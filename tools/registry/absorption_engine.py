@@ -50,6 +50,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -57,8 +58,10 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
     from tools.registry.genome_manager import GenomeManager
+
     _HAS_GENOME = True
 except ImportError:
     _HAS_GENOME = False
@@ -276,9 +279,7 @@ class AbsorptionEngine:
             hours_observed = 0.0
             if discovered_at:
                 try:
-                    disc_dt = datetime.fromisoformat(
-                        discovered_at.replace("Z", "+00:00")
-                    )
+                    disc_dt = datetime.fromisoformat(discovered_at.replace("Z", "+00:00"))
                     now_dt = datetime.now(timezone.utc)
                     delta = now_dt - disc_dt
                     hours_observed = round(delta.total_seconds() / 3600.0, 2)
@@ -344,8 +345,7 @@ class AbsorptionEngine:
 
             _audit(
                 "absorption.stability_check",
-                f"Stability check for capability {capability_id}: "
-                f"{'stable' if stable else 'not stable'}",
+                f"Stability check for capability {capability_id}: {'stable' if stable else 'not stable'}",
                 result,
             )
 
@@ -364,9 +364,9 @@ class AbsorptionEngine:
         Returns:
             One of 'decreasing', 'flat', 'increasing', or 'insufficient_data'.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
         rows = conn.execute(
             """SELECT error_rate, collected_at
@@ -405,9 +405,9 @@ class AbsorptionEngine:
         Returns:
             One of 'positive', 'neutral', or 'negative'.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
         rows = conn.execute(
             """SELECT compliance_scores_json, collected_at
@@ -501,11 +501,7 @@ class AbsorptionEngine:
 
                     # Add the absorbed capability to the genome data
                     capabilities = current_data.get("capabilities", {})
-                    cap_key = (
-                        behavior.get("behavior_type", "other")
-                        + "_"
-                        + str(capability_id)
-                    )
+                    cap_key = behavior.get("behavior_type", "other") + "_" + str(capability_id)
                     capabilities[cap_key] = {
                         "description": behavior.get("description", ""),
                         "source_child": behavior.get("child_id", ""),
@@ -576,8 +572,7 @@ class AbsorptionEngine:
 
             _audit(
                 "absorption.completed",
-                f"Absorbed capability {capability_id} into genome "
-                f"(version: {new_genome_version or 'unversioned'})",
+                f"Absorbed capability {capability_id} into genome (version: {new_genome_version or 'unversioned'})",
                 result,
             )
 
@@ -603,9 +598,9 @@ class AbsorptionEngine:
         Returns:
             List of candidate dicts with stability metrics.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
         conn = self._get_conn()
         try:
@@ -628,9 +623,7 @@ class AbsorptionEngine:
                 disc = record.get("discovered_at", "")
                 if disc:
                     try:
-                        disc_dt = datetime.fromisoformat(
-                            disc.replace("Z", "+00:00")
-                        )
+                        disc_dt = datetime.fromisoformat(disc.replace("Z", "+00:00"))
                         delta = datetime.now(timezone.utc) - disc_dt
                         hours_observed = round(delta.total_seconds() / 3600.0, 2)
                     except (ValueError, TypeError):
@@ -689,44 +682,40 @@ class AbsorptionEngine:
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "ICDEV Absorption Engine -- 72-hour stability window (D212) "
-            "before genome absorption"
-        )
+        description=("ICDEV Absorption Engine -- 72-hour stability window (D212) before genome absorption")
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--check", action="store_true",
+        "--check",
+        action="store_true",
         help="Check stability of a capability",
     )
     group.add_argument(
-        "--absorb", action="store_true",
+        "--absorb",
+        action="store_true",
         help="Absorb a stable capability into the parent genome",
     )
     group.add_argument(
-        "--candidates", action="store_true",
+        "--candidates",
+        action="store_true",
         help="List capabilities ready for absorption",
     )
     group.add_argument(
-        "--history", action="store_true",
+        "--history",
+        action="store_true",
         help="Show absorption history",
     )
 
+    parser.add_argument("--capability-id", help="Capability ID (row ID in child_learned_behaviors)")
     parser.add_argument(
-        "--capability-id", help="Capability ID (row ID in child_learned_behaviors)"
-    )
-    parser.add_argument(
-        "--absorbed-by", default="system",
+        "--absorbed-by",
+        default="system",
         help="Identity of the person/system performing absorption",
     )
-    parser.add_argument(
-        "--limit", type=int, default=20, help="History limit (default: 20)"
-    )
+    parser.add_argument("--limit", type=int, default=20, help="History limit (default: 20)")
 
     args = parser.parse_args()
 

@@ -17,6 +17,8 @@ def _utcnow() -> datetime:
     """Return current UTC time as a naive datetime (no tzinfo) for SQLite
     compatibility.  Avoids deprecated ``_utcnow()``."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _create_tables(db_path: Path) -> None:
     """Create minimal audit_trail and hook_events tables matching the
@@ -71,16 +74,32 @@ def _seed_data(db_path: Path) -> None:
 
     # Audit trail rows (5 events spanning several hours)
     audit_rows = [
-        ("code_generated", "builder-agent", "Generated auth module",
-         "proj-001", "CUI", (now - timedelta(hours=4)).isoformat()),
-        ("test_passed", "builder-agent", "All tests green",
-         "proj-001", "CUI", (now - timedelta(hours=3)).isoformat()),
-        ("compliance_check", "compliance-agent", "Ran STIG check",
-         "proj-002", "CUI", (now - timedelta(hours=2)).isoformat()),
-        ("deployment_succeeded", "infra-agent", "Deployed v1.2.0",
-         "proj-001", "CUI", (now - timedelta(minutes=30)).isoformat()),
-        ("security_scan", "security-agent", "SAST clean",
-         "proj-003", "CUI", (now - timedelta(minutes=10)).isoformat()),
+        (
+            "code_generated",
+            "builder-agent",
+            "Generated auth module",
+            "proj-001",
+            "CUI",
+            (now - timedelta(hours=4)).isoformat(),
+        ),
+        ("test_passed", "builder-agent", "All tests green", "proj-001", "CUI", (now - timedelta(hours=3)).isoformat()),
+        (
+            "compliance_check",
+            "compliance-agent",
+            "Ran STIG check",
+            "proj-002",
+            "CUI",
+            (now - timedelta(hours=2)).isoformat(),
+        ),
+        (
+            "deployment_succeeded",
+            "infra-agent",
+            "Deployed v1.2.0",
+            "proj-001",
+            "CUI",
+            (now - timedelta(minutes=30)).isoformat(),
+        ),
+        ("security_scan", "security-agent", "SAST clean", "proj-003", "CUI", (now - timedelta(minutes=10)).isoformat()),
     ]
     conn.executemany(
         "INSERT INTO audit_trail (event_type, actor, action, project_id, classification, created_at)"
@@ -92,21 +111,49 @@ def _seed_data(db_path: Path) -> None:
     # The activity API reads hook_type and session_id (not event_type/agent_id),
     # so populate both columns for compatibility.
     hook_rows = [
-        ("post_tool_use", "builder-agent", "scaffold",
-         "proj-001", "CUI", (now - timedelta(hours=5)).isoformat(),
-         "post_tool_use", "builder-agent"),
-        ("pre_tool_use", "security-agent", "sast_runner",
-         "proj-002", "CUI", (now - timedelta(hours=1)).isoformat(),
-         "pre_tool_use", "security-agent"),
-        ("notification", "monitor-agent", "health_checker",
-         "proj-001", "CUI", (now - timedelta(minutes=20)).isoformat(),
-         "notification", "monitor-agent"),
-        ("post_tool_use", "compliance-agent", "sbom_generator",
-         "proj-003", "CUI", (now - timedelta(minutes=5)).isoformat(),
-         "post_tool_use", "compliance-agent"),
+        (
+            "post_tool_use",
+            "builder-agent",
+            "scaffold",
+            "proj-001",
+            "CUI",
+            (now - timedelta(hours=5)).isoformat(),
+            "post_tool_use",
+            "builder-agent",
+        ),
+        (
+            "pre_tool_use",
+            "security-agent",
+            "sast_runner",
+            "proj-002",
+            "CUI",
+            (now - timedelta(hours=1)).isoformat(),
+            "pre_tool_use",
+            "security-agent",
+        ),
+        (
+            "notification",
+            "monitor-agent",
+            "health_checker",
+            "proj-001",
+            "CUI",
+            (now - timedelta(minutes=20)).isoformat(),
+            "notification",
+            "monitor-agent",
+        ),
+        (
+            "post_tool_use",
+            "compliance-agent",
+            "sbom_generator",
+            "proj-003",
+            "CUI",
+            (now - timedelta(minutes=5)).isoformat(),
+            "post_tool_use",
+            "compliance-agent",
+        ),
     ]
     conn.executemany(
-        "INSERT INTO hook_events (event_type, agent_id, tool_name, project_id, classification, created_at, hook_type, session_id)"
+        "INSERT INTO hook_events (event_type, agent_id, tool_name, project_id, classification, created_at, hook_type, session_id)"  # noqa: E501
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         hook_rows,
     )
@@ -118,6 +165,7 @@ def _seed_data(db_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def db_path(tmp_path):
@@ -162,6 +210,7 @@ def empty_client(tmp_path):
 # 1. Feed — merged events
 # ===================================================================
 
+
 class TestFeedMerged:
     """Feed endpoint returns merged events from both tables."""
 
@@ -184,8 +233,16 @@ class TestFeedMerged:
     def test_feed_events_have_expected_keys(self, client):
         resp = client.get("/api/activity/feed")
         data = resp.get_json()
-        required_keys = {"source", "id", "event_type", "actor_or_agent",
-                         "summary", "project_id", "classification", "created_at"}
+        required_keys = {
+            "source",
+            "id",
+            "event_type",
+            "actor_or_agent",
+            "summary",
+            "project_id",
+            "classification",
+            "created_at",
+        }
         for event in data["events"]:
             assert required_keys.issubset(event.keys())
 
@@ -193,6 +250,7 @@ class TestFeedMerged:
 # ===================================================================
 # 2. Feed — source filter
 # ===================================================================
+
 
 class TestFeedSourceFilter:
     """Filtering by source=audit or source=hook."""
@@ -214,6 +272,7 @@ class TestFeedSourceFilter:
 # 3. Feed — event type filter
 # ===================================================================
 
+
 class TestFeedEventTypeFilter:
     """Filtering by event_type."""
 
@@ -234,6 +293,7 @@ class TestFeedEventTypeFilter:
 # ===================================================================
 # 4. Feed — actor filter (LIKE match)
 # ===================================================================
+
 
 class TestFeedActorFilter:
     """Filtering by actor uses LIKE %value%."""
@@ -261,6 +321,7 @@ class TestFeedActorFilter:
 # 5. Feed — project_id filter
 # ===================================================================
 
+
 class TestFeedProjectFilter:
     """Filtering by project_id."""
 
@@ -282,6 +343,7 @@ class TestFeedProjectFilter:
 # ===================================================================
 # 6. Feed — since timestamp filter
 # ===================================================================
+
 
 class TestFeedSinceFilter:
     """Filtering with since=ISO timestamp."""
@@ -306,6 +368,7 @@ class TestFeedSinceFilter:
 # ===================================================================
 # 7. Feed — pagination (limit, offset)
 # ===================================================================
+
 
 class TestFeedPagination:
     """Pagination via limit and offset query params."""
@@ -336,6 +399,7 @@ class TestFeedPagination:
 # ===================================================================
 # 8. Poll — cursor-based polling
 # ===================================================================
+
 
 class TestPoll:
     """Cursor-based polling returns events newer than cursor."""
@@ -385,6 +449,7 @@ class TestPoll:
 # 9. Filter options
 # ===================================================================
 
+
 class TestFilterOptions:
     """Filter-options endpoint returns unique dropdown values."""
 
@@ -424,6 +489,7 @@ class TestFilterOptions:
 # 10. Stats
 # ===================================================================
 
+
 class TestStats:
     """Stats endpoint returns correct counts."""
 
@@ -454,6 +520,7 @@ class TestStats:
 # ===================================================================
 # 11. Empty database
 # ===================================================================
+
 
 class TestEmptyDatabase:
     """Endpoints return graceful empty results on an empty DB."""
@@ -492,6 +559,7 @@ class TestEmptyDatabase:
 # ===================================================================
 # 12. Feed ordering
 # ===================================================================
+
 
 class TestFeedOrdering:
     """Feed results are ordered DESC by created_at."""

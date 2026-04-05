@@ -151,13 +151,11 @@ def _query_compliance(conn: sqlite3.Connection, project_id: str) -> dict:
         stig_summary[sev][r["status"]] = r["cnt"]
 
     stig_total = sum(r["cnt"] for r in stig_rows)
-    stig_open = sum(
-        r["cnt"] for r in stig_rows if r["status"] in ("Open", "open")
-    )
+    stig_open = sum(r["cnt"] for r in stig_rows if r["status"] in ("Open", "open"))
 
     # Control implementation status
     control_rows = conn.execute(
-        "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = ? GROUP BY implementation_status",
+        "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = ? GROUP BY implementation_status",  # noqa: E501
         (project_id,),
     ).fetchall()
     controls_summary = {r["implementation_status"]: r["cnt"] for r in control_rows}
@@ -399,7 +397,7 @@ def format_brief(data: dict) -> str:
     # Compliance
     lines.append("")
     lines.append(f"  {'--- Compliance ---':^56}")
-    lines.append(f"    SSP:      {c['ssp']['status']}" + (f" (v{c['ssp']['version']})" if c['ssp']['version'] else ""))
+    lines.append(f"    SSP:      {c['ssp']['status']}" + (f" (v{c['ssp']['version']})" if c["ssp"]["version"] else ""))
     lines.append(f"    POA&M:    {c['poam']['open_count']} open / {c['poam']['total']} total")
     lines.append(f"    STIG:     {c['stig']['open_findings']} open / {c['stig']['total_findings']} total")
     lines.append(f"    Controls: {c['controls']['implemented']} implemented / {c['controls']['total']} total")
@@ -449,15 +447,13 @@ def format_detailed(data: dict) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Get detailed status for an ICDEV-managed project"
-    )
+    parser = argparse.ArgumentParser(description="Get detailed status for an ICDEV-managed project")
+    parser.add_argument("--project-id", "--project", required=True, help="Project UUID", dest="project_id")
     parser.add_argument(
-        "--project-id", "--project", required=True,
-        help="Project UUID", dest="project_id")
-    parser.add_argument(
-        "--format", choices=["brief", "detailed", "json"], default="brief",
-        help="Output format (brief=summary, detailed/json=full JSON)"
+        "--format",
+        choices=["brief", "detailed", "json"],
+        default="brief",
+        help="Output format (brief=summary, detailed/json=full JSON)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()

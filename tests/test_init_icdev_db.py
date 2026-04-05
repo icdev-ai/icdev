@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.db.init_icdev_db — ICDEV database initialization."""
@@ -84,9 +85,7 @@ class TestHasMigrationSystem:
     def test_has_migration_system_true_when_schema_migrations_exists(self, db_path):
         """_has_migration_system should return True when schema_migrations table exists."""
         conn = sqlite3.connect(str(db_path))
-        conn.execute(
-            "CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, version TEXT)"
-        )
+        conn.execute("CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, version TEXT)")
         conn.commit()
         conn.close()
         assert _has_migration_system(db_path) is True
@@ -94,9 +93,7 @@ class TestHasMigrationSystem:
     def test_init_db_detects_migration_system_and_returns_early(self, db_path):
         """init_db should return empty list when migration system is detected."""
         conn = sqlite3.connect(str(db_path))
-        conn.execute(
-            "CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, version TEXT)"
-        )
+        conn.execute("CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, version TEXT)")
         conn.commit()
         conn.close()
 
@@ -119,14 +116,13 @@ class TestMainFunction:
             ["init_icdev_db.py", "--db-path", str(db_path), "--reset"],
         ):
             from icdev.tools.db.init_icdev_db import main
+
             main()
 
         assert db_path.exists()
         # Verify tables exist (DB was recreated)
         conn = sqlite3.connect(str(db_path))
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         conn.close()
         assert len(tables) > 0
 

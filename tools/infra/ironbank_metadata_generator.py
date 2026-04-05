@@ -256,9 +256,7 @@ def generate_hardening_manifest(
         output_paths["hardening_manifest"] = str(manifest_path)
 
         approval_path = out / "container_approval.json"
-        approval_path.write_text(
-            json.dumps(approval_record, indent=2), encoding="utf-8"
-        )
+        approval_path.write_text(json.dumps(approval_record, indent=2), encoding="utf-8")
         output_paths["container_approval"] = str(approval_path)
 
     return {
@@ -303,9 +301,14 @@ def validate_hardening_manifest(project_id: str, manifest_path: str = None) -> d
 
         # Required fields check
         required_fields = [
-            "apiVersion:", "name:", "tags:", "labels:",
-            "base_image:", "image_author:",
-            "mil.dod.impact.level:", "mil.dod.classification:",
+            "apiVersion:",
+            "name:",
+            "tags:",
+            "labels:",
+            "base_image:",
+            "image_author:",
+            "mil.dod.impact.level:",
+            "mil.dod.classification:",
         ]
         for field in required_fields:
             if field not in content:
@@ -341,10 +344,9 @@ def validate_hardening_manifest(project_id: str, manifest_path: str = None) -> d
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Iron Bank hardening manifest generator (D350)"
-    )
+    parser = argparse.ArgumentParser(description="Iron Bank hardening manifest generator (D350)")
     parser.add_argument("--project-id", required=True, help="Project UUID")
     parser.add_argument("--project-dir", help="Project directory (language detection)")
     parser.add_argument("--output-dir", help="Directory to write generated artifacts")
@@ -367,8 +369,11 @@ def main() -> None:
                 for lang, info in IRONBANK_BASE_IMAGES.items()
             ]
         }
-        print(json.dumps(result, indent=2) if args.json else
-              "\n".join(f"  {r['language']}: {r['registry']}:{r['tag']}" for r in result["base_images"]))
+        print(
+            json.dumps(result, indent=2)
+            if args.json
+            else "\n".join(f"  {r['language']}: {r['registry']}:{r['tag']}" for r in result["base_images"])
+        )
         sys.exit(0)
 
     if args.generate:

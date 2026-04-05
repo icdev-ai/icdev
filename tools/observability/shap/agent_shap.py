@@ -118,9 +118,7 @@ class AgentSHAP:
         total = sum(abs(r["shapley_value"]) for r in results.values())
         if total > 0:
             for tool in results:
-                results[tool]["normalized"] = round(
-                    abs(results[tool]["shapley_value"]) / total, 6
-                )
+                results[tool]["normalized"] = round(abs(results[tool]["shapley_value"]) / total, 6)
         else:
             for tool in results:
                 results[tool]["normalized"] = round(1.0 / len(tools), 6)
@@ -176,9 +174,7 @@ class AgentSHAP:
 
         if metric == "success":
             # Fraction of tool calls that succeeded
-            ok_count = sum(
-                1 for s in relevant_spans if s.get("status_code") == "OK"
-            )
+            ok_count = sum(1 for s in relevant_spans if s.get("status_code") == "OK")
             return ok_count / len(relevant_spans)
         elif metric == "duration":
             # Inverse of total duration (lower is better, so invert)
@@ -186,9 +182,7 @@ class AgentSHAP:
             return 1.0 / (1.0 + total_ms / 1000.0)
         else:
             # Default: success rate
-            ok_count = sum(
-                1 for s in relevant_spans if s.get("status_code") == "OK"
-            )
+            ok_count = sum(1 for s in relevant_spans if s.get("status_code") == "OK")
             return ok_count / len(relevant_spans)
 
     def _get_trace_spans(self, trace_id: str) -> List[Dict]:

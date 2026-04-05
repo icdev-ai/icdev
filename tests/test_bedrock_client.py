@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.agent.bedrock_client — centralized Amazon Bedrock API wrapper.
@@ -31,10 +32,16 @@ from icdev.tools.agent.bedrock_client import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_invoke_response(content_text="Hello", input_tokens=10, output_tokens=20,
-                          model="anthropic.claude-opus-4-6-20260215-v1:0",
-                          stop_reason="end_turn", tool_use_blocks=None,
-                          thinking_blocks=None):
+
+def _make_invoke_response(
+    content_text="Hello",
+    input_tokens=10,
+    output_tokens=20,
+    model="anthropic.claude-opus-4-6-20260215-v1:0",
+    stop_reason="end_turn",
+    tool_use_blocks=None,
+    thinking_blocks=None,
+):
     """Build a mocked invoke_model raw response dict."""
     content_blocks = []
     if thinking_blocks:
@@ -43,12 +50,14 @@ def _make_invoke_response(content_text="Hello", input_tokens=10, output_tokens=2
     content_blocks.append({"type": "text", "text": content_text})
     if tool_use_blocks:
         for tu in tool_use_blocks:
-            content_blocks.append({
-                "type": "tool_use",
-                "id": tu.get("id", "tool-1"),
-                "name": tu.get("name", "my_tool"),
-                "input": tu.get("input", {}),
-            })
+            content_blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": tu.get("id", "tool-1"),
+                    "name": tu.get("name", "my_tool"),
+                    "input": tu.get("input", {}),
+                }
+            )
 
     body_dict = {
         "model": model,
@@ -65,12 +74,14 @@ def _create_client(**kwargs):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         from icdev.tools.agent.bedrock_client import BedrockClient
+
         return BedrockClient(**kwargs)
 
 
 # ---------------------------------------------------------------------------
 # TestBedrockRequest
 # ---------------------------------------------------------------------------
+
 
 class TestBedrockRequest:
     """BedrockRequest dataclass construction and default values."""
@@ -117,6 +128,7 @@ class TestBedrockRequest:
 # ---------------------------------------------------------------------------
 # TestBedrockResponse
 # ---------------------------------------------------------------------------
+
 
 class TestBedrockResponse:
     """BedrockResponse dataclass construction and default values."""
@@ -166,6 +178,7 @@ class TestBedrockResponse:
 # TestBedrockClientInit
 # ---------------------------------------------------------------------------
 
+
 class TestBedrockClientInit:
     """BedrockClient initialization, config loading, lazy boto3."""
 
@@ -186,6 +199,7 @@ class TestBedrockClientInit:
                 with warnings.catch_warnings(record=True) as w:
                     warnings.simplefilter("always")
                     from icdev.tools.agent.bedrock_client import BedrockClient
+
                     BedrockClient()
                     deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
                     assert len(deprecation_warnings) >= 1
@@ -212,6 +226,7 @@ class TestBedrockClientInit:
 # TestBedrockClientInvoke
 # ---------------------------------------------------------------------------
 
+
 class TestBedrockClientInvoke:
     """BedrockClient.invoke with mocked boto3 responses."""
 
@@ -228,6 +243,7 @@ class TestBedrockClientInvoke:
                     # Pre-fill availability cache so _resolve_model_id does not probe
                     client._availability_cache = {"opus": True, "sonnet-4-5": True, "sonnet-3-5": True}
                     import time
+
                     client._availability_cache_time = time.time()
         return client, mock_runtime
 
@@ -311,6 +327,7 @@ class TestBedrockClientInvoke:
 # TestModelRegistry
 # ---------------------------------------------------------------------------
 
+
 class TestModelRegistry:
     """DEFAULT_MODELS registry and model config lookup."""
 
@@ -331,9 +348,15 @@ class TestModelRegistry:
         assert DEFAULT_MODELS["sonnet-3-5"]["supports_structured_output"] is False
 
     def test_all_models_have_required_keys(self):
-        required_keys = {"model_id", "display_name", "max_output_tokens",
-                         "supports_thinking", "supports_tool_use", "supports_streaming",
-                         "anthropic_version"}
+        required_keys = {
+            "model_id",
+            "display_name",
+            "max_output_tokens",
+            "supports_thinking",
+            "supports_tool_use",
+            "supports_streaming",
+            "anthropic_version",
+        }
         for name, cfg in DEFAULT_MODELS.items():
             missing = required_keys - set(cfg.keys())
             assert missing == set(), f"Model '{name}' missing keys: {missing}"
@@ -342,6 +365,7 @@ class TestModelRegistry:
 # ---------------------------------------------------------------------------
 # TestFallbackChain
 # ---------------------------------------------------------------------------
+
 
 class TestFallbackChain:
     """FALLBACK_CHAIN configuration and _resolve_model_id behavior."""
@@ -362,6 +386,7 @@ class TestFallbackChain:
                 client = _create_client()
                 # Mark opus unavailable, sonnet-4-5 available
                 import time
+
                 client._availability_cache = {"opus": False, "sonnet-4-5": True, "sonnet-3-5": True}
                 client._availability_cache_time = time.time()
                 model_id = client._resolve_model_id("opus")
@@ -371,6 +396,7 @@ class TestFallbackChain:
 # ---------------------------------------------------------------------------
 # TestTokenTracking
 # ---------------------------------------------------------------------------
+
 
 class TestTokenTracking:
     """_track_tokens best-effort integration."""
@@ -389,8 +415,9 @@ class TestTokenTracking:
         """When token_tracker is available, _track_tokens calls log_usage."""
         mock_tracker = MagicMock()
         mock_tracker.estimate_cost.return_value = 0.005
-        resp = BedrockResponse(model_id="test-model", input_tokens=100, output_tokens=200,
-                               thinking_tokens=50, duration_ms=1000)
+        resp = BedrockResponse(
+            model_id="test-model", input_tokens=100, output_tokens=200, thinking_tokens=50, duration_ms=1000
+        )
         with patch.dict("sys.modules", {"icdev.tools.agent.token_tracker": mock_tracker}):
             _track_tokens(resp, "builder-agent", "proj-123")
         mock_tracker.log_usage.assert_called_once()
@@ -401,6 +428,7 @@ class TestTokenTracking:
 # ---------------------------------------------------------------------------
 # TestBoto3Unavailable
 # ---------------------------------------------------------------------------
+
 
 class TestBoto3Unavailable:
     """Graceful handling when boto3 is not installed."""
@@ -418,18 +446,21 @@ class TestBoto3Unavailable:
 # TestEffortResolution
 # ---------------------------------------------------------------------------
 
+
 class TestEffortResolution:
     """Effort mapping and per-agent overrides."""
 
     @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_effort_to_budget_low(self):
         from icdev.tools.agent.bedrock_client import BedrockClient
+
         budget = BedrockClient._effort_to_budget("low", 8192)
         assert budget == max(int(8192 * 0.10), 1024)
 
     @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_effort_to_budget_max(self):
         from icdev.tools.agent.bedrock_client import BedrockClient
+
         budget = BedrockClient._effort_to_budget("max", 128000)
         assert budget == max(int(128000 * 1.0), 10240)
 
@@ -445,6 +476,7 @@ class TestEffortResolution:
 # ---------------------------------------------------------------------------
 # TestProbe
 # ---------------------------------------------------------------------------
+
 
 class TestProbe:
     """probe_model_availability caching and error handling."""
@@ -482,27 +514,31 @@ class TestProbe:
 # TestRetryLogic
 # ---------------------------------------------------------------------------
 
+
 class TestRetryLogic:
     """_is_retryable and _backoff_delay static methods."""
 
     def test_throttling_is_retryable(self):
         from icdev.tools.agent.bedrock_client import BedrockClient
+
         exc = Exception("rate limited")
         exc.response = {"Error": {"Code": "ThrottlingException"}}
         assert BedrockClient._is_retryable(exc) is True
 
     def test_generic_error_not_retryable(self):
         from icdev.tools.agent.bedrock_client import BedrockClient
+
         exc = ValueError("bad input")
         assert BedrockClient._is_retryable(exc) is False
 
     def test_backoff_delay_increases_with_attempt(self):
         from icdev.tools.agent.bedrock_client import BedrockClient
+
         delays = [BedrockClient._backoff_delay(i) for i in range(5)]
         # Generally the max possible delay should increase with attempt
         # Due to jitter, we check the underlying exponential growth via ceiling
         for i in range(1, len(delays)):
-            max_possible_current = min(30.0, 1.0 * (2 ** i))
+            max_possible_current = min(30.0, 1.0 * (2**i))
             max_possible_previous = min(30.0, 1.0 * (2 ** (i - 1)))
             assert max_possible_current >= max_possible_previous
 

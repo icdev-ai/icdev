@@ -39,13 +39,14 @@ def _get_recently_evolved(hours: int = 72) -> set:
     """Get files that were recently targeted by Evolve to avoid re-targeting."""
     conn = get_connection()
     try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        rows = conn.execute("""
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows = conn.execute(
+            """
             SELECT payload FROM genesis_gkp
             WHERE genesis_reflex = 'evolve' AND created_at > ?
-        """, (cutoff,)).fetchall()
+        """,
+            (cutoff,),
+        ).fetchall()
         recently_evolved = set()
         for row in rows:
             payload_str = row["payload"] if isinstance(row, dict) else row[0]
@@ -68,10 +69,12 @@ def _refresh_file_metrics(file_path: str) -> Optional[Dict[str, Any]]:
     """Re-run code_analyzer on a single file to get fresh metrics."""
     try:
         result = subprocess.run(
-            [sys.executable, "tools/analysis/code_analyzer.py",
-             "--file", file_path, "--json"],
-            capture_output=True, text=True, timeout=60,
-            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            [sys.executable, "tools/analysis/code_analyzer.py", "--file", file_path, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(BASE_DIR),
+            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         stdout = result.stdout.strip()
         json_start = stdout.find("{")
@@ -177,8 +180,7 @@ def _get_worst_quality_file(
     return None
 
 
-def _analyze_with_llm(file_path: str, file_content: str,
-                       metrics: Dict) -> Optional[Dict[str, Any]]:
+def _analyze_with_llm(file_path: str, file_content: str, metrics: Dict) -> Optional[Dict[str, Any]]:
     """Use scanner-tier LLM to propose improvement (phi4-reasoning)."""
     try:
         from tools.llm.router import invoke as llm_invoke
@@ -187,9 +189,9 @@ def _analyze_with_llm(file_path: str, file_content: str,
 
 File: {file_path}
 Current metrics:
-- Cyclomatic complexity: {metrics.get('cyclomatic_complexity', '?')}
-- Smell count: {metrics.get('smell_count', '?')}
-- Maintainability score: {metrics.get('maintainability_score', '?')}
+- Cyclomatic complexity: {metrics.get("cyclomatic_complexity", "?")}
+- Smell count: {metrics.get("smell_count", "?")}
+- Maintainability score: {metrics.get("maintainability_score", "?")}
 
 Code:
 ```python
@@ -197,7 +199,7 @@ Code:
 ```
 
 Respond with JSON only:
-{{"improvement": "description of the change", "target_function": "function name to refactor", "risk": "low|medium|high", "estimated_complexity_reduction": number}}
+{{"improvement": "description of the change", "target_function": "function name to refactor", "risk": "low|medium|high", "estimated_complexity_reduction": number}}  # noqa: E501
 """
         result = llm_invoke(
             prompt=prompt,
@@ -221,18 +223,14 @@ Respond with JSON only:
 def _run_tests_for_file(file_path: str, timeout: int = 120) -> Dict[str, Any]:
     """Run tests related to a specific file."""
     # Find related test files
-    module_name = Path(file_path).stem
-    test_patterns = [
-        f"tests/**/test_{module_name}.py",
-        f"tests/test_{module_name}.py",
-        f"tests/genesis_auto/test_{module_name}.py",
-    ]
+    Path(file_path).stem
 
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-x", "--tb=short", "-q",
-             "tests/"],
-            capture_output=True, text=True, timeout=timeout,
+            [sys.executable, "-m", "pytest", "-x", "--tb=short", "-q", "tests/"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
             cwd=str(BASE_DIR),
             env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
@@ -258,6 +256,7 @@ def _export_mutation_proposal(
     """Export mutation proposal as a GKP code_patch with quality-gated confidence."""
     try:
         from tools.genesis.promoter import export_gkp
+
         result = export_gkp(
             reflex="evolve",
             artifact_type="code_patch",
@@ -296,9 +295,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     - High risk OR tests fail → confidence 0.45 (mandatory human review)
     """
     allowed_dirs = config.get("allowed_directories", ["tools/", "goals/"])
-    forbidden_files = config.get("forbidden_files", [
-        "CLAUDE.md", ".env", "tools/db/storage.py", "tools/genesis/daemon.py",
-    ])
+    forbidden_files = config.get(
+        "forbidden_files",
+        [
+            "CLAUDE.md",
+            ".env",
+            "tools/db/storage.py",
+            "tools/genesis/daemon.py",
+        ],
+    )
 
     # Step 1: Find worst-quality file
     print("  Evolve: scanning for worst-quality file...")
@@ -310,8 +315,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "details": {"status": "no_files_need_improvement"},
         }
 
-    print(f"  Evolve: target = {target['file_path']} "
-          f"(smells={target['smell_count']}, complexity={target['cyclomatic_complexity']})")
+    print(
+        f"  Evolve: target = {target['file_path']} "
+        f"(smells={target['smell_count']}, complexity={target['cyclomatic_complexity']})"
+    )
 
     # Step 2: Read file
     try:
@@ -358,11 +365,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             old_maint = target.get("maintainability_score", 0) or 0
             new_maint = fresh_metrics.get("maintainability_score", 0) or 0
             # Improvement = fewer smells OR lower complexity OR higher maintainability
-            metrics_improved = (
-                new_smells < old_smells
-                or new_cc < old_cc
-                or new_maint > old_maint
-            )
+            metrics_improved = new_smells < old_smells or new_cc < old_cc or new_maint > old_maint
 
     # Step 6: Compute quality-gated confidence
     confidence, rationale = _compute_confidence(risk, tests_passed, metrics_improved)
@@ -371,7 +374,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # Step 7: Export as GKP proposal with computed confidence
     print(f"  Evolve: proposing -- {analysis.get('improvement', '?')[:80]}")
     gkp_id = _export_mutation_proposal(
-        target["file_path"], analysis, target,
+        target["file_path"],
+        analysis,
+        target,
         confidence=confidence,
         confidence_rationale=rationale,
         fresh_metrics=fresh_metrics,

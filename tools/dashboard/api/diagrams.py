@@ -54,11 +54,13 @@ def get_diagram_detail(diagram_id):
     if not diagram:
         return jsonify({"error": f"Diagram '{diagram_id}' not found"}), 404
 
-    return jsonify({
-        "id": diagram_id,
-        "title": diagram["title"],
-        "description": diagram["description"],
-        "category": diagram.get("category", "general"),
-        "roles": diagram.get("roles", []),
-        "mermaid": diagram["mermaid"],
-    })
+    return jsonify(
+        {
+            "id": diagram_id,
+            "title": diagram["title"],
+            "description": diagram["description"],
+            "category": diagram.get("category", "general"),
+            "roles": diagram.get("roles", []),
+            "mermaid": diagram["mermaid"],
+        }
+    )

@@ -18,6 +18,7 @@ sys.path.insert(0, str(BASE_DIR))
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def memory_db(tmp_path):
     """Create a temporary memory.db with the full schema including enhancements."""
@@ -82,9 +83,11 @@ def memory_db(tmp_path):
 # Feature 1: SHA-256 Content-Hash Deduplication (D179)
 # ---------------------------------------------------------------------------
 
+
 class TestContentHashDedup:
     def test_compute_content_hash_deterministic(self):
         from icdev.tools.memory.memory_write import compute_content_hash
+
         h1 = compute_content_hash("hello world")
         h2 = compute_content_hash("hello world")
         assert h1 == h2
@@ -92,12 +95,14 @@ class TestContentHashDedup:
 
     def test_compute_content_hash_different_inputs(self):
         from icdev.tools.memory.memory_write import compute_content_hash
+
         h1 = compute_content_hash("hello")
         h2 = compute_content_hash("world")
         assert h1 != h2
 
     def test_write_with_dedup_first_write_succeeds(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_write
+
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         entry_id, is_dup = memory_write.write_to_db("test content", "fact", 5)
@@ -106,6 +111,7 @@ class TestContentHashDedup:
 
     def test_write_with_dedup_duplicate_returns_existing(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_write
+
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         id1, dup1 = memory_write.write_to_db("same content", "fact", 5)
@@ -116,6 +122,7 @@ class TestContentHashDedup:
 
     def test_different_users_same_content_no_dedup(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_write
+
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         id1, dup1 = memory_write.write_to_db("shared fact", "fact", 5, user_id="user-a")
@@ -126,6 +133,7 @@ class TestContentHashDedup:
 
     def test_null_user_dedup(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_write
+
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         id1, _ = memory_write.write_to_db("no user content", "event", 3)
@@ -137,6 +145,7 @@ class TestContentHashDedup:
 # ---------------------------------------------------------------------------
 # Feature 2: User-Scoped Memory (D180)
 # ---------------------------------------------------------------------------
+
 
 class TestUserScopedMemory:
     def _seed_entries(self, db_path):
@@ -160,6 +169,7 @@ class TestUserScopedMemory:
 
     def test_search_filters_by_user(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_db as mdb
+
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -171,6 +181,7 @@ class TestUserScopedMemory:
 
     def test_search_without_user_returns_all(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_db as mdb
+
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -179,6 +190,7 @@ class TestUserScopedMemory:
 
     def test_list_all_user_scoped(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_db as mdb
+
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -190,6 +202,7 @@ class TestUserScopedMemory:
 
     def test_hybrid_search_user_scoped(self, memory_db, monkeypatch):
         from icdev.tools.memory import hybrid_search
+
         monkeypatch.setattr(hybrid_search, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -200,6 +213,7 @@ class TestUserScopedMemory:
 
     def test_memory_read_user_scoped(self, memory_db, monkeypatch):
         from icdev.tools.memory import memory_read
+
         monkeypatch.setattr(memory_read, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -213,9 +227,11 @@ class TestUserScopedMemory:
 # Feature 3: Auto-Capture Buffer (D181)
 # ---------------------------------------------------------------------------
 
+
 class TestAutoCapture:
     def test_capture_writes_to_buffer(self, memory_db):
         from icdev.tools.memory.auto_capture import capture
+
         result = capture("test capture", source="hook", db_path=memory_db)
         assert result["status"] == "captured"
         assert result["buffer_id"] > 0
@@ -223,6 +239,7 @@ class TestAutoCapture:
 
     def test_capture_dedup_in_buffer(self, memory_db):
         from icdev.tools.memory.auto_capture import capture
+
         r1 = capture("duplicate content", source="hook", db_path=memory_db)
         r2 = capture("duplicate content", source="hook", db_path=memory_db)
         assert r1["status"] == "captured"
@@ -230,6 +247,7 @@ class TestAutoCapture:
 
     def test_flush_buffer_to_entries(self, memory_db):
         from icdev.tools.memory.auto_capture import capture, flush_buffer
+
         capture("flush me", source="hook", db_path=memory_db)
         capture("flush me too", source="auto", db_path=memory_db)
 
@@ -273,6 +291,7 @@ class TestAutoCapture:
 
     def test_buffer_status(self, memory_db):
         from icdev.tools.memory.auto_capture import capture, buffer_status
+
         capture("entry 1", source="hook", db_path=memory_db)
         capture("entry 2", source="thinking", db_path=memory_db)
 
@@ -283,6 +302,7 @@ class TestAutoCapture:
 
     def test_thinking_source_type(self, memory_db):
         from icdev.tools.memory.auto_capture import capture
+
         result = capture(
             "chain of thought reasoning",
             source="thinking",
@@ -305,13 +325,16 @@ class TestAutoCapture:
 # Feature 4: Thinking Type (D182) — Time-Decay
 # ---------------------------------------------------------------------------
 
+
 class TestThinkingType:
     def test_thinking_type_in_valid_types(self):
         from icdev.tools.memory.memory_write import VALID_TYPES
+
         assert "thinking" in VALID_TYPES
 
     def test_thinking_half_life_in_config(self):
         from icdev.tools.memory.time_decay import DEFAULT_CONFIG
+
         assert "thinking" in DEFAULT_CONFIG["half_lives"]
         assert DEFAULT_CONFIG["half_lives"]["thinking"] == 3
 
@@ -335,6 +358,7 @@ class TestThinkingType:
 # ---------------------------------------------------------------------------
 # D72 Fix: embed_memory.py provider abstraction
 # ---------------------------------------------------------------------------
+
 
 class TestEmbedMemoryD72:
     def test_get_embedding_client_tries_provider_first(self, monkeypatch):
@@ -362,6 +386,7 @@ class TestEmbedMemoryD72:
 # Migration: schema changes
 # ---------------------------------------------------------------------------
 
+
 class TestMigration:
     def test_migration_up_adds_columns(self, tmp_path):
         """Test that migration 002 adds required columns and buffer table."""
@@ -385,6 +410,7 @@ class TestMigration:
         # Run migration
         sys.path.insert(0, str(BASE_DIR / "tools" / "db" / "migrations" / "002_memory_enhancements"))
         from up import up as migrate_up
+
         migrate_up(conn)
 
         # Verify columns added
@@ -395,16 +421,12 @@ class TestMigration:
         assert "source" in cols
 
         # Verify backfill
-        row = conn.execute(
-            "SELECT content_hash FROM memory_entries WHERE content = 'pre-existing'"
-        ).fetchone()
+        row = conn.execute("SELECT content_hash FROM memory_entries WHERE content = 'pre-existing'").fetchone()
         assert row[0] is not None
         assert len(row[0]) == 64  # SHA-256 hex
 
         # Verify buffer table exists
-        tables = [r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )]
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
         assert "memory_buffer" in tables
 
         conn.close()

@@ -40,10 +40,12 @@ MAX_CONCURRENT_PER_USER = 5
 # Extension hook integration (Feature 2)
 # ---------------------------------------------------------------------------
 
+
 def _dispatch_hook(hook_name: str, context: dict) -> dict:
     """Dispatch extension hook if available."""
     try:
         from tools.extensions.extension_manager import extension_manager, ExtensionPoint
+
         ep = ExtensionPoint(hook_name)
         return extension_manager.dispatch(ep, context)
     except (ImportError, ValueError):
@@ -54,6 +56,7 @@ def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
     """Mark context dirty on state tracker if available (Feature 4)."""
     try:
         from tools.dashboard.state_tracker import state_tracker
+
         state_tracker.mark_dirty(context_id, change_type, data)
     except ImportError:
         pass
@@ -62,6 +65,7 @@ def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
 # ---------------------------------------------------------------------------
 # ChatContext — per-context state
 # ---------------------------------------------------------------------------
+
 
 class ChatContext:
     """Represents a single chat stream with its own message queue and thread."""
@@ -143,6 +147,7 @@ class ChatContext:
 # ChatManager — singleton managing all chat contexts
 # ---------------------------------------------------------------------------
 
+
 class ChatManager:
     """Manages multi-stream parallel chat contexts.
 
@@ -169,10 +174,7 @@ class ChatManager:
         """Create a new chat context. Returns context dict."""
         with self._lock:
             # Check concurrent limit per user
-            user_contexts = [
-                c for c in self._contexts.values()
-                if c.user_id == user_id and c.status == "active"
-            ]
+            user_contexts = [c for c in self._contexts.values() if c.user_id == user_id and c.status == "active"]
             if len(user_contexts) >= MAX_CONCURRENT_PER_USER:
                 return {
                     "error": f"Max {MAX_CONCURRENT_PER_USER} concurrent contexts per user",
@@ -271,11 +273,14 @@ class ChatManager:
                 return {"error": f"Context is {ctx.status}"}
 
         # Dispatch pre-hook
-        hook_ctx = _dispatch_hook("chat_message_before", {
-            "context_id": context_id,
-            "content": content,
-            "role": role,
-        })
+        hook_ctx = _dispatch_hook(
+            "chat_message_before",
+            {
+                "context_id": context_id,
+                "content": content,
+                "role": role,
+            },
+        )
         content = hook_ctx.get("content", content)
         role = hook_ctx.get("role", role)
 
@@ -285,18 +290,24 @@ class ChatManager:
         self._db_insert_message(context_id, turn, role, content)
 
         # Queue for processing
-        ctx.message_queue.append({
-            "turn_number": turn,
-            "role": role,
-            "content": content,
-        })
+        ctx.message_queue.append(
+            {
+                "turn_number": turn,
+                "role": role,
+                "content": content,
+            }
+        )
         ctx.last_activity_at = datetime.now(timezone.utc).isoformat()
 
-        _mark_dirty(context_id, "new_message", {
-            "turn_number": turn,
-            "role": role,
-            "content": content[:200],
-        })
+        _mark_dirty(
+            context_id,
+            "new_message",
+            {
+                "turn_number": turn,
+                "role": role,
+                "content": content[:200],
+            },
+        )
 
         return {
             "context_id": context_id,
@@ -322,14 +333,21 @@ class ChatManager:
         ctx.turn_number += 1
         turn = ctx.turn_number
         self._db_insert_message(
-            context_id, turn, "intervention", message,
+            context_id,
+            turn,
+            "intervention",
+            message,
             content_type="intervention",
         )
 
-        _mark_dirty(context_id, "intervention", {
-            "turn_number": turn,
-            "message": message[:200],
-        })
+        _mark_dirty(
+            context_id,
+            "intervention",
+            {
+                "turn_number": turn,
+                "message": message[:200],
+            },
+        )
 
         logger.info("Intervention set on context %s", context_id)
         return {
@@ -411,27 +429,35 @@ class ChatManager:
                 intervention = ctx.check_intervention()
                 if intervention:
                     # Save current response as checkpoint
-                    ctx.save_checkpoint({
-                        "interrupted_message": msg,
-                        "partial_response": response,
-                    })
+                    ctx.save_checkpoint(
+                        {
+                            "interrupted_message": msg,
+                            "partial_response": response,
+                        }
+                    )
                     self._handle_intervention(ctx, intervention)
                     continue
 
                 # Record assistant response
                 ctx.turn_number += 1
                 self._db_insert_message(
-                    context_id, ctx.turn_number, "assistant", response,
+                    context_id,
+                    ctx.turn_number,
+                    "assistant",
+                    response,
                 )
 
                 # Dispatch post-hook — check for governance advisory (D325, D327)
-                hook_result = _dispatch_hook("chat_message_after", {
-                    "context_id": context_id,
-                    "role": "assistant",
-                    "content": response,
-                    "turn_number": ctx.turn_number,
-                    "project_id": getattr(ctx, "project_id", ""),
-                })
+                hook_result = _dispatch_hook(
+                    "chat_message_after",
+                    {
+                        "context_id": context_id,
+                        "role": "assistant",
+                        "content": response,
+                        "turn_number": ctx.turn_number,
+                        "project_id": getattr(ctx, "project_id", ""),
+                    },
+                )
 
                 # Inject governance advisory as system message if present
                 gov_advisory = hook_result.get("governance_advisory") if isinstance(hook_result, dict) else None
@@ -442,28 +468,42 @@ class ChatManager:
                         f"Action: {gov_advisory.get('action', '')}"
                     )
                     self._db_insert_message(
-                        context_id, ctx.turn_number, "system", advisory_content,
+                        context_id,
+                        ctx.turn_number,
+                        "system",
+                        advisory_content,
                         content_type="governance_advisory",
                     )
-                    _mark_dirty(context_id, "governance_advisory", {
-                        "gap_id": gov_advisory.get("gap_id"),
-                        "severity": gov_advisory.get("severity"),
-                        "total_gaps": gov_advisory.get("total_gaps", 0),
-                    })
+                    _mark_dirty(
+                        context_id,
+                        "governance_advisory",
+                        {
+                            "gap_id": gov_advisory.get("gap_id"),
+                            "severity": gov_advisory.get("severity"),
+                            "total_gaps": gov_advisory.get("total_gaps", 0),
+                        },
+                    )
 
                 self._db_complete_task(task_id, response)
-                _mark_dirty(context_id, "new_message", {
-                    "turn_number": ctx.turn_number,
-                    "role": "assistant",
-                    "content": response[:200],
-                })
+                _mark_dirty(
+                    context_id,
+                    "new_message",
+                    {
+                        "turn_number": ctx.turn_number,
+                        "role": "assistant",
+                        "content": response[:200],
+                    },
+                )
 
             except Exception as exc:
                 logger.error("Error processing message in %s: %s", context_id, exc)
                 ctx.turn_number += 1
                 error_msg = f"Error: {type(exc).__name__}: {exc}"
                 self._db_insert_message(
-                    context_id, ctx.turn_number, "system", error_msg,
+                    context_id,
+                    ctx.turn_number,
+                    "system",
+                    error_msg,
                     content_type="error",
                 )
                 self._db_fail_task(task_id, str(exc))
@@ -482,6 +522,7 @@ class ChatManager:
         """
         try:
             from tools.llm.router import LLMRouter
+
             router = LLMRouter()
 
             # Build conversation history for context
@@ -513,22 +554,32 @@ class ChatManager:
         logger.info("Processing intervention in context %s", ctx.context_id)
 
         # Process intervention through LLM
-        response = self._process_message(ctx, {
-            "content": f"[INTERVENTION] {message}",
-            "role": "user",
-        })
+        response = self._process_message(
+            ctx,
+            {
+                "content": f"[INTERVENTION] {message}",
+                "role": "user",
+            },
+        )
 
         # Record intervention response
         ctx.turn_number += 1
         self._db_insert_message(
-            ctx.context_id, ctx.turn_number, "assistant", response,
+            ctx.context_id,
+            ctx.turn_number,
+            "assistant",
+            response,
             content_type="text",
         )
 
-        _mark_dirty(ctx.context_id, "intervention_response", {
-            "turn_number": ctx.turn_number,
-            "content": response[:200],
-        })
+        _mark_dirty(
+            ctx.context_id,
+            "intervention_response",
+            {
+                "turn_number": ctx.turn_number,
+                "content": response[:200],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Database operations
@@ -549,10 +600,19 @@ class ChatManager:
                     classification, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    ctx.context_id, ctx.user_id, ctx.tenant_id, ctx.title,
-                    ctx.status, ctx.project_id, ctx.agent_model,
-                    ctx.system_prompt, 0, 0, DEFAULT_CLASSIFICATION,
-                    ctx.created_at, ctx.created_at,
+                    ctx.context_id,
+                    ctx.user_id,
+                    ctx.tenant_id,
+                    ctx.title,
+                    ctx.status,
+                    ctx.project_id,
+                    ctx.agent_model,
+                    ctx.system_prompt,
+                    0,
+                    0,
+                    DEFAULT_CLASSIFICATION,
+                    ctx.created_at,
+                    ctx.created_at,
                 ),
             )
             conn.commit()
@@ -589,14 +649,18 @@ class ChatManager:
                     metadata, classification, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    context_id, turn_number, role, content, content_type,
+                    context_id,
+                    turn_number,
+                    role,
+                    content,
+                    content_type,
                     json.dumps(metadata) if metadata else None,
                     DEFAULT_CLASSIFICATION,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
             conn.execute(
-                "UPDATE chat_contexts SET message_count = ?, dirty_version = dirty_version + 1, updated_at = ? WHERE id = ?",
+                "UPDATE chat_contexts SET message_count = ?, dirty_version = dirty_version + 1, updated_at = ? WHERE id = ?",  # noqa: E501
                 (turn_number, datetime.now(timezone.utc).isoformat(), context_id),
             )
             conn.commit()
@@ -604,9 +668,7 @@ class ChatManager:
         except sqlite3.OperationalError as exc:
             logger.debug("DB message insert skipped: %s", exc)
 
-    def _db_create_task(
-        self, task_id: str, context_id: str, task_type: str, input_text: str
-    ) -> None:
+    def _db_create_task(self, task_id: str, context_id: str, task_type: str, input_text: str) -> None:
         try:
             conn = self._get_db()
             conn.execute(
@@ -615,7 +677,10 @@ class ChatManager:
                     classification, created_at)
                    VALUES (?, ?, ?, 'processing', ?, ?, ?)""",
                 (
-                    task_id, context_id, task_type, input_text[:2000],
+                    task_id,
+                    context_id,
+                    task_type,
+                    input_text[:2000],
                     DEFAULT_CLASSIFICATION,
                     datetime.now(timezone.utc).isoformat(),
                 ),
@@ -660,15 +725,9 @@ class ChatManager:
         with self._lock:
             return {
                 "total_contexts": len(self._contexts),
-                "active_contexts": sum(
-                    1 for c in self._contexts.values() if c.status == "active"
-                ),
-                "processing": sum(
-                    1 for c in self._contexts.values() if c.is_processing
-                ),
-                "total_queued": sum(
-                    len(c.message_queue) for c in self._contexts.values()
-                ),
+                "active_contexts": sum(1 for c in self._contexts.values() if c.status == "active"),
+                "processing": sum(1 for c in self._contexts.values() if c.is_processing),
+                "total_queued": sum(len(c.message_queue) for c in self._contexts.values()),
             }
 
 

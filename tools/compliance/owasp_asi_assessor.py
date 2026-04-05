@@ -38,7 +38,9 @@ class OWASPASIAssessor(BaseAssessor):
     CATALOG_FILENAME = "owasp_agentic_asi.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OWASP ASI01-ASI10 automated checks.
 
@@ -175,7 +177,7 @@ class OWASPASIAssessor(BaseAssessor):
                 if agent_config.exists():
                     try:
                         content = agent_config.read_text(encoding="utf-8", errors="ignore").lower()
-                        if ("tls" in content or "mtls" in content or "hmac" in content):
+                        if "tls" in content or "mtls" in content or "hmac" in content:
                             results["ASI-07"] = "satisfied"
                     except Exception:
                         pass

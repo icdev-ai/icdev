@@ -38,30 +38,80 @@ def _generate_id(prefix: str = "pg") -> str:
 
 CATEGORY_KEYWORDS = {
     "technical": [
-        "technical", "technology", "architecture", "software", "hardware",
-        "integration", "api", "platform", "cloud", "infrastructure",
-        "cybersecurity", "encryption", "zero trust",
+        "technical",
+        "technology",
+        "architecture",
+        "software",
+        "hardware",
+        "integration",
+        "api",
+        "platform",
+        "cloud",
+        "infrastructure",
+        "cybersecurity",
+        "encryption",
+        "zero trust",
     ],
     "management": [
-        "management", "schedule", "timeline", "milestone", "team",
-        "resource", "staffing", "leadership", "communication", "risk",
-        "project", "program",
+        "management",
+        "schedule",
+        "timeline",
+        "milestone",
+        "team",
+        "resource",
+        "staffing",
+        "leadership",
+        "communication",
+        "risk",
+        "project",
+        "program",
     ],
     "pricing": [
-        "price", "cost", "budget", "lpta", "best value", "competitive",
-        "rate", "discount", "profit", "margin", "fee",
+        "price",
+        "cost",
+        "budget",
+        "lpta",
+        "best value",
+        "competitive",
+        "rate",
+        "discount",
+        "profit",
+        "margin",
+        "fee",
     ],
     "past_performance": [
-        "past performance", "cpars", "reference", "experience",
-        "track record", "prior work", "contract history",
+        "past performance",
+        "cpars",
+        "reference",
+        "experience",
+        "track record",
+        "prior work",
+        "contract history",
     ],
     "compliance": [
-        "compliance", "fedramp", "cmmc", "nist", "ato", "stig",
-        "fips", "cui", "clearance", "security", "audit",
+        "compliance",
+        "fedramp",
+        "cmmc",
+        "nist",
+        "ato",
+        "stig",
+        "fips",
+        "cui",
+        "clearance",
+        "security",
+        "audit",
     ],
     "staffing": [
-        "staffing", "personnel", "resume", "key personnel", "labor",
-        "sme", "subject matter", "workforce", "hire", "recruit",
+        "staffing",
+        "personnel",
+        "resume",
+        "key personnel",
+        "labor",
+        "sme",
+        "subject matter",
+        "workforce",
+        "hire",
+        "recruit",
     ],
 }
 
@@ -79,6 +129,7 @@ def _classify_category(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Find analyzable opportunities
 # ---------------------------------------------------------------------------
+
 
 def _get_completed_opportunities() -> List[Dict]:
     """Find opportunities with outcomes but no win/loss record."""
@@ -111,7 +162,8 @@ def _get_competitor_data(opportunity_id: str) -> Optional[Dict]:
     """Get competitor intel for this opportunity from scout data."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT vendor_name, award_amount, award_date
             FROM govcon_awards
             WHERE naics_code IN (
@@ -119,7 +171,9 @@ def _get_competitor_data(opportunity_id: str) -> Optional[Dict]:
                 WHERE id = ?
             )
             ORDER BY award_date DESC LIMIT 5
-        """, (opportunity_id,)).fetchall()
+        """,
+            (opportunity_id,),
+        ).fetchall()
         if rows:
             return {
                 "competitors": [dict(r) for r in rows],
@@ -136,13 +190,16 @@ def _get_draft_quality(opportunity_id: str) -> Optional[Dict]:
     """Get quality score data for drafts on this opportunity."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT composite_score, grammar_score, readability_score,
                    tone_score, plagiarism_score, ai_detection_score
             FROM pg_proposal_quality_scores
             WHERE opportunity_id = ?
             ORDER BY created_at DESC
-        """, (opportunity_id,)).fetchall()
+        """,
+            (opportunity_id,),
+        ).fetchall()
         if not rows:
             return None
         avg_composite = sum(r["composite_score"] for r in rows) / len(rows)
@@ -159,6 +216,7 @@ def _get_draft_quality(opportunity_id: str) -> Optional[Dict]:
 # ---------------------------------------------------------------------------
 # Generate analysis
 # ---------------------------------------------------------------------------
+
 
 def _analyze_opportunity(opp: Dict) -> Dict:
     """Generate win/loss analysis for a completed opportunity.
@@ -182,8 +240,7 @@ def _analyze_opportunity(opp: Dict) -> Dict:
     # Identify strengths and weaknesses from dimension scores
     strengths = []
     weaknesses = []
-    for dim, score in sorted(dimensions.items(),
-                             key=lambda x: x[1], reverse=True):
+    for dim, score in sorted(dimensions.items(), key=lambda x: x[1], reverse=True):
         label = dim.replace("_", " ").title()
         if score >= 0.6:
             strengths.append(f"{label} ({score:.0%})")
@@ -196,10 +253,7 @@ def _analyze_opportunity(opp: Dict) -> Dict:
     competitor_strengths = ""
     if comp_data and outcome == "lost":
         competitor_name = comp_data.get("top_competitor", "Unknown")
-        competitor_strengths = (
-            f"Active in NAICS with {len(comp_data['competitors'])} "
-            f"recent awards"
-        )
+        competitor_strengths = f"Active in NAICS with {len(comp_data['competitors'])} recent awards"
 
     # Quality data
     quality = _get_draft_quality(opp_id)
@@ -209,90 +263,99 @@ def _analyze_opportunity(opp: Dict) -> Dict:
 
     # Lesson from decision accuracy
     if outcome == "won" and decision == "bid":
-        lessons.append({
-            "category": "management",
-            "lesson": (
-                f"Bid decision was correct (win prob {win_prob:.0%}). "
-                f"Scoring model calibrated well for this opportunity type."
-            ),
-            "actionable": True,
-        })
+        lessons.append(
+            {
+                "category": "management",
+                "lesson": (
+                    f"Bid decision was correct (win prob {win_prob:.0%}). "
+                    f"Scoring model calibrated well for this opportunity type."
+                ),
+                "actionable": True,
+            }
+        )
     elif outcome == "lost" and decision == "bid":
-        lessons.append({
-            "category": "management",
-            "lesson": (
-                f"Bid decision overestimated win probability ({win_prob:.0%}). "
-                f"Review scoring dimensions for this NAICS/agency combination."
-            ),
-            "actionable": True,
-        })
+        lessons.append(
+            {
+                "category": "management",
+                "lesson": (
+                    f"Bid decision overestimated win probability ({win_prob:.0%}). "
+                    f"Review scoring dimensions for this NAICS/agency combination."
+                ),
+                "actionable": True,
+            }
+        )
     elif outcome == "won" and decision == "no_bid":
-        lessons.append({
-            "category": "management",
-            "lesson": (
-                "Missed winning opportunity — no-bid decision was premature. "
-                "Consider lowering no-bid threshold for similar opportunities."
-            ),
-            "actionable": True,
-        })
+        lessons.append(
+            {
+                "category": "management",
+                "lesson": (
+                    "Missed winning opportunity — no-bid decision was premature. "
+                    "Consider lowering no-bid threshold for similar opportunities."
+                ),
+                "actionable": True,
+            }
+        )
 
     # Lesson from capability gaps
     cap_fit = dimensions.get("capability_fit", 0)
     if cap_fit < 0.5 and outcome == "lost":
-        lessons.append({
-            "category": "technical",
-            "lesson": (
-                f"Low capability fit ({cap_fit:.0%}). "
-                f"Invest in capability development for this domain."
-            ),
-            "actionable": True,
-        })
+        lessons.append(
+            {
+                "category": "technical",
+                "lesson": (f"Low capability fit ({cap_fit:.0%}). Invest in capability development for this domain."),
+                "actionable": True,
+            }
+        )
 
     # Lesson from quality
     if quality and quality["avg_composite"] < 65 and outcome == "lost":
-        lessons.append({
-            "category": "technical",
-            "lesson": (
-                f"Low draft quality ({quality['avg_composite']:.0f}/100). "
-                f"Improve proposal writing process and knowledge base."
-            ),
-            "actionable": True,
-        })
+        lessons.append(
+            {
+                "category": "technical",
+                "lesson": (
+                    f"Low draft quality ({quality['avg_composite']:.0f}/100). "
+                    f"Improve proposal writing process and knowledge base."
+                ),
+                "actionable": True,
+            }
+        )
 
     # Lesson from compliance
     comp_readiness = dimensions.get("compliance_readiness", 0)
     if comp_readiness < 0.5:
-        lessons.append({
-            "category": "compliance",
-            "lesson": (
-                f"Low compliance readiness ({comp_readiness:.0%}). "
-                f"Strengthen compliance posture for targeted frameworks."
-            ),
-            "actionable": True,
-        })
+        lessons.append(
+            {
+                "category": "compliance",
+                "lesson": (
+                    f"Low compliance readiness ({comp_readiness:.0%}). "
+                    f"Strengthen compliance posture for targeted frameworks."
+                ),
+                "actionable": True,
+            }
+        )
 
     # Lesson from staffing/resources
     resource = dimensions.get("resource_availability", 0)
     if resource < 0.5:
-        lessons.append({
-            "category": "staffing",
-            "lesson": (
-                f"Low resource availability ({resource:.0%}). "
-                f"Improve capture planning and early team allocation."
-            ),
-            "actionable": True,
-        })
+        lessons.append(
+            {
+                "category": "staffing",
+                "lesson": (
+                    f"Low resource availability ({resource:.0%}). Improve capture planning and early team allocation."
+                ),
+                "actionable": True,
+            }
+        )
 
     # Ensure at least one lesson
     if not lessons:
-        lessons.append({
-            "category": "other",
-            "lesson": (
-                f"Opportunity {outcome}. No specific corrective actions "
-                f"identified from available data."
-            ),
-            "actionable": False,
-        })
+        lessons.append(
+            {
+                "category": "other",
+                "lesson": (f"Opportunity {outcome}. No specific corrective actions identified from available data."),
+                "actionable": False,
+            }
+        )
 
     return {
         "outcome": outcome,
@@ -309,8 +372,8 @@ def _analyze_opportunity(opp: Dict) -> Dict:
 # Store analysis results
 # ---------------------------------------------------------------------------
 
-def _store_win_loss_record(opportunity_id: str,
-                           analysis: Dict) -> Optional[str]:
+
+def _store_win_loss_record(opportunity_id: str, analysis: Dict) -> Optional[str]:
     """Write win/loss record to pg_win_loss_records."""
     conn = get_connection()
     rec_id = _generate_id("pgwl")
@@ -373,8 +436,7 @@ def _store_lessons(win_loss_id: str, lessons: List[Dict]) -> int:
         conn.close()
 
 
-def _audit_analyze(event_type: str, opportunity_id: Optional[str],
-                   details: Dict, success: bool) -> None:
+def _audit_analyze(event_type: str, opportunity_id: Optional[str], details: Dict, success: bool) -> None:
     """Log analyze event to audit trail."""
     conn = get_connection()
     try:
@@ -405,6 +467,7 @@ def _audit_analyze(event_type: str, opportunity_id: Optional[str],
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Analyze Reflex (R13).
 
@@ -434,12 +497,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             analyzed += 1
             total_lessons += lesson_count
 
-            analysis_results.append({
-                "opportunity_id": opp_id,
-                "outcome": analysis["outcome"],
-                "record_id": rec_id,
-                "lessons_count": lesson_count,
-            })
+            analysis_results.append(
+                {
+                    "opportunity_id": opp_id,
+                    "outcome": analysis["outcome"],
+                    "record_id": rec_id,
+                    "lessons_count": lesson_count,
+                }
+            )
 
         _audit_analyze(
             f"win_loss_analyzed_{analysis['outcome']}",
@@ -462,12 +527,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "analyses_completed": analyzed,
             "total_lessons": total_lessons,
             "outcomes": {
-                "won": sum(1 for r in analysis_results
-                           if r["outcome"] == "won"),
-                "lost": sum(1 for r in analysis_results
-                            if r["outcome"] == "lost"),
-                "other": sum(1 for r in analysis_results
-                             if r["outcome"] not in ("won", "lost")),
+                "won": sum(1 for r in analysis_results if r["outcome"] == "won"),
+                "lost": sum(1 for r in analysis_results if r["outcome"] == "lost"),
+                "other": sum(1 for r in analysis_results if r["outcome"] not in ("won", "lost")),
             },
             "analyses": analysis_results,
         },

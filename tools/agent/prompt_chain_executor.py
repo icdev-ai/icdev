@@ -70,6 +70,7 @@ VALID_AGENTS = set(AGENT_FUNCTION_MAP.keys())
 @dataclass
 class ChainStep:
     """A single step in a prompt chain."""
+
     step_id: str
     agent: str
     prompt: str
@@ -79,6 +80,7 @@ class ChainStep:
 @dataclass
 class ChainDefinition:
     """A prompt chain template loaded from YAML."""
+
     name: str
     description: str = ""
     max_iterations: int = 1
@@ -88,6 +90,7 @@ class ChainDefinition:
 @dataclass
 class StepResult:
     """Result of executing a single chain step."""
+
     step_id: str
     agent: str
     output: str = ""
@@ -103,6 +106,7 @@ class StepResult:
 @dataclass
 class ChainExecution:
     """Full execution state of a prompt chain."""
+
     id: str
     project_id: str
     chain_name: str
@@ -136,10 +140,12 @@ def _get_db(db_path: Path = None) -> sqlite3.Connection:
 def _now() -> str:
     """Current UTC timestamp as ISO string."""
     from tools.compat.datetime_utils import utc_now_iso
+
     try:
         return utc_now_iso()
     except Exception:
         import datetime
+
         return datetime.datetime.utcnow().isoformat() + "Z"
 
 
@@ -148,12 +154,13 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _audit(event_type: str, actor: str, action: str,
-           project_id: str = None, details: dict = None,
-           db_path: Path = None):
+def _audit(
+    event_type: str, actor: str, action: str, project_id: str = None, details: dict = None, db_path: Path = None
+):
     """Best-effort audit trail logging (D6 append-only)."""
     try:
         from tools.audit.audit_logger import log_event
+
         log_event(
             event_type=event_type,
             actor=actor,
@@ -238,7 +245,7 @@ def substitute_variables(
         step_id = match.group(1)
         return step_outputs.get(step_id, f"[MISSING: step '{step_id}' not found]")
 
-    result = re.sub(r'\$STEP\{([^}]+)\}', _step_replacer, result)
+    result = re.sub(r"\$STEP\{([^}]+)\}", _step_replacer, result)
     return result
 
 
@@ -315,9 +322,7 @@ def validate_chain(chain: ChainDefinition) -> List[str]:
     for i, step in enumerate(chain.steps):
         # Duplicate step_id check
         if step.step_id in step_ids:
-            errors.append(
-                f"Chain '{chain.name}': duplicate step_id '{step.step_id}'"
-            )
+            errors.append(f"Chain '{chain.name}': duplicate step_id '{step.step_id}'")
         step_ids.add(step.step_id)
 
         # Valid agent check
@@ -330,25 +335,21 @@ def validate_chain(chain: ChainDefinition) -> List[str]:
 
         # Empty prompt check
         if not step.prompt.strip():
-            errors.append(
-                f"Chain '{chain.name}', step '{step.step_id}': empty prompt"
-            )
+            errors.append(f"Chain '{chain.name}', step '{step.step_id}': empty prompt")
 
         # $STEP{x} references must point to earlier steps
-        refs = re.findall(r'\$STEP\{([^}]+)\}', step.prompt)
+        refs = re.findall(r"\$STEP\{([^}]+)\}", step.prompt)
         earlier_ids = {s.step_id for s in chain.steps[:i]}
         for ref in refs:
             if ref not in earlier_ids:
                 errors.append(
-                    f"Chain '{chain.name}', step '{step.step_id}': "
-                    f"$STEP{{{ref}}} references unknown or later step"
+                    f"Chain '{chain.name}', step '{step.step_id}': $STEP{{{ref}}} references unknown or later step"
                 )
 
         # Timeout sanity
         if step.timeout_s <= 0:
             errors.append(
-                f"Chain '{chain.name}', step '{step.step_id}': "
-                f"timeout_s must be positive, got {step.timeout_s}"
+                f"Chain '{chain.name}', step '{step.step_id}': timeout_s must be positive, got {step.timeout_s}"
             )
 
     return errors
@@ -387,6 +388,7 @@ class PromptChainExecutor:
         """Lazy-init LLMRouter (D-PC-2: LLM reasoning, not tool dispatch)."""
         if self._llm_router is None:
             from tools.llm.router import LLMRouter
+
             self._llm_router = LLMRouter()
         return self._llm_router
 
@@ -399,16 +401,18 @@ class PromptChainExecutor:
         result = []
         for name, chain in self._chains.items():
             errors = validate_chain(chain)
-            result.append({
-                "name": name,
-                "description": chain.description,
-                "steps": len(chain.steps),
-                "max_iterations": chain.max_iterations,
-                "step_ids": [s.step_id for s in chain.steps],
-                "agents": [s.agent for s in chain.steps],
-                "valid": len(errors) == 0,
-                "errors": errors,
-            })
+            result.append(
+                {
+                    "name": name,
+                    "description": chain.description,
+                    "steps": len(chain.steps),
+                    "max_iterations": chain.max_iterations,
+                    "step_ids": [s.step_id for s in chain.steps],
+                    "agents": [s.agent for s in chain.steps],
+                    "valid": len(errors) == 0,
+                    "errors": errors,
+                }
+            )
         return result
 
     def dry_run(
@@ -439,18 +443,21 @@ class PromptChainExecutor:
 
         for step in chain.steps:
             resolved_prompt = substitute_variables(
-                step.prompt, prev_output, user_input, step_outputs,
+                step.prompt,
+                prev_output,
+                user_input,
+                step_outputs,
             )
             function = AGENT_FUNCTION_MAP.get(step.agent, "default")
-            steps_preview.append({
-                "step_id": step.step_id,
-                "agent": step.agent,
-                "llm_function": function,
-                "timeout_s": step.timeout_s,
-                "resolved_prompt_preview": resolved_prompt[:500] + (
-                    "..." if len(resolved_prompt) > 500 else ""
-                ),
-            })
+            steps_preview.append(
+                {
+                    "step_id": step.step_id,
+                    "agent": step.agent,
+                    "llm_function": function,
+                    "timeout_s": step.timeout_s,
+                    "resolved_prompt_preview": resolved_prompt[:500] + ("..." if len(resolved_prompt) > 500 else ""),
+                }
+            )
             # For dry-run, simulate output as placeholder
             placeholder = f"[DRY RUN: output of step '{step.step_id}' by agent '{step.agent}']"
             step_outputs[step.step_id] = placeholder
@@ -495,9 +502,7 @@ class PromptChainExecutor:
 
         errors = validate_chain(chain)
         if errors:
-            raise ValueError(
-                f"Chain '{chain_name}' validation failed: {'; '.join(errors)}"
-            )
+            raise ValueError(f"Chain '{chain_name}' validation failed: {'; '.join(errors)}")
 
         # Initialize execution record
         exec_id = f"pce-{uuid.uuid4().hex[:12]}"
@@ -546,9 +551,7 @@ class PromptChainExecutor:
             )
 
             execution.step_results[step.step_id] = step_result
-            execution.total_tokens_used += (
-                step_result.input_tokens + step_result.output_tokens
-            )
+            execution.total_tokens_used += step_result.input_tokens + step_result.output_tokens
 
             if step_result.status == "completed":
                 execution.steps_completed += 1
@@ -557,9 +560,7 @@ class PromptChainExecutor:
             else:
                 # Step failed — abort chain
                 execution.status = "failed"
-                execution.error_message = (
-                    f"Step '{step.step_id}' failed: {step_result.error}"
-                )
+                execution.error_message = f"Step '{step.step_id}' failed: {step_result.error}"
                 break
 
             # Update intermediate state
@@ -577,11 +578,7 @@ class PromptChainExecutor:
         self._persist_execution(execution)
 
         _audit(
-            event_type=(
-                "prompt_chain.completed"
-                if execution.status == "completed"
-                else "prompt_chain.failed"
-            ),
+            event_type=("prompt_chain.completed" if execution.status == "completed" else "prompt_chain.failed"),
             actor=executed_by,
             action=(
                 f"Prompt chain '{chain_name}' {execution.status}: "
@@ -635,7 +632,10 @@ class PromptChainExecutor:
 
         # Resolve prompt variables
         resolved_prompt = substitute_variables(
-            step.prompt, current_input, original_input, step_outputs,
+            step.prompt,
+            current_input,
+            original_input,
+            step_outputs,
         )
 
         # Map agent to LLM function
@@ -677,7 +677,9 @@ class PromptChainExecutor:
             result.status = "failed"
             logger.error(
                 "Chain step '%s' (agent=%s) failed: %s",
-                step.step_id, step.agent, exc,
+                step.step_id,
+                step.agent,
+                exc,
             )
 
         result.duration_ms = int((time.time() - start_time) * 1000)
@@ -686,10 +688,7 @@ class PromptChainExecutor:
         _audit(
             event_type=f"prompt_chain.step.{result.status}",
             actor=executed_by,
-            action=(
-                f"Step '{step.step_id}' ({step.agent}): {result.status} "
-                f"in {result.duration_ms}ms"
-            ),
+            action=(f"Step '{step.step_id}' ({step.agent}): {result.status} in {result.duration_ms}ms"),
             project_id=project_id,
             details={
                 "step_id": step.step_id,
@@ -908,11 +907,16 @@ def main():
     if args.list:
         chains = executor.list_chains()
         if args.json:
-            print(json.dumps({
-                "chains": chains,
-                "count": len(chains),
-                "classification": "CUI",
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "chains": chains,
+                        "count": len(chains),
+                        "classification": "CUI",
+                    },
+                    indent=2,
+                )
+            )
         else:
             print("Available Prompt Chains")
             print("Classification: CUI // SP-CTI")
@@ -1017,11 +1021,17 @@ def main():
             limit=args.limit,
         )
         if args.json:
-            print(json.dumps({
-                "executions": results,
-                "count": len(results),
-                "classification": "CUI",
-            }, indent=2, default=str))
+            print(
+                json.dumps(
+                    {
+                        "executions": results,
+                        "count": len(results),
+                        "classification": "CUI",
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
         else:
             print("Prompt Chain Execution History")
             print("Classification: CUI // SP-CTI")

@@ -31,6 +31,7 @@ try:
         check_output,
         get_summary,
     )
+
     _HAS_CONFAB = True
 except ImportError:
     _HAS_CONFAB = False
@@ -40,6 +41,7 @@ try:
         FairnessAssessor,
         FAIRNESS_DIMENSIONS,
     )
+
     _HAS_FAIRNESS = True
 except ImportError:
     _HAS_FAIRNESS = False
@@ -50,6 +52,7 @@ try:
         list_inventory,
         export_inventory,
     )
+
     _HAS_INVENTORY = True
 except ImportError:
     _HAS_INVENTORY = False
@@ -58,6 +61,7 @@ try:
     from icdev.tools.compliance.gao_evidence_builder import (
         build_evidence,
     )
+
     _HAS_GAO = True
 except ImportError:
     _HAS_GAO = False
@@ -66,6 +70,7 @@ try:
     from icdev.tools.compliance.ai_transparency_audit import (
         run_transparency_audit,
     )
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -260,13 +265,11 @@ def populated_transparency_db(transparency_db):
     now = datetime.now(timezone.utc).isoformat()
     # XAI assessments
     conn.execute(
-        "INSERT INTO xai_assessments (project_id, requirement_id, requirement_title, "
-        "status) VALUES (?, ?, ?, ?)",
+        "INSERT INTO xai_assessments (project_id, requirement_id, requirement_title, status) VALUES (?, ?, ?, ?)",
         ("proj-test", "XAI-001", "Tracing Active", "satisfied"),
     )
     conn.execute(
-        "INSERT INTO xai_assessments (project_id, requirement_id, requirement_title, "
-        "status) VALUES (?, ?, ?, ?)",
+        "INSERT INTO xai_assessments (project_id, requirement_id, requirement_title, status) VALUES (?, ?, ?, ?)",
         ("proj-test", "XAI-006", "SHAP Analysis", "satisfied"),
     )
     # ai_bom entries
@@ -274,16 +277,12 @@ def populated_transparency_db(transparency_db):
         "INSERT INTO ai_bom (id, project_id, component_type, component_name, "
         "version, provider, risk_level, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("bom-1", "proj-test", "model", "claude-sonnet", "4.0",
-         "bedrock", "medium", now, now),
+        ("bom-1", "proj-test", "model", "claude-sonnet", "4.0", "bedrock", "medium", now, now),
     )
     # Model card
     conn.execute(
-        "INSERT INTO model_cards (project_id, model_name, card_data, card_hash, version) "
-        "VALUES (?, ?, ?, ?, ?)",
-        ("proj-test", "claude-sonnet",
-         json.dumps({"model_details": {}, "intended_use": {}}),
-         "a" * 16, 1),
+        "INSERT INTO model_cards (project_id, model_name, card_data, card_hash, version) VALUES (?, ?, ?, ?, ?)",
+        ("proj-test", "claude-sonnet", json.dumps({"model_details": {}, "intended_use": {}}), "a" * 16, 1),
     )
     conn.commit()
     conn.close()
@@ -293,6 +292,7 @@ def populated_transparency_db(transparency_db):
 # ============================================================
 # Confabulation Detector Tests
 # ============================================================
+
 
 @pytest.mark.skipif(not _HAS_CONFAB, reason="confabulation_detector not available")
 class TestConfabulationCitationPatterns:
@@ -346,10 +346,7 @@ class TestConfabulationCitationPatterns:
 class TestConfabulationContradictions:
     def test_contradicting_sentences(self):
         """Text with contradictions should be flagged."""
-        text = (
-            "Encryption must be enabled for all data at rest. "
-            "Encryption must not be enabled for temporary files."
-        )
+        text = "Encryption must be enabled for all data at rest. Encryption must not be enabled for temporary files."
         result = check_internal_contradictions(text)
         assert isinstance(result, list)
         assert len(result) > 0
@@ -414,6 +411,7 @@ class TestConfabulationFullCheck:
 # Fairness Assessor Tests
 # ============================================================
 
+
 @pytest.mark.skipif(not _HAS_FAIRNESS, reason="fairness_assessor not available")
 class TestFairnessDimensions:
     def test_dimensions_count(self):
@@ -457,8 +455,7 @@ class TestFairnessAssessment:
         if isinstance(dimensions, list):
             statuses = [d.get("status", "not_assessed") for d in dimensions]
         elif isinstance(dimensions, dict):
-            statuses = [v.get("status", v) if isinstance(v, dict) else v
-                        for v in dimensions.values()]
+            statuses = [v.get("status", v) if isinstance(v, dict) else v for v in dimensions.values()]
         # At least one dimension should reference available data
         assert len(statuses) > 0
 
@@ -481,6 +478,7 @@ class TestFairnessAssessment:
 # ============================================================
 # AI Inventory Manager Tests
 # ============================================================
+
 
 @pytest.mark.skipif(not _HAS_INVENTORY, reason="ai_inventory_manager not available")
 class TestAIInventoryRegister:
@@ -598,6 +596,7 @@ class TestAIInventoryExport:
 # GAO Evidence Builder Tests
 # ============================================================
 
+
 @pytest.mark.skipif(not _HAS_GAO, reason="gao_evidence_builder not available")
 class TestGAOEvidenceBuilder:
     def test_build_evidence_returns_dict(self, transparency_db):
@@ -620,8 +619,7 @@ class TestGAOEvidenceBuilder:
         summary = result.get("summary", {})
         if isinstance(summary, dict):
             # Should have coverage or score fields
-            assert "coverage" in summary or "overall_coverage" in summary or \
-                   "score" in summary or len(summary) > 0
+            assert "coverage" in summary or "overall_coverage" in summary or "score" in summary or len(summary) > 0
 
     def test_evidence_items_have_fields(self, transparency_db):
         """Each evidence item should have required fields."""
@@ -641,6 +639,7 @@ class TestGAOEvidenceBuilder:
 # ============================================================
 # AI Transparency Audit Tests
 # ============================================================
+
 
 @pytest.mark.skipif(not _HAS_AUDIT, reason="ai_transparency_audit not available")
 class TestAITransparencyAudit:
@@ -664,7 +663,8 @@ class TestAITransparencyAudit:
     def test_gap_detection_with_data(self, populated_transparency_db):
         """Audit with populated data recognizes existing model cards."""
         result = run_transparency_audit(
-            "proj-test", db_path=populated_transparency_db,
+            "proj-test",
+            db_path=populated_transparency_db,
         )
         # Model card was inserted by fixture, so the artifact count should be > 0
         assert result["artifacts"]["model_cards"] > 0

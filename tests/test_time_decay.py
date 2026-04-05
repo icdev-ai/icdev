@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
@@ -21,6 +22,7 @@ from icdev.tools.memory.time_decay import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_memory_db(db_path):
     """Create memory_entries + memory_access_log tables for testing."""
@@ -47,14 +49,12 @@ def _init_memory_db(db_path):
     conn.close()
 
 
-def _insert_entry(db_path, content, memory_type="event", importance=5,
-                   created_at=None):
+def _insert_entry(db_path, content, memory_type="event", importance=5, created_at=None):
     """Insert a test memory entry with optional timestamp."""
     conn = sqlite3.connect(str(db_path))
     ts = created_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "INSERT INTO memory_entries (content, type, importance, created_at) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO memory_entries (content, type, importance, created_at) VALUES (?, ?, ?, ?)",
         (content, memory_type, importance, ts),
     )
     conn.commit()
@@ -67,6 +67,7 @@ def _insert_entry(db_path, content, memory_type="event", importance=5,
 # Config loading
 # ---------------------------------------------------------------------------
 
+
 class TestLoadDecayConfig:
     def test_returns_dict(self):
         config = load_decay_config()
@@ -76,8 +77,7 @@ class TestLoadDecayConfig:
         config = load_decay_config()
         assert "half_lives" in config
         hl = config["half_lives"]
-        for t in ("fact", "preference", "event", "insight", "task",
-                   "relationship"):
+        for t in ("fact", "preference", "event", "insight", "task", "relationship"):
             assert t in hl, f"Missing half-life for {t}"
 
     def test_weights_sum_to_one(self):
@@ -99,6 +99,7 @@ class TestLoadDecayConfig:
 # ---------------------------------------------------------------------------
 # Decay factor computation
 # ---------------------------------------------------------------------------
+
 
 class TestComputeDecayFactor:
     def test_brand_new_entry(self):
@@ -137,10 +138,8 @@ class TestComputeDecayFactor:
     def test_high_importance_resists_decay(self):
         now = datetime.now(timezone.utc)
         ts = (now - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-        normal = compute_decay_factor(ts, "event", importance=5,
-                                      reference_time=now)
-        important = compute_decay_factor(ts, "event", importance=9,
-                                         reference_time=now)
+        normal = compute_decay_factor(ts, "event", importance=5, reference_time=now)
+        important = compute_decay_factor(ts, "event", importance=9, reference_time=now)
         assert important > normal
 
     def test_unknown_type_uses_default(self):
@@ -168,13 +167,17 @@ class TestComputeDecayFactor:
 # Time-aware scoring
 # ---------------------------------------------------------------------------
 
+
 class TestComputeTimeAwareScore:
     def test_recent_high_importance_highest(self):
         now = datetime.now(timezone.utc)
         ts = now.strftime("%Y-%m-%d %H:%M:%S")
         score = compute_time_aware_score(
-            base_score=1.0, created_at=ts, memory_type="fact",
-            importance=10, reference_time=now,
+            base_score=1.0,
+            created_at=ts,
+            memory_type="fact",
+            importance=10,
+            reference_time=now,
         )
         assert score > 0.9
 
@@ -182,8 +185,11 @@ class TestComputeTimeAwareScore:
         now = datetime.now(timezone.utc)
         ts = (now - timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
         score = compute_time_aware_score(
-            base_score=0.0, created_at=ts, memory_type="event",
-            importance=1, reference_time=now,
+            base_score=0.0,
+            created_at=ts,
+            memory_type="event",
+            importance=1,
+            reference_time=now,
         )
         assert score < 0.1
 
@@ -191,8 +197,11 @@ class TestComputeTimeAwareScore:
         now = datetime.now(timezone.utc)
         ts = (now - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
         score = compute_time_aware_score(
-            base_score=1.0, created_at=ts, memory_type="event",
-            importance=1, reference_time=now,
+            base_score=1.0,
+            created_at=ts,
+            memory_type="event",
+            importance=1,
+            reference_time=now,
         )
         # relevance weight = 0.6, so score >= 0.6
         assert score >= 0.55
@@ -201,8 +210,11 @@ class TestComputeTimeAwareScore:
         now = datetime.now(timezone.utc)
         ts = now.strftime("%Y-%m-%d %H:%M:%S")
         score = compute_time_aware_score(
-            base_score=0.0, created_at=ts, memory_type="fact",
-            importance=10, reference_time=now,
+            base_score=0.0,
+            created_at=ts,
+            memory_type="fact",
+            importance=10,
+            reference_time=now,
         )
         # recency (0.25 * ~1.0) + importance (0.15 * 1.0) ≈ 0.4
         assert score > 0.3
@@ -211,11 +223,14 @@ class TestComputeTimeAwareScore:
         now = datetime.now(timezone.utc)
         ts = now.strftime("%Y-%m-%d %H:%M:%S")
         config = dict(DEFAULT_CONFIG)
-        config["weights"] = {"relevance": 1.0, "recency": 0.0,
-                              "importance": 0.0}
+        config["weights"] = {"relevance": 1.0, "recency": 0.0, "importance": 0.0}
         score = compute_time_aware_score(
-            base_score=0.7, created_at=ts, memory_type="event",
-            importance=10, config=config, reference_time=now,
+            base_score=0.7,
+            created_at=ts,
+            memory_type="event",
+            importance=10,
+            config=config,
+            reference_time=now,
         )
         assert abs(score - 0.7) < 0.01
 
@@ -223,6 +238,7 @@ class TestComputeTimeAwareScore:
 # ---------------------------------------------------------------------------
 # Score entry
 # ---------------------------------------------------------------------------
+
 
 class TestScoreEntry:
     def test_scores_existing_entry(self, tmp_path):
@@ -247,9 +263,17 @@ class TestScoreEntry:
         _init_memory_db(db)
         entry_id = _insert_entry(db, "test", "event", 5)
         result = score_entry(entry_id, db_path=db)
-        expected = ["entry_id", "content", "type", "importance",
-                     "created_at", "age_days", "half_life",
-                     "decay_factor", "importance_normalized"]
+        expected = [
+            "entry_id",
+            "content",
+            "type",
+            "importance",
+            "created_at",
+            "age_days",
+            "half_life",
+            "decay_factor",
+            "importance_normalized",
+        ]
         for key in expected:
             assert key in result, f"Missing key: {key}"
 
@@ -258,17 +282,22 @@ class TestScoreEntry:
 # Rank with decay
 # ---------------------------------------------------------------------------
 
+
 class TestRankWithDecay:
     def test_recent_ranks_above_old(self, tmp_path):
         db = tmp_path / "mem.db"
         _init_memory_db(db)
         now = datetime.now(timezone.utc)
         # Old entry
-        _insert_entry(db, "python coding tips for developers", "fact", 5,
-                      (now - timedelta(days=180)).strftime("%Y-%m-%d %H:%M:%S"))
+        _insert_entry(
+            db,
+            "python coding tips for developers",
+            "fact",
+            5,
+            (now - timedelta(days=180)).strftime("%Y-%m-%d %H:%M:%S"),
+        )
         # Recent entry
-        _insert_entry(db, "python coding patterns for developers", "fact", 5,
-                      now.strftime("%Y-%m-%d %H:%M:%S"))
+        _insert_entry(db, "python coding patterns for developers", "fact", 5, now.strftime("%Y-%m-%d %H:%M:%S"))
 
         results = rank_with_decay("python coding", top_k=10, db_path=db)
         assert len(results) == 2
@@ -280,11 +309,15 @@ class TestRankWithDecay:
         _init_memory_db(db)
         now = datetime.now(timezone.utc)
         # Old but important
-        _insert_entry(db, "critical security note about auth", "fact", 10,
-                      (now - timedelta(days=60)).strftime("%Y-%m-%d %H:%M:%S"))
+        _insert_entry(
+            db,
+            "critical security note about auth",
+            "fact",
+            10,
+            (now - timedelta(days=60)).strftime("%Y-%m-%d %H:%M:%S"),
+        )
         # Recent but unimportant
-        _insert_entry(db, "security update notes", "event", 1,
-                      now.strftime("%Y-%m-%d %H:%M:%S"))
+        _insert_entry(db, "security update notes", "event", 1, now.strftime("%Y-%m-%d %H:%M:%S"))
 
         results = rank_with_decay("security", top_k=10, db_path=db)
         assert len(results) == 2
@@ -313,9 +346,16 @@ class TestRankWithDecay:
         results = rank_with_decay("test", top_k=10, db_path=db)
         assert len(results) == 1
         r = results[0]
-        expected = ["entry_id", "content", "type", "importance",
-                     "base_score", "decay_factor", "time_aware_score",
-                     "age_days"]
+        expected = [
+            "entry_id",
+            "content",
+            "type",
+            "importance",
+            "base_score",
+            "decay_factor",
+            "time_aware_score",
+            "age_days",
+        ]
         for key in expected:
             assert key in r, f"Missing key: {key}"
 
@@ -324,17 +364,20 @@ class TestRankWithDecay:
 # Hybrid search integration
 # ---------------------------------------------------------------------------
 
+
 class TestHybridSearchIntegration:
     def test_time_decay_flag_accepted(self):
         """Verify hybrid_search module accepts --time-decay flag."""
         from icdev.tools.memory.hybrid_search import hybrid_rank
         import inspect
+
         sig = inspect.signature(hybrid_rank)
         assert "time_decay_enabled" in sig.parameters
 
     def test_backward_compatible(self):
         """Verify hybrid_rank works without time-decay flag."""
         from icdev.tools.memory.hybrid_search import hybrid_rank
+
         entries = [(1, "test content", "event", 5, None, "2026-01-01 00:00:00")]
         bm25 = [0.8]
         results = hybrid_rank(entries, bm25, None, 0.7, 0.3)
@@ -344,14 +387,20 @@ class TestHybridSearchIntegration:
     def test_time_decay_changes_score(self):
         """Verify time-decay changes the combined score."""
         from icdev.tools.memory.hybrid_search import hybrid_rank
+
         entries = [(1, "test content", "event", 5, None, "2020-01-01 00:00:00")]
         bm25 = [0.8]
         # Without decay
         results_no_decay = hybrid_rank(entries, bm25, None, 0.7, 0.3)
         # With decay
         results_with_decay = hybrid_rank(
-            entries, bm25, None, 0.7, 0.3,
-            time_decay_enabled=True, decay_config=DEFAULT_CONFIG,
+            entries,
+            bm25,
+            None,
+            0.7,
+            0.3,
+            time_decay_enabled=True,
+            decay_config=DEFAULT_CONFIG,
         )
         # Scores should differ (old entry penalized by decay)
         assert results_no_decay[0][0] != results_with_decay[0][0]

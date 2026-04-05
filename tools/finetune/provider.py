@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 
 # ── Request / Status dataclasses ──────────────────────────────────────
 
+
 @dataclass
 class FineTuneRequest:
     """Parameters for a fine-tuning job."""
@@ -28,10 +29,17 @@ class FineTuneRequest:
     lora_rank: int = 16
     lora_alpha: int = 32
     lora_dropout: float = 0.0
-    target_modules: List[str] = field(default_factory=lambda: [
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
-    ])
+    target_modules: List[str] = field(
+        default_factory=lambda: [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ]
+    )
     learning_rate: float = 2e-4
     epochs: int = 3
     batch_size: int = 2
@@ -89,6 +97,7 @@ class FineTuneStatus:
 
 # ── Provider ABC ──────────────────────────────────────────────────────
 
+
 class FineTuneProvider(ABC):
     """Abstract base class for fine-tuning providers (D-FT-1, D66 pattern)."""
 
@@ -125,9 +134,7 @@ class FineTuneProvider(ABC):
         quantization: str = "q4_k_m",
     ) -> str:
         """Export adapter to GGUF format. Not all providers support this."""
-        raise NotImplementedError(
-            f"GGUF export not supported by {self.provider_name}"
-        )
+        raise NotImplementedError(f"GGUF export not supported by {self.provider_name}")
 
     def list_models(self) -> List[Dict[str, Any]]:
         """List available base models for fine-tuning."""

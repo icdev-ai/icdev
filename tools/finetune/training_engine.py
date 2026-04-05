@@ -39,9 +39,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _record_event(
-    conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}"
-) -> None:
+def _record_event(conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}") -> None:
     """Record a training job event (append-only, D6)."""
     conn.execute(
         "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (?, ?, ?, ?)",
@@ -50,6 +48,7 @@ def _record_event(
 
 
 # ── Job Lifecycle ────────────────────────────────────────────────────
+
 
 def create_training_job(
     dataset_id: str,
@@ -87,13 +86,15 @@ def create_training_job(
         job_id = f"ft-{uuid.uuid4().hex[:12]}"
         now = _now()
 
-        hyperparams = json.dumps({
-            "lora_rank": lora_rank,
-            "learning_rate": learning_rate,
-            "epochs": epochs,
-            "batch_size": batch_size,
-            "max_seq_length": max_seq_length,
-        })
+        hyperparams = json.dumps(
+            {
+                "lora_rank": lora_rank,
+                "learning_rate": learning_rate,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "max_seq_length": max_seq_length,
+            }
+        )
 
         output_dir = str(BASE_DIR / "data" / "finetune" / "jobs" / job_id)
 
@@ -104,13 +105,28 @@ def create_training_job(
                 gpu_count, distributed, output_dir, classification,
                 tenant_id, project_id, created_by, created_at)
                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (job_id, dataset_id, provider_name or "unsloth_local", base_model,
-             hyperparams, lora_rank, learning_rate, epochs, batch_size,
-             max_seq_length, gpu_count, 1 if distributed else 0,
-             output_dir, classification, tenant_id, project_id, created_by, now),
+            (
+                job_id,
+                dataset_id,
+                provider_name or "unsloth_local",
+                base_model,
+                hyperparams,
+                lora_rank,
+                learning_rate,
+                epochs,
+                batch_size,
+                max_seq_length,
+                gpu_count,
+                1 if distributed else 0,
+                output_dir,
+                classification,
+                tenant_id,
+                project_id,
+                created_by,
+                now,
+            ),
         )
-        _record_event(conn, job_id, "created",
-                       json.dumps({"dataset_id": dataset_id, "base_model": base_model}))
+        _record_event(conn, job_id, "created", json.dumps({"dataset_id": dataset_id, "base_model": base_model}))
         conn.commit()
 
         # Export dataset to JSONL
@@ -122,8 +138,7 @@ def create_training_job(
                 "UPDATE ft_training_jobs SET status = 'failed', error_message = ? WHERE id = ?",
                 (f"Dataset export failed: {export_result.get('error', '')}", job_id),
             )
-            _record_event(conn, job_id, "failed",
-                           json.dumps({"reason": "dataset_export_failed"}))
+            _record_event(conn, job_id, "failed", json.dumps({"reason": "dataset_export_failed"}))
             conn.commit()
             return {"success": False, "error": f"Dataset export failed: {export_result.get('error', '')}"}
 
@@ -295,6 +310,7 @@ def list_jobs(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tuning training engine")

@@ -23,6 +23,7 @@ GATES_PATH = BASE_DIR / "args" / "security_gates.yaml"
 # Language support (Phase 16)
 try:
     import importlib.util as _ilu
+
     _ls_path = BASE_DIR / "tools" / "builder" / "language_support.py"
     if _ls_path.exists():
         _ls_spec = _ilu.spec_from_file_location("language_support", _ls_path)
@@ -95,13 +96,17 @@ def audit_python(
     try:
         version_check = subprocess.run(
             [sys.executable, "-m", "pip_audit", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             # Try alternative command
             version_check = subprocess.run(
                 ["pip-audit", "--version"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if version_check.returncode != 0:
                 result["success"] = False
@@ -127,7 +132,11 @@ def audit_python(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout if proc.stdout else proc.stderr
         result["raw_output"] = raw
@@ -189,15 +198,17 @@ def _parse_pip_audit_json(json_str: str) -> List[Dict]:
             if "fix_versions" in vuln or "aliases" in vuln:
                 severity = "high"  # Default if not specified
 
-            findings.append({
-                "package": dep.get("name", ""),
-                "version": dep.get("version", ""),
-                "vulnerability_id": vuln.get("id", ""),
-                "aliases": vuln.get("aliases", []),
-                "description": vuln.get("description", ""),
-                "fix_versions": vuln.get("fix_versions", []),
-                "severity": severity,
-            })
+            findings.append(
+                {
+                    "package": dep.get("name", ""),
+                    "version": dep.get("version", ""),
+                    "vulnerability_id": vuln.get("id", ""),
+                    "aliases": vuln.get("aliases", []),
+                    "description": vuln.get("description", ""),
+                    "fix_versions": vuln.get("fix_versions", []),
+                    "severity": severity,
+                }
+            )
 
     return findings
 
@@ -235,7 +246,9 @@ def audit_javascript(
     try:
         version_check = subprocess.run(
             ["npm", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -251,7 +264,11 @@ def audit_javascript(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout if proc.stdout else proc.stderr
         result["raw_output"] = raw
@@ -306,40 +323,46 @@ def _parse_npm_audit_json(json_str: str) -> List[Dict]:
         via = vuln_data.get("via", [])
         for v in via:
             if isinstance(v, dict):
-                findings.append({
-                    "package": pkg_name,
-                    "version": vuln_data.get("range", ""),
-                    "vulnerability_id": v.get("url", ""),
-                    "title": v.get("title", ""),
-                    "severity": v.get("severity", severity),
-                    "source": v.get("source", ""),
-                    "cwe": v.get("cwe", []),
-                    "fix_available": vuln_data.get("fixAvailable", False),
-                })
+                findings.append(
+                    {
+                        "package": pkg_name,
+                        "version": vuln_data.get("range", ""),
+                        "vulnerability_id": v.get("url", ""),
+                        "title": v.get("title", ""),
+                        "severity": v.get("severity", severity),
+                        "source": v.get("source", ""),
+                        "cwe": v.get("cwe", []),
+                        "fix_available": vuln_data.get("fixAvailable", False),
+                    }
+                )
             elif isinstance(v, str):
-                findings.append({
-                    "package": pkg_name,
-                    "version": vuln_data.get("range", ""),
-                    "vulnerability_id": "",
-                    "title": f"Transitive dependency via {v}",
-                    "severity": severity,
-                    "fix_available": vuln_data.get("fixAvailable", False),
-                })
+                findings.append(
+                    {
+                        "package": pkg_name,
+                        "version": vuln_data.get("range", ""),
+                        "vulnerability_id": "",
+                        "title": f"Transitive dependency via {v}",
+                        "severity": severity,
+                        "fix_available": vuln_data.get("fixAvailable", False),
+                    }
+                )
 
     # npm audit v1 format fallback
     if not findings and "advisories" in data:
         for adv_id, adv in data["advisories"].items():
-            findings.append({
-                "package": adv.get("module_name", ""),
-                "version": adv.get("vulnerable_versions", ""),
-                "vulnerability_id": str(adv_id),
-                "title": adv.get("title", ""),
-                "severity": adv.get("severity", "info"),
-                "overview": adv.get("overview", ""),
-                "recommendation": adv.get("recommendation", ""),
-                "cwe": adv.get("cwe", ""),
-                "fix_available": bool(adv.get("patched_versions")),
-            })
+            findings.append(
+                {
+                    "package": adv.get("module_name", ""),
+                    "version": adv.get("vulnerable_versions", ""),
+                    "vulnerability_id": str(adv_id),
+                    "title": adv.get("title", ""),
+                    "severity": adv.get("severity", "info"),
+                    "overview": adv.get("overview", ""),
+                    "recommendation": adv.get("recommendation", ""),
+                    "cwe": adv.get("cwe", ""),
+                    "fix_available": bool(adv.get("patched_versions")),
+                }
+            )
 
     return findings
 
@@ -371,7 +394,9 @@ def audit_java(
     try:
         version_check = subprocess.run(
             ["mvn", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -383,13 +408,20 @@ def audit_java(
         return result
 
     cmd = [
-        "mvn", "org.owasp:dependency-check-maven:check",
-        "-DfailBuildOnCVSS=0", "-Dformat=JSON", "-q",
+        "mvn",
+        "org.owasp:dependency-check-maven:check",
+        "-DfailBuildOnCVSS=0",
+        "-Dformat=JSON",
+        "-q",
     ]
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout + proc.stderr
         result["raw_output"] = raw
@@ -403,9 +435,13 @@ def audit_java(
                 for dep in report_data.get("dependencies", []):
                     vulns = dep.get("vulnerabilities", [])
                     for vuln in vulns:
-                        cvss_score = vuln.get("cvssv3", {}).get("baseScore", 0) if isinstance(vuln.get("cvssv3"), dict) else 0
+                        cvss_score = (
+                            vuln.get("cvssv3", {}).get("baseScore", 0) if isinstance(vuln.get("cvssv3"), dict) else 0
+                        )
                         if cvss_score == 0:
-                            cvss_score = vuln.get("cvssv2", {}).get("score", 0) if isinstance(vuln.get("cvssv2"), dict) else 0
+                            cvss_score = (
+                                vuln.get("cvssv2", {}).get("score", 0) if isinstance(vuln.get("cvssv2"), dict) else 0
+                            )
                         severity = "unknown"
                         if cvss_score >= 9.0:
                             severity = "critical"
@@ -416,14 +452,16 @@ def audit_java(
                         elif cvss_score > 0:
                             severity = "low"
 
-                        findings.append({
-                            "package": dep.get("fileName", ""),
-                            "version": dep.get("version", ""),
-                            "advisory": vuln.get("name", ""),
-                            "severity": severity,
-                            "description": vuln.get("description", "")[:200],
-                            "fix_version": "",
-                        })
+                        findings.append(
+                            {
+                                "package": dep.get("fileName", ""),
+                                "version": dep.get("version", ""),
+                                "advisory": vuln.get("name", ""),
+                                "severity": severity,
+                                "description": vuln.get("description", "")[:200],
+                                "fix_version": "",
+                            }
+                        )
             except (json.JSONDecodeError, OSError):
                 pass
 
@@ -482,12 +520,16 @@ def audit_go(
     try:
         subprocess.run(
             ["govulncheck", "-version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         # govulncheck may not support -version, try running it anyway
     except FileNotFoundError:
         result["success"] = False
-        result["raw_output"] = "govulncheck not found. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"
+        result["raw_output"] = (
+            "govulncheck not found. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"
+        )
         return result
     except subprocess.TimeoutExpired:
         result["success"] = False
@@ -498,7 +540,11 @@ def audit_go(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout if proc.stdout else proc.stderr
         result["raw_output"] = raw
@@ -524,14 +570,16 @@ def audit_go(
                                 sev = db_specific.get("severity", "").lower()
                                 if sev in ("critical", "high", "medium", "low"):
                                     severity = sev
-                            findings.append({
-                                "package": vuln.get("module", vuln.get("id", "")),
-                                "version": "",
-                                "advisory": vuln.get("id", ""),
-                                "severity": severity,
-                                "description": vuln.get("summary", vuln.get("details", ""))[:200],
-                                "fix_version": "",
-                            })
+                            findings.append(
+                                {
+                                    "package": vuln.get("module", vuln.get("id", "")),
+                                    "version": "",
+                                    "advisory": vuln.get("id", ""),
+                                    "severity": severity,
+                                    "description": vuln.get("summary", vuln.get("details", ""))[:200],
+                                    "fix_version": "",
+                                }
+                            )
                     except json.JSONDecodeError:
                         continue
             except Exception:
@@ -592,7 +640,9 @@ def audit_rust(
     try:
         version_check = subprocess.run(
             ["cargo", "audit", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -607,7 +657,11 @@ def audit_rust(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout if proc.stdout else proc.stderr
         result["raw_output"] = raw
@@ -638,14 +692,16 @@ def audit_rust(
                         # CVSS vector string; default to medium
                         severity = "medium"
 
-                    findings.append({
-                        "package": package_info.get("name", ""),
-                        "version": package_info.get("version", ""),
-                        "advisory": advisory.get("id", ""),
-                        "severity": severity,
-                        "description": advisory.get("description", advisory.get("title", ""))[:200],
-                        "fix_version": ", ".join(str(v) for v in advisory.get("patched_versions", [])),
-                    })
+                    findings.append(
+                        {
+                            "package": package_info.get("name", ""),
+                            "version": package_info.get("version", ""),
+                            "advisory": advisory.get("id", ""),
+                            "severity": severity,
+                            "description": advisory.get("description", advisory.get("title", ""))[:200],
+                            "fix_version": ", ".join(str(v) for v in advisory.get("patched_versions", [])),
+                        }
+                    )
             except (json.JSONDecodeError, KeyError):
                 pass
 
@@ -704,7 +760,9 @@ def audit_csharp(
     try:
         version_check = subprocess.run(
             ["dotnet", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -719,7 +777,11 @@ def audit_csharp(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout if proc.stdout else proc.stderr
         result["raw_output"] = raw
@@ -737,14 +799,16 @@ def audit_csharp(
                         for pkg in packages:
                             for vuln in pkg.get("vulnerabilities", []):
                                 severity = vuln.get("severity", "unknown").lower()
-                                findings.append({
-                                    "package": pkg.get("id", ""),
-                                    "version": pkg.get("resolvedVersion", pkg.get("requestedVersion", "")),
-                                    "advisory": vuln.get("advisoryurl", ""),
-                                    "severity": severity,
-                                    "description": f"Vulnerability in {pkg.get('id', '')}",
-                                    "fix_version": "",
-                                })
+                                findings.append(
+                                    {
+                                        "package": pkg.get("id", ""),
+                                        "version": pkg.get("resolvedVersion", pkg.get("requestedVersion", "")),
+                                        "advisory": vuln.get("advisoryurl", ""),
+                                        "severity": severity,
+                                        "description": f"Vulnerability in {pkg.get('id', '')}",
+                                        "fix_version": "",
+                                    }
+                                )
             except (json.JSONDecodeError, KeyError):
                 pass
 
@@ -759,14 +823,16 @@ def audit_csharp(
                 elif line.startswith(">") and current_package:
                     parts = line.strip("> ").split()
                     if len(parts) >= 2:
-                        findings.append({
-                            "package": parts[0],
-                            "version": parts[1] if len(parts) > 1 else "",
-                            "advisory": parts[3] if len(parts) > 3 else "",
-                            "severity": parts[2].lower() if len(parts) > 2 else "unknown",
-                            "description": " ".join(parts[4:]) if len(parts) > 4 else "",
-                            "fix_version": "",
-                        })
+                        findings.append(
+                            {
+                                "package": parts[0],
+                                "version": parts[1] if len(parts) > 1 else "",
+                                "advisory": parts[3] if len(parts) > 3 else "",
+                                "severity": parts[2].lower() if len(parts) > 2 else "unknown",
+                                "description": " ".join(parts[4:]) if len(parts) > 4 else "",
+                                "fix_version": "",
+                            }
+                        )
 
         result["findings"] = findings
         result["success"] = True  # Tool ran successfully
@@ -826,13 +892,9 @@ def evaluate_gate(
     max_high = thresholds.get("max_high", 0)
 
     if severity_counts["critical"] > max_critical:
-        violations.append(
-            f"CRITICAL vulnerabilities: {severity_counts['critical']} (max: {max_critical})"
-        )
+        violations.append(f"CRITICAL vulnerabilities: {severity_counts['critical']} (max: {max_critical})")
     if severity_counts["high"] > max_high:
-        violations.append(
-            f"HIGH vulnerabilities: {severity_counts['high']} (max: {max_high})"
-        )
+        violations.append(f"HIGH vulnerabilities: {severity_counts['high']} (max: {max_high})")
 
     return {
         "passed": len(violations) == 0,
@@ -873,12 +935,12 @@ def main():
     # Language presence checks for auto-detect mode
     LANGUAGE_CHECKS = {
         "python": lambda r: (
-            (r / "pyproject.toml").exists()
-            or (r / "requirements.txt").exists()
-            or (r / "setup.py").exists()
+            (r / "pyproject.toml").exists() or (r / "requirements.txt").exists() or (r / "setup.py").exists()
         ),
         "javascript": lambda r: (r / "package.json").exists(),
-        "java": lambda r: (r / "pom.xml").exists() or (r / "build.gradle").exists() or (r / "build.gradle.kts").exists(),
+        "java": lambda r: (
+            (r / "pom.xml").exists() or (r / "build.gradle").exists() or (r / "build.gradle.kts").exists()
+        ),
         "go": lambda r: (r / "go.mod").exists(),
         "rust": lambda r: (r / "Cargo.toml").exists(),
         "csharp": lambda r: bool(list(r.glob("*.csproj"))) or bool(list(r.glob("*.sln"))),

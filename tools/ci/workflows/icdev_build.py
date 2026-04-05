@@ -110,9 +110,7 @@ def main():
         pass
     issue_json = json.dumps(issue_data)
 
-    commit_msg, error = create_commit(
-        AGENT_IMPLEMENTOR, issue_json, issue_class, run_id, logger
-    )
+    commit_msg, error = create_commit(AGENT_IMPLEMENTOR, issue_json, issue_class, run_id, logger)
     if error:
         logger.warning(f"Commit message generation failed, using fallback: {error}")
         commit_msg = f"{AGENT_IMPLEMENTOR}: implement plan for issue #{issue_number}"

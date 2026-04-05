@@ -1,7 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.resilience.circuit_breaker."""
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import threading
@@ -261,12 +263,11 @@ class TestConfigLoading:
         config_file = tmp_path / "resilience_config.yaml"
 
         import yaml
+
         with open(str(config_file), "w") as f:
             yaml.dump(yaml_content, f)
 
-        with patch(
-            "icdev.tools.resilience.circuit_breaker.BASE_DIR", tmp_path.parent
-        ):
+        with patch("icdev.tools.resilience.circuit_breaker.BASE_DIR", tmp_path.parent):
             # Make config_path resolve to our tmp file
             args_dir = tmp_path / "args"
             args_dir.mkdir(exist_ok=True)
@@ -276,6 +277,7 @@ class TestConfigLoading:
 
             with patch("icdev.tools.resilience.circuit_breaker.BASE_DIR", tmp_path):
                 from icdev.tools.resilience.circuit_breaker import _get_service_config
+
                 cfg = _get_service_config("bedrock")
                 assert cfg["failure_threshold"] == 7
                 # Default for non-overridden key

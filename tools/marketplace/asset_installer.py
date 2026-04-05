@@ -11,6 +11,7 @@ Usage:
     from tools.marketplace.asset_installer import install
     result = install("writeguard")
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -28,12 +29,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 INSTALL_ROOT = BASE_DIR / "tools"
 
 # Configurable via env or direct assignment (tests override these)
-MARKETPLACE_URL = os.environ.get(
-    "ICDEV_MARKETPLACE_URL", ""
-)
-MARKETPLACE_API_KEY = os.environ.get(
-    "ICDEV_MARKETPLACE_API_KEY", ""
-)
+MARKETPLACE_URL = os.environ.get("ICDEV_MARKETPLACE_URL", "")
+MARKETPLACE_API_KEY = os.environ.get("ICDEV_MARKETPLACE_API_KEY", "")
 
 
 def _api_json(path: str) -> Optional[Dict[str, Any]]:
@@ -122,10 +119,7 @@ def install(slug: str, version: str = "latest") -> Dict[str, Any]:
     if expected_sha and computed_sha != expected_sha:
         return {
             "status": "error",
-            "error": (
-                f"SHA-256 mismatch: expected {expected_sha}, "
-                f"computed {computed_sha}"
-            ),
+            "error": (f"SHA-256 mismatch: expected {expected_sha}, computed {computed_sha}"),
         }
 
     # Step 4: Extract to install path

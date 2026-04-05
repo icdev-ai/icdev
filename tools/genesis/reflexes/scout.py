@@ -38,6 +38,7 @@ def _load_targets() -> List[Dict[str, Any]]:
     """Load scout targets from context/genesis/competitors.yaml."""
     try:
         import yaml
+
         path = BASE_DIR / "context" / "genesis" / "competitors.yaml"
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
@@ -140,8 +141,9 @@ def _generate_brief(targets_data: List[Dict]) -> str:
             if desc:
                 lines.append(f"- **Description:** {desc}")
             if release:
-                lines.append(f"- **Latest Release:** {release.get('tag', '?')} "
-                             f"({release.get('published_at', '?')[:10]})")
+                lines.append(
+                    f"- **Latest Release:** {release.get('tag', '?')} ({release.get('published_at', '?')[:10]})"
+                )
                 if release.get("body"):
                     # First 200 chars of release notes
                     lines.append(f"- **Notes:** {release['body'][:200]}...")
@@ -190,12 +192,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         if "releases" in watch:
             release = _get_latest_release(repo)
 
-        targets_data.append({
-            "repo": repo,
-            "category": target.get("category", ""),
-            "info": info,
-            "release": release,
-        })
+        targets_data.append(
+            {
+                "repo": repo,
+                "category": target.get("category", ""),
+                "info": info,
+                "release": release,
+            }
+        )
 
     # Generate brief
     brief_md = _generate_brief([t for t in targets_data if not t.get("error")])
@@ -217,9 +221,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "repos_failed": errors,
             "brief_file": str(brief_file),
             "top_by_stars": sorted(
-                [{"repo": t["repo"], "stars": t["info"].get("stars", 0)}
-                 for t in targets_data if t.get("info")],
-                key=lambda x: x["stars"], reverse=True
+                [{"repo": t["repo"], "stars": t["info"].get("stars", 0)} for t in targets_data if t.get("info")],
+                key=lambda x: x["stars"],
+                reverse=True,
             )[:5],
         },
     }

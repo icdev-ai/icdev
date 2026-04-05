@@ -76,6 +76,7 @@ from tools.db import init_icdev_db  # noqa: E402
 # Helpers
 # ============================================================================
 
+
 def _slugify(name):
     """Convert a tenant name to a URL-safe slug.
 
@@ -114,8 +115,7 @@ def _utcnow():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _audit_platform(conn, tenant_id, actor, action, resource_type,
-                    resource_id=None, details=None):
+def _audit_platform(conn, tenant_id, actor, action, resource_type, resource_id=None, details=None):
     """Append an entry to the platform audit log (immutable/append-only)."""
     detail_obj = {"resource_type": resource_type, "actor": actor}
     if resource_id:
@@ -150,6 +150,7 @@ def _tier_limits(tier_key):
 # Tenant CRUD
 # ============================================================================
 
+
 def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
     """Create a new tenant with admin user and initial API key.
 
@@ -162,25 +163,18 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
     tier_lower = tier.lower()
 
     if il not in [e.value for e in ImpactLevel]:
-        raise ValueError(
-            "Invalid impact level: {}. Valid: {}".format(
-                il, [e.value for e in ImpactLevel]))
+        raise ValueError("Invalid impact level: {}. Valid: {}".format(il, [e.value for e in ImpactLevel]))
     if tier_lower not in [e.value for e in SubscriptionTier]:
-        raise ValueError(
-            "Invalid tier: {}. Valid: {}".format(
-                tier_lower, [e.value for e in SubscriptionTier]))
+        raise ValueError("Invalid tier: {}. Valid: {}".format(tier_lower, [e.value for e in SubscriptionTier]))
 
     limits = _tier_limits(tier_lower)
     allowed_ils = limits.get("allowed_il_levels", [])
     if il not in allowed_ils:
-        raise ValueError(
-            "Tier '{}' does not support impact level {}. Allowed: {}".format(
-                tier_lower, il, allowed_ils))
+        raise ValueError("Tier '{}' does not support impact level {}. Allowed: {}".format(tier_lower, il, allowed_ils))
 
     slug = _slugify(name)
     if not slug:
-        raise ValueError(
-            "Cannot generate a valid slug from name: '{}'".format(name))
+        raise ValueError("Cannot generate a valid slug from name: '{}'".format(name))
 
     tenant_id = "tenant-" + uuid.uuid4().hex[:12]
     user_id = "user-" + uuid.uuid4().hex[:12]
@@ -188,23 +182,16 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
     subscription_id = "sub-" + uuid.uuid4().hex[:12]
     now = _utcnow()
 
-    auto_approve = (
-        il in ("IL2", "IL4") and tier_lower in ("starter", "professional"))
-    initial_status = (
-        TenantStatus.PROVISIONING.value if auto_approve
-        else TenantStatus.PENDING.value)
+    auto_approve = il in ("IL2", "IL4") and tier_lower in ("starter", "professional")
+    initial_status = TenantStatus.PROVISIONING.value if auto_approve else TenantStatus.PENDING.value
 
     full_key, key_prefix, key_hash = _generate_api_key()
 
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT id FROM tenants WHERE slug = ? AND status != 'deleted'",
-            (slug,)).fetchone()
+        row = conn.execute("SELECT id FROM tenants WHERE slug = ? AND status != 'deleted'", (slug,)).fetchone()
         if row:
-            raise ValueError(
-                "A tenant with slug '{}' already exists (id={}).".format(
-                    slug, row[0]))
+            raise ValueError("A tenant with slug '{}' already exists (id={}).".format(slug, row[0]))
 
         conn.execute(
             """INSERT INTO tenants
@@ -212,8 +199,8 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
                 db_host, db_name, k8s_namespace, settings,
                 created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (tenant_id, name, slug, initial_status, tier_lower, il,
-             None, None, None, json.dumps({}), now, now))
+            (tenant_id, name, slug, initial_status, tier_lower, il, None, None, None, json.dumps({}), now, now),
+        )
 
         display_name = admin_name or admin_email.split("@")[0]
         conn.execute(
@@ -221,17 +208,25 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
                (id, tenant_id, email, display_name, role, auth_method,
                 status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, tenant_id, admin_email, display_name,
-             UserRole.TENANT_ADMIN.value, AuthMethod.API_KEY.value,
-             "active", now))
+            (
+                user_id,
+                tenant_id,
+                admin_email,
+                display_name,
+                UserRole.TENANT_ADMIN.value,
+                AuthMethod.API_KEY.value,
+                "active",
+                now,
+            ),
+        )
 
         conn.execute(
             """INSERT INTO api_keys
                (id, tenant_id, user_id, key_hash, key_prefix, name,
                 status, created_at, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (key_id, tenant_id, user_id, key_hash, key_prefix,
-             "initial-admin-key", "active", now, None))
+            (key_id, tenant_id, user_id, key_hash, key_prefix, "initial-admin-key", "active", now, None),
+        )
 
         conn.execute(
             """INSERT INTO subscriptions
@@ -239,34 +234,62 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
                 allowed_il_levels, allowed_frameworks,
                 starts_at, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (subscription_id, tenant_id, tier_lower, "active",
-             limits.get("max_projects", 5),
-             limits.get("max_users", 3),
-             json.dumps(limits.get("allowed_il_levels", ["IL2", "IL4"])),
-             json.dumps(limits.get("allowed_frameworks", ["nist_800_53"])),
-             now, now))
+            (
+                subscription_id,
+                tenant_id,
+                tier_lower,
+                "active",
+                limits.get("max_projects", 5),
+                limits.get("max_users", 3),
+                json.dumps(limits.get("allowed_il_levels", ["IL2", "IL4"])),
+                json.dumps(limits.get("allowed_frameworks", ["nist_800_53"])),
+                now,
+                now,
+            ),
+        )
 
         _audit_platform(
-            conn, tenant_id, user_id, "tenant.created", "tenant", tenant_id,
+            conn,
+            tenant_id,
+            user_id,
+            "tenant.created",
+            "tenant",
+            tenant_id,
             details={
-                "name": name, "slug": slug, "tier": tier_lower,
-                "impact_level": il, "auto_approved": auto_approve,
-                "admin_email": admin_email})
+                "name": name,
+                "slug": slug,
+                "tier": tier_lower,
+                "impact_level": il,
+                "auto_approved": auto_approve,
+                "admin_email": admin_email,
+            },
+        )
 
         conn.commit()
 
         result = {
             "tenant": {
-                "id": tenant_id, "name": name, "slug": slug,
-                "status": initial_status, "tier": tier_lower,
-                "impact_level": il, "created_at": now},
+                "id": tenant_id,
+                "name": name,
+                "slug": slug,
+                "status": initial_status,
+                "tier": tier_lower,
+                "impact_level": il,
+                "created_at": now,
+            },
             "user": {
-                "id": user_id, "email": admin_email,
+                "id": user_id,
+                "email": admin_email,
                 "display_name": display_name,
-                "role": UserRole.TENANT_ADMIN.value},
+                "role": UserRole.TENANT_ADMIN.value,
+            },
             "api_key": {
-                "id": key_id, "key": full_key, "prefix": key_prefix,
-                "note": "Save this key now. It cannot be retrieved later."}}
+                "id": key_id,
+                "key": full_key,
+                "prefix": key_prefix,
+                "note": "Save this key now. It cannot be retrieved later.",
+            },
+        }
 
         if auto_approve:
             provision_result = provision_tenant(tenant_id)
@@ -292,9 +315,7 @@ def provision_tenant(tenant_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT id, slug, status, impact_level FROM tenants WHERE id = ?",
-            (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, slug, status, impact_level FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
 
@@ -302,8 +323,8 @@ def provision_tenant(tenant_id):
         if status != TenantStatus.PROVISIONING.value:
             raise ValueError(
                 "Tenant {} status is '{}', expected 'provisioning'. "
-                "Use approve_tenant() first for IL5+/Enterprise tenants.".format(
-                    tenant_id, status))
+                "Use approve_tenant() first for IL5+/Enterprise tenants.".format(tenant_id, status)
+            )
 
         TENANTS_DIR.mkdir(parents=True, exist_ok=True)
         db_name = slug + ".db"
@@ -318,22 +339,28 @@ def provision_tenant(tenant_id):
                SET db_host = ?, db_name = ?, k8s_namespace = ?,
                    status = ?, updated_at = ?
                WHERE id = ?""",
-            ("localhost-sqlite", db_name, k8s_namespace,
-             TenantStatus.ACTIVE.value, now, tenant_id))
+            ("localhost-sqlite", db_name, k8s_namespace, TenantStatus.ACTIVE.value, now, tenant_id),
+        )
 
         _audit_platform(
-            conn, tenant_id, "system", "tenant.provisioned", "tenant",
-            tenant_id, details={
-                "db_path": str(db_path),
-                "k8s_namespace": k8s_namespace,
-                "impact_level": il})
+            conn,
+            tenant_id,
+            "system",
+            "tenant.provisioned",
+            "tenant",
+            tenant_id,
+            details={"db_path": str(db_path), "k8s_namespace": k8s_namespace, "impact_level": il},
+        )
 
         conn.commit()
         return {
-            "id": tenant_id, "slug": slug,
+            "id": tenant_id,
+            "slug": slug,
             "status": TenantStatus.ACTIVE.value,
-            "db_name": db_name, "db_path": str(db_path),
-            "k8s_namespace": k8s_namespace}
+            "db_name": db_name,
+            "db_path": str(db_path),
+            "k8s_namespace": k8s_namespace,
+        }
     except Exception:
         conn.rollback()
         raise
@@ -349,15 +376,11 @@ def approve_tenant(tenant_id, approver_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT id, status FROM tenants WHERE id = ?",
-            (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
         if row[1] != TenantStatus.PENDING.value:
-            raise ValueError(
-                "Tenant {} status is '{}', expected 'pending'.".format(
-                    tenant_id, row[1]))
+            raise ValueError("Tenant {} status is '{}', expected 'pending'.".format(tenant_id, row[1]))
 
         now = _utcnow()
         conn.execute(
@@ -365,11 +388,12 @@ def approve_tenant(tenant_id, approver_id):
                SET approved_by = ?, approved_at = ?,
                    status = ?, updated_at = ?
                WHERE id = ?""",
-            (approver_id, now, TenantStatus.PROVISIONING.value, now, tenant_id))
+            (approver_id, now, TenantStatus.PROVISIONING.value, now, tenant_id),
+        )
 
         _audit_platform(
-            conn, tenant_id, approver_id, "tenant.approved", "tenant",
-            tenant_id, details={"approver_id": approver_id})
+            conn, tenant_id, approver_id, "tenant.approved", "tenant", tenant_id, details={"approver_id": approver_id}
+        )
 
         conn.commit()
     except Exception:
@@ -395,19 +419,30 @@ def list_tenants(status=None):
                           created_at, updated_at
                    FROM tenants WHERE status = ?
                    ORDER BY created_at DESC""",
-                (status,)).fetchall()
+                (status,),
+            ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT id, name, slug, status, tier,
                           impact_level, db_host, db_name, k8s_namespace,
                           created_at, updated_at
                    FROM tenants WHERE status != 'deleted'
-                   ORDER BY created_at DESC""").fetchall()
+                   ORDER BY created_at DESC"""
+            ).fetchall()
 
         columns = [
-            "id", "name", "slug", "status", "tier",
-            "impact_level", "db_host", "db_name", "k8s_namespace",
-            "created_at", "updated_at"]
+            "id",
+            "name",
+            "slug",
+            "status",
+            "tier",
+            "impact_level",
+            "db_host",
+            "db_name",
+            "k8s_namespace",
+            "created_at",
+            "updated_at",
+        ]
         return [dict(zip(columns, row)) for row in rows]
     finally:
         conn.close()
@@ -423,19 +458,33 @@ def get_tenant(tenant_id):
                       settings, artifact_config, bedrock_config, idp_config,
                       approved_by, approved_at, created_at, updated_at
                FROM tenants WHERE id = ?""",
-            (tenant_id,)).fetchone()
+            (tenant_id,),
+        ).fetchone()
         if not row:
             return None
 
         columns = [
-            "id", "name", "slug", "status", "tier",
-            "impact_level", "db_host", "db_name", "k8s_namespace",
-            "settings", "artifact_config", "bedrock_config", "idp_config",
-            "approved_by", "approved_at", "created_at", "updated_at"]
+            "id",
+            "name",
+            "slug",
+            "status",
+            "tier",
+            "impact_level",
+            "db_host",
+            "db_name",
+            "k8s_namespace",
+            "settings",
+            "artifact_config",
+            "bedrock_config",
+            "idp_config",
+            "approved_by",
+            "approved_at",
+            "created_at",
+            "updated_at",
+        ]
         tenant = dict(zip(columns, row))
 
-        for json_field in ("settings", "artifact_config",
-                           "bedrock_config", "idp_config"):
+        for json_field in ("settings", "artifact_config", "bedrock_config", "idp_config"):
             val = tenant.get(json_field)
             if val and isinstance(val, str):
                 try:
@@ -456,15 +505,11 @@ def update_tenant(tenant_id, **kwargs):
     Allowed kwargs: settings, artifact_config, bedrock_config, idp_config, name.
     JSON fields are merged (not replaced) with existing values.
     """
-    allowed_fields = {
-        "settings", "artifact_config", "bedrock_config", "idp_config", "name"}
-    json_fields = {
-        "settings", "artifact_config", "bedrock_config", "idp_config"}
+    allowed_fields = {"settings", "artifact_config", "bedrock_config", "idp_config", "name"}
+    json_fields = {"settings", "artifact_config", "bedrock_config", "idp_config"}
     invalid = set(kwargs.keys()) - allowed_fields
     if invalid:
-        raise ValueError(
-            "Cannot update fields: {}. Allowed: {}".format(
-                invalid, allowed_fields))
+        raise ValueError("Cannot update fields: {}. Allowed: {}".format(invalid, allowed_fields))
     if not kwargs:
         raise ValueError("No fields provided to update.")
 
@@ -474,13 +519,12 @@ def update_tenant(tenant_id, **kwargs):
             """SELECT id, settings, artifact_config, bedrock_config,
                       idp_config
                FROM tenants WHERE id = ?""",
-            (tenant_id,)).fetchone()
+            (tenant_id,),
+        ).fetchone()
         if not existing:
             raise ValueError("Tenant not found: {}".format(tenant_id))
 
-        col_map = {
-            "settings": 1, "artifact_config": 2,
-            "bedrock_config": 3, "idp_config": 4}
+        col_map = {"settings": 1, "artifact_config": 2, "bedrock_config": 3, "idp_config": 4}
 
         updates = {}
         for field, value in kwargs.items():
@@ -497,9 +541,7 @@ def update_tenant(tenant_id, **kwargs):
                     existing_dict.update(value)
                     updates[field] = json.dumps(existing_dict)
                 else:
-                    updates[field] = (
-                        json.dumps(value) if not isinstance(value, str)
-                        else value)
+                    updates[field] = json.dumps(value) if not isinstance(value, str) else value
             else:
                 updates[field] = value
 
@@ -508,13 +550,17 @@ def update_tenant(tenant_id, **kwargs):
         set_clause += ", updated_at = ?"
         values = list(updates.values()) + [now, tenant_id]
 
-        conn.execute(
-            "UPDATE tenants SET {} WHERE id = ?".format(set_clause),
-            values)
+        conn.execute("UPDATE tenants SET {} WHERE id = ?".format(set_clause), values)
 
         _audit_platform(
-            conn, tenant_id, "system", "tenant.updated", "tenant",
-            tenant_id, details={"updated_fields": list(kwargs.keys())})
+            conn,
+            tenant_id,
+            "system",
+            "tenant.updated",
+            "tenant",
+            tenant_id,
+            details={"updated_fields": list(kwargs.keys())},
+        )
 
         conn.commit()
         return get_tenant(tenant_id)
@@ -529,29 +575,23 @@ def suspend_tenant(tenant_id):
     """Suspend a tenant.  Sets status to 'suspended'.  Reversible."""
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT id, status FROM tenants WHERE id = ?",
-            (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
         if row[1] == TenantStatus.DELETED.value:
-            raise ValueError(
-                "Cannot suspend a deleted tenant: {}".format(tenant_id))
+            raise ValueError("Cannot suspend a deleted tenant: {}".format(tenant_id))
 
         now = _utcnow()
         conn.execute(
-            "UPDATE tenants SET status = ?, updated_at = ? WHERE id = ?",
-            (TenantStatus.SUSPENDED.value, now, tenant_id))
+            "UPDATE tenants SET status = ?, updated_at = ? WHERE id = ?", (TenantStatus.SUSPENDED.value, now, tenant_id)
+        )
 
         _audit_platform(
-            conn, tenant_id, "system", "tenant.suspended", "tenant",
-            tenant_id, details={"previous_status": row[1]})
+            conn, tenant_id, "system", "tenant.suspended", "tenant", tenant_id, details={"previous_status": row[1]}
+        )
 
         conn.commit()
-        return {
-            "id": tenant_id,
-            "status": TenantStatus.SUSPENDED.value,
-            "updated_at": now}
+        return {"id": tenant_id, "status": TenantStatus.SUSPENDED.value, "updated_at": now}
     except Exception:
         conn.rollback()
         raise
@@ -563,39 +603,37 @@ def delete_tenant(tenant_id):
     """Soft-delete a tenant.  Sets status to 'deleted'.  Data is retained."""
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT id, status FROM tenants WHERE id = ?",
-            (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
         if row[1] == TenantStatus.DELETED.value:
-            raise ValueError(
-                "Tenant already deleted: {}".format(tenant_id))
+            raise ValueError("Tenant already deleted: {}".format(tenant_id))
 
         now = _utcnow()
         conn.execute(
-            "UPDATE tenants SET status = ?, updated_at = ? WHERE id = ?",
-            (TenantStatus.DELETED.value, now, tenant_id))
+            "UPDATE tenants SET status = ?, updated_at = ? WHERE id = ?", (TenantStatus.DELETED.value, now, tenant_id)
+        )
 
-        conn.execute(
-            "UPDATE api_keys SET status = 'revoked' WHERE tenant_id = ?",
-            (tenant_id,))
+        conn.execute("UPDATE api_keys SET status = 'revoked' WHERE tenant_id = ?", (tenant_id,))
 
         conn.execute(
             """UPDATE users SET status = 'deactivated'
                WHERE tenant_id = ?""",
-            (tenant_id,))
+            (tenant_id,),
+        )
 
         _audit_platform(
-            conn, tenant_id, "system", "tenant.deleted", "tenant",
+            conn,
             tenant_id,
-            details={"previous_status": row[1], "soft_delete": True})
+            "system",
+            "tenant.deleted",
+            "tenant",
+            tenant_id,
+            details={"previous_status": row[1], "soft_delete": True},
+        )
 
         conn.commit()
-        return {
-            "id": tenant_id,
-            "status": TenantStatus.DELETED.value,
-            "updated_at": now}
+        return {"id": tenant_id, "status": TenantStatus.DELETED.value, "updated_at": now}
     except Exception:
         conn.rollback()
         raise
@@ -607,6 +645,7 @@ def delete_tenant(tenant_id):
 # Tenant Database Path
 # ============================================================================
 
+
 def get_tenant_db_path(tenant_id):
     """Return the filesystem path to a tenant's isolated database.
 
@@ -614,9 +653,7 @@ def get_tenant_db_path(tenant_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT slug, db_host, db_name FROM tenants WHERE id = ?",
-            (tenant_id,)).fetchone()
+        row = conn.execute("SELECT slug, db_host, db_name FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
 
@@ -634,6 +671,7 @@ def get_tenant_db_path(tenant_id):
 # API Key Management
 # ============================================================================
 
+
 def rotate_api_key(key_id, user_id):
     """Revoke an existing API key and generate a new one.
 
@@ -641,21 +679,16 @@ def rotate_api_key(key_id, user_id):
     """
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT id, tenant_id, user_id, status FROM api_keys WHERE id = ?",
-            (key_id,)).fetchone()
+        row = conn.execute("SELECT id, tenant_id, user_id, status FROM api_keys WHERE id = ?", (key_id,)).fetchone()
         if not row:
             raise ValueError("API key not found: {}".format(key_id))
         if row[2] != user_id:
-            raise PermissionError(
-                "User {} does not own key {}.".format(user_id, key_id))
+            raise PermissionError("User {} does not own key {}.".format(user_id, key_id))
 
         tenant_id = row[1]
         now = _utcnow()
 
-        conn.execute(
-            "UPDATE api_keys SET status = 'revoked' WHERE id = ?",
-            (key_id,))
+        conn.execute("UPDATE api_keys SET status = 'revoked' WHERE id = ?", (key_id,))
 
         new_key_id = "key-" + uuid.uuid4().hex[:12]
         full_key, key_prefix, key_hash = _generate_api_key()
@@ -665,19 +698,27 @@ def rotate_api_key(key_id, user_id):
                (id, tenant_id, user_id, key_hash, key_prefix, name,
                 status, created_at, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (new_key_id, tenant_id, user_id, key_hash, key_prefix,
-             "rotated-key", "active", now, None))
+            (new_key_id, tenant_id, user_id, key_hash, key_prefix, "rotated-key", "active", now, None),
+        )
 
         _audit_platform(
-            conn, tenant_id, user_id, "api_key.rotated", "api_key",
+            conn,
+            tenant_id,
+            user_id,
+            "api_key.rotated",
+            "api_key",
             new_key_id,
-            details={"old_key_id": key_id, "new_key_prefix": key_prefix})
+            details={"old_key_id": key_id, "new_key_prefix": key_prefix},
+        )
 
         conn.commit()
         return {
-            "id": new_key_id, "key": full_key, "prefix": key_prefix,
+            "id": new_key_id,
+            "key": full_key,
+            "prefix": key_prefix,
             "revoked_key_id": key_id,
-            "note": "Save this key now. It cannot be retrieved later."}
+            "note": "Save this key now. It cannot be retrieved later.",
+        }
     except Exception:
         conn.rollback()
         raise
@@ -689,13 +730,12 @@ def rotate_api_key(key_id, user_id):
 # User Management
 # ============================================================================
 
+
 def list_users(tenant_id):
     """List all users in a tenant."""
     conn = get_platform_connection()
     try:
-        row = conn.execute(
-            "SELECT id FROM tenants WHERE id = ?",
-            (tenant_id,)).fetchone()
+        row = conn.execute("SELECT id FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
         if not row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
 
@@ -705,12 +745,20 @@ def list_users(tenant_id):
                       created_at
                FROM users WHERE tenant_id = ?
                ORDER BY created_at""",
-            (tenant_id,)).fetchall()
+            (tenant_id,),
+        ).fetchall()
 
         columns = [
-            "id", "tenant_id", "email", "display_name", "role",
-            "auth_method", "status", "last_login",
-            "created_at"]
+            "id",
+            "tenant_id",
+            "email",
+            "display_name",
+            "role",
+            "auth_method",
+            "status",
+            "last_login",
+            "created_at",
+        ]
         return [dict(zip(columns, r)) for r in rows]
     finally:
         conn.close()
@@ -725,56 +773,52 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key"):
     role_lower = role.lower()
     valid_roles = [r.value for r in UserRole]
     if role_lower not in valid_roles:
-        raise ValueError(
-            "Invalid role: {}. Valid: {}".format(role_lower, valid_roles))
+        raise ValueError("Invalid role: {}. Valid: {}".format(role_lower, valid_roles))
 
     auth_lower = auth_method.lower()
     valid_auth = [a.value for a in AuthMethod]
     if auth_lower not in valid_auth:
-        raise ValueError(
-            "Invalid auth method: {}. Valid: {}".format(
-                auth_lower, valid_auth))
+        raise ValueError("Invalid auth method: {}. Valid: {}".format(auth_lower, valid_auth))
 
     conn = get_platform_connection()
     try:
-        tenant_row = conn.execute(
-            "SELECT id, status FROM tenants WHERE id = ?",
-            (tenant_id,)).fetchone()
+        tenant_row = conn.execute("SELECT id, status FROM tenants WHERE id = ?", (tenant_id,)).fetchone()
         if not tenant_row:
             raise ValueError("Tenant not found: {}".format(tenant_id))
-        if tenant_row[1] not in (
-                TenantStatus.ACTIVE.value,
-                TenantStatus.PROVISIONING.value):
+        if tenant_row[1] not in (TenantStatus.ACTIVE.value, TenantStatus.PROVISIONING.value):
             raise ValueError(
-                "Tenant {} status is '{}'. Users can only be added to "
-                "active or provisioning tenants.".format(
-                    tenant_id, tenant_row[1]))
+                "Tenant {} status is '{}'. Users can only be added to active or provisioning tenants.".format(
+                    tenant_id, tenant_row[1]
+                )
+            )
 
         sub_row = conn.execute(
             """SELECT max_users FROM subscriptions
                WHERE tenant_id = ? AND status = 'active'""",
-            (tenant_id,)).fetchone()
+            (tenant_id,),
+        ).fetchone()
         if sub_row:
             max_users = sub_row[0]
             if max_users > 0:
                 current_count = conn.execute(
                     """SELECT COUNT(*) FROM users
                        WHERE tenant_id = ? AND status = 'active'""",
-                    (tenant_id,)).fetchone()[0]
+                    (tenant_id,),
+                ).fetchone()[0]
                 if current_count >= max_users:
                     raise ValueError(
-                        "User limit reached ({}/{}). Upgrade subscription "
-                        "tier to add more users.".format(
-                            current_count, max_users))
+                        "User limit reached ({}/{}). Upgrade subscription tier to add more users.".format(
+                            current_count, max_users
+                        )
+                    )
 
         dup = conn.execute(
             """SELECT id FROM users
                WHERE tenant_id = ? AND email = ? AND status = 'active'""",
-            (tenant_id, email)).fetchone()
+            (tenant_id, email),
+        ).fetchone()
         if dup:
-            raise ValueError(
-                "User with email '{}' already exists in tenant {}.".format(
-                    email, tenant_id))
+            raise ValueError("User with email '{}' already exists in tenant {}.".format(email, tenant_id))
 
         user_id = "user-" + uuid.uuid4().hex[:12]
         now = _utcnow()
@@ -784,19 +828,24 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key"):
                (id, tenant_id, email, display_name, role, auth_method,
                 status, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, tenant_id, email, display_name, role_lower,
-             auth_lower, "active", now))
+            (user_id, tenant_id, email, display_name, role_lower, auth_lower, "active", now),
+        )
 
         _audit_platform(
-            conn, tenant_id, "system", "user.added", "user", user_id,
-            details={"email": email, "role": role_lower})
+            conn, tenant_id, "system", "user.added", "user", user_id, details={"email": email, "role": role_lower}
+        )
 
         conn.commit()
         return {
-            "id": user_id, "tenant_id": tenant_id,
-            "email": email, "display_name": display_name,
-            "role": role_lower, "auth_method": auth_lower,
-            "status": "active", "created_at": now}
+            "id": user_id,
+            "tenant_id": tenant_id,
+            "email": email,
+            "display_name": display_name,
+            "role": role_lower,
+            "auth_method": auth_lower,
+            "status": "active",
+            "created_at": now,
+        }
     except Exception:
         conn.rollback()
         raise
@@ -814,35 +863,33 @@ def remove_user(tenant_id, user_id):
         row = conn.execute(
             """SELECT id, email, role, status FROM users
                WHERE id = ? AND tenant_id = ?""",
-            (user_id, tenant_id)).fetchone()
+            (user_id, tenant_id),
+        ).fetchone()
         if not row:
-            raise ValueError(
-                "User {} not found in tenant {}.".format(
-                    user_id, tenant_id))
+            raise ValueError("User {} not found in tenant {}.".format(user_id, tenant_id))
         if row[3] == "deactivated":
-            raise ValueError(
-                "User {} is already deactivated.".format(user_id))
+            raise ValueError("User {} is already deactivated.".format(user_id))
 
         now = _utcnow()
 
         conn.execute(
             """UPDATE users SET status = 'deactivated'
                WHERE id = ?""",
-            (user_id,))
+            (user_id,),
+        )
 
         conn.execute(
             """UPDATE api_keys SET status = 'revoked'
                WHERE user_id = ? AND tenant_id = ?""",
-            (user_id, tenant_id))
+            (user_id, tenant_id),
+        )
 
         _audit_platform(
-            conn, tenant_id, "system", "user.removed", "user", user_id,
-            details={"email": row[1], "role": row[2]})
+            conn, tenant_id, "system", "user.removed", "user", user_id, details={"email": row[1], "role": row[2]}
+        )
 
         conn.commit()
-        return {
-            "id": user_id, "email": row[1],
-            "status": "deactivated", "deactivated_at": now}
+        return {"id": user_id, "email": row[1], "status": "deactivated", "deactivated_at": now}
     except Exception:
         conn.rollback()
         raise
@@ -853,6 +900,7 @@ def remove_user(tenant_id, user_id):
 # ============================================================================
 # CLI
 # ============================================================================
+
 
 def _print_result(data, as_json=False):
     """Print result to stdout."""
@@ -880,81 +928,53 @@ def _print_result(data, as_json=False):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV SaaS Tenant Manager",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+        description="CUI // SP-CTI -- ICDEV SaaS Tenant Manager", formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
     action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument(
-        "--create", action="store_true", help="Create a new tenant")
-    action.add_argument(
-        "--provision", action="store_true",
-        help="Provision a pending tenant")
-    action.add_argument(
-        "--approve", action="store_true",
-        help="Approve and provision a tenant")
-    action.add_argument(
-        "--list", action="store_true", help="List tenants")
-    action.add_argument(
-        "--get", action="store_true", help="Get tenant details")
-    action.add_argument(
-        "--suspend", action="store_true", help="Suspend a tenant")
-    action.add_argument(
-        "--delete", action="store_true", help="Soft-delete a tenant")
-    action.add_argument(
-        "--add-user", action="store_true",
-        help="Add a user to a tenant")
-    action.add_argument(
-        "--list-users", action="store_true",
-        help="List users in a tenant")
+    action.add_argument("--create", action="store_true", help="Create a new tenant")
+    action.add_argument("--provision", action="store_true", help="Provision a pending tenant")
+    action.add_argument("--approve", action="store_true", help="Approve and provision a tenant")
+    action.add_argument("--list", action="store_true", help="List tenants")
+    action.add_argument("--get", action="store_true", help="Get tenant details")
+    action.add_argument("--suspend", action="store_true", help="Suspend a tenant")
+    action.add_argument("--delete", action="store_true", help="Soft-delete a tenant")
+    action.add_argument("--add-user", action="store_true", help="Add a user to a tenant")
+    action.add_argument("--list-users", action="store_true", help="List users in a tenant")
 
     parser.add_argument("--tenant-id", type=str, help="Tenant ID")
-    parser.add_argument(
-        "--json", action="store_true", dest="as_json",
-        help="Output as JSON")
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Output as JSON")
 
     parser.add_argument("--name", type=str, help="Tenant name")
-    parser.add_argument(
-        "--il", type=str,
-        help="Impact level (IL2, IL4, IL5, IL6)")
-    parser.add_argument(
-        "--tier", type=str,
-        help="Subscription tier (starter, professional, enterprise)")
-    parser.add_argument(
-        "--admin-email", type=str, help="Admin email address")
-    parser.add_argument(
-        "--admin-name", type=str, default=None,
-        help="Admin display name")
+    parser.add_argument("--il", type=str, help="Impact level (IL2, IL4, IL5, IL6)")
+    parser.add_argument("--tier", type=str, help="Subscription tier (starter, professional, enterprise)")
+    parser.add_argument("--admin-email", type=str, help="Admin email address")
+    parser.add_argument("--admin-name", type=str, default=None, help="Admin display name")
 
-    parser.add_argument(
-        "--approver-id", type=str, help="Approver user ID")
+    parser.add_argument("--approver-id", type=str, help="Approver user ID")
 
-    parser.add_argument(
-        "--status", type=str, default=None,
-        help="Filter by status")
+    parser.add_argument("--status", type=str, default=None, help="Filter by status")
 
     parser.add_argument("--email", type=str, help="User email address")
+    parser.add_argument("--display-name", type=str, help="User display name")
     parser.add_argument(
-        "--display-name", type=str, help="User display name")
-    parser.add_argument(
-        "--role", type=str,
-        help="User role (tenant_admin, developer, "
-             "compliance_officer, auditor, viewer)")
-    parser.add_argument(
-        "--auth-method", type=str, default="api_key",
-        help="Auth method (api_key, oauth, cac_piv)")
+        "--role", type=str, help="User role (tenant_admin, developer, compliance_officer, auditor, viewer)"
+    )
+    parser.add_argument("--auth-method", type=str, default="api_key", help="Auth method (api_key, oauth, cac_piv)")
 
     args = parser.parse_args()
 
     try:
         if args.create:
             if not all([args.name, args.il, args.tier, args.admin_email]):
-                parser.error(
-                    "--create requires --name, --il, --tier, "
-                    "and --admin-email")
+                parser.error("--create requires --name, --il, --tier, and --admin-email")
             result = create_tenant(
-                name=args.name, impact_level=args.il,
-                tier=args.tier, admin_email=args.admin_email,
-                admin_name=args.admin_name)
+                name=args.name,
+                impact_level=args.il,
+                tier=args.tier,
+                admin_email=args.admin_email,
+                admin_name=args.admin_name,
+            )
             _print_result(result, args.as_json)
 
         elif args.provision:
@@ -965,8 +985,7 @@ def main():
 
         elif args.approve:
             if not args.tenant_id or not args.approver_id:
-                parser.error(
-                    "--approve requires --tenant-id and --approver-id")
+                parser.error("--approve requires --tenant-id and --approver-id")
             result = approve_tenant(args.tenant_id, args.approver_id)
             _print_result(result, args.as_json)
 
@@ -997,14 +1016,15 @@ def main():
 
         elif args.add_user:
             if not all([args.tenant_id, args.email, args.role]):
-                parser.error(
-                    "--add-user requires --tenant-id, --email, "
-                    "and --role")
+                parser.error("--add-user requires --tenant-id, --email, and --role")
             display = args.display_name or args.email.split("@")[0]
             result = add_user(
-                tenant_id=args.tenant_id, email=args.email,
-                display_name=display, role=args.role,
-                auth_method=args.auth_method)
+                tenant_id=args.tenant_id,
+                email=args.email,
+                display_name=display,
+                role=args.role,
+                auth_method=args.auth_method,
+            )
             _print_result(result, args.as_json)
 
         elif args.list_users:

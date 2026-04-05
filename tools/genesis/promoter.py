@@ -76,18 +76,21 @@ def _log_audit(event_type: str, gkp_id: str = None, details: Dict = None) -> Non
     """Log to genesis_audit (append-only)."""
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO genesis_audit
                 (id, event_type, reflex_name, details, gkp_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            f"aud-{uuid.uuid4().hex[:10]}",
-            event_type,
-            None,
-            json.dumps(details) if details else None,
-            gkp_id,
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                f"aud-{uuid.uuid4().hex[:10]}",
+                event_type,
+                None,
+                json.dumps(details) if details else None,
+                gkp_id,
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
     except Exception:
         pass  # Best-effort audit
@@ -102,6 +105,7 @@ def _load_promoter_config() -> Dict[str, Any]:
     """Load promoter config from genesis_config.yaml."""
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "genesis_config.yaml"
         if config_path.exists():
             with open(config_path, "r", encoding="utf-8") as f:
@@ -115,17 +119,19 @@ def _load_promoter_config() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Deduplication
 # ---------------------------------------------------------------------------
-def _check_duplicate(payload_hash: str, artifact_type: str,
-                     threshold: float = 0.85) -> Optional[str]:
+def _check_duplicate(payload_hash: str, artifact_type: str, threshold: float = 0.85) -> Optional[str]:
     """Check if a similar GKP already exists.  Returns existing GKP ID or None."""
     conn = get_connection()
     try:
         # Exact hash match
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT id FROM genesis_gkp
             WHERE sha256 = ? AND artifact_type = ?
               AND promotion_status NOT IN ('rejected', 'dedup_skipped')
-        """, (payload_hash, artifact_type)).fetchone()
+        """,
+            (payload_hash, artifact_type),
+        ).fetchone()
         if row:
             return row["id"]
     finally:
@@ -136,15 +142,15 @@ def _check_duplicate(payload_hash: str, artifact_type: str,
 # ---------------------------------------------------------------------------
 # GKP Operations
 # ---------------------------------------------------------------------------
-def export_gkp(reflex: str, artifact_type: str, payload: Dict[str, Any],
-               confidence: float = 0.0, evidence: Dict = None) -> Dict[str, Any]:
+def export_gkp(
+    reflex: str, artifact_type: str, payload: Dict[str, Any], confidence: float = 0.0, evidence: Dict = None
+) -> Dict[str, Any]:
     """Create a new Genesis Knowledge Packet (D-GEN-3).
 
     Returns the created GKP record.
     """
     if artifact_type not in ARTIFACT_TYPES:
-        return {"error": f"Unknown artifact type: {artifact_type}",
-                "valid_types": ARTIFACT_TYPES}
+        return {"error": f"Unknown artifact type: {artifact_type}", "valid_types": ARTIFACT_TYPES}
 
     gkp_id = _generate_id()
     payload_json = json.dumps(payload, sort_keys=True)
@@ -153,23 +159,32 @@ def export_gkp(reflex: str, artifact_type: str, payload: Dict[str, Any],
     # Deduplication check
     existing = _check_duplicate(payload_hash, artifact_type)
     if existing:
-        _log_audit("genesis.promoter.dedup_skipped", gkp_id,
-                   {"existing_gkp": existing, "artifact_type": artifact_type})
+        _log_audit("genesis.promoter.dedup_skipped", gkp_id, {"existing_gkp": existing, "artifact_type": artifact_type})
         return {"status": "dedup_skipped", "existing_gkp": existing, "gkp_id": gkp_id}
 
     # Store in DB
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO genesis_gkp
                 (id, gkp_version, artifact_type, genesis_reflex, confidence,
                  evidence, payload, sha256, promotion_status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            gkp_id, GKP_VERSION, artifact_type, reflex, confidence,
-            json.dumps(evidence) if evidence else None,
-            payload_json, payload_hash, STATUS_PENDING, _utcnow_iso(),
-        ))
+        """,
+            (
+                gkp_id,
+                GKP_VERSION,
+                artifact_type,
+                reflex,
+                confidence,
+                json.dumps(evidence) if evidence else None,
+                payload_json,
+                payload_hash,
+                STATUS_PENDING,
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
     finally:
         conn.close()
@@ -191,11 +206,15 @@ def export_gkp(reflex: str, artifact_type: str, payload: Dict[str, Any],
     }
     gkp_file.write_text(json.dumps(gkp_doc, indent=2), encoding="utf-8")
 
-    _log_audit("genesis.promoter.exported", gkp_id, {
-        "artifact_type": artifact_type,
-        "reflex": reflex,
-        "confidence": confidence,
-    })
+    _log_audit(
+        "genesis.promoter.exported",
+        gkp_id,
+        {
+            "artifact_type": artifact_type,
+            "reflex": reflex,
+            "confidence": confidence,
+        },
+    )
 
     return {"status": "exported", "gkp_id": gkp_id, "artifact_type": artifact_type}
 
@@ -208,9 +227,7 @@ def promote_gkp(gkp_id: str, auto: bool = False) -> Dict[str, Any]:
     """
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT * FROM genesis_gkp WHERE id = ?", (gkp_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
         if not row:
             return {"error": f"GKP not found: {gkp_id}"}
 
@@ -229,17 +246,24 @@ def promote_gkp(gkp_id: str, auto: bool = False) -> Dict[str, Any]:
 
         if import_result.get("success"):
             new_status = STATUS_AUTO_PROMOTED if auto else STATUS_PROMOTED
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE genesis_gkp SET promotion_status = ?, promoted_at = ?
                 WHERE id = ?
-            """, (new_status, _utcnow_iso(), gkp_id))
+            """,
+                (new_status, _utcnow_iso(), gkp_id),
+            )
             conn.commit()
 
             event = "genesis.promoter.auto_promoted" if auto else "genesis.promoter.promoted"
-            _log_audit(event, gkp_id, {
-                "artifact_type": artifact_type,
-                "import_result": import_result,
-            })
+            _log_audit(
+                event,
+                gkp_id,
+                {
+                    "artifact_type": artifact_type,
+                    "import_result": import_result,
+                },
+            )
 
             return {
                 "status": new_status,
@@ -261,15 +285,16 @@ def reject_gkp(gkp_id: str, reason: str = "") -> Dict[str, Any]:
     """Reject a GKP — it will not be promoted."""
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT promotion_status FROM genesis_gkp WHERE id = ?", (gkp_id,)
-        ).fetchone()
+        row = conn.execute("SELECT promotion_status FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
         if not row:
             return {"error": f"GKP not found: {gkp_id}"}
 
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE genesis_gkp SET promotion_status = ? WHERE id = ?
-        """, (STATUS_REJECTED, gkp_id))
+        """,
+            (STATUS_REJECTED, gkp_id),
+        )
         conn.commit()
 
         _log_audit("genesis.promoter.rejected", gkp_id, {"reason": reason})
@@ -286,10 +311,13 @@ def auto_promote_eligible() -> List[Dict[str, Any]]:
 
     conn = get_connection()
     try:
-        pending = conn.execute("""
+        pending = conn.execute(
+            """
             SELECT * FROM genesis_gkp WHERE promotion_status = ?
             ORDER BY created_at ASC
-        """, (STATUS_PENDING,)).fetchall()
+        """,
+            (STATUS_PENDING,),
+        ).fetchall()
     finally:
         conn.close()
 
@@ -322,11 +350,15 @@ def auto_promote_eligible() -> List[Dict[str, Any]]:
                 break
         if not matched:
             # No auto-promote rule matched — stays pending for human review
-            _log_audit("genesis.promoter.human_review_pending", row["id"], {
-                "artifact_type": artifact_type,
-                "confidence": confidence,
-                "source": source,
-            })
+            _log_audit(
+                "genesis.promoter.human_review_pending",
+                row["id"],
+                {
+                    "artifact_type": artifact_type,
+                    "confidence": confidence,
+                    "source": source,
+                },
+            )
 
     return results
 
@@ -365,23 +397,26 @@ def _import_research_signal(payload: Dict) -> Dict:
         title = payload.get("title", "Genesis Research Signal")
         description = payload.get("description", "")
         content_hash = _sha256(f"{title}:{description}")
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO innovation_signals
                 (id, source, source_type, title, description, content_hash,
                  innovation_score, status, discovered_at, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            signal_id,
-            payload.get("source", "genesis_research"),
-            "genesis",
-            title,
-            description,
-            content_hash,
-            payload.get("score", 50),
-            "new",
-            _utcnow_iso(),
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                signal_id,
+                payload.get("source", "genesis_research"),
+                "genesis",
+                title,
+                description,
+                content_hash,
+                payload.get("score", 50),
+                "new",
+                _utcnow_iso(),
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
         return {"success": True, "table": "innovation_signals", "id": signal_id}
     except Exception as e:
@@ -395,18 +430,21 @@ def _import_compliance_knowledge(payload: Dict) -> Dict:
     conn = get_connection()
     try:
         cache_id = f"enr-{uuid.uuid4().hex[:8]}"
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO dh_enrichment_cache
                 (id, source, query_hash, result_data, expires_at, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            cache_id,
-            payload.get("source", "genesis_comply"),
-            _sha256(json.dumps(payload.get("query", ""), sort_keys=True)),
-            json.dumps(payload.get("data", {})),
-            payload.get("expires_at", _utcnow_iso()),
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                cache_id,
+                payload.get("source", "genesis_comply"),
+                _sha256(json.dumps(payload.get("query", ""), sort_keys=True)),
+                json.dumps(payload.get("data", {})),
+                payload.get("expires_at", _utcnow_iso()),
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
         return {"success": True, "table": "dh_enrichment_cache", "id": cache_id}
     except Exception as e:
@@ -419,27 +457,30 @@ def _import_quality_baseline(payload: Dict) -> Dict:
     """Import quality baseline into code_quality_metrics."""
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO code_quality_metrics
                 (id, project_id, file_path, language, total_functions,
                  avg_cyclomatic, avg_cognitive, avg_nesting, avg_params,
                  avg_loc, maintainability_score, smells, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            f"cqm-{uuid.uuid4().hex[:8]}",
-            payload.get("project_id", "sparkpilot"),
-            payload.get("file_path", ""),
-            payload.get("language", "python"),
-            payload.get("total_functions", 0),
-            payload.get("avg_cyclomatic", 0),
-            payload.get("avg_cognitive", 0),
-            payload.get("avg_nesting", 0),
-            payload.get("avg_params", 0),
-            payload.get("avg_loc", 0),
-            payload.get("maintainability_score", 100),
-            json.dumps(payload.get("smells", [])),
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                f"cqm-{uuid.uuid4().hex[:8]}",
+                payload.get("project_id", "sparkpilot"),
+                payload.get("file_path", ""),
+                payload.get("language", "python"),
+                payload.get("total_functions", 0),
+                payload.get("avg_cyclomatic", 0),
+                payload.get("avg_cognitive", 0),
+                payload.get("avg_nesting", 0),
+                payload.get("avg_params", 0),
+                payload.get("avg_loc", 0),
+                payload.get("maintainability_score", 100),
+                json.dumps(payload.get("smells", [])),
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
         return {"success": True, "table": "code_quality_metrics"}
     except Exception as e:
@@ -453,24 +494,27 @@ def _import_proven_pattern(payload: Dict, confidence: float) -> Dict:
     conn = get_connection()
     try:
         pattern_id = f"pat-{uuid.uuid4().hex[:8]}"
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO knowledge_patterns
                 (id, pattern_type, pattern_signature, root_cause,
                  remediation, confidence, auto_healable, occurrence_count,
                  source, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            pattern_id,
-            payload.get("pattern_type", "discovered"),
-            payload.get("signature", ""),
-            payload.get("root_cause", ""),
-            json.dumps(payload.get("remediation", {})),
-            confidence,
-            1 if payload.get("auto_healable", False) else 0,
-            payload.get("occurrence_count", 1),
-            "genesis_heal",
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                pattern_id,
+                payload.get("pattern_type", "discovered"),
+                payload.get("signature", ""),
+                payload.get("root_cause", ""),
+                json.dumps(payload.get("remediation", {})),
+                confidence,
+                1 if payload.get("auto_healable", False) else 0,
+                payload.get("occurrence_count", 1),
+                "genesis_heal",
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
         return {"success": True, "table": "knowledge_patterns", "id": pattern_id}
     except Exception as e:
@@ -508,25 +552,32 @@ def _import_training_pair(payload: Dict) -> Dict:
     conn = get_connection()
     try:
         pair_id = f"ftp-{uuid.uuid4().hex[:8]}"
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO ft_training_pairs
                 (id, dataset_id, instruction, input_text, output_text,
                  purpose, approved, source, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            pair_id,
-            payload.get("dataset_id", "genesis_learn"),
-            payload.get("instruction", ""),
-            payload.get("input_text", ""),
-            payload.get("output_text", ""),
-            payload.get("purpose", "general"),
-            0,  # Always unapproved — requires human review
-            "genesis_learn",
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                pair_id,
+                payload.get("dataset_id", "genesis_learn"),
+                payload.get("instruction", ""),
+                payload.get("input_text", ""),
+                payload.get("output_text", ""),
+                payload.get("purpose", "general"),
+                0,  # Always unapproved — requires human review
+                "genesis_learn",
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
-        return {"success": True, "table": "ft_training_pairs", "id": pair_id,
-                "note": "Pair stored as unapproved — requires human review"}
+        return {
+            "success": True,
+            "table": "ft_training_pairs",
+            "id": pair_id,
+            "note": "Pair stored as unapproved — requires human review",
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
@@ -541,14 +592,20 @@ def list_gkps(status: str = None, limit: int = 50) -> List[Dict]:
     conn = get_connection()
     try:
         if status:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT * FROM genesis_gkp WHERE promotion_status = ?
                 ORDER BY created_at DESC LIMIT ?
-            """, (status, limit)).fetchall()
+            """,
+                (status, limit),
+            ).fetchall()
         else:
-            rows = conn.execute("""
+            rows = conn.execute(
+                """
                 SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT ?
-            """, (limit,)).fetchall()
+            """,
+                (limit,),
+            ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -587,53 +644,51 @@ def get_stats() -> Dict[str, Any]:
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Genesis Knowledge Bridge — v2.0 to v1.x Promoter")
+    parser = argparse.ArgumentParser(description="Genesis Knowledge Bridge — v2.0 to v1.x Promoter")
     parser.add_argument("--list", action="store_true", help="List GKPs")
-    parser.add_argument("--status-filter", type=str, default=None,
-                        help="Filter by status (pending_review, promoted, rejected)")
+    parser.add_argument(
+        "--status-filter", type=str, default=None, help="Filter by status (pending_review, promoted, rejected)"
+    )
     parser.add_argument("--export", action="store_true", help="Create a new GKP")
     parser.add_argument("--reflex", type=str, help="Source reflex name")
     parser.add_argument("--artifact-type", type=str, help="Artifact type")
     parser.add_argument("--payload", type=str, help="JSON payload string")
     parser.add_argument("--confidence", type=float, default=0.0)
-    parser.add_argument("--promote", type=str, metavar="GKP_ID",
-                        help="Promote a GKP to v1.x")
-    parser.add_argument("--reject", type=str, metavar="GKP_ID",
-                        help="Reject a GKP")
+    parser.add_argument("--promote", type=str, metavar="GKP_ID", help="Promote a GKP to v1.x")
+    parser.add_argument("--reject", type=str, metavar="GKP_ID", help="Reject a GKP")
     parser.add_argument("--reason", type=str, default="", help="Rejection reason")
-    parser.add_argument("--auto-promote", action="store_true",
-                        help="Auto-promote all eligible GKPs")
+    parser.add_argument("--auto-promote", action="store_true", help="Auto-promote all eligible GKPs")
     parser.add_argument("--stats", action="store_true", help="Show statistics")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
     if args.export:
         if not args.reflex or not args.artifact_type or not args.payload:
-            print("ERROR: --export requires --reflex, --artifact-type, --payload",
-                  file=sys.stderr)
+            print("ERROR: --export requires --reflex, --artifact-type, --payload", file=sys.stderr)
             sys.exit(1)
         try:
             payload = json.loads(args.payload)
         except json.JSONDecodeError as e:
             print(f"ERROR: Invalid JSON payload: {e}", file=sys.stderr)
             sys.exit(1)
-        result = export_gkp(args.reflex, args.artifact_type, payload,
-                            confidence=args.confidence)
-        print(json.dumps(result, indent=2) if args.json else
-              f"GKP {result.get('gkp_id', 'unknown')}: {result.get('status', 'unknown')}")
+        result = export_gkp(args.reflex, args.artifact_type, payload, confidence=args.confidence)
+        print(
+            json.dumps(result, indent=2)
+            if args.json
+            else f"GKP {result.get('gkp_id', 'unknown')}: {result.get('status', 'unknown')}"
+        )
         return
 
     if args.promote:
         result = promote_gkp(args.promote)
-        print(json.dumps(result, indent=2) if args.json else
-              f"Promote {args.promote}: {result.get('status', 'unknown')}")
+        print(
+            json.dumps(result, indent=2) if args.json else f"Promote {args.promote}: {result.get('status', 'unknown')}"
+        )
         return
 
     if args.reject:
         result = reject_gkp(args.reject, reason=args.reason)
-        print(json.dumps(result, indent=2) if args.json else
-              f"Reject {args.reject}: {result.get('status', 'unknown')}")
+        print(json.dumps(result, indent=2) if args.json else f"Reject {args.reject}: {result.get('status', 'unknown')}")
         return
 
     if args.auto_promote:
@@ -648,10 +703,13 @@ def main() -> None:
 
     if args.stats:
         stats = get_stats()
-        print(json.dumps(stats, indent=2) if args.json else
-              f"Total GKPs: {stats['total_gkps']}\n"
-              f"By status: {json.dumps(stats['by_status'])}\n"
-              f"By type: {json.dumps(stats['by_artifact_type'])}")
+        print(
+            json.dumps(stats, indent=2)
+            if args.json
+            else f"Total GKPs: {stats['total_gkps']}\n"
+            f"By status: {json.dumps(stats['by_status'])}\n"
+            f"By type: {json.dumps(stats['by_artifact_type'])}"
+        )
         return
 
     if args.list:
@@ -662,9 +720,11 @@ def main() -> None:
             print(f"{'ID':<16} {'Type':<20} {'Reflex':<10} {'Conf':<6} {'Status':<18} {'Created'}")
             print("-" * 100)
             for g in gkps:
-                print(f"{g['id']:<16} {g['artifact_type']:<20} "
-                      f"{g['genesis_reflex']:<10} {g['confidence']:<6.2f} "
-                      f"{g['promotion_status']:<18} {g.get('created_at', '')[:16]}")
+                print(
+                    f"{g['id']:<16} {g['artifact_type']:<20} "
+                    f"{g['genesis_reflex']:<10} {g['confidence']:<6.2f} "
+                    f"{g['promotion_status']:<18} {g.get('created_at', '')[:16]}"
+                )
         return
 
     parser.print_help()

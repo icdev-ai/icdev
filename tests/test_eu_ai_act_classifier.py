@@ -142,8 +142,7 @@ def icdev_db(tmp_path):
         );
     """)
     project_id = f"proj-{uuid.uuid4().hex[:8]}"
-    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)",
-                 (project_id, "Test EU Project"))
+    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)", (project_id, "Test EU Project"))
     conn.commit()
     conn.close()
     return db_path, project_id

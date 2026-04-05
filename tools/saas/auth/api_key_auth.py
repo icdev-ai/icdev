@@ -2,6 +2,7 @@
 """ICDEV SaaS — API Key Authentication.
 CUI // SP-CTI
 """
+
 import hashlib
 import logging
 import os
@@ -45,7 +46,8 @@ def validate_api_key(key: str) -> Optional[dict]:
 
     try:
         conn = _get_platform_conn()
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT k.id as key_id, k.tenant_id, k.user_id, k.scopes, k.status as key_status,
                    k.expires_at,
                    u.role, u.status as user_status, u.email,
@@ -55,7 +57,9 @@ def validate_api_key(key: str) -> Optional[dict]:
             JOIN users u ON k.user_id = u.id AND k.tenant_id = u.tenant_id
             JOIN tenants t ON k.tenant_id = t.id
             WHERE k.key_hash = ?
-        """, (key_hash,)).fetchone()
+        """,
+            (key_hash,),
+        ).fetchone()
 
         if not row:
             logger.warning("API key not found: prefix=%s", key[:12])
@@ -87,8 +91,10 @@ def validate_api_key(key: str) -> Optional[dict]:
 
         # Update last_used_at
         try:
-            conn.execute("UPDATE api_keys SET last_used_at = ? WHERE id = ?",
-                        (datetime.now(timezone.utc).isoformat(), row["key_id"]))
+            conn.execute(
+                "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
+                (datetime.now(timezone.utc).isoformat(), row["key_id"]),
+            )
             conn.commit()
         except Exception:
             pass  # Non-critical
@@ -100,6 +106,7 @@ def validate_api_key(key: str) -> Optional[dict]:
         if row["scopes"]:
             try:
                 import json
+
                 scopes = json.loads(row["scopes"]) if isinstance(row["scopes"], str) else row["scopes"]
             except Exception:
                 scopes = []

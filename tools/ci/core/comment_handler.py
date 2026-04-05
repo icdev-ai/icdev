@@ -83,6 +83,7 @@ class CommentHandler:
         """Post message to Slack channel/thread (D137: always threaded)."""
         try:
             from tools.ci.connectors.connector_registry import ConnectorRegistry
+
             connector = ConnectorRegistry.get_connector("slack")
             if connector:
                 channel_id = envelope.metadata.get("channel_id", "")
@@ -100,6 +101,7 @@ class CommentHandler:
         """Post message to Mattermost channel/thread (D137: always threaded)."""
         try:
             from tools.ci.connectors.connector_registry import ConnectorRegistry
+
             connector = ConnectorRegistry.get_connector("mattermost")
             if connector:
                 channel_id = envelope.metadata.get("channel_id", "")
@@ -116,6 +118,7 @@ class CommentHandler:
         """Post message via connector registry (marketplace plugins)."""
         try:
             from tools.ci.connectors.connector_registry import ConnectorRegistry
+
             connector = ConnectorRegistry.get_connector(envelope.platform)
             if connector:
                 channel_id = envelope.metadata.get("channel_id", "")
@@ -128,9 +131,7 @@ class CommentHandler:
             print(f"Warning: Failed to post via {envelope.platform}: {e}")
         return None
 
-    def fetch_new_comments(
-        self, envelope: EventEnvelope, since_id: str = None
-    ) -> list:
+    def fetch_new_comments(self, envelope: EventEnvelope, since_id: str = None) -> list:
         """Fetch new comments/messages since a given ID.
 
         Returns list of dicts: [{body, author, id, timestamp}]
@@ -163,25 +164,23 @@ class CommentHandler:
                     new_comments = []
                     for c in comments:
                         if found:
-                            new_comments.append({
-                                "body": c.get("body", "") or c.get("note", ""),
-                                "author": (
-                                    c.get("user", {}).get("login", "")
-                                    or c.get("author", {}).get("username", "")
-                                ),
-                                "id": str(c.get("id", "")),
-                                "timestamp": c.get("created_at", ""),
-                            })
+                            new_comments.append(
+                                {
+                                    "body": c.get("body", "") or c.get("note", ""),
+                                    "author": (
+                                        c.get("user", {}).get("login", "") or c.get("author", {}).get("username", "")
+                                    ),
+                                    "id": str(c.get("id", "")),
+                                    "timestamp": c.get("created_at", ""),
+                                }
+                            )
                         if str(c.get("id", "")) == since_id:
                             found = True
                     return new_comments
                 return [
                     {
                         "body": c.get("body", "") or c.get("note", ""),
-                        "author": (
-                            c.get("user", {}).get("login", "")
-                            or c.get("author", {}).get("username", "")
-                        ),
+                        "author": (c.get("user", {}).get("login", "") or c.get("author", {}).get("username", "")),
                         "id": str(c.get("id", "")),
                         "timestamp": c.get("created_at", ""),
                     }

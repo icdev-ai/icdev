@@ -4,6 +4,7 @@
 Deterministic protocol → base class mapping.
 No LLM, no I/O. Input: ForgeApiManifest. Output: BaseClassSelection.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

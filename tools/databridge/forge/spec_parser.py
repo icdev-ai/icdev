@@ -5,6 +5,7 @@ Accepts OpenAPI JSON/YAML, WSDL XML, HTML API docs, or structured YAML.
 Normalizes all inputs to a ForgeApiManifest for the base selector.
 Air-gap safe: stdlib only (urllib, xml.etree, html.parser, json).
 """
+
 from __future__ import annotations
 
 import json
@@ -115,21 +116,15 @@ def _detect_type(content: str, url: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _parse_openapi_or_yaml(
-    content: str, input_type: str, source_url: str
-) -> ForgeApiManifest:
+def _parse_openapi_or_yaml(content: str, input_type: str, source_url: str) -> ForgeApiManifest:
     """Parse OpenAPI 2/3 or structured YAML spec."""
     data = _load_json_or_yaml(content)
     if not data:
-        return ForgeApiManifest(
-            input_type=input_type, parse_warnings=["Failed to parse JSON/YAML"]
-        )
+        return ForgeApiManifest(input_type=input_type, parse_warnings=["Failed to parse JSON/YAML"])
 
     manifest = ForgeApiManifest(input_type=input_type, raw_schema=data)
     manifest.title = data.get("info", {}).get("title", "") or data.get("title", "")
-    manifest.version = data.get("info", {}).get("version", "") or data.get(
-        "version", ""
-    )
+    manifest.version = data.get("info", {}).get("version", "") or data.get("version", "")
 
     manifest.base_url = _extract_base_url(data, source_url)
     manifest.auth_methods = _extract_auth_methods(data)
@@ -152,9 +147,7 @@ def _extract_base_url(data: Dict[str, Any], source_url: str) -> str:
 
 def _extract_auth_methods(data: Dict[str, Any]) -> List[str]:
     """Extract authentication methods from security definitions."""
-    security_defs = data.get("securityDefinitions") or data.get(
-        "components", {}
-    ).get("securitySchemes", {})
+    security_defs = data.get("securityDefinitions") or data.get("components", {}).get("securitySchemes", {})
     if not isinstance(security_defs, dict):
         return []
 
@@ -183,17 +176,19 @@ def _extract_endpoints(data: Dict[str, Any]) -> List[ForgeEndpoint]:
         for method, op in path_item.items():
             if method.upper() not in _VALID_METHODS or not isinstance(op, dict):
                 continue
-            endpoints.append(ForgeEndpoint(
-                path=path,
-                method=method.upper(),
-                operation_id=op.get("operationId", ""),
-                summary=op.get("summary", ""),
-                parameters=op.get("parameters", []),
-                request_body_schema=op.get("requestBody", {})
-                .get("content", {})
-                .get("application/json", {})
-                .get("schema"),
-            ))
+            endpoints.append(
+                ForgeEndpoint(
+                    path=path,
+                    method=method.upper(),
+                    operation_id=op.get("operationId", ""),
+                    summary=op.get("summary", ""),
+                    parameters=op.get("parameters", []),
+                    request_body_schema=op.get("requestBody", {})
+                    .get("content", {})
+                    .get("application/json", {})
+                    .get("schema"),
+                )
+            )
     return endpoints
 
 
@@ -275,25 +270,19 @@ def _parse_html(content: str, source_url: str) -> ForgeApiManifest:
     manifest.base_url = _infer_base_url(source_url)
 
     # Find HTTP method + path patterns in code blocks, tables, etc.
-    method_pattern = re.compile(
-        r"\b(GET|POST|PUT|DELETE|PATCH)\b\s+(/[^\s<>\"']+)"
-    )
+    method_pattern = re.compile(r"\b(GET|POST|PUT|DELETE|PATCH)\b\s+(/[^\s<>\"']+)")
     seen: set = set()
     for match in method_pattern.finditer(content):
         key = (match.group(1), match.group(2))
         if key not in seen:
             seen.add(key)
-            manifest.endpoints.append(
-                ForgeEndpoint(path=match.group(2), method=match.group(1))
-            )
+            manifest.endpoints.append(ForgeEndpoint(path=match.group(2), method=match.group(1)))
 
     # Cap at 50 endpoints from scraping
     manifest.endpoints = manifest.endpoints[:50]
 
     if not manifest.endpoints:
-        manifest.parse_warnings.append(
-            "No API endpoints found in HTML — try OpenAPI spec instead"
-        )
+        manifest.parse_warnings.append("No API endpoints found in HTML — try OpenAPI spec instead")
 
     return manifest
 
@@ -307,9 +296,7 @@ def _parse_manual(content: str) -> ForgeApiManifest:
     """Parse a pre-structured dict (JSON or YAML) directly as a manifest."""
     data = _load_json_or_yaml(content)
     if not data:
-        return ForgeApiManifest(
-            input_type="manual", parse_warnings=["Empty or unparseable manifest"]
-        )
+        return ForgeApiManifest(input_type="manual", parse_warnings=["Empty or unparseable manifest"])
 
     endpoints = []
     for ep in data.get("endpoints", []):

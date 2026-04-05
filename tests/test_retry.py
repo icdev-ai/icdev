@@ -1,7 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.resilience.retry."""
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from unittest.mock import patch, MagicMock
@@ -33,6 +35,7 @@ class TestBackoffDelay:
     def test_exponential_growth(self):
         """Average delay at attempt N+1 should be ~2x attempt N."""
         import statistics
+
         samples_a = [backoff_delay(attempt=1, base_delay=1.0, max_delay=1000.0) for _ in range(200)]
         samples_b = [backoff_delay(attempt=2, base_delay=1.0, max_delay=1000.0) for _ in range(200)]
         mean_a = statistics.mean(samples_a)

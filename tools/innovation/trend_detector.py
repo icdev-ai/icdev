@@ -60,40 +60,167 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # =========================================================================
 # CONSTANTS
 # =========================================================================
 # Hardcoded English stopwords (~60 common words) — no NLTK dependency needed
-STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "been", "by", "but",
-    "can", "could", "did", "do", "does", "for", "from", "had", "has",
-    "have", "he", "her", "him", "his", "how", "i", "if", "in", "into",
-    "is", "it", "its", "just", "may", "me", "might", "more", "most",
-    "must", "my", "no", "nor", "not", "of", "on", "or", "our", "out",
-    "own", "re", "s", "she", "should", "so", "some", "such", "t",
-    "than", "that", "the", "their", "them", "then", "there", "these",
-    "they", "this", "those", "through", "to", "too", "up", "us",
-    "very", "was", "we", "were", "what", "when", "where", "which",
-    "while", "who", "whom", "why", "will", "with", "would", "you",
-    "your", "about", "above", "after", "again", "all", "also", "am",
-    "any", "because", "before", "being", "between", "both", "during",
-    "each", "few", "further", "get", "got", "here", "how", "itself",
-    "let", "like", "make", "many", "much", "new", "now", "off", "old",
-    "one", "only", "other", "over", "same", "set", "since", "still",
-    "take", "two", "under", "use", "used", "using", "way", "well",
-})
+STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "by",
+        "but",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "just",
+        "may",
+        "me",
+        "might",
+        "more",
+        "most",
+        "must",
+        "my",
+        "no",
+        "nor",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "out",
+        "own",
+        "re",
+        "s",
+        "she",
+        "should",
+        "so",
+        "some",
+        "such",
+        "t",
+        "than",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "up",
+        "us",
+        "very",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "why",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
+        "about",
+        "above",
+        "after",
+        "again",
+        "all",
+        "also",
+        "am",
+        "any",
+        "because",
+        "before",
+        "being",
+        "between",
+        "both",
+        "during",
+        "each",
+        "few",
+        "further",
+        "get",
+        "got",
+        "here",
+        "how",
+        "itself",
+        "let",
+        "like",
+        "make",
+        "many",
+        "much",
+        "new",
+        "now",
+        "off",
+        "old",
+        "one",
+        "only",
+        "other",
+        "over",
+        "same",
+        "set",
+        "since",
+        "still",
+        "take",
+        "two",
+        "under",
+        "use",
+        "used",
+        "using",
+        "way",
+        "well",
+    }
+)
 
 # Minimum keyword length to consider
 MIN_KEYWORD_LEN = 3
@@ -352,16 +479,18 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
             if not category or category == "":
                 category = categorize_signal(title, desc, categories_config)
             keywords = extract_keyword_set(f"{title} {desc}")
-            signal_data.append({
-                "id": row["id"],
-                "title": title,
-                "description": desc,
-                "category": category,
-                "keywords": keywords,
-                "discovered_at": row["discovered_at"],
-                "source": row["source"],
-                "community_score": row["community_score"] or 0.0,
-            })
+            signal_data.append(
+                {
+                    "id": row["id"],
+                    "title": title,
+                    "description": desc,
+                    "category": category,
+                    "keywords": keywords,
+                    "discovered_at": row["discovered_at"],
+                    "source": row["source"],
+                    "community_score": row["community_score"] or 0.0,
+                }
+            )
 
         # -----------------------------------------------------------------
         # Step 3: Group by category
@@ -457,8 +586,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
                        WHERE discovered_at >= ? AND discovered_at < ?
                          AND (category = ? OR category IS NULL)
                          AND (title || ' ' || description) LIKE ?""",
-                    (prev_cutoff, cutoff, category,
-                     f"%{common_keywords[0]}%"),
+                    (prev_cutoff, cutoff, category, f"%{common_keywords[0]}%"),
                 ).fetchone()["cnt"]
                 prev_velocity = prev_count / max(time_window_days, 1)
                 acceleration = velocity - prev_velocity
@@ -467,7 +595,11 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
                 # Step 7: Lifecycle status
                 # -----------------------------------------------------------------
                 status = _determine_lifecycle(
-                    signal_count, velocity, acceleration, last_seen, now,
+                    signal_count,
+                    velocity,
+                    acceleration,
+                    last_seen,
+                    now,
                 )
 
                 # Check if trend with same fingerprint already exists
@@ -476,9 +608,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
                     (fingerprint,),
                 ).fetchone()
 
-                avg_community_score = (
-                    sum(s["community_score"] for s in cluster_signals) / signal_count
-                )
+                avg_community_score = sum(s["community_score"] for s in cluster_signals) / signal_count
                 sources = list(set(s["source"] for s in cluster_signals))
 
                 trend = {
@@ -509,9 +639,7 @@ def detect_trends(time_window_days=30, min_signals=3, db_path=None):
         # -----------------------------------------------------------------
         # Step 8: Mark stale trends that got no new signals
         # -----------------------------------------------------------------
-        stale_cutoff = (now - timedelta(days=LIFECYCLE["stale_days"])).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        stale_cutoff = (now - timedelta(days=LIFECYCLE["stale_days"])).strftime("%Y-%m-%dT%H:%M:%SZ")
         conn.execute(
             """UPDATE innovation_trends SET status = 'stale'
                WHERE status IN ('emerging', 'active')
@@ -746,14 +874,8 @@ def get_trend_report(db_path=None):
         return {
             "generated_at": _now(),
             "total_trends": total,
-            "by_status": {
-                status: [_trend_summary(t) for t in trend_list]
-                for status, trend_list in by_status.items()
-            },
-            "by_category": {
-                cat: [_trend_summary(t) for t in trend_list]
-                for cat, trend_list in by_category.items()
-            },
+            "by_status": {status: [_trend_summary(t) for t in trend_list] for status, trend_list in by_status.items()},
+            "by_category": {cat: [_trend_summary(t) for t in trend_list] for cat, trend_list in by_category.items()},
             "top_trends": [_trend_summary(t) for t in top_trends],
             "statistics": {
                 "total_signals_in_trends": total_signals,
@@ -847,11 +969,13 @@ def get_trend_velocity(trend_id, db_path=None):
             window_count = sum(daily_counts[d] for d in window_days)
             window_size = len(window_days)
             vel = window_count / window_size if window_size > 0 else 0
-            rolling_velocity.append({
-                "date": day,
-                "count": daily_counts[day],
-                "rolling_7d_velocity": round(vel, 4),
-            })
+            rolling_velocity.append(
+                {
+                    "date": day,
+                    "count": daily_counts[day],
+                    "rolling_7d_velocity": round(vel, 4),
+                }
+            )
 
         # Projection: if velocity > 0, estimate signals in next 7 days
         current_velocity = row["velocity"]
@@ -904,36 +1028,18 @@ def main():
         description="ICDEV Cross-Signal Trend Detector — detect emerging patterns from innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--detect", action="store_true", help="Detect trends from signals within the time window")
+    group.add_argument("--report", action="store_true", help="Generate a summary report of all tracked trends")
     group.add_argument(
-        "--detect", action="store_true",
-        help="Detect trends from signals within the time window"
-    )
-    group.add_argument(
-        "--report", action="store_true",
-        help="Generate a summary report of all tracked trends"
-    )
-    group.add_argument(
-        "--velocity", action="store_true",
-        help="Measure velocity for a specific trend (requires --trend-id)"
+        "--velocity", action="store_true", help="Measure velocity for a specific trend (requires --trend-id)"
     )
 
-    parser.add_argument(
-        "--days", type=int, default=30,
-        help="Time window in days for trend detection (default: 30)"
-    )
-    parser.add_argument(
-        "--min-signals", type=int, default=3,
-        help="Minimum signals to form a trend (default: 3)"
-    )
-    parser.add_argument(
-        "--trend-id", type=str, default=None,
-        help="Trend ID for --velocity command"
-    )
+    parser.add_argument("--days", type=int, default=30, help="Time window in days for trend detection (default: 30)")
+    parser.add_argument("--min-signals", type=int, default=3, help="Minimum signals to form a trend (default: 3)")
+    parser.add_argument("--trend-id", type=str, default=None, help="Trend ID for --velocity command")
 
     args = parser.parse_args()
 
@@ -950,9 +1056,7 @@ def main():
             if not args.trend_id:
                 print("ERROR: --velocity requires --trend-id", file=sys.stderr)
                 sys.exit(1)
-            result = get_trend_velocity(
-                trend_id=args.trend_id, db_path=args.db_path
-            )
+            result = get_trend_velocity(trend_id=args.trend_id, db_path=args.db_path)
         else:
             result = {"error": "No action specified"}
 
@@ -1015,8 +1119,7 @@ def _print_human(args, result):
         print("  Top Trends:")
         for t in result.get("top_trends", [])[:10]:
             print(
-                f"    [{t['status'][:3].upper()}] {t['name']}"
-                f"  — {t['signal_count']} signals, v={t['velocity']:.4f}/day"
+                f"    [{t['status'][:3].upper()}] {t['name']}  — {t['signal_count']} signals, v={t['velocity']:.4f}/day"
             )
 
     elif args.velocity:
@@ -1035,10 +1138,7 @@ def _print_human(args, result):
             print("  Daily Breakdown (last 10):")
             for entry in breakdown[-10:]:
                 bar = "#" * min(entry["count"], 40)
-                print(
-                    f"    {entry['date']}: {entry['count']:3d} {bar}"
-                    f"  (7d avg: {entry['rolling_7d_velocity']:.2f})"
-                )
+                print(f"    {entry['date']}: {entry['count']:3d} {bar}  (7d avg: {entry['rolling_7d_velocity']:.2f})")
 
 
 if __name__ == "__main__":

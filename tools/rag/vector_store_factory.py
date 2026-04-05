@@ -22,6 +22,7 @@ def _load_rag_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, "r") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -68,6 +69,7 @@ class VectorStoreFactory:
         # Try ChromaDB
         try:
             import chromadb  # noqa: F401
+
             return VectorStoreFactory._create_chromadb(vs_cfg, tenant_id)
         except ImportError:
             pass
@@ -75,6 +77,7 @@ class VectorStoreFactory:
         # Try FAISS
         try:
             import faiss  # noqa: F401
+
             return VectorStoreFactory._create_faiss(vs_cfg, tenant_id)
         except ImportError:
             pass
@@ -85,6 +88,7 @@ class VectorStoreFactory:
     @staticmethod
     def _create_sqlite(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
         from tools.rag.sqlite_vector_store import SQLiteVectorStore
+
         sqlite_cfg = vs_cfg.get("sqlite", {})
         db_path = sqlite_cfg.get("db_path", "")
         if db_path:
@@ -95,6 +99,7 @@ class VectorStoreFactory:
     def _create_chromadb(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
         try:
             from tools.rag.chroma_vector_store import ChromaVectorStore
+
             chroma_cfg = vs_cfg.get("chromadb", {})
             persist_dir = chroma_cfg.get("persist_dir", "data/rag/chromadb/")
             return ChromaVectorStore(
@@ -109,6 +114,7 @@ class VectorStoreFactory:
     def _create_faiss(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
         try:
             from tools.rag.faiss_vector_store import FAISSVectorStore
+
             faiss_cfg = vs_cfg.get("faiss", {})
             index_dir = faiss_cfg.get("index_dir", "data/rag/faiss/")
             return FAISSVectorStore(
@@ -125,11 +131,13 @@ class VectorStoreFactory:
         available = ["sqlite"]  # Always available
         try:
             import chromadb  # noqa: F401
+
             available.append("chromadb")
         except ImportError:
             pass
         try:
             import faiss  # noqa: F401
+
             available.append("faiss")
         except ImportError:
             pass

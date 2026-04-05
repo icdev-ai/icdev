@@ -5,6 +5,7 @@ Buffers DB writes in a thread-safe queue. A single background writer thread
 holds one WAL-mode SQLite connection and flushes periodically, eliminating
 per-sync DB open/close overhead. All writes are INSERT-only (NIST AU compliant).
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,9 +48,7 @@ class WriteBatcher:
         self._flush_interval = flush_interval_ms / 1000.0
         self._max_buffer = max_buffer_size
 
-        self._queue: queue.Queue[WriteItem] = queue.Queue(
-            maxsize=max_buffer_size * 2
-        )
+        self._queue: queue.Queue[WriteItem] = queue.Queue(maxsize=max_buffer_size * 2)
         self._writer_thread: Optional[threading.Thread] = None
         self._shutdown_event = threading.Event()
         self._conn: Optional[sqlite3.Connection] = None

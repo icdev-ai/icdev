@@ -135,12 +135,16 @@ SQL:"""
         # Use vendor-agnostic LLM router (reads model from llm_config.yaml)
         from tools.llm import get_router
         from tools.llm.provider import LLMRequest
+
         router = get_router()
-        llm_resp = router.invoke("nlq_sql", LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.0,
-        ))
+        llm_resp = router.invoke(
+            "nlq_sql",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500,
+                temperature=0.0,
+            ),
+        )
         sql = llm_resp.content.strip()
 
         # Clean up: remove markdown code blocks if present
@@ -163,10 +167,12 @@ def _generate_sql_fallback(query: str, schema: dict) -> Optional[str]:
 
     # Simple patterns
     if "all projects" in query_lower or "list projects" in query_lower or "show projects" in query_lower:
-        return "SELECT id, name, type, status, classification, created_at FROM projects ORDER BY created_at DESC LIMIT 100"
+        return (
+            "SELECT id, name, type, status, classification, created_at FROM projects ORDER BY created_at DESC LIMIT 100"
+        )
 
     if "active projects" in query_lower:
-        return "SELECT id, name, type, classification, created_at FROM projects WHERE status = 'active' ORDER BY created_at DESC"
+        return "SELECT id, name, type, classification, created_at FROM projects WHERE status = 'active' ORDER BY created_at DESC"  # noqa: E501
 
     if "cat1" in query_lower and "stig" in query_lower:
         return "SELECT * FROM stig_findings WHERE severity = 'CAT1' AND status = 'Open' ORDER BY created_at DESC"
@@ -181,13 +187,13 @@ def _generate_sql_fallback(query: str, schema: dict) -> Optional[str]:
         return "SELECT * FROM agents ORDER BY name"
 
     if "vulnerabilit" in query_lower:
-        return "SELECT * FROM dependency_vulnerabilities WHERE status = 'open' ORDER BY severity, created_at DESC LIMIT 100"
+        return "SELECT * FROM dependency_vulnerabilities WHERE status = 'open' ORDER BY severity, created_at DESC LIMIT 100"  # noqa: E501
 
     if "deployment" in query_lower:
         return "SELECT * FROM deployments ORDER BY created_at DESC LIMIT 50"
 
     if "compliance" in query_lower and "score" in query_lower:
-        return "SELECT project_id, framework_id, coverage_pct, gate_status, last_assessed FROM project_framework_status ORDER BY coverage_pct ASC"
+        return "SELECT project_id, framework_id, coverage_pct, gate_status, last_assessed FROM project_framework_status ORDER BY coverage_pct ASC"  # noqa: E501
 
     if "hook" in query_lower and "event" in query_lower:
         return "SELECT * FROM hook_events ORDER BY created_at DESC LIMIT 100"
@@ -242,9 +248,15 @@ def format_results(results: dict) -> dict:
     }
 
 
-def log_nlq_query(query_text: str, generated_sql: str, result_count: int,
-                  execution_time_ms: int, actor: str, status: str,
-                  error_message: str = None):
+def log_nlq_query(
+    query_text: str,
+    generated_sql: str,
+    result_count: int,
+    execution_time_ms: int,
+    actor: str,
+    status: str,
+    error_message: str = None,
+):
     """Log NLQ query to audit table."""
     try:
         conn = sqlite3.connect(str(DB_PATH))
@@ -253,8 +265,16 @@ def log_nlq_query(query_text: str, generated_sql: str, result_count: int,
                (query_text, generated_sql, result_count, execution_time_ms,
                 actor, status, error_message, classification)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (query_text, generated_sql, result_count, execution_time_ms,
-             actor, status, error_message, DEFAULT_CLASSIFICATION),
+            (
+                query_text,
+                generated_sql,
+                result_count,
+                execution_time_ms,
+                actor,
+                status,
+                error_message,
+                DEFAULT_CLASSIFICATION,
+            ),
         )
         conn.commit()
         conn.close()
@@ -274,8 +294,7 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
 
     if not generated_sql:
         duration_ms = int((time.time() - start_time) * 1000)
-        log_nlq_query(query_text, None, 0, duration_ms, actor, "error",
-                      "Could not generate SQL from query")
+        log_nlq_query(query_text, None, 0, duration_ms, actor, "error", "Could not generate SQL from query")
         return {
             "status": "error",
             "error": "Could not generate SQL from your question. Try rephrasing.",
@@ -286,8 +305,7 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
     is_valid, validation_error = validate_sql(generated_sql)
     if not is_valid:
         duration_ms = int((time.time() - start_time) * 1000)
-        log_nlq_query(query_text, generated_sql, 0, duration_ms, actor, "blocked",
-                      validation_error)
+        log_nlq_query(query_text, generated_sql, 0, duration_ms, actor, "blocked", validation_error)
         return {
             "status": "blocked",
             "error": f"Query blocked by security policy: {validation_error}",
@@ -301,8 +319,7 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
         formatted = format_results(results)
         duration_ms = int((time.time() - start_time) * 1000)
 
-        log_nlq_query(query_text, generated_sql, formatted["row_count"],
-                      duration_ms, actor, "success")
+        log_nlq_query(query_text, generated_sql, formatted["row_count"], duration_ms, actor, "success")
 
         return {
             "status": "success",
@@ -314,8 +331,7 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
         }
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
-        log_nlq_query(query_text, generated_sql, 0, duration_ms, actor, "error",
-                      str(e))
+        log_nlq_query(query_text, generated_sql, 0, duration_ms, actor, "error", str(e))
         return {
             "status": "error",
             "error": f"Query execution failed: {str(e)}",

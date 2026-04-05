@@ -32,30 +32,111 @@ if str(BASE_DIR) not in sys.path:
 
 # ── Keyword sets for ambiguity scoring ────────────────────────────────────
 
-_PROBLEM_KEYWORDS = frozenset([
-    "problem", "issue", "gap", "challenge", "failure", "risk", "bug",
-    "vulnerability", "deficiency", "weakness", "error", "missing",
-])
-_SOLUTION_KEYWORDS = frozenset([
-    "solution", "approach", "implement", "fix", "resolve", "create",
-    "build", "generate", "improve", "optimize", "refactor", "add",
-])
-_VERIFICATION_KEYWORDS = frozenset([
-    "test", "verify", "measure", "metric", "assert", "validate",
-    "check", "confirm", "benchmark", "coverage", "score", "gate",
-])
-_STOPWORDS = frozenset([
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-    "should", "may", "might", "can", "could", "of", "in", "to", "for",
-    "with", "on", "at", "from", "by", "as", "into", "and", "or", "not",
-    "this", "that", "it", "its", "they", "them", "their", "we", "our",
-])
+_PROBLEM_KEYWORDS = frozenset(
+    [
+        "problem",
+        "issue",
+        "gap",
+        "challenge",
+        "failure",
+        "risk",
+        "bug",
+        "vulnerability",
+        "deficiency",
+        "weakness",
+        "error",
+        "missing",
+    ]
+)
+_SOLUTION_KEYWORDS = frozenset(
+    [
+        "solution",
+        "approach",
+        "implement",
+        "fix",
+        "resolve",
+        "create",
+        "build",
+        "generate",
+        "improve",
+        "optimize",
+        "refactor",
+        "add",
+    ]
+)
+_VERIFICATION_KEYWORDS = frozenset(
+    [
+        "test",
+        "verify",
+        "measure",
+        "metric",
+        "assert",
+        "validate",
+        "check",
+        "confirm",
+        "benchmark",
+        "coverage",
+        "score",
+        "gate",
+    ]
+)
+_STOPWORDS = frozenset(
+    [
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "shall",
+        "should",
+        "may",
+        "might",
+        "can",
+        "could",
+        "of",
+        "in",
+        "to",
+        "for",
+        "with",
+        "on",
+        "at",
+        "from",
+        "by",
+        "as",
+        "into",
+        "and",
+        "or",
+        "not",
+        "this",
+        "that",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "we",
+        "our",
+    ]
+)
 
 
 def _tokenize(text: str) -> set:
     """Lowercase, strip non-alpha, remove stopwords."""
     import re
+
     words = set(re.findall(r"[a-z_]+", text.lower()))
     return words - _STOPWORDS
 
@@ -112,9 +193,7 @@ class ConvergenceGate:
         """Run all convergence checks. Returns full result dict."""
 
         goal = self._compute_goal_drift(reflex_description, current_output)
-        metric, metric_detail = self._compute_metric_drift(
-            reflex_name, current_metric
-        )
+        metric, metric_detail = self._compute_metric_drift(reflex_name, current_metric)
         output_hash = hashlib.sha256(current_output.encode()).hexdigest()
         similarity = self._compute_output_similarity(reflex_name, output_hash)
 
@@ -126,9 +205,7 @@ class ConvergenceGate:
         )
 
         ambiguity = self._compute_ambiguity(current_output)
-        converged = similarity >= self.thresholds.get(
-            "convergence_similarity", 0.95
-        )
+        converged = similarity >= self.thresholds.get("convergence_similarity", 0.95)
         drift_ok = combined <= self.thresholds.get("max_acceptable_drift", 0.30)
         ambiguity_ok = ambiguity <= self.thresholds.get("max_ambiguity", 0.20)
         retro = self._should_trigger_retrospective(generation, combined)
@@ -171,9 +248,7 @@ class ConvergenceGate:
         sim = _jaccard(charter_kw, output_kw)
         return round(1.0 - sim, 4)  # drift = 1 - similarity
 
-    def _compute_metric_drift(
-        self, reflex_name: str, current: float
-    ) -> Tuple[float, Dict]:
+    def _compute_metric_drift(self, reflex_name: str, current: float) -> Tuple[float, Dict]:
         """Slope-based metric drift. Low slope = diminishing returns."""
         from tools.db.storage import get_connection
 
@@ -205,9 +280,7 @@ class ConvergenceGate:
         }
         return round(drift, 4), detail
 
-    def _compute_output_similarity(
-        self, reflex_name: str, current_hash: str
-    ) -> float:
+    def _compute_output_similarity(self, reflex_name: str, current_hash: str) -> float:
         """Compare current output hash to most recent GKP output hash."""
         from tools.db.storage import get_connection
 
@@ -255,9 +328,7 @@ class ConvergenceGate:
 
     # ── Retrospective trigger ─────────────────────────────────────────
 
-    def _should_trigger_retrospective(
-        self, generation: int, combined_drift: float
-    ) -> bool:
+    def _should_trigger_retrospective(self, generation: int, combined_drift: float) -> bool:
         n = self.retrospective.get("trigger_every_n_cycles", 5)
         drift_thresh = self.retrospective.get("trigger_on_drift_above", 0.30)
         return (generation > 0 and generation % n == 0) or combined_drift > drift_thresh

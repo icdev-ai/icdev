@@ -242,24 +242,20 @@ SEED_PROJECT_ID = "proj-test-001"
 def _seed_platform_db(conn):
     """Insert minimal seed data into platform DB."""
     conn.execute(
-        "INSERT OR IGNORE INTO tenants (id, name, slug, tier, impact_level, status) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO tenants (id, name, slug, tier, impact_level, status) VALUES (?, ?, ?, ?, ?, ?)",
         (SEED_TENANT_ID, "Test Org", "test-org", "professional", "IL4", "active"),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO users (id, tenant_id, email, role, display_name) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO users (id, tenant_id, email, role, display_name) VALUES (?, ?, ?, ?, ?)",
         (SEED_USER_ID, SEED_TENANT_ID, "dev@test.gov", "admin", "Test Admin"),
     )
     conn.execute(
         "INSERT OR IGNORE INTO api_keys (id, tenant_id, user_id, name, key_hash, key_prefix, scopes) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("key-test-001", SEED_TENANT_ID, SEED_USER_ID, "test-key",
-         SEED_API_KEY_HASH, SEED_API_KEY_PREFIX, '["*"]'),
+        ("key-test-001", SEED_TENANT_ID, SEED_USER_ID, "test-key", SEED_API_KEY_HASH, SEED_API_KEY_PREFIX, '["*"]'),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO subscriptions (id, tenant_id, tier, status) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO subscriptions (id, tenant_id, tier, status) VALUES (?, ?, ?, ?)",
         ("sub-test-001", SEED_TENANT_ID, "professional", "active"),
     )
     conn.commit()
@@ -312,6 +308,7 @@ def api_gateway_app(platform_db, icdev_db):
     os.environ["PLATFORM_DB_PATH"] = str(platform_db)
 
     from icdev.tools.saas.api_gateway import create_app
+
     app = create_app(config={"TESTING": True})
 
     yield app
@@ -330,6 +327,7 @@ def dashboard_app(icdev_db):
     """Dashboard Flask test app with patched DB path."""
     with patch("icdev.tools.dashboard.app.DB_PATH", str(icdev_db)):
         from icdev.tools.dashboard.app import create_app
+
         app = create_app()
         app.config["TESTING"] = True
         yield app
@@ -473,6 +471,7 @@ def rate_limiter_backend():
     """Fresh in-memory rate limiter backend for testing."""
     try:
         from icdev.tools.saas.rate_limiter import InMemoryBackend
+
         return InMemoryBackend()
     except ImportError:
         pytest.skip("rate_limiter module not available")

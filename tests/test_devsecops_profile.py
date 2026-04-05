@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.devsecops.profile_manager — DevSecOps profile CRUD, maturity
@@ -54,6 +55,7 @@ def devsecops_db(icdev_db):
 # ---------------------------------------------------------------------------
 # TestCreateProfile
 # ---------------------------------------------------------------------------
+
 
 class TestCreateProfile:
     """create_profile: insert a new DevSecOps profile into the database."""
@@ -110,6 +112,7 @@ class TestCreateProfile:
 # TestGetProfile
 # ---------------------------------------------------------------------------
 
+
 class TestGetProfile:
     """get_profile: retrieve a stored profile by project ID."""
 
@@ -136,6 +139,7 @@ class TestGetProfile:
 # ---------------------------------------------------------------------------
 # TestUpdateProfile
 # ---------------------------------------------------------------------------
+
 
 class TestUpdateProfile:
     """update_profile: modify active stages and maturity level."""
@@ -173,6 +177,7 @@ class TestUpdateProfile:
 # ---------------------------------------------------------------------------
 # TestDetectMaturity
 # ---------------------------------------------------------------------------
+
 
 class TestDetectMaturity:
     """detect_maturity_from_text: pure-function keyword-based detection."""
@@ -220,6 +225,7 @@ class TestDetectMaturity:
 # TestAssessMaturity
 # ---------------------------------------------------------------------------
 
+
 class TestAssessMaturity:
     """assess_maturity: evaluate profile against maturity requirements."""
 
@@ -236,12 +242,17 @@ class TestAssessMaturity:
 
     def test_assess_level_5_has_no_next_level(self, devsecops_db):
         all_stages = [
-            "sast", "sca", "secret_detection", "container_scan",
-            "policy_as_code", "sbom_attestation", "image_signing", "rasp",
+            "sast",
+            "sca",
+            "secret_detection",
+            "container_scan",
+            "policy_as_code",
+            "sbom_attestation",
+            "image_signing",
+            "rasp",
         ]
         with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
-            create_profile("proj-test-001", maturity_level="level_5_optimized",
-                           stages=all_stages)
+            create_profile("proj-test-001", maturity_level="level_5_optimized", stages=all_stages)
             result = assess_maturity("proj-test-001")
 
         assert result["current_level"] == "level_5_optimized"
@@ -258,6 +269,7 @@ class TestAssessMaturity:
 # ---------------------------------------------------------------------------
 # TestConfigFallback
 # ---------------------------------------------------------------------------
+
 
 class TestConfigFallback:
     """_load_config: YAML loading with built-in fallback defaults."""
@@ -284,9 +296,7 @@ class TestConfigFallback:
 
         level_3 = config["maturity_levels"]["level_3_defined"]
         assert level_3["min_stages"] == 4
-        assert set(level_3["required_stages"]) == {
-            "sast", "sca", "secret_detection", "container_scan"
-        }
+        assert set(level_3["required_stages"]) == {"sast", "sca", "secret_detection", "container_scan"}
 
 
 # [TEMPLATE: CUI // SP-CTI]

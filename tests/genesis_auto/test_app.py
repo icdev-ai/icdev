@@ -17,31 +17,36 @@ import pytest
 
 # --- Module Import ---
 
+
 def test_app_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.dashboard.app
+        import tools.dashboard.app  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 
 
 # --- Function Signature Tests ---
 
+
 def test_app_create_app_exists():
     """Verify create_app exists and is callable."""
     try:
         from tools.dashboard.app import create_app
-        assert callable(create_app), 'create_app is not callable'
+
+        assert callable(create_app), "create_app is not callable"
     except ImportError:
         pytest.skip("Module not importable")
 
 
 # --- Constants ---
 
+
 def test_app_constants():
     """Verify module exports expected constants."""
     try:
         import tools.dashboard.app as mod
+
         assert hasattr(mod, "_HAS_FINETUNE_API"), "Missing constant _HAS_FINETUNE_API"
         assert hasattr(mod, "_HAS_FINETUNE_API"), "Missing constant _HAS_FINETUNE_API"
         assert hasattr(mod, "_HAS_GOVCON"), "Missing constant _HAS_GOVCON"

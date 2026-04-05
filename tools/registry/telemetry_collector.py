@@ -44,6 +44,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # =========================================================================
 try:
     from tools.security.ai_telemetry_logger import AITelemetryLogger
+
     _telemetry = AITelemetryLogger()
 except Exception:
     _telemetry = None
@@ -76,10 +77,7 @@ class TelemetryCollector:
 
     def _get_connection(self) -> sqlite3.Connection:
         if not self.db_path.exists():
-            raise FileNotFoundError(
-                f"Database not found: {self.db_path}\n"
-                "Run: python tools/db/init_icdev_db.py"
-            )
+            raise FileNotFoundError(f"Database not found: {self.db_path}\nRun: python tools/db/init_icdev_db.py")
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         return conn
@@ -200,15 +198,9 @@ class TelemetryCollector:
             else:
                 telemetry["health_status"] = "unknown"
 
-            telemetry["genome_version"] = data.get(
-                "genome_version", data.get("version")
-            )
-            telemetry["uptime_hours"] = float(
-                data.get("uptime_hours", 0.0)
-            )
-            telemetry["error_rate"] = float(
-                data.get("error_rate", 0.0)
-            )
+            telemetry["genome_version"] = data.get("genome_version", data.get("version"))
+            telemetry["uptime_hours"] = float(data.get("uptime_hours", 0.0))
+            telemetry["error_rate"] = float(data.get("error_rate", 0.0))
 
             compliance = data.get("compliance_scores", {})
             telemetry["compliance_scores_json"] = json.dumps(compliance)
@@ -235,15 +227,11 @@ class TelemetryCollector:
         except urllib.error.URLError as e:
             telemetry["health_status"] = "unreachable"
             telemetry["raw_response"] = str(e)
-            telemetry["response_time_ms"] = int(
-                (time.time() - start_time) * 1000
-            )
+            telemetry["response_time_ms"] = int((time.time() - start_time) * 1000)
         except Exception as e:
             telemetry["health_status"] = "unreachable"
             telemetry["raw_response"] = str(e)
-            telemetry["response_time_ms"] = int(
-                (time.time() - start_time) * 1000
-            )
+            telemetry["response_time_ms"] = int((time.time() - start_time) * 1000)
 
         return telemetry
 
@@ -286,7 +274,8 @@ class TelemetryCollector:
             conn.close()
 
     def get_latest_heartbeat(
-        self, child_id: str,
+        self,
+        child_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Get the most recent heartbeat for a child app.
 
@@ -407,9 +396,7 @@ class TelemetryCollector:
             self._ensure_table(conn)
 
             # Get distinct child IDs from telemetry
-            child_ids = conn.execute(
-                "SELECT DISTINCT child_id FROM child_telemetry"
-            ).fetchall()
+            child_ids = conn.execute("SELECT DISTINCT child_id FROM child_telemetry").fetchall()
 
             summaries = []
             for row in child_ids:

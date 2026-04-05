@@ -21,6 +21,7 @@ try:
         LocalStorageProvider,
         OCIObjectStorageProvider,
     )
+
     _HAS_CLOUD = True
 except ImportError:
     _HAS_CLOUD = False
@@ -55,8 +56,7 @@ class CloudSyncProvider(SyncTargetProvider):
     list/head metadata when available.
     """
 
-    def __init__(self, cloud_provider: str = "s3", region: str = "",
-                 provider_instance=None, **kwargs):
+    def __init__(self, cloud_provider: str = "s3", region: str = "", provider_instance=None, **kwargs):
         """Initialize cloud sync provider.
 
         Args:
@@ -101,11 +101,13 @@ class CloudSyncProvider(SyncTargetProvider):
             for key in keys:
                 if not key or key.endswith("/"):
                     continue  # Skip directory markers
-                files.append({
-                    "relative_path": key.replace("\\", "/"),
-                    "size": 0,  # Cloud list typically doesn't include size
-                    "mtime_epoch": 0.0,
-                })
+                files.append(
+                    {
+                        "relative_path": key.replace("\\", "/"),
+                        "size": 0,  # Cloud list typically doesn't include size
+                        "mtime_epoch": 0.0,
+                    }
+                )
             return files
         except Exception:
             return []

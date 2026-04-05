@@ -57,6 +57,7 @@ class MCPOAuthVerifier:
         """Get HMAC secret key from environment or generate one."""
         import os
         import secrets as _secrets
+
         key = os.environ.get("ICDEV_MCP_OAUTH_SECRET", "")
         if not key:
             key = os.environ.get("ICDEV_DASHBOARD_SECRET", "")
@@ -117,7 +118,7 @@ class MCPOAuthVerifier:
             conn.row_factory = sqlite3.Row
 
             row = conn.execute(
-                "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ? AND ak.is_active = 1",
+                "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ? AND ak.is_active = 1",  # noqa: E501
                 (key_hash,),
             ).fetchone()
             conn.close()
@@ -153,9 +154,7 @@ class MCPOAuthVerifier:
             signature = urlsafe_b64decode(sig_b64 + "==")
 
             # Verify HMAC
-            expected_sig = hmac.new(
-                self.secret_key.encode(), payload_bytes, hashlib.sha256
-            ).digest()
+            expected_sig = hmac.new(self.secret_key.encode(), payload_bytes, hashlib.sha256).digest()
 
             if not hmac.compare_digest(signature, expected_sig):
                 return {"verified": False, "error": "HMAC signature mismatch"}
@@ -205,7 +204,9 @@ class MCPOAuthVerifier:
                 "user_id": payload.get("sub", "unknown"),
                 "email": payload.get("email", ""),
                 "role": payload.get("role", "developer"),
-                "scopes": payload.get("scope", "").split() if isinstance(payload.get("scope"), str) else payload.get("scopes", []),
+                "scopes": payload.get("scope", "").split()
+                if isinstance(payload.get("scope"), str)
+                else payload.get("scopes", []),
                 "tenant_id": payload.get("tenant_id"),
             }
         except Exception:
@@ -252,9 +253,7 @@ class MCPOAuthVerifier:
         }
 
         payload_bytes = json.dumps(payload, separators=(",", ":")).encode()
-        signature = hmac.new(
-            self.secret_key.encode(), payload_bytes, hashlib.sha256
-        ).digest()
+        signature = hmac.new(self.secret_key.encode(), payload_bytes, hashlib.sha256).digest()
 
         payload_b64 = urlsafe_b64encode(payload_bytes).rstrip(b"=").decode()
         sig_b64 = urlsafe_b64encode(signature).rstrip(b"=").decode()

@@ -43,11 +43,13 @@ def list_agents():
         active = sum(1 for a in agents if a["status"] == "active")
         inactive = len(agents) - active
 
-        return jsonify({
-            "agents": agents,
-            "total": len(agents),
-            "active": active,
-            "inactive": inactive,
-        })
+        return jsonify(
+            {
+                "agents": agents,
+                "total": len(agents),
+                "active": active,
+                "inactive": inactive,
+            }
+        )
     finally:
         conn.close()

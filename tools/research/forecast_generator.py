@@ -12,6 +12,7 @@ Architecture Decisions:
 
 CUI // SP-CTI
 """
+
 from __future__ import annotations
 
 import json
@@ -124,6 +125,7 @@ def _parse_json(text: str) -> Optional[List[Dict]]:
 
     # Strip qwen3.5 thinking tags (model emits <think>...</think> before JSON)
     import re
+
     cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
 
     # Strip markdown code fences
@@ -165,9 +167,7 @@ def _parse_json(text: str) -> Optional[List[Dict]]:
 # ---------------------------------------------------------------------------
 # Cross-engine data aggregation (D-RES-18)
 # ---------------------------------------------------------------------------
-def _aggregate_cross_engine_data(
-    session_id: str, db_path: Optional[str] = None
-) -> Dict[str, Any]:
+def _aggregate_cross_engine_data(session_id: str, db_path: Optional[str] = None) -> Dict[str, Any]:
     """Aggregate data from Research + Innovation + Creative engines.
 
     Queries research tables for current session, plus innovation and creative
@@ -187,9 +187,7 @@ def _aggregate_cross_engine_data(
 
     try:
         # Session info
-        row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if row:
             result["session"] = dict(row)
 
@@ -308,9 +306,7 @@ def _format_data_section(items: List[Dict], max_items: int = 10) -> str:
     return "\n".join(lines)
 
 
-def _build_forecast_prompt(
-    aggregated: Dict[str, Any], config: Dict
-) -> str:
+def _build_forecast_prompt(aggregated: Dict[str, Any], config: Dict) -> str:
     """Build LLM prompt from aggregated cross-engine data."""
     forecast_cfg = config.get("forecast", {})
     max_predictions = forecast_cfg.get("max_predictions", 5)
@@ -323,9 +319,7 @@ def _build_forecast_prompt(
         prediction_types=", ".join(PREDICTION_TYPES),
         time_horizons=", ".join(TIME_HORIZONS),
         research_data=_format_data_section(aggregated["signals"], 15),
-        innovation_data=_format_data_section(
-            aggregated["innovation_trends"] + aggregated["innovation_signals"], 10
-        ),
+        innovation_data=_format_data_section(aggregated["innovation_trends"] + aggregated["innovation_signals"], 10),
         creative_data=_format_data_section(
             aggregated["creative_pain_points"] + aggregated["creative_feature_gaps"], 10
         ),
@@ -396,10 +390,10 @@ def _score_surprise(
 
     # Adjust based on prediction type (some types are inherently more surprising)
     type_boost = {
-        "greenfield": 0.10,       # unseen opportunities are surprising
-        "convergence": 0.08,      # cross-domain convergence is unexpected
-        "disruption": 0.05,       # disruptions can be surprising
-        "regulatory_shift": 0.03, # regulatory changes are somewhat predictable
+        "greenfield": 0.10,  # unseen opportunities are surprising
+        "convergence": 0.08,  # cross-domain convergence is unexpected
+        "disruption": 0.05,  # disruptions can be surprising
+        "regulatory_shift": 0.03,  # regulatory changes are somewhat predictable
         "trend_trajectory": 0.0,  # extending existing trends is least surprising
     }
     pred_type = prediction.get("prediction_type", "trend_trajectory")
@@ -413,8 +407,15 @@ def _score_surprise(
     # Boost if prediction contradicts majority sentiment
     title_lower = (prediction.get("title", "") + " " + prediction.get("description", "")).lower()
     contrarian_keywords = [
-        "contrary", "despite", "unexpected", "overlooked", "hidden",
-        "contrarian", "underestimated", "paradox", "counterintuitive",
+        "contrary",
+        "despite",
+        "unexpected",
+        "overlooked",
+        "hidden",
+        "contrarian",
+        "underestimated",
+        "paradox",
+        "counterintuitive",
     ]
     contrarian_count = sum(1 for kw in contrarian_keywords if kw in title_lower)
     base_score += min(contrarian_count * 0.04, 0.12)
@@ -466,17 +467,19 @@ def _rank_predictions(
         if horizon not in TIME_HORIZONS:
             horizon = "6mo"
 
-        ranked.append({
-            "title": (pred.get("title", "") or "")[:500],
-            "description": pred.get("description", ""),
-            "prediction_type": pred_type,
-            "confidence": confidence,
-            "surprise_score": surprise,
-            "composite_rank": composite,
-            "time_horizon": horizon,
-            "supporting_evidence": pred.get("supporting_evidence", []),
-            "cross_engine_sources": pred.get("cross_engine_sources", []),
-        })
+        ranked.append(
+            {
+                "title": (pred.get("title", "") or "")[:500],
+                "description": pred.get("description", ""),
+                "prediction_type": pred_type,
+                "confidence": confidence,
+                "surprise_score": surprise,
+                "composite_rank": composite,
+                "time_horizon": horizon,
+                "supporting_evidence": pred.get("supporting_evidence", []),
+                "cross_engine_sources": pred.get("cross_engine_sources", []),
+            }
+        )
 
     # Sort by composite_rank descending
     ranked.sort(key=lambda x: x["composite_rank"], reverse=True)
@@ -621,9 +624,7 @@ def generate_forecasts(
     forecast_ids = []
     if ranked:
         try:
-            forecast_ids = _store_forecasts(
-                session_id, ranked, llm_model, llm_raw, db_path
-            )
+            forecast_ids = _store_forecasts(session_id, ranked, llm_model, llm_raw, db_path)
         except Exception as exc:
             logger.error("Failed to store forecasts: %s", exc)
 
@@ -631,10 +632,7 @@ def generate_forecasts(
 
     return {
         "session_id": session_id,
-        "predictions": [
-            {**pred, "id": fid}
-            for pred, fid in zip(ranked, forecast_ids)
-        ] if forecast_ids else ranked,
+        "predictions": [{**pred, "id": fid} for pred, fid in zip(ranked, forecast_ids)] if forecast_ids else ranked,
         "count": len(ranked),
         "model": llm_model,
         "cross_engine_sources": {
@@ -651,9 +649,7 @@ def generate_forecasts(
 # ---------------------------------------------------------------------------
 # Deterministic fallback
 # ---------------------------------------------------------------------------
-def _deterministic_forecast(
-    aggregated: Dict[str, Any], config: Dict
-) -> List[Dict]:
+def _deterministic_forecast(aggregated: Dict[str, Any], config: Dict) -> List[Dict]:
     """Generate basic predictions without LLM — trend extrapolation only.
 
     Used when forecast.method = 'deterministic' or LLM is unavailable.
@@ -667,38 +663,41 @@ def _deterministic_forecast(
         name = trend.get("name", "Unknown trend")
 
         if velocity > 0:
-            predictions.append({
-                "title": f"{name} — continued acceleration expected",
-                "description": (
-                    f"Based on current velocity ({velocity:.2f}) and "
-                    f"{trend.get('signal_count', 0)} supporting signals, "
-                    f"this trend is likely to continue accelerating."
-                ),
-                "prediction_type": "trend_trajectory",
-                "confidence": min(confidence_val + 0.1, 0.9),
-                "surprise_score": 0.3,  # extrapolation is not surprising
-                "time_horizon": "6mo",
-                "supporting_evidence": [trend.get("id", "")],
-                "cross_engine_sources": [],
-            })
+            predictions.append(
+                {
+                    "title": f"{name} — continued acceleration expected",
+                    "description": (
+                        f"Based on current velocity ({velocity:.2f}) and "
+                        f"{trend.get('signal_count', 0)} supporting signals, "
+                        f"this trend is likely to continue accelerating."
+                    ),
+                    "prediction_type": "trend_trajectory",
+                    "confidence": min(confidence_val + 0.1, 0.9),
+                    "surprise_score": 0.3,  # extrapolation is not surprising
+                    "time_horizon": "6mo",
+                    "supporting_evidence": [trend.get("id", "")],
+                    "cross_engine_sources": [],
+                }
+            )
 
     # Extract predictions from top challenges
     for challenge in aggregated.get("challenges", [])[:2]:
         score = float(challenge.get("composite_score", 0))
         if score > 0.6:
-            predictions.append({
-                "title": f"Emerging opportunity in: {challenge.get('title', '')[:80]}",
-                "description": (
-                    f"High-scoring challenge (score={score:.2f}) suggests "
-                    f"market gap that could be addressed."
-                ),
-                "prediction_type": "greenfield",
-                "confidence": min(score, 0.8),
-                "surprise_score": 0.5,
-                "time_horizon": "1yr",
-                "supporting_evidence": [challenge.get("id", "")],
-                "cross_engine_sources": [],
-            })
+            predictions.append(
+                {
+                    "title": f"Emerging opportunity in: {challenge.get('title', '')[:80]}",
+                    "description": (
+                        f"High-scoring challenge (score={score:.2f}) suggests market gap that could be addressed."
+                    ),
+                    "prediction_type": "greenfield",
+                    "confidence": min(score, 0.8),
+                    "surprise_score": 0.5,
+                    "time_horizon": "1yr",
+                    "supporting_evidence": [challenge.get("id", "")],
+                    "cross_engine_sources": [],
+                }
+            )
 
     return predictions
 
@@ -738,17 +737,11 @@ def main():
     """CLI entry point for standalone testing."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Forecast Generator — Research Engine"
-    )
-    parser.add_argument(
-        "--generate", action="store_true", help="Generate forecasts"
-    )
+    parser = argparse.ArgumentParser(description="Forecast Generator — Research Engine")
+    parser.add_argument("--generate", action="store_true", help="Generate forecasts")
     parser.add_argument("--session-id", help="Research session ID")
     parser.add_argument("--db-path", help="Database path override")
-    parser.add_argument(
-        "--get", action="store_true", help="Get stored forecasts"
-    )
+    parser.add_argument("--get", action="store_true", help="Get stored forecasts")
     parser.add_argument("--limit", type=int, default=10, help="Result limit")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
@@ -774,10 +767,7 @@ def main():
         else:
             print(f"Found {len(forecasts)} forecasts")
             for f in forecasts:
-                print(
-                    f"  [{f['prediction_type']}] {f['title'][:60]} "
-                    f"(rank={f['composite_rank']:.3f})"
-                )
+                print(f"  [{f['prediction_type']}] {f['title'][:60]} (rank={f['composite_rank']:.3f})")
     else:
         parser.print_help()
 

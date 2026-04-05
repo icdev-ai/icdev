@@ -23,9 +23,9 @@ VALID_PROVIDERS = ("anthropic", "openai", "bedrock", "ollama", "vllm")
 PROVIDER_ENV_MAP = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
-    "bedrock": "",       # Bedrock uses IAM credentials, not a single key
-    "ollama": "",        # Ollama is local, no key needed
-    "vllm": "",          # vLLM is local, no key needed
+    "bedrock": "",  # Bedrock uses IAM credentials, not a single key
+    "ollama": "",  # Ollama is local, no key needed
+    "vllm": "",  # vLLM is local, no key needed
 }
 
 
@@ -36,11 +36,11 @@ def _encrypt(plaintext):
     """Encrypt a plaintext key using Fernet AES-256."""
     try:
         from tools.dashboard.byok import encrypt_key
+
         return encrypt_key(plaintext)
     except ImportError:
         raise RuntimeError(
-            "cryptography package is required for LLM key encryption. "
-            "Install it with: pip install cryptography"
+            "cryptography package is required for LLM key encryption. Install it with: pip install cryptography"
         )
 
 
@@ -48,11 +48,11 @@ def _decrypt(ciphertext):
     """Decrypt a ciphertext key."""
     try:
         from tools.dashboard.byok import decrypt_key
+
         return decrypt_key(ciphertext)
     except ImportError:
         raise RuntimeError(
-            "cryptography package is required for LLM key decryption. "
-            "Install it with: pip install cryptography"
+            "cryptography package is required for LLM key decryption. Install it with: pip install cryptography"
         )
 
 
@@ -62,6 +62,7 @@ def _decrypt(ciphertext):
 def _get_conn():
     """Get platform DB connection with dict row factory."""
     from tools.saas.platform_db import get_platform_connection
+
     return get_platform_connection()
 
 
@@ -70,15 +71,15 @@ def _get_tenant_tier(tenant_id):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT tier FROM subscriptions WHERE tenant_id = ? "
-            "AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+            "SELECT tier FROM subscriptions WHERE tenant_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
             (tenant_id,),
         ).fetchone()
         if row:
             return row["tier"] if hasattr(row, "keys") else row[0]
         # Fallback to tenant table tier
         row = conn.execute(
-            "SELECT tier FROM tenants WHERE id = ?", (tenant_id,),
+            "SELECT tier FROM tenants WHERE id = ?",
+            (tenant_id,),
         ).fetchone()
         if row:
             return row["tier"] if hasattr(row, "keys") else row[0]
@@ -96,6 +97,7 @@ def _audit(tenant_id, user_id, event_type, action, details=None):
     """Log an audit event (best-effort)."""
     try:
         from tools.saas.platform_db import log_platform_audit
+
         log_platform_audit(
             tenant_id=tenant_id,
             user_id=user_id or "",
@@ -134,18 +136,13 @@ def store_tenant_llm_key(
     """
     provider = provider.strip().lower()
     if provider not in VALID_PROVIDERS:
-        raise ValueError(
-            "Invalid provider '{}'. Must be one of: {}".format(
-                provider, ", ".join(VALID_PROVIDERS)
-            )
-        )
+        raise ValueError("Invalid provider '{}'. Must be one of: {}".format(provider, ", ".join(VALID_PROVIDERS)))
 
     # Check tier gate
     tier = _get_tenant_tier(tenant_id)
     if not _tier_allows_byok(tier):
         raise ValueError(
-            "BYOK LLM keys require a Professional or Enterprise subscription. "
-            "Current tier: {}".format(tier)
+            "BYOK LLM keys require a Professional or Enterprise subscription. Current tier: {}".format(tier)
         )
 
     key_id = str(uuid.uuid4())
@@ -160,20 +157,29 @@ def store_tenant_llm_key(
             "(id, tenant_id, provider, encrypted_key, key_label, key_prefix, "
             "status, created_by, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (key_id, tenant_id, provider, encrypted, key_label or provider,
-             key_prefix, "active", created_by, now, now),
+            (key_id, tenant_id, provider, encrypted, key_label or provider, key_prefix, "active", created_by, now, now),
         )
         conn.commit()
     finally:
         conn.close()
 
-    _audit(tenant_id, created_by, "llm_key.created", "store_tenant_llm_key", {
-        "key_id": key_id, "provider": provider, "key_label": key_label or provider,
-    })
+    _audit(
+        tenant_id,
+        created_by,
+        "llm_key.created",
+        "store_tenant_llm_key",
+        {
+            "key_id": key_id,
+            "provider": provider,
+            "key_label": key_label or provider,
+        },
+    )
 
     logger.info(
         "Stored LLM key for tenant=%s provider=%s label=%s",
-        tenant_id, provider, key_label or provider,
+        tenant_id,
+        provider,
+        key_label or provider,
     )
 
     return {
@@ -230,9 +236,15 @@ def revoke_tenant_llm_key(tenant_id, key_id):
         conn.close()
 
     if revoked:
-        _audit(tenant_id, None, "llm_key.revoked", "revoke_tenant_llm_key", {
-            "key_id": key_id,
-        })
+        _audit(
+            tenant_id,
+            None,
+            "llm_key.revoked",
+            "revoke_tenant_llm_key",
+            {
+                "key_id": key_id,
+            },
+        )
         logger.info("Revoked LLM key %s for tenant %s", key_id, tenant_id)
 
     return revoked

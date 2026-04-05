@@ -625,7 +625,7 @@ output "repository_id" {
 
 output "registry_url" {
   description = "OCIR registry URL"
-  value       = "$${var.region}.ocir.io/$${data.oci_objectstorage_namespace.this.namespace}/$${oci_artifacts_container_repository.this.display_name}"
+  value       = "$${var.region}.ocir.io/$${data.oci_objectstorage_namespace.this.namespace}/$${oci_artifacts_container_repository.this.display_name}"  # noqa: E501
 }
 
 output "scan_recipe_id" {
@@ -851,18 +851,14 @@ def generate(project_path: str, project_config: dict = None) -> list:
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate Terraform for Oracle OCI Government Cloud"
-    )
+    parser = argparse.ArgumentParser(description="Generate Terraform for Oracle OCI Government Cloud")
     parser.add_argument("--project-path", required=True, help="Target project directory")
     parser.add_argument(
         "--components",
         default="base,vcn,autonomous_db,ocir,vault",
         help="Comma-separated components: base,vcn,autonomous_db,ocir,vault",
     )
-    parser.add_argument(
-        "--project-name", default="icdev-project", help="Project name for resource naming"
-    )
+    parser.add_argument("--project-name", default="icdev-project", help="Project name for resource naming")
     parser.add_argument(
         "--environment",
         default="dev",

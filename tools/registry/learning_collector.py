@@ -66,6 +66,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -73,14 +74,17 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
     from tools.registry.capability_evaluator import CapabilityEvaluator
+
     _HAS_EVALUATOR = True
 except ImportError:
     _HAS_EVALUATOR = False
 
 try:
     from tools.security.prompt_injection_detector import PromptInjectionDetector
+
     _pid = PromptInjectionDetector()
 except Exception:
     _pid = None
@@ -247,8 +251,7 @@ class LearningCollector:
         # Validate behavior_type
         if behavior_type not in VALID_BEHAVIOR_TYPES:
             print(
-                f"Warning: Invalid behavior_type '{behavior_type}'. "
-                f"Must be one of: {', '.join(VALID_BEHAVIOR_TYPES)}",
+                f"Warning: Invalid behavior_type '{behavior_type}'. Must be one of: {', '.join(VALID_BEHAVIOR_TYPES)}",
                 file=sys.stderr,
             )
             return None
@@ -268,9 +271,10 @@ class LearningCollector:
             if scan_result.get("detected") and scan_result.get("confidence", 0) >= 0.7:
                 # Block high-confidence injection attempts
                 self._log_audit_event(
-                    None, child_id,
+                    None,
+                    child_id,
                     "learned_behavior_rejected",
-                    f"Prompt injection detected (confidence={scan_result['confidence']:.2f})"
+                    f"Prompt injection detected (confidence={scan_result['confidence']:.2f})",
                 )
                 return {
                     "status": "rejected",
@@ -307,8 +311,7 @@ class LearningCollector:
 
             _audit(
                 "learning.behavior_ingested",
-                f"Ingested behavior from child {child_id}: "
-                f"{behavior_type} (confidence={confidence:.2f})",
+                f"Ingested behavior from child {child_id}: {behavior_type} (confidence={confidence:.2f})",
                 {
                     "behavior_id": behavior_id,
                     "child_id": child_id,
@@ -369,17 +372,18 @@ class LearningCollector:
             # Build capability_data for CapabilityEvaluator
             capability_data = {
                 "id": f"beh-{behavior_id}",
-                "name": f"{behavior.get('behavior_type', 'other')}: "
-                        f"{behavior.get('description', '')[:80]}",
+                "name": f"{behavior.get('behavior_type', 'other')}: {behavior.get('description', '')[:80]}",
                 "source": "child_report",
                 "compliance_impact": self._infer_compliance_impact(behavior),
                 "blast_radius": self._infer_blast_radius(behavior),
-                "evidence_count": evidence.get("test_count", 0)
-                                  or len(evidence),
+                "evidence_count": evidence.get("test_count", 0) or len(evidence),
                 "field_hours": evidence.get("field_hours", 0.0),
                 "existing_similar": False,
-                "fills_gap": behavior.get("behavior_type") in (
-                    "error_recovery", "security_pattern", "compliance_shortcut",
+                "fills_gap": behavior.get("behavior_type")
+                in (
+                    "error_recovery",
+                    "security_pattern",
+                    "compliance_shortcut",
                 ),
                 "token_cost": evidence.get("token_cost", 0.1),
                 "integration_effort": evidence.get("integration_effort", "medium"),
@@ -424,8 +428,7 @@ class LearningCollector:
                     "score": conf,
                     "outcome": outcome,
                     "rationale": (
-                        f"Fallback evaluation using confidence={conf:.2f} "
-                        "(CapabilityEvaluator not available)"
+                        f"Fallback evaluation using confidence={conf:.2f} (CapabilityEvaluator not available)"
                     ),
                     "dimensions": {"confidence_proxy": conf},
                 }
@@ -482,8 +485,10 @@ class LearningCollector:
         btype = behavior.get("behavior_type", "other")
         positive_types = ("compliance_shortcut", "security_pattern")
         neutral_types = (
-            "optimization", "performance_tuning",
-            "configuration", "workflow_improvement",
+            "optimization",
+            "performance_tuning",
+            "configuration",
+            "workflow_improvement",
         )
 
         if btype in positive_types:
@@ -577,9 +582,7 @@ class LearningCollector:
                 record = dict(row)
                 # Parse evidence JSON
                 try:
-                    record["evidence"] = json.loads(
-                        record.pop("evidence_json", "{}")
-                    )
+                    record["evidence"] = json.loads(record.pop("evidence_json", "{}"))
                 except (json.JSONDecodeError, TypeError):
                     record["evidence"] = {}
                 results.append(record)
@@ -614,9 +617,7 @@ class LearningCollector:
             for row in rows:
                 record = dict(row)
                 try:
-                    record["evidence"] = json.loads(
-                        record.pop("evidence_json", "{}")
-                    )
+                    record["evidence"] = json.loads(record.pop("evidence_json", "{}"))
                 except (json.JSONDecodeError, TypeError):
                     record["evidence"] = {}
                 results.append(record)
@@ -696,35 +697,35 @@ class LearningCollector:
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "ICDEV Learning Collector -- ingest and evaluate "
-            "learned behaviors from child applications (D213)"
-        )
+        description=("ICDEV Learning Collector -- ingest and evaluate learned behaviors from child applications (D213)")
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--ingest", action="store_true",
+        "--ingest",
+        action="store_true",
         help="Ingest a learned behavior from a child",
     )
     group.add_argument(
-        "--evaluate", action="store_true",
+        "--evaluate",
+        action="store_true",
         help="Evaluate a behavior using 6-dimension scoring",
     )
     group.add_argument(
-        "--unevaluated", action="store_true",
+        "--unevaluated",
+        action="store_true",
         help="List unevaluated behaviors",
     )
     group.add_argument(
-        "--by-child", action="store_true",
+        "--by-child",
+        action="store_true",
         help="List behaviors for a specific child",
     )
     group.add_argument(
-        "--summary", action="store_true",
+        "--summary",
+        action="store_true",
         help="Show behavior summary statistics",
     )
 
@@ -736,11 +737,11 @@ def main():
         help="Type of learned behavior",
     )
     parser.add_argument("--description", help="Human-readable behavior description")
+    parser.add_argument("--evidence", help="JSON string with supporting evidence")
     parser.add_argument(
-        "--evidence", help="JSON string with supporting evidence"
-    )
-    parser.add_argument(
-        "--confidence", type=float, default=0.5,
+        "--confidence",
+        type=float,
+        default=0.5,
         help="Confidence score (0.0-1.0, default: 0.5)",
     )
 
@@ -749,7 +750,9 @@ def main():
 
     # List args
     parser.add_argument(
-        "--limit", type=int, default=50,
+        "--limit",
+        type=int,
+        default=50,
         help="Result limit (default: 50)",
     )
 

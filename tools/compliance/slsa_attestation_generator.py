@@ -196,21 +196,22 @@ def generate_slsa_provenance(
                 for row in rows:
                     version = row["version"] if row["version"] else "1"
                     file_path = row["file_path"] if row["file_path"] else f"sbom-{row['id']}"
-                    subjects.append({
-                        "name": file_path,
-                        "digest": {
-                            "sha256": hashlib.sha256(
-                                (row["id"] + version).encode()
-                            ).hexdigest()
-                        },
-                    })
+                    subjects.append(
+                        {
+                            "name": file_path,
+                            "digest": {"sha256": hashlib.sha256((row["id"] + version).encode()).hexdigest()},
+                        }
+                    )
             except (sqlite3.OperationalError, KeyError):
                 pass
 
         # Build the in-toto v1 statement
         provenance = {
             "_type": IN_TOTO_STATEMENT_TYPE,
-            "subject": subjects or [{"name": f"project-{project_id}", "digest": {"sha256": hashlib.sha256(project_id.encode()).hexdigest()}}],
+            "subject": subjects
+            or [
+                {"name": f"project-{project_id}", "digest": {"sha256": hashlib.sha256(project_id.encode()).hexdigest()}}
+            ],
             "predicateType": SLSA_PROVENANCE_TYPE,
             "predicate": {
                 "buildDefinition": {
@@ -249,10 +250,12 @@ def generate_slsa_provenance(
                     (project_id,),
                 ).fetchall()
                 for row in rows:
-                    provenance["predicate"]["buildDefinition"]["resolvedDependencies"].append({
-                        "uri": f"sbom://{project_id}/{row['id']}",
-                        "digest": {"sha256": hashlib.sha256(row["id"].encode()).hexdigest()},
-                    })
+                    provenance["predicate"]["buildDefinition"]["resolvedDependencies"].append(
+                        {
+                            "uri": f"sbom://{project_id}/{row['id']}",
+                            "digest": {"sha256": hashlib.sha256(row["id"].encode()).hexdigest()},
+                        }
+                    )
             except sqlite3.OperationalError:
                 pass
 
@@ -430,9 +433,7 @@ def verify_slsa_level(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="SLSA v1.0 Provenance Generator + VEX Document Generator"
-    )
+    parser = argparse.ArgumentParser(description="SLSA v1.0 Provenance Generator + VEX Document Generator")
     parser.add_argument("--project-id", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--generate", action="store_true", help="Generate SLSA provenance")
     parser.add_argument("--vex", action="store_true", help="Generate VEX document")

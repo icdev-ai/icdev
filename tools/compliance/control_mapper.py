@@ -22,14 +22,26 @@ CONTROLS_PATH = BASE_DIR / "context" / "compliance" / "nist_800_53.json"
 
 # All 17 FIPS 200 minimum security requirement families
 REQUIRED_FAMILIES = [
-    "AC", "AT", "AU", "CA", "CM", "CP", "IA", "IR",
-    "MA", "MP", "PE", "PL", "PS", "RA", "SA", "SC", "SI"
+    "AC",
+    "AT",
+    "AU",
+    "CA",
+    "CM",
+    "CP",
+    "IA",
+    "IR",
+    "MA",
+    "MP",
+    "PE",
+    "PL",
+    "PS",
+    "RA",
+    "SA",
+    "SC",
+    "SI",
 ]
 
-VALID_STATUSES = (
-    "planned", "implemented", "partially_implemented",
-    "not_applicable", "compensating"
-)
+VALID_STATUSES = ("planned", "implemented", "partially_implemented", "not_applicable", "compensating")
 
 
 def _get_connection(db_path=None):
@@ -38,10 +50,7 @@ def _get_connection(db_path=None):
         return get_db_connection(db_path or DB_PATH, validate=True)
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -58,9 +67,7 @@ def _load_nist_controls():
 
 def _verify_project_exists(conn, project_id):
     """Verify that a project exists in the database."""
-    row = conn.execute(
-        "SELECT id, name FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT id, name FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -78,9 +85,7 @@ def create_mapping(
     """Create or update a control mapping for a project.
     Returns the mapping row ID."""
     if implementation_status not in VALID_STATUSES:
-        raise ValueError(
-            f"Invalid status '{implementation_status}'. Valid: {VALID_STATUSES}"
-        )
+        raise ValueError(f"Invalid status '{implementation_status}'. Valid: {VALID_STATUSES}")
 
     conn = _get_connection(db_path)
     try:
@@ -102,9 +107,13 @@ def create_mapping(
                        last_assessed = ?, updated_at = ?
                    WHERE id = ?""",
                 (
-                    implementation_status, description,
-                    responsible_role, evidence_path,
-                    now, now, existing["id"],
+                    implementation_status,
+                    description,
+                    responsible_role,
+                    evidence_path,
+                    now,
+                    now,
+                    existing["id"],
                 ),
             )
             conn.commit()
@@ -118,9 +127,15 @@ def create_mapping(
                     evidence_path, last_assessed, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id, control_id.upper(), implementation_status,
-                    description, responsible_role, evidence_path,
-                    now, now, now,
+                    project_id,
+                    control_id.upper(),
+                    implementation_status,
+                    description,
+                    responsible_role,
+                    evidence_path,
+                    now,
+                    now,
+                    now,
                 ),
             )
             conn.commit()
@@ -180,15 +195,9 @@ def verify_mappings(project_id, db_path=None):
         }
 
         for family_code in REQUIRED_FAMILIES:
-            family_controls = [
-                cid for cid in nist_controls if cid.startswith(f"{family_code}-")
-            ]
-            mapped_in_family = [
-                cid for cid in family_controls if cid in mapped_ids
-            ]
-            missing = [
-                cid for cid in family_controls if cid not in mapped_ids
-            ]
+            family_controls = [cid for cid in nist_controls if cid.startswith(f"{family_code}-")]
+            mapped_in_family = [cid for cid in family_controls if cid in mapped_ids]
+            missing = [cid for cid in family_controls if cid not in mapped_ids]
 
             report["total_required"] += len(family_controls)
             report["families"][family_code] = {
@@ -215,8 +224,7 @@ def verify_mappings(project_id, db_path=None):
         # Completeness percentage
         if report["total_required"] > 0:
             report["completeness_pct"] = round(
-                (report["total_required"] - len(report["missing_controls"]))
-                / report["total_required"] * 100, 1
+                (report["total_required"] - len(report["missing_controls"])) / report["total_required"] * 100, 1
             )
         else:
             report["completeness_pct"] = 0.0
@@ -242,6 +250,7 @@ def generate_matrix(project_id, output_path=None, db_path=None):
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         config = load_cui_config()
     except ImportError:
         config = {
@@ -338,9 +347,7 @@ def generate_matrix(project_id, output_path=None, db_path=None):
             title = ctrl_ref.get("title", "N/A")
             desc = (m.get("implementation_description") or "").replace("\n", " ")[:80]
             responsible = m.get("responsible_role") or "TBD"
-            lines.append(
-                f"| {m['control_id']} | {title} | {m['implementation_status']} | {desc} | {responsible} |"
-            )
+            lines.append(f"| {m['control_id']} | {title} | {m['implementation_status']} | {desc} | {responsible} |")
         lines.append("")
 
     lines.append("---")
@@ -354,9 +361,7 @@ def generate_matrix(project_id, output_path=None, db_path=None):
         # Default output to project compliance directory
         conn = _get_connection(db_path)
         try:
-            row = conn.execute(
-                "SELECT directory_path FROM projects WHERE id = ?", (project_id,)
-            ).fetchone()
+            row = conn.execute("SELECT directory_path FROM projects WHERE id = ?", (project_id,)).fetchone()
             if row and row["directory_path"]:
                 output_dir = Path(row["directory_path"]) / "compliance"
             else:
@@ -411,9 +416,7 @@ def _format_verification_report(report):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Map project activities to NIST 800-53 controls"
-    )
+    parser = argparse.ArgumentParser(description="Map project activities to NIST 800-53 controls")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--db", type=str, default=None, help="Database path")
 
@@ -422,10 +425,7 @@ def main():
     # create subcommand
     create_p = subparsers.add_parser("create", help="Create a control mapping")
     create_p.add_argument("--control-id", required=True, help="NIST control ID (e.g., SA-11)")
-    create_p.add_argument(
-        "--status", default="planned", choices=VALID_STATUSES,
-        help="Implementation status"
-    )
+    create_p.add_argument("--status", default="planned", choices=VALID_STATUSES, help="Implementation status")
     create_p.add_argument("--description", help="Implementation description")
     create_p.add_argument("--responsible", help="Responsible role")
     create_p.add_argument("--evidence", help="Path to evidence artifact")
@@ -478,9 +478,7 @@ def main():
             print(f"Mapping ID: {row_id}")
 
         elif args.command == "list":
-            mappings = get_mappings(
-                args.project_id, family=args.family, status=args.status, db_path=db_path
-            )
+            mappings = get_mappings(args.project_id, family=args.family, status=args.status, db_path=db_path)
             if args.json:
                 print(json.dumps(mappings, indent=2, default=str))
             else:

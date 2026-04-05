@@ -55,6 +55,7 @@ class ConnectorRegistry:
         if slack_config.get("enabled", False):
             try:
                 from tools.ci.connectors.slack_connector import SlackConnector
+
                 connector = SlackConnector(slack_config)
                 cls.register(connector)
                 print("[ConnectorRegistry] Slack connector registered")
@@ -66,6 +67,7 @@ class ConnectorRegistry:
         if mm_config.get("enabled", False):
             try:
                 from tools.ci.connectors.mattermost_connector import MattermostConnector
+
                 connector = MattermostConnector(mm_config)
                 cls.register(connector)
                 print("[ConnectorRegistry] Mattermost connector registered")
@@ -90,10 +92,7 @@ class ConnectorRegistry:
     @classmethod
     def list_connectors(cls) -> Dict[str, bool]:
         """List all registered connectors with their enabled status."""
-        return {
-            name: connector.is_enabled()
-            for name, connector in cls._connectors.items()
-        }
+        return {name: connector.is_enabled() for name, connector in cls._connectors.items()}
 
     @classmethod
     def register_routes(cls, app):
@@ -131,9 +130,7 @@ class ConnectorRegistry:
 
                 # For Slack, prepend timestamp for signature verification
                 if conn.connector_name == "slack":
-                    timestamp = request.headers.get(
-                        "X-Slack-Request-Timestamp", ""
-                    )
+                    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
                     signature = f"{timestamp}:{signature}" if timestamp else signature
 
                 if signature and not conn.verify_signature(raw_body, signature):
@@ -143,10 +140,7 @@ class ConnectorRegistry:
                 payload = request.get_json(silent=True) or {}
 
                 # Handle Slack URL verification challenge
-                if (
-                    conn.connector_name == "slack"
-                    and payload.get("type") == "url_verification"
-                ):
+                if conn.connector_name == "slack" and payload.get("type") == "url_verification":
                     return jsonify({"challenge": payload.get("challenge", "")})
 
                 # Parse inbound event
@@ -179,6 +173,7 @@ class ConnectorRegistry:
         """Load cicd_config.yaml."""
         try:
             import yaml
+
             config_path = PROJECT_ROOT / "args" / "cicd_config.yaml"
             if config_path.exists():
                 with open(config_path) as f:

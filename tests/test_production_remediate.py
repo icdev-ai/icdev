@@ -33,6 +33,7 @@ from icdev.tools.testing.production_audit import AuditCheck, CHECK_REGISTRY
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def sample_audit_report():
     """A minimal audit report dict with some failed checks."""
@@ -184,6 +185,7 @@ def temp_db(tmp_path):
 # Data structure tests
 # ---------------------------------------------------------------------------
 
+
 class TestRemediationAction:
     def test_create(self):
         action = RemediationAction(
@@ -289,6 +291,7 @@ class TestRemediationReport:
 # Registry validation
 # ---------------------------------------------------------------------------
 
+
 class TestRemediationRegistry:
     def test_registry_has_entries(self):
         assert len(REMEDIATION_REGISTRY) >= 14
@@ -355,6 +358,7 @@ class TestRemediationRegistry:
 # Extract failed checks
 # ---------------------------------------------------------------------------
 
+
 class TestExtractFailedChecks:
     def test_extract_from_report(self, sample_audit_report):
         failed = _extract_failed_checks(sample_audit_report)
@@ -402,6 +406,7 @@ class TestExtractFailedChecks:
 # ---------------------------------------------------------------------------
 # Auto-fix logic
 # ---------------------------------------------------------------------------
+
 
 class TestRunAutoFix:
     def test_dry_run(self):
@@ -468,6 +473,7 @@ class TestRunAutoFix:
 # DB storage
 # ---------------------------------------------------------------------------
 
+
 class TestStoreRemediation:
     def test_store_action(self, temp_db):
         action = RemediationAction(
@@ -494,8 +500,8 @@ class TestStoreRemediation:
         row = conn2.execute("SELECT * FROM remediation_audit_log ORDER BY id DESC LIMIT 1").fetchone()
         assert row is not None
         assert row[2] == "SEC-002"  # check_id
-        assert row[7] == "fixed"    # status
-        assert row[16] == 0         # dry_run
+        assert row[7] == "fixed"  # status
+        assert row[16] == 0  # dry_run
         conn2.close()
 
     def test_store_dry_run(self, temp_db):
@@ -528,22 +534,29 @@ class TestStoreRemediation:
 # Full remediation pipeline
 # ---------------------------------------------------------------------------
 
+
 class TestRunRemediation:
     def test_with_mocked_audit(self, sample_audit_report, temp_db):
         """Test full pipeline with mocked audit and mocked subprocess."""
-        with mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit, \
-             mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest, \
-             mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub, \
-             mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db, \
-             mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify:
-
+        with (
+            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+        ):
             # Setup mocks
             from icdev.tools.testing.production_audit import AuditReport
+
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
                 timestamp="2026-02-22T00:00:00+00:00",
                 categories=sample_audit_report["categories"],
-                total_checks=6, passed=3, failed=3, warned=0, skipped=0,
+                total_checks=6,
+                passed=3,
+                failed=3,
+                warned=0,
+                skipped=0,
                 blockers=["SEC-001", "SEC-002", "SEC-003"],
                 warnings=[],
                 duration_total_ms=850,
@@ -552,9 +565,13 @@ class TestRunRemediation:
             mock_sub.return_value = (0, "success", "")
             mock_db.return_value = sqlite3.connect(str(temp_db))
             mock_verify.return_value = AuditCheck(
-                check_id="SEC-002", check_name="Dep audit",
-                category="security", status="pass", severity="blocking",
-                message="OK", details={},
+                check_id="SEC-002",
+                check_name="Dep audit",
+                category="security",
+                status="pass",
+                severity="blocking",
+                message="OK",
+                details={},
             )
 
             report = run_remediation(auto=True, stream=False)
@@ -568,16 +585,22 @@ class TestRunRemediation:
 
     def test_dry_run_pipeline(self, sample_audit_report, temp_db):
         """Dry run should preview without executing."""
-        with mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit, \
-             mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest, \
-             mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db:
-
+        with (
+            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+        ):
             from icdev.tools.testing.production_audit import AuditReport
+
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
                 timestamp="2026-02-22T00:00:00+00:00",
                 categories=sample_audit_report["categories"],
-                total_checks=6, passed=3, failed=3, warned=0, skipped=0,
+                total_checks=6,
+                passed=3,
+                failed=3,
+                warned=0,
+                skipped=0,
                 blockers=["SEC-002"],
                 warnings=[],
                 duration_total_ms=500,
@@ -595,11 +618,12 @@ class TestRunRemediation:
 
     def test_skip_audit(self, sample_audit_report, temp_db):
         """Test using stored audit instead of re-running."""
-        with mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest, \
-             mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db, \
-             mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub, \
-             mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify:
-
+        with (
+            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+        ):
             mock_latest.return_value = {**sample_audit_report, "_db_id": 5}
             mock_db.return_value = sqlite3.connect(str(temp_db))
             mock_sub.return_value = (0, "ok", "")
@@ -611,18 +635,24 @@ class TestRunRemediation:
 
     def test_single_check_filter(self, sample_audit_report, temp_db):
         """Test targeting a specific check ID."""
-        with mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit, \
-             mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest, \
-             mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db, \
-             mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub, \
-             mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify:
-
+        with (
+            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+        ):
             from icdev.tools.testing.production_audit import AuditReport
+
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
                 timestamp="2026-02-22T00:00:00+00:00",
                 categories=sample_audit_report["categories"],
-                total_checks=6, passed=3, failed=3, warned=0, skipped=0,
+                total_checks=6,
+                passed=3,
+                failed=3,
+                warned=0,
+                skipped=0,
                 blockers=["SEC-002"],
                 warnings=[],
                 duration_total_ms=500,
@@ -631,9 +661,13 @@ class TestRunRemediation:
             mock_db.return_value = sqlite3.connect(str(temp_db))
             mock_sub.return_value = (0, "ok", "")
             mock_verify.return_value = AuditCheck(
-                check_id="SEC-002", check_name="Dep audit",
-                category="security", status="pass", severity="blocking",
-                message="OK", details={},
+                check_id="SEC-002",
+                check_name="Dep audit",
+                category="security",
+                status="pass",
+                severity="blocking",
+                message="OK",
+                details={},
             )
 
             report = run_remediation(check_id="SEC-002", auto=True, stream=False)
@@ -643,16 +677,22 @@ class TestRunRemediation:
 
     def test_no_auto_flag_skips_auto_fix(self, sample_audit_report, temp_db):
         """Without --auto, auto-fix items should be skipped."""
-        with mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit, \
-             mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest, \
-             mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db:
-
+        with (
+            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+        ):
             from icdev.tools.testing.production_audit import AuditReport
+
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
                 timestamp="2026-02-22T00:00:00+00:00",
                 categories=sample_audit_report["categories"],
-                total_checks=6, passed=3, failed=3, warned=0, skipped=0,
+                total_checks=6,
+                passed=3,
+                failed=3,
+                warned=0,
+                skipped=0,
                 blockers=[],
                 warnings=[],
                 duration_total_ms=500,
@@ -669,18 +709,24 @@ class TestRunRemediation:
 
     def test_category_filter(self, sample_audit_report, temp_db):
         """Test filtering by category."""
-        with mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit, \
-             mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest, \
-             mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db, \
-             mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub, \
-             mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify:
-
+        with (
+            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+        ):
             from icdev.tools.testing.production_audit import AuditReport
+
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
                 timestamp="2026-02-22T00:00:00+00:00",
                 categories=sample_audit_report["categories"],
-                total_checks=6, passed=3, failed=3, warned=0, skipped=0,
+                total_checks=6,
+                passed=3,
+                failed=3,
+                warned=0,
+                skipped=0,
                 blockers=[],
                 warnings=[],
                 duration_total_ms=500,
@@ -701,6 +747,7 @@ class TestRunRemediation:
 # Verification targeting (D298)
 # ---------------------------------------------------------------------------
 
+
 class TestVerificationTargeting:
     def test_all_registry_checks_in_audit(self):
         """Every remediation check_id should exist in the audit CHECK_REGISTRY."""
@@ -718,9 +765,11 @@ class TestVerificationTargeting:
 # Output formatting
 # ---------------------------------------------------------------------------
 
+
 class TestFormatHuman:
     def test_format_basic(self):
         from icdev.tools.testing.production_remediate import _format_human
+
         report = RemediationReport(
             timestamp="2026-02-22T00:00:00+00:00",
             source_audit=None,
@@ -735,18 +784,27 @@ class TestFormatHuman:
             verified_fail=0,
             actions=[
                 {
-                    "check_id": "SEC-002", "check_name": "Dep audit",
-                    "tier": "auto_fix", "status": "fixed", "message": "Fixed 3 deps",
+                    "check_id": "SEC-002",
+                    "check_name": "Dep audit",
+                    "tier": "auto_fix",
+                    "status": "fixed",
+                    "message": "Fixed 3 deps",
                     "verification_result": {"status": "pass", "message": "OK"},
                 },
                 {
-                    "check_id": "SEC-001", "check_name": "SAST",
-                    "tier": "suggest", "status": "suggested", "message": "Run bandit",
+                    "check_id": "SEC-001",
+                    "check_name": "SAST",
+                    "tier": "suggest",
+                    "status": "suggested",
+                    "message": "Run bandit",
                     "verification_result": None,
                 },
                 {
-                    "check_id": "SEC-003", "check_name": "Secrets",
-                    "tier": "escalate", "status": "escalated", "message": "Rotate secrets",
+                    "check_id": "SEC-003",
+                    "check_name": "Secrets",
+                    "tier": "escalate",
+                    "status": "escalated",
+                    "message": "Rotate secrets",
                     "verification_result": None,
                 },
             ],
@@ -761,6 +819,7 @@ class TestFormatHuman:
 
     def test_format_dry_run(self):
         from icdev.tools.testing.production_remediate import _format_human
+
         report = RemediationReport(
             timestamp="2026-02-22T00:00:00+00:00",
             source_audit=None,
@@ -781,6 +840,7 @@ class TestFormatHuman:
 
     def test_format_all_clear(self):
         from icdev.tools.testing.production_remediate import _format_human
+
         report = RemediationReport(
             timestamp="2026-02-22T00:00:00+00:00",
             source_audit=None,
@@ -795,8 +855,11 @@ class TestFormatHuman:
             verified_fail=0,
             actions=[
                 {
-                    "check_id": "INT-002", "check_name": "DB schema",
-                    "tier": "auto_fix", "status": "fixed", "message": "Rebuilt",
+                    "check_id": "INT-002",
+                    "check_name": "DB schema",
+                    "tier": "auto_fix",
+                    "status": "fixed",
+                    "message": "Rebuilt",
                     "verification_result": {"status": "pass", "message": "OK"},
                 },
             ],

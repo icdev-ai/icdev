@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(128) NOT NULL, slug VARCHAR(128) NOT NULL UNIQUE,
     impact_level VARCHAR(4) NOT NULL DEFAULT 'IL4' CHECK (impact_level IN ('IL2','IL4','IL5','IL6')),
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','provisioning','active','suspended','deactivated','deleted')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','provisioning','active','suspended','deactivated','deleted')),  # noqa: E501
     tier VARCHAR(20) NOT NULL DEFAULT 'starter' CHECK (tier IN ('starter','professional','enterprise')),
     db_host VARCHAR(256), db_name VARCHAR(128), db_port INTEGER DEFAULT 5432,
     k8s_namespace VARCHAR(128), aws_account_id VARCHAR(32),
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     email VARCHAR(256) NOT NULL, display_name VARCHAR(256),
-    role VARCHAR(24) NOT NULL DEFAULT 'developer' CHECK (role IN ('tenant_admin','developer','compliance_officer','auditor','viewer')),
+    role VARCHAR(24) NOT NULL DEFAULT 'developer' CHECK (role IN ('tenant_admin','developer','compliance_officer','auditor','viewer')),  # noqa: E501
     auth_method VARCHAR(16) NOT NULL DEFAULT 'api_key' CHECK (auth_method IN ('api_key','oauth','cac_piv')),
     status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','deactivated')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_login TIMESTAMPTZ,
@@ -170,7 +170,7 @@ SQLITE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
     impact_level TEXT NOT NULL DEFAULT 'IL4' CHECK (impact_level IN ('IL2','IL4','IL5','IL6')),
-    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','provisioning','active','suspended','deactivated','deleted')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','provisioning','active','suspended','deactivated','deleted')),  # noqa: E501
     tier TEXT NOT NULL DEFAULT 'starter' CHECK (tier IN ('starter','professional','enterprise')),
     db_host TEXT, db_name TEXT, db_port INTEGER DEFAULT 5432,
     k8s_namespace TEXT, aws_account_id TEXT,
@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     email TEXT NOT NULL, display_name TEXT,
-    role TEXT NOT NULL DEFAULT 'developer' CHECK (role IN ('tenant_admin','developer','compliance_officer','auditor','viewer')),
+    role TEXT NOT NULL DEFAULT 'developer' CHECK (role IN ('tenant_admin','developer','compliance_officer','auditor','viewer')),  # noqa: E501
     auth_method TEXT NOT NULL DEFAULT 'api_key' CHECK (auth_method IN ('api_key','oauth','cac_piv')),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','deactivated')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -289,8 +289,13 @@ CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_provider ON tenant_llm_keys(tenan
 # Expected tables for verification
 # ---------------------------------------------------------------------------
 EXPECTED_TABLES = [
-    "tenants", "users", "api_keys", "subscriptions",
-    "usage_records", "audit_platform", "rate_limits",
+    "tenants",
+    "users",
+    "api_keys",
+    "subscriptions",
+    "usage_records",
+    "audit_platform",
+    "rate_limits",
     "tenant_llm_keys",
 ]
 
@@ -327,10 +332,7 @@ def _get_pg_connection():
         import psycopg2
         import psycopg2.extras
     except ImportError:
-        raise ImportError(
-            "psycopg2 is required for PostgreSQL. "
-            "Install with: pip install psycopg2-binary"
-        )
+        raise ImportError("psycopg2 is required for PostgreSQL. Install with: pip install psycopg2-binary")
     url = _get_db_url()
     try:
         conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
@@ -386,15 +388,19 @@ def init_platform_db(force=False):
 
         if missing:
             result = {
-                "status": "error", "backend": backend,
-                "tables_created": tables, "missing_tables": missing,
+                "status": "error",
+                "backend": backend,
+                "tables_created": tables,
+                "missing_tables": missing,
                 "message": f"Schema incomplete -- missing tables: {missing}",
             }
             logger.error(result["message"])
         else:
             result = {
-                "status": "ok", "backend": backend,
-                "tables_created": tables, "missing_tables": [],
+                "status": "ok",
+                "backend": backend,
+                "tables_created": tables,
+                "missing_tables": [],
                 "message": f"Platform DB initialized: {len(tables)} tables ({backend})",
             }
             logger.info(result["message"])
@@ -457,8 +463,13 @@ def _split_sql_statements(sql):
 def _drop_all_tables(cursor, backend):
     """Drop all platform tables (for --force reinit)."""
     drop_order = [
-        "rate_limits", "audit_platform", "usage_records",
-        "subscriptions", "api_keys", "users", "tenants",
+        "rate_limits",
+        "audit_platform",
+        "usage_records",
+        "subscriptions",
+        "api_keys",
+        "users",
+        "tenants",
     ]
     if backend == "postgresql":
         cursor.execute("DROP TRIGGER IF EXISTS trg_audit_no_update ON audit_platform")
@@ -478,10 +489,7 @@ def _list_tables(cursor, backend):
         cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
         return [row["tablename"] for row in cursor.fetchall()]
     else:
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         return [row["name"] for row in cursor.fetchall()]
 
 
@@ -506,21 +514,27 @@ def verify_platform_db():
         conn.close()
         if missing:
             return {
-                "status": "incomplete", "backend": backend,
-                "tables": tables, "missing": missing,
+                "status": "incomplete",
+                "backend": backend,
+                "tables": tables,
+                "missing": missing,
                 "row_counts": counts,
                 "message": f"Missing tables: {missing}",
             }
         return {
-            "status": "ok", "backend": backend,
-            "tables": tables, "missing": [],
+            "status": "ok",
+            "backend": backend,
+            "tables": tables,
+            "missing": [],
             "row_counts": counts,
             "message": f"Schema verified: {len(tables)} tables ({backend})",
         }
     except Exception as exc:
         return {
-            "status": "error", "backend": backend,
-            "tables": [], "missing": EXPECTED_TABLES,
+            "status": "error",
+            "backend": backend,
+            "tables": [],
+            "missing": EXPECTED_TABLES,
             "row_counts": {},
             "message": f"Verification failed: {exc}",
         }
@@ -567,16 +581,14 @@ def log_platform_audit(
                 "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
                 "action, details, ip_address, user_agent) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (tenant_id, user_id, event_type, action, details_json,
-                 ip_address, user_agent),
+                (tenant_id, user_id, event_type, action, details_json, ip_address, user_agent),
             )
         else:
             cursor.execute(
                 "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
                 "action, details, ip_address, user_agent) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (tenant_id, user_id, event_type, action, details_json,
-                 ip_address, user_agent),
+                (tenant_id, user_id, event_type, action, details_json, ip_address, user_agent),
             )
         conn.commit()
     except Exception as exc:
@@ -630,17 +642,14 @@ def seed_demo_data():
 
         # 1. Create tenant
         cursor.execute(
-            "INSERT INTO tenants (id, name, slug, status, tier, impact_level) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tenants (id, name, slug, status, tier, impact_level) VALUES (?, ?, ?, ?, ?, ?)",
             (tenant_id, "ICDEV Demo", "icdev-demo", "active", "starter", "IL4"),
         )
 
         # 2. Create admin user
         cursor.execute(
-            "INSERT INTO users (id, tenant_id, email, display_name, role, status) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, tenant_id, "admin@icdev.local", "Demo Admin",
-             "tenant_admin", "active"),
+            "INSERT INTO users (id, tenant_id, email, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, tenant_id, "admin@icdev.local", "Demo Admin", "tenant_admin", "active"),
         )
 
         # 3. Create API key
@@ -660,10 +669,14 @@ def seed_demo_data():
         # 5. Audit event
         try:
             cursor.execute(
-                "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
-                "action, details) VALUES (?, ?, ?, ?, ?)",
-                (tenant_id, user_id, "tenant.seed", "seed_demo_data",
-                 json.dumps({"tenant": "ICDEV Demo", "user": "admin@icdev.local"})),
+                "INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details) VALUES (?, ?, ?, ?, ?)",
+                (
+                    tenant_id,
+                    user_id,
+                    "tenant.seed",
+                    "seed_demo_data",
+                    json.dumps({"tenant": "ICDEV Demo", "user": "admin@icdev.local"}),
+                ),
             )
         except Exception:
             pass  # Audit logging should not block seed
@@ -695,18 +708,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="ICDEV SaaS Platform Database Manager (CUI // SP-CTI)",
     )
-    parser.add_argument("--init", action="store_true",
-                        help="Initialize the platform database schema")
-    parser.add_argument("--force", action="store_true",
-                        help="Drop existing tables before creating (DESTRUCTIVE)")
-    parser.add_argument("--verify", action="store_true",
-                        help="Verify schema integrity")
-    parser.add_argument("--info", action="store_true",
-                        help="Show connection info")
-    parser.add_argument("--seed", action="store_true",
-                        help="Create demo tenant + admin user + API key")
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
+    parser.add_argument("--init", action="store_true", help="Initialize the platform database schema")
+    parser.add_argument("--force", action="store_true", help="Drop existing tables before creating (DESTRUCTIVE)")
+    parser.add_argument("--verify", action="store_true", help="Verify schema integrity")
+    parser.add_argument("--info", action="store_true", help="Show connection info")
+    parser.add_argument("--seed", action="store_true", help="Create demo tenant + admin user + API key")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()
 

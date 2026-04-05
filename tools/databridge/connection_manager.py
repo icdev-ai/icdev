@@ -5,6 +5,7 @@ Provides helpers to look up, create, and update connection records in the
 ``db_connections`` table of icdev.db.  Also resolves secret references for
 auth credentials.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,9 +32,7 @@ def get_connection(
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute(
-            "SELECT * FROM db_connections WHERE id = ?", (connection_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM db_connections WHERE id = ?", (connection_id,)).fetchone()
         conn.close()
         if row:
             return dict(row)
@@ -63,9 +62,7 @@ def update_connection(
     values = list(filtered.values()) + [connection_id]
     try:
         conn = _get_conn(db)
-        conn.execute(
-            f"UPDATE db_connections SET {set_clause} WHERE id = ?", values
-        )
+        conn.execute(f"UPDATE db_connections SET {set_clause} WHERE id = ?", values)
         conn.commit()
         conn.close()
         return True

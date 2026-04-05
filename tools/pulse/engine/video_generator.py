@@ -42,18 +42,19 @@ LTX_MODEL_ID = "Lightricks/LTX-Video"
 LTX_MODEL_VARIANT = "ltxv-2b-0.9.8-distilled"
 
 # Video defaults — tuned for RTX 4060 8 GB VRAM
-DEFAULT_WIDTH = 704         # Divisible by 32
-DEFAULT_HEIGHT = 480        # Divisible by 32, 16:9-ish
+DEFAULT_WIDTH = 704  # Divisible by 32
+DEFAULT_HEIGHT = 480  # Divisible by 32, 16:9-ish
 DEFAULT_FPS = 24
-DEFAULT_NUM_FRAMES = 97     # Must be divisible by 8 + 1 (96+1=97), ~4s at 24fps
-DEFAULT_STEPS = 20          # Inference steps (distilled model: 20 is good)
-DEFAULT_GUIDANCE = 7.5      # CFG scale
-MIN_VRAM_GB = 6.0           # Minimum VRAM for LTX-Video 2B
+DEFAULT_NUM_FRAMES = 97  # Must be divisible by 8 + 1 (96+1=97), ~4s at 24fps
+DEFAULT_STEPS = 20  # Inference steps (distilled model: 20 is good)
+DEFAULT_GUIDANCE = 7.5  # CFG scale
+MIN_VRAM_GB = 6.0  # Minimum VRAM for LTX-Video 2B
 
 
 # ---------------------------------------------------------------------------
 # GPU / CUDA detection
 # ---------------------------------------------------------------------------
+
 
 def check_gpu() -> Dict[str, Any]:
     """Check GPU availability and VRAM for video generation."""
@@ -67,14 +68,15 @@ def check_gpu() -> Dict[str, Any]:
     }
     try:
         import torch
+
         if torch.cuda.is_available():
             result["cuda_available"] = True
             result["device_name"] = torch.cuda.get_device_name(0)
             props = torch.cuda.get_device_properties(0)
             total = getattr(props, "total_memory", None) or getattr(props, "total_mem", 0)
             free = total - torch.cuda.memory_allocated(0)
-            result["vram_total_gb"] = round(total / (1024 ** 3), 1)
-            result["vram_free_gb"] = round(free / (1024 ** 3), 1)
+            result["vram_total_gb"] = round(total / (1024**3), 1)
+            result["vram_free_gb"] = round(free / (1024**3), 1)
             result["ltx_video_compatible"] = result["vram_total_gb"] >= MIN_VRAM_GB
     except ImportError:
         pass
@@ -82,6 +84,7 @@ def check_gpu() -> Dict[str, Any]:
     # Check if diffusers + LTX pipeline are installed
     try:
         from diffusers import DiffusionPipeline  # noqa: F401
+
         result["ltx_video_installed"] = True
     except ImportError:
         pass
@@ -137,6 +140,7 @@ def _build_video_prompt(title: str, category: str = "") -> str:
 # Tier 1: Animated SVG fallback (zero deps, air-gap safe)
 # ---------------------------------------------------------------------------
 
+
 def generate_svg_video(
     title: str,
     category: str = "",
@@ -150,7 +154,7 @@ def generate_svg_video(
     """
     start = time.time()
 
-    h = hashlib.md5(title.encode()).hexdigest()
+    h = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()  # noqa: E501
     hue1 = int(h[:3], 16) % 360
     hue2 = (hue1 + 40) % 360
     color1 = f"hsl({hue1}, 65%, 25%)"
@@ -158,15 +162,8 @@ def generate_svg_video(
     accent = f"hsl({(hue1 + 180) % 360}, 70%, 75%)"
 
     display_title = title[:60] + ("..." if len(title) > 60 else "")
-    display_title = (
-        display_title.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-    category_display = (
-        category[:30].upper().replace("&", "&amp;") if category else "ICDEV PULSE"
-    )
+    display_title = display_title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    category_display = category[:30].upper().replace("&", "&amp;") if category else "ICDEV PULSE"
 
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}"
@@ -180,40 +177,40 @@ def generate_svg_video(
   <rect width="{width}" height="{height}" fill="url(#bg)"/>
   <!-- Animated grid lines -->
   <g opacity="0.15">
-    <line x1="0" y1="{height//3}" x2="{width}" y2="{height//3}" stroke="{accent}" stroke-width="0.5">
-      <animate attributeName="y1" values="{height//3};{height//3+20};{height//3}" dur="4s" repeatCount="indefinite"/>
-      <animate attributeName="y2" values="{height//3};{height//3+20};{height//3}" dur="4s" repeatCount="indefinite"/>
+    <line x1="0" y1="{height // 3}" x2="{width}" y2="{height // 3}" stroke="{accent}" stroke-width="0.5">
+      <animate attributeName="y1" values="{height // 3};{height // 3 + 20};{height // 3}" dur="4s" repeatCount="indefinite"/>  # noqa: E501
+      <animate attributeName="y2" values="{height // 3};{height // 3 + 20};{height // 3}" dur="4s" repeatCount="indefinite"/>  # noqa: E501
     </line>
-    <line x1="0" y1="{2*height//3}" x2="{width}" y2="{2*height//3}" stroke="{accent}" stroke-width="0.5">
-      <animate attributeName="y1" values="{2*height//3};{2*height//3-20};{2*height//3}" dur="4s" repeatCount="indefinite"/>
-      <animate attributeName="y2" values="{2*height//3};{2*height//3-20};{2*height//3}" dur="4s" repeatCount="indefinite"/>
+    <line x1="0" y1="{2 * height // 3}" x2="{width}" y2="{2 * height // 3}" stroke="{accent}" stroke-width="0.5">
+      <animate attributeName="y1" values="{2 * height // 3};{2 * height // 3 - 20};{2 * height // 3}" dur="4s" repeatCount="indefinite"/>  # noqa: E501
+      <animate attributeName="y2" values="{2 * height // 3};{2 * height // 3 - 20};{2 * height // 3}" dur="4s" repeatCount="indefinite"/>  # noqa: E501
     </line>
   </g>
   <!-- Pulsing circle -->
-  <circle cx="{width//2}" cy="{height//2}" r="80" fill="none" stroke="{accent}" stroke-width="1" opacity="0.3">
+  <circle cx="{width // 2}" cy="{height // 2}" r="80" fill="none" stroke="{accent}" stroke-width="1" opacity="0.3">
     <animate attributeName="r" values="80;120;80" dur="4s" repeatCount="indefinite"/>
     <animate attributeName="opacity" values="0.3;0.1;0.3" dur="4s" repeatCount="indefinite"/>
   </circle>
   <!-- Content overlay -->
-  <rect x="60" y="{height//2 - 50}" width="{width - 120}" height="100" rx="10" fill="rgba(0,0,0,0.4)"/>
-  <text x="{width//2}" y="{height//2 - 10}" text-anchor="middle"
+  <rect x="60" y="{height // 2 - 50}" width="{width - 120}" height="100" rx="10" fill="rgba(0,0,0,0.4)"/>
+  <text x="{width // 2}" y="{height // 2 - 10}" text-anchor="middle"
         font-family="system-ui, sans-serif" font-size="12" font-weight="600"
         letter-spacing="2" fill="{accent}">
     {category_display}
   </text>
-  <text x="{width//2}" y="{height//2 + 20}" text-anchor="middle"
+  <text x="{width // 2}" y="{height // 2 + 20}" text-anchor="middle"
         font-family="system-ui, sans-serif" font-size="20" font-weight="700" fill="white">
     {display_title}
   </text>
   <!-- Play icon hint -->
-  <polygon points="{width//2-12},{height-50} {width//2-12},{height-30} {width//2+8},{height-40}"
+  <polygon points="{width // 2 - 12},{height - 50} {width // 2 - 12},{height - 30} {width // 2 + 8},{height - 40}"
            fill="rgba(255,255,255,0.4)">
     <animate attributeName="opacity" values="0.4;0.8;0.4" dur="2s" repeatCount="indefinite"/>
   </polygon>
 </svg>"""
 
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]  # noqa: E501
         DEFAULT_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_VIDEO_DIR / f"video-{slug}.svg")
 
@@ -328,7 +325,7 @@ def generate_video(
     prompt = prompt_override or _build_video_prompt(title, category)
 
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]  # noqa: E501
         DEFAULT_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_VIDEO_DIR / f"video-{slug}.mp4")
 
@@ -420,6 +417,7 @@ def _export_frames_to_mp4(frames, output_path: str, fps: int = DEFAULT_FPS):
     # Try imageio (preferred — uses ffmpeg)
     try:
         import imageio.v3 as iio
+
         iio.imwrite(output_path, np_frames, fps=fps, codec="libx264")
         return
     except ImportError:
@@ -429,6 +427,7 @@ def _export_frames_to_mp4(frames, output_path: str, fps: int = DEFAULT_FPS):
 
     try:
         import imageio
+
         writer = imageio.get_writer(output_path, fps=fps, codec="libx264")
         for f in np_frames:
             writer.append_data(f)
@@ -442,6 +441,7 @@ def _export_frames_to_mp4(frames, output_path: str, fps: int = DEFAULT_FPS):
     # Fallback: OpenCV
     try:
         import cv2
+
         h, w = np_frames[0].shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
@@ -454,14 +454,13 @@ def _export_frames_to_mp4(frames, output_path: str, fps: int = DEFAULT_FPS):
     except ImportError:
         pass
 
-    raise RuntimeError(
-        "No video encoder available. Install imageio[ffmpeg] or opencv-python."
-    )
+    raise RuntimeError("No video encoder available. Install imageio[ffmpeg] or opencv-python.")
 
 
 # ---------------------------------------------------------------------------
 # Public API: auto-select best available method
 # ---------------------------------------------------------------------------
+
 
 def generate_post_video(
     title: str,
@@ -539,10 +538,9 @@ def create_post_video(title: str, topic: str = "") -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Pulse video generator (LTX-Video 2B / animated SVG fallback)"
-    )
+    parser = argparse.ArgumentParser(description="Pulse video generator (LTX-Video 2B / animated SVG fallback)")
     parser.add_argument("--prompt", type=str, help="Article title or custom prompt")
     parser.add_argument("--category", type=str, default="", help="Article category")
     parser.add_argument("--output", type=str, help="Output file path")

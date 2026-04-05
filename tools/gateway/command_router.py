@@ -25,9 +25,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.gateway.event_envelope import CommandEnvelope
-from tools.gateway.response_filter import (
-    filter_response, truncate_response, format_response
-)
+from tools.gateway.response_filter import filter_response, truncate_response, format_response
 
 logger = logging.getLogger("icdev.gateway.command_router")
 
@@ -37,6 +35,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping: %s", kwargs.get("action", ""))
 
@@ -95,8 +94,7 @@ COMMAND_TOOL_MAP = {
 }
 
 
-def is_command_allowed(command: str, channel: str,
-                       allowlist: List[Dict]) -> Tuple[bool, Optional[Dict]]:
+def is_command_allowed(command: str, channel: str, allowlist: List[Dict]) -> Tuple[bool, Optional[Dict]]:
     """Check if a command is allowed on a given channel.
 
     Args:
@@ -128,9 +126,7 @@ def requires_confirmation(command: str, allowlist: List[Dict]) -> bool:
     return False
 
 
-def execute_command(envelope: CommandEnvelope,
-                    channel_config: Dict,
-                    gateway_config: Dict) -> Dict[str, Any]:
+def execute_command(envelope: CommandEnvelope, channel_config: Dict, gateway_config: Dict) -> Dict[str, Any]:
     """Execute an ICDEV command and return the result.
 
     Args:
@@ -156,14 +152,12 @@ def execute_command(envelope: CommandEnvelope,
     # Look up the tool
     tool_info = COMMAND_TOOL_MAP.get(envelope.command)
     if not tool_info:
-        return _result(False, f"Unknown command: {envelope.command}",
-                       audit_id=audit_id, start_time=start_time)
+        return _result(False, f"Unknown command: {envelope.command}", audit_id=audit_id, start_time=start_time)
 
     # Build command line
     script_path = BASE_DIR / tool_info["script"]
     if not script_path.exists():
-        return _result(False, f"Tool not found: {tool_info['script']}",
-                       audit_id=audit_id, start_time=start_time)
+        return _result(False, f"Tool not found: {tool_info['script']}", audit_id=audit_id, start_time=start_time)
 
     # Format args
     args_str = tool_info["args_template"]
@@ -203,9 +197,7 @@ def execute_command(envelope: CommandEnvelope,
         return _result(False, raw_output, audit_id=audit_id, start_time=start_time)
 
     # Filter response by classification
-    filtered_output, was_filtered, detected_il = filter_response(
-        raw_output, channel_max_il, envelope.id
-    )
+    filtered_output, was_filtered, detected_il = filter_response(raw_output, channel_max_il, envelope.id)
 
     # Truncate for channel limits
     response_config = gateway_config.get("gateway", {}).get("response", {})
@@ -218,7 +210,8 @@ def execute_command(envelope: CommandEnvelope,
     include_audit = response_config.get("include_audit_id", True)
 
     final_output = format_response(
-        filtered_output, envelope.command,
+        filtered_output,
+        envelope.command,
         execution_time_ms=exec_time_ms,
         audit_id=audit_id,
         include_timing=include_timing,
@@ -226,22 +219,30 @@ def execute_command(envelope: CommandEnvelope,
     )
 
     # Log to DB
-    _log_command(envelope, audit_id, raw_output, detected_il,
-                 was_filtered, exec_time_ms,
-                 "completed" if result.returncode == 0 else "failed")
+    _log_command(
+        envelope,
+        audit_id,
+        raw_output,
+        detected_il,
+        was_filtered,
+        exec_time_ms,
+        "completed" if result.returncode == 0 else "failed",
+    )
 
     audit_log_event(
         event_type="remote_command_completed",
         actor=envelope.icdev_user_id or envelope.channel_user_id,
         action=f"Command '{envelope.command}' executed via {envelope.channel}",
-        details=str({
-            "audit_id": audit_id,
-            "command": envelope.command,
-            "channel": envelope.channel,
-            "execution_time_ms": exec_time_ms,
-            "response_filtered": was_filtered,
-            "detected_il": detected_il,
-        }),
+        details=str(
+            {
+                "audit_id": audit_id,
+                "command": envelope.command,
+                "channel": envelope.channel,
+                "execution_time_ms": exec_time_ms,
+                "response_filtered": was_filtered,
+                "detected_il": detected_il,
+            }
+        ),
     )
 
     return {
@@ -259,8 +260,8 @@ def execute_command(envelope: CommandEnvelope,
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _result(success: bool, output: str, audit_id: str = "",
-            start_time: float = 0) -> Dict[str, Any]:
+
+def _result(success: bool, output: str, audit_id: str = "", start_time: float = 0) -> Dict[str, Any]:
     """Build a result dict for error cases."""
     exec_time = int((time.time() - start_time) * 1000) if start_time else 0
     return {
@@ -280,23 +281,40 @@ def _safe_env() -> Dict[str, str]:
     Strips potentially dangerous env vars while keeping necessary ones.
     """
     import os
+
     safe = {}
     # Keep essential vars
-    for key in ("PATH", "HOME", "PYTHONPATH", "VIRTUAL_ENV",
-                "ICDEV_GATEWAY_HMAC_SECRET", "ICDEV_MAILBOX_SECRET",
-                "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-                "AWS_DEFAULT_REGION", "AWS_REGION",
-                "OLLAMA_BASE_URL", "SYSTEMROOT", "TEMP", "TMP"):
+    for key in (
+        "PATH",
+        "HOME",
+        "PYTHONPATH",
+        "VIRTUAL_ENV",
+        "ICDEV_GATEWAY_HMAC_SECRET",
+        "ICDEV_MAILBOX_SECRET",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "AWS_DEFAULT_REGION",
+        "AWS_REGION",
+        "OLLAMA_BASE_URL",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+    ):
         val = os.environ.get(key)
         if val:
             safe[key] = val
     return safe
 
 
-def _log_command(envelope: CommandEnvelope, audit_id: str,
-                 raw_output: str, detected_il: str,
-                 was_filtered: bool, exec_time_ms: int,
-                 status: str):
+def _log_command(
+    envelope: CommandEnvelope,
+    audit_id: str,
+    raw_output: str,
+    detected_il: str,
+    was_filtered: bool,
+    exec_time_ms: int,
+    status: str,
+):
     """Log command execution to remote_command_log table."""
     try:
         conn = sqlite3.connect(str(DB_PATH))
@@ -318,7 +336,7 @@ def _log_command(envelope: CommandEnvelope, audit_id: str,
                 detected_il,
                 1 if was_filtered else 0,
                 exec_time_ms,
-            )
+            ),
         )
         conn.commit()
         conn.close()

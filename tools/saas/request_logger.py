@@ -30,9 +30,7 @@ if str(BASE_DIR) not in sys.path:
 
 logger = logging.getLogger("saas.request_logger")
 
-PLATFORM_DB_PATH = Path(
-    os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db"))
-)
+PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +81,10 @@ def log_request(
         conn.close()
         logger.debug(
             "Logged request: tenant=%s endpoint=%s status=%s duration=%dms",
-            tenant_id, endpoint, status_code, duration_ms,
+            tenant_id,
+            endpoint,
+            status_code,
+            duration_ms,
         )
     except Exception as exc:
         # Never let logging failures break the actual request

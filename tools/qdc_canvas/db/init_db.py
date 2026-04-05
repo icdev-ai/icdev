@@ -24,9 +24,7 @@ def get_connection():
         try:
             from tools.db.storage import get_connection as _icdev_conn
 
-            return _icdev_conn(
-                db_path=os.environ.get("QDC_PG_DATABASE", "qdc_canvas")
-            )
+            return _icdev_conn(db_path=os.environ.get("QDC_PG_DATABASE", "qdc_canvas"))
         except ImportError:
             pass
     conn = sqlite3.connect(str(DB_PATH))
@@ -182,6 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_qdc_collab_design ON qdc_collab_sessions(design_i
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _uid():
     return uuid.uuid4().hex[:10]
 
@@ -209,6 +208,7 @@ def _edge(src, tgt, label=""):
 
 
 # ── Templates ────────────────────────────────────────────────────────────────
+
 
 def _seed_templates(conn):
     """Seed 5 QA/QC templates."""
@@ -245,13 +245,17 @@ def _seed_templates(conn):
         _edge(nodes[8]["id"], nodes[9]["id"]),
         _edge(nodes[9]["id"], nodes[10]["id"]),
     ]
-    templates.append((
-        f"tpl-{_uid()}", "FedRAMP Moderate QA", "compliance",
-        "Standard FedRAMP Moderate ATO quality topology with SAST, SCA, unit tests, E2E, code review, STIG, and OSCAL.",
-        json.dumps({"nodes": nodes, "edges": edges}),
-        "fedramp_moderate",
-        '["fedramp", "moderate", "ato"]',
-    ))
+    templates.append(
+        (
+            f"tpl-{_uid()}",
+            "FedRAMP Moderate QA",
+            "compliance",
+            "Standard FedRAMP Moderate ATO quality topology with SAST, SCA, unit tests, E2E, code review, STIG, and OSCAL.",  # noqa: E501
+            json.dumps({"nodes": nodes, "edges": edges}),
+            "fedramp_moderate",
+            '["fedramp", "moderate", "ato"]',
+        )
+    )
 
     # 2. FedRAMP High QA
     nodes2 = [
@@ -283,13 +287,17 @@ def _seed_templates(conn):
         _edge(nodes2[11]["id"], nodes2[12]["id"]),
         _edge(nodes2[12]["id"], nodes2[13]["id"]),
     ]
-    templates.append((
-        f"tpl-{_uid()}", "FedRAMP High QA", "compliance",
-        "Enhanced FedRAMP High topology: all Moderate gates plus DAST, pen test, fuzz, container scan.",
-        json.dumps({"nodes": nodes2, "edges": edges2}),
-        "fedramp_high",
-        '["fedramp", "high", "ato", "dast", "pentest"]',
-    ))
+    templates.append(
+        (
+            f"tpl-{_uid()}",
+            "FedRAMP High QA",
+            "compliance",
+            "Enhanced FedRAMP High topology: all Moderate gates plus DAST, pen test, fuzz, container scan.",
+            json.dumps({"nodes": nodes2, "edges": edges2}),
+            "fedramp_high",
+            '["fedramp", "high", "ato", "dast", "pentest"]',
+        )
+    )
 
     # 3. CMMC Level 2 QA
     nodes3 = [
@@ -311,13 +319,17 @@ def _seed_templates(conn):
         _edge(nodes3[1]["id"], nodes3[6]["id"]),
         _edge(nodes3[6]["id"], nodes3[7]["id"]),
     ]
-    templates.append((
-        f"tpl-{_uid()}", "CMMC Level 2 QA", "compliance",
-        "CMMC L2 quality gates for CUI protection: SAST, SCA, unit tests, code review, secret scan.",
-        json.dumps({"nodes": nodes3, "edges": edges3}),
-        "cmmc_l2",
-        '["cmmc", "level2", "cui"]',
-    ))
+    templates.append(
+        (
+            f"tpl-{_uid()}",
+            "CMMC Level 2 QA",
+            "compliance",
+            "CMMC L2 quality gates for CUI protection: SAST, SCA, unit tests, code review, secret scan.",
+            json.dumps({"nodes": nodes3, "edges": edges3}),
+            "cmmc_l2",
+            '["cmmc", "level2", "cui"]',
+        )
+    )
 
     # 4. cATO Continuous
     nodes4 = [
@@ -345,13 +357,17 @@ def _seed_templates(conn):
         _edge(nodes4[6]["id"], nodes4[9]["id"]),
         _edge(nodes4[8]["id"], nodes4[10]["id"]),
     ]
-    templates.append((
-        f"tpl-{_uid()}", "cATO Continuous", "continuous",
-        "Continuous ATO with real-time evidence, UQS trending, and observability integration.",
-        json.dumps({"nodes": nodes4, "edges": edges4}),
-        "cato",
-        '["cato", "continuous", "evidence", "monitoring"]',
-    ))
+    templates.append(
+        (
+            f"tpl-{_uid()}",
+            "cATO Continuous",
+            "continuous",
+            "Continuous ATO with real-time evidence, UQS trending, and observability integration.",
+            json.dumps({"nodes": nodes4, "edges": edges4}),
+            "cato",
+            '["cato", "continuous", "evidence", "monitoring"]',
+        )
+    )
 
     # 5. Rapid Prototype
     nodes5 = [
@@ -368,13 +384,17 @@ def _seed_templates(conn):
         _edge(nodes5[1]["id"], nodes5[4]["id"]),
         _edge(nodes5[2]["id"], nodes5[4]["id"]),
     ]
-    templates.append((
-        f"tpl-{_uid()}", "Rapid Prototype", "development",
-        "Minimal quality gates for dev/sandbox: SAST, unit tests, code review.",
-        json.dumps({"nodes": nodes5, "edges": edges5}),
-        "rapid",
-        '["prototype", "sandbox", "minimal"]',
-    ))
+    templates.append(
+        (
+            f"tpl-{_uid()}",
+            "Rapid Prototype",
+            "development",
+            "Minimal quality gates for dev/sandbox: SAST, unit tests, code review.",
+            json.dumps({"nodes": nodes5, "edges": edges5}),
+            "rapid",
+            '["prototype", "sandbox", "minimal"]',
+        )
+    )
 
     for t in templates:
         conn.execute(
@@ -388,6 +408,7 @@ def _seed_templates(conn):
 
 # ── Snippets ─────────────────────────────────────────────────────────────────
 
+
 def _seed_snippets(conn):
     """Seed 8 reusable snippet patterns."""
     count = conn.execute("SELECT COUNT(*) FROM qdc_snippets").fetchone()[0]
@@ -395,32 +416,111 @@ def _seed_snippets(conn):
         return
 
     snippets = [
-        ("SAST+DAST Pipeline", "security", "Basic security testing chain: static then dynamic analysis.",
-         [_node("gate-sast", "SAST", 50, 50), _node("gate-dast", "DAST", 250, 50), _node("con-compliance", "Report", 450, 50)],
-         3, '["sast", "dast", "pipeline"]'),
-        ("Full Test Pyramid", "testing", "Complete test coverage stack: unit → BDD → E2E → fuzz.",
-         [_node("gate-unit", "Unit", 50, 50), _node("gate-bdd", "BDD", 200, 50), _node("gate-e2e", "E2E", 350, 50), _node("gate-fuzz", "Fuzz", 500, 50)],
-         4, '["testing", "pyramid", "coverage"]'),
-        ("Compliance Gate Chain", "compliance", "Compliance validation pipeline: STIG → FedRAMP → cATO.",
-         [_node("tgt-stig", "STIG", 50, 50), _node("tgt-fedramp-mod", "FedRAMP", 250, 50), _node("con-cato", "cATO Evidence", 450, 50)],
-         3, '["compliance", "stig", "fedramp", "cato"]'),
-        ("Container Security", "security", "Container supply chain: SCA → container scan → SBOM → registry.",
-         [_node("gate-sca", "SCA", 50, 50), _node("gate-container", "Container Scan", 250, 50), _node("con-compliance", "SBOM", 450, 50), _node("src-registry", "Registry", 650, 50)],
-         4, '["container", "sbom", "supply-chain"]'),
-        ("Code Quality Triad", "quality", "Code quality validation: complexity → coherence → review.",
-         [_node("gate-sast", "Complexity", 50, 50), _node("gate-review", "Coherence", 250, 50), _node("gate-review", "Review", 450, 50)],
-         3, '["quality", "complexity", "coherence"]'),
-        ("Cross-Canvas Hub", "integration", "All-canvas quality aggregation hub.",
-         [_node("xc-idc", "IDC", 50, 20), _node("xc-sdc", "SDC", 50, 80), _node("xc-bdc", "BDC", 50, 140),
-          _node("xc-pdc", "PDC", 50, 200), _node("xc-odc", "ODC", 50, 260), _node("xc-ddc", "DDC", 50, 320),
-          _node("xc-ndc", "NDC", 50, 380), _node("con-uqs", "UQS", 300, 200)],
-         8, '["cross-canvas", "aggregation", "hub"]'),
-        ("Incident Response QA", "operations", "Post-incident quality loop: alert → triage → fix → retest → close.",
-         [_node("src-health", "Alert", 50, 50), _node("gate-sast", "Triage", 200, 50), _node("gate-unit", "Fix & Test", 350, 50), _node("con-trend", "Close", 500, 50)],
-         4, '["incident", "response", "remediation"]'),
-        ("AI Code Assurance", "ai", "Quality gates for AI-generated code: AI gen → SAST → review → coverage.",
-         [_node("src-repo", "AI Gen", 50, 50), _node("gate-sast", "SAST", 200, 50), _node("gate-review", "Review", 350, 50), _node("gate-unit", "Coverage", 500, 50)],
-         4, '["ai", "generated", "assurance"]'),
+        (
+            "SAST+DAST Pipeline",
+            "security",
+            "Basic security testing chain: static then dynamic analysis.",
+            [
+                _node("gate-sast", "SAST", 50, 50),
+                _node("gate-dast", "DAST", 250, 50),
+                _node("con-compliance", "Report", 450, 50),
+            ],
+            3,
+            '["sast", "dast", "pipeline"]',
+        ),
+        (
+            "Full Test Pyramid",
+            "testing",
+            "Complete test coverage stack: unit → BDD → E2E → fuzz.",
+            [
+                _node("gate-unit", "Unit", 50, 50),
+                _node("gate-bdd", "BDD", 200, 50),
+                _node("gate-e2e", "E2E", 350, 50),
+                _node("gate-fuzz", "Fuzz", 500, 50),
+            ],
+            4,
+            '["testing", "pyramid", "coverage"]',
+        ),
+        (
+            "Compliance Gate Chain",
+            "compliance",
+            "Compliance validation pipeline: STIG → FedRAMP → cATO.",
+            [
+                _node("tgt-stig", "STIG", 50, 50),
+                _node("tgt-fedramp-mod", "FedRAMP", 250, 50),
+                _node("con-cato", "cATO Evidence", 450, 50),
+            ],
+            3,
+            '["compliance", "stig", "fedramp", "cato"]',
+        ),
+        (
+            "Container Security",
+            "security",
+            "Container supply chain: SCA → container scan → SBOM → registry.",
+            [
+                _node("gate-sca", "SCA", 50, 50),
+                _node("gate-container", "Container Scan", 250, 50),
+                _node("con-compliance", "SBOM", 450, 50),
+                _node("src-registry", "Registry", 650, 50),
+            ],
+            4,
+            '["container", "sbom", "supply-chain"]',
+        ),
+        (
+            "Code Quality Triad",
+            "quality",
+            "Code quality validation: complexity → coherence → review.",
+            [
+                _node("gate-sast", "Complexity", 50, 50),
+                _node("gate-review", "Coherence", 250, 50),
+                _node("gate-review", "Review", 450, 50),
+            ],
+            3,
+            '["quality", "complexity", "coherence"]',
+        ),
+        (
+            "Cross-Canvas Hub",
+            "integration",
+            "All-canvas quality aggregation hub.",
+            [
+                _node("xc-idc", "IDC", 50, 20),
+                _node("xc-sdc", "SDC", 50, 80),
+                _node("xc-bdc", "BDC", 50, 140),
+                _node("xc-pdc", "PDC", 50, 200),
+                _node("xc-odc", "ODC", 50, 260),
+                _node("xc-ddc", "DDC", 50, 320),
+                _node("xc-ndc", "NDC", 50, 380),
+                _node("con-uqs", "UQS", 300, 200),
+            ],
+            8,
+            '["cross-canvas", "aggregation", "hub"]',
+        ),
+        (
+            "Incident Response QA",
+            "operations",
+            "Post-incident quality loop: alert → triage → fix → retest → close.",
+            [
+                _node("src-health", "Alert", 50, 50),
+                _node("gate-sast", "Triage", 200, 50),
+                _node("gate-unit", "Fix & Test", 350, 50),
+                _node("con-trend", "Close", 500, 50),
+            ],
+            4,
+            '["incident", "response", "remediation"]',
+        ),
+        (
+            "AI Code Assurance",
+            "ai",
+            "Quality gates for AI-generated code: AI gen → SAST → review → coverage.",
+            [
+                _node("src-repo", "AI Gen", 50, 50),
+                _node("gate-sast", "SAST", 200, 50),
+                _node("gate-review", "Review", 350, 50),
+                _node("gate-unit", "Coverage", 500, 50),
+            ],
+            4,
+            '["ai", "generated", "assurance"]',
+        ),
     ]
 
     for name, cat, desc, nodes, nc, tags in snippets:
@@ -431,13 +531,13 @@ def _seed_snippets(conn):
             "INSERT INTO qdc_snippets "
             "(id, name, category, description, graph_json, node_count, tags) "
             "VALUES (?,?,?,?,?,?,?)",
-            (f"snp-{_uid()}", name, cat, desc,
-             json.dumps({"nodes": nodes, "edges": edges}), nc, tags),
+            (f"snp-{_uid()}", name, cat, desc, json.dumps({"nodes": nodes, "edges": edges}), nc, tags),
         )
     conn.commit()
 
 
 # ── Runbooks ─────────────────────────────────────────────────────────────────
+
 
 def _seed_runbooks(conn):
     """Seed 6 executable runbooks."""
@@ -447,93 +547,129 @@ def _seed_runbooks(conn):
 
     now = _now()
     runbooks = [
-        ("SAST Failure Remediation", "sast",
-         json.dumps([
-             "Read bandit/SAST findings JSON",
-             "Classify by severity (CAT1/CAT2/CAT3)",
-             "Auto-fix CAT3 issues (safe patterns)",
-             "Flag CAT1/CAT2 for manual review",
-             "Re-run SAST gate to verify",
-         ]),
-         "## SAST Failure Remediation\n\nTriggered when the SAST gate fails.\n\n"
-         "1. Run `python tools/security/sast_runner.py --project-dir . --json`\n"
-         "2. Parse findings by severity\n"
-         "3. For CAT3: apply auto-fix patterns\n"
-         "4. For CAT1/CAT2: create POAM items\n"
-         "5. Re-run gate and verify pass\n",
-         1, 0.7),
-        ("Test Coverage Recovery", "coverage",
-         json.dumps([
-             "Run stub_detector to find untested modules",
-             "Identify modules below coverage threshold",
-             "Generate test stubs via TDD workflow",
-             "Run pytest --cov to verify improvement",
-             "Update UQS coverage dimension",
-         ]),
-         "## Test Coverage Recovery\n\nTriggered when coverage drops below threshold.\n\n"
-         "1. Run `python tools/testing/stub_detector.py --project-dir . --json`\n"
-         "2. Run `python -m pytest tests/ --cov --cov-report=term-missing`\n"
-         "3. Generate tests for uncovered modules\n"
-         "4. Re-run coverage check\n",
-         1, 0.7),
-        ("cATO Evidence Refresh", "assessment",
-         json.dumps([
-             "Run cato_scheduler for due evidence",
-             "Collect fresh evidence from all tools",
-             "Generate OSCAL assessment artifacts",
-             "Update cATO dashboard metrics",
-             "Notify assessor of refreshed evidence",
-         ]),
-         "## cATO Evidence Refresh\n\nTriggered when evidence is older than 30 days.\n\n"
-         "1. Run `python tools/compliance/cato_scheduler.py --project-id PROJ --run-due`\n"
-         "2. Run `python tools/compliance/evidence_collector.py --project-id PROJ --json`\n"
-         "3. Run `python tools/compliance/oscal_generator.py --project-id PROJ --artifact ar`\n"
-         "4. Update dashboard with fresh timestamps\n",
-         1, 0.8),
-        ("Security Gate Escalation", "sast",
-         json.dumps([
-             "Triage CVE via dependency_auditor",
-             "Check EPSS score for exploitability",
-             "If exploitable: create POAM immediately",
-             "Apply patch within SLA window",
-             "Re-scan and verify fix",
-             "Close POAM item",
-         ]),
-         "## Security Gate Escalation\n\nTriggered when critical/high vulnerability found.\n\n"
-         "1. Run `python tools/security/dependency_auditor.py --project-dir . --json`\n"
-         "2. Check EPSS via `python tools/supply_chain/cve_triager.py --sla-check --json`\n"
-         "3. Create POAM if exploitable\n"
-         "4. Apply remediation and re-scan\n",
-         0, 0.5),
-        ("Cross-Canvas Quality Sync", None,
-         json.dumps([
-             "Rebuild KG for changed canvas",
-             "Re-assess affected quality gates",
-             "Recompute UQS score",
-             "Emit delta compliance evidence",
-             "Update trend data in qdc_uqs_history",
-         ]),
-         "## Cross-Canvas Quality Sync\n\nTriggered when any canvas design is saved.\n\n"
-         "1. Run `python tools/canvas/kg_builder.py --canvas <key> --design-id <id>`\n"
-         "2. Re-assess linked quality gates\n"
-         "3. Recompute UQS and store in history\n"
-         "4. Emit OSCAL evidence for changed gates\n",
-         1, 0.9),
-        ("Pre-Release Quality Gate", None,
-         json.dumps([
-             "Run all SA-11 gates sequentially",
-             "Verify UQS >= release threshold",
-             "Generate OSCAL assessment report",
-             "Check STIG compliance (0 CAT1)",
-             "Produce release quality certificate",
-         ]),
-         "## Pre-Release Quality Gate\n\nTriggered when release branch created.\n\n"
-         "1. Run full assessment: `POST /quality/api/designs/<id>/assess`\n"
-         "2. Check UQS >= 90 (release threshold)\n"
-         "3. Generate OSCAL: `python tools/compliance/oscal_generator.py --artifact ar`\n"
-         "4. Verify STIG: `python tools/compliance/stig_checker.py --project-id PROJ`\n"
-         "5. Sign quality certificate\n",
-         0, 0.5),
+        (
+            "SAST Failure Remediation",
+            "sast",
+            json.dumps(
+                [
+                    "Read bandit/SAST findings JSON",
+                    "Classify by severity (CAT1/CAT2/CAT3)",
+                    "Auto-fix CAT3 issues (safe patterns)",
+                    "Flag CAT1/CAT2 for manual review",
+                    "Re-run SAST gate to verify",
+                ]
+            ),
+            "## SAST Failure Remediation\n\nTriggered when the SAST gate fails.\n\n"
+            "1. Run `python tools/security/sast_runner.py --project-dir . --json`\n"
+            "2. Parse findings by severity\n"
+            "3. For CAT3: apply auto-fix patterns\n"
+            "4. For CAT1/CAT2: create POAM items\n"
+            "5. Re-run gate and verify pass\n",
+            1,
+            0.7,
+        ),
+        (
+            "Test Coverage Recovery",
+            "coverage",
+            json.dumps(
+                [
+                    "Run stub_detector to find untested modules",
+                    "Identify modules below coverage threshold",
+                    "Generate test stubs via TDD workflow",
+                    "Run pytest --cov to verify improvement",
+                    "Update UQS coverage dimension",
+                ]
+            ),
+            "## Test Coverage Recovery\n\nTriggered when coverage drops below threshold.\n\n"
+            "1. Run `python tools/testing/stub_detector.py --project-dir . --json`\n"
+            "2. Run `python -m pytest tests/ --cov --cov-report=term-missing`\n"
+            "3. Generate tests for uncovered modules\n"
+            "4. Re-run coverage check\n",
+            1,
+            0.7,
+        ),
+        (
+            "cATO Evidence Refresh",
+            "assessment",
+            json.dumps(
+                [
+                    "Run cato_scheduler for due evidence",
+                    "Collect fresh evidence from all tools",
+                    "Generate OSCAL assessment artifacts",
+                    "Update cATO dashboard metrics",
+                    "Notify assessor of refreshed evidence",
+                ]
+            ),
+            "## cATO Evidence Refresh\n\nTriggered when evidence is older than 30 days.\n\n"
+            "1. Run `python tools/compliance/cato_scheduler.py --project-id PROJ --run-due`\n"
+            "2. Run `python tools/compliance/evidence_collector.py --project-id PROJ --json`\n"
+            "3. Run `python tools/compliance/oscal_generator.py --project-id PROJ --artifact ar`\n"
+            "4. Update dashboard with fresh timestamps\n",
+            1,
+            0.8,
+        ),
+        (
+            "Security Gate Escalation",
+            "sast",
+            json.dumps(
+                [
+                    "Triage CVE via dependency_auditor",
+                    "Check EPSS score for exploitability",
+                    "If exploitable: create POAM immediately",
+                    "Apply patch within SLA window",
+                    "Re-scan and verify fix",
+                    "Close POAM item",
+                ]
+            ),
+            "## Security Gate Escalation\n\nTriggered when critical/high vulnerability found.\n\n"
+            "1. Run `python tools/security/dependency_auditor.py --project-dir . --json`\n"
+            "2. Check EPSS via `python tools/supply_chain/cve_triager.py --sla-check --json`\n"
+            "3. Create POAM if exploitable\n"
+            "4. Apply remediation and re-scan\n",
+            0,
+            0.5,
+        ),
+        (
+            "Cross-Canvas Quality Sync",
+            None,
+            json.dumps(
+                [
+                    "Rebuild KG for changed canvas",
+                    "Re-assess affected quality gates",
+                    "Recompute UQS score",
+                    "Emit delta compliance evidence",
+                    "Update trend data in qdc_uqs_history",
+                ]
+            ),
+            "## Cross-Canvas Quality Sync\n\nTriggered when any canvas design is saved.\n\n"
+            "1. Run `python tools/canvas/kg_builder.py --canvas <key> --design-id <id>`\n"
+            "2. Re-assess linked quality gates\n"
+            "3. Recompute UQS and store in history\n"
+            "4. Emit OSCAL evidence for changed gates\n",
+            1,
+            0.9,
+        ),
+        (
+            "Pre-Release Quality Gate",
+            None,
+            json.dumps(
+                [
+                    "Run all SA-11 gates sequentially",
+                    "Verify UQS >= release threshold",
+                    "Generate OSCAL assessment report",
+                    "Check STIG compliance (0 CAT1)",
+                    "Produce release quality certificate",
+                ]
+            ),
+            "## Pre-Release Quality Gate\n\nTriggered when release branch created.\n\n"
+            "1. Run full assessment: `POST /quality/api/designs/<id>/assess`\n"
+            "2. Check UQS >= 90 (release threshold)\n"
+            "3. Generate OSCAL: `python tools/compliance/oscal_generator.py --artifact ar`\n"
+            "4. Verify STIG: `python tools/compliance/stig_checker.py --project-id PROJ`\n"
+            "5. Sign quality certificate\n",
+            0,
+            0.5,
+        ),
     ]
 
     for name, trigger, steps, body, auto, conf in runbooks:
@@ -549,6 +685,7 @@ def _seed_runbooks(conn):
 
 # ── SOPs ─────────────────────────────────────────────────────────────────────
 
+
 def _seed_sops(conn):
     """Seed 4 Standard Operating Procedures."""
     count = conn.execute("SELECT COUNT(*) FROM qdc_sops").fetchone()[0]
@@ -557,56 +694,72 @@ def _seed_sops(conn):
 
     now = _now()
     sops = [
-        ("SOP-QDC-001", "Quality Gate Configuration",
-         "on_project_init", "DevSecOps Lead",
-         "## SOP-QDC-001: Quality Gate Configuration\n\n"
-         "### Purpose\nDefine the process for configuring UQS weights, gate thresholds, "
-         "and compliance targets when initializing a new project.\n\n"
-         "### Procedure\n"
-         "1. Review project classification (IL2/IL4/IL5/IL6)\n"
-         "2. Select appropriate QDC template (FedRAMP/CMMC/cATO/Rapid)\n"
-         "3. Adjust UQS dimension weights if needed\n"
-         "4. Set gate thresholds per `args/qdc_canvas_config.yaml`\n"
-         "5. Link cross-canvas designs from existing canvases\n"
-         "6. Run initial assessment to establish baseline UQS\n"
-         "7. Document configuration decisions in audit trail\n"),
-        ("SOP-QDC-002", "Continuous Quality Monitoring",
-         "daily", "SRE / QA Team",
-         "## SOP-QDC-002: Continuous Quality Monitoring\n\n"
-         "### Purpose\nDefine daily quality monitoring procedures.\n\n"
-         "### Procedure\n"
-         "1. Review UQS dashboard for score changes > 5 points\n"
-         "2. Check for new CAT1/CAT2 findings\n"
-         "3. Verify no expired cATO evidence\n"
-         "4. Review trend report for declining dimensions\n"
-         "5. Escalate any dimension below threshold\n"
-         "6. Run applicable runbooks for failed gates\n"
-         "7. Update daily quality log\n"),
-        ("SOP-QDC-003", "Quality Evidence Collection for ATO",
-         "per_assessment", "ISSO / Assessor",
-         "## SOP-QDC-003: Quality Evidence Collection for ATO\n\n"
-         "### Purpose\nCollect and package quality evidence for ATO assessments.\n\n"
-         "### Procedure\n"
-         "1. Export current UQS breakdown as JSON\n"
-         "2. Export all SA-11 gate results with OSCAL artifacts\n"
-         "3. Generate STIG compliance report\n"
-         "4. Generate SBOM (CycloneDX format)\n"
-         "5. Collect cross-canvas quality scores\n"
-         "6. Package as OSCAL assessment-results\n"
-         "7. Submit to eMASS/Xacta via export engine\n"),
-        ("SOP-QDC-004", "Quality Incident Response",
-         "on_gate_failure", "Dev Team",
-         "## SOP-QDC-004: Quality Incident Response\n\n"
-         "### Purpose\nTriage and remediate quality gate failures within SLA.\n\n"
-         "### Procedure\n"
-         "1. Identify failed gate and severity (CAT1/CAT2/CAT3)\n"
-         "2. CAT1: Immediate response — fix within 24 hours\n"
-         "3. CAT2: Standard response — fix within 5 business days\n"
-         "4. CAT3: Planned response — schedule in next sprint\n"
-         "5. Execute applicable runbook if available\n"
-         "6. Re-run gate to verify remediation\n"
-         "7. Update POAM if fix extends beyond SLA\n"
-         "8. Record incident in audit trail\n"),
+        (
+            "SOP-QDC-001",
+            "Quality Gate Configuration",
+            "on_project_init",
+            "DevSecOps Lead",
+            "## SOP-QDC-001: Quality Gate Configuration\n\n"
+            "### Purpose\nDefine the process for configuring UQS weights, gate thresholds, "
+            "and compliance targets when initializing a new project.\n\n"
+            "### Procedure\n"
+            "1. Review project classification (IL2/IL4/IL5/IL6)\n"
+            "2. Select appropriate QDC template (FedRAMP/CMMC/cATO/Rapid)\n"
+            "3. Adjust UQS dimension weights if needed\n"
+            "4. Set gate thresholds per `args/qdc_canvas_config.yaml`\n"
+            "5. Link cross-canvas designs from existing canvases\n"
+            "6. Run initial assessment to establish baseline UQS\n"
+            "7. Document configuration decisions in audit trail\n",
+        ),
+        (
+            "SOP-QDC-002",
+            "Continuous Quality Monitoring",
+            "daily",
+            "SRE / QA Team",
+            "## SOP-QDC-002: Continuous Quality Monitoring\n\n"
+            "### Purpose\nDefine daily quality monitoring procedures.\n\n"
+            "### Procedure\n"
+            "1. Review UQS dashboard for score changes > 5 points\n"
+            "2. Check for new CAT1/CAT2 findings\n"
+            "3. Verify no expired cATO evidence\n"
+            "4. Review trend report for declining dimensions\n"
+            "5. Escalate any dimension below threshold\n"
+            "6. Run applicable runbooks for failed gates\n"
+            "7. Update daily quality log\n",
+        ),
+        (
+            "SOP-QDC-003",
+            "Quality Evidence Collection for ATO",
+            "per_assessment",
+            "ISSO / Assessor",
+            "## SOP-QDC-003: Quality Evidence Collection for ATO\n\n"
+            "### Purpose\nCollect and package quality evidence for ATO assessments.\n\n"
+            "### Procedure\n"
+            "1. Export current UQS breakdown as JSON\n"
+            "2. Export all SA-11 gate results with OSCAL artifacts\n"
+            "3. Generate STIG compliance report\n"
+            "4. Generate SBOM (CycloneDX format)\n"
+            "5. Collect cross-canvas quality scores\n"
+            "6. Package as OSCAL assessment-results\n"
+            "7. Submit to eMASS/Xacta via export engine\n",
+        ),
+        (
+            "SOP-QDC-004",
+            "Quality Incident Response",
+            "on_gate_failure",
+            "Dev Team",
+            "## SOP-QDC-004: Quality Incident Response\n\n"
+            "### Purpose\nTriage and remediate quality gate failures within SLA.\n\n"
+            "### Procedure\n"
+            "1. Identify failed gate and severity (CAT1/CAT2/CAT3)\n"
+            "2. CAT1: Immediate response — fix within 24 hours\n"
+            "3. CAT2: Standard response — fix within 5 business days\n"
+            "4. CAT3: Planned response — schedule in next sprint\n"
+            "5. Execute applicable runbook if available\n"
+            "6. Re-run gate to verify remediation\n"
+            "7. Update POAM if fix extends beyond SLA\n"
+            "8. Record incident in audit trail\n",
+        ),
     ]
 
     for sop_num, title, freq, audience, body in sops:
@@ -615,13 +768,13 @@ def _seed_sops(conn):
             "(id, sop_number, title, version, frequency, audience, "
             "body_markdown, approval_status, classification, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (f"sop-{_uid()}", sop_num, title, 1, freq, audience,
-             body, "draft", "CUI", now, now),
+            (f"sop-{_uid()}", sop_num, title, 1, freq, audience, body, "draft", "CUI", now, now),
         )
     conn.commit()
 
 
 # ── Init ─────────────────────────────────────────────────────────────────────
+
 
 def init_db():
     """Initialize QDC database: create schema and seed data."""
@@ -641,9 +794,7 @@ if __name__ == "__main__":
     init_db()
     conn = get_connection()
     try:
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
         print(f"QDC Canvas DB initialized: {len(tables)} tables")
         for t in tables:
             count = conn.execute(f"SELECT COUNT(*) FROM [{t[0]}]").fetchone()[0]  # noqa: S608

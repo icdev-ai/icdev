@@ -18,7 +18,7 @@ import pytest
 def test_runtime_feedback_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.analysis.runtime_feedback
+        import tools.analysis.runtime_feedback  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

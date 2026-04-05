@@ -23,6 +23,7 @@ if str(BASE_DIR) not in sys.path:
 
 logger = logging.getLogger("icdev.mcp.gateway")
 
+
 # MCP protocol helpers (reuse pattern from other MCP servers)
 def _read_message():
     """Read a JSON-RPC message from stdin."""
@@ -62,11 +63,10 @@ def _error(id, code, message):
 # Tool Handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_bind_user(params):
     """Initiate or complete a user binding ceremony."""
-    from tools.gateway.user_binder import (
-        create_challenge, verify_challenge, provision_binding
-    )
+    from tools.gateway.user_binder import create_challenge, verify_challenge, provision_binding
 
     action = params.get("action", "initiate")
 
@@ -98,6 +98,7 @@ def handle_bind_user(params):
 def handle_list_bindings(params):
     """List remote user bindings."""
     from tools.gateway.user_binder import list_bindings
+
     channel = params.get("channel", "")
     status = params.get("status", "")
     bindings = list_bindings(channel=channel, status=status)
@@ -107,6 +108,7 @@ def handle_list_bindings(params):
 def handle_revoke_binding(params):
     """Revoke an active binding."""
     from tools.gateway.user_binder import revoke_binding
+
     binding_id = params.get("binding_id", "")
     reason = params.get("reason", "")
     if not binding_id:
@@ -181,12 +183,14 @@ def handle_gateway_status(params):
         enabled = ch_config.get("enabled", False)
         req_internet = ch_config.get("requires_internet", False)
         available = enabled and not (env_mode == "air_gapped" and req_internet)
-        active.append({
-            "channel": name,
-            "enabled": enabled,
-            "available": available,
-            "max_il": ch_config.get("max_il", "IL4"),
-        })
+        active.append(
+            {
+                "channel": name,
+                "enabled": enabled,
+                "available": available,
+                "max_il": ch_config.get("max_il", "IL4"),
+            }
+        )
 
     # Recent commands
     recent = []
@@ -292,23 +296,30 @@ def main():
         params = msg.get("params", {})
 
         if method == "initialize":
-            _write_message(_result(id, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {
-                    "name": "icdev-gateway",
-                    "version": "1.0.0",
-                },
-            }))
+            _write_message(
+                _result(
+                    id,
+                    {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {"listChanged": False}},
+                        "serverInfo": {
+                            "name": "icdev-gateway",
+                            "version": "1.0.0",
+                        },
+                    },
+                )
+            )
 
         elif method == "tools/list":
             tool_list = []
             for name, info in TOOLS.items():
-                tool_list.append({
-                    "name": name,
-                    "description": info["description"],
-                    "inputSchema": info["inputSchema"],
-                })
+                tool_list.append(
+                    {
+                        "name": name,
+                        "description": info["description"],
+                        "inputSchema": info["inputSchema"],
+                    }
+                )
             _write_message(_result(id, {"tools": tool_list}))
 
         elif method == "tools/call":
@@ -318,9 +329,14 @@ def main():
             if tool_name in TOOLS:
                 try:
                     result = TOOLS[tool_name]["handler"](tool_args)
-                    _write_message(_result(id, {
-                        "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}],
-                    }))
+                    _write_message(
+                        _result(
+                            id,
+                            {
+                                "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}],
+                            },
+                        )
+                    )
                 except Exception as e:
                     _write_message(_error(id, -32000, str(e)))
             else:

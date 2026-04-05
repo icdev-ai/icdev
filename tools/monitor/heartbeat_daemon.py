@@ -195,10 +195,7 @@ def _notify(
     2. SSE broadcast (best-effort HTTP POST to dashboard)
     3. Gateway mailbox broadcast (if configured, best-effort)
     """
-    event_type = (
-        "heartbeat_check_critical" if severity == "critical"
-        else "heartbeat_check_warning"
-    )
+    event_type = "heartbeat_check_critical" if severity == "critical" else "heartbeat_check_warning"
 
     # --- 1. Audit trail ---------------------------------------------------
     try:
@@ -216,14 +213,16 @@ def _notify(
 
     # --- 2. SSE broadcast --------------------------------------------------
     try:
-        payload = json.dumps({
-            "event_type": event_type,
-            "check_type": check_type,
-            "severity": severity,
-            "title": title,
-            "details": details,
-            "timestamp": _utcnow_iso(),
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "event_type": event_type,
+                "check_type": check_type,
+                "severity": severity,
+                "title": title,
+                "details": details,
+                "timestamp": _utcnow_iso(),
+            }
+        ).encode("utf-8")
         req = urllib.request.Request(
             "http://localhost:5000/api/events/ingest",
             data=payload,
@@ -439,14 +438,17 @@ def check_memory_maintenance(
     # D181: Flush auto-capture buffer as first step
     try:
         from tools.memory.auto_capture import flush_buffer, buffer_status
+
         buf = buffer_status(db_path=mem_path)
         if buf.get("total_buffered", 0) > 0:
             flush_result = flush_buffer(db_path=mem_path)
-            items.append({
-                "type": "buffer_flush",
-                "flushed": flush_result.get("flushed", 0),
-                "duplicates": flush_result.get("duplicates", 0),
-            })
+            items.append(
+                {
+                    "type": "buffer_flush",
+                    "flushed": flush_result.get("flushed", 0),
+                    "duplicates": flush_result.get("duplicates", 0),
+                }
+            )
     except (ImportError, Exception):
         pass  # auto_capture not available
 
@@ -475,8 +477,7 @@ def check_memory_maintenance(
         status = "warning" if count > 0 else "ok"
         return {"status": status, "count": count, "items": items}
     except Exception as exc:
-        return {"status": "ok", "count": len(items), "items": items,
-                "note": f"table not found or error: {exc}"}
+        return {"status": "ok", "count": len(items), "items": items, "note": f"table not found or error: {exc}"}
 
 
 # ---------------------------------------------------------------------------
@@ -739,9 +740,7 @@ def _format_status_human(statuses: List[dict]) -> str:
 # ---------------------------------------------------------------------------
 def main() -> None:
     """CLI entry point for the heartbeat daemon."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV Heartbeat Daemon (D141) — proactive check loop"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Heartbeat Daemon (D141) — proactive check loop")
     parser.add_argument("--once", action="store_true", help="Single pass, then exit")
     parser.add_argument("--check", type=str, help="Run a specific check only")
     parser.add_argument("--status", action="store_true", help="Show latest check statuses")

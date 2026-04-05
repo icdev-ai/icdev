@@ -4,6 +4,7 @@
 Wraps ArrowPipeline to avoid full-table materialization. Processes data
 in configurable chunks, concatenating results or yielding per-chunk.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +15,7 @@ logger = logging.getLogger("databridge.scale.chunked_pipeline")
 
 try:
     import pyarrow as pa
+
     HAS_ARROW = True
 except ImportError:
     HAS_ARROW = False
@@ -94,9 +96,7 @@ class ChunkedPipeline:
 
         # Concatenate results
         if results:
-            final_table = pa.concat_tables(
-                [_normalize_to_table(r) for r in results if r is not None]
-            )
+            final_table = pa.concat_tables([_normalize_to_table(r) for r in results if r is not None])
         else:
             final_table = table.slice(0, 0)  # empty with same schema
 

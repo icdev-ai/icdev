@@ -46,12 +46,18 @@ from icdev.tools.testing.production_audit import (
 # Data structure tests
 # ---------------------------------------------------------------------------
 
+
 class TestAuditCheck:
     def test_to_dict(self):
         check = AuditCheck(
-            check_id="TEST-001", check_name="Test Check",
-            category="test", status="pass", severity="warning",
-            message="OK", details={"key": "value"}, duration_ms=42,
+            check_id="TEST-001",
+            check_name="Test Check",
+            category="test",
+            status="pass",
+            severity="warning",
+            message="OK",
+            details={"key": "value"},
+            duration_ms=42,
         )
         d = check.to_dict()
         assert d["check_id"] == "TEST-001"
@@ -73,9 +79,16 @@ class TestAuditCheck:
 class TestAuditReport:
     def test_to_dict(self):
         report = AuditReport(
-            overall_pass=True, timestamp="2026-01-01T00:00:00Z",
-            categories={}, total_checks=5, passed=4, failed=0,
-            warned=1, skipped=0, blockers=[], warnings=["w1"],
+            overall_pass=True,
+            timestamp="2026-01-01T00:00:00Z",
+            categories={},
+            total_checks=5,
+            passed=4,
+            failed=0,
+            warned=1,
+            skipped=0,
+            blockers=[],
+            warnings=["w1"],
             duration_total_ms=100,
         )
         d = report.to_dict()
@@ -86,9 +99,17 @@ class TestAuditReport:
 
     def test_overall_pass_false_when_blockers(self):
         report = AuditReport(
-            overall_pass=False, timestamp="", categories={},
-            total_checks=1, passed=0, failed=1, warned=0, skipped=0,
-            blockers=["BLOCKER"], warnings=[], duration_total_ms=0,
+            overall_pass=False,
+            timestamp="",
+            categories={},
+            total_checks=1,
+            passed=0,
+            failed=1,
+            warned=0,
+            skipped=0,
+            blockers=["BLOCKER"],
+            warnings=[],
+            duration_total_ms=0,
         )
         assert report.overall_pass is False
         assert len(report.blockers) == 1
@@ -97,6 +118,7 @@ class TestAuditReport:
 # ---------------------------------------------------------------------------
 # Registry tests
 # ---------------------------------------------------------------------------
+
 
 class TestCheckRegistry:
     def test_registry_has_at_least_30_checks(self):
@@ -125,6 +147,7 @@ class TestCheckRegistry:
 # ---------------------------------------------------------------------------
 # Individual check tests (fast, no subprocess)
 # ---------------------------------------------------------------------------
+
 
 class TestPlatformChecks:
     def test_python_version_passes(self):
@@ -268,6 +291,7 @@ class TestDocumentationChecks:
 # Runner tests
 # ---------------------------------------------------------------------------
 
+
 class TestRunAudit:
     @patch("icdev.tools.testing.production_audit._store_report")
     def test_run_single_category(self, mock_store):
@@ -304,6 +328,7 @@ class TestRunAudit:
 # ---------------------------------------------------------------------------
 # Category filtering tests
 # ---------------------------------------------------------------------------
+
 
 class TestCategoryFiltering:
     @patch("icdev.tools.testing.production_audit._store_report")

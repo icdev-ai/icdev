@@ -74,12 +74,14 @@ CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -92,6 +94,7 @@ def _try_import(module_path, func_name):
     """Dynamically import a function with graceful fallback."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -306,9 +309,7 @@ def stage_rank(top_k=20, db_path=None):
     get_top = _try_import("tools.creative.gap_scorer", "get_top_scored")
     if get_top:
         try:
-            result["sub_results"]["top_pain_points"] = get_top(
-                limit=top_k, min_score=0.0, db_path=db_path
-            )
+            result["sub_results"]["top_pain_points"] = get_top(limit=top_k, min_score=0.0, db_path=db_path)
         except Exception as e:
             result["sub_results"]["top_pain_points"] = {"error": str(e)}
     else:
@@ -551,45 +552,35 @@ def get_status(db_path=None):
 
         # Competitors by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_competitors GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_competitors GROUP BY status").fetchall()
             status["competitors_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["competitors_by_status"] = {}
 
         # Pain points by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_pain_points GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_pain_points GROUP BY status").fetchall()
             status["pain_points_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["pain_points_by_status"] = {}
 
         # Specs by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_specs GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_specs GROUP BY status").fetchall()
             status["specs_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["specs_by_status"] = {}
 
         # Trends by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_trends GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_trends GROUP BY status").fetchall()
             status["trends_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["trends_by_status"] = {}
 
         # Signals last 24h
         try:
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
             row = conn.execute(
                 "SELECT COUNT(*) as cnt FROM creative_signals WHERE discovered_at >= ?",
                 (cutoff,),
@@ -722,29 +713,17 @@ def get_pipeline_report(db_path=None):
     scored_pp = pp_by_status.get("scored", 0)
 
     if status.get("total_competitors", 0) == 0:
-        report["recommendations"].append(
-            "No competitors tracked — run: --discover --domain '<your domain>'"
-        )
+        report["recommendations"].append("No competitors tracked — run: --discover --domain '<your domain>'")
     elif status.get("competitors_by_status", {}).get("confirmed", 0) == 0:
-        report["recommendations"].append(
-            "No confirmed competitors — run competitor_discoverer.py --confirm <id>"
-        )
+        report["recommendations"].append("No confirmed competitors — run competitor_discoverer.py --confirm <id>")
     if status.get("total_signals", 0) == 0:
-        report["recommendations"].append(
-            "No signals collected — run: --scan --all"
-        )
+        report["recommendations"].append("No signals collected — run: --scan --all")
     if new_pp > 50:
-        report["recommendations"].append(
-            f"{new_pp} unscored pain points — run: --score"
-        )
+        report["recommendations"].append(f"{new_pp} unscored pain points — run: --score")
     if scored_pp > 20:
-        report["recommendations"].append(
-            f"{scored_pp} scored pain points pending spec generation — run: --generate"
-        )
+        report["recommendations"].append(f"{scored_pp} scored pain points pending spec generation — run: --generate")
     if not status.get("healthy"):
-        report["recommendations"].append(
-            "Database tables missing — run: python tools/db/init_icdev_db.py"
-        )
+        report["recommendations"].append("Database tables missing — run: python tools/db/init_icdev_db.py")
 
     return report
 
@@ -822,16 +801,11 @@ def main():
     group.add_argument("--daemon", action="store_true", help="Run as continuous daemon")
 
     # Optional flags
-    parser.add_argument("--domain", type=str, default=None,
-                        help="Product domain for competitor discovery")
-    parser.add_argument("--source", type=str, default=None,
-                        help="Specific source to scan (g2, capterra, reddit, etc.)")
-    parser.add_argument("--all", action="store_true", dest="scan_all",
-                        help="Scan all configured sources")
-    parser.add_argument("--top-k", type=int, default=20,
-                        help="Number of top items to return (default: 20)")
-    parser.add_argument("--spec-status", type=str, default=None,
-                        help="Filter specs by status")
+    parser.add_argument("--domain", type=str, default=None, help="Product domain for competitor discovery")
+    parser.add_argument("--source", type=str, default=None, help="Specific source to scan (g2, capterra, reddit, etc.)")
+    parser.add_argument("--all", action="store_true", dest="scan_all", help="Scan all configured sources")
+    parser.add_argument("--top-k", type=int, default=20, help="Number of top items to return (default: 20)")
+    parser.add_argument("--spec-status", type=str, default=None, help="Filter specs by status")
 
     args = parser.parse_args()
 

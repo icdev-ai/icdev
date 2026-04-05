@@ -7,7 +7,6 @@ Adds: dev_profiles (D183), dev_profile_locks (D184), dev_profile_detections (D18
 """
 
 
-
 def _table_exists(conn, table):
     """Check if a table exists."""
     cursor = conn.execute(
@@ -72,15 +71,9 @@ def up(conn):
     if not _table_exists(conn, "dev_profiles"):
         conn.executescript(DEV_PROFILES_SCHEMA)
     if not _table_exists(conn, "dev_profile_locks"):
-        conn.executescript(
-            DEV_PROFILES_SCHEMA.split("-- Dimension locks")[1].split(
-                "-- Auto-detection"
-            )[0]
-        )
+        conn.executescript(DEV_PROFILES_SCHEMA.split("-- Dimension locks")[1].split("-- Auto-detection")[0])
     if not _table_exists(conn, "dev_profile_detections"):
-        conn.executescript(
-            DEV_PROFILES_SCHEMA.split("-- Auto-detection results")[1]
-        )
+        conn.executescript(DEV_PROFILES_SCHEMA.split("-- Auto-detection results")[1])
     conn.commit()
 
 

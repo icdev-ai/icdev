@@ -43,16 +43,12 @@ class TestExtractCommand:
         assert rid == ""
 
     def test_command_with_run_id(self):
-        wf, rid = EventEnvelope._extract_command(
-            "icdev_build run_id:abc12345"
-        )
+        wf, rid = EventEnvelope._extract_command("icdev_build run_id:abc12345")
         assert wf == "icdev_build"
         assert rid == "abc12345"
 
     def test_command_with_run_id_space(self):
-        wf, rid = EventEnvelope._extract_command(
-            "icdev_build run_id: abc12345"
-        )
+        wf, rid = EventEnvelope._extract_command("icdev_build run_id: abc12345")
         assert wf == "icdev_build"
         assert rid == "abc12345"
 
@@ -91,18 +87,14 @@ class TestExtractCommand:
     def test_partial_match_not_extracted(self):
         wf, rid = EventEnvelope._extract_command("my_icdev_custom_tool")
         # Should still match — icdev_ prefix is in the word
-        assert wf == ""  or "icdev_" in wf
+        assert wf == "" or "icdev_" in wf
 
     def test_run_id_with_hyphens(self):
-        wf, rid = EventEnvelope._extract_command(
-            "icdev_build run_id:abc-123-def"
-        )
+        wf, rid = EventEnvelope._extract_command("icdev_build run_id:abc-123-def")
         assert rid == "abc-123-def"
 
     def test_run_id_with_underscores(self):
-        wf, rid = EventEnvelope._extract_command(
-            "icdev_test run_id:run_2025_01"
-        )
+        wf, rid = EventEnvelope._extract_command("icdev_test run_id:run_2025_01")
         assert rid == "run_2025_01"
 
 
@@ -243,9 +235,7 @@ class TestGitHubWebhookFactory:
                 "line": 42,
             },
         }
-        env = EventEnvelope.from_github_webhook(
-            payload, "pull_request_review_comment"
-        )
+        env = EventEnvelope.from_github_webhook(payload, "pull_request_review_comment")
         assert env is not None
         assert env.event_type == "mr_comment"
         assert env.metadata["file_path"] == "src/auth.py"
@@ -417,9 +407,7 @@ class TestPollFactory:
             "body": "Original body",
             "user": {"login": "dev1"},
         }
-        env = EventEnvelope.from_poll_issue(
-            issue_data, "github", latest_comment="icdev_sdlc"
-        )
+        env = EventEnvelope.from_poll_issue(issue_data, "github", latest_comment="icdev_sdlc")
         assert env.source == "github_poll"
         assert env.event_type == "issue_comment"
         assert env.workflow_command == "icdev_sdlc"
@@ -482,9 +470,18 @@ class TestGitLabTagFactory:
 
     def test_all_known_tags(self):
         known = [
-            "intake", "build", "sdlc", "comply", "secure",
-            "modernize", "deploy", "maintain", "test", "review",
-            "plan", "plan_build",
+            "intake",
+            "build",
+            "sdlc",
+            "comply",
+            "secure",
+            "modernize",
+            "deploy",
+            "maintain",
+            "test",
+            "review",
+            "plan",
+            "plan_build",
         ]
         for tag in known:
             env = EventEnvelope.from_gitlab_tag({"iid": 1}, tag)
@@ -657,9 +654,7 @@ class TestChatPluginFactory:
         assert env.workflow_command == "icdev_plan"
 
     def test_plugin_no_thread(self):
-        env = EventEnvelope.from_chat_plugin(
-            source="teams", channel_id="ch1", text="hello", author="u1"
-        )
+        env = EventEnvelope.from_chat_plugin(source="teams", channel_id="ch1", text="hello", author="u1")
         assert env.session_key == "ch1"
 
 
@@ -672,9 +667,7 @@ class TestSerialization:
     """Test EventEnvelope serialization."""
 
     def test_to_dict_roundtrip(self):
-        env = EventEnvelope.from_chat_plugin(
-            source="test", channel_id="ch", text="icdev_plan", author="u"
-        )
+        env = EventEnvelope.from_chat_plugin(source="test", channel_id="ch", text="icdev_plan", author="u")
         d = env.to_dict()
         assert isinstance(d, dict)
         assert d["source"] == "test"
@@ -685,9 +678,7 @@ class TestSerialization:
 
     def test_raw_payload_excluded_from_to_dict(self):
         """raw_payload is intentionally excluded to keep serialized size small."""
-        env = EventEnvelope.from_chat_plugin(
-            source="t", channel_id="c", text="x", author="a"
-        )
+        env = EventEnvelope.from_chat_plugin(source="t", channel_id="c", text="x", author="a")
         d = env.to_dict()
         assert "raw_payload" not in d
 
@@ -707,6 +698,7 @@ class TestEventRouter:
         # Ensure DB directory exists
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         from icdev.tools.ci.core.event_router import EventRouter
+
         return EventRouter(db_path=db_path)
 
     def _make_envelope(self, **kwargs):
@@ -742,33 +734,25 @@ class TestEventRouter:
         assert "unknown_workflow" in result["reason"]
 
     def test_route_build_without_run_id_ignored(self, router):
-        env = self._make_envelope(
-            workflow_command="icdev_build", run_id=""
-        )
+        env = self._make_envelope(workflow_command="icdev_build", run_id="")
         result = router.route(env)
         assert result["action"] == "ignored"
         assert "requires run_id" in result["reason"]
 
     def test_route_review_without_run_id_ignored(self, router):
-        env = self._make_envelope(
-            workflow_command="icdev_review", run_id=""
-        )
+        env = self._make_envelope(workflow_command="icdev_review", run_id="")
         result = router.route(env)
         assert result["action"] == "ignored"
         assert "requires run_id" in result["reason"]
 
     def test_route_no_workflow_no_icdev_keyword(self, router):
-        env = self._make_envelope(
-            workflow_command="", content="Just a normal comment"
-        )
+        env = self._make_envelope(workflow_command="", content="Just a normal comment")
         result = router.route(env)
         assert result["action"] == "ignored"
         assert "no_workflow" in result["reason"]
 
     def test_route_no_workflow_with_icdev_keyword(self, router):
-        env = self._make_envelope(
-            workflow_command="", content="please icdev this issue"
-        )
+        env = self._make_envelope(workflow_command="", content="please icdev this issue")
         # Should default to configured default_workflow
         result = router.route(env)
         # May be "launched" or "ignored" depending on workflow script existence
@@ -808,9 +792,7 @@ class TestEventRouter:
         # Fill queue to max (default 20)
         for i in range(20):
             conn.execute(
-                "INSERT INTO ci_event_queue "
-                "(session_key, event_id, envelope_json, status) "
-                "VALUES (?, ?, ?, 'queued')",
+                "INSERT INTO ci_event_queue (session_key, event_id, envelope_json, status) VALUES (?, ?, ?, 'queued')",
                 ("42", f"evt-q{i}", "{}"),
             )
         conn.commit()

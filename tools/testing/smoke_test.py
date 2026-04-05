@@ -49,6 +49,7 @@ CLI_PATTERNS = [
 # Discovery
 # ---------------------------------------------------------------------------
 
+
 def discover_cli_tools(tools_dir: Path) -> list:
     """Find all Python CLI tools in tools/ directory."""
     discovered = []
@@ -79,6 +80,7 @@ def discover_cli_tools(tools_dir: Path) -> list:
 # ---------------------------------------------------------------------------
 # Test execution
 # ---------------------------------------------------------------------------
+
 
 def run_py_compile(filepath: Path) -> dict:
     """Run py_compile on a single file. Returns result dict."""
@@ -169,6 +171,7 @@ def run_help(filepath: Path) -> dict:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def run_smoke_test(quick: bool = False, verbose: bool = False) -> dict:
     """Execute the smoke test suite. Returns summary dict."""
     tools_dir = PROJECT_ROOT / "tools"
@@ -240,9 +243,7 @@ def run_smoke_test(quick: bool = False, verbose: bool = False) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Smoke Test — verify all CLI tools compile and --help works"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Smoke Test — verify all CLI tools compile and --help works")
     parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
     parser.add_argument("--quick", action="store_true", help="py_compile only (skip --help)")
     parser.add_argument("--verbose", action="store_true", help="Detailed per-tool output")

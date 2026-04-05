@@ -48,11 +48,13 @@ try:
     )
     from tools.marketplace.search_engine import search_assets as _search_assets
     from tools.marketplace.review_queue import (
-        complete_review, list_pending as _list_pending,
+        complete_review,
+        list_pending as _list_pending,
     )
     from tools.marketplace.compatibility_checker import full_compatibility_check
     from tools.marketplace.asset_scanner import run_full_scan
     from tools.marketplace.federation_sync import get_sync_status
+
     _MODULES_LOADED = True
 except ImportError as e:
     _MODULES_LOADED = False
@@ -69,8 +71,12 @@ def _audit(event_type, actor, action, project_id=None, details=None):
     if audit_log_event:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor, action=action,
-                project_id=project_id, details=details, db_path=DB_PATH,
+                event_type=event_type,
+                actor=actor,
+                action=action,
+                project_id=project_id,
+                details=details,
+                db_path=DB_PATH,
             )
         except Exception:
             pass
@@ -79,6 +85,7 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_publish_asset(args: dict) -> dict:
     """Publish a GOTCHA asset through the 7-gate security pipeline."""
@@ -277,6 +284,7 @@ def handle_asset_scan(args: dict) -> dict:
 # Resource handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_catalog_resource(uri: str) -> dict:
     """Return the full marketplace catalog."""
     if not _MODULES_LOADED:
@@ -295,6 +303,7 @@ def handle_pending_resource(uri: str) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-marketplace", version="1.0.0")
 
@@ -306,11 +315,18 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "asset_path": {"type": "string", "description": "Path to asset directory"},
-                "asset_type": {"type": "string", "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"]},
+                "asset_type": {
+                    "type": "string",
+                    "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"],
+                },
                 "tenant_id": {"type": "string", "description": "Publisher tenant ID"},
                 "publisher_user": {"type": "string", "description": "Publisher identity"},
                 "publisher_org": {"type": "string", "description": "Publisher organization"},
-                "target_tier": {"type": "string", "enum": ["tenant_local", "central_vetted"], "default": "tenant_local"},
+                "target_tier": {
+                    "type": "string",
+                    "enum": ["tenant_local", "central_vetted"],
+                    "default": "tenant_local",
+                },
                 "asset_id": {"type": "string", "description": "Existing asset ID (for new version)"},
                 "new_version": {"type": "string", "description": "Version for update"},
                 "changelog": {"type": "string"},
@@ -360,7 +376,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "asset_type": {"type": "string", "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"]},
+                "asset_type": {
+                    "type": "string",
+                    "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"],
+                },
                 "impact_level": {"type": "string", "enum": ["IL2", "IL4", "IL5", "IL6"]},
                 "catalog_tier": {"type": "string", "enum": ["tenant_local", "central_vetted"]},
                 "tenant_id": {"type": "string"},

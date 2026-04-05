@@ -46,7 +46,8 @@ def check_for_changes(logger: logging.Logger) -> bool:
     try:
         result = subprocess.run(
             ["git", "diff", "origin/main", "--stat"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
             cwd=str(PROJECT_ROOT),
         )
         has_changes = bool(result.stdout.strip())
@@ -128,19 +129,13 @@ def main():
 
         vcs.comment_on_issue(
             int(issue_number),
-            format_issue_message(
-                run_id, AGENT_DOCUMENTER,
-                f"Documentation created at `{doc_path}` and committed"
-            ),
+            format_issue_message(run_id, AGENT_DOCUMENTER, f"Documentation created at `{doc_path}` and committed"),
         )
     else:
         logger.error(f"Documentation generation failed: {response.output}")
         vcs.comment_on_issue(
             int(issue_number),
-            format_issue_message(
-                run_id, AGENT_DOCUMENTER,
-                f"Documentation generation failed: {response.output[:500]}"
-            ),
+            format_issue_message(run_id, AGENT_DOCUMENTER, f"Documentation generation failed: {response.output[:500]}"),
         )
         sys.exit(1)
 

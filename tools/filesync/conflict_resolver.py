@@ -69,40 +69,46 @@ def _resolve_single(conflict: Dict, strategy: str) -> List[Dict]:
     size = conflict.get("size", 0)
 
     if strategy == STRATEGY_SOURCE_WINS:
-        return [{
-            "action": "update",
-            "relative_path": path,
-            "reason": "conflict_resolved_source_wins",
-            "source_hash": src_hash,
-            "dest_hash": dst_hash,
-            "size": size,
-            "direction": "source_to_dest",
-            "resolution": "source_wins",
-        }]
-
-    elif strategy == STRATEGY_LAST_WRITE_WINS:
-        if src_mtime >= dst_mtime:
-            return [{
+        return [
+            {
                 "action": "update",
                 "relative_path": path,
-                "reason": "conflict_resolved_newer_source",
+                "reason": "conflict_resolved_source_wins",
                 "source_hash": src_hash,
                 "dest_hash": dst_hash,
                 "size": size,
                 "direction": "source_to_dest",
                 "resolution": "source_wins",
-            }]
+            }
+        ]
+
+    elif strategy == STRATEGY_LAST_WRITE_WINS:
+        if src_mtime >= dst_mtime:
+            return [
+                {
+                    "action": "update",
+                    "relative_path": path,
+                    "reason": "conflict_resolved_newer_source",
+                    "source_hash": src_hash,
+                    "dest_hash": dst_hash,
+                    "size": size,
+                    "direction": "source_to_dest",
+                    "resolution": "source_wins",
+                }
+            ]
         else:
-            return [{
-                "action": "update",
-                "relative_path": path,
-                "reason": "conflict_resolved_newer_dest",
-                "source_hash": src_hash,
-                "dest_hash": dst_hash,
-                "size": size,
-                "direction": "dest_to_source",
-                "resolution": "dest_wins",
-            }]
+            return [
+                {
+                    "action": "update",
+                    "relative_path": path,
+                    "reason": "conflict_resolved_newer_dest",
+                    "source_hash": src_hash,
+                    "dest_hash": dst_hash,
+                    "size": size,
+                    "direction": "dest_to_source",
+                    "resolution": "dest_wins",
+                }
+            ]
 
     elif strategy == STRATEGY_RENAME_BOTH:
         ts = int(time.time())
@@ -141,24 +147,28 @@ def _resolve_single(conflict: Dict, strategy: str) -> List[Dict]:
         ]
 
     elif strategy == STRATEGY_SKIP:
-        return [{
-            "action": "skip",
+        return [
+            {
+                "action": "skip",
+                "relative_path": path,
+                "reason": "conflict_skipped",
+                "source_hash": src_hash,
+                "dest_hash": dst_hash,
+                "size": size,
+                "resolution": "skipped",
+            }
+        ]
+
+    # Fallback: source wins
+    return [
+        {
+            "action": "update",
             "relative_path": path,
-            "reason": "conflict_skipped",
+            "reason": "conflict_resolved_fallback",
             "source_hash": src_hash,
             "dest_hash": dst_hash,
             "size": size,
-            "resolution": "skipped",
-        }]
-
-    # Fallback: source wins
-    return [{
-        "action": "update",
-        "relative_path": path,
-        "reason": "conflict_resolved_fallback",
-        "source_hash": src_hash,
-        "dest_hash": dst_hash,
-        "size": size,
-        "direction": "source_to_dest",
-        "resolution": "source_wins",
-    }]
+            "direction": "source_to_dest",
+            "resolution": "source_wins",
+        }
+    ]

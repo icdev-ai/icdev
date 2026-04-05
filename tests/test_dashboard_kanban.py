@@ -93,38 +93,33 @@ def dashboard_app(tmp_path):
         );
     """)
     # Seed test data
-    ins_proj = (
-        "INSERT INTO projects (id, name, type, status, classification)"
-        " VALUES (?, ?, ?, ?, ?)"
+    ins_proj = "INSERT INTO projects (id, name, type, status, classification) VALUES (?, ?, ?, ?, ?)"
+    conn.execute(
+        ins_proj,
+        ("proj-001", "Alpha System", "microservice", "active", "CUI"),
     )
     conn.execute(
-        ins_proj, ("proj-001", "Alpha System", "microservice", "active", "CUI"),
+        ins_proj,
+        ("proj-002", "Bravo Platform", "api", "planning", "UNCLASSIFIED"),
     )
     conn.execute(
-        ins_proj, ("proj-002", "Bravo Platform", "api", "planning", "UNCLASSIFIED"),
+        ins_proj,
+        ("proj-003", "Charlie App", "web-app", "completed", "CUI"),
     )
     conn.execute(
-        ins_proj, ("proj-003", "Charlie App", "web-app", "completed", "CUI"),
-    )
-    conn.execute(
-        "INSERT INTO agents (id, name, status)"
-        " VALUES (?, ?, ?)",
+        "INSERT INTO agents (id, name, status) VALUES (?, ?, ?)",
         ("agent-1", "Builder", "active"),
     )
     conn.execute(
-        "INSERT INTO agents (id, name, status)"
-        " VALUES (?, ?, ?)",
+        "INSERT INTO agents (id, name, status) VALUES (?, ?, ?)",
         ("agent-2", "Monitor", "inactive"),
     )
     conn.execute(
-        "INSERT INTO alerts (id, title, severity, source, status)"
-        " VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO alerts (id, title, severity, source, status) VALUES (?, ?, ?, ?, ?)",
         ("alert-1", "High CPU", "critical", "monitor", "firing"),
     )
     conn.execute(
-        "INSERT INTO poam_items"
-        " (id, project_id, title, severity, status)"
-        " VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO poam_items (id, project_id, title, severity, status) VALUES (?, ?, ?, ?, ?)",
         ("poam-1", "proj-001", "Patch needed", "high", "open"),
     )
     conn.commit()
@@ -153,11 +148,14 @@ def dashboard_app(tmp_path):
     conn2.commit()
     conn2.close()
 
-    with patch("icdev.tools.dashboard.config.DB_PATH", db_path), \
-         patch("icdev.tools.dashboard.app.DB_PATH", db_path), \
-         patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path), \
-         patch("icdev.tools.dashboard.auth.DB_PATH", db_path):
+    with (
+        patch("icdev.tools.dashboard.config.DB_PATH", db_path),
+        patch("icdev.tools.dashboard.app.DB_PATH", db_path),
+        patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path),
+        patch("icdev.tools.dashboard.auth.DB_PATH", db_path),
+    ):
         from icdev.tools.dashboard.app import create_app
+
         app = create_app()
         app.config["TESTING"] = True
         yield app
@@ -297,11 +295,14 @@ class TestIndexEmptyState:
         conn.commit()
         conn.close()
 
-        with patch("icdev.tools.dashboard.config.DB_PATH", db_path), \
-             patch("icdev.tools.dashboard.app.DB_PATH", db_path), \
-             patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path), \
-             patch("icdev.tools.dashboard.auth.DB_PATH", db_path):
+        with (
+            patch("icdev.tools.dashboard.config.DB_PATH", db_path),
+            patch("icdev.tools.dashboard.app.DB_PATH", db_path),
+            patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path),
+            patch("icdev.tools.dashboard.auth.DB_PATH", db_path),
+        ):
             from icdev.tools.dashboard.app import create_app
+
             app = create_app()
             app.config["TESTING"] = True
             yield app

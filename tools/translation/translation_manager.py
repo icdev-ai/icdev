@@ -25,8 +25,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 VALID_LANGUAGES = ("python", "java", "go", "rust", "csharp", "typescript", "javascript")
 
 
-def _create_job(db_path, project_id, source_language, target_language,
-                source_path, output_dir):
+def _create_job(db_path, project_id, source_language, target_language, source_path, output_dir):
     """Create a translation job record in the database."""
     job_id = str(uuid.uuid4())
     try:
@@ -37,8 +36,7 @@ def _create_job(db_path, project_id, source_language, target_language,
                (id, project_id, source_language, target_language,
                 source_path, output_path, status)
                VALUES (?, ?, ?, ?, ?, ?, 'pending')""",
-            (job_id, project_id, source_language, target_language,
-             str(source_path), str(output_dir)),
+            (job_id, project_id, source_language, target_language, str(source_path), str(output_dir)),
         )
         conn.commit()
         conn.close()
@@ -73,11 +71,22 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         pass
 
 
-def run_pipeline(source_path, source_language, target_language, output_dir,
-                 project_id=None, extract_only=False, translate_only=False,
-                 validate_only=False, dry_run=False, compliance_bridge=False,
-                 candidates=None, ir_file=None, translate_tests_flag=False,
-                 source_test_dir=None):
+def run_pipeline(
+    source_path,
+    source_language,
+    target_language,
+    output_dir,
+    project_id=None,
+    extract_only=False,
+    translate_only=False,
+    validate_only=False,
+    dry_run=False,
+    compliance_bridge=False,
+    candidates=None,
+    ir_file=None,
+    translate_tests_flag=False,
+    source_test_dir=None,
+):
     """Run the full translation pipeline or a subset.
 
     Returns pipeline result dict.
@@ -96,8 +105,9 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
         return {"error": "Source and target language must be different"}
 
     # Create job
-    job_id = _create_job(db_path, project_id, src_lang, tgt_lang,
-                         source_path, output_dir) if db_path else str(uuid.uuid4())
+    job_id = (
+        _create_job(db_path, project_id, src_lang, tgt_lang, source_path, output_dir) if db_path else str(uuid.uuid4())
+    )
 
     result = {
         "job_id": job_id,
@@ -113,6 +123,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
     # Audit: job created
     try:
         from tools.audit.audit_logger import log_event
+
         log_event(
             event_type="translation.job_created",
             actor="translation_manager",
@@ -127,6 +138,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
     _update_job_status(db_path, job_id, "extracting")
     try:
         from tools.translation.source_extractor import extract_source
+
         ir_data = None
 
         if ir_file:
@@ -138,8 +150,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
         if not ir_data or not ir_data.get("units"):
             result["status"] = "failed"
             result["error"] = "No extractable units found in source"
-            _update_job_status(db_path, job_id, "failed",
-                               error_message="No extractable units")
+            _update_job_status(db_path, job_id, "failed", error_message="No extractable units")
             return result
 
         result["phases"]["extract"] = {
@@ -156,9 +167,13 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
         with open(ir_output, "w", encoding="utf-8") as f:
             json.dump(ir_data, f, indent=2)
 
-        _update_job_status(db_path, job_id, "extracting",
-                           total_units=len(ir_data.get("units", [])),
-                           source_loc=ir_data.get("total_lines", 0))
+        _update_job_status(
+            db_path,
+            job_id,
+            "extracting",
+            total_units=len(ir_data.get("units", [])),
+            source_loc=ir_data.get("total_lines", 0),
+        )
 
     except Exception as e:
         result["phases"]["extract"] = {"status": "failed", "error": str(e)}
@@ -176,6 +191,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
     _update_job_status(db_path, job_id, "type_checking")
     try:
         from tools.translation.type_checker import check_all_units, load_type_mappings
+
         type_mappings = load_type_mappings()
         type_result = check_all_units(ir_data, src_lang, tgt_lang, type_mappings)
 
@@ -188,6 +204,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
         # Audit
         try:
             from tools.audit.audit_logger import log_event
+
             log_event(
                 event_type="translation.type_check",
                 actor="translation_manager",
@@ -220,6 +237,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
         # Audit: dry run completed
         try:
             from tools.audit.audit_logger import log_event
+
             log_event(
                 event_type="translation.job_completed",
                 actor="translation_manager",
@@ -294,7 +312,9 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
             json.dump(trans_result, f, indent=2)
 
         _update_job_status(
-            db_path, job_id, "translating",
+            db_path,
+            job_id,
+            "translating",
             translated_units=trans_result["stats"]["translated_count"],
             mocked_units=trans_result["stats"]["mocked_count"],
             failed_units=trans_result["stats"]["failed_count"],
@@ -318,8 +338,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
     try:
         from tools.translation.project_assembler import assemble_project
 
-        all_units = trans_result.get("translated_units", []) + \
-                    trans_result.get("mocked_units", [])
+        all_units = trans_result.get("translated_units", []) + trans_result.get("mocked_units", [])
 
         # Flatten dependency resolutions for assembler
         dep_resolutions = list(dep_mappings.values()) if dep_mappings else None
@@ -341,8 +360,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
             "project_path": assembly_result.get("project_path"),
         }
 
-        _update_job_status(db_path, job_id, "assembling",
-                           output_path=str(output_dir))
+        _update_job_status(db_path, job_id, "assembling", output_path=str(output_dir))
 
     except Exception as e:
         result["phases"]["assemble"] = {"status": "failed", "error": str(e)}
@@ -395,6 +413,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
                 if errors:
                     try:
                         from tools.audit.audit_logger import log_event
+
                         log_event(
                             event_type="translation.repair_attempted",
                             actor="translation_manager",
@@ -418,6 +437,7 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
     if translate_tests_flag and source_test_dir:
         try:
             from tools.translation.test_translator import translate_tests
+
             test_result = translate_tests(
                 source_test_dir=source_test_dir,
                 source_language=src_lang,
@@ -449,35 +469,28 @@ def run_pipeline(source_path, source_language, target_language, output_dir,
     result["elapsed_seconds"] = round(elapsed, 2)
 
     # Determine final status
-    failed_phases = [p for p, r in result["phases"].items()
-                     if r.get("status") == "failed"]
+    failed_phases = [p for p, r in result["phases"].items() if r.get("status") == "failed"]
     if failed_phases:
         result["status"] = "failed"
-        _update_job_status(db_path, job_id, "failed",
-                           error_message=f"Failed phases: {', '.join(failed_phases)}")
+        _update_job_status(db_path, job_id, "failed", error_message=f"Failed phases: {', '.join(failed_phases)}")
     else:
         gate = result.get("phases", {}).get("validate", {}).get("gate_result", "pass")
         if gate == "fail":
             result["status"] = "partial"
-            _update_job_status(db_path, job_id, "partial",
-                               gate_result="fail",
-                               elapsed_seconds=elapsed)
+            _update_job_status(db_path, job_id, "partial", gate_result="fail", elapsed_seconds=elapsed)
         else:
             result["status"] = "completed"
-            _update_job_status(db_path, job_id, "completed",
-                               gate_result=gate,
-                               elapsed_seconds=elapsed)
+            _update_job_status(db_path, job_id, "completed", gate_result=gate, elapsed_seconds=elapsed)
 
     # Final audit
     try:
         from tools.audit.audit_logger import log_event
-        event_type = ("translation.job_completed" if result["status"] == "completed"
-                      else "translation.job_failed")
+
+        event_type = "translation.job_completed" if result["status"] == "completed" else "translation.job_failed"
         log_event(
             event_type=event_type,
             actor="translation_manager",
-            action=f"Translation {result['status']}: {src_lang} → {tgt_lang} "
-                   f"({elapsed:.1f}s)",
+            action=f"Translation {result['status']}: {src_lang} → {tgt_lang} ({elapsed:.1f}s)",
             project_id=project_id,
             details={
                 "job_id": job_id,
@@ -514,31 +527,24 @@ Examples:
     --output-dir .tmp/translate-test --project-id test-001 --dry-run --json
         """,
     )
-    parser.add_argument("--source-path", required=True,
-                        help="Path to source code directory")
-    parser.add_argument("--source-language", required=True,
-                        help="Source language (python, java, go, rust, csharp, typescript)")
-    parser.add_argument("--target-language", required=True,
-                        help="Target language")
-    parser.add_argument("--output-dir", required=True,
-                        help="Output directory for translated project")
+    parser.add_argument("--source-path", required=True, help="Path to source code directory")
+    parser.add_argument(
+        "--source-language", required=True, help="Source language (python, java, go, rust, csharp, typescript)"
+    )
+    parser.add_argument("--target-language", required=True, help="Target language")
+    parser.add_argument("--output-dir", required=True, help="Output directory for translated project")
     parser.add_argument("--project-id", help="Project ID for audit trail")
     parser.add_argument("--ir-file", help="Pre-existing IR file (skip extraction)")
-    parser.add_argument("--extract-only", action="store_true",
-                        help="Run extraction phase only (no LLM)")
-    parser.add_argument("--translate-only", action="store_true",
-                        help="Run extraction + translation only")
-    parser.add_argument("--validate-only", action="store_true",
-                        help="Run validation on existing translation")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Extract and type-check only (no LLM calls)")
-    parser.add_argument("--compliance-bridge", action="store_true",
-                        help="Enable compliance bridge for ATO control inheritance")
-    parser.add_argument("--translate-tests", action="store_true",
-                        help="Also translate test files")
+    parser.add_argument("--extract-only", action="store_true", help="Run extraction phase only (no LLM)")
+    parser.add_argument("--translate-only", action="store_true", help="Run extraction + translation only")
+    parser.add_argument("--validate-only", action="store_true", help="Run validation on existing translation")
+    parser.add_argument("--dry-run", action="store_true", help="Extract and type-check only (no LLM calls)")
+    parser.add_argument(
+        "--compliance-bridge", action="store_true", help="Enable compliance bridge for ATO control inheritance"
+    )
+    parser.add_argument("--translate-tests", action="store_true", help="Also translate test files")
     parser.add_argument("--source-test-dir", help="Source test directory")
-    parser.add_argument("--candidates", type=int,
-                        help="Override pass@k candidate count")
+    parser.add_argument("--candidates", type=int, help="Override pass@k candidate count")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 

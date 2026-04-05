@@ -28,6 +28,7 @@ def _import_tool(module_path, func_name):
     """Dynamically import a function. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -37,6 +38,7 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_terraform_plan(args: dict) -> dict:
     """Generate Terraform configurations for a project."""
@@ -119,7 +121,9 @@ def handle_pipeline_generate(args: dict) -> dict:
         raise ValueError("'project_id' is required")
 
     output_dir = args.get("output_dir")
-    stages = args.get("stages", ["lint", "test", "security-scan", "build", "compliance-check", "deploy-staging", "deploy-prod"])
+    stages = args.get(
+        "stages", ["lint", "test", "security-scan", "build", "compliance-check", "deploy-staging", "deploy-prod"]
+    )
 
     return generate(project_id=project_id, output_dir=output_dir, stages=stages, db_path=str(DB_PATH))
 
@@ -144,12 +148,13 @@ def handle_rollback(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-infra", version="1.0.0")
 
     server.register_tool(
         name="terraform_plan",
-        description="Generate Terraform configurations for AWS GovCloud deployment. Produces provider.tf, variables.tf, main.tf with VPC, ECR, and RDS modules.",
+        description="Generate Terraform configurations for AWS GovCloud deployment. Produces provider.tf, variables.tf, main.tf with VPC, ECR, and RDS modules.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -169,7 +174,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="terraform_apply",
-        description="Apply Terraform configurations. Requires explicit approval flag. In production, delegates to GitLab CI/CD pipeline.",
+        description="Apply Terraform configurations. Requires explicit approval flag. In production, delegates to GitLab CI/CD pipeline.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -203,7 +208,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="k8s_deploy",
-        description="Generate Kubernetes manifests (Deployment, Service, ConfigMap, NetworkPolicy) for a project with security hardening.",
+        description="Generate Kubernetes manifests (Deployment, Service, ConfigMap, NetworkPolicy) for a project with security hardening.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -223,7 +228,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="pipeline_generate",
-        description="Generate a GitLab CI/CD pipeline (.gitlab-ci.yml) with 7 stages: lint, test, security-scan, build, compliance-check, deploy-staging, deploy-prod.",
+        description="Generate a GitLab CI/CD pipeline (.gitlab-ci.yml) with 7 stages: lint, test, security-scan, build, compliance-check, deploy-staging, deploy-prod.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -242,12 +247,15 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="rollback",
-        description="Rollback a deployment to a previous version. Records the rollback in audit trail and updates deployment status.",
+        description="Rollback a deployment to a previous version. Records the rollback in audit trail and updates deployment status.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "deployment_id": {"type": "string", "description": "ID of the deployment to rollback"},
-                "target_version": {"type": "string", "description": "Version to rollback to (optional, defaults to previous)"},
+                "target_version": {
+                    "type": "string",
+                    "description": "Version to rollback to (optional, defaults to previous)",
+                },
                 "reason": {"type": "string", "description": "Reason for rollback"},
             },
             "required": ["deployment_id"],

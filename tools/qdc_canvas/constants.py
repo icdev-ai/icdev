@@ -106,32 +106,32 @@ QDC_OBJECTS: dict = {
 # ---------------------------------------------------------------------------
 QDC_NODE_DESCS: dict[str, str] = {
     # quality_gates
-    "gate-sast": "Static Application Security Testing — analyzes source code for vulnerabilities without executing it. Maps to NIST SA-11(1).",
-    "gate-dast": "Dynamic Application Security Testing — tests running application for vulnerabilities. Maps to NIST SA-11(8).",
+    "gate-sast": "Static Application Security Testing — analyzes source code for vulnerabilities without executing it. Maps to NIST SA-11(1).",  # noqa: E501
+    "gate-dast": "Dynamic Application Security Testing — tests running application for vulnerabilities. Maps to NIST SA-11(8).",  # noqa: E501
     "gate-sca": "Software Composition Analysis — scans third-party dependencies for known CVEs. Maps to NIST SA-11(2).",
-    "gate-secret": "Secret Detection Gate — scans code and config for leaked credentials, tokens, and API keys. Maps to NIST SA-11(1).",
-    "gate-container": "Container Scan Gate — analyzes container images for OS and library vulnerabilities. Maps to NIST SI-7.",
-    "gate-unit": "Unit Test Gate — verifies individual functions and modules pass automated tests. Maps to NIST SA-11(7).",
-    "gate-bdd": "BDD Test Gate — validates behavior-driven scenarios against acceptance criteria. Maps to NIST SA-11(7).",
+    "gate-secret": "Secret Detection Gate — scans code and config for leaked credentials, tokens, and API keys. Maps to NIST SA-11(1).",  # noqa: E501
+    "gate-container": "Container Scan Gate — analyzes container images for OS and library vulnerabilities. Maps to NIST SI-7.",  # noqa: E501
+    "gate-unit": "Unit Test Gate — verifies individual functions and modules pass automated tests. Maps to NIST SA-11(7).",  # noqa: E501
+    "gate-bdd": "BDD Test Gate — validates behavior-driven scenarios against acceptance criteria. Maps to NIST SA-11(7).",  # noqa: E501
     "gate-e2e": "E2E Test Gate — runs end-to-end browser and API integration tests. Maps to NIST SA-11(8).",
-    "gate-fuzz": "Fuzz Test Gate — sends randomized inputs to discover crash and edge-case bugs. Maps to NIST SA-11(5).",
+    "gate-fuzz": "Fuzz Test Gate — sends randomized inputs to discover crash and edge-case bugs. Maps to NIST SA-11(5).",  # noqa: E501
     "gate-review": "Code Review Gate — enforces peer review of all code changes before merge. Maps to NIST SA-11(4).",
-    "gate-pentest": "Penetration Test Gate — tracks manual or automated pen-test execution and findings. Maps to NIST SA-11(5).",
-    "gate-iast": "Interactive Application Security Testing — instruments the running application to detect vulnerabilities in real time. Maps to NIST SA-11(9).",
+    "gate-pentest": "Penetration Test Gate — tracks manual or automated pen-test execution and findings. Maps to NIST SA-11(5).",  # noqa: E501
+    "gate-iast": "Interactive Application Security Testing — instruments the running application to detect vulnerabilities in real time. Maps to NIST SA-11(9).",  # noqa: E501
     # quality_sources
     "src-repo": "Code Repository — source control system providing code artifacts to quality gates.",
     "src-pipeline": "CI/CD Pipeline — automated build and deployment pipeline that triggers quality gates.",
     "src-registry": "Container Registry — stores and serves container images for scanning and deployment.",
     "src-testrunner": "Test Runner — orchestrates unit, integration, and BDD test execution.",
     "src-scanner": "Security Scanner — aggregated security scanning tools (SAST, DAST, SCA).",
-    "src-compliance": "Compliance Engine — evaluates artifacts against NIST, FedRAMP, and CMMC controls. Maps to NIST CA-2.",
-    "src-observability": "Observability Stack — collects logs, metrics, and traces for runtime quality monitoring. Maps to NIST SI-4.",
-    "src-health": "Health Monitor — continuously checks service availability and performance baselines. Maps to NIST SI-6.",
+    "src-compliance": "Compliance Engine — evaluates artifacts against NIST, FedRAMP, and CMMC controls. Maps to NIST CA-2.",  # noqa: E501
+    "src-observability": "Observability Stack — collects logs, metrics, and traces for runtime quality monitoring. Maps to NIST SI-4.",  # noqa: E501
+    "src-health": "Health Monitor — continuously checks service availability and performance baselines. Maps to NIST SI-6.",  # noqa: E501
     # quality_consumers
     "con-uqs": "Unified Quality Score Dashboard — aggregates all gate results into a single quality metric.",
     "con-compliance": "Compliance Report — generates formatted compliance evidence packages for auditors.",
     "con-cato": "cATO Evidence Pack — produces continuous Authority to Operate evidence bundles. Maps to NIST CA-6.",
-    "con-oscal": "OSCAL Artifact — emits machine-readable OSCAL JSON for automated compliance exchange. Maps to NIST CA-2.",
+    "con-oscal": "OSCAL Artifact — emits machine-readable OSCAL JSON for automated compliance exchange. Maps to NIST CA-2.",  # noqa: E501
     "con-poam": "POAM Generator — creates Plan of Action and Milestones from open findings. Maps to NIST CA-5.",
     "con-trend": "Trend Report — visualizes quality score trends over time for executive reporting.",
     # cross_canvas
@@ -144,11 +144,11 @@ QDC_NODE_DESCS: dict[str, str] = {
     "xc-ddc": "Data Design Canvas quality integration — links QDC gates to DDC data flows.",
     # compliance_targets
     "tgt-fedramp-mod": "FedRAMP Moderate baseline — 325 controls, suitable for CUI/IL4 workloads. Maps to NIST CA-2.",
-    "tgt-fedramp-high": "FedRAMP High baseline — 421 controls, required for high-impact federal systems. Maps to NIST CA-2.",
+    "tgt-fedramp-high": "FedRAMP High baseline — 421 controls, required for high-impact federal systems. Maps to NIST CA-2.",  # noqa: E501
     "tgt-cmmc-l2": "CMMC Level 2 — advanced cybersecurity practices aligned to NIST SP 800-171.",
     "tgt-cmmc-l3": "CMMC Level 3 — expert cybersecurity practices with additional NIST SP 800-172 controls.",
     "tgt-cato": "Continuous Authority to Operate — ongoing automated compliance monitoring. Maps to NIST CA-6.",
-    "tgt-stig": "STIG Compliance — Defense Information Systems Agency security technical implementation guides. Maps to NIST CM-6.",
+    "tgt-stig": "STIG Compliance — Defense Information Systems Agency security technical implementation guides. Maps to NIST CM-6.",  # noqa: E501
     "tgt-il45": "Impact Level 4/5 Baseline — DoD Cloud Computing SRG requirements for CUI workloads.",
 }
 
@@ -156,18 +156,90 @@ QDC_NODE_DESCS: dict[str, str] = {
 # Compliance rules — checked by assess_quality_design()
 # ---------------------------------------------------------------------------
 QDC_COMPLIANCE_RULES: list[dict[str, str]] = [
-    {"id": "QDC-001", "title": "SAST Gate Required", "severity": "CAT1", "category": "security", "check": "has_sast_gate"},
-    {"id": "QDC-002", "title": "Unit Test Gate Required", "severity": "CAT1", "category": "testing", "check": "has_unit_gate"},
-    {"id": "QDC-003", "title": "Code Review Gate Required", "severity": "CAT2", "category": "quality", "check": "has_review_gate"},
-    {"id": "QDC-004", "title": "STIG Compliance Gate Required", "severity": "CAT2", "category": "compliance", "check": "has_stig_gate"},
-    {"id": "QDC-005", "title": "SBOM Generation Required", "severity": "CAT2", "category": "compliance", "check": "has_sbom_node"},
-    {"id": "QDC-006", "title": "Secret Detection Gate Required", "severity": "CAT1", "category": "security", "check": "has_secret_gate"},
-    {"id": "QDC-007", "title": "UQS Consumer Required", "severity": "CAT3", "category": "quality", "check": "has_uqs_consumer"},
-    {"id": "QDC-008", "title": "Cross-Canvas Link Recommended", "severity": "CAT3", "category": "integration", "check": "has_cross_canvas_link"},
-    {"id": "QDC-009", "title": "Compliance Target Required", "severity": "CAT2", "category": "compliance", "check": "has_compliance_target"},
-    {"id": "QDC-010", "title": "E2E Test Gate Recommended", "severity": "CAT3", "category": "testing", "check": "has_e2e_gate"},
-    {"id": "QDC-011", "title": "All Gates Must Have Source", "severity": "CAT2", "category": "topology", "check": "gates_have_sources"},
-    {"id": "QDC-012", "title": "No Orphan Nodes", "severity": "CAT3", "category": "topology", "check": "no_orphan_nodes"},
+    {
+        "id": "QDC-001",
+        "title": "SAST Gate Required",
+        "severity": "CAT1",
+        "category": "security",
+        "check": "has_sast_gate",
+    },
+    {
+        "id": "QDC-002",
+        "title": "Unit Test Gate Required",
+        "severity": "CAT1",
+        "category": "testing",
+        "check": "has_unit_gate",
+    },
+    {
+        "id": "QDC-003",
+        "title": "Code Review Gate Required",
+        "severity": "CAT2",
+        "category": "quality",
+        "check": "has_review_gate",
+    },
+    {
+        "id": "QDC-004",
+        "title": "STIG Compliance Gate Required",
+        "severity": "CAT2",
+        "category": "compliance",
+        "check": "has_stig_gate",
+    },
+    {
+        "id": "QDC-005",
+        "title": "SBOM Generation Required",
+        "severity": "CAT2",
+        "category": "compliance",
+        "check": "has_sbom_node",
+    },
+    {
+        "id": "QDC-006",
+        "title": "Secret Detection Gate Required",
+        "severity": "CAT1",
+        "category": "security",
+        "check": "has_secret_gate",
+    },
+    {
+        "id": "QDC-007",
+        "title": "UQS Consumer Required",
+        "severity": "CAT3",
+        "category": "quality",
+        "check": "has_uqs_consumer",
+    },
+    {
+        "id": "QDC-008",
+        "title": "Cross-Canvas Link Recommended",
+        "severity": "CAT3",
+        "category": "integration",
+        "check": "has_cross_canvas_link",
+    },
+    {
+        "id": "QDC-009",
+        "title": "Compliance Target Required",
+        "severity": "CAT2",
+        "category": "compliance",
+        "check": "has_compliance_target",
+    },
+    {
+        "id": "QDC-010",
+        "title": "E2E Test Gate Recommended",
+        "severity": "CAT3",
+        "category": "testing",
+        "check": "has_e2e_gate",
+    },
+    {
+        "id": "QDC-011",
+        "title": "All Gates Must Have Source",
+        "severity": "CAT2",
+        "category": "topology",
+        "check": "gates_have_sources",
+    },
+    {
+        "id": "QDC-012",
+        "title": "No Orphan Nodes",
+        "severity": "CAT3",
+        "category": "topology",
+        "check": "no_orphan_nodes",
+    },
 ]
 
 # ---------------------------------------------------------------------------

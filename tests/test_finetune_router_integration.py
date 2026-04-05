@@ -66,10 +66,15 @@ def ft_db(tmp_path):
     return db_path
 
 
-def _seed_active_model(db_path, function_name, ollama_model_name,
-                       model_version_id="mv-test-001",
-                       tenant_id="", project_id="",
-                       deactivated=False):
+def _seed_active_model(
+    db_path,
+    function_name,
+    ollama_model_name,
+    model_version_id="mv-test-001",
+    tenant_id="",
+    project_id="",
+    deactivated=False,
+):
     """Insert an active model override into ft_active_models."""
     conn = sqlite3.connect(str(db_path))
     deact = "2025-01-01T00:00:00Z" if deactivated else None
@@ -78,8 +83,7 @@ def _seed_active_model(db_path, function_name, ollama_model_name,
            (function_name, model_version_id, ollama_model_name,
             routing_tier, tenant_id, project_id, deactivated_at)
            VALUES (?, ?, ?, 'worker', ?, ?, ?)""",
-        (function_name, model_version_id, ollama_model_name,
-         tenant_id, project_id, deact),
+        (function_name, model_version_id, ollama_model_name, tenant_id, project_id, deact),
     )
     conn.commit()
     conn.close()
@@ -97,6 +101,7 @@ class TestCheckFinetunedOverride:
         """Returns None when icdev.db doesn't exist."""
         with patch("tools.llm.router.BASE_DIR", tmp_path):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -111,6 +116,7 @@ class TestCheckFinetunedOverride:
         """Returns None when no model is active for function."""
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -127,6 +133,7 @@ class TestCheckFinetunedOverride:
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -139,11 +146,11 @@ class TestCheckFinetunedOverride:
 
     def test_deactivated_model_ignored(self, ft_db):
         """Deactivated models are not returned."""
-        _seed_active_model(ft_db, "code_generation", "old-model-v1",
-                           deactivated=True)
+        _seed_active_model(ft_db, "code_generation", "old-model-v1", deactivated=True)
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -156,11 +163,11 @@ class TestCheckFinetunedOverride:
 
     def test_tenant_scoped_override(self, ft_db):
         """Tenant-scoped overrides are returned when tenant matches."""
-        _seed_active_model(ft_db, "compliance_export", "acme-compliance-v2",
-                           tenant_id="tenant-acme")
+        _seed_active_model(ft_db, "compliance_export", "acme-compliance-v2", tenant_id="tenant-acme")
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -170,7 +177,8 @@ class TestCheckFinetunedOverride:
             router._cache_ttl = 1800.0
             # Matching tenant
             result = router._check_finetuned_override(
-                "compliance_export", tenant_id="tenant-acme",
+                "compliance_export",
+                tenant_id="tenant-acme",
             )
             assert result == "acme-compliance-v2"
 
@@ -180,6 +188,7 @@ class TestCheckFinetunedOverride:
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -192,13 +201,12 @@ class TestCheckFinetunedOverride:
 
     def test_most_recent_activation_wins(self, ft_db):
         """When multiple active models exist, most recent wins."""
-        _seed_active_model(ft_db, "code_generation", "model-v1",
-                           model_version_id="mv-001")
-        _seed_active_model(ft_db, "code_generation", "model-v2",
-                           model_version_id="mv-002")
+        _seed_active_model(ft_db, "code_generation", "model-v1", model_version_id="mv-001")
+        _seed_active_model(ft_db, "code_generation", "model-v2", model_version_id="mv-002")
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -211,11 +219,11 @@ class TestCheckFinetunedOverride:
 
     def test_global_override_matches_any_tenant(self, ft_db):
         """A global override (empty tenant_id) matches any tenant query."""
-        _seed_active_model(ft_db, "code_generation", "global-model-v1",
-                           tenant_id="")
+        _seed_active_model(ft_db, "code_generation", "global-model-v1", tenant_id="")
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -224,7 +232,8 @@ class TestCheckFinetunedOverride:
             router._availability_cache_time = 0.0
             router._cache_ttl = 1800.0
             result = router._check_finetuned_override(
-                "code_generation", tenant_id="any-tenant",
+                "code_generation",
+                tenant_id="any-tenant",
             )
             assert result == "global-model-v1"
 
@@ -240,6 +249,7 @@ class TestInvokeFinetunedModel:
     def _make_router(self):
         """Create a router without __init__ side effects."""
         from tools.llm.router import LLMRouter
+
         router = LLMRouter.__new__(LLMRouter)
         router._config = {
             "providers": {
@@ -339,6 +349,7 @@ class TestTwoTierFineTunedIntegration:
     def _make_router_with_two_tier(self):
         """Create a router with two-tier config enabled."""
         from tools.llm.router import LLMRouter
+
         router = LLMRouter.__new__(LLMRouter)
         router._config = {
             "providers": {
@@ -370,7 +381,11 @@ class TestTwoTierFineTunedIntegration:
     @patch("tools.llm.router.LLMRouter._invoke_model_direct")
     @patch("tools.llm.router.LLMRouter._check_finetuned_override")
     def test_ft_override_used_for_worker(
-        self, mock_ft_check, mock_direct, mock_ft_invoke, mock_rag,
+        self,
+        mock_ft_check,
+        mock_direct,
+        mock_ft_invoke,
+        mock_rag,
     ):
         """When fine-tuned model exists, it replaces qwen3 for drafting."""
         from tools.llm.provider import LLMRequest, LLMResponse
@@ -407,7 +422,10 @@ class TestTwoTierFineTunedIntegration:
     @patch("tools.llm.router.LLMRouter._invoke_model_direct")
     @patch("tools.llm.router.LLMRouter._check_finetuned_override")
     def test_no_ft_override_uses_default_qwen3(
-        self, mock_ft_check, mock_direct, mock_rag,
+        self,
+        mock_ft_check,
+        mock_direct,
+        mock_rag,
     ):
         """Without fine-tuned override, default qwen3 tier1 is used."""
         from tools.llm.provider import LLMRequest, LLMResponse
@@ -439,7 +457,11 @@ class TestTwoTierFineTunedIntegration:
     @patch("tools.llm.router.LLMRouter._invoke_model_direct")
     @patch("tools.llm.router.LLMRouter._check_finetuned_override")
     def test_ft_draft_returned_when_claude_unavailable(
-        self, mock_ft_check, mock_direct, mock_ft_invoke, mock_rag,
+        self,
+        mock_ft_check,
+        mock_direct,
+        mock_ft_invoke,
+        mock_rag,
     ):
         """When Claude is unavailable, fine-tuned draft is returned as fallback."""
         from tools.llm.provider import LLMRequest, LLMResponse
@@ -467,7 +489,11 @@ class TestTwoTierFineTunedIntegration:
     @patch("tools.llm.router.LLMRouter._invoke_model_direct")
     @patch("tools.llm.router.LLMRouter._check_finetuned_override")
     def test_ft_model_unavailable_falls_through(
-        self, mock_ft_check, mock_direct, mock_ft_invoke, mock_rag,
+        self,
+        mock_ft_check,
+        mock_direct,
+        mock_ft_invoke,
+        mock_rag,
     ):
         """When fine-tuned model fails, falls through to chain routing."""
         from tools.llm.provider import LLMRequest
@@ -491,7 +517,10 @@ class TestTwoTierFineTunedIntegration:
     @patch("tools.llm.router.LLMRouter._invoke_model_direct")
     @patch("tools.llm.router.LLMRouter._check_finetuned_override")
     def test_planner_functions_not_affected(
-        self, mock_ft_check, mock_direct, mock_rag,
+        self,
+        mock_ft_check,
+        mock_direct,
+        mock_rag,
     ):
         """Fine-tuned override does NOT affect planner functions."""
         from tools.llm.provider import LLMRequest, LLMResponse
@@ -515,7 +544,9 @@ class TestTwoTierFineTunedIntegration:
     @patch("tools.llm.router.LLMRouter._invoke_model_direct")
     @patch("tools.llm.router.LLMRouter._check_finetuned_override")
     def test_scanner_functions_not_affected(
-        self, mock_ft_check, mock_direct,
+        self,
+        mock_ft_check,
+        mock_direct,
     ):
         """Fine-tuned override does NOT affect scanner functions."""
         from tools.llm.provider import LLMRequest, LLMResponse
@@ -538,7 +569,11 @@ class TestTwoTierFineTunedIntegration:
     @patch("tools.llm.router.LLMRouter._invoke_model_direct")
     @patch("tools.llm.router.LLMRouter._check_finetuned_override")
     def test_ft_override_passes_tenant_project(
-        self, mock_ft_check, mock_direct, mock_ft_invoke, mock_rag,
+        self,
+        mock_ft_check,
+        mock_direct,
+        mock_ft_invoke,
+        mock_rag,
     ):
         """Fine-tuned check receives tenant_id and project_id from request."""
         from tools.llm.provider import LLMRequest, LLMResponse
@@ -602,6 +637,7 @@ class TestEndToEndDBIntegration:
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {
                 "providers": {
@@ -656,6 +692,7 @@ class TestEndToEndDBIntegration:
         """Empty ft_active_models table → no override → default routing."""
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}
@@ -669,11 +706,11 @@ class TestEndToEndDBIntegration:
 
     def test_deactivated_model_not_used(self, ft_db):
         """Deactivated model in DB is not used for routing."""
-        _seed_active_model(ft_db, "code_generation", "old-model-v1",
-                           deactivated=True)
+        _seed_active_model(ft_db, "code_generation", "old-model-v1", deactivated=True)
 
         with patch("tools.llm.router.BASE_DIR", ft_db.parent.parent):
             from tools.llm.router import LLMRouter
+
             router = LLMRouter.__new__(LLMRouter)
             router._config = {}
             router._providers = {}

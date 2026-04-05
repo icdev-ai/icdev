@@ -75,7 +75,9 @@ def run_test_suite(run_id: str, logger: logging.Logger, skip_e2e: bool = False) 
         logger.info("Running E2E tests...")
         try:
             e2e_results, e2e_passed, e2e_failed = run_e2e_tests_with_resolution(
-                run_id, logger, max_attempts=MAX_E2E_RETRY,
+                run_id,
+                logger,
+                max_attempts=MAX_E2E_RETRY,
             )
             results["e2e_tests"] = e2e_results
             if e2e_failed > 0:
@@ -198,18 +200,21 @@ def main():
             engine = RecoveryEngine()
             failure_text = json.dumps(results, default=str)
             recovery_result = engine.attempt_recovery(
-                "test", failure_text, run_id, issue_number, state,
+                "test",
+                failure_text,
+                run_id,
+                issue_number,
+                state,
             )
 
             if recovery_result.recovered:
                 recovered = True
-                logger.info(
-                    f"Test recovery succeeded after {recovery_result.attempts} attempt(s)"
-                )
+                logger.info(f"Test recovery succeeded after {recovery_result.attempts} attempt(s)")
                 vcs.comment_on_issue(
                     int(issue_number),
                     format_issue_message(
-                        run_id, "recovery",
+                        run_id,
+                        "recovery",
                         f"Test failures recovered after {recovery_result.attempts} attempt(s). "
                         f"Fixed files: {', '.join(recovery_result.fixed_files)}",
                     ),

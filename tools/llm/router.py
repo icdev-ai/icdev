@@ -32,13 +32,15 @@ def _expand_env(value):
     """Expand ${VAR:-default} patterns in string values."""
     if not isinstance(value, str):
         return value
-    pattern = r'\$\{([^}]+)\}'
+    pattern = r"\$\{([^}]+)\}"
+
     def replacer(match):
         expr = match.group(1)
         if ":-" in expr:
             var, default = expr.split(":-", 1)
             return os.environ.get(var, default)
         return os.environ.get(expr, match.group(0))
+
     return re.sub(pattern, replacer, value)
 
 
@@ -76,11 +78,7 @@ class LLMRouter:
         try:
             with open(self._config_path, "r", encoding="utf-8") as f:
                 self._config = yaml.safe_load(f) or {}
-            self._cache_ttl = float(
-                self._config.get("settings", {}).get(
-                    "availability_cache_ttl_seconds", 1800
-                )
-            )
+            self._cache_ttl = float(self._config.get("settings", {}).get("availability_cache_ttl_seconds", 1800))
             logger.info(
                 "LLM config loaded: %d providers, %d models, %d routes",
                 len(self._config.get("providers", {})),
@@ -110,11 +108,13 @@ class LLMRouter:
         try:
             if ptype == "bedrock":
                 from tools.llm.bedrock_provider import BedrockLLMProvider
+
                 region = _expand_env(provider_cfg.get("region", "us-gov-west-1"))
                 instance = BedrockLLMProvider(region=region)
 
             elif ptype == "anthropic":
                 from tools.llm.anthropic_provider import AnthropicLLMProvider
+
                 api_key_env = provider_cfg.get("api_key_env", "ANTHROPIC_API_KEY")
                 api_key = os.environ.get(api_key_env, "")
                 base_url = provider_cfg.get("base_url", "https://api.anthropic.com")
@@ -122,13 +122,13 @@ class LLMRouter:
 
             elif ptype == "ollama":
                 from tools.llm.ollama_provider import OllamaProvider
-                base_url = _expand_env(
-                    provider_cfg.get("base_url", "http://localhost:11434")
-                )
+
+                base_url = _expand_env(provider_cfg.get("base_url", "http://localhost:11434"))
                 instance = OllamaProvider(base_url=base_url)
 
             elif ptype == "gemini":
                 from tools.llm.gemini_provider import GeminiProvider
+
                 api_key = provider_cfg.get("api_key", "")
                 if not api_key:
                     api_key_env = provider_cfg.get("api_key_env", "GOOGLE_API_KEY")
@@ -138,6 +138,7 @@ class LLMRouter:
 
             elif ptype in ("openai", "openai_compatible"):
                 from tools.llm.openai_provider import OpenAICompatibleProvider
+
                 api_key = provider_cfg.get("api_key", "")
                 if not api_key:
                     api_key_env = provider_cfg.get("api_key_env", "")
@@ -152,6 +153,7 @@ class LLMRouter:
 
             elif ptype == "azure_openai":
                 from tools.llm.azure_openai_provider import AzureOpenAIProvider
+
                 endpoint = _expand_env(provider_cfg.get("endpoint", ""))
                 api_key = _expand_env(provider_cfg.get("api_key", ""))
                 if not api_key:
@@ -159,20 +161,24 @@ class LLMRouter:
                     api_key = os.environ.get(api_key_env, "")
                 api_version = provider_cfg.get("api_version", "2024-06-01")
                 instance = AzureOpenAIProvider(
-                    endpoint=endpoint, api_key=api_key,
+                    endpoint=endpoint,
+                    api_key=api_key,
                     api_version=api_version,
                 )
 
             elif ptype == "vertex_ai":
                 from tools.llm.vertex_ai_provider import VertexAIProvider
+
                 project_id = _expand_env(provider_cfg.get("project_id", ""))
                 location = provider_cfg.get("location", "us-east4")
                 instance = VertexAIProvider(
-                    project_id=project_id, location=location,
+                    project_id=project_id,
+                    location=location,
                 )
 
             elif ptype == "oci_genai":
                 from tools.llm.oci_genai_provider import OCIGenAIProvider
+
                 compartment_id = _expand_env(provider_cfg.get("compartment_id", ""))
                 serving_mode = provider_cfg.get("serving_mode", "ON_DEMAND")
                 instance = OCIGenAIProvider(
@@ -182,6 +188,7 @@ class LLMRouter:
 
             elif ptype == "ibm_watsonx":
                 from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+
                 api_key = _expand_env(provider_cfg.get("api_key", ""))
                 if not api_key:
                     api_key_env = provider_cfg.get("api_key_env", "IBM_CLOUD_API_KEY")
@@ -191,10 +198,11 @@ class LLMRouter:
                     project_id = os.environ.get("IBM_WATSONX_PROJECT_ID", "")
                 url = _expand_env(provider_cfg.get("url", ""))
                 if not url:
-                    url = os.environ.get("IBM_WATSONX_URL",
-                                         "https://us-south.ml.cloud.ibm.com")
+                    url = os.environ.get("IBM_WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
                 instance = IBMWatsonxProvider(
-                    api_key=api_key, project_id=project_id, url=url,
+                    api_key=api_key,
+                    project_id=project_id,
+                    url=url,
                 )
 
             else:
@@ -283,7 +291,10 @@ class LLMRouter:
                 if provider:
                     logger.debug(
                         "Resolved %s -> %s (%s via %s)",
-                        function, model_name, model_cfg.get("model_id"), provider_name,
+                        function,
+                        model_name,
+                        model_cfg.get("model_id"),
+                        provider_name,
                     )
                     return provider, model_cfg.get("model_id", ""), model_cfg
 
@@ -296,7 +307,8 @@ class LLMRouter:
             if provider:
                 logger.warning(
                     "No confirmed available model for '%s'; attempting %s anyway",
-                    function, model_name,
+                    function,
+                    model_name,
                 )
                 return provider, model_cfg.get("model_id", ""), model_cfg
 
@@ -329,7 +341,7 @@ class LLMRouter:
         detector = PromptInjectionDetector()
         # Scan all user messages in the request
         texts = []
-        for msg in (request.messages or []):
+        for msg in request.messages or []:
             if isinstance(msg, dict):
                 content = msg.get("content", "")
                 if isinstance(content, str):
@@ -344,7 +356,9 @@ class LLMRouter:
         if result["detected"]:
             logger.warning(
                 "Prompt injection detected in LLM request: confidence=%.2f action=%s findings=%d",
-                result["confidence"], result["action"], result["finding_count"],
+                result["confidence"],
+                result["action"],
+                result["finding_count"],
             )
             # Log to DB (best-effort)
             detector.log_detection(
@@ -389,6 +403,7 @@ class LLMRouter:
         the LLM system prompt. This strips common injection patterns.
         """
         import re as _re
+
         # Patterns that attempt to override system behavior
         _injection_patterns = [
             _re.compile(r"(?i)ignore\s+(all\s+)?previous\s+instructions?"),
@@ -441,7 +456,7 @@ class LLMRouter:
 
         # Extract user query from messages
         query = ""
-        for msg in (request.messages or []):
+        for msg in request.messages or []:
             if isinstance(msg, dict) and msg.get("role") == "user":
                 c = msg.get("content", "")
                 query = c if isinstance(c, str) else str(c)
@@ -465,7 +480,9 @@ class LLMRouter:
             context_parts = []
             total_chars = 0
             for i, r in enumerate(results):
-                snippet = r.content[:max_chars - total_chars] if total_chars + len(r.content) > max_chars else r.content
+                snippet = (
+                    r.content[: max_chars - total_chars] if total_chars + len(r.content) > max_chars else r.content
+                )
                 # SEC: Strip known prompt injection patterns from retrieved chunks
                 snippet = self._sanitize_rag_chunk(snippet)
                 source_label = f"{r.source_type}"
@@ -502,8 +519,13 @@ class LLMRouter:
             # Prepend to system prompt
             req = copy.copy(request)
             req.system_prompt = context_block + citation_block + (request.system_prompt or "")
-            logger.debug("RAG augment: injected %d chunks (%d chars, citations=%s) for %s",
-                         len(context_parts), total_chars, citation_enabled, function)
+            logger.debug(
+                "RAG augment: injected %d chunks (%d chars, citations=%s) for %s",
+                len(context_parts),
+                total_chars,
+                citation_enabled,
+                function,
+            )
             return req
 
         except Exception as exc:
@@ -540,23 +562,31 @@ class LLMRouter:
         )
         # Extract original user message for context
         original_task = ""
-        for msg in (original.messages or []):
+        for msg in original.messages or []:
             if isinstance(msg, dict) and msg.get("role") == "user":
                 c = msg.get("content", "")
                 original_task = c if isinstance(c, str) else str(c)
                 break
-        req.messages = [{"role": "user", "content": (
-            f"ORIGINAL TASK:\n{original_task}\n\n"
-            f"DRAFT TO REVIEW:\n{draft.content}\n\n"
-            "Return the corrected, final response only."
-        )}]
+        req.messages = [
+            {
+                "role": "user",
+                "content": (
+                    f"ORIGINAL TASK:\n{original_task}\n\n"
+                    f"DRAFT TO REVIEW:\n{draft.content}\n\n"
+                    "Return the corrected, final response only."
+                ),
+            }
+        ]
         return req
 
     # -------------------------------------------------------------------
     # Fine-tuned model override (D-FT-6)
     # -------------------------------------------------------------------
     def _check_finetuned_override(
-        self, function: str, tenant_id: str = "", project_id: str = "",
+        self,
+        function: str,
+        tenant_id: str = "",
+        project_id: str = "",
     ) -> Optional[str]:
         """Check if a fine-tuned model is active for this function (D-FT-6).
 
@@ -585,7 +615,8 @@ class LLMRouter:
             if row and row["ollama_model_name"]:
                 logger.info(
                     "Fine-tuned override: %s → %s",
-                    function, row["ollama_model_name"],
+                    function,
+                    row["ollama_model_name"],
                 )
                 return row["ollama_model_name"]
         except Exception as exc:
@@ -594,7 +625,9 @@ class LLMRouter:
         return None
 
     def _invoke_finetuned_model(
-        self, ollama_model_name: str, request: LLMRequest,
+        self,
+        ollama_model_name: str,
+        request: LLMRequest,
     ) -> Optional[LLMResponse]:
         """Invoke a fine-tuned model via the Ollama provider.
 
@@ -620,13 +653,12 @@ class LLMRouter:
         except Exception as exc:
             logger.warning(
                 "Fine-tuned invoke failed for %s: %s",
-                ollama_model_name, exc,
+                ollama_model_name,
+                exc,
             )
             return None
 
-    def _maybe_invoke_two_tier(
-        self, function: str, request: LLMRequest
-    ) -> Optional[LLMResponse]:
+    def _maybe_invoke_two_tier(self, function: str, request: LLMRequest) -> Optional[LLMResponse]:
         """Apply two-tier routing if function is configured for it.
 
         Returns LLMResponse if two-tier handled the call, else None
@@ -670,10 +702,12 @@ class LLMRouter:
                 # Fine-tuned model replaces qwen3 as drafter
                 logger.debug(
                     "Two-tier: %s → worker (fine-tuned %s draft → Claude review)",
-                    function, ft_override,
+                    function,
+                    ft_override,
                 )
                 draft = self._invoke_finetuned_model(
-                    ft_override, self._draft_request(augmented),
+                    ft_override,
+                    self._draft_request(augmented),
                 )
             else:
                 # Default: qwen3 drafts
@@ -744,6 +778,7 @@ class LLMRouter:
         # D286: Create trace span for LLM invocation
         try:
             from tools.observability import get_tracer
+
             tracer = get_tracer()
         except ImportError:
             tracer = None
@@ -761,16 +796,21 @@ class LLMRouter:
             # D286: Span with GenAI semantic conventions
             span = None
             if tracer:
-                span = tracer.start_span("gen_ai.invoke", kind="CLIENT", attributes={
-                    "gen_ai.operation.name": "chat",
-                    "gen_ai.system": provider_name,
-                    "gen_ai.request.model": model_id,
-                    "gen_ai.effort": request.effort or "medium",
-                    "icdev.llm_function": function,
-                })
+                span = tracer.start_span(
+                    "gen_ai.invoke",
+                    kind="CLIENT",
+                    attributes={
+                        "gen_ai.operation.name": "chat",
+                        "gen_ai.system": provider_name,
+                        "gen_ai.request.model": model_id,
+                        "gen_ai.effort": request.effort or "medium",
+                        "icdev.llm_function": function,
+                    },
+                )
 
             try:
                 import time as _time
+
                 _start = _time.time()
                 response = provider.invoke(request, model_id, model_cfg)
                 _latency = int((_time.time() - _start) * 1000)
@@ -789,15 +829,21 @@ class LLMRouter:
             except Exception as exc:
                 logger.warning(
                     "Provider %s (%s) failed for %s: %s — trying next in chain",
-                    provider_name, model_id, function, exc,
+                    provider_name,
+                    model_id,
+                    function,
+                    exc,
                 )
                 if span:
                     span.set_status("ERROR", str(exc))
-                    span.add_event("provider_fallback", {
-                        "failed_provider": provider_name,
-                        "failed_model": model_id,
-                        "error": str(exc),
-                    })
+                    span.add_event(
+                        "provider_fallback",
+                        {
+                            "failed_provider": provider_name,
+                            "failed_model": model_id,
+                            "error": str(exc),
+                        },
+                    )
                     span.end()
                 last_error = exc
                 # Mark model as unavailable in cache so next call skips it
@@ -805,8 +851,7 @@ class LLMRouter:
                 continue
 
         raise RuntimeError(
-            "All providers in chain {} failed for function '{}'. "
-            "Last error: {}".format(chain, function, last_error)
+            "All providers in chain {} failed for function '{}'. Last error: {}".format(chain, function, last_error)
         )
 
     def invoke_streaming(self, function: str, request: LLMRequest):
@@ -831,15 +876,19 @@ class LLMRouter:
             except Exception as exc:
                 logger.warning(
                     "Streaming provider %s (%s) failed for %s: %s — trying next",
-                    provider_name, model_id, function, exc,
+                    provider_name,
+                    model_id,
+                    function,
+                    exc,
                 )
                 last_error = exc
                 self._availability_cache[model_name] = False
                 continue
 
         raise RuntimeError(
-            "All streaming providers in chain {} failed for function '{}'. "
-            "Last error: {}".format(chain, function, last_error)
+            "All streaming providers in chain {} failed for function '{}'. Last error: {}".format(
+                chain, function, last_error
+            )
         )
 
     # -------------------------------------------------------------------
@@ -872,6 +921,7 @@ class LLMRouter:
                 emb = None
                 if ptype in ("openai", "openai_compatible"):
                     from tools.llm.embedding_provider import OpenAIEmbeddingProvider
+
                     pcfg = self._config.get("providers", {}).get(provider_name, {})
                     api_key = pcfg.get("api_key", "")
                     if not api_key:
@@ -887,6 +937,7 @@ class LLMRouter:
                     )
                 elif ptype == "bedrock":
                     from tools.llm.embedding_provider import BedrockEmbeddingProvider
+
                     pcfg = self._config.get("providers", {}).get(provider_name, {})
                     region = _expand_env(pcfg.get("region", "us-gov-west-1"))
                     emb = BedrockEmbeddingProvider(
@@ -896,6 +947,7 @@ class LLMRouter:
                     )
                 elif ptype == "gemini":
                     from tools.llm.embedding_provider import GeminiEmbeddingProvider
+
                     pcfg = self._config.get("providers", {}).get(provider_name, {})
                     api_key = pcfg.get("api_key", "")
                     if not api_key:
@@ -909,6 +961,7 @@ class LLMRouter:
 
                 elif ptype == "azure_openai":
                     from tools.llm.embedding_provider import AzureEmbeddingProvider
+
                     pcfg = self._config.get("providers", {}).get(provider_name, {})
                     api_key = _expand_env(pcfg.get("api_key", ""))
                     if not api_key:
@@ -927,6 +980,7 @@ class LLMRouter:
 
                 elif ptype == "oci_genai":
                     from tools.llm.embedding_provider import OCIEmbeddingProvider
+
                     pcfg = self._config.get("providers", {}).get(provider_name, {})
                     compartment_id = _expand_env(pcfg.get("compartment_id", ""))
                     if not compartment_id:
@@ -945,25 +999,26 @@ class LLMRouter:
 
                 elif ptype == "ibm_watsonx":
                     from tools.llm.embedding_provider import IBMWatsonxEmbeddingProvider
+
                     pcfg = self._config.get("providers", {}).get(provider_name, {})
                     api_key = _expand_env(pcfg.get("api_key", ""))
                     if not api_key:
-                        api_key = os.environ.get(
-                            pcfg.get("api_key_env", "IBM_CLOUD_API_KEY"), ""
-                        )
+                        api_key = os.environ.get(pcfg.get("api_key_env", "IBM_CLOUD_API_KEY"), "")
                     project_id = _expand_env(pcfg.get("project_id", ""))
                     if not project_id:
                         project_id = os.environ.get("IBM_WATSONX_PROJECT_ID", "")
                     url = _expand_env(pcfg.get("url", ""))
                     if not url:
-                        url = os.environ.get("IBM_WATSONX_URL",
-                                             "https://us-south.ml.cloud.ibm.com")
+                        url = os.environ.get("IBM_WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
                     emb = IBMWatsonxEmbeddingProvider(
-                        api_key=api_key, project_id=project_id, url=url,
+                        api_key=api_key,
+                        project_id=project_id,
+                        url=url,
                     )
 
                 elif ptype == "ollama":
                     from tools.llm.embedding_provider import OllamaEmbeddingProvider
+
                     pcfg = self._config.get("providers", {}).get(provider_name, {})
                     base_url = _expand_env(pcfg.get("base_url", "http://localhost:11434"))
                     emb = OllamaEmbeddingProvider(
@@ -981,9 +1036,7 @@ class LLMRouter:
             except Exception as exc:
                 logger.debug("Embedding provider '%s' failed: %s", model_name, exc)
 
-        raise RuntimeError(
-            "No embedding provider available. Check llm_config.yaml embeddings section."
-        )
+        raise RuntimeError("No embedding provider available. Check llm_config.yaml embeddings section.")
 
     # -------------------------------------------------------------------
     # Model pricing lookup

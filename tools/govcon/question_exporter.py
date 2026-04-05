@@ -41,6 +41,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # HELPERS
 # =========================================================================
 
+
 def _get_db():
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -258,6 +259,7 @@ ROW_TEMPLATE = """        <tr>
 # CORE EXPORT
 # =========================================================================
 
+
 def export_questions(opp_id, status_filter=None, output_path=None, company_name=None):
     """Export questions to formatted HTML document.
 
@@ -308,25 +310,35 @@ def export_questions(opp_id, status_filter=None, output_path=None, company_name=
         # Build category sections HTML
         category_sections = []
         global_num = 1
-        for cat in ["scope", "evaluation_criteria", "technical_requirements",
-                     "contract_terms", "compliance_security", "small_business"]:
+        for cat in [
+            "scope",
+            "evaluation_criteria",
+            "technical_requirements",
+            "contract_terms",
+            "compliance_security",
+            "small_business",
+        ]:
             if cat not in by_category:
                 continue
             rows_html = []
             for q in by_category[cat]:
-                rows_html.append(ROW_TEMPLATE.format(
-                    number=global_num,
-                    priority=q["priority"],
-                    priority_label=PRIORITY_LABELS.get(q["priority"], q["priority"]),
-                    question_text=_escape_html(q["question_text"]),
-                    rfp_ref=_escape_html(q.get("rfp_section_ref") or "N/A"),
-                ))
+                rows_html.append(
+                    ROW_TEMPLATE.format(
+                        number=global_num,
+                        priority=q["priority"],
+                        priority_label=PRIORITY_LABELS.get(q["priority"], q["priority"]),
+                        question_text=_escape_html(q["question_text"]),
+                        rfp_ref=_escape_html(q.get("rfp_section_ref") or "N/A"),
+                    )
+                )
                 global_num += 1
 
-            category_sections.append(CATEGORY_SECTION_TEMPLATE.format(
-                category_label=CATEGORY_LABELS.get(cat, cat),
-                rows="\n".join(rows_html),
-            ))
+            category_sections.append(
+                CATEGORY_SECTION_TEMPLATE.format(
+                    category_label=CATEGORY_LABELS.get(cat, cat),
+                    rows="\n".join(rows_html),
+                )
+            )
 
         # Priority summary
         priority_counts = {"high": 0, "medium": 0, "low": 0}
@@ -361,8 +373,7 @@ def export_questions(opp_id, status_filter=None, output_path=None, company_name=
                 return {"status": "error", "message": "Invalid output path"}
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(html, encoding="utf-8")
-            _audit(conn, "questions_exported",
-                   f"opp={opp_id}, count={len(questions)}, path={output_path}")
+            _audit(conn, "questions_exported", f"opp={opp_id}, count={len(questions)}, path={output_path}")
             conn.commit()
             return {
                 "status": "ok",
@@ -373,8 +384,7 @@ def export_questions(opp_id, status_filter=None, output_path=None, company_name=
             }
 
         # Return HTML in result
-        _audit(conn, "questions_exported",
-               f"opp={opp_id}, count={len(questions)}, inline")
+        _audit(conn, "questions_exported", f"opp={opp_id}, count={len(questions)}, inline")
         conn.commit()
         return {
             "status": "ok",
@@ -391,16 +401,13 @@ def _escape_html(text):
     """Minimal HTML escaping."""
     if not text:
         return ""
-    return (text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;"))
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 # =========================================================================
 # CLI
 # =========================================================================
+
 
 def _build_parser():
     p = argparse.ArgumentParser(description="Question Exporter — HTML for government submission (D-QTG-4)")
@@ -429,9 +436,9 @@ def main():
 
     if args.human:
         status = result.get("status", "unknown")
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Question Exporter — {status.upper()}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         if status == "error":
             print(f"  ERROR: {result.get('message', '')}")
         else:

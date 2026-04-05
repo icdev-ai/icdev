@@ -31,9 +31,7 @@ def _count_existing_pairs() -> int:
     """Count existing training pairs in the database."""
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ft_dataset_examples WHERE approved = 1"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) as cnt FROM ft_dataset_examples WHERE approved = 1").fetchone()
         return (row["cnt"] if isinstance(row, dict) else row[0]) if row else 0
     except Exception:
         return 0
@@ -46,16 +44,24 @@ def _generate_pairs_from_source(source_table: str, limit: int = 20) -> List[Dict
     try:
         result = subprocess.run(
             [
-                sys.executable, "tools/finetune/pair_generator.py",
+                sys.executable,
+                "tools/finetune/pair_generator.py",
                 "--generate-filtered",
-                "--dataset-id", f"genesis-{source_table}",
-                "--source-table", source_table,
-                "--num-attempts", str(limit),
-                "--min-pass-rate", "0.2",
-                "--max-pass-rate", "0.8",
+                "--dataset-id",
+                f"genesis-{source_table}",
+                "--source-table",
+                source_table,
+                "--num-attempts",
+                str(limit),
+                "--min-pass-rate",
+                "0.2",
+                "--max-pass-rate",
+                "0.8",
                 "--json",
             ],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=300,
             cwd=str(BASE_DIR),
         )
         stdout = result.stdout.strip()
@@ -72,7 +78,10 @@ def _check_ollama_modelfile_support() -> bool:
     """Check if Ollama supports model creation (fine-tuning via Modelfile)."""
     try:
         result = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=15,
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         return result.returncode == 0
     except Exception:
@@ -94,7 +103,9 @@ def _get_training_stats() -> Dict[str, Any]:
                 {
                     "table": r["source"] if isinstance(r, dict) else r[0],
                     "count": r["cnt"] if isinstance(r, dict) else r[1],
-                    "avg_quality": round(r["avg_quality"] if isinstance(r, dict) else r[2], 3) if (r["avg_quality"] if isinstance(r, dict) else r[2]) else 0.0,
+                    "avg_quality": round(r["avg_quality"] if isinstance(r, dict) else r[2], 3)
+                    if (r["avg_quality"] if isinstance(r, dict) else r[2])
+                    else 0.0,
                 }
                 for r in rows
             ],
@@ -118,10 +129,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         print(f"  Learn: generating pairs from {table}")
         pairs = _generate_pairs_from_source(table, limit=20)
         total_new_pairs += len(pairs)
-        source_results.append({
-            "source": table,
-            "pairs_generated": len(pairs),
-        })
+        source_results.append(
+            {
+                "source": table,
+                "pairs_generated": len(pairs),
+            }
+        )
 
     # Get overall stats
     stats = _get_training_stats()

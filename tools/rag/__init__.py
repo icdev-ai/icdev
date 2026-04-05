@@ -29,6 +29,7 @@ def get_vector_store(tenant_id: str | None = None):
         VectorStoreProvider instance.
     """
     from tools.rag.vector_store_factory import VectorStoreFactory
+
     return VectorStoreFactory.create(tenant_id=tenant_id)
 
 
@@ -42,4 +43,5 @@ def get_retriever(tenant_id: str | None = None):
         RAGRetriever instance.
     """
     from tools.rag.retriever import RAGRetriever
+
     return RAGRetriever(tenant_id=tenant_id)

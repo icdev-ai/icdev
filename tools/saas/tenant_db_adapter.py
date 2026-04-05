@@ -42,9 +42,7 @@ if str(BASE_DIR) not in sys.path:
 
 logger = logging.getLogger("saas.tenant_db")
 
-PLATFORM_DB_PATH = Path(
-    os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db"))
-)
+PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
 TENANTS_DATA_DIR = BASE_DIR / "data" / "tenants"
 
 # ---------------------------------------------------------------------------
@@ -116,8 +114,7 @@ def _get_platform_conn() -> sqlite3.Connection:
     """Open a connection to the platform database."""
     if not PLATFORM_DB_PATH.exists():
         raise FileNotFoundError(
-            "Platform database not found at {}. "
-            "Run: python tools/saas/platform_db.py --init".format(PLATFORM_DB_PATH)
+            "Platform database not found at {}. Run: python tools/saas/platform_db.py --init".format(PLATFORM_DB_PATH)
         )
     conn = sqlite3.connect(str(PLATFORM_DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -243,10 +240,7 @@ def get_tenant_db_connection(tenant_id: str) -> sqlite3.Connection:
         db_path = TENANTS_DATA_DIR / "{}.db".format(slug)
 
     if not db_path.exists():
-        raise FileNotFoundError(
-            "Tenant database not found: {}. "
-            "Provision the tenant first.".format(db_path)
-        )
+        raise FileNotFoundError("Tenant database not found: {}. Provision the tenant first.".format(db_path))
 
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -320,9 +314,7 @@ def verify_project_belongs_to_tenant(tenant_id: str, project_id: str) -> bool:
     """
     try:
         conn = get_tenant_db_connection(tenant_id)
-        row = conn.execute(
-            "SELECT id FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
         conn.close()
         return row is not None
     except Exception:

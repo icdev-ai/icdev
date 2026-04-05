@@ -43,11 +43,13 @@ def _content_hash(system: str, user: str, expected: str) -> str:
 # Source: Approved proposal drafts
 # ---------------------------------------------------------------------------
 
+
 def _get_approved_drafts(limit: int = 50) -> List[Dict]:
     """Get approved proposal drafts not yet used for training."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT d.id, d.opportunity_id, d.section_type,
                    d.draft_content, d.final_content,
                    o.title as opp_title, o.agency, o.naics_code
@@ -60,7 +62,9 @@ def _get_approved_drafts(limit: int = 50) -> List[Dict]:
             )
             ORDER BY d.updated_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """,
+            (limit,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -83,35 +87,35 @@ def _generate_draft_pairs(draft: Dict) -> List[Dict]:
     title = draft.get("opp_title", "this opportunity")
 
     # Pair 1: Section drafting
-    pairs.append({
-        "system_prompt": (
-            "You are a government proposal writer. Generate professional, "
-            "compliant proposal sections that address RFP requirements."
-        ),
-        "user_input": (
-            f"Write a {section} section for a proposal responding to "
-            f"{agency}'s requirement: {title}"
-        ),
-        "expected_output": content[:2000],
-        "source_type": "approved_draft",
-        "source_id": draft.get("id", ""),
-    })
+    pairs.append(
+        {
+            "system_prompt": (
+                "You are a government proposal writer. Generate professional, "
+                "compliant proposal sections that address RFP requirements."
+            ),
+            "user_input": (f"Write a {section} section for a proposal responding to {agency}'s requirement: {title}"),
+            "expected_output": content[:2000],
+            "source_type": "approved_draft",
+            "source_id": draft.get("id", ""),
+        }
+    )
 
     # Pair 2: Quality improvement
     if len(content) > 300:
-        pairs.append({
-            "system_prompt": (
-                "You are a proposal quality reviewer. Provide concise, "
-                "professional content that meets government writing standards."
-            ),
-            "user_input": (
-                f"Improve the following {section} section for clarity "
-                f"and compliance:\n\n{content[:500]}"
-            ),
-            "expected_output": content[:1500],
-            "source_type": "approved_draft",
-            "source_id": draft.get("id", ""),
-        })
+        pairs.append(
+            {
+                "system_prompt": (
+                    "You are a proposal quality reviewer. Provide concise, "
+                    "professional content that meets government writing standards."
+                ),
+                "user_input": (
+                    f"Improve the following {section} section for clarity and compliance:\n\n{content[:500]}"
+                ),
+                "expected_output": content[:1500],
+                "source_type": "approved_draft",
+                "source_id": draft.get("id", ""),
+            }
+        )
 
     return pairs
 
@@ -120,11 +124,13 @@ def _generate_draft_pairs(draft: Dict) -> List[Dict]:
 # Source: Win/loss lessons
 # ---------------------------------------------------------------------------
 
+
 def _get_recent_lessons(limit: int = 100) -> List[Dict]:
     """Get actionable lessons not yet used for training."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT l.id, l.category, l.lesson, l.actionable,
                    r.outcome, r.our_strengths, r.our_weaknesses,
                    o.title as opp_title, o.agency
@@ -138,7 +144,9 @@ def _get_recent_lessons(limit: int = 100) -> List[Dict]:
             )
             ORDER BY l.created_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """,
+            (limit,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -158,23 +166,24 @@ def _generate_lesson_pairs(lesson: Dict) -> List[Dict]:
     agency = lesson.get("agency", "the government")
 
     # Pair: Lesson application
-    pairs.append({
-        "system_prompt": (
-            "You are a government contracting advisor. Provide actionable "
-            "recommendations based on past proposal outcomes."
-        ),
-        "user_input": (
-            f"Based on a {outcome} outcome with {agency}, what lessons "
-            f"should we apply in the {category} area?"
-        ),
-        "expected_output": (
-            f"Key lesson: {lesson_text}\n\n"
-            f"Strengths to leverage: {lesson.get('our_strengths', 'N/A')}\n"
-            f"Weaknesses to address: {lesson.get('our_weaknesses', 'N/A')}"
-        ),
-        "source_type": "win_loss_lesson",
-        "source_id": lesson.get("id", ""),
-    })
+    pairs.append(
+        {
+            "system_prompt": (
+                "You are a government contracting advisor. Provide actionable "
+                "recommendations based on past proposal outcomes."
+            ),
+            "user_input": (
+                f"Based on a {outcome} outcome with {agency}, what lessons should we apply in the {category} area?"
+            ),
+            "expected_output": (
+                f"Key lesson: {lesson_text}\n\n"
+                f"Strengths to leverage: {lesson.get('our_strengths', 'N/A')}\n"
+                f"Weaknesses to address: {lesson.get('our_weaknesses', 'N/A')}"
+            ),
+            "source_type": "win_loss_lesson",
+            "source_id": lesson.get("id", ""),
+        }
+    )
 
     return pairs
 
@@ -183,11 +192,13 @@ def _generate_lesson_pairs(lesson: Dict) -> List[Dict]:
 # Source: Knowledge base
 # ---------------------------------------------------------------------------
 
+
 def _get_kb_entries(limit: int = 50) -> List[Dict]:
     """Get knowledge base entries not yet used for training."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT kb.id, kb.title, kb.content, kb.domain,
                    kb.tags, kb.usage_count
             FROM proposal_knowledge_base kb
@@ -200,7 +211,9 @@ def _get_kb_entries(limit: int = 50) -> List[Dict]:
             )
             ORDER BY kb.usage_count DESC, kb.updated_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """,
+            (limit,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -218,19 +231,18 @@ def _generate_kb_pairs(entry: Dict) -> List[Dict]:
     title = entry.get("title", "")
     domain = entry.get("domain", "general")
 
-    pairs.append({
-        "system_prompt": (
-            "You are a proposal knowledge expert. Provide detailed, "
-            "accurate content based on the organization's capability library."
-        ),
-        "user_input": (
-            f"What capabilities and experience do we have in "
-            f"{domain}: {title}?"
-        ),
-        "expected_output": content[:2000],
-        "source_type": "knowledge_base",
-        "source_id": entry.get("id", ""),
-    })
+    pairs.append(
+        {
+            "system_prompt": (
+                "You are a proposal knowledge expert. Provide detailed, "
+                "accurate content based on the organization's capability library."
+            ),
+            "user_input": (f"What capabilities and experience do we have in {domain}: {title}?"),
+            "expected_output": content[:2000],
+            "source_type": "knowledge_base",
+            "source_id": entry.get("id", ""),
+        }
+    )
 
     return pairs
 
@@ -238,6 +250,7 @@ def _generate_kb_pairs(entry: Dict) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Store training pairs
 # ---------------------------------------------------------------------------
+
 
 def _ensure_tracking_table() -> None:
     """Create tracking table if it doesn't exist."""
@@ -278,10 +291,7 @@ def _store_pair(pair: Dict, dataset_id: Optional[str] = None) -> bool:
     )
     try:
         # Check for duplicate
-        existing = conn.execute(
-            "SELECT id FROM pg_training_pair_sources WHERE content_hash = ?",
-            (ch,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM pg_training_pair_sources WHERE content_hash = ?", (ch,)).fetchone()
         if existing:
             return False
 
@@ -363,6 +373,7 @@ def _audit_train(event_type: str, details: Dict, success: bool) -> None:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def _get_or_create_dataset() -> Optional[str]:
     """Find existing proposal_drafting dataset or create one.
 
@@ -392,8 +403,7 @@ def _get_or_create_dataset() -> Optional[str]:
             (
                 ds_id,
                 "Proposal Genesis Training Data",
-                "Auto-generated from approved drafts, win/loss lessons, "
-                "and knowledge base by R14 Train reflex.",
+                "Auto-generated from approved drafts, win/loss lessons, and knowledge base by R14 Train reflex.",
                 "proposal_drafting",
                 "qwen3.5:latest",
                 "CUI",
@@ -419,8 +429,7 @@ def _update_dataset_count(dataset_id: str, added: int) -> None:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE ft_datasets SET example_count = example_count + ?, "
-            "updated_at = ? WHERE id = ?",
+            "UPDATE ft_datasets SET example_count = example_count + ?, updated_at = ? WHERE id = ?",
             (added, _utcnow_iso(), dataset_id),
         )
         conn.commit()
@@ -451,8 +460,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     _ensure_tracking_table()
 
     all_pairs = []
-    source_counts = {"approved_draft": 0, "win_loss_lesson": 0,
-                     "knowledge_base": 0}
+    source_counts = {"approved_draft": 0, "win_loss_lesson": 0, "knowledge_base": 0}
 
     # Source 1: Approved drafts
     drafts = _get_approved_drafts(limit=50)

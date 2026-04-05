@@ -28,9 +28,7 @@ def _get_module_stats() -> List[Dict[str, Any]]:
     conn = get_connection()
     try:
         # Check if marketplace tables exist
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'mkt_%'"
-        ).fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'mkt_%'").fetchall()
         if not tables:
             return []
 
@@ -40,9 +38,13 @@ def _get_module_stats() -> List[Dict[str, Any]]:
             GROUP BY module_slug
             ORDER BY install_count DESC
         """).fetchall()
-        return [{"slug": r["module_slug"] if isinstance(r, dict) else r[0],
-                 "installs": r["install_count"] if isinstance(r, dict) else r[1]}
-                for r in rows]
+        return [
+            {
+                "slug": r["module_slug"] if isinstance(r, dict) else r[0],
+                "installs": r["install_count"] if isinstance(r, dict) else r[1],
+            }
+            for r in rows
+        ]
     except Exception:
         return []
     finally:
@@ -61,9 +63,11 @@ def _get_feedback_summary() -> Dict[str, Any]:
         return {
             "modules_with_feedback": len(rows),
             "details": [
-                {"slug": r["module_slug"] if isinstance(r, dict) else r[0],
-                 "avg_rating": round(r["avg_rating"] if isinstance(r, dict) else r[1], 2),
-                 "count": r["feedback_count"] if isinstance(r, dict) else r[2]}
+                {
+                    "slug": r["module_slug"] if isinstance(r, dict) else r[0],
+                    "avg_rating": round(r["avg_rating"] if isinstance(r, dict) else r[1], 2),
+                    "count": r["feedback_count"] if isinstance(r, dict) else r[2],
+                }
                 for r in rows
             ],
         }
@@ -80,32 +84,38 @@ def _generate_suggestions(stats: List[Dict], feedback: Dict) -> List[Dict[str, s
     # Suggest improvements for low-rated modules
     for mod in feedback.get("details", []):
         if mod.get("avg_rating", 5) < 3.5 and mod.get("count", 0) >= 2:
-            suggestions.append({
-                "type": "quality_improvement",
-                "module": mod["slug"],
-                "reason": f"Low average rating ({mod['avg_rating']}) across {mod['count']} reviews",
-                "action": "Review feedback comments, prioritize fixes",
-            })
+            suggestions.append(
+                {
+                    "type": "quality_improvement",
+                    "module": mod["slug"],
+                    "reason": f"Low average rating ({mod['avg_rating']}) across {mod['count']} reviews",
+                    "action": "Review feedback comments, prioritize fixes",
+                }
+            )
 
     # Suggest promotion for high-install modules without feedback
     slugs_with_feedback = {m["slug"] for m in feedback.get("details", [])}
     for mod in stats:
         if mod["slug"] not in slugs_with_feedback and mod["installs"] > 3:
-            suggestions.append({
-                "type": "feedback_gap",
-                "module": mod["slug"],
-                "reason": f"{mod['installs']} installs but no feedback collected",
-                "action": "Add feedback prompt to renewal flow",
-            })
+            suggestions.append(
+                {
+                    "type": "feedback_gap",
+                    "module": mod["slug"],
+                    "reason": f"{mod['installs']} installs but no feedback collected",
+                    "action": "Add feedback prompt to renewal flow",
+                }
+            )
 
     # If no marketplace data exists, suggest bootstrapping
     if not stats:
-        suggestions.append({
-            "type": "bootstrap",
-            "module": "all",
-            "reason": "No marketplace activity detected",
-            "action": "Enable marketplace and register initial modules",
-        })
+        suggestions.append(
+            {
+                "type": "bootstrap",
+                "module": "all",
+                "reason": "No marketplace activity detected",
+                "action": "Enable marketplace and register initial modules",
+            }
+        )
 
     return suggestions
 
@@ -120,6 +130,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     exported = 0
     try:
         from tools.genesis.promoter import export_gkp
+
         for suggestion in suggestions[:5]:  # Cap at 5 per cycle
             result = export_gkp(
                 reflex="market",

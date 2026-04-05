@@ -20,9 +20,7 @@ if str(BASE_DIR) not in sys.path:
 
 logger = logging.getLogger("saas.db.pool")
 
-PLATFORM_DB_PATH = Path(
-    os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db"))
-)
+PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
 
 
 class TenantConnectionPool:
@@ -44,8 +42,7 @@ class TenantConnectionPool:
             conn = sqlite3.connect(str(PLATFORM_DB_PATH))
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT db_host, db_name, db_port, slug, impact_level "
-                "FROM tenants WHERE id = ?",
+                "SELECT db_host, db_name, db_port, slug, impact_level FROM tenants WHERE id = ?",
                 (tenant_id,),
             ).fetchone()
             conn.close()
@@ -69,7 +66,9 @@ class TenantConnectionPool:
             raise ValueError(f"Tenant {tenant_id} not found or not configured")
 
         if config.get("db_host") and config["db_host"] not in (
-            "localhost-sqlite", "", None,
+            "localhost-sqlite",
+            "",
+            None,
         ):
             return self._get_pg_connection(tenant_id, config)
 
@@ -98,9 +97,8 @@ class TenantConnectionPool:
             logger.warning("psycopg2 not installed, falling back to SQLite")
             slug = config.get("slug", tenant_id)
             from tools.saas.db.db_compat import get_sqlite_connection
-            return get_sqlite_connection(
-                str(BASE_DIR / "data" / "tenants" / f"{slug}.db")
-            )
+
+            return get_sqlite_connection(str(BASE_DIR / "data" / "tenants" / f"{slug}.db"))
         except Exception as e:
             logger.error("PG pool error for tenant %s: %s", tenant_id, e)
             raise
@@ -110,20 +108,12 @@ class TenantConnectionPool:
         try:
             from psycopg2.pool import ThreadedConnectionPool
 
-            db_url = (
-                f"postgresql://{config['db_host']}"
-                f":{config.get('db_port', 5432)}"
-                f"/{config['db_name']}"
-            )
+            db_url = f"postgresql://{config['db_host']}:{config.get('db_port', 5432)}/{config['db_name']}"
             pool = ThreadedConnectionPool(self._min_conn, self._max_conn, db_url)
             self._pools[tenant_id] = pool
-            logger.info(
-                "Created PG pool for tenant %s: %s", tenant_id, config["db_name"]
-            )
+            logger.info("Created PG pool for tenant %s: %s", tenant_id, config["db_name"])
         except ImportError:
-            logger.warning(
-                "psycopg2 not available - no PG pool for tenant %s", tenant_id
-            )
+            logger.warning("psycopg2 not available - no PG pool for tenant %s", tenant_id)
         except Exception as e:
             logger.error("Failed to create PG pool for %s: %s", tenant_id, e)
 

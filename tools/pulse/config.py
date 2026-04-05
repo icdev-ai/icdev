@@ -18,6 +18,7 @@ _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 if _env_path.exists():
     try:
         from dotenv import load_dotenv
+
         load_dotenv(_env_path)
     except ImportError:
         # Manual fallback: parse KEY=VALUE lines
@@ -92,7 +93,7 @@ CHALLENGE_SOLUTION_TOPICS = [
     "CMMC Level 2 certification gaps crushing defense contractors",
     "ATO process bottlenecks: 560 hours of manual security assessment effort",
     "continuous ATO vs point-in-time compliance: why cATO changes everything",
-    "managing compliance across 8 frameworks simultaneously (NIST, FedRAMP, CMMC, 800-171, CISA SbD, IEEE 1012, DoDI 5000.87, IEC 62443)",
+    "managing compliance across 8 frameworks simultaneously (NIST, FedRAMP, CMMC, 800-171, CISA SbD, IEEE 1012, DoDI 5000.87, IEC 62443)",  # noqa: E501
     # Security
     "zero trust architecture implementation challenges for federal agencies",
     "supply chain security and SBOM management at scale",

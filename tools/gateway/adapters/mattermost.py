@@ -61,8 +61,7 @@ class MattermostAdapter(BaseChannelAdapter):
 
         return hmac.compare_digest(signature, self.webhook_token)
 
-    def parse_webhook(self, request_data: Dict[str, Any],
-                      headers: Dict[str, str]) -> Optional[CommandEnvelope]:
+    def parse_webhook(self, request_data: Dict[str, Any], headers: Dict[str, str]) -> Optional[CommandEnvelope]:
         """Parse a Mattermost outgoing webhook payload into a CommandEnvelope.
 
         Mattermost outgoing webhook format:
@@ -84,8 +83,7 @@ class MattermostAdapter(BaseChannelAdapter):
             return None
 
         # Only process ICDEV commands
-        if not (text.startswith("/icdev") or text.startswith("/bind")
-                or text.startswith("icdev-")):
+        if not (text.startswith("/icdev") or text.startswith("/bind") or text.startswith("icdev-")):
             return None
 
         command, args = parse_command_text(text)
@@ -117,8 +115,7 @@ class MattermostAdapter(BaseChannelAdapter):
 
         return envelope
 
-    def send_message(self, channel_user_id: str, text: str,
-                     thread_id: str = "") -> bool:
+    def send_message(self, channel_user_id: str, text: str, thread_id: str = "") -> bool:
         """Send a message via Mattermost REST API.
 
         Uses POST /api/v4/posts to create a new post in the channel.
@@ -134,16 +131,22 @@ class MattermostAdapter(BaseChannelAdapter):
 
         url = f"{self.base_url}/api/v4/posts"
 
-        payload = json.dumps({
-            "channel_id": thread_id,
-            "message": text,
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "channel_id": thread_id,
+                "message": text,
+            }
+        ).encode("utf-8")
 
         try:
-            req = Request(url, data=payload, headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.token}",
-            })
+            req = Request(
+                url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.token}",
+                },
+            )
             with urlopen(req, timeout=10) as resp:
                 return resp.status in (200, 201)
         except (URLError, Exception) as e:

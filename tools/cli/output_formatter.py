@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # Ensure UTF-8 output on Windows (box-drawing and Unicode block chars).
 from tools.compat.platform_utils import ensure_utf8_console
+
 ensure_utf8_console()
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ CUI_BANNER = "# CUI // SP-CTI"
 # ANSI color support
 # ---------------------------------------------------------------------------
 
+
 def _is_tty() -> bool:
     """Return True if stdout is connected to a terminal."""
     try:
@@ -51,10 +53,7 @@ def _is_tty() -> bool:
 
 
 # Also respect NO_COLOR (https://no-color.org/) and FORCE_COLOR env vars.
-_COLORS_ENABLED: bool = (
-    os.environ.get("FORCE_COLOR", "") == "1"
-    or (_is_tty() and os.environ.get("NO_COLOR") is None)
-)
+_COLORS_ENABLED: bool = os.environ.get("FORCE_COLOR", "") == "1" or (_is_tty() and os.environ.get("NO_COLOR") is None)
 
 
 class _Ansi:
@@ -62,16 +61,16 @@ class _Ansi:
     is disabled (piped output, NO_COLOR, etc.)."""
 
     _CODES = {
-        "reset":     "\033[0m",
-        "bold":      "\033[1m",
-        "dim":       "\033[2m",
+        "reset": "\033[0m",
+        "bold": "\033[1m",
+        "dim": "\033[2m",
         "underline": "\033[4m",
-        "red":       "\033[31m",
-        "green":     "\033[32m",
-        "yellow":    "\033[33m",
-        "blue":      "\033[34m",
-        "magenta":   "\033[35m",
-        "cyan":      "\033[36m",
+        "red": "\033[31m",
+        "green": "\033[32m",
+        "yellow": "\033[33m",
+        "blue": "\033[34m",
+        "magenta": "\033[35m",
+        "cyan": "\033[36m",
     }
 
     @classmethod
@@ -92,6 +91,7 @@ class _Ansi:
     def strip(cls, text: str) -> str:
         """Remove all ANSI escape sequences from *text*."""
         import re
+
         return re.sub(r"\033\[[0-9;]*m", "", text)
 
 
@@ -103,33 +103,33 @@ C = _Ansi  # short alias
 
 _VALUE_COLORS: List[Tuple[str, List[str]]] = [
     # (pattern_substring, [ansi_styles])
-    ("critical",       ["red", "bold"]),
-    ("high",           ["red"]),
-    ("firing",         ["red", "bold"]),
-    ("failed",         ["red"]),
-    ("fail",           ["red"]),
-    ("error",          ["red"]),
-    ("blocked",        ["red"]),
-    ("not_met",        ["red"]),
-    ("not_satisfied",  ["red"]),
-    ("non_compliant",  ["red"]),
-    ("expired",        ["red"]),
-    ("degraded",       ["yellow", "bold"]),
-    ("medium",         ["yellow"]),
-    ("warning",        ["yellow"]),
-    ("pending",        ["yellow"]),
-    ("partial",        ["yellow"]),
-    ("skipped",        ["dim"]),
-    ("healthy",        ["green"]),
-    ("pass",           ["green"]),
-    ("passed",         ["green"]),
-    ("completed",      ["green"]),
-    ("active",         ["green"]),
-    ("resolved",       ["green"]),
-    ("satisfied",      ["green"]),
-    ("compliant",      ["green"]),
-    ("low",            ["green"]),
-    ("info",           ["blue"]),
+    ("critical", ["red", "bold"]),
+    ("high", ["red"]),
+    ("firing", ["red", "bold"]),
+    ("failed", ["red"]),
+    ("fail", ["red"]),
+    ("error", ["red"]),
+    ("blocked", ["red"]),
+    ("not_met", ["red"]),
+    ("not_satisfied", ["red"]),
+    ("non_compliant", ["red"]),
+    ("expired", ["red"]),
+    ("degraded", ["yellow", "bold"]),
+    ("medium", ["yellow"]),
+    ("warning", ["yellow"]),
+    ("pending", ["yellow"]),
+    ("partial", ["yellow"]),
+    ("skipped", ["dim"]),
+    ("healthy", ["green"]),
+    ("pass", ["green"]),
+    ("passed", ["green"]),
+    ("completed", ["green"]),
+    ("active", ["green"]),
+    ("resolved", ["green"]),
+    ("satisfied", ["green"]),
+    ("compliant", ["green"]),
+    ("low", ["green"]),
+    ("info", ["blue"]),
 ]
 
 
@@ -146,9 +146,11 @@ def _visible_len(text: str) -> int:
     """Return the display width of *text*, ignoring ANSI codes."""
     return len(C.strip(str(text)))
 
+
 # ---------------------------------------------------------------------------
 # CUI wrapper helper
 # ---------------------------------------------------------------------------
+
 
 def _cui_wrap(text: str, classification: Optional[str] = None) -> str:
     """Prepend and append classification banner if provided."""
@@ -158,9 +160,11 @@ def _cui_wrap(text: str, classification: Optional[str] = None) -> str:
     rule = C.wrap("-" * max(40, _visible_len(classification) + 4), "yellow")
     return f"{rule}\n{banner}\n{rule}\n\n{text}\n\n{rule}\n{banner}\n{rule}"
 
+
 # ---------------------------------------------------------------------------
 # 1. format_table
 # ---------------------------------------------------------------------------
+
 
 def format_table(
     headers: Sequence[str],
@@ -193,8 +197,8 @@ def format_table(
     def _hline(left: str, mid: str, right: str, fill: str = "\u2500") -> str:
         return left + mid.join(fill * (w + 2) for w in widths) + right
 
-    top    = _hline("\u250c", "\u252c", "\u2510")
-    sep    = _hline("\u251c", "\u253c", "\u2524")
+    top = _hline("\u250c", "\u252c", "\u2510")
+    sep = _hline("\u251c", "\u253c", "\u2524")
     bottom = _hline("\u2514", "\u2534", "\u2518")
 
     def _row_str(cells: List[str], color_fn: Optional[Callable] = None) -> str:
@@ -220,15 +224,16 @@ def format_table(
     result = "\n".join(lines)
     return _cui_wrap(result, classification)
 
+
 # ---------------------------------------------------------------------------
 # 2. format_banner
 # ---------------------------------------------------------------------------
 
 _BANNER_STYLES = {
-    "healthy":  ("green",),
+    "healthy": ("green",),
     "degraded": ("yellow",),
     "critical": ("red", "bold"),
-    "info":     ("blue",),
+    "info": ("blue",),
 }
 
 
@@ -251,16 +256,20 @@ def format_banner(
     rule = "\u2550" * width
     inner = f"  {icon}  {message}"
     pad = width - _visible_len(inner)
-    text = "\n".join([
-        C.wrap(rule, *styles),
-        C.wrap(f"{inner}{' ' * max(pad, 0)}", *styles),
-        C.wrap(rule, *styles),
-    ])
+    text = "\n".join(
+        [
+            C.wrap(rule, *styles),
+            C.wrap(f"{inner}{' ' * max(pad, 0)}", *styles),
+            C.wrap(rule, *styles),
+        ]
+    )
     return _cui_wrap(text, classification)
+
 
 # ---------------------------------------------------------------------------
 # 3. format_score
 # ---------------------------------------------------------------------------
+
 
 def format_score(
     value: float,
@@ -287,16 +296,14 @@ def format_score(
     score_str = f"{value:.2f}" if isinstance(value, float) else str(value)
     thresh_str = f"{threshold:.2f}" if isinstance(threshold, float) else str(threshold)
 
-    text = (
-        f"  {C.wrap(label, 'bold')}  "
-        f"{C.wrap(bar, style)}  "
-        f"{C.wrap(score_str, style, 'bold')} / {thresh_str}"
-    )
+    text = f"  {C.wrap(label, 'bold')}  {C.wrap(bar, style)}  {C.wrap(score_str, style, 'bold')} / {thresh_str}"
     return _cui_wrap(text, classification)
+
 
 # ---------------------------------------------------------------------------
 # 4. format_kv
 # ---------------------------------------------------------------------------
+
 
 def format_kv(
     pairs: Union[Dict[str, Any], List[Tuple[str, Any]]],
@@ -325,9 +332,11 @@ def format_kv(
     result = "\n".join(lines)
     return _cui_wrap(result, classification)
 
+
 # ---------------------------------------------------------------------------
 # 5. format_section
 # ---------------------------------------------------------------------------
+
 
 def format_section(
     title: str,
@@ -336,16 +345,20 @@ def format_section(
 ) -> str:
     """Decorated section header with horizontal rules."""
     rule = "\u2500" * width
-    text = "\n".join([
-        C.wrap(rule, "dim"),
-        C.wrap(f"  {title}", "bold", "magenta"),
-        C.wrap(rule, "dim"),
-    ])
+    text = "\n".join(
+        [
+            C.wrap(rule, "dim"),
+            C.wrap(f"  {title}", "bold", "magenta"),
+            C.wrap(rule, "dim"),
+        ]
+    )
     return _cui_wrap(text, classification)
+
 
 # ---------------------------------------------------------------------------
 # 6. format_list
 # ---------------------------------------------------------------------------
+
 
 def format_list(
     items: Sequence[str],
@@ -361,16 +374,17 @@ def format_list(
     result = "\n".join(lines)
     return _cui_wrap(result, classification)
 
+
 # ---------------------------------------------------------------------------
 # 7. format_pipeline
 # ---------------------------------------------------------------------------
 
 _PIPELINE_ICONS = {
-    "completed": ("\u2714", "green"),   # checkmark
-    "active":    ("\u25b6", "cyan"),     # play
-    "pending":   ("\u25cb", "dim"),      # circle
-    "blocked":   ("\u2718", "red"),      # X
-    "skipped":   ("\u2500", "dim"),      # dash
+    "completed": ("\u2714", "green"),  # checkmark
+    "active": ("\u25b6", "cyan"),  # play
+    "pending": ("\u25cb", "dim"),  # circle
+    "blocked": ("\u2718", "red"),  # X
+    "skipped": ("\u2500", "dim"),  # dash
 }
 
 
@@ -397,9 +411,11 @@ def format_pipeline(
     text = "".join(parts)
     return _cui_wrap(text, classification)
 
+
 # ---------------------------------------------------------------------------
 # 8. format_json_human
 # ---------------------------------------------------------------------------
+
 
 def format_json_human(
     data: Any,
@@ -434,7 +450,7 @@ def format_json_human(
                 lines.append(f"{pad}  {C.wrap(f'[{i}]', 'dim')}")
                 lines.append(format_json_human(item, _indent=_indent + 1))
             else:
-                bullet = '\u2022'
+                bullet = "\u2022"
                 lines.append(f"{pad}  {C.wrap(bullet, 'dim')} {_auto_color_value(str(item))}")
     else:
         lines.append(f"{pad}  {_auto_color_value(str(data))}")
@@ -444,9 +460,11 @@ def format_json_human(
         return _cui_wrap(result, classification)
     return result
 
+
 # ---------------------------------------------------------------------------
 # 9. auto_format
 # ---------------------------------------------------------------------------
+
 
 def auto_format(
     data: Any,
@@ -530,9 +548,11 @@ def auto_format(
     # Scalar fallback
     return format_json_human(data, title=title, classification=classification)
 
+
 # ---------------------------------------------------------------------------
 # 10. human_output decorator
 # ---------------------------------------------------------------------------
+
 
 def human_output(func: Callable) -> Callable:
     """Decorator that intercepts a tool function's dict return value and
@@ -568,9 +588,11 @@ def human_output(func: Callable) -> Callable:
 
     return wrapper
 
+
 # ---------------------------------------------------------------------------
 # 11. CLI integration helpers
 # ---------------------------------------------------------------------------
+
 
 def add_human_flag(parser: argparse.ArgumentParser) -> None:
     """Add ``--human`` flag to an argparse parser.
@@ -590,6 +612,7 @@ def add_human_flag(parser: argparse.ArgumentParser) -> None:
 def should_use_human(args: argparse.Namespace) -> bool:
     """Return True if the ``--human`` flag is set on *args*."""
     return getattr(args, "human", False)
+
 
 # ---------------------------------------------------------------------------
 # 12. Demo / self-test
@@ -615,20 +638,22 @@ if __name__ == "__main__":
     print()
 
     # -- Table --
-    print(format_table(
-        headers=["Agent", "Port", "Status", "Uptime"],
-        rows=[
-            ["Orchestrator", "8443", "healthy",  "99.9%"],
-            ["Architect",    "8444", "healthy",  "99.8%"],
-            ["Builder",      "8445", "degraded", "97.2%"],
-            ["Compliance",   "8446", "critical", "0.0%"],
-            ["Security",     "8447", "healthy",  "99.7%"],
-            ["Infrastructure","8448","healthy",  "99.9%"],
-            ["MBSE",         "8451", "healthy",  "99.5%"],
-            ["Monitor",      "8450", "healthy",  "99.6%"],
-        ],
-        title="ICDEV Agent Fleet",
-    ))
+    print(
+        format_table(
+            headers=["Agent", "Port", "Status", "Uptime"],
+            rows=[
+                ["Orchestrator", "8443", "healthy", "99.9%"],
+                ["Architect", "8444", "healthy", "99.8%"],
+                ["Builder", "8445", "degraded", "97.2%"],
+                ["Compliance", "8446", "critical", "0.0%"],
+                ["Security", "8447", "healthy", "99.7%"],
+                ["Infrastructure", "8448", "healthy", "99.9%"],
+                ["MBSE", "8451", "healthy", "99.5%"],
+                ["Monitor", "8450", "healthy", "99.6%"],
+            ],
+            title="ICDEV Agent Fleet",
+        )
+    )
     print()
 
     # -- Score --
@@ -640,107 +665,132 @@ if __name__ == "__main__":
     print()
 
     # -- Key-Value --
-    print(format_kv(
-        {
-            "Project":           "mission-planner-v2",
-            "Impact Level":      "IL5",
-            "Classification":    "CUI // SP-CTI",
-            "ATO Status":        "active",
-            "STIG Findings":     "0 CAT1, 2 CAT2",
-            "SBOM Components":   "142",
-            "Last Deploy":       "2026-02-17 14:30 UTC",
-        },
-        title="Project Summary",
-    ))
+    print(
+        format_kv(
+            {
+                "Project": "mission-planner-v2",
+                "Impact Level": "IL5",
+                "Classification": "CUI // SP-CTI",
+                "ATO Status": "active",
+                "STIG Findings": "0 CAT1, 2 CAT2",
+                "SBOM Components": "142",
+                "Last Deploy": "2026-02-17 14:30 UTC",
+            },
+            title="Project Summary",
+        )
+    )
     print()
 
     # -- Pipeline --
     print(format_section("ATLAS Workflow"))
     print()
-    print(format_pipeline([
-        {"name": "Model",     "status": "completed"},
-        {"name": "Architect", "status": "completed"},
-        {"name": "Trace",     "status": "completed"},
-        {"name": "Link",      "status": "active"},
-        {"name": "Assemble",  "status": "pending"},
-        {"name": "Stress",    "status": "pending"},
-    ]))
+    print(
+        format_pipeline(
+            [
+                {"name": "Model", "status": "completed"},
+                {"name": "Architect", "status": "completed"},
+                {"name": "Trace", "status": "completed"},
+                {"name": "Link", "status": "active"},
+                {"name": "Assemble", "status": "pending"},
+                {"name": "Stress", "status": "pending"},
+            ]
+        )
+    )
     print()
 
     # -- Pipeline with blocked --
-    print(format_pipeline([
-        {"name": "Plan",   "status": "completed"},
-        {"name": "Build",  "status": "completed"},
-        {"name": "Test",   "status": "completed"},
-        {"name": "Review", "status": "blocked"},
-        {"name": "Deploy", "status": "skipped"},
-    ]))
+    print(
+        format_pipeline(
+            [
+                {"name": "Plan", "status": "completed"},
+                {"name": "Build", "status": "completed"},
+                {"name": "Test", "status": "completed"},
+                {"name": "Review", "status": "blocked"},
+                {"name": "Deploy", "status": "skipped"},
+            ]
+        )
+    )
     print()
 
     # -- List --
     print(format_section("Recent Findings"))
     print()
-    print(format_list([
-        "critical: AC-2 control implementation missing",
-        "high: Outdated dependency openssl 1.1.1",
-        "medium: CUI banner not on 3 generated artifacts",
-        "low: Non-standard port in K8s service manifest",
-        "info: New STIG checklist V2R4 available",
-    ]))
+    print(
+        format_list(
+            [
+                "critical: AC-2 control implementation missing",
+                "high: Outdated dependency openssl 1.1.1",
+                "medium: CUI banner not on 3 generated artifacts",
+                "low: Non-standard port in K8s service manifest",
+                "info: New STIG checklist V2R4 available",
+            ]
+        )
+    )
     print()
 
     # -- Numbered List --
-    print(format_list([
-        "Run FIPS 199 categorization",
-        "Validate FIPS 200 minimum security",
-        "Generate SSP with dynamic baseline",
-        "Submit to eMASS for review",
-    ], numbered=True))
+    print(
+        format_list(
+            [
+                "Run FIPS 199 categorization",
+                "Validate FIPS 200 minimum security",
+                "Generate SSP with dynamic baseline",
+                "Submit to eMASS for review",
+            ],
+            numbered=True,
+        )
+    )
     print()
 
     # -- JSON Human --
     print(format_section("Nested Data (format_json_human)"))
     print()
-    print(format_json_human(
-        {
-            "project_id": "proj-42",
-            "status": "active",
-            "compliance": {
-                "fedramp": "satisfied",
-                "cmmc": "partial",
-                "stig": {
-                    "cat1": 0,
-                    "cat2": 3,
-                    "cat3": 12,
+    print(
+        format_json_human(
+            {
+                "project_id": "proj-42",
+                "status": "active",
+                "compliance": {
+                    "fedramp": "satisfied",
+                    "cmmc": "partial",
+                    "stig": {
+                        "cat1": 0,
+                        "cat2": 3,
+                        "cat3": 12,
+                    },
+                },
+                "agents": ["Orchestrator", "Builder", "Compliance"],
+                "gates": {
+                    "merge": "passed",
+                    "deploy": "blocked",
                 },
             },
-            "agents": ["Orchestrator", "Builder", "Compliance"],
-            "gates": {
-                "merge": "passed",
-                "deploy": "blocked",
-            },
-        },
-        title="Project Detail",
-    ))
+            title="Project Detail",
+        )
+    )
     print()
 
     # -- Auto-format: list of dicts -> table --
     print(format_section("auto_format: List of Dicts"))
     print()
-    print(auto_format(
-        [
-            {"CVE": "CVE-2025-1234", "Severity": "critical", "Component": "openssl",  "SLA": "24h"},
-            {"CVE": "CVE-2025-5678", "Severity": "high",     "Component": "libxml2",  "SLA": "72h"},
-            {"CVE": "CVE-2025-9012", "Severity": "medium",   "Component": "requests", "SLA": "30d"},
-        ],
-        title="CVE Triage Queue",
-    ))
+    print(
+        auto_format(
+            [
+                {"CVE": "CVE-2025-1234", "Severity": "critical", "Component": "openssl", "SLA": "24h"},
+                {"CVE": "CVE-2025-5678", "Severity": "high", "Component": "libxml2", "SLA": "72h"},
+                {"CVE": "CVE-2025-9012", "Severity": "medium", "Component": "requests", "SLA": "30d"},
+            ],
+            title="CVE Triage Queue",
+        )
+    )
     print()
 
     # -- Auto-format: score dict --
-    print(auto_format(
-        {"value": 0.85, "threshold": 0.70, "label": "Readiness Score"},
-    ))
+    print(
+        auto_format(
+            {"value": 0.85, "threshold": 0.70, "label": "Readiness Score"},
+        )
+    )
     print()
 
     # -- CUI-wrapped output --

@@ -31,6 +31,7 @@ def _utcnow_iso() -> str:
 # Check 1: Feature docs referencing missing tools/files
 # ---------------------------------------------------------------------------
 
+
 def _check_stale_feature_docs() -> List[Dict[str, Any]]:
     """Scan docs/features/*.md for references to non-existent tool paths."""
     issues = []
@@ -39,7 +40,7 @@ def _check_stale_feature_docs() -> List[Dict[str, Any]]:
         return issues
 
     # Pattern: python tools/some/path.py or tools/some/path.py
-    tool_ref_pattern = re.compile(r'(?:python\s+)?(tools/[\w/]+\.py)')
+    tool_ref_pattern = re.compile(r"(?:python\s+)?(tools/[\w/]+\.py)")
 
     for doc_file in docs_dir.glob("*.md"):
         try:
@@ -51,12 +52,14 @@ def _check_stale_feature_docs() -> List[Dict[str, Any]]:
         for ref in refs:
             ref_path = BASE_DIR / ref
             if not ref_path.exists():
-                issues.append({
-                    "type": "stale_tool_reference",
-                    "doc": str(doc_file.relative_to(BASE_DIR)),
-                    "missing_tool": ref,
-                    "severity": "medium",
-                })
+                issues.append(
+                    {
+                        "type": "stale_tool_reference",
+                        "doc": str(doc_file.relative_to(BASE_DIR)),
+                        "missing_tool": ref,
+                        "severity": "medium",
+                    }
+                )
 
     return issues
 
@@ -64,6 +67,7 @@ def _check_stale_feature_docs() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Check 2: Phases with code but no feature doc
 # ---------------------------------------------------------------------------
+
 
 def _check_missing_feature_docs() -> List[Dict[str, Any]]:
     """Detect tool directories that lack a corresponding feature doc."""
@@ -92,11 +96,13 @@ def _check_missing_feature_docs() -> List[Dict[str, Any]]:
         # Check if any feature doc mentions this directory
         has_doc = any(dir_name in doc_name for doc_name in existing_docs)
         if not has_doc:
-            issues.append({
-                "type": "missing_feature_doc",
-                "tool_dir": f"tools/{dir_name}/",
-                "severity": "low",
-            })
+            issues.append(
+                {
+                    "type": "missing_feature_doc",
+                    "tool_dir": f"tools/{dir_name}/",
+                    "severity": "low",
+                }
+            )
 
     return issues
 
@@ -104,6 +110,7 @@ def _check_missing_feature_docs() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Check 3: Manifest drift — tools in tools/ but not in manifest.md
 # ---------------------------------------------------------------------------
+
 
 def _check_manifest_drift() -> List[Dict[str, Any]]:
     """Check tools/manifest.md for missing tool entries."""
@@ -120,7 +127,9 @@ def _check_manifest_drift() -> List[Dict[str, Any]]:
     tools_dir = BASE_DIR / "tools"
     for py_file in tools_dir.rglob("*.py"):
         if py_file.name.startswith("_") or py_file.name in (
-            "__init__.py", "conftest.py", "setup.py",
+            "__init__.py",
+            "conftest.py",
+            "setup.py",
         ):
             continue
         # Skip very small files
@@ -134,11 +143,13 @@ def _check_manifest_drift() -> List[Dict[str, Any]]:
         tool_name = rel.stem
         # Check if tool name appears anywhere in manifest
         if tool_name not in manifest_content:
-            issues.append({
-                "type": "manifest_drift",
-                "tool": str(rel).replace("\\", "/"),
-                "severity": "low",
-            })
+            issues.append(
+                {
+                    "type": "manifest_drift",
+                    "tool": str(rel).replace("\\", "/"),
+                    "severity": "low",
+                }
+            )
 
     return issues
 
@@ -146,6 +157,7 @@ def _check_manifest_drift() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Check 4: CLAUDE.md route documentation drift
 # ---------------------------------------------------------------------------
+
 
 def _check_claude_md_route_drift() -> List[Dict[str, Any]]:
     """Check documented dashboard routes against actual Flask routes."""
@@ -163,12 +175,12 @@ def _check_claude_md_route_drift() -> List[Dict[str, Any]]:
         return issues
 
     # Extract routes documented in CLAUDE.md (pattern: /route_name — description)
-    doc_route_pattern = re.compile(r'#\s+(/[\w\-<>/]+)\s+—')
+    doc_route_pattern = re.compile(r"#\s+(/[\w\-<>/]+)\s+—")
     documented_routes = set()
     for m in doc_route_pattern.finditer(claude_content):
         route = m.group(1).strip()
         # Normalize: remove <param> parts
-        route = re.sub(r'<[^>]+>', '', route).rstrip('/')
+        route = re.sub(r"<[^>]+>", "", route).rstrip("/")
         if route:
             documented_routes.add(route)
 
@@ -177,7 +189,7 @@ def _check_claude_md_route_drift() -> List[Dict[str, Any]]:
     actual_routes = set()
     for m in flask_route_pattern.finditer(app_content):
         route = m.group(1).strip()
-        route = re.sub(r'<[^>]+>', '', route).rstrip('/')
+        route = re.sub(r"<[^>]+>", "", route).rstrip("/")
         if route:
             actual_routes.add(route)
 
@@ -189,7 +201,7 @@ def _check_claude_md_route_drift() -> List[Dict[str, Any]]:
                 api_content = api_file.read_text(encoding="utf-8", errors="replace")
                 for m in flask_route_pattern.finditer(api_content):
                     route = m.group(1).strip()
-                    route = re.sub(r'<[^>]+>', '', route).rstrip('/')
+                    route = re.sub(r"<[^>]+>", "", route).rstrip("/")
                     if route:
                         actual_routes.add(route)
             except OSError:
@@ -201,11 +213,13 @@ def _check_claude_md_route_drift() -> List[Dict[str, Any]]:
         # Skip API endpoints and static routes
         if route.startswith("/api/") or route in ("/static", "/favicon.ico"):
             continue
-        issues.append({
-            "type": "undocumented_route",
-            "route": route,
-            "severity": "low",
-        })
+        issues.append(
+            {
+                "type": "undocumented_route",
+                "route": route,
+                "severity": "low",
+            }
+        )
 
     return issues
 
@@ -213,6 +227,7 @@ def _check_claude_md_route_drift() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Check 5: README version/count mismatches
 # ---------------------------------------------------------------------------
+
 
 def _check_readme_staleness() -> List[Dict[str, Any]]:
     """Check README.md for potentially stale counts or versions."""
@@ -235,11 +250,13 @@ def _check_readme_staleness() -> List[Dict[str, Any]]:
             if version_match:
                 actual_version = version_match.group(1)
                 if actual_version not in content:
-                    issues.append({
-                        "type": "readme_version_mismatch",
-                        "actual_version": actual_version,
-                        "severity": "medium",
-                    })
+                    issues.append(
+                        {
+                            "type": "readme_version_mismatch",
+                            "actual_version": actual_version,
+                            "severity": "medium",
+                        }
+                    )
         except OSError:
             pass
 
@@ -250,10 +267,12 @@ def _check_readme_staleness() -> List[Dict[str, Any]]:
 # Export results as GKP
 # ---------------------------------------------------------------------------
 
+
 def _export_docs_report(issues: List[Dict], stats: Dict) -> Optional[str]:
     """Export documentation drift report as a GKP."""
     try:
         from tools.genesis.promoter import export_gkp
+
         result = export_gkp(
             reflex="docs",
             artifact_type="docs_drift_report",

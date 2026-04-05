@@ -4,6 +4,7 @@
 Wraps existing synchronous sync_read/sync_write in a thread pool with
 configurable max_workers and max_concurrent_syncs enforcement via Semaphore.
 """
+
 from __future__ import annotations
 
 import logging
@@ -87,9 +88,7 @@ class ScaleWorkerPool:
         future.add_done_callback(_on_done)
         return future
 
-    def get_result(
-        self, future: Future, timeout: Optional[float] = None
-    ) -> Any:
+    def get_result(self, future: Future, timeout: Optional[float] = None) -> Any:
         """Block until future completes or timeout. Returns result or raises."""
         t = timeout if timeout is not None else self._timeout
         try:
@@ -115,9 +114,7 @@ class ScaleWorkerPool:
     def shutdown(self, wait: bool = True, timeout: float = 30.0) -> None:
         """Graceful shutdown: wait for active syncs, then kill executor."""
         self._shutdown = True
-        logger.info(
-            "Shutting down worker pool (wait=%s, timeout=%.1fs)", wait, timeout
-        )
+        logger.info("Shutting down worker pool (wait=%s, timeout=%.1fs)", wait, timeout)
         self._executor.shutdown(wait=wait)
         with self._lock:
             self._active_futures.clear()
@@ -125,9 +122,7 @@ class ScaleWorkerPool:
     def status(self) -> Dict[str, Any]:
         """Return pool stats."""
         with self._lock:
-            active = sum(
-                1 for f in self._active_futures.values() if not f.done()
-            )
+            active = sum(1 for f in self._active_futures.values() if not f.done())
             return {
                 "max_workers": self._max_workers,
                 "max_concurrent_syncs": self._max_concurrent,

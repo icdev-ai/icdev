@@ -123,19 +123,21 @@ class ChromaVectorStore(VectorStoreProvider):
                 # ChromaDB cosine distance = 1 - similarity
                 score = 1.0 - dist
 
-                search_results.append(SearchResult(
-                    chunk_id=cid,
-                    content=doc,
-                    source_type=meta.get("source_type", ""),
-                    source_id=meta.get("source_id", ""),
-                    source_table=meta.get("source_table", ""),
-                    chunk_index=meta.get("chunk_index", 0),
-                    score=score,
-                    final_score=score,
-                    metadata={k: v for k, v in meta.items() if k.startswith("meta_")},
-                    tier=meta.get("tier", "hot"),
-                    classification=meta.get("classification", "CUI"),
-                ))
+                search_results.append(
+                    SearchResult(
+                        chunk_id=cid,
+                        content=doc,
+                        source_type=meta.get("source_type", ""),
+                        source_id=meta.get("source_id", ""),
+                        source_table=meta.get("source_table", ""),
+                        chunk_index=meta.get("chunk_index", 0),
+                        score=score,
+                        final_score=score,
+                        metadata={k: v for k, v in meta.items() if k.startswith("meta_")},
+                        tier=meta.get("tier", "hot"),
+                        classification=meta.get("classification", "CUI"),
+                    )
+                )
 
         search_results.sort(key=lambda r: r.score, reverse=True)
         return search_results

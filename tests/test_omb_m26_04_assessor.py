@@ -192,6 +192,7 @@ def mock_db_path(tmp_path):
 # Import & Metadata
 # ============================================================
 
+
 class TestImportAndMetadata:
     def test_import(self):
         """OMBM2604Assessor can be imported."""
@@ -225,6 +226,7 @@ class TestImportAndMetadata:
 # ============================================================
 # Catalog Loading
 # ============================================================
+
 
 class TestCatalogLoading:
     def test_catalog_file_exists(self):
@@ -263,6 +265,7 @@ class TestCatalogLoading:
 # Automated Checks — Assessment
 # ============================================================
 
+
 class TestAssessment:
     def test_automated_checks_returns_dict(self, mock_db_path):
         """get_automated_checks returns a dict with string values."""
@@ -295,10 +298,8 @@ class TestAssessment:
         project = {"id": "proj-test"}
         results = assessor.get_automated_checks(project, project_dir=None)
         # Model card key must not be satisfied on an empty DB
-        assert results.get("M26-DOC-1") != "satisfied", \
-            "M26-DOC-1 should not be satisfied with empty model_cards"
-        assert results.get("M26-DOC-2") != "satisfied", \
-            "M26-DOC-2 should not be satisfied with empty system_cards"
+        assert results.get("M26-DOC-1") != "satisfied", "M26-DOC-1 should not be satisfied with empty model_cards"
+        assert results.get("M26-DOC-2") != "satisfied", "M26-DOC-2 should not be satisfied with empty system_cards"
 
     def test_model_card_check_satisfied_with_data(self, mock_db_path):
         """Populated model_cards -> model card check improves."""
@@ -338,8 +339,7 @@ class TestAssessment:
         """Populated shap_attributions -> XAI check improves."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO shap_attributions (trace_id, tool_name, shapley_value, project_id) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO shap_attributions (trace_id, tool_name, shapley_value, project_id) VALUES (?, ?, ?, ?)",
             ("trace-1", "scaffold", 0.45, "proj-test"),
         )
         conn.commit()
@@ -365,6 +365,7 @@ class TestAssessment:
 # ============================================================
 # Gate Evaluation
 # ============================================================
+
 
 class TestGateEvaluation:
     def test_gate_not_assessed_empty(self, mock_db_path):

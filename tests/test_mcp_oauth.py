@@ -17,6 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_db(tmp_path):
     """Create a temporary platform DB with api_keys and users tables."""
@@ -40,8 +41,7 @@ def tmp_db(tmp_path):
         )
     """)
     # Insert a test user and API key
-    conn.execute("INSERT INTO users (id, email, role) VALUES (?, ?, ?)",
-                 ("user-001", "test@icdev.mil", "developer"))
+    conn.execute("INSERT INTO users (id, email, role) VALUES (?, ?, ?)", ("user-001", "test@icdev.mil", "developer"))
     test_key = "icdev_test_key_abc123"
     key_hash = hashlib.sha256(test_key.encode()).hexdigest()
     conn.execute(
@@ -57,6 +57,7 @@ def tmp_db(tmp_path):
 def verifier(tmp_db):
     """Create an MCPOAuthVerifier with test DB."""
     from icdev.tools.saas.mcp_oauth import MCPOAuthVerifier
+
     return MCPOAuthVerifier(db_path=tmp_db, secret_key="test-secret-key-123")
 
 
@@ -64,6 +65,7 @@ def verifier(tmp_db):
 def elicitation_handler():
     """Create an MCPElicitationHandler."""
     from icdev.tools.saas.mcp_oauth import MCPElicitationHandler
+
     return MCPElicitationHandler()
 
 
@@ -71,12 +73,14 @@ def elicitation_handler():
 def task_manager():
     """Create an MCPTaskManager."""
     from icdev.tools.saas.mcp_oauth import MCPTaskManager
+
     return MCPTaskManager()
 
 
 # ---------------------------------------------------------------------------
 # MCPOAuthVerifier Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMCPOAuthVerifier:
     """Test OAuth 2.1 token verification."""
@@ -111,6 +115,7 @@ class TestMCPOAuthVerifier:
 
     def test_api_key_no_db(self, tmp_path):
         from icdev.tools.saas.mcp_oauth import MCPOAuthVerifier
+
         v = MCPOAuthVerifier(db_path=tmp_path / "nonexistent.db")
         result = v._verify_api_key("icdev_test")
         assert result["verified"] is False
@@ -169,6 +174,7 @@ class TestHMACToken:
 
     def test_wrong_secret_key(self, tmp_db):
         from icdev.tools.saas.mcp_oauth import MCPOAuthVerifier
+
         v1 = MCPOAuthVerifier(db_path=tmp_db, secret_key="secret-A")
         v2 = MCPOAuthVerifier(db_path=tmp_db, secret_key="secret-B")
         token = v1.generate_offline_token(user_id="user-test")
@@ -191,15 +197,24 @@ class TestJWTVerification:
 
     def test_valid_jwt_structure(self, verifier):
         import base64
+
         header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).rstrip(b"=").decode()
-        payload = base64.urlsafe_b64encode(json.dumps({
-            "sub": "user-jwt",
-            "email": "jwt@icdev.mil",
-            "role": "admin",
-            "scope": "mcp:read mcp:write",
-            "tenant_id": "tenant-jwt",
-            "exp": int(time.time()) + 3600,
-        }).encode()).rstrip(b"=").decode()
+        payload = (
+            base64.urlsafe_b64encode(
+                json.dumps(
+                    {
+                        "sub": "user-jwt",
+                        "email": "jwt@icdev.mil",
+                        "role": "admin",
+                        "scope": "mcp:read mcp:write",
+                        "tenant_id": "tenant-jwt",
+                        "exp": int(time.time()) + 3600,
+                    }
+                ).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
         sig = base64.urlsafe_b64encode(b"fake_signature").rstrip(b"=").decode()
         token = f"{header}.{payload}.{sig}"
 
@@ -212,11 +227,20 @@ class TestJWTVerification:
 
     def test_expired_jwt(self, verifier):
         import base64
+
         header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).rstrip(b"=").decode()
-        payload = base64.urlsafe_b64encode(json.dumps({
-            "sub": "user-jwt",
-            "exp": int(time.time()) - 100,  # Expired
-        }).encode()).rstrip(b"=").decode()
+        payload = (
+            base64.urlsafe_b64encode(
+                json.dumps(
+                    {
+                        "sub": "user-jwt",
+                        "exp": int(time.time()) - 100,  # Expired
+                    }
+                ).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
         sig = base64.urlsafe_b64encode(b"sig").rstrip(b"=").decode()
         token = f"{header}.{payload}.{sig}"
         result = verifier.verify_token(token)
@@ -229,12 +253,21 @@ class TestJWTVerification:
 
     def test_jwt_scopes_as_list(self, verifier):
         import base64
+
         header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).rstrip(b"=").decode()
-        payload = base64.urlsafe_b64encode(json.dumps({
-            "sub": "user-jwt",
-            "scopes": ["mcp:read", "mcp:execute"],
-            "exp": int(time.time()) + 3600,
-        }).encode()).rstrip(b"=").decode()
+        payload = (
+            base64.urlsafe_b64encode(
+                json.dumps(
+                    {
+                        "sub": "user-jwt",
+                        "scopes": ["mcp:read", "mcp:execute"],
+                        "exp": int(time.time()) + 3600,
+                    }
+                ).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
         sig = base64.urlsafe_b64encode(b"sig").rstrip(b"=").decode()
         token = f"{header}.{payload}.{sig}"
         result = verifier.verify_token(token)
@@ -245,6 +278,7 @@ class TestJWTVerification:
 # ---------------------------------------------------------------------------
 # MCPElicitationHandler Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMCPElicitationHandler:
     """Test MCP Elicitation support."""
@@ -295,6 +329,7 @@ class TestMCPElicitationHandler:
 # ---------------------------------------------------------------------------
 # MCPTaskManager Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMCPTaskManager:
     """Test MCP Tasks lifecycle management."""

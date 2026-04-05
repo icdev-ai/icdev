@@ -177,6 +177,7 @@ def mock_db_path(tmp_path):
 # Import & Metadata
 # ============================================================
 
+
 class TestImportAndMetadata:
     def test_import(self):
         """NISTAI6001Assessor can be imported."""
@@ -210,6 +211,7 @@ class TestImportAndMetadata:
 # ============================================================
 # Catalog Loading
 # ============================================================
+
 
 class TestCatalogLoading:
     def test_catalog_file_exists(self):
@@ -248,6 +250,7 @@ class TestCatalogLoading:
 # Automated Checks — Assessment
 # ============================================================
 
+
 class TestAssessment:
     def test_automated_checks_returns_dict(self, mock_db_path):
         """get_automated_checks returns a dict with string values."""
@@ -280,10 +283,8 @@ class TestAssessment:
         project = {"id": "proj-test"}
         results = assessor.get_automated_checks(project, project_dir=None)
         # Confabulation key must not be satisfied on an empty DB
-        assert results.get("GAI-1-1") != "satisfied", \
-            "GAI-1-1 should not be satisfied with empty confabulation_checks"
-        assert results.get("GAI-10-1") != "satisfied", \
-            "GAI-10-1 should not be satisfied with empty ai_bom"
+        assert results.get("GAI-1-1") != "satisfied", "GAI-1-1 should not be satisfied with empty confabulation_checks"
+        assert results.get("GAI-10-1") != "satisfied", "GAI-10-1 should not be satisfied with empty ai_bom"
 
     def test_confabulation_check_satisfied_with_data(self, mock_db_path):
         """Populated confabulation_checks -> confabulation check improves."""
@@ -306,8 +307,7 @@ class TestAssessment:
         """Populated prov_entities -> provenance check improves."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO prov_entities (id, entity_type, label, project_id) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO prov_entities (id, entity_type, label, project_id) VALUES (?, ?, ?, ?)",
             ("ent-1", "prompt", "User query for doc classification", "proj-test"),
         )
         conn.commit()
@@ -340,8 +340,7 @@ class TestAssessment:
         """Populated ai_bom -> AI BOM check improves."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO ai_bom (project_id, component_name, component_type, version, provider) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO ai_bom (project_id, component_name, component_type, version, provider) VALUES (?, ?, ?, ?, ?)",
             ("proj-test", "claude-opus-4", "foundation_model", "4.0", "anthropic"),
         )
         conn.commit()
@@ -367,6 +366,7 @@ class TestAssessment:
 # ============================================================
 # Gate Evaluation
 # ============================================================
+
 
 class TestGateEvaluation:
     def test_gate_not_assessed_empty(self, mock_db_path):

@@ -42,14 +42,17 @@ CUI // SP-CTI | Department of Defense
 //////////////////////////////////////////////////////////////////"""
 
 MAINTENANCE_CONTROLS = {
-    "SI-2": "Flaw Remediation", "SA-22": "Unsupported System Components",
-    "CM-3": "Configuration Change Control", "CM-8": "System Component Inventory",
+    "SI-2": "Flaw Remediation",
+    "SA-22": "Unsupported System Components",
+    "CM-3": "Configuration Change Control",
+    "CM-8": "System Component Inventory",
     "RA-5": "Vulnerability Monitoring and Scanning",
 }
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_connection(db_path=None):
     """Get a database connection."""
@@ -75,9 +78,16 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
         conn.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, details,
                 affected_files, classification) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (project_id, "maintenance_audit", "icdev-maintenance-engine", action,
-             json.dumps(details) if details else None,
-             json.dumps([str(file_path)]) if file_path else None, "CUI"))
+            (
+                project_id,
+                "maintenance_audit",
+                "icdev-maintenance-engine",
+                action,
+                json.dumps(details) if details else None,
+                json.dumps([str(file_path)]) if file_path else None,
+                "CUI",
+            ),
+        )
         conn.commit()
     except Exception as e:
         print(f"Warning: Could not log audit event: {e}", file=sys.stderr)
@@ -130,9 +140,9 @@ def _parse_simple_yaml(path):
         if ":" not in stripped:
             continue
         ci = stripped.index(":")
-        key, vp = stripped[:ci].strip(), stripped[ci+1:].strip()
+        key, vp = stripped[:ci].strip(), stripped[ci + 1 :].strip()
         if "#" in vp and not vp.startswith('"'):
-            vp = vp[:vp.index("#")].strip()
+            vp = vp[: vp.index("#")].strip()
         if indent == 0:
             if vp == "|":
                 ml_key, section, ml_lines = key, None, []
@@ -162,9 +172,14 @@ def _load_maintenance_config():
     defaults = {
         "sla": {"critical_hours": 48, "high_hours": 168, "medium_hours": 720, "low_hours": 2160},
         "staleness": {"warning_days": 90, "critical_days": 180, "max_acceptable_days": 365},
-        "scoring": {"overdue_critical_penalty": 15, "overdue_high_penalty": 10,
-                     "overdue_medium_penalty": 5, "overdue_low_penalty": 2,
-                     "staleness_penalty_per_day": 0.1, "staleness_baseline_days": 90},
+        "scoring": {
+            "overdue_critical_penalty": 15,
+            "overdue_high_penalty": 10,
+            "overdue_medium_penalty": 5,
+            "overdue_low_penalty": 2,
+            "staleness_penalty_per_day": 0.1,
+            "staleness_baseline_days": 90,
+        },
         "reporting": {"trend_lookback_days": 90, "cui_markings": True},
     }
     config = _parse_simple_yaml(MAINTENANCE_CONFIG_PATH)
@@ -189,9 +204,11 @@ def _load_security_gates():
     """Load args/security_gates.yaml for gate evaluation."""
     return _parse_simple_yaml(SECURITY_GATES_PATH) or {"thresholds": {"dependency": {"max_critical": 0, "max_high": 0}}}
 
+
 # ---------------------------------------------------------------------------
 # Lazy imports for sibling tools
 # ---------------------------------------------------------------------------
+
 
 def _import_dependency_scanner():
     """Lazy import dependency_scanner from same directory."""
@@ -214,9 +231,11 @@ def _import_vulnerability_checker():
     spec.loader.exec_module(mod)
     return mod
 
+
 # ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
+
 
 def _compute_maintenance_score(audit_data, config=None):
     """Compute maintenance score (0-100) based on SLA compliance and staleness.
@@ -250,21 +269,34 @@ def _compute_maintenance_score(audit_data, config=None):
         score -= (avg_stale - baseline) * scoring.get("staleness_penalty_per_day", 0.1)
     return max(0.0, round(score, 1))
 
+
 # ---------------------------------------------------------------------------
 # Data collection from DB
 # ---------------------------------------------------------------------------
+
 
 def _collect_staleness_stats(conn, project_id):
     """Query dependency_inventory for staleness statistics."""
     rows = conn.execute(
         "SELECT language, package_name, current_version, latest_version, days_stale, scope "
-        "FROM dependency_inventory WHERE project_id = ?", (project_id,)).fetchall()
+        "FROM dependency_inventory WHERE project_id = ?",
+        (project_id,),
+    ).fetchall()
     if not rows:
-        return {"total_dependencies": 0, "outdated_count": 0, "avg_staleness_days": 0.0,
-                "max_staleness_days": 0, "by_language": {},
-                "staleness_distribution": {"current": 0, "warning": 0, "critical": 0, "unacceptable": 0}}
+        return {
+            "total_dependencies": 0,
+            "outdated_count": 0,
+            "avg_staleness_days": 0.0,
+            "max_staleness_days": 0,
+            "by_language": {},
+            "staleness_distribution": {"current": 0, "warning": 0, "critical": 0, "unacceptable": 0},
+        }
     cfg = _load_maintenance_config().get("staleness", {})
-    warn_d, crit_d, max_d = cfg.get("warning_days", 90), cfg.get("critical_days", 180), cfg.get("max_acceptable_days", 365)
+    warn_d, crit_d, max_d = (
+        cfg.get("warning_days", 90),
+        cfg.get("critical_days", 180),
+        cfg.get("max_acceptable_days", 365),
+    )
     stale_vals = [r["days_stale"] or 0 for r in rows]
     total = len(rows)
     outdated = sum(1 for r in rows if r["latest_version"] and r["current_version"] != r["latest_version"])
@@ -290,9 +322,14 @@ def _collect_staleness_stats(conn, project_id):
             dist["critical"] += 1
         else:
             dist["unacceptable"] += 1
-    return {"total_dependencies": total, "outdated_count": outdated,
-            "avg_staleness_days": round(sum(stale_vals) / total, 1), "max_staleness_days": max(stale_vals),
-            "by_language": by_lang, "staleness_distribution": dist}
+    return {
+        "total_dependencies": total,
+        "outdated_count": outdated,
+        "avg_staleness_days": round(sum(stale_vals) / total, 1),
+        "max_staleness_days": max(stale_vals),
+        "by_language": by_lang,
+        "staleness_distribution": dist,
+    }
 
 
 def _collect_vulnerability_stats(conn, project_id):
@@ -301,12 +338,23 @@ def _collect_vulnerability_stats(conn, project_id):
     rows = conn.execute(
         "SELECT severity, sla_category, sla_deadline, status, fix_available, "
         "exploit_available, cve_id, title FROM dependency_vulnerabilities "
-        "WHERE project_id = ? AND status NOT IN ('remediated','false_positive')", (project_id,)).fetchall()
+        "WHERE project_id = ? AND status NOT IN ('remediated','false_positive')",
+        (project_id,),
+    ).fetchall()
     zero_sev = {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
     if not rows:
-        return {"vulnerable_count": 0, "by_severity": dict(zero_sev), "overdue_critical": 0,
-                "overdue_high": 0, "overdue_medium": 0, "overdue_low": 0, "sla_compliant_pct": 100.0,
-                "fix_available_count": 0, "exploit_available_count": 0, "overdue_items": []}
+        return {
+            "vulnerable_count": 0,
+            "by_severity": dict(zero_sev),
+            "overdue_critical": 0,
+            "overdue_high": 0,
+            "overdue_medium": 0,
+            "overdue_low": 0,
+            "sla_compliant_pct": 100.0,
+            "fix_available_count": 0,
+            "exploit_available_count": 0,
+            "overdue_items": [],
+        }
     by_sev = dict(zero_sev)
     overdue = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     overdue_items, fix_avail, exploit_avail, sla_total, sla_met = [], 0, 0, 0, 0
@@ -323,21 +371,36 @@ def _collect_vulnerability_stats(conn, project_id):
                 cat = r["sla_category"] or sev
                 if cat in overdue:
                     overdue[cat] += 1
-                overdue_items.append({"cve_id": r["cve_id"], "severity": sev,
-                    "sla_category": r["sla_category"], "sla_deadline": r["sla_deadline"],
-                    "title": r["title"], "status": r["status"]})
+                overdue_items.append(
+                    {
+                        "cve_id": r["cve_id"],
+                        "severity": sev,
+                        "sla_category": r["sla_category"],
+                        "sla_deadline": r["sla_deadline"],
+                        "title": r["title"],
+                        "status": r["status"],
+                    }
+                )
             else:
                 sla_met += 1
-    return {"vulnerable_count": len(rows), "by_severity": by_sev,
-            "overdue_critical": overdue["critical"], "overdue_high": overdue["high"],
-            "overdue_medium": overdue["medium"], "overdue_low": overdue["low"],
-            "sla_compliant_pct": round(100.0 * sla_met / sla_total, 1) if sla_total else 100.0,
-            "fix_available_count": fix_avail, "exploit_available_count": exploit_avail,
-            "overdue_items": overdue_items}
+    return {
+        "vulnerable_count": len(rows),
+        "by_severity": by_sev,
+        "overdue_critical": overdue["critical"],
+        "overdue_high": overdue["high"],
+        "overdue_medium": overdue["medium"],
+        "overdue_low": overdue["low"],
+        "sla_compliant_pct": round(100.0 * sla_met / sla_total, 1) if sla_total else 100.0,
+        "fix_available_count": fix_avail,
+        "exploit_available_count": exploit_avail,
+        "overdue_items": overdue_items,
+    }
+
 
 # ---------------------------------------------------------------------------
 # Trend Analysis
 # ---------------------------------------------------------------------------
+
 
 def _generate_trend_analysis(conn, project_id, lookback_days=90):
     """Compare current audit against previous audits for trend analysis.
@@ -352,10 +415,17 @@ def _generate_trend_analysis(conn, project_id, lookback_days=90):
         "SELECT audit_date, maintenance_score, total_dependencies, vulnerable_count, "
         "outdated_count, avg_staleness_days, critical_vulns, high_vulns "
         "FROM maintenance_audits WHERE project_id = ? AND audit_date >= ? ORDER BY audit_date ASC",
-        (project_id, cutoff)).fetchall()
-    previous = [{"date": r["audit_date"], "score": r["maintenance_score"],
-                  "total_deps": r["total_dependencies"], "vulnerable_count": r["vulnerable_count"]}
-                 for r in rows]
+        (project_id, cutoff),
+    ).fetchall()
+    previous = [
+        {
+            "date": r["audit_date"],
+            "score": r["maintenance_score"],
+            "total_deps": r["total_dependencies"],
+            "vulnerable_count": r["vulnerable_count"],
+        }
+        for r in rows
+    ]
     score_trend, vuln_trend = "stable", "stable"
     if len(previous) >= 2:
         sd = previous[-1]["score"] - previous[0]["score"]
@@ -368,13 +438,19 @@ def _generate_trend_analysis(conn, project_id, lookback_days=90):
             vuln_trend = "improving"
         elif vd > 0:
             vuln_trend = "degrading"
-    return {"previous_audits": previous, "score_trend": score_trend,
-            "vulnerability_trend": vuln_trend, "audit_count": len(previous),
-            "lookback_days": lookback_days}
+    return {
+        "previous_audits": previous,
+        "score_trend": score_trend,
+        "vulnerability_trend": vuln_trend,
+        "audit_count": len(previous),
+        "lookback_days": lookback_days,
+    }
+
 
 # ---------------------------------------------------------------------------
 # Gate Evaluation
 # ---------------------------------------------------------------------------
+
 
 def _evaluate_gate(audit_data, config=None):
     """Evaluate maintenance gate pass/fail.
@@ -414,9 +490,11 @@ def _evaluate_gate(audit_data, config=None):
     status = "FAIL" if blockers else ("WARN" if warnings else "PASS")
     return {"gate_status": status, "blockers": blockers, "warnings": warnings}
 
+
 # ---------------------------------------------------------------------------
 # Report Generator
 # ---------------------------------------------------------------------------
+
 
 def _generate_audit_report(audit_data, output_dir, project_name):
     """Generate CUI-marked maintenance audit report.
@@ -446,21 +524,30 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     recs = audit_data.get("recommendations", [])
     status_label = "HEALTHY" if score >= 80 else ("AT RISK" if score >= 50 else "CRITICAL")
 
-    L = [cui.get("document_header", CUI_BANNER), "",
-         "# Maintenance Audit Report", "",
-         f"**Project:** {project_name} ({audit_data.get('project_id','N/A')})",
-         f"**Date:** {ts}", "**Classification:** CUI // SP-CTI", "",
-         "## Executive Summary", "",
-         "| Metric | Value |", "|--------|-------|",
-         f"| **Maintenance Score** | **{score}/100** |",
-         f"| **Status** | {status_label} |",
-         f"| **Gate** | {gate.get('gate_status','N/A')} |",
-         f"| Total Dependencies | {sl.get('total_dependencies',0)} |",
-         f"| Outdated | {sl.get('outdated_count',0)} |",
-         f"| Vulnerable | {vl.get('vulnerable_count',0)} |",
-         f"| SLA Compliance | {vl.get('sla_compliant_pct',100.0)}% |",
-         f"| Avg Staleness | {sl.get('avg_staleness_days',0)} days |",
-         f"| Score Trend | {tr.get('score_trend','N/A')} |", ""]
+    L = [
+        cui.get("document_header", CUI_BANNER),
+        "",
+        "# Maintenance Audit Report",
+        "",
+        f"**Project:** {project_name} ({audit_data.get('project_id', 'N/A')})",
+        f"**Date:** {ts}",
+        "**Classification:** CUI // SP-CTI",
+        "",
+        "## Executive Summary",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
+        f"| **Maintenance Score** | **{score}/100** |",
+        f"| **Status** | {status_label} |",
+        f"| **Gate** | {gate.get('gate_status', 'N/A')} |",
+        f"| Total Dependencies | {sl.get('total_dependencies', 0)} |",
+        f"| Outdated | {sl.get('outdated_count', 0)} |",
+        f"| Vulnerable | {vl.get('vulnerable_count', 0)} |",
+        f"| SLA Compliance | {vl.get('sla_compliant_pct', 100.0)}% |",
+        f"| Avg Staleness | {sl.get('avg_staleness_days', 0)} days |",
+        f"| Score Trend | {tr.get('score_trend', 'N/A')} |",
+        "",
+    ]
 
     if gate.get("blockers"):
         L += ["### Gate Blockers (FAIL)", ""] + [f"- **BLOCKER:** {b}" for b in gate["blockers"]] + [""]
@@ -471,8 +558,10 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     L += ["## Dependency Inventory", ""]
     by_lang = sl.get("by_language", {})
     if by_lang:
-        L += ["| Language | Total | Outdated | Avg Staleness (days) |",
-              "|----------|-------|----------|----------------------|"]
+        L += [
+            "| Language | Total | Outdated | Avg Staleness (days) |",
+            "|----------|-------|----------|----------------------|",
+        ]
         for lang, s in sorted(by_lang.items()):
             L.append(f"| {lang} | {s['total']} | {s['outdated']} | {s['avg_staleness']:.0f} |")
     else:
@@ -485,43 +574,66 @@ def _generate_audit_report(audit_data, output_dir, project_name):
         c = vl.get("by_severity", {}).get(sev, 0)
         if c > 0:
             L.append(f"| {sev.upper()} | {c} |")
-    L += [f"| **Total** | **{vl.get('vulnerable_count',0)}** |", "",
-          f"- Fixes available: {vl.get('fix_available_count',0)}",
-          f"- Known exploits: {vl.get('exploit_available_count',0)}", ""]
+    L += [
+        f"| **Total** | **{vl.get('vulnerable_count', 0)}** |",
+        "",
+        f"- Fixes available: {vl.get('fix_available_count', 0)}",
+        f"- Known exploits: {vl.get('exploit_available_count', 0)}",
+        "",
+    ]
 
     # SLA Compliance
-    L += ["## SLA Compliance", "", f"**Overall SLA Compliance:** {vl.get('sla_compliant_pct',100.0)}%", ""]
+    L += ["## SLA Compliance", "", f"**Overall SLA Compliance:** {vl.get('sla_compliant_pct', 100.0)}%", ""]
     oi = vl.get("overdue_items", [])
     if oi:
-        L += ["### Overdue SLA Items", "",
-              "| CVE | Severity | SLA Category | Deadline | Title |",
-              "|-----|----------|--------------|----------|-------|"]
+        L += [
+            "### Overdue SLA Items",
+            "",
+            "| CVE | Severity | SLA Category | Deadline | Title |",
+            "|-----|----------|--------------|----------|-------|",
+        ]
         for item in oi[:20]:
-            L.append(f"| {item.get('cve_id','N/A')} | {item.get('severity','?')} | "
-                     f"{item.get('sla_category','?')} | {item.get('sla_deadline','?')} | "
-                     f"{item.get('title','')[:60]} |")
-        L += ["", f"- Critical overdue: {vl.get('overdue_critical',0)}",
-              f"- High overdue: {vl.get('overdue_high',0)}",
-              f"- Medium overdue: {vl.get('overdue_medium',0)}",
-              f"- Low overdue: {vl.get('overdue_low',0)}", ""]
+            L.append(
+                f"| {item.get('cve_id', 'N/A')} | {item.get('severity', '?')} | "
+                f"{item.get('sla_category', '?')} | {item.get('sla_deadline', '?')} | "
+                f"{item.get('title', '')[:60]} |"
+            )
+        L += [
+            "",
+            f"- Critical overdue: {vl.get('overdue_critical', 0)}",
+            f"- High overdue: {vl.get('overdue_high', 0)}",
+            f"- Medium overdue: {vl.get('overdue_medium', 0)}",
+            f"- Low overdue: {vl.get('overdue_low', 0)}",
+            "",
+        ]
     else:
         L += ["All remediations within SLA deadlines.", ""]
 
     # Staleness Analysis
     dist = sl.get("staleness_distribution", {})
-    L += ["## Staleness Analysis", "",
-          f"- **Average:** {sl.get('avg_staleness_days',0)} days",
-          f"- **Maximum:** {sl.get('max_staleness_days',0)} days", "",
-          "| Category | Count | Threshold |", "|----------|-------|-----------|",
-          f"| Current | {dist.get('current',0)} | 0-90 days |",
-          f"| Warning | {dist.get('warning',0)} | 91-180 days |",
-          f"| Critical | {dist.get('critical',0)} | 181-365 days |",
-          f"| Unacceptable | {dist.get('unacceptable',0)} | >365 days |", ""]
+    L += [
+        "## Staleness Analysis",
+        "",
+        f"- **Average:** {sl.get('avg_staleness_days', 0)} days",
+        f"- **Maximum:** {sl.get('max_staleness_days', 0)} days",
+        "",
+        "| Category | Count | Threshold |",
+        "|----------|-------|-----------|",
+        f"| Current | {dist.get('current', 0)} | 0-90 days |",
+        f"| Warning | {dist.get('warning', 0)} | 91-180 days |",
+        f"| Critical | {dist.get('critical', 0)} | 181-365 days |",
+        f"| Unacceptable | {dist.get('unacceptable', 0)} | >365 days |",
+        "",
+    ]
 
     # Trend Analysis
-    L += ["## Trend Analysis", "",
-          f"- Lookback: {tr.get('lookback_days',90)} days | Audits: {tr.get('audit_count',0)}",
-          f"- Score trend: {tr.get('score_trend','N/A')} | Vuln trend: {tr.get('vulnerability_trend','N/A')}", ""]
+    L += [
+        "## Trend Analysis",
+        "",
+        f"- Lookback: {tr.get('lookback_days', 90)} days | Audits: {tr.get('audit_count', 0)}",
+        f"- Score trend: {tr.get('score_trend', 'N/A')} | Vuln trend: {tr.get('vulnerability_trend', 'N/A')}",
+        "",
+    ]
     pa = tr.get("previous_audits", [])
     if pa:
         L += ["| Date | Score | Dependencies | Vulnerable |", "|------|-------|--------------|------------|"]
@@ -532,19 +644,33 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     # Recommendations
     L += ["## Remediation Recommendations", ""]
     for r in recs:
-        L += [f"### {r['priority']}. {r['category']}", "",
-              f"**Action:** {r['recommendation']}", f"**Impact:** {r['impact']}", ""]
+        L += [
+            f"### {r['priority']}. {r['category']}",
+            "",
+            f"**Action:** {r['recommendation']}",
+            f"**Impact:** {r['impact']}",
+            "",
+        ]
 
     # NIST Control Mapping
-    L += ["## NIST 800-53 Control Mapping", "",
-          "| Control | Title | Relevance |", "|---------|-------|-----------|",
-          "| SI-2 | Flaw Remediation | Vulnerability tracking, SLA enforcement, patch management |",
-          "| SA-22 | Unsupported System Components | Staleness analysis, end-of-life detection |",
-          "| CM-3 | Configuration Change Control | Dependency version tracking, change auditing |",
-          "| CM-8 | System Component Inventory | Complete dependency inventory with PURLs |",
-          "| RA-5 | Vulnerability Monitoring and Scanning | CVE detection, severity assessment |", "",
-          "---", "", f"*Generated by ICDEV Maintenance Auditor on {ts}*", "",
-          cui.get("document_footer", CUI_FOOTER), ""]
+    L += [
+        "## NIST 800-53 Control Mapping",
+        "",
+        "| Control | Title | Relevance |",
+        "|---------|-------|-----------|",
+        "| SI-2 | Flaw Remediation | Vulnerability tracking, SLA enforcement, patch management |",
+        "| SA-22 | Unsupported System Components | Staleness analysis, end-of-life detection |",
+        "| CM-3 | Configuration Change Control | Dependency version tracking, change auditing |",
+        "| CM-8 | System Component Inventory | Complete dependency inventory with PURLs |",
+        "| RA-5 | Vulnerability Monitoring and Scanning | CVE detection, severity assessment |",
+        "",
+        "---",
+        "",
+        f"*Generated by ICDEV Maintenance Auditor on {ts}*",
+        "",
+        cui.get("document_footer", CUI_FOOTER),
+        "",
+    ]
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -561,49 +687,91 @@ def _generate_remediation_recommendations(vuln_stats, staleness_stats, config=No
 
     if by_sev.get("critical", 0) > 0:
         p += 1
-        recs.append({"priority": p, "category": "CRITICAL VULNERABILITY",
-            "recommendation": f"Remediate {by_sev['critical']} critical vulnerabilities immediately. "
-                              f"{vuln_stats.get('fix_available_count',0)} fixes available.",
-            "impact": "Blocks deployment gate. Required within 48 hours per SLA."})
+        recs.append(
+            {
+                "priority": p,
+                "category": "CRITICAL VULNERABILITY",
+                "recommendation": f"Remediate {by_sev['critical']} critical vulnerabilities immediately. "
+                f"{vuln_stats.get('fix_available_count', 0)} fixes available.",
+                "impact": "Blocks deployment gate. Required within 48 hours per SLA.",
+            }
+        )
     if vuln_stats.get("overdue_critical", 0) > 0:
         p += 1
-        recs.append({"priority": p, "category": "SLA VIOLATION",
-            "recommendation": f"{vuln_stats['overdue_critical']} critical SLA(s) overdue. Escalate immediately.",
-            "impact": "Blocks deployment gate. NIST SI-2 non-compliance."})
+        recs.append(
+            {
+                "priority": p,
+                "category": "SLA VIOLATION",
+                "recommendation": f"{vuln_stats['overdue_critical']} critical SLA(s) overdue. Escalate immediately.",
+                "impact": "Blocks deployment gate. NIST SI-2 non-compliance.",
+            }
+        )
     if by_sev.get("high", 0) > 0:
         p += 1
-        recs.append({"priority": p, "category": "HIGH VULNERABILITY",
-            "recommendation": f"Remediate {by_sev['high']} high-severity vulnerabilities within 7-day SLA.",
-            "impact": "Blocks deployment gate if count exceeds threshold."})
+        recs.append(
+            {
+                "priority": p,
+                "category": "HIGH VULNERABILITY",
+                "recommendation": f"Remediate {by_sev['high']} high-severity vulnerabilities within 7-day SLA.",
+                "impact": "Blocks deployment gate if count exceeds threshold.",
+            }
+        )
     if vuln_stats.get("exploit_available_count", 0) > 0:
         p += 1
-        recs.append({"priority": p, "category": "ACTIVE EXPLOIT",
-            "recommendation": f"{vuln_stats['exploit_available_count']} vulnerabilities have known exploits.",
-            "impact": "Elevated risk of active exploitation."})
+        recs.append(
+            {
+                "priority": p,
+                "category": "ACTIVE EXPLOIT",
+                "recommendation": f"{vuln_stats['exploit_available_count']} vulnerabilities have known exploits.",
+                "impact": "Elevated risk of active exploitation.",
+            }
+        )
     if dist.get("unacceptable", 0) > 0:
         p += 1
-        recs.append({"priority": p, "category": "UNSUPPORTED COMPONENTS",
-            "recommendation": f"{dist['unacceptable']} dependencies exceed 365-day staleness limit.",
-            "impact": "NIST SA-22 finding — unsupported system components."})
+        recs.append(
+            {
+                "priority": p,
+                "category": "UNSUPPORTED COMPONENTS",
+                "recommendation": f"{dist['unacceptable']} dependencies exceed 365-day staleness limit.",
+                "impact": "NIST SA-22 finding — unsupported system components.",
+            }
+        )
     if dist.get("critical", 0) > 0:
         p += 1
-        recs.append({"priority": p, "category": "STALE DEPENDENCIES",
-            "recommendation": f"{dist['critical']} dependencies critically stale (180-365 days).",
-            "impact": "Increases vulnerability surface and maintenance burden."})
+        recs.append(
+            {
+                "priority": p,
+                "category": "STALE DEPENDENCIES",
+                "recommendation": f"{dist['critical']} dependencies critically stale (180-365 days).",
+                "impact": "Increases vulnerability surface and maintenance burden.",
+            }
+        )
     if by_sev.get("medium", 0) > 0:
         p += 1
-        recs.append({"priority": p, "category": "MEDIUM VULNERABILITY",
-            "recommendation": f"Plan remediation for {by_sev['medium']} medium vulnerabilities within 30-day SLA.",
-            "impact": "Affects maintenance score. 5-point penalty per overdue SLA."})
+        recs.append(
+            {
+                "priority": p,
+                "category": "MEDIUM VULNERABILITY",
+                "recommendation": f"Plan remediation for {by_sev['medium']} medium vulnerabilities within 30-day SLA.",
+                "impact": "Affects maintenance score. 5-point penalty per overdue SLA.",
+            }
+        )
     if not recs:
-        recs.append({"priority": 1, "category": "MAINTENANCE",
-            "recommendation": "No urgent actions. Continue routine dependency updates.",
-            "impact": "Maintain current compliance posture."})
+        recs.append(
+            {
+                "priority": 1,
+                "category": "MAINTENANCE",
+                "recommendation": "No urgent actions. Continue routine dependency updates.",
+                "impact": "Maintain current compliance posture.",
+            }
+        )
     return recs
+
 
 # ---------------------------------------------------------------------------
 # Main Orchestrator
 # ---------------------------------------------------------------------------
+
 
 def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=None):
     """Run full maintenance audit lifecycle.
@@ -685,12 +853,14 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
 
         # Recommendations and gate
         recommendations = _generate_remediation_recommendations(vuln_stats, staleness_stats, config)
-        gate_input = {"overdue_critical": vuln_stats["overdue_critical"],
-                      "overdue_high": vuln_stats["overdue_high"],
-                      "critical_vulns": vuln_stats["by_severity"].get("critical", 0),
-                      "high_vulns": vuln_stats["by_severity"].get("high", 0),
-                      "maintenance_score": maintenance_score,
-                      "avg_staleness_days": staleness_stats["avg_staleness_days"]}
+        gate_input = {
+            "overdue_critical": vuln_stats["overdue_critical"],
+            "overdue_high": vuln_stats["overdue_high"],
+            "critical_vulns": vuln_stats["by_severity"].get("critical", 0),
+            "high_vulns": vuln_stats["by_severity"].get("high", 0),
+            "maintenance_score": maintenance_score,
+            "avg_staleness_days": staleness_stats["avg_staleness_days"],
+        }
         gate = _evaluate_gate(gate_input)
 
         # 8. Generate report
@@ -702,10 +872,18 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
             rpt_dir = str(BASE_DIR / ".tmp" / "maintenance" / project_id)
 
         report_path = _generate_audit_report(
-            {"project_id": project_id, "maintenance_score": maintenance_score,
-             "staleness_stats": staleness_stats, "vulnerability_stats": vuln_stats,
-             "trend": trend, "recommendations": recommendations, "gate": gate},
-            rpt_dir, project_name)
+            {
+                "project_id": project_id,
+                "maintenance_score": maintenance_score,
+                "staleness_stats": staleness_stats,
+                "vulnerability_stats": vuln_stats,
+                "trend": trend,
+                "recommendations": recommendations,
+                "gate": gate,
+            },
+            rpt_dir,
+            project_name,
+        )
 
         # 9. Store snapshot
         try:
@@ -715,22 +893,45 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
                 "avg_staleness_days, max_staleness_days, sla_compliant_pct, overdue_critical, "
                 "overdue_high, maintenance_score, languages_audited, report_path, classification) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (project_id, staleness_stats["total_dependencies"], staleness_stats["outdated_count"],
-                 vuln_stats["vulnerable_count"], vuln_stats["by_severity"].get("critical", 0),
-                 vuln_stats["by_severity"].get("high", 0), vuln_stats["by_severity"].get("medium", 0),
-                 vuln_stats["by_severity"].get("low", 0), staleness_stats["avg_staleness_days"],
-                 staleness_stats["max_staleness_days"], vuln_stats["sla_compliant_pct"],
-                 vuln_stats["overdue_critical"], vuln_stats["overdue_high"], maintenance_score,
-                 json.dumps(sorted(staleness_stats.get("by_language", {}).keys())), report_path, "CUI"))
+                (
+                    project_id,
+                    staleness_stats["total_dependencies"],
+                    staleness_stats["outdated_count"],
+                    vuln_stats["vulnerable_count"],
+                    vuln_stats["by_severity"].get("critical", 0),
+                    vuln_stats["by_severity"].get("high", 0),
+                    vuln_stats["by_severity"].get("medium", 0),
+                    vuln_stats["by_severity"].get("low", 0),
+                    staleness_stats["avg_staleness_days"],
+                    staleness_stats["max_staleness_days"],
+                    vuln_stats["sla_compliant_pct"],
+                    vuln_stats["overdue_critical"],
+                    vuln_stats["overdue_high"],
+                    maintenance_score,
+                    json.dumps(sorted(staleness_stats.get("by_language", {}).keys())),
+                    report_path,
+                    "CUI",
+                ),
+            )
             conn.commit()
         except Exception as e:
             print(f"Warning: Could not store audit snapshot: {e}", file=sys.stderr)
 
         # 10. Log audit event
-        _log_audit_event(conn, project_id, f"Maintenance audit completed — score {maintenance_score}", {
-            "maintenance_score": maintenance_score, "total_dependencies": staleness_stats["total_dependencies"],
-            "vulnerable_count": vuln_stats["vulnerable_count"], "sla_compliant_pct": vuln_stats["sla_compliant_pct"],
-            "gate_status": gate["gate_status"], "report_path": report_path}, report_path)
+        _log_audit_event(
+            conn,
+            project_id,
+            f"Maintenance audit completed — score {maintenance_score}",
+            {
+                "maintenance_score": maintenance_score,
+                "total_dependencies": staleness_stats["total_dependencies"],
+                "vulnerable_count": vuln_stats["vulnerable_count"],
+                "sla_compliant_pct": vuln_stats["sla_compliant_pct"],
+                "gate_status": gate["gate_status"],
+                "report_path": report_path,
+            },
+            report_path,
+        )
 
         # 11. Print summary
         print("=" * 60)
@@ -762,30 +963,40 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
 
         # 12. Return result
         return {
-            "project_id": project_id, "project_name": project_name,
+            "project_id": project_id,
+            "project_name": project_name,
             "maintenance_score": maintenance_score,
             "total_dependencies": staleness_stats["total_dependencies"],
             "outdated_count": staleness_stats["outdated_count"],
             "vulnerable_count": vuln_stats["vulnerable_count"],
             "sla_compliance": vuln_stats["sla_compliant_pct"],
             "by_severity": vuln_stats["by_severity"],
-            "overdue_counts": {s: vuln_stats[f"overdue_{s}"] for s in ("critical","high","medium","low")},
-            "staleness": {"avg_days": staleness_stats["avg_staleness_days"],
-                          "max_days": staleness_stats["max_staleness_days"],
-                          "distribution": staleness_stats["staleness_distribution"]},
-            "trend": {"score_trend": trend["score_trend"],
-                      "vulnerability_trend": trend["vulnerability_trend"],
-                      "audit_count": trend["audit_count"]},
-            "report_path": report_path, "gate_status": gate["gate_status"],
-            "gate_blockers": gate["blockers"], "gate_warnings": gate["warnings"],
-            "scanner_error": scanner_error, "checker_error": checker_error,
+            "overdue_counts": {s: vuln_stats[f"overdue_{s}"] for s in ("critical", "high", "medium", "low")},
+            "staleness": {
+                "avg_days": staleness_stats["avg_staleness_days"],
+                "max_days": staleness_stats["max_staleness_days"],
+                "distribution": staleness_stats["staleness_distribution"],
+            },
+            "trend": {
+                "score_trend": trend["score_trend"],
+                "vulnerability_trend": trend["vulnerability_trend"],
+                "audit_count": trend["audit_count"],
+            },
+            "report_path": report_path,
+            "gate_status": gate["gate_status"],
+            "gate_blockers": gate["blockers"],
+            "gate_warnings": gate["warnings"],
+            "scanner_error": scanner_error,
+            "checker_error": checker_error,
         }
     finally:
         conn.close()
 
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run full maintenance audit")
@@ -799,8 +1010,11 @@ def main():
 
     try:
         result = run_maintenance_audit(
-            project_id=args.project_id, output_dir=args.output_dir,
-            offline=args.offline, db_path=Path(args.db_path) if args.db_path else None)
+            project_id=args.project_id,
+            output_dir=args.output_dir,
+            offline=args.offline,
+            db_path=Path(args.db_path) if args.db_path else None,
+        )
         if args.json:
             print(json.dumps(result, indent=2, default=str))
         if args.gate and result.get("gate_status") == "FAIL":

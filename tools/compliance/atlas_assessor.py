@@ -50,7 +50,9 @@ class ATLASAssessor(BaseAssessor):
     CATALOG_FILENAME = "atlas_mitigations.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """ATLAS-specific automated checks.
 
@@ -75,16 +77,17 @@ class ATLASAssessor(BaseAssessor):
             for pattern in search_patterns:
                 for fpath in project_path.rglob(pattern):
                     try:
-                        content = fpath.read_text(
-                            encoding="utf-8", errors="ignore"
-                        )
-                        if any(kw in content.lower() for kw in [
-                            "prompt_injection",
-                            "prompt injection",
-                            "input_validation",
-                            "input_sanitiz",
-                            "adversarial_input",
-                        ]):
+                        content = fpath.read_text(encoding="utf-8", errors="ignore")
+                        if any(
+                            kw in content.lower()
+                            for kw in [
+                                "prompt_injection",
+                                "prompt injection",
+                                "input_validation",
+                                "input_sanitiz",
+                                "adversarial_input",
+                            ]
+                        ):
                             found_prompt_detector = True
                             break
                     except Exception:
@@ -132,9 +135,7 @@ class ATLASAssessor(BaseAssessor):
             conn = self._get_connection()
             try:
                 # Check for BYOK encryption entries
-                row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM dashboard_user_llm_keys"
-                ).fetchone()
+                row = conn.execute("SELECT COUNT(*) as cnt FROM dashboard_user_llm_keys").fetchone()
                 byok_configured = row and row["cnt"] > 0
 
                 # Also check for encryption config files
@@ -143,13 +144,9 @@ class ATLASAssessor(BaseAssessor):
                 if config_path.exists():
                     for cfg in config_path.glob("*.yaml"):
                         try:
-                            content = cfg.read_text(
-                                encoding="utf-8", errors="ignore"
-                            )
+                            content = cfg.read_text(encoding="utf-8", errors="ignore")
                             if "encrypt" in content.lower() and (
-                                "byok" in content.lower()
-                                or "fernet" in content.lower()
-                                or "aes" in content.lower()
+                                "byok" in content.lower() or "fernet" in content.lower() or "aes" in content.lower()
                             ):
                                 encryption_in_config = True
                                 break
@@ -184,10 +181,7 @@ class ATLASAssessor(BaseAssessor):
                     results["M0013"] = "satisfied"
                 else:
                     # Also check if attestation_manager config exists
-                    attestation_path = (
-                        BASE_DIR / "tools" / "devsecops"
-                        / "attestation_manager.py"
-                    )
+                    attestation_path = BASE_DIR / "tools" / "devsecops" / "attestation_manager.py"
                     if attestation_path.exists():
                         results["M0013"] = "partially_satisfied"
                     else:
@@ -207,15 +201,11 @@ class ATLASAssessor(BaseAssessor):
             conn = self._get_connection()
             try:
                 # Check for API key entries in the platform
-                row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM dashboard_api_keys"
-                ).fetchone()
+                row = conn.execute("SELECT COUNT(*) as cnt FROM dashboard_api_keys").fetchone()
                 api_keys_configured = row and row["cnt"] > 0
 
                 # Check for auth middleware existence
-                auth_middleware = (
-                    BASE_DIR / "tools" / "saas" / "auth" / "middleware.py"
-                )
+                auth_middleware = BASE_DIR / "tools" / "saas" / "auth" / "middleware.py"
                 has_auth = auth_middleware.exists()
 
                 if api_keys_configured and has_auth:
@@ -235,14 +225,10 @@ class ATLASAssessor(BaseAssessor):
         # M0026 — Restrict Command / Query Input (Command Allowlists)
         # Check if remote gateway command allowlists are configured
         # ---------------------------------------------------------------
-        allowlist_config = (
-            BASE_DIR / "args" / "remote_gateway_config.yaml"
-        )
+        allowlist_config = BASE_DIR / "args" / "remote_gateway_config.yaml"
         if allowlist_config.exists():
             try:
-                content = allowlist_config.read_text(
-                    encoding="utf-8", errors="ignore"
-                )
+                content = allowlist_config.read_text(encoding="utf-8", errors="ignore")
                 if "allowlist" in content.lower() or "allow_list" in content.lower():
                     results["M0026"] = "satisfied"
                 else:

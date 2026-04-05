@@ -65,8 +65,7 @@ def icdev_db(tmp_path):
         );
     """)
     project_id = f"proj-{uuid.uuid4().hex[:8]}"
-    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)",
-                 (project_id, "Test FedRAMP Project"))
+    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)", (project_id, "Test FedRAMP Project"))
     conn.commit()
     conn.close()
     return db_path, project_id
@@ -159,10 +158,14 @@ class TestKSIGeneration:
     def test_generate_all_with_data(self, icdev_db):
         db_path, project_id = icdev_db
         conn = sqlite3.connect(str(db_path))
-        conn.execute("INSERT INTO audit_trail (id, project_id, event_type) VALUES (?, ?, ?)",
-                     (str(uuid.uuid4()), project_id, "test"))
-        conn.execute("INSERT INTO prompt_injection_log (id, project_id, input_text) VALUES (?, ?, ?)",
-                     (str(uuid.uuid4()), project_id, "test"))
+        conn.execute(
+            "INSERT INTO audit_trail (id, project_id, event_type) VALUES (?, ?, ?)",
+            (str(uuid.uuid4()), project_id, "test"),
+        )
+        conn.execute(
+            "INSERT INTO prompt_injection_log (id, project_id, input_text) VALUES (?, ?, ?)",
+            (str(uuid.uuid4()), project_id, "test"),
+        )
         conn.commit()
         conn.close()
         result = generate_all_ksis(project_id, db_path)

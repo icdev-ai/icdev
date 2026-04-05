@@ -22,36 +22,219 @@ logger = logging.getLogger(__name__)
 # Stopwords — common English words that carry no topical signal
 # ---------------------------------------------------------------------------
 STOPWORDS: set[str] = {
-    "a", "about", "above", "after", "again", "against", "all", "am", "an",
-    "and", "any", "are", "aren't", "as", "at", "be", "because", "been",
-    "before", "being", "below", "between", "both", "but", "by", "can",
-    "can't", "cannot", "could", "couldn't", "did", "didn't", "do", "does",
-    "doesn't", "doing", "don't", "down", "during", "each", "few", "for",
-    "from", "further", "get", "got", "had", "hadn't", "has", "hasn't",
-    "have", "haven't", "having", "he", "her", "here", "hers", "herself",
-    "him", "himself", "his", "how", "i", "if", "in", "into", "is", "isn't",
-    "it", "it's", "its", "itself", "just", "let", "like", "ll", "may", "me",
-    "might", "more", "most", "mustn't", "my", "myself", "need", "no", "nor",
-    "not", "now", "of", "off", "on", "once", "only", "or", "other", "our",
-    "ours", "ourselves", "out", "over", "own", "re", "s", "same", "shan't",
-    "she", "should", "shouldn't", "so", "some", "such", "t", "than", "that",
-    "the", "their", "theirs", "them", "themselves", "then", "there", "these",
-    "they", "this", "those", "through", "to", "too", "under", "until", "up",
-    "us", "ve", "very", "was", "wasn't", "we", "were", "weren't", "what",
-    "when", "where", "which", "while", "who", "whom", "why", "will", "with",
-    "won't", "would", "wouldn't", "you", "your", "yours", "yourself",
-    "yourselves", "also", "already", "always", "another", "back", "come",
-    "even", "every", "first", "go", "going", "good", "great", "however",
-    "keep", "know", "last", "long", "look", "made", "make", "many", "much",
-    "never", "new", "next", "one", "people", "really", "right", "say", "see",
-    "since", "still", "take", "tell", "thing", "think", "time", "two", "use",
-    "used", "using", "want", "way", "well", "work", "year",
+    "a",
+    "about",
+    "above",
+    "after",
+    "again",
+    "against",
+    "all",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "aren't",
+    "as",
+    "at",
+    "be",
+    "because",
+    "been",
+    "before",
+    "being",
+    "below",
+    "between",
+    "both",
+    "but",
+    "by",
+    "can",
+    "can't",
+    "cannot",
+    "could",
+    "couldn't",
+    "did",
+    "didn't",
+    "do",
+    "does",
+    "doesn't",
+    "doing",
+    "don't",
+    "down",
+    "during",
+    "each",
+    "few",
+    "for",
+    "from",
+    "further",
+    "get",
+    "got",
+    "had",
+    "hadn't",
+    "has",
+    "hasn't",
+    "have",
+    "haven't",
+    "having",
+    "he",
+    "her",
+    "here",
+    "hers",
+    "herself",
+    "him",
+    "himself",
+    "his",
+    "how",
+    "i",
+    "if",
+    "in",
+    "into",
+    "is",
+    "isn't",
+    "it",
+    "it's",
+    "its",
+    "itself",
+    "just",
+    "let",
+    "like",
+    "ll",
+    "may",
+    "me",
+    "might",
+    "more",
+    "most",
+    "mustn't",
+    "my",
+    "myself",
+    "need",
+    "no",
+    "nor",
+    "not",
+    "now",
+    "of",
+    "off",
+    "on",
+    "once",
+    "only",
+    "or",
+    "other",
+    "our",
+    "ours",
+    "ourselves",
+    "out",
+    "over",
+    "own",
+    "re",
+    "s",
+    "same",
+    "shan't",
+    "she",
+    "should",
+    "shouldn't",
+    "so",
+    "some",
+    "such",
+    "t",
+    "than",
+    "that",
+    "the",
+    "their",
+    "theirs",
+    "them",
+    "themselves",
+    "then",
+    "there",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "under",
+    "until",
+    "up",
+    "us",
+    "ve",
+    "very",
+    "was",
+    "wasn't",
+    "we",
+    "were",
+    "weren't",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "who",
+    "whom",
+    "why",
+    "will",
+    "with",
+    "won't",
+    "would",
+    "wouldn't",
+    "you",
+    "your",
+    "yours",
+    "yourself",
+    "yourselves",
+    "also",
+    "already",
+    "always",
+    "another",
+    "back",
+    "come",
+    "even",
+    "every",
+    "first",
+    "go",
+    "going",
+    "good",
+    "great",
+    "however",
+    "keep",
+    "know",
+    "last",
+    "long",
+    "look",
+    "made",
+    "make",
+    "many",
+    "much",
+    "never",
+    "new",
+    "next",
+    "one",
+    "people",
+    "really",
+    "right",
+    "say",
+    "see",
+    "since",
+    "still",
+    "take",
+    "tell",
+    "thing",
+    "think",
+    "time",
+    "two",
+    "use",
+    "used",
+    "using",
+    "want",
+    "way",
+    "well",
+    "work",
+    "year",
 }
 
 
 # ---------------------------------------------------------------------------
 # Keyword extraction (TF-IDF-like, stdlib only)
 # ---------------------------------------------------------------------------
+
 
 def _tokenize(text: str) -> list[str]:
     """Lowercase, strip punctuation, split into tokens."""
@@ -90,10 +273,7 @@ def _build_idf(documents: list[str]) -> dict[str, float]:
         unique_tokens = set(_tokenize(doc))
         for token in unique_tokens:
             doc_freq[token] += 1
-    return {
-        term: math.log((1 + n_docs) / (1 + df)) + 1
-        for term, df in doc_freq.items()
-    }
+    return {term: math.log((1 + n_docs) / (1 + df)) + 1 for term, df in doc_freq.items()}
 
 
 def _tfidf_keywords(text: str, idf: dict[str, float], top_n: int = 15) -> list[tuple[str, float]]:
@@ -108,6 +288,7 @@ def _tfidf_keywords(text: str, idf: dict[str, float], top_n: int = 15) -> list[t
 # ---------------------------------------------------------------------------
 # Similarity
 # ---------------------------------------------------------------------------
+
 
 def _keyword_overlap_score(kw_a: list[tuple[str, float]], kw_b: list[tuple[str, float]]) -> float:
     """Compute similarity between two keyword lists via weighted overlap.
@@ -135,6 +316,7 @@ def _keyword_overlap_score(kw_a: list[tuple[str, float]], kw_b: list[tuple[str, 
 # Text helpers
 # ---------------------------------------------------------------------------
 
+
 def _result_text(result: dict) -> str:
     """Combine searchable text fields from a research_cache row."""
     parts = [
@@ -159,6 +341,7 @@ def _result_full_text(result: dict) -> str:
 # Clustering
 # ---------------------------------------------------------------------------
 
+
 def _try_absorb_candidates(
     seed_idx: int,
     n: int,
@@ -173,10 +356,7 @@ def _try_absorb_candidates(
     for candidate_idx in range(seed_idx + 1, n):
         if assigned[candidate_idx]:
             continue
-        max_sim = max(
-            _keyword_overlap_score(kw_per_result[m], kw_per_result[candidate_idx])
-            for m in cluster_indices
-        )
+        max_sim = max(_keyword_overlap_score(kw_per_result[m], kw_per_result[candidate_idx]) for m in cluster_indices)
         if max_sim >= similarity_threshold:
             cluster_indices.append(candidate_idx)
             assigned[candidate_idx] = True
@@ -201,9 +381,7 @@ def _collect_remaining(
         cluster["name"] = "Miscellaneous Topics"
         clusters.append(cluster)
     elif remaining:
-        logger.info(
-            "Discarding %d research results that did not meet min_cluster_size.", len(remaining)
-        )
+        logger.info("Discarding %d research results that did not meet min_cluster_size.", len(remaining))
 
 
 def cluster_research(
@@ -227,8 +405,7 @@ def cluster_research(
     idf = _build_idf(corpus)
 
     kw_per_result: list[list[tuple[str, float]]] = [
-        _tfidf_keywords(_result_full_text(r), idf, top_n=15)
-        for r in research_results
+        _tfidf_keywords(_result_full_text(r), idf, top_n=15) for r in research_results
     ]
 
     n = len(research_results)
@@ -240,8 +417,7 @@ def cluster_research(
         if assigned[seed_idx]:
             continue
 
-        cluster_indices = _try_absorb_candidates(
-            seed_idx, n, assigned, kw_per_result, similarity_threshold)
+        cluster_indices = _try_absorb_candidates(seed_idx, n, assigned, kw_per_result, similarity_threshold)
 
         if len(cluster_indices) < min_cluster_size:
             for idx in cluster_indices:
@@ -309,6 +485,7 @@ def _build_cluster(
 # Priority scoring
 # ---------------------------------------------------------------------------
 
+
 def _compute_priority(members: list[dict]) -> float:
     """Score cluster priority in [0, 1].
 
@@ -322,9 +499,7 @@ def _compute_priority(members: list[dict]) -> float:
         return 0.0
 
     # --- Average relevance (0-1) ---
-    relevance_scores = [
-        float(m.get("relevance_score") or 0.0) for m in members
-    ]
+    relevance_scores = [float(m.get("relevance_score") or 0.0) for m in members]
     avg_relevance = sum(relevance_scores) / len(relevance_scores)
     # Clamp
     avg_relevance = max(0.0, min(avg_relevance, 1.0))
@@ -358,12 +533,7 @@ def _compute_priority(members: list[dict]) -> float:
     diversity_score = min(len(platforms) / total_platforms, 1.0)
 
     # Weighted sum
-    priority = (
-        0.3 * avg_relevance
-        + 0.3 * source_score
-        + 0.2 * recency_score
-        + 0.2 * diversity_score
-    )
+    priority = 0.3 * avg_relevance + 0.3 * source_score + 0.2 * recency_score + 0.2 * diversity_score
 
     return max(0.0, min(priority, 1.0))
 
@@ -372,17 +542,19 @@ def _compute_priority(members: list[dict]) -> float:
 # Ranking
 # ---------------------------------------------------------------------------
 
+
 def rank_clusters(clusters: list[dict]) -> list[dict]:
     """Rank clusters by priority_score descending.
 
     Clusters with higher used_count are deprioritized so fresh topics
     surface first.
     """
+
     def sort_key(c: dict) -> float:
         base = float(c.get("priority_score", 0.0))
         used = int(c.get("used_count", 0))
         # Decay priority by 20 % per usage
-        decay = 0.8 ** used
+        decay = 0.8**used
         return base * decay
 
     ranked = sorted(clusters, key=sort_key, reverse=True)
@@ -393,6 +565,7 @@ def rank_clusters(clusters: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Persistence helpers
 # ---------------------------------------------------------------------------
+
 
 def save_clusters(clusters: list[dict]) -> int:
     """Persist a list of cluster dicts to the topic_clusters table.
@@ -439,6 +612,7 @@ def load_clusters() -> list[dict]:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def get_next_topic() -> dict | None:
     """Return the highest-priority unused cluster for the next blog post.
 
@@ -459,10 +633,9 @@ def get_next_topic() -> dict | None:
     existing_title_words: set[str] = set()
     try:
         from tools.pulse.db import get_existing_titles
+
         for title in get_existing_titles():
-            existing_title_words.update(
-                w.lower() for w in title.split() if len(w) > 4
-            )
+            existing_title_words.update(w.lower() for w in title.split() if len(w) > 4)
     except Exception:
         pass
 

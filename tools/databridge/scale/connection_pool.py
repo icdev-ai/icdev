@@ -4,6 +4,7 @@
 Maintains pools of connected connector instances keyed by connector_name.
 Prevents one noisy connector type from starving others.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -98,7 +99,11 @@ class ConnectionPool:
                 # Create new if under limit
                 if len(pool) < self._max_per_type:
                     return self._create_and_add(
-                        pool, connector_name, config, cfg_hash, connector_factory,
+                        pool,
+                        connector_name,
+                        config,
+                        cfg_hash,
+                        connector_factory,
                     )
 
                 # Pool full — wait for release
@@ -111,9 +116,7 @@ class ConnectionPool:
                     )
                 self._condition.wait(timeout=remaining)
 
-    def _find_idle(
-        self, pool: List[PooledConnector], cfg_hash: str
-    ) -> Optional[PooledConnector]:
+    def _find_idle(self, pool: List[PooledConnector], cfg_hash: str) -> Optional[PooledConnector]:
         """Find an idle connector matching cfg_hash (caller holds lock).
 
         Runs optional health check; removes unhealthy entries.
@@ -126,9 +129,7 @@ class ConnectionPool:
             return entry
         return None
 
-    def _passes_health_check(
-        self, pool: List[PooledConnector], entry: PooledConnector
-    ) -> bool:
+    def _passes_health_check(self, pool: List[PooledConnector], entry: PooledConnector) -> bool:
         """Return True if entry passes health check; remove it otherwise."""
         try:
             health = entry.connector.health_check()
@@ -253,20 +254,14 @@ class ConnectionPool:
 
             connector = get_connector_instance(connector_name)
             if not connector:
-                raise RuntimeError(
-                    f"Connector '{connector_name}' not found in registry"
-                )
+                raise RuntimeError(f"Connector '{connector_name}' not found in registry")
 
         connected = connector.connect(config)
         if not connected:
-            raise RuntimeError(
-                f"Failed to connect '{connector_name}'"
-            )
+            raise RuntimeError(f"Failed to connect '{connector_name}'")
         return connector
 
-    def _remove_entry(
-        self, pool: List[PooledConnector], entry: PooledConnector
-    ) -> None:
+    def _remove_entry(self, pool: List[PooledConnector], entry: PooledConnector) -> None:
         """Disconnect and remove a pooled entry (caller holds lock)."""
         try:
             entry.connector.disconnect()
@@ -288,10 +283,7 @@ class ConnectionPool:
             for pool in self._pools.values():
                 to_remove = []
                 for entry in pool:
-                    if (
-                        not entry.in_use
-                        and (now - entry.last_used) > self._idle_timeout
-                    ):
+                    if not entry.in_use and (now - entry.last_used) > self._idle_timeout:
                         to_remove.append(entry)
                 for entry in to_remove:
                     try:

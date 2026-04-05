@@ -37,6 +37,7 @@ def _import_tool(module_path, func_name):
     """Dynamically import a function (graceful fallback)."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -188,7 +189,7 @@ if __name__ == "__main__":
             "properties": {
                 "source": {
                     "type": "string",
-                    "description": "Specific source to scan (github, cve_databases, stackoverflow, hackernews) or omit for all",
+                    "description": "Specific source to scan (github, cve_databases, stackoverflow, hackernews) or omit for all",  # noqa: E501
                 },
             },
         },
@@ -275,7 +276,7 @@ if __name__ == "__main__":
             "properties": {
                 "type": {
                     "type": "string",
-                    "description": "Analysis type: all, failed_self_heals, gate_failures, unused_tools, slow_pipelines, nlq_gaps, knowledge_gaps",
+                    "description": "Analysis type: all, failed_self_heals, gate_failures, unused_tools, slow_pipelines, nlq_gaps, knowledge_gaps",  # noqa: E501
                     "default": "all",
                 },
             },

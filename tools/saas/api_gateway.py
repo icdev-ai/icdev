@@ -61,9 +61,7 @@ logger = logging.getLogger("saas.gateway")
 GATEWAY_VERSION = "1.0.0"
 GATEWAY_NAME = "icdev-saas-gateway"
 DEFAULT_PORT = 8443
-PLATFORM_DB_PATH = Path(
-    os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db"))
-)
+PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
 
 # Track server start time for uptime reporting
 _start_time = time.time()
@@ -137,6 +135,7 @@ def _register_cors(app):
         request_origin = None
         try:
             from flask import request as flask_request
+
             request_origin = flask_request.headers.get("Origin", "")
         except Exception:
             pass
@@ -148,12 +147,9 @@ def _register_cors(app):
 
         if origin:
             response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = (
-                "GET, POST, PATCH, PUT, DELETE, OPTIONS"
-            )
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, PUT, DELETE, OPTIONS"
             response.headers["Access-Control-Allow-Headers"] = (
-                "Authorization, Content-Type, X-Request-ID, X-Client-Cert-CN, "
-                "X-Client-Cert-Serial"
+                "Authorization, Content-Type, X-Request-ID, X-Client-Cert-CN, X-Client-Cert-Serial"
             )
             response.headers["Access-Control-Max-Age"] = "3600"
             response.headers["Access-Control-Allow-Credentials"] = "true"
@@ -163,8 +159,10 @@ def _register_cors(app):
     @app.before_request
     def _handle_preflight():
         from flask import request as flask_request
+
         if flask_request.method == "OPTIONS":
             from flask import make_response
+
             resp = make_response("", 204)
             return resp
         return None
@@ -183,15 +181,11 @@ def _register_cui_headers(app):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = (
-            "geolocation=(), camera=(), microphone=()"
-        )
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
         # Content-Security-Policy (Enhancement #1C)
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
@@ -217,40 +211,50 @@ def _register_error_handlers(app):
 
     @app.errorhandler(400)
     def bad_request(exc):
-        return jsonify({
-            "error": "Bad request",
-            "code": "BAD_REQUEST",
-            "details": str(exc),
-        }), 400
+        return jsonify(
+            {
+                "error": "Bad request",
+                "code": "BAD_REQUEST",
+                "details": str(exc),
+            }
+        ), 400
 
     @app.errorhandler(404)
     def not_found(exc):
-        return jsonify({
-            "error": "Not found",
-            "code": "NOT_FOUND",
-        }), 404
+        return jsonify(
+            {
+                "error": "Not found",
+                "code": "NOT_FOUND",
+            }
+        ), 404
 
     @app.errorhandler(405)
     def method_not_allowed(exc):
-        return jsonify({
-            "error": "Method not allowed",
-            "code": "METHOD_NOT_ALLOWED",
-        }), 405
+        return jsonify(
+            {
+                "error": "Method not allowed",
+                "code": "METHOD_NOT_ALLOWED",
+            }
+        ), 405
 
     @app.errorhandler(429)
     def rate_limited(exc):
-        return jsonify({
-            "error": "Rate limit exceeded",
-            "code": "RATE_LIMITED",
-        }), 429
+        return jsonify(
+            {
+                "error": "Rate limit exceeded",
+                "code": "RATE_LIMITED",
+            }
+        ), 429
 
     @app.errorhandler(500)
     def internal_error(exc):
         logger.error("Internal server error: %s", exc)
-        return jsonify({
-            "error": "Internal server error",
-            "code": "INTERNAL_ERROR",
-        }), 500
+        return jsonify(
+            {
+                "error": "Internal server error",
+                "code": "INTERNAL_ERROR",
+            }
+        ), 500
 
 
 # ---------------------------------------------------------------------------
@@ -268,20 +272,22 @@ def _register_health_check(app):
 
         overall_status = "ok" if db_health["status"] == "ok" else "degraded"
 
-        return jsonify({
-            "status": overall_status,
-            "service": GATEWAY_NAME,
-            "version": GATEWAY_VERSION,
-            "uptime_seconds": uptime_seconds,
-            "uptime_human": _format_uptime(uptime_seconds),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "classification": os.environ.get("CLASSIFICATION", "CUI // SP-CTI"),
-            "components": {
-                "platform_db": db_health,
-                "api": {"status": "ok"},
-                "mcp": {"status": "ok"},
-            },
-        })
+        return jsonify(
+            {
+                "status": overall_status,
+                "service": GATEWAY_NAME,
+                "version": GATEWAY_VERSION,
+                "uptime_seconds": uptime_seconds,
+                "uptime_human": _format_uptime(uptime_seconds),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "classification": os.environ.get("CLASSIFICATION", "CUI // SP-CTI"),
+                "components": {
+                    "platform_db": db_health,
+                    "api": {"status": "ok"},
+                    "mcp": {"status": "ok"},
+                },
+            }
+        )
 
 
 def _format_uptime(seconds):
@@ -330,6 +336,7 @@ def create_app(config=None):
     # Load .env if python-dotenv is available
     try:
         from dotenv import load_dotenv
+
         env_path = BASE_DIR / ".env"
         if env_path.exists():
             load_dotenv(str(env_path))
@@ -346,6 +353,7 @@ def create_app(config=None):
     # 0. Correlation ID middleware (must be first — D149)
     try:
         from tools.resilience.correlation import register_correlation_middleware
+
         register_correlation_middleware(app)
         logger.info("Correlation ID middleware registered")
     except ImportError as exc:
@@ -354,6 +362,7 @@ def create_app(config=None):
     # 1. Auth middleware (sets g.tenant_id, g.user_id, g.user_role)
     try:
         from tools.saas.auth.middleware import register_auth_middleware
+
         register_auth_middleware(app)
         logger.info("Auth middleware registered")
     except ImportError as exc:
@@ -362,6 +371,7 @@ def create_app(config=None):
     # 2. Rate limiter (requires auth context from step 1)
     try:
         from tools.saas.rate_limiter import register_rate_limiter
+
         register_rate_limiter(app)
         logger.info("Rate limiter registered")
     except ImportError as exc:
@@ -370,6 +380,7 @@ def create_app(config=None):
     # 3. Request logger (logs all authenticated requests)
     try:
         from tools.saas.request_logger import register_request_logger
+
         register_request_logger(app)
         logger.info("Request logger registered")
     except ImportError as exc:
@@ -392,6 +403,7 @@ def create_app(config=None):
     # ---- Auto-initialize platform DB if missing ----
     try:
         from tools.saas.platform_db import init_platform_db, SQLITE_PATH
+
         if not SQLITE_PATH.exists():
             logger.info("Platform DB not found — initializing at %s", SQLITE_PATH)
             init_platform_db()
@@ -403,6 +415,7 @@ def create_app(config=None):
     # REST API v1
     try:
         from tools.saas.rest_api import api_bp
+
         app.register_blueprint(api_bp)
         logger.info("REST API v1 blueprint registered at /api/v1")
     except ImportError as exc:
@@ -411,6 +424,7 @@ def create_app(config=None):
     # MCP Streamable HTTP (spec 2025-03-26)
     try:
         from tools.saas.mcp_http import mcp_bp
+
         app.register_blueprint(mcp_bp)
         logger.info("MCP Streamable HTTP blueprint registered at /mcp/v1")
     except ImportError as exc:
@@ -419,6 +433,7 @@ def create_app(config=None):
     # Portal (optional web UI)
     try:
         from tools.saas.portal import portal_bp
+
         app.register_blueprint(portal_bp)
         logger.info("Portal blueprint registered")
     except ImportError:
@@ -427,6 +442,7 @@ def create_app(config=None):
     # OpenAPI / Swagger UI (D153)
     try:
         from tools.saas.swagger_ui import swagger_bp
+
         app.register_blueprint(swagger_bp)
         logger.info("Swagger UI blueprint registered at /api/v1/docs")
     except ImportError as exc:
@@ -435,6 +451,7 @@ def create_app(config=None):
     # Prometheus metrics (D154)
     try:
         from tools.saas.metrics import get_collector
+
         collector = get_collector()
         collector.register_metrics_middleware(app)
         logger.info("Prometheus metrics middleware registered")
@@ -443,6 +460,7 @@ def create_app(config=None):
 
     try:
         from tools.saas.metrics_blueprint import metrics_bp
+
         app.register_blueprint(metrics_bp)
         logger.info("Prometheus metrics blueprint registered at /metrics")
     except ImportError as exc:
@@ -450,8 +468,7 @@ def create_app(config=None):
 
     # ---- Startup banner ----
     logger.info(
-        "ICDEV SaaS API Gateway v%s initialized "
-        "(CUI // SP-CTI)",
+        "ICDEV SaaS API Gateway v%s initialized (CUI // SP-CTI)",
         GATEWAY_VERSION,
     )
 
@@ -477,31 +494,39 @@ def main():
         ),
     )
     parser.add_argument(
-        "--port", type=int,
+        "--port",
+        type=int,
         default=int(os.environ.get("GATEWAY_PORT", str(DEFAULT_PORT))),
-        help="Port to listen on (default: {}, env: GATEWAY_PORT)".format(
-            DEFAULT_PORT),
+        help="Port to listen on (default: {}, env: GATEWAY_PORT)".format(DEFAULT_PORT),
     )
     parser.add_argument(
-        "--host", type=str,
+        "--host",
+        type=str,
         default=os.environ.get("GATEWAY_HOST", "0.0.0.0"),
         help="Host to bind to (default: 0.0.0.0, env: GATEWAY_HOST)",
     )
     parser.add_argument(
-        "--debug", action="store_true",
+        "--debug",
+        action="store_true",
         default=os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true"),
         help="Enable Flask debug mode (env: FLASK_DEBUG)",
     )
     parser.add_argument(
-        "--workers", type=int, default=1,
+        "--workers",
+        type=int,
+        default=1,
         help="Number of workers (only applies to gunicorn, ignored in dev mode)",
     )
     parser.add_argument(
-        "--ssl-cert", type=str, default=None,
+        "--ssl-cert",
+        type=str,
+        default=None,
         help="Path to SSL certificate file",
     )
     parser.add_argument(
-        "--ssl-key", type=str, default=None,
+        "--ssl-key",
+        type=str,
+        default=None,
         help="Path to SSL private key file",
     )
 
@@ -525,7 +550,10 @@ def main():
     scheme = "https" if ssl_context else "http"
     logger.info(
         "Starting ICDEV SaaS API Gateway on %s://%s:%d (debug=%s)",
-        scheme, args.host, args.port, args.debug,
+        scheme,
+        args.host,
+        args.port,
+        args.debug,
     )
     logger.info("Health check: %s://%s:%d/health", scheme, args.host, args.port)
     logger.info("REST API:     %s://%s:%d/api/v1/", scheme, args.host, args.port)

@@ -68,17 +68,41 @@ IL_DEFAULTS = {
 
 VALID_IMPACT_LEVELS = list(IL_DEFAULTS.keys())
 VALID_PROJECT_TYPES = [
-    "api", "microservice", "monolith", "cli", "data-pipeline",
-    "frontend", "library", "webapp", "data_pipeline", "iac",
+    "api",
+    "microservice",
+    "monolith",
+    "cli",
+    "data-pipeline",
+    "frontend",
+    "library",
+    "webapp",
+    "data_pipeline",
+    "iac",
 ]
 VALID_LANGUAGES = ["python", "java", "go", "rust", "csharp", "typescript"]
 VALID_FRAMEWORKS = [
-    "fedramp_moderate", "fedramp_high", "cmmc_l2", "cmmc_l3",
-    "nist_800_171", "cjis", "hipaa", "hitrust", "soc2", "pci_dss",
-    "iso27001", "mosa",
+    "fedramp_moderate",
+    "fedramp_high",
+    "cmmc_l2",
+    "cmmc_l3",
+    "nist_800_171",
+    "cjis",
+    "hipaa",
+    "hitrust",
+    "soc2",
+    "pci_dss",
+    "iso27001",
+    "mosa",
 ]
 VALID_ATO_STATUSES = [
-    "none", "in_progress", "iato", "ato", "cato", "dato", "denied", "active",
+    "none",
+    "in_progress",
+    "iato",
+    "ato",
+    "cato",
+    "dato",
+    "denied",
+    "active",
 ]
 
 # ── Env-var override mapping ─────────────────────────────────────────────
@@ -96,6 +120,7 @@ _ENV_MAP = {
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
 
 def _deep_get(d: dict, keys: tuple, default=None):
     """Get a nested dict value by key path."""
@@ -122,6 +147,7 @@ def _try_int(val):
 
 
 # ── Core functions ───────────────────────────────────────────────────────
+
 
 def load_manifest(directory: str = None, file_path: str = None) -> dict:
     """Load and parse icdev.yaml from a directory or explicit path.
@@ -161,6 +187,7 @@ def load_manifest(directory: str = None, file_path: str = None) -> dict:
     # Parse YAML
     try:
         import yaml
+
         raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     except ImportError:
         # Fallback: attempt JSON parse (for testing / air-gap edge case)
@@ -182,9 +209,7 @@ def load_manifest(directory: str = None, file_path: str = None) -> dict:
     # Version check
     version = raw.get("version")
     if version is not None and version != MANIFEST_VERSION:
-        result["warnings"].append(
-            f"Manifest version {version} differs from expected {MANIFEST_VERSION}"
-        )
+        result["warnings"].append(f"Manifest version {version} differs from expected {MANIFEST_VERSION}")
 
     # Apply defaults then env overrides
     normalized = _apply_defaults(deepcopy(raw))
@@ -237,10 +262,17 @@ def _apply_defaults(raw: dict) -> dict:
     # Pipeline defaults
     pipeline = config.setdefault("pipeline", {})
     pipeline.setdefault("platform", "auto")
-    pipeline.setdefault("on_pr", [
-        "sast", "dependency_audit", "secret_detection", "cui_check",
-        "stig_check", "unit_tests",
-    ])
+    pipeline.setdefault(
+        "on_pr",
+        [
+            "sast",
+            "dependency_audit",
+            "secret_detection",
+            "cui_check",
+            "stig_check",
+            "unit_tests",
+        ],
+    )
     pipeline.setdefault("on_merge", ["ssp_generate", "sbom_generate"])
     pipeline.setdefault("gates", {})
     gates = pipeline["gates"]
@@ -294,10 +326,7 @@ def validate_manifest(config: dict) -> tuple:
 
     # IL6 requires SECRET
     if il == "IL6" and classification_level != "SECRET":
-        errors.append(
-            f"impact_level IL6 requires classification.level = SECRET "
-            f"(got '{classification_level}')"
-        )
+        errors.append(f"impact_level IL6 requires classification.level = SECRET (got '{classification_level}')")
 
     # CJIS requires IL4+
     if "cjis" in frameworks and il == "IL2":
@@ -306,41 +335,37 @@ def validate_manifest(config: dict) -> tuple:
     # FedRAMP High on non-GovCloud
     if "fedramp_high" in frameworks and il in ("IL4", "IL5", "IL6"):
         if cloud == "aws" and cloud != "aws_govcloud":
-            errors.append(
-                "fedramp_high with impact_level IL4+ requires "
-                "deployment.cloud = aws_govcloud (got 'aws')"
-            )
+            errors.append("fedramp_high with impact_level IL4+ requires deployment.cloud = aws_govcloud (got 'aws')")
 
     # Warnings
     if il in ("IL4", "IL5", "IL6") and not frameworks:
         warnings.append(
-            f"No compliance frameworks specified for {il} project "
-            f"(consider adding fedramp_moderate or fedramp_high)"
+            f"No compliance frameworks specified for {il} project (consider adding fedramp_moderate or fedramp_high)"
         )
 
     if il in ("IL5", "IL6") and not cui_markings:
-        warnings.append(
-            f"CUI markings disabled but impact_level = {il} "
-            f"(CUI markings are required for {il})"
-        )
+        warnings.append(f"CUI markings disabled but impact_level = {il} (CUI markings are required for {il})")
 
     if il == "IL2" and cui_markings:
-        warnings.append(
-            "CUI markings enabled for IL2 project (typically unnecessary)"
-        )
+        warnings.append("CUI markings enabled for IL2 project (typically unnecessary)")
 
     # Companion tool validation (D194)
     companion_tools = _deep_get(config, ("companion", "tools"), [])
     valid_companions = [
-        "claude_code", "codex", "gemini", "copilot", "cursor",
-        "windsurf", "amazon_q", "junie", "cline", "aider",
+        "claude_code",
+        "codex",
+        "gemini",
+        "copilot",
+        "cursor",
+        "windsurf",
+        "amazon_q",
+        "junie",
+        "cline",
+        "aider",
     ]
     for ct in companion_tools:
         if ct not in valid_companions:
-            warnings.append(
-                f"Unknown companion tool '{ct}' in companion.tools "
-                f"(valid: {', '.join(valid_companions)})"
-            )
+            warnings.append(f"Unknown companion tool '{ct}' in companion.tools (valid: {', '.join(valid_companions)})")
 
     return errors, warnings
 
@@ -358,7 +383,9 @@ def detect_vcs_platform(directory: str = None) -> str:
         cwd = directory or str(Path.cwd())
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             cwd=cwd,
         )
         if result.returncode != 0:
@@ -377,14 +404,12 @@ def detect_vcs_platform(directory: str = None) -> str:
 
 # ── CLI ──────────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Parse and validate icdev.yaml project manifests"
-    )
+    parser = argparse.ArgumentParser(description="Parse and validate icdev.yaml project manifests")
     parser.add_argument("--dir", help="Project directory containing icdev.yaml")
     parser.add_argument("--file", help="Explicit path to icdev.yaml")
-    parser.add_argument("--validate", action="store_true",
-                        help="Validate only, print errors/warnings")
+    parser.add_argument("--validate", action="store_true", help="Validate only, print errors/warnings")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
 

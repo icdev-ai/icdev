@@ -44,7 +44,10 @@ class ChatConnectorAdapter(ABC):
 
     @abstractmethod
     def send_message(
-        self, channel_id: str, text: str, thread_id: str = None,
+        self,
+        channel_id: str,
+        text: str,
+        thread_id: str = None,
     ) -> bool:
         """Send a message to a channel/thread.
 

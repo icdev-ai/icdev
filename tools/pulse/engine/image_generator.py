@@ -49,6 +49,7 @@ DEFAULT_GUIDANCE = 0.0  # SDXL Turbo uses CFG=0 (guidance-free)
 # GPU / CUDA detection
 # ---------------------------------------------------------------------------
 
+
 def check_gpu() -> Dict[str, Any]:
     """Check GPU availability and VRAM for image generation."""
     result = {
@@ -60,14 +61,15 @@ def check_gpu() -> Dict[str, Any]:
     }
     try:
         import torch
+
         if torch.cuda.is_available():
             result["cuda_available"] = True
             result["device_name"] = torch.cuda.get_device_name(0)
             props = torch.cuda.get_device_properties(0)
             total = getattr(props, "total_memory", None) or getattr(props, "total_mem", 0)
             free = total - torch.cuda.memory_allocated(0)
-            result["vram_total_gb"] = round(total / (1024 ** 3), 1)
-            result["vram_free_gb"] = round(free / (1024 ** 3), 1)
+            result["vram_total_gb"] = round(total / (1024**3), 1)
+            result["vram_free_gb"] = round(free / (1024**3), 1)
             # SDXL Turbo needs ~6 GB VRAM
             result["sdxl_turbo_compatible"] = result["vram_total_gb"] >= 6.0
     except ImportError:
@@ -78,6 +80,7 @@ def check_gpu() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Tier 1: Deterministic SVG fallback (zero deps, air-gap safe)
 # ---------------------------------------------------------------------------
+
 
 def _generate_svg_hero(
     title: str,
@@ -90,7 +93,7 @@ def _generate_svg_hero(
     Returns SVG string. Deterministic — same inputs produce same output.
     """
     # Derive a consistent color from title hash
-    h = hashlib.md5(title.encode()).hexdigest()
+    h = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()  # noqa: E501
     hue1 = int(h[:3], 16) % 360
     hue2 = (hue1 + 40) % 360
     color1 = f"hsl({hue1}, 65%, 35%)"
@@ -100,15 +103,8 @@ def _generate_svg_hero(
     # Truncate title for display
     display_title = title[:80] + ("..." if len(title) > 80 else "")
     # Escape XML entities
-    display_title = (
-        display_title.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-    category_display = (
-        category[:30].upper().replace("&", "&amp;") if category else "ICDEV PULSE"
-    )
+    display_title = display_title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    category_display = category[:30].upper().replace("&", "&amp;") if category else "ICDEV PULSE"
 
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
@@ -123,19 +119,19 @@ def _generate_svg_hero(
   </defs>
   <rect width="{width}" height="{height}" fill="url(#bg)"/>
   <rect width="{width}" height="{height}" fill="url(#grid)"/>
-  <rect x="60" y="{height//2 - 80}" width="{width - 120}" height="160" rx="12"
+  <rect x="60" y="{height // 2 - 80}" width="{width - 120}" height="160" rx="12"
         fill="rgba(0,0,0,0.3)"/>
-  <text x="{width//2}" y="{height//2 - 20}" text-anchor="middle"
+  <text x="{width // 2}" y="{height // 2 - 20}" text-anchor="middle"
         font-family="system-ui, -apple-system, sans-serif" font-size="14"
         font-weight="600" letter-spacing="3" fill="{accent}">
     {category_display}
   </text>
-  <text x="{width//2}" y="{height//2 + 25}" text-anchor="middle"
+  <text x="{width // 2}" y="{height // 2 + 25}" text-anchor="middle"
         font-family="system-ui, -apple-system, sans-serif" font-size="28"
         font-weight="700" fill="white">
     {display_title}
   </text>
-  <text x="{width//2}" y="{height - 30}" text-anchor="middle"
+  <text x="{width // 2}" y="{height - 30}" text-anchor="middle"
         font-family="system-ui, -apple-system, sans-serif" font-size="12"
         fill="rgba(255,255,255,0.5)">
     ICDEV Intelligent Certified Development
@@ -174,7 +170,7 @@ def generate_svg(
     svg_content = _generate_svg_hero(title, category, width, height)
 
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]  # noqa: E501
         DEFAULT_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_IMAGE_DIR / f"hero-{slug}.svg")
 
@@ -230,16 +226,16 @@ def _get_pipeline():
 _TOPIC_VISUAL_MAP = {
     # Map domain keywords to concrete visual elements SDXL can render
     "compliance": "government building with digital shield overlay, regulatory documents, checkmarks on screens",
-    "ato": "security authorization dashboard with green status indicators, federal seal, compliance checklist on screen",
+    "ato": "security authorization dashboard with green status indicators, federal seal, compliance checklist on screen",  # noqa: E501
     "fedramp": "cloud infrastructure with security shield, federal compliance certification badges on monitors",
     "cmmc": "military defense network with layered security barriers, certification badge",
-    "zero trust": "network diagram with locked nodes and encrypted connections, no perimeter, identity verification at every point",
+    "zero trust": "network diagram with locked nodes and encrypted connections, no perimeter, identity verification at every point",  # noqa: E501
     "devsecops": "software development pipeline with security gates, code on screens with shield icons, CI/CD flow",
     "agentic": "multiple AI robot agents collaborating around a holographic blueprint, building architecture together",
-    "vibe coding": "developer at desk with AI code floating in air, warning symbols on some code blocks, quality gates blocking bad code",
+    "vibe coding": "developer at desk with AI code floating in air, warning symbols on some code blocks, quality gates blocking bad code",  # noqa: E501
     "security": "cybersecurity operations center with threat dashboards, lock icons, network monitoring screens",
-    "sbom": "software supply chain diagram with component boxes, dependency tree visualization, vulnerability scan results",
-    "cato": "continuous monitoring dashboard with real-time compliance gauges, green/yellow/red status lights, evidence timeline",
+    "sbom": "software supply chain diagram with component boxes, dependency tree visualization, vulnerability scan results",  # noqa: E501
+    "cato": "continuous monitoring dashboard with real-time compliance gauges, green/yellow/red status lights, evidence timeline",  # noqa: E501
     "modernization": "legacy mainframe transforming into modern cloud microservices, digital transformation visual",
     "kubernetes": "container orchestration dashboard, pod status indicators, service mesh visualization",
     "terraform": "infrastructure as code, cloud architecture diagram being generated from code",
@@ -266,14 +262,14 @@ def _build_image_prompt(title: str, category: str = "") -> str:
         # Use the single most relevant visual (keeps images distinct)
         scene = visuals[0]
         # Vary the art style based on title hash for diversity
-        h = hashlib.md5(title.encode()).hexdigest()
+        h = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()  # noqa: E501
         style_idx = int(h[:2], 16) % 5
         styles = [
-            "photorealistic digital art, cinematic lighting, detailed, high quality, 4k, dark blue and teal color palette",
-            "isometric 3D illustration, clean geometric shapes, soft studio lighting, high quality, 4k, purple and blue color palette",
-            "futuristic concept art, neon accents, volumetric lighting, high quality, 4k, cyan and dark navy color palette",
-            "minimalist flat design illustration, bold colors, clean lines, modern, high quality, 4k, blue and orange accent palette",
-            "sci-fi movie poster style, dramatic lighting, depth of field, high quality, 4k, dark teal and gold accent palette",
+            "photorealistic digital art, cinematic lighting, detailed, high quality, 4k, dark blue and teal color palette",  # noqa: E501
+            "isometric 3D illustration, clean geometric shapes, soft studio lighting, high quality, 4k, purple and blue color palette",  # noqa: E501
+            "futuristic concept art, neon accents, volumetric lighting, high quality, 4k, cyan and dark navy color palette",  # noqa: E501
+            "minimalist flat design illustration, bold colors, clean lines, modern, high quality, 4k, blue and orange accent palette",  # noqa: E501
+            "sci-fi movie poster style, dramatic lighting, depth of field, high quality, 4k, dark teal and gold accent palette",  # noqa: E501
         ]
         style = styles[style_idx]
         prompt = f"{style}, {scene}"
@@ -338,7 +334,7 @@ def generate_image(
 
     # Build output path
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]  # noqa: E501
         DEFAULT_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_IMAGE_DIR / f"hero-{slug}.png")
 
@@ -396,6 +392,7 @@ def generate_image(
 # ---------------------------------------------------------------------------
 # Public API: auto-select best available method
 # ---------------------------------------------------------------------------
+
 
 def generate_hero_image(
     title: str,
@@ -476,10 +473,9 @@ def create_post_image(title: str, topic: str = "") -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Pulse hero image generator (SDXL Turbo / SVG fallback)"
-    )
+    parser = argparse.ArgumentParser(description="Pulse hero image generator (SDXL Turbo / SVG fallback)")
     parser.add_argument("--prompt", type=str, help="Article title or custom prompt")
     parser.add_argument("--category", type=str, default="", help="Article category")
     parser.add_argument("--output", type=str, help="Output file path")
@@ -487,12 +483,8 @@ def main():
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS)
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
-    parser.add_argument(
-        "--svg-only", action="store_true", help="Force SVG (no GPU)"
-    )
-    parser.add_argument(
-        "--gpu-only", action="store_true", help="Force GPU (no SVG fallback)"
-    )
+    parser.add_argument("--svg-only", action="store_true", help="Force SVG (no GPU)")
+    parser.add_argument("--gpu-only", action="store_true", help="Force GPU (no SVG fallback)")
     parser.add_argument("--health", action="store_true", help="Check GPU health")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()

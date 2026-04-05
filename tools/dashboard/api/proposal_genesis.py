@@ -22,9 +22,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
-proposal_genesis_api = Blueprint(
-    "proposal_genesis_api", __name__, url_prefix="/api/proposal-genesis"
-)
+proposal_genesis_api = Blueprint("proposal_genesis_api", __name__, url_prefix="/api/proposal-genesis")
 
 
 def _get_db():
@@ -43,7 +41,10 @@ def _run_daemon_cmd(args_list, timeout=30):
     try:
         result = subprocess.run(
             [sys.executable, "tools/proposal_genesis/daemon.py"] + args_list,
-            capture_output=True, text=True, timeout=timeout, cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(BASE_DIR),
         )
         stdout = result.stdout.strip()
         json_start = stdout.find("{")
@@ -58,6 +59,7 @@ def _run_daemon_cmd(args_list, timeout=30):
 
 # ── Status ────────────────────────────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/status", methods=["GET"])
 def api_pg_status():
     """GET /api/proposal-genesis/status — Daemon status with reflex details."""
@@ -69,14 +71,25 @@ def api_pg_status():
 
 # ── Reflex Control ────────────────────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/reflex/<name>", methods=["POST"])
 def api_pg_run_reflex(name):
     """POST /api/proposal-genesis/reflex/<name> — Run a single reflex."""
     allowed = [
-        "discover", "scout", "shape", "engage",
-        "extract", "map", "draft", "polish", "decide",
-        "monitor", "fulfill", "publish",
-        "analyze", "train",
+        "discover",
+        "scout",
+        "shape",
+        "engage",
+        "extract",
+        "map",
+        "draft",
+        "polish",
+        "decide",
+        "monitor",
+        "fulfill",
+        "publish",
+        "analyze",
+        "train",
     ]
     if name not in allowed:
         return jsonify({"error": f"Unknown reflex: {name}"}), 400
@@ -96,6 +109,7 @@ def api_pg_run_pipeline():
 
 
 # ── Quality Scores ────────────────────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/quality-scores", methods=["GET"])
 def api_pg_quality_scores():
@@ -119,6 +133,7 @@ def api_pg_quality_scores():
 
 
 # ── Audit Trail ───────────────────────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/audit", methods=["GET"])
 def api_pg_audit():
@@ -148,6 +163,7 @@ def api_pg_audit():
 
 # ── Pulse Links ───────────────────────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/pulse-links", methods=["GET"])
 def api_pg_pulse_links():
     """GET /api/proposal-genesis/pulse-links — Pulse-proposal content links (D-PG-5)."""
@@ -155,8 +171,7 @@ def api_pg_pulse_links():
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM pg_pulse_proposal_links "
-            "ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM pg_pulse_proposal_links ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
         links = [dict(r) for r in rows]
@@ -169,6 +184,7 @@ def api_pg_pulse_links():
 
 # ── Summary Stats ─────────────────────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/summary", methods=["GET"])
 def api_pg_summary():
     """GET /api/proposal-genesis/summary — High-level metrics for dashboard."""
@@ -177,56 +193,46 @@ def api_pg_summary():
         stats = {}
         try:
             stats["opportunities"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM proposal_opportunities "
-                "WHERE status IN ('tracking', 'drafting')"
+                "SELECT COUNT(*) as cnt FROM proposal_opportunities WHERE status IN ('tracking', 'drafting')"
             ).fetchone()["cnt"]
         except Exception:
             stats["opportunities"] = 0
 
         try:
-            stats["shall_statements"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM rfp_shall_statements"
-            ).fetchone()["cnt"]
+            stats["shall_statements"] = conn.execute("SELECT COUNT(*) as cnt FROM rfp_shall_statements").fetchone()[
+                "cnt"
+            ]
         except Exception:
             stats["shall_statements"] = 0
 
         try:
             stats["drafts"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM proposal_section_drafts "
-                "WHERE status = 'draft'"
+                "SELECT COUNT(*) as cnt FROM proposal_section_drafts WHERE status = 'draft'"
             ).fetchone()["cnt"]
         except Exception:
             stats["drafts"] = 0
 
         try:
-            row = conn.execute(
-                "SELECT AVG(composite_score) as avg_score "
-                "FROM pg_proposal_quality_scores"
-            ).fetchone()
+            row = conn.execute("SELECT AVG(composite_score) as avg_score FROM pg_proposal_quality_scores").fetchone()
             stats["avg_quality"] = round(row["avg_score"] or 0, 3)
         except Exception:
             stats["avg_quality"] = 0
 
         try:
             stats["audit_events_24h"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_proposal_genesis_audit "
-                "WHERE timestamp > datetime('now', '-1 day')"
+                "SELECT COUNT(*) as cnt FROM pg_proposal_genesis_audit WHERE timestamp > datetime('now', '-1 day')"
             ).fetchone()["cnt"]
         except Exception:
             stats["audit_events_24h"] = 0
 
         try:
-            stats["pulse_links"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_pulse_proposal_links"
-            ).fetchone()["cnt"]
+            stats["pulse_links"] = conn.execute("SELECT COUNT(*) as cnt FROM pg_pulse_proposal_links").fetchone()["cnt"]
         except Exception:
             stats["pulse_links"] = 0
 
         # Phase B stats
         try:
-            stats["capture_plans"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_capture_plans"
-            ).fetchone()["cnt"]
+            stats["capture_plans"] = conn.execute("SELECT COUNT(*) as cnt FROM pg_capture_plans").fetchone()["cnt"]
         except Exception:
             stats["capture_plans"] = 0
 
@@ -239,8 +245,7 @@ def api_pg_summary():
 
         try:
             stats["intel_briefs"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_proposal_genesis_audit "
-                "WHERE event_type = 'brief_generated'"
+                "SELECT COUNT(*) as cnt FROM pg_proposal_genesis_audit WHERE event_type = 'brief_generated'"
             ).fetchone()["cnt"]
         except Exception:
             stats["intel_briefs"] = 0
@@ -254,16 +259,14 @@ def api_pg_summary():
             stats["crm_accounts"] = 0
 
         try:
-            stats["crm_interactions"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_crm_interactions"
-            ).fetchone()["cnt"]
+            stats["crm_interactions"] = conn.execute("SELECT COUNT(*) as cnt FROM pg_crm_interactions").fetchone()[
+                "cnt"
+            ]
         except Exception:
             stats["crm_interactions"] = 0
 
         try:
-            row = conn.execute(
-                "SELECT AVG(score) as avg_score FROM pg_crm_engagement_scores"
-            ).fetchone()
+            row = conn.execute("SELECT AVG(score) as avg_score FROM pg_crm_engagement_scores").fetchone()
             stats["avg_engagement"] = round(row["avg_score"] or 0, 3)
         except Exception:
             stats["avg_engagement"] = 0
@@ -271,63 +274,56 @@ def api_pg_summary():
         # Phase D stats
         try:
             stats["published_articles"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pulse_posts "
-                "WHERE author_id = 'pg_publish'"
+                "SELECT COUNT(*) as cnt FROM pulse_posts WHERE author_id = 'pg_publish'"
             ).fetchone()["cnt"]
         except Exception:
             stats["published_articles"] = 0
 
         try:
             stats["cdrl_case_studies"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_pulse_proposal_links "
-                "WHERE link_type = 'cdrl_to_case_study'"
+                "SELECT COUNT(*) as cnt FROM pg_pulse_proposal_links WHERE link_type = 'cdrl_to_case_study'"
             ).fetchone()["cnt"]
         except Exception:
             stats["cdrl_case_studies"] = 0
 
         # Phase F stats
         try:
-            stats["bid_decisions"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_bid_decisions"
-            ).fetchone()["cnt"]
+            stats["bid_decisions"] = conn.execute("SELECT COUNT(*) as cnt FROM pg_bid_decisions").fetchone()["cnt"]
         except Exception:
             stats["bid_decisions"] = 0
 
         try:
             stats["bid_recommendations"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_bid_decisions "
-                "WHERE decision = 'bid'"
+                "SELECT COUNT(*) as cnt FROM pg_bid_decisions WHERE decision = 'bid'"
             ).fetchone()["cnt"]
         except Exception:
             stats["bid_recommendations"] = 0
 
         try:
-            stats["win_loss_records"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_win_loss_records"
-            ).fetchone()["cnt"]
+            stats["win_loss_records"] = conn.execute("SELECT COUNT(*) as cnt FROM pg_win_loss_records").fetchone()[
+                "cnt"
+            ]
         except Exception:
             stats["win_loss_records"] = 0
 
         try:
             stats["win_loss_lessons"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_win_loss_lessons "
-                "WHERE actionable = 1"
+                "SELECT COUNT(*) as cnt FROM pg_win_loss_lessons WHERE actionable = 1"
             ).fetchone()["cnt"]
         except Exception:
             stats["win_loss_lessons"] = 0
 
         try:
-            stats["training_pairs"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM pg_training_pair_sources"
-            ).fetchone()["cnt"]
+            stats["training_pairs"] = conn.execute("SELECT COUNT(*) as cnt FROM pg_training_pair_sources").fetchone()[
+                "cnt"
+            ]
         except Exception:
             stats["training_pairs"] = 0
 
         # Phase E stats
         try:
             stats["active_contracts"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM cpmp_contracts "
-                "WHERE status IN ('active', 'option_pending')"
+                "SELECT COUNT(*) as cnt FROM cpmp_contracts WHERE status IN ('active', 'option_pending')"
             ).fetchone()["cnt"]
         except Exception:
             stats["active_contracts"] = 0
@@ -353,8 +349,7 @@ def api_pg_summary():
 
         try:
             stats["cdrls_generated"] = conn.execute(
-                "SELECT COUNT(*) as cnt FROM cpmp_cdrl_generations "
-                "WHERE generated_by = 'pg_fulfill'"
+                "SELECT COUNT(*) as cnt FROM cpmp_cdrl_generations WHERE generated_by = 'pg_fulfill'"
             ).fetchone()["cnt"]
         except Exception:
             stats["cdrls_generated"] = 0
@@ -367,6 +362,7 @@ def api_pg_summary():
 
 
 # ── Phase B: Capture Plans ───────────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/capture-plans", methods=["GET"])
 def api_pg_capture_plans():
@@ -391,6 +387,7 @@ def api_pg_capture_plans():
 
 # ── Phase B: Teaming Assessments ─────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/teaming-assessments", methods=["GET"])
 def api_pg_teaming_assessments():
     """GET /api/proposal-genesis/teaming-assessments — Partner fit assessments."""
@@ -414,6 +411,7 @@ def api_pg_teaming_assessments():
 
 
 # ── Phase C: CRM Accounts ───────────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/crm-accounts", methods=["GET"])
 def api_pg_crm_accounts():
@@ -441,6 +439,7 @@ def api_pg_crm_accounts():
 
 # ── Phase C: CRM Interactions ────────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/crm-interactions", methods=["GET"])
 def api_pg_crm_interactions():
     """GET /api/proposal-genesis/crm-interactions — Recent CRM interactions."""
@@ -465,6 +464,7 @@ def api_pg_crm_interactions():
 
 # ── Phase C: Engagement Scores ───────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/engagement-scores", methods=["GET"])
 def api_pg_engagement_scores():
     """GET /api/proposal-genesis/engagement-scores — Engagement scores per account."""
@@ -487,6 +487,7 @@ def api_pg_engagement_scores():
 
 
 # ── Phase D: Published Articles ──────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/published-articles", methods=["GET"])
 def api_pg_published_articles():
@@ -534,6 +535,7 @@ def api_pg_case_study_links():
 
 # ── Phase E: Contract Health ──────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/contract-health", methods=["GET"])
 def api_pg_contract_health():
     """GET /api/proposal-genesis/contract-health — Active contract health summary."""
@@ -558,6 +560,7 @@ def api_pg_contract_health():
 
 
 # ── Phase E: CPARS Predictions ────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/cpars-predictions", methods=["GET"])
 def api_pg_cpars_predictions():
@@ -590,6 +593,7 @@ def api_pg_cpars_predictions():
 
 # ── Phase E: Overdue Deliverables ─────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/overdue-deliverables", methods=["GET"])
 def api_pg_overdue_deliverables():
     """GET /api/proposal-genesis/overdue-deliverables — Overdue CPMP deliverables."""
@@ -616,6 +620,7 @@ def api_pg_overdue_deliverables():
 
 
 # ── Phase E: CDRL Generations ─────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/cdrl-generations", methods=["GET"])
 def api_pg_cdrl_generations():
@@ -644,6 +649,7 @@ def api_pg_cdrl_generations():
 
 
 # ── Phase F: Bid Decisions ──────────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/bid-decisions", methods=["GET"])
 def api_pg_bid_decisions():
@@ -676,6 +682,7 @@ def api_pg_bid_decisions():
 
 
 # ── Phase F: Win/Loss Records ───────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/win-loss-records", methods=["GET"])
 def api_pg_win_loss_records():
@@ -710,6 +717,7 @@ def api_pg_win_loss_records():
 
 # ── Phase F: Win/Loss Lessons ───────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/win-loss-lessons", methods=["GET"])
 def api_pg_win_loss_lessons():
     """GET /api/proposal-genesis/win-loss-lessons — Categorized lessons learned."""
@@ -743,6 +751,7 @@ def api_pg_win_loss_lessons():
 
 # ── Phase F: Training Pairs ─────────────────────────────────────────────────
 
+
 @proposal_genesis_api.route("/training-pairs", methods=["GET"])
 def api_pg_training_pairs():
     """GET /api/proposal-genesis/training-pairs — Fine-tuning training pair tracking."""
@@ -765,11 +774,13 @@ def api_pg_training_pairs():
         ).fetchall()
         by_source = {r["source_type"]: {"count": r["cnt"], "pairs": r["total_pairs"]} for r in agg}
 
-        return jsonify({
-            "pairs": pairs,
-            "count": len(pairs),
-            "by_source": by_source,
-        })
+        return jsonify(
+            {
+                "pairs": pairs,
+                "count": len(pairs),
+                "by_source": by_source,
+            }
+        )
     except Exception as exc:
         return jsonify({"pairs": [], "count": 0, "by_source": {}, "note": str(exc)})
     finally:
@@ -777,6 +788,7 @@ def api_pg_training_pairs():
 
 
 # ── Trend Charts ──────────────────────────────────────────────────────────────
+
 
 @proposal_genesis_api.route("/trends/win-rate", methods=["GET"])
 def api_pg_trend_win_rate():
@@ -796,12 +808,14 @@ def api_pg_trend_win_rate():
         data = []
         for r in rows:
             total = r["total"] or 1
-            data.append({
-                "month": r["month"],
-                "total": total,
-                "wins": r["wins"] or 0,
-                "win_rate": round((r["wins"] or 0) / total, 3),
-            })
+            data.append(
+                {
+                    "month": r["month"],
+                    "total": total,
+                    "wins": r["wins"] or 0,
+                    "win_rate": round((r["wins"] or 0) / total, 3),
+                }
+            )
         return jsonify({"data": data})
     except Exception:
         return jsonify({"data": []})
@@ -848,11 +862,13 @@ def api_pg_trend_training_pairs():
         cumulative = 0
         for r in rows:
             cumulative += r["pairs_added"] or 0
-            data.append({
-                "week": r["week"],
-                "pairs_added": r["pairs_added"] or 0,
-                "cumulative": cumulative,
-            })
+            data.append(
+                {
+                    "week": r["week"],
+                    "pairs_added": r["pairs_added"] or 0,
+                    "cumulative": cumulative,
+                }
+            )
         return jsonify({"data": data})
     except Exception:
         return jsonify({"data": []})

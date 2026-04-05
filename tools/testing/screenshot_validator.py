@@ -85,6 +85,7 @@ Rules:
 @dataclass
 class VisionValidationResult:
     """Result of a single screenshot assertion validation."""
+
     image_path: str
     assertion: str
     passed: Optional[bool] = None  # None = skipped (no model available)
@@ -121,10 +122,7 @@ def encode_image(image_path: str) -> tuple:
     ext = path.suffix.lower()
     media_type = IMAGE_MEDIA_TYPES.get(ext)
     if not media_type:
-        raise ValueError(
-            f"Unsupported image format: {ext}. "
-            f"Supported: {', '.join(IMAGE_MEDIA_TYPES.keys())}"
-        )
+        raise ValueError(f"Unsupported image format: {ext}. Supported: {', '.join(IMAGE_MEDIA_TYPES.keys())}")
 
     with open(path, "rb") as f:
         b64_data = base64.b64encode(f.read()).decode("utf-8")
@@ -143,6 +141,7 @@ def check_vision_available() -> dict:
     """
     try:
         from tools.llm import get_router
+
         router = get_router()
         provider, model_id, model_cfg = router.get_provider_for_function("screenshot_validation")
 
@@ -323,12 +322,31 @@ def _parse_vision_response(content: str) -> dict:
     # Priority: check for negative indicators first (more specific),
     # then positive indicators
     lower = text.lower()
-    neg_indicators = ("fail", "not visible", "not present", "absent",
-                      "missing", "cannot see", "don't see", "doesn't show",
-                      "no,", "\"passed\": false", "passed: false")
-    pos_indicators = ("pass", "yes", "confirmed", "visible", "present",
-                      "can see", "shows", "contains", "\"passed\": true",
-                      "passed: true")
+    neg_indicators = (
+        "fail",
+        "not visible",
+        "not present",
+        "absent",
+        "missing",
+        "cannot see",
+        "don't see",
+        "doesn't show",
+        "no,",
+        '"passed": false',
+        "passed: false",
+    )
+    pos_indicators = (
+        "pass",
+        "yes",
+        "confirmed",
+        "visible",
+        "present",
+        "can see",
+        "shows",
+        "contains",
+        '"passed": true',
+        "passed: true",
+    )
 
     if any(w in lower for w in neg_indicators):
         passed = False
@@ -444,9 +462,7 @@ def validate_directory(
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Vision-Based Screenshot Validator"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Vision-Based Screenshot Validator")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -455,7 +471,9 @@ def main():
     group.add_argument("--check", action="store_true", help="Check if vision model is available")
 
     parser.add_argument(
-        "--assert", dest="assertions", action="append",
+        "--assert",
+        dest="assertions",
+        action="append",
         help="Assertion to verify (can be specified multiple times)",
     )
     parser.add_argument(

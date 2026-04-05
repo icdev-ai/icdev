@@ -102,8 +102,8 @@ FALLBACK_CHAIN = {
 
 # Retry configuration
 MAX_RETRIES = 5
-BASE_RETRY_DELAY = 1.0    # seconds
-MAX_RETRY_DELAY = 30.0    # seconds
+BASE_RETRY_DELAY = 1.0  # seconds
+MAX_RETRY_DELAY = 30.0  # seconds
 RETRYABLE_ERROR_CODES = [
     "ThrottlingException",
     "ServiceUnavailableException",
@@ -122,12 +122,13 @@ AVAILABILITY_CACHE_TTL = 1800  # 30 minutes in seconds
 @dataclass
 class BedrockRequest:
     """Encapsulates a single Bedrock invocation request."""
+
     messages: List[Dict[str, Any]] = field(default_factory=list)
     system_prompt: str = ""
     agent_id: str = ""
     project_id: str = ""
-    model_preference: str = "opus"      # opus, sonnet-4-5, sonnet-3-5
-    effort: str = "medium"              # low, medium, high, max
+    model_preference: str = "opus"  # opus, sonnet-4-5, sonnet-3-5
+    effort: str = "medium"  # low, medium, high, max
     max_tokens: int = 4096
     tools: Optional[List[Dict]] = None
     output_schema: Optional[Dict] = None
@@ -139,6 +140,7 @@ class BedrockRequest:
 @dataclass
 class BedrockResponse:
     """Encapsulates Bedrock invocation results including token accounting."""
+
     content: str = ""
     tool_calls: List[Dict] = field(default_factory=list)
     structured_output: Optional[Dict] = None
@@ -158,6 +160,7 @@ def _track_tokens(response: BedrockResponse, agent_id: str, project_id: str):
     """Best-effort token tracking via tools/agent/token_tracker.py."""
     try:
         from tools.agent.token_tracker import log_usage, estimate_cost
+
         cost = estimate_cost(response.model_id, response.input_tokens, response.output_tokens)
         log_usage(
             model_id=response.model_id,
@@ -196,9 +199,9 @@ class BedrockClient:
 
     def __init__(self, config_path: Optional[str] = None, db_path: Optional[str] = None):
         import warnings
+
         warnings.warn(
-            "BedrockClient is deprecated. Use tools.llm.router.LLMRouter instead. "
-            "See D70 for migration guidance.",
+            "BedrockClient is deprecated. Use tools.llm.router.LLMRouter instead. See D70 for migration guidance.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -260,10 +263,7 @@ class BedrockClient:
         """Return cached boto3 bedrock-runtime client, creating if needed."""
         if self._client is None:
             if boto3 is None:
-                raise ImportError(
-                    "boto3 is required for Bedrock invocation. "
-                    "Install with: pip install boto3"
-                )
+                raise ImportError("boto3 is required for Bedrock invocation. Install with: pip install boto3")
             self._client = boto3.client("bedrock-runtime", region_name=self._region)
         return self._client
 
@@ -276,8 +276,7 @@ class BedrockClient:
         Returns a dict mapping model preference key -> bool (available).
         """
         now = time.time()
-        if (self._availability_cache
-                and (now - self._availability_cache_time) < AVAILABILITY_CACHE_TTL):
+        if self._availability_cache and (now - self._availability_cache_time) < AVAILABILITY_CACHE_TTL:
             return dict(self._availability_cache)
 
         results: Dict[str, bool] = {}
@@ -290,16 +289,12 @@ class BedrockClient:
                 continue
             try:
                 body = {
-                    "anthropic_version": model_cfg.get(
-                        "anthropic_version", "bedrock-2023-05-31"
-                    ),
+                    "anthropic_version": model_cfg.get("anthropic_version", "bedrock-2023-05-31"),
                     "max_tokens": 1,
                     "messages": [
                         {
                             "role": "user",
-                            "content": [
-                                {"type": "text", "text": "ping"}
-                            ],
+                            "content": [{"type": "text", "text": "ping"}],
                         }
                     ],
                 }
@@ -345,7 +340,9 @@ class BedrockClient:
                     if pref_key != preference:
                         logger.info(
                             "Fell back from %s to %s (%s)",
-                            preference, pref_key, model_id,
+                            preference,
+                            pref_key,
+                            model_id,
                         )
                     return model_id
 
@@ -357,13 +354,12 @@ class BedrockClient:
             if model_id:
                 logger.warning(
                     "No models confirmed available; attempting %s (%s) anyway",
-                    pref_key, model_id,
+                    pref_key,
+                    model_id,
                 )
                 return model_id
 
-        raise RuntimeError(
-            f"No model_id found for preference '{preference}' in chain {chain}"
-        )
+        raise RuntimeError(f"No model_id found for preference '{preference}' in chain {chain}")
 
     # -----------------------------------------------------------------------
     # Model capability lookup
@@ -493,11 +489,13 @@ class BedrockClient:
             if block_type == "text":
                 text_parts.append(block.get("text", ""))
             elif block_type == "tool_use":
-                tool_calls.append({
-                    "id": block.get("id", ""),
-                    "name": block.get("name", ""),
-                    "input": block.get("input", {}),
-                })
+                tool_calls.append(
+                    {
+                        "id": block.get("id", ""),
+                        "name": block.get("name", ""),
+                        "input": block.get("input", {}),
+                    }
+                )
             elif block_type == "thinking":
                 thinking_text_parts.append(block.get("thinking", ""))
                 resp.thinking_tokens += block.get("tokens", 0)
@@ -534,9 +532,10 @@ class BedrockClient:
         """Exponential backoff with full jitter (D147 — delegates to resilience.retry)."""
         try:
             from tools.resilience.retry import backoff_delay
+
             return backoff_delay(attempt, BASE_RETRY_DELAY, MAX_RETRY_DELAY)
         except ImportError:
-            delay = min(MAX_RETRY_DELAY, BASE_RETRY_DELAY * (2 ** attempt))
+            delay = min(MAX_RETRY_DELAY, BASE_RETRY_DELAY * (2**attempt))
             return delay * random.uniform(0.5, 1.0)
 
     # -----------------------------------------------------------------------
@@ -555,20 +554,25 @@ class BedrockClient:
         # D286: Create trace span for Bedrock invocation
         try:
             from tools.observability import get_tracer
+
             tracer = get_tracer()
         except ImportError:
             tracer = None
 
         span = None
         if tracer:
-            span = tracer.start_span("gen_ai.bedrock.invoke", kind="CLIENT", attributes={
-                "gen_ai.operation.name": "chat",
-                "gen_ai.system": "aws.bedrock",
-                "gen_ai.request.model": model_id,
-                "gen_ai.effort": getattr(request, "effort", "medium") or "medium",
-                "icdev.agent_id": getattr(request, "agent_id", None) or "",
-                "icdev.project_id": getattr(request, "project_id", None) or "",
-            })
+            span = tracer.start_span(
+                "gen_ai.bedrock.invoke",
+                kind="CLIENT",
+                attributes={
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.system": "aws.bedrock",
+                    "gen_ai.request.model": model_id,
+                    "gen_ai.effort": getattr(request, "effort", "medium") or "medium",
+                    "icdev.agent_id": getattr(request, "agent_id", None) or "",
+                    "icdev.project_id": getattr(request, "project_id", None) or "",
+                },
+            )
 
         start_time = time.time()
         last_exc: Optional[Exception] = None
@@ -605,19 +609,24 @@ class BedrockClient:
                 last_exc = exc
                 if self._is_retryable(exc) and attempt < MAX_RETRIES:
                     delay = self._backoff_delay(attempt)
-                    error_code = getattr(exc, "response", {}).get(
-                        "Error", {}
-                    ).get("Code", type(exc).__name__)
+                    error_code = getattr(exc, "response", {}).get("Error", {}).get("Code", type(exc).__name__)
                     logger.warning(
                         "Retryable error on attempt %d/%d (%s): %s — retrying in %.1fs",
-                        attempt + 1, MAX_RETRIES, error_code, exc, delay,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        error_code,
+                        exc,
+                        delay,
                     )
                     if span:
-                        span.add_event("retry", {
-                            "attempt": attempt + 1,
-                            "error_code": error_code,
-                            "error": str(exc),
-                        })
+                        span.add_event(
+                            "retry",
+                            {
+                                "attempt": attempt + 1,
+                                "error_code": error_code,
+                                "error": str(exc),
+                            },
+                        )
                     time.sleep(delay)
                     continue
                 else:
@@ -749,7 +758,10 @@ class BedrockClient:
                     delay = self._backoff_delay(attempt)
                     logger.warning(
                         "Stream retry attempt %d/%d: %s — retrying in %.1fs",
-                        attempt + 1, MAX_RETRIES, exc, delay,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        exc,
+                        delay,
                     )
                     time.sleep(delay)
                     continue
@@ -827,12 +839,14 @@ class BedrockClient:
             if resp.content:
                 assistant_content.append({"type": "text", "text": resp.content})
             for tc in resp.tool_calls:
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": tc["id"],
-                    "name": tc["name"],
-                    "input": tc["input"],
-                })
+                assistant_content.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc["id"],
+                        "name": tc["name"],
+                        "input": tc["input"],
+                    }
+                )
             messages.append({"role": "assistant", "content": assistant_content})
 
             # Execute each tool call and build tool_result blocks
@@ -844,17 +858,19 @@ class BedrockClient:
 
                 handler = tool_handlers.get(tool_name)
                 if handler is None:
-                    tool_result_content.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "is_error": True,
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"Unknown tool: {tool_name}",
-                            }
-                        ],
-                    })
+                    tool_result_content.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "is_error": True,
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Unknown tool: {tool_name}",
+                                }
+                            ],
+                        }
+                    )
                     continue
 
                 try:
@@ -864,32 +880,36 @@ class BedrockClient:
                         result_text = json.dumps(result)
                     else:
                         result_text = str(result)
-                    tool_result_content.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "content": [
-                            {"type": "text", "text": result_text}
-                        ],
-                    })
+                    tool_result_content.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": [{"type": "text", "text": result_text}],
+                        }
+                    )
                 except Exception as exc:
                     logger.error("Tool '%s' raised: %s", tool_name, exc)
-                    tool_result_content.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_id,
-                        "is_error": True,
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": f"Tool execution error: {exc}",
-                            }
-                        ],
-                    })
+                    tool_result_content.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "is_error": True,
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Tool execution error: {exc}",
+                                }
+                            ],
+                        }
+                    )
 
             messages.append({"role": "user", "content": tool_result_content})
 
             logger.info(
                 "Tool loop iteration %d/%d: executed %d tool(s)",
-                iteration + 1, max_iterations, len(resp.tool_calls),
+                iteration + 1,
+                max_iterations,
+                len(resp.tool_calls),
             )
 
         # Max iterations reached — return last response with aggregated tokens
@@ -906,38 +926,44 @@ class BedrockClient:
 # ---------------------------------------------------------------------------
 def main():
     """CLI for quick Bedrock invocations and model probing."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV Bedrock Client — centralized model invocation"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Bedrock Client — centralized model invocation")
     parser.add_argument("--prompt", help="Prompt text to send")
     parser.add_argument(
-        "--model", default="opus",
+        "--model",
+        default="opus",
         choices=["opus", "sonnet-4-5", "sonnet-3-5"],
         help="Model preference (default: opus)",
     )
     parser.add_argument(
-        "--effort", default="medium",
+        "--effort",
+        default="medium",
         choices=["low", "medium", "high", "max"],
         help="Thinking effort level (default: medium)",
     )
     parser.add_argument(
-        "--max-tokens", type=int, default=4096,
+        "--max-tokens",
+        type=int,
+        default=4096,
         help="Max output tokens (default: 4096)",
     )
     parser.add_argument(
-        "--probe", action="store_true",
+        "--probe",
+        action="store_true",
         help="Probe model availability and exit",
     )
     parser.add_argument(
-        "--json", action="store_true",
+        "--json",
+        action="store_true",
         help="Output results as JSON",
     )
     parser.add_argument(
-        "--system", default="",
+        "--system",
+        default="",
         help="System prompt (optional)",
     )
     parser.add_argument(
-        "--stream", action="store_true",
+        "--stream",
+        action="store_true",
         help="Use streaming invocation",
     )
     args = parser.parse_args()
@@ -953,15 +979,20 @@ def main():
     if args.probe:
         availability = client.probe_model_availability()
         if args.json:
-            print(json.dumps({
-                "availability": availability,
-                "models": {
-                    k: {"model_id": v.get("model_id", ""), "display_name": v.get("display_name", "")}
-                    for k, v in client._models.items()
-                },
-                "region": client._region,
-                "classification": "CUI",
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "availability": availability,
+                        "models": {
+                            k: {"model_id": v.get("model_id", ""), "display_name": v.get("display_name", "")}
+                            for k, v in client._models.items()
+                        },
+                        "region": client._region,
+                        "classification": "CUI",
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(f"Region: {client._region}")
             print("Classification: CUI // SP-CTI")
@@ -1015,14 +1046,19 @@ def main():
                 sys.exit(1)
 
         if args.json:
-            print(json.dumps({
-                "content": "".join(text_parts),
-                "model_id": final_meta.get("model_id", ""),
-                "stop_reason": final_meta.get("stop_reason", ""),
-                "usage": final_meta.get("usage", {}),
-                "duration_ms": final_meta.get("duration_ms", 0),
-                "classification": "CUI",
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "content": "".join(text_parts),
+                        "model_id": final_meta.get("model_id", ""),
+                        "stop_reason": final_meta.get("stop_reason", ""),
+                        "usage": final_meta.get("usage", {}),
+                        "duration_ms": final_meta.get("duration_ms", 0),
+                        "classification": "CUI",
+                    },
+                    indent=2,
+                )
+            )
         else:
             print()  # Newline after streamed text
             usage = final_meta.get("usage", {})
@@ -1037,27 +1073,37 @@ def main():
             resp = client.invoke(request)
         except Exception as exc:
             if args.json:
-                print(json.dumps({
-                    "error": str(exc),
-                    "classification": "CUI",
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "error": str(exc),
+                            "classification": "CUI",
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
 
         if args.json:
-            print(json.dumps({
-                "content": resp.content,
-                "model_id": resp.model_id,
-                "input_tokens": resp.input_tokens,
-                "output_tokens": resp.output_tokens,
-                "thinking_tokens": resp.thinking_tokens,
-                "duration_ms": resp.duration_ms,
-                "stop_reason": resp.stop_reason,
-                "tool_calls": resp.tool_calls,
-                "structured_output": resp.structured_output,
-                "classification": resp.classification,
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "content": resp.content,
+                        "model_id": resp.model_id,
+                        "input_tokens": resp.input_tokens,
+                        "output_tokens": resp.output_tokens,
+                        "thinking_tokens": resp.thinking_tokens,
+                        "duration_ms": resp.duration_ms,
+                        "stop_reason": resp.stop_reason,
+                        "tool_calls": resp.tool_calls,
+                        "structured_output": resp.structured_output,
+                        "classification": resp.classification,
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(resp.content)
             print("\n--- Metadata ---")

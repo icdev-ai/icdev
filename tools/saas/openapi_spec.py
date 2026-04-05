@@ -110,8 +110,7 @@ OPENAPI_BASE = {
         {
             "name": "Audit",
             "description": (
-                "Append-only audit trail queries.  NIST 800-53 AU compliant "
-                "(no UPDATE/DELETE operations)."
+                "Append-only audit trail queries.  NIST 800-53 AU compliant (no UPDATE/DELETE operations)."
             ),
         },
         {
@@ -220,8 +219,7 @@ SCHEMAS = {
             },
             "status": {
                 "type": "string",
-                "enum": ["pending", "provisioning", "active", "suspended",
-                         "deprovisioning", "archived"],
+                "enum": ["pending", "provisioning", "active", "suspended", "deprovisioning", "archived"],
                 "description": "Tenant lifecycle status.",
                 "example": "active",
             },
@@ -254,8 +252,7 @@ SCHEMAS = {
             },
             "role": {
                 "type": "string",
-                "enum": ["tenant_admin", "isso", "developer", "viewer",
-                         "auditor"],
+                "enum": ["tenant_admin", "isso", "developer", "viewer", "auditor"],
                 "description": "User role within the tenant.",
                 "example": "developer",
             },
@@ -289,16 +286,13 @@ SCHEMAS = {
             },
             "role": {
                 "type": "string",
-                "enum": ["tenant_admin", "isso", "developer", "viewer",
-                         "auditor"],
+                "enum": ["tenant_admin", "isso", "developer", "viewer", "auditor"],
                 "description": "Role to assign. Defaults to 'developer'.",
                 "default": "developer",
             },
             "display_name": {
                 "type": "string",
-                "description": (
-                    "Display name. Defaults to email local part."
-                ),
+                "description": ("Display name. Defaults to email local part."),
                 "example": "John Doe",
             },
         },
@@ -328,8 +322,7 @@ SCHEMAS = {
             },
             "status": {
                 "type": "string",
-                "enum": ["planning", "active", "testing", "deployed",
-                         "archived"],
+                "enum": ["planning", "active", "testing", "deployed", "archived"],
                 "description": "Project lifecycle status.",
                 "example": "active",
             },
@@ -372,9 +365,7 @@ SCHEMAS = {
             },
             "directory_path": {
                 "type": "string",
-                "description": (
-                    "Optional filesystem path for the project directory."
-                ),
+                "description": ("Optional filesystem path for the project directory."),
             },
         },
     },
@@ -432,10 +423,7 @@ SCHEMAS = {
             },
             "expires_in_days": {
                 "type": "integer",
-                "description": (
-                    "Number of days until expiration.  "
-                    "Omit for non-expiring key."
-                ),
+                "description": ("Number of days until expiration.  Omit for non-expiring key."),
                 "example": 365,
             },
         },
@@ -481,8 +469,7 @@ SCHEMAS = {
             },
             "scan_type": {
                 "type": "string",
-                "enum": ["sast", "dependency_audit", "secret_detection",
-                         "container_scan"],
+                "enum": ["sast", "dependency_audit", "secret_detection", "container_scan"],
                 "description": "Type of security scan performed.",
                 "example": "sast",
             },
@@ -632,6 +619,7 @@ SCHEMAS = {
 # COMMON RESPONSE HELPERS
 # ============================================================================
 
+
 def _ref(schema_name):
     """Return a JSON Schema $ref pointer to a component schema."""
     return {"$ref": "#/components/schemas/{}".format(schema_name)}
@@ -726,9 +714,12 @@ ENDPOINT_DOCS = {
         "tags": ["Tenants"],
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "tenant": _ref("TenantResponse"),
-                }},
+                {
+                    "type": "object",
+                    "properties": {
+                        "tenant": _ref("TenantResponse"),
+                    },
+                },
                 "Current tenant details.",
             ),
             **_error_responses(401, 404, 500),
@@ -776,33 +767,36 @@ ENDPOINT_DOCS = {
         },
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "tenant": _ref("TenantResponse"),
-                }},
+                {
+                    "type": "object",
+                    "properties": {
+                        "tenant": _ref("TenantResponse"),
+                    },
+                },
                 "Updated tenant details.",
             ),
             **_error_responses(400, 401, 403, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # USERS
     # ------------------------------------------------------------------
     ("get", "/users"): {
         "summary": "List users for tenant",
-        "description": (
-            "Returns all users belonging to the authenticated tenant."
-        ),
+        "description": ("Returns all users belonging to the authenticated tenant."),
         "tags": ["Users"],
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "users": {
-                        "type": "array",
-                        "items": _ref("UserResponse"),
+                {
+                    "type": "object",
+                    "properties": {
+                        "users": {
+                            "type": "array",
+                            "items": _ref("UserResponse"),
+                        },
+                        "total": {"type": "integer"},
                     },
-                    "total": {"type": "integer"},
-                }},
+                },
                 "List of tenant users.",
             ),
             **_error_responses(401, 500),
@@ -825,9 +819,12 @@ ENDPOINT_DOCS = {
         },
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "user": _ref("UserResponse"),
-                }},
+                {
+                    "type": "object",
+                    "properties": {
+                        "user": _ref("UserResponse"),
+                    },
+                },
                 "Newly created user.",
                 status="201",
             ),
@@ -837,8 +834,7 @@ ENDPOINT_DOCS = {
     ("patch", "/users/{user_id}"): {
         "summary": "Update user",
         "description": (
-            "Update a user's role or display name.  Requires tenant_admin "
-            "role.  Cannot demote the last tenant_admin."
+            "Update a user's role or display name.  Requires tenant_admin role.  Cannot demote the last tenant_admin."
         ),
         "tags": ["Users"],
         "parameters": [_user_id_param()],
@@ -851,8 +847,7 @@ ENDPOINT_DOCS = {
                         "properties": {
                             "role": {
                                 "type": "string",
-                                "enum": ["tenant_admin", "isso", "developer",
-                                         "viewer", "auditor"],
+                                "enum": ["tenant_admin", "isso", "developer", "viewer", "auditor"],
                             },
                             "display_name": {"type": "string"},
                         },
@@ -862,9 +857,12 @@ ENDPOINT_DOCS = {
         },
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "user": _ref("UserResponse"),
-                }},
+                {
+                    "type": "object",
+                    "properties": {
+                        "user": _ref("UserResponse"),
+                    },
+                },
                 "Updated user details.",
             ),
             **_error_responses(400, 401, 403, 404, 500),
@@ -873,8 +871,7 @@ ENDPOINT_DOCS = {
     ("delete", "/users/{user_id}"): {
         "summary": "Delete user",
         "description": (
-            "Remove a user from the current tenant.  Requires tenant_admin "
-            "role.  Cannot delete the last tenant_admin."
+            "Remove a user from the current tenant.  Requires tenant_admin role.  Cannot delete the last tenant_admin."
         ),
         "tags": ["Users"],
         "parameters": [_user_id_param()],
@@ -896,7 +893,6 @@ ENDPOINT_DOCS = {
             **_error_responses(401, 403, 404, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # API KEYS
     # ------------------------------------------------------------------
@@ -909,13 +905,16 @@ ENDPOINT_DOCS = {
         "tags": ["API Keys"],
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "keys": {
-                        "type": "array",
-                        "items": _ref("APIKeyResponse"),
+                {
+                    "type": "object",
+                    "properties": {
+                        "keys": {
+                            "type": "array",
+                            "items": _ref("APIKeyResponse"),
+                        },
+                        "total": {"type": "integer"},
                     },
-                    "total": {"type": "integer"},
-                }},
+                },
                 "List of API keys.",
             ),
             **_error_responses(401, 500),
@@ -948,10 +947,7 @@ ENDPOINT_DOCS = {
                                 "key": _ref("APIKeyResponse"),
                                 "key_value": {
                                     "type": "string",
-                                    "description": (
-                                        "Full API key value.  Only returned "
-                                        "once at creation time."
-                                    ),
+                                    "description": ("Full API key value.  Only returned once at creation time."),
                                     "example": "icdev_a1b2c3d4e5f6...",
                                 },
                             },
@@ -965,8 +961,7 @@ ENDPOINT_DOCS = {
     ("delete", "/keys/{key_id}"): {
         "summary": "Revoke API key",
         "description": (
-            "Revoke (delete) an API key.  The key becomes immediately "
-            "unusable.  Requires tenant_admin role."
+            "Revoke (delete) an API key.  The key becomes immediately unusable.  Requires tenant_admin role."
         ),
         "tags": ["API Keys"],
         "parameters": [_key_id_param()],
@@ -988,7 +983,6 @@ ENDPOINT_DOCS = {
             **_error_responses(401, 403, 404, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # PROJECTS
     # ------------------------------------------------------------------
@@ -1010,9 +1004,12 @@ ENDPOINT_DOCS = {
         },
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "project": _ref("ProjectResponse"),
-                }},
+                {
+                    "type": "object",
+                    "properties": {
+                        "project": _ref("ProjectResponse"),
+                    },
+                },
                 "Newly created project.",
                 status="201",
             ),
@@ -1028,13 +1025,16 @@ ENDPOINT_DOCS = {
         "tags": ["Projects"],
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "projects": {
-                        "type": "array",
-                        "items": _ref("ProjectResponse"),
+                {
+                    "type": "object",
+                    "properties": {
+                        "projects": {
+                            "type": "array",
+                            "items": _ref("ProjectResponse"),
+                        },
+                        "total": {"type": "integer"},
                     },
-                    "total": {"type": "integer"},
-                }},
+                },
                 "List of tenant projects.",
             ),
             **_error_responses(401, 500),
@@ -1051,15 +1051,17 @@ ENDPOINT_DOCS = {
         "parameters": [_project_id_param()],
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "project": _ref("ProjectResponse"),
-                }},
+                {
+                    "type": "object",
+                    "properties": {
+                        "project": _ref("ProjectResponse"),
+                    },
+                },
                 "Project details.",
             ),
             **_error_responses(401, 403, 404, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # COMPLIANCE
     # ------------------------------------------------------------------
@@ -1168,7 +1170,6 @@ ENDPOINT_DOCS = {
             **_error_responses(401, 403, 404, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # SECURITY
     # ------------------------------------------------------------------
@@ -1209,7 +1210,6 @@ ENDPOINT_DOCS = {
             **_error_responses(401, 403, 404, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # AUDIT
     # ------------------------------------------------------------------
@@ -1248,21 +1248,23 @@ ENDPOINT_DOCS = {
         ],
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "entries": {
-                        "type": "array",
-                        "items": _ref("AuditEntry"),
+                {
+                    "type": "object",
+                    "properties": {
+                        "entries": {
+                            "type": "array",
+                            "items": _ref("AuditEntry"),
+                        },
+                        "total": {"type": "integer"},
+                        "offset": {"type": "integer"},
+                        "limit": {"type": "integer"},
                     },
-                    "total": {"type": "integer"},
-                    "offset": {"type": "integer"},
-                    "limit": {"type": "integer"},
-                }},
+                },
                 "Paginated audit trail entries.",
             ),
             **_error_responses(401, 403, 404, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # USAGE
     # ------------------------------------------------------------------
@@ -1279,23 +1281,23 @@ ENDPOINT_DOCS = {
                 "name": "period",
                 "in": "query",
                 "required": False,
-                "description": (
-                    "Billing period in YYYY-MM format.  Defaults to current."
-                ),
+                "description": ("Billing period in YYYY-MM format.  Defaults to current."),
                 "schema": {"type": "string", "example": "2026-02"},
             },
         ],
         "responses": {
             **_json_response(
-                {"type": "object", "properties": {
-                    "usage": _ref("UsageRecord"),
-                }},
+                {
+                    "type": "object",
+                    "properties": {
+                        "usage": _ref("UsageRecord"),
+                    },
+                },
                 "Tenant usage statistics.",
             ),
             **_error_responses(401, 500),
         },
     },
-
     # ------------------------------------------------------------------
     # HEALTH
     # ------------------------------------------------------------------
@@ -1322,6 +1324,7 @@ ENDPOINT_DOCS = {
 # ============================================================================
 # SPEC GENERATOR
 # ============================================================================
+
 
 def generate_openapi_spec():
     """Build the complete OpenAPI 3.0.3 specification.
@@ -1353,6 +1356,7 @@ def generate_openapi_spec():
 # CLI ENTRY POINT
 # ============================================================================
 
+
 def main():
     """Dump the OpenAPI spec as formatted JSON."""
     import argparse
@@ -1361,7 +1365,8 @@ def main():
         description="Generate ICDEV SaaS OpenAPI 3.0.3 specification.",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=str,
         default=None,
         help="Output file path.  Prints to stdout if omitted.",

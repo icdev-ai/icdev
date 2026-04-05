@@ -34,8 +34,12 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Evidence type constants
 EVIDENCE_TYPES = (
-    "scan_result", "test_result", "config_check",
-    "manual_review", "attestation", "artifact",
+    "scan_result",
+    "test_result",
+    "config_check",
+    "manual_review",
+    "attestation",
+    "artifact",
 )
 
 # Status constants
@@ -43,7 +47,12 @@ EVIDENCE_STATUSES = ("current", "stale", "expired", "superseded")
 
 # Automation frequency constants
 AUTOMATION_FREQUENCIES = (
-    "continuous", "daily", "weekly", "monthly", "per_change", "manual",
+    "continuous",
+    "daily",
+    "weekly",
+    "monthly",
+    "per_change",
+    "manual",
 )
 
 # Expiration windows (in days) by automation frequency
@@ -64,10 +73,7 @@ def _get_connection(db_path=None):
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -125,9 +131,7 @@ def _verify_project(conn, project_id):
     Raises:
         ValueError if project not found.
     """
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -157,6 +161,7 @@ def _compute_expires_at(collected_at_str, automation_frequency):
 # Public API functions
 # --------------------------------------------------------------------------
 
+
 def collect_evidence(
     project_id,
     control_id,
@@ -185,14 +190,10 @@ def collect_evidence(
         Dict with evidence_id, status, collected_at, expires_at, evidence_hash.
     """
     if evidence_type not in EVIDENCE_TYPES:
-        raise ValueError(
-            f"Invalid evidence_type '{evidence_type}'. "
-            f"Valid types: {EVIDENCE_TYPES}"
-        )
+        raise ValueError(f"Invalid evidence_type '{evidence_type}'. Valid types: {EVIDENCE_TYPES}")
     if automation_frequency not in AUTOMATION_FREQUENCIES:
         raise ValueError(
-            f"Invalid automation_frequency '{automation_frequency}'. "
-            f"Valid frequencies: {AUTOMATION_FREQUENCIES}"
+            f"Invalid automation_frequency '{automation_frequency}'. Valid frequencies: {AUTOMATION_FREQUENCIES}"
         )
 
     conn = _get_connection(db_path)
@@ -255,10 +256,16 @@ def collect_evidence(
                     is_fresh, freshness_check_at, status, automation_frequency)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'current', ?)""",
                 (
-                    project_id, control_id, evidence_type, evidence_source,
+                    project_id,
+                    control_id,
+                    evidence_type,
+                    evidence_source,
                     str(evidence_path) if evidence_path else None,
-                    evidence_hash, collected_at, expires_at,
-                    collected_at, automation_frequency,
+                    evidence_hash,
+                    collected_at,
+                    expires_at,
+                    collected_at,
+                    automation_frequency,
                 ),
             )
             conn.commit()
@@ -266,14 +273,19 @@ def collect_evidence(
             action = "Evidence collected"
 
         # Audit trail
-        _log_audit_event(conn, project_id, action, {
-            "evidence_id": evidence_id,
-            "control_id": control_id,
-            "evidence_type": evidence_type,
-            "evidence_source": evidence_source,
-            "automation_frequency": automation_frequency,
-            "expires_at": expires_at,
-        })
+        _log_audit_event(
+            conn,
+            project_id,
+            action,
+            {
+                "evidence_id": evidence_id,
+                "control_id": control_id,
+                "evidence_type": evidence_type,
+                "evidence_source": evidence_source,
+                "automation_frequency": automation_frequency,
+                "expires_at": expires_at,
+            },
+        )
 
         result = {
             "evidence_id": evidence_id,
@@ -286,8 +298,7 @@ def collect_evidence(
             "evidence_hash": evidence_hash,
         }
 
-        print(f"cATO evidence {action.lower()}: {control_id} "
-              f"[{evidence_type}] from {evidence_source}")
+        print(f"cATO evidence {action.lower()}: {control_id} [{evidence_type}] from {evidence_source}")
 
         return result
 
@@ -357,9 +368,7 @@ def check_evidence_freshness(project_id, db_path=None):
             else:
                 # Check staleness: 80% of expiry window elapsed
                 window_days = EXPIRY_WINDOWS.get(freq, 90)
-                stale_threshold = collected_at + timedelta(
-                    days=window_days * STALENESS_RATIO
-                )
+                stale_threshold = collected_at + timedelta(days=window_days * STALENESS_RATIO)
                 if now >= stale_threshold:
                     new_status = "stale"
                     is_fresh = 0
@@ -380,23 +389,29 @@ def check_evidence_freshness(project_id, db_path=None):
 
             if control_id not in summary["by_control"]:
                 summary["by_control"][control_id] = {
-                    "current": 0, "stale": 0, "expired": 0,
+                    "current": 0,
+                    "stale": 0,
+                    "expired": 0,
                 }
             summary["by_control"][control_id][new_status] += 1
 
         conn.commit()
 
         # Audit trail
-        _log_audit_event(conn, project_id, "Freshness check completed", {
-            "total": summary["total"],
-            "current": summary["current"],
-            "stale": summary["stale"],
-            "expired": summary["expired"],
-        })
+        _log_audit_event(
+            conn,
+            project_id,
+            "Freshness check completed",
+            {
+                "total": summary["total"],
+                "current": summary["current"],
+                "stale": summary["stale"],
+                "expired": summary["expired"],
+            },
+        )
 
         print(f"cATO freshness check: {summary['total']} items checked")
-        print(f"  Current: {summary['current']}  Stale: {summary['stale']}  "
-              f"Expired: {summary['expired']}")
+        print(f"  Current: {summary['current']}  Stale: {summary['stale']}  Expired: {summary['expired']}")
 
         return summary
 
@@ -480,10 +495,11 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
                     check_dir = scan_dir / pattern if pattern != "." else scan_dir
                     if check_dir.is_dir():
                         for f in sorted(check_dir.iterdir(), reverse=True):
-                            if f.is_file() and (
-                                "test" in f.name.lower() or
-                                "junit" in f.name.lower()
-                            ) and f.suffix in (".xml", ".json", ".html"):
+                            if (
+                                f.is_file()
+                                and ("test" in f.name.lower() or "junit" in f.name.lower())
+                                and f.suffix in (".xml", ".json", ".html")
+                            ):
                                 new_hash = _hash_file(f)
                                 new_path = str(f)
                                 refreshed = True
@@ -497,10 +513,7 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
                     check_dir = scan_dir / pattern_dir if pattern_dir != "." else scan_dir
                     if check_dir.is_dir():
                         for f in sorted(check_dir.iterdir(), reverse=True):
-                            if f.is_file() and (
-                                "sbom" in f.name.lower() or
-                                "bom" in f.name.lower()
-                            ):
+                            if f.is_file() and ("sbom" in f.name.lower() or "bom" in f.name.lower()):
                                 new_hash = _hash_file(f)
                                 new_path = str(f)
                                 refreshed = True
@@ -547,36 +560,44 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
                            status = 'current'
                        WHERE id = ?""",
                     (
-                        new_path, new_hash,
-                        collected_at, expires_at,
-                        collected_at, evidence_id,
+                        new_path,
+                        new_hash,
+                        collected_at,
+                        expires_at,
+                        collected_at,
+                        evidence_id,
                     ),
                 )
 
-                reassessed.append({
-                    "evidence_id": evidence_id,
-                    "control_id": control_id,
-                    "evidence_type": evidence_type,
-                    "evidence_source": evidence_source,
-                    "new_status": "current",
-                    "collected_at": collected_at,
-                    "expires_at": expires_at,
-                })
+                reassessed.append(
+                    {
+                        "evidence_id": evidence_id,
+                        "control_id": control_id,
+                        "evidence_type": evidence_type,
+                        "evidence_source": evidence_source,
+                        "new_status": "current",
+                        "collected_at": collected_at,
+                        "expires_at": expires_at,
+                    }
+                )
 
         conn.commit()
 
         # Audit trail
-        _log_audit_event(conn, project_id, "Auto-reassessment completed", {
-            "stale_expired_checked": len(rows),
-            "reassessed": len(reassessed),
-            "controls_refreshed": list(set(r["control_id"] for r in reassessed)),
-        })
+        _log_audit_event(
+            conn,
+            project_id,
+            "Auto-reassessment completed",
+            {
+                "stale_expired_checked": len(rows),
+                "reassessed": len(reassessed),
+                "controls_refreshed": list(set(r["control_id"] for r in reassessed)),
+            },
+        )
 
-        print(f"cATO auto-reassess: {len(rows)} stale/expired items checked, "
-              f"{len(reassessed)} refreshed")
+        print(f"cATO auto-reassess: {len(rows)} stale/expired items checked, {len(reassessed)} refreshed")
         for r in reassessed:
-            print(f"  Refreshed: {r['control_id']} [{r['evidence_type']}] "
-                  f"from {r['evidence_source']}")
+            print(f"  Refreshed: {r['control_id']} [{r['evidence_type']}] from {r['evidence_source']}")
 
         return reassessed
 
@@ -666,9 +687,7 @@ def compute_cato_readiness(project_id, db_path=None):
 
         readiness_pct = 0.0
         if total_controls > 0:
-            readiness_pct = round(
-                len(controls_with_fresh) / total_controls * 100, 1
-            )
+            readiness_pct = round(len(controls_with_fresh) / total_controls * 100, 1)
 
         automated_pct = 0.0
         if total_evidence > 0:
@@ -684,8 +703,7 @@ def compute_cato_readiness(project_id, db_path=None):
             "by_frequency": freq_counts,
         }
 
-        print(f"cATO readiness: {readiness_pct}% "
-              f"({len(controls_with_fresh)}/{total_controls} controls fresh)")
+        print(f"cATO readiness: {readiness_pct}% ({len(controls_with_fresh)}/{total_controls} controls fresh)")
         print(f"  Automation: {automated_pct}% of evidence is automated")
 
         return result
@@ -725,7 +743,10 @@ def get_cato_dashboard_data(project_id, db_path=None):
         ).fetchall()
 
         freshness_chart = {
-            "current": 0, "stale": 0, "expired": 0, "superseded": 0,
+            "current": 0,
+            "stale": 0,
+            "expired": 0,
+            "superseded": 0,
         }
         for row in rows:
             freshness_chart[row["status"]] = row["cnt"]
@@ -754,16 +775,18 @@ def get_cato_dashboard_data(project_id, db_path=None):
             except (ValueError, TypeError):
                 days_until = -1
 
-            upcoming_expirations.append({
-                "evidence_id": row["id"],
-                "control_id": row["control_id"],
-                "evidence_type": row["evidence_type"],
-                "evidence_source": row["evidence_source"],
-                "expires_at": row["expires_at"],
-                "days_until_expiry": days_until,
-                "automation_frequency": row["automation_frequency"],
-                "status": row["status"],
-            })
+            upcoming_expirations.append(
+                {
+                    "evidence_id": row["id"],
+                    "control_id": row["control_id"],
+                    "evidence_type": row["evidence_type"],
+                    "evidence_source": row["evidence_source"],
+                    "expires_at": row["expires_at"],
+                    "days_until_expiry": days_until,
+                    "automation_frequency": row["automation_frequency"],
+                    "status": row["status"],
+                }
+            )
 
         # --- Controls needing attention ---
         attention_rows = conn.execute(
@@ -777,13 +800,15 @@ def get_cato_dashboard_data(project_id, db_path=None):
 
         controls_needing_attention = []
         for row in attention_rows:
-            controls_needing_attention.append({
-                "control_id": row["control_id"],
-                "status": row["status"],
-                "evidence_type": row["evidence_type"],
-                "evidence_source": row["evidence_source"],
-                "expires_at": row["expires_at"],
-            })
+            controls_needing_attention.append(
+                {
+                    "control_id": row["control_id"],
+                    "status": row["status"],
+                    "evidence_type": row["evidence_type"],
+                    "evidence_source": row["evidence_source"],
+                    "expires_at": row["expires_at"],
+                }
+            )
 
         # --- Trend data: evidence collected per day (last 30 days) ---
         thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
@@ -797,10 +822,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
             (project_id, thirty_days_ago),
         ).fetchall()
 
-        trend_data = [
-            {"date": row["day"], "evidence_collected": row["cnt"]}
-            for row in trend_rows
-        ]
+        trend_data = [{"date": row["day"], "evidence_collected": row["cnt"]} for row in trend_rows]
 
         # --- Evidence by type distribution ---
         type_rows = conn.execute(
@@ -887,10 +909,15 @@ def expire_old_evidence(project_id, db_path=None):
 
         # Audit trail
         if expired_ids:
-            _log_audit_event(conn, project_id, "Evidence expired", {
-                "expired_count": len(expired_ids),
-                "expired_ids": expired_ids,
-            })
+            _log_audit_event(
+                conn,
+                project_id,
+                "Evidence expired",
+                {
+                    "expired_count": len(expired_ids),
+                    "expired_ids": expired_ids,
+                },
+            )
 
         print(f"cATO expire: {len(expired_ids)} evidence items marked as expired")
 
@@ -979,9 +1006,11 @@ def check_zta_posture(project_id, db_path=None):
         if result["zta_available"]:
             result["cato_contribution"] = round(result["overall_score"] * 100, 1)
 
-        print(f"ZTA posture check: maturity={result['overall_maturity']} "
-              f"score={result['overall_score']:.2f} "
-              f"evidence={result['posture_evidence']['total']} items")
+        print(
+            f"ZTA posture check: maturity={result['overall_maturity']} "
+            f"score={result['overall_score']:.2f} "
+            f"evidence={result['posture_evidence']['total']} items"
+        )
 
         return result
 
@@ -1010,6 +1039,7 @@ def collect_mosa_evidence(project_id, db_path=None):
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             mosa_enabled = cfg.get("mosa", {}).get("cato_integration", {}).get("enabled", False)
@@ -1017,8 +1047,11 @@ def collect_mosa_evidence(project_id, db_path=None):
             pass
 
     if not mosa_enabled:
-        return {"project_id": project_id, "mosa_available": False,
-                "reason": "cato_integration.enabled is false in mosa_config.yaml"}
+        return {
+            "project_id": project_id,
+            "mosa_available": False,
+            "reason": "cato_integration.enabled is false in mosa_config.yaml",
+        }
 
     conn = _get_connection(db_path)
     try:
@@ -1049,15 +1082,18 @@ def collect_mosa_evidence(project_id, db_path=None):
                 result["icd_coverage"]["total_required"] = metrics["total_icd_required"] or 0
                 if metrics["total_icd_required"]:
                     result["icd_coverage"]["pct"] = round(
-                        (metrics["approved_icd_count"] or 0) / metrics["total_icd_required"] * 100, 1)
+                        (metrics["approved_icd_count"] or 0) / metrics["total_icd_required"] * 100, 1
+                    )
                 result["tsp_current"] = bool(metrics["tsp_current"])
                 result["cato_contribution"] = round(result["modularity_score"] * 100, 1)
         except Exception:
             pass
 
-        print(f"MOSA evidence check: available={result['mosa_available']} "
-              f"modularity={result['modularity_score']:.2f} "
-              f"ICD={result['icd_coverage']['approved']}/{result['icd_coverage']['total_required']}")
+        print(
+            f"MOSA evidence check: available={result['mosa_available']} "
+            f"modularity={result['modularity_score']:.2f} "
+            f"ICD={result['icd_coverage']['approved']}/{result['icd_coverage']['total_required']}"
+        )
         return result
     finally:
         conn.close()
@@ -1090,20 +1126,22 @@ def get_evidence_for_control(project_id, control_id, db_path=None):
 
         results = []
         for row in rows:
-            results.append({
-                "evidence_id": row["id"],
-                "control_id": row["control_id"],
-                "evidence_type": row["evidence_type"],
-                "evidence_source": row["evidence_source"],
-                "evidence_path": row["evidence_path"],
-                "evidence_hash": row["evidence_hash"],
-                "collected_at": row["collected_at"],
-                "expires_at": row["expires_at"],
-                "is_fresh": bool(row["is_fresh"]),
-                "freshness_check_at": row["freshness_check_at"],
-                "status": row["status"],
-                "automation_frequency": row["automation_frequency"],
-            })
+            results.append(
+                {
+                    "evidence_id": row["id"],
+                    "control_id": row["control_id"],
+                    "evidence_type": row["evidence_type"],
+                    "evidence_source": row["evidence_source"],
+                    "evidence_path": row["evidence_path"],
+                    "evidence_hash": row["evidence_hash"],
+                    "collected_at": row["collected_at"],
+                    "expires_at": row["expires_at"],
+                    "is_fresh": bool(row["is_fresh"]),
+                    "freshness_check_at": row["freshness_check_at"],
+                    "status": row["status"],
+                    "automation_frequency": row["automation_frequency"],
+                }
+            )
 
         print(f"cATO evidence for {control_id}: {len(results)} items found")
         return results
@@ -1115,6 +1153,7 @@ def get_evidence_for_control(project_id, control_id, db_path=None):
 # --------------------------------------------------------------------------
 # CLI formatting helpers
 # --------------------------------------------------------------------------
+
 
 def _format_readiness_report(readiness):
     """Format readiness data as a console report."""
@@ -1191,10 +1230,7 @@ def _format_dashboard_report(dashboard):
     if attention:
         lines.append(f"  --- Controls Needing Attention: {len(attention)} ---")
         for item in attention[:15]:
-            lines.append(
-                f"    {item['control_id']:<10} {item['evidence_type']:<16} "
-                f"status={item['status']}"
-            )
+            lines.append(f"    {item['control_id']:<10} {item['evidence_type']:<16} status={item['status']}")
         if len(attention) > 15:
             lines.append(f"    ... and {len(attention) - 15} more")
         lines.append("")
@@ -1207,64 +1243,31 @@ def _format_dashboard_report(dashboard):
 # CLI entry point
 # --------------------------------------------------------------------------
 
+
 def main():
     """CLI entry point for cATO monitoring engine."""
-    parser = argparse.ArgumentParser(
-        description="Continuous ATO (cATO) monitoring engine"
-    )
+    parser = argparse.ArgumentParser(description="Continuous ATO (cATO) monitoring engine")
+    parser.add_argument("--project-id", required=True, help="Project ID in ICDEV database")
+    parser.add_argument("--db-path", type=Path, default=None, help="Override database path")
     parser.add_argument(
-        "--project-id", required=True,
-        help="Project ID in ICDEV database"
-    )
-    parser.add_argument(
-        "--db-path", type=Path, default=None,
-        help="Override database path"
-    )
-    parser.add_argument(
-        "--project-dir", type=Path, default=None,
-        help="Project directory for auto-reassessment file checks"
+        "--project-dir", type=Path, default=None, help="Project directory for auto-reassessment file checks"
     )
 
     # Action flags (mutually exclusive)
     group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--check-freshness", action="store_true", help="Check all evidence for staleness and expiration")
+    group.add_argument("--auto-reassess", action="store_true", help="Auto-reassess stale/expired evidence")
+    group.add_argument("--readiness", action="store_true", help="Compute cATO readiness score")
+    group.add_argument("--dashboard", action="store_true", help="Generate dashboard data")
+    group.add_argument("--expire", action="store_true", help="Expire all past-due evidence")
+    group.add_argument("--control", type=str, default=None, help="Get evidence for a specific control ID")
+    group.add_argument("--zta-posture", action="store_true", help="Check ZTA posture for cATO readiness (ADR D123)")
     group.add_argument(
-        "--check-freshness", action="store_true",
-        help="Check all evidence for staleness and expiration"
-    )
-    group.add_argument(
-        "--auto-reassess", action="store_true",
-        help="Auto-reassess stale/expired evidence"
-    )
-    group.add_argument(
-        "--readiness", action="store_true",
-        help="Compute cATO readiness score"
-    )
-    group.add_argument(
-        "--dashboard", action="store_true",
-        help="Generate dashboard data"
-    )
-    group.add_argument(
-        "--expire", action="store_true",
-        help="Expire all past-due evidence"
-    )
-    group.add_argument(
-        "--control", type=str, default=None,
-        help="Get evidence for a specific control ID"
-    )
-    group.add_argument(
-        "--zta-posture", action="store_true",
-        help="Check ZTA posture for cATO readiness (ADR D123)"
-    )
-    group.add_argument(
-        "--mosa-evidence", action="store_true",
-        help="Collect MOSA architecture evidence for cATO (D130)"
+        "--mosa-evidence", action="store_true", help="Collect MOSA architecture evidence for cATO (D130)"
     )
 
     # Output format
-    parser.add_argument(
-        "--json", action="store_true",
-        help="Output as JSON"
-    )
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -1330,10 +1333,12 @@ def main():
                     print(f"No evidence found for control {args.control}")
                 else:
                     for item in result:
-                        print(f"  [{item['status']}] {item['evidence_type']} "
-                              f"from {item['evidence_source']} "
-                              f"(collected {item['collected_at']}, "
-                              f"expires {item['expires_at']})")
+                        print(
+                            f"  [{item['status']}] {item['evidence_type']} "
+                            f"from {item['evidence_source']} "
+                            f"(collected {item['collected_at']}, "
+                            f"expires {item['expires_at']})"
+                        )
 
         elif args.zta_posture:
             result = check_zta_posture(
@@ -1347,11 +1352,13 @@ def main():
                 print(f"  Available:  {result['zta_available']}")
                 print(f"  Maturity:   {result['overall_maturity']}")
                 print(f"  Score:      {result['overall_score']:.2f}")
-                print(f"  Evidence:   {result['posture_evidence']['total']} items "
-                      f"({result['posture_evidence']['current']} current)")
-                if result['pillar_scores']:
+                print(
+                    f"  Evidence:   {result['posture_evidence']['total']} items "
+                    f"({result['posture_evidence']['current']} current)"
+                )
+                if result["pillar_scores"]:
                     print("  Pillar Scores:")
-                    for pillar, data in result['pillar_scores'].items():
+                    for pillar, data in result["pillar_scores"].items():
                         print(f"    {pillar:<30} {data['score']:.2f} ({data['maturity_level']})")
 
         elif args.mosa_evidence:
@@ -1364,11 +1371,13 @@ def main():
             else:
                 print(f"MOSA Evidence for {args.project_id}:")
                 print(f"  Available:       {result['mosa_available']}")
-                if result['mosa_available']:
+                if result["mosa_available"]:
                     print(f"  Modularity:      {result['modularity_score']:.2f}")
-                    print(f"  ICD Coverage:    {result['icd_coverage']['approved']}"
-                          f"/{result['icd_coverage']['total_required']}"
-                          f" ({result['icd_coverage']['pct']}%)")
+                    print(
+                        f"  ICD Coverage:    {result['icd_coverage']['approved']}"
+                        f"/{result['icd_coverage']['total_required']}"
+                        f" ({result['icd_coverage']['pct']}%)"
+                    )
                     print(f"  TSP Current:     {result['tsp_current']}")
                     print(f"  Mapped Controls: {', '.join(result['mapped_controls'])}")
                     print(f"  cATO Score:      {result['cato_contribution']}")

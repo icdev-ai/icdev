@@ -41,14 +41,12 @@ ISA_STATUSES = ("draft", "review", "signed", "active", "expiring", "expired", "t
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Return a sqlite3 connection with Row factory."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -62,9 +60,14 @@ def _log_audit(conn, project_id, event_type, action, details):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (project_id, event_type, "icdev-supply-chain-agent", action,
-             json.dumps(details) if isinstance(details, dict) else str(details),
-             "CUI"),
+            (
+                project_id,
+                event_type,
+                "icdev-supply-chain-agent",
+                action,
+                json.dumps(details) if isinstance(details, dict) else str(details),
+                "CUI",
+            ),
         )
         conn.commit()
     except Exception as exc:
@@ -87,10 +90,18 @@ def _row_to_dict(row):
 # Core functions
 # ---------------------------------------------------------------------------
 
-def create_isa(project_id, partner_system, data_types_shared,
-               authorization_date, expiry_date,
-               agreement_type="isa", partner_org=None,
-               review_cadence_days=365, db_path=None):
+
+def create_isa(
+    project_id,
+    partner_system,
+    data_types_shared,
+    authorization_date,
+    expiry_date,
+    agreement_type="isa",
+    partner_org=None,
+    review_cadence_days=365,
+    db_path=None,
+):
     """Create a new ISA/MOU agreement.
 
     Args:
@@ -144,16 +155,31 @@ def create_isa(project_id, partner_system, data_types_shared,
                 review_cadence_days, next_review_date, classification,
                 created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (isa_id, project_id, agreement_type, partner_system, partner_org,
-             status, authorization_date, expiry_date, data_json,
-             review_cadence_days, next_review, "CUI",
-             now, now),
+            (
+                isa_id,
+                project_id,
+                agreement_type,
+                partner_system,
+                partner_org,
+                status,
+                authorization_date,
+                expiry_date,
+                data_json,
+                review_cadence_days,
+                next_review,
+                "CUI",
+                now,
+                now,
+            ),
         )
         conn.commit()
-        _log_audit(conn, project_id, "isa_created",
-                   f"Created {agreement_type.upper()}: {partner_system}",
-                   {"isa_id": isa_id, "expiry_date": expiry_date,
-                    "status": status})
+        _log_audit(
+            conn,
+            project_id,
+            "isa_created",
+            f"Created {agreement_type.upper()}: {partner_system}",
+            {"isa_id": isa_id, "expiry_date": expiry_date, "status": status},
+        )
         return {
             "isa_id": isa_id,
             "partner_system": partner_system,
@@ -272,9 +298,7 @@ def renew_isa(isa_id, new_expiry_date, notes=None, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM isa_agreements WHERE id = ?", (isa_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM isa_agreements WHERE id = ?", (isa_id,)).fetchone()
         if not row:
             raise ValueError(f"ISA '{isa_id}' not found.")
 
@@ -292,10 +316,13 @@ def renew_isa(isa_id, new_expiry_date, notes=None, db_path=None):
         )
         conn.commit()
 
-        _log_audit(conn, d["project_id"], "isa_renewed",
-                   f"Renewed ISA {isa_id}: new expiry {new_expiry_date}",
-                   {"isa_id": isa_id, "new_expiry": new_expiry_date,
-                    "notes": notes})
+        _log_audit(
+            conn,
+            d["project_id"],
+            "isa_renewed",
+            f"Renewed ISA {isa_id}: new expiry {new_expiry_date}",
+            {"isa_id": isa_id, "new_expiry": new_expiry_date, "notes": notes},
+        )
 
         d["expiry_date"] = new_expiry_date
         d["next_review_date"] = next_review
@@ -316,9 +343,7 @@ def revoke_isa(isa_id, reason, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM isa_agreements WHERE id = ?", (isa_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM isa_agreements WHERE id = ?", (isa_id,)).fetchone()
         if not row:
             raise ValueError(f"ISA '{isa_id}' not found.")
 
@@ -333,9 +358,13 @@ def revoke_isa(isa_id, reason, db_path=None):
         )
         conn.commit()
 
-        _log_audit(conn, d["project_id"], "isa_expired",
-                   f"Revoked ISA {isa_id}: {reason}",
-                   {"isa_id": isa_id, "reason": reason})
+        _log_audit(
+            conn,
+            d["project_id"],
+            "isa_expired",
+            f"Revoked ISA {isa_id}: {reason}",
+            {"isa_id": isa_id, "reason": reason},
+        )
 
         return {
             "isa_id": isa_id,
@@ -388,43 +417,35 @@ def list_isas(project_id, status=None, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ISA/MOU Lifecycle Manager (RICOAS)")
+    parser = argparse.ArgumentParser(description="ISA/MOU Lifecycle Manager (RICOAS)")
     parser.add_argument("--project-id", help="Project identifier")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Create
-    parser.add_argument("--create", action="store_true",
-                        help="Create a new ISA/MOU")
+    parser.add_argument("--create", action="store_true", help="Create a new ISA/MOU")
     parser.add_argument("--source-system", help="Source system name (this system)")
     parser.add_argument("--target-system", help="Partner/target system name")
-    parser.add_argument("--agreement-type", choices=AGREEMENT_TYPES,
-                        default="isa", help="Agreement type (default: isa)")
+    parser.add_argument(
+        "--agreement-type", choices=AGREEMENT_TYPES, default="isa", help="Agreement type (default: isa)"
+    )
     parser.add_argument("--partner-org", help="Partner organization")
     parser.add_argument("--data-types", help="JSON array of data types shared")
     parser.add_argument("--auth-date", help="Authorization/signing date (YYYY-MM-DD)")
     parser.add_argument("--expiry-date", help="Expiration date (YYYY-MM-DD)")
-    parser.add_argument("--cadence", type=int, default=365,
-                        help="Review cadence in days (default: 365)")
+    parser.add_argument("--cadence", type=int, default=365, help="Review cadence in days (default: 365)")
 
     # Query
-    parser.add_argument("--expiring", action="store_true",
-                        help="Show ISAs expiring soon")
-    parser.add_argument("--days", type=int, default=90,
-                        help="Days ahead for expiring query (default: 90)")
-    parser.add_argument("--review-due", action="store_true",
-                        help="Show ISAs past review cadence")
-    parser.add_argument("--list", action="store_true",
-                        help="List all ISAs")
-    parser.add_argument("--status", choices=ISA_STATUSES,
-                        help="Filter by status")
+    parser.add_argument("--expiring", action="store_true", help="Show ISAs expiring soon")
+    parser.add_argument("--days", type=int, default=90, help="Days ahead for expiring query (default: 90)")
+    parser.add_argument("--review-due", action="store_true", help="Show ISAs past review cadence")
+    parser.add_argument("--list", action="store_true", help="List all ISAs")
+    parser.add_argument("--status", choices=ISA_STATUSES, help="Filter by status")
 
     # Update
-    parser.add_argument("--renew", action="store_true",
-                        help="Renew an ISA")
-    parser.add_argument("--revoke", action="store_true",
-                        help="Revoke an ISA")
+    parser.add_argument("--renew", action="store_true", help="Renew an ISA")
+    parser.add_argument("--revoke", action="store_true", help="Revoke an ISA")
     parser.add_argument("--isa-id", help="ISA ID for renew/revoke")
     parser.add_argument("--new-expiry", help="New expiry date (YYYY-MM-DD)")
     parser.add_argument("--reason", help="Reason for revocation")
@@ -449,11 +470,15 @@ def main():
                 except json.JSONDecodeError:
                     data_types = [s.strip() for s in args.data_types.split(",")]
             result = create_isa(
-                args.project_id, args.target_system, data_types,
-                args.auth_date, args.expiry_date,
+                args.project_id,
+                args.target_system,
+                data_types,
+                args.auth_date,
+                args.expiry_date,
                 agreement_type=args.agreement_type,
                 partner_org=args.partner_org,
-                review_cadence_days=args.cadence)
+                review_cadence_days=args.cadence,
+            )
 
         elif args.expiring:
             if not args.project_id:
@@ -498,8 +523,7 @@ def main():
 def _print_human(data):
     """Pretty-print result dict for human consumption."""
     if "isa_id" in data and "partner_system" in data and "agreements" not in data:
-        print(f"ISA {data.get('agreement_type', 'ISA').upper()}: "
-              f"{data.get('partner_system', 'N/A')}")
+        print(f"ISA {data.get('agreement_type', 'ISA').upper()}: {data.get('partner_system', 'N/A')}")
         print(f"  ID: {data['isa_id']}")
         print(f"  Status: {data.get('status', 'N/A')}")
         print(f"  Expiry: {data.get('expiry_date', 'N/A')}")
@@ -508,28 +532,32 @@ def _print_human(data):
         if "renewal_notes" in data:
             print(f"  Notes: {data['renewal_notes']}")
     elif "expiring" in data:
-        print(f"Expiring ISAs for {data['project_id']} "
-              f"(within {data['days_ahead']} days): {data['expiring_count']}")
+        print(f"Expiring ISAs for {data['project_id']} (within {data['days_ahead']} days): {data['expiring_count']}")
         for isa in data["expiring"]:
             urgency = isa.get("renewal_urgency", "?")
             days = isa.get("days_until_expiry", "?")
-            print(f"  [{urgency.upper()}] {isa.get('partner_system', 'N/A')} "
-                  f"- expires in {days} days ({isa.get('expiry_date', '?')})")
+            print(
+                f"  [{urgency.upper()}] {isa.get('partner_system', 'N/A')} "
+                f"- expires in {days} days ({isa.get('expiry_date', '?')})"
+            )
     elif "review_due" in data:
-        print(f"ISAs past review for {data['project_id']}: "
-              f"{data['review_due_count']}")
+        print(f"ISAs past review for {data['project_id']}: {data['review_due_count']}")
         for isa in data["review_due"]:
             overdue = isa.get("days_overdue", 0)
-            print(f"  {isa.get('partner_system', 'N/A')} "
-                  f"- {overdue} days overdue (due: {isa.get('next_review_date', '?')})")
+            print(
+                f"  {isa.get('partner_system', 'N/A')} "
+                f"- {overdue} days overdue (due: {isa.get('next_review_date', '?')})"
+            )
     elif "agreements" in data:
         filt = f" (status={data['filter_status']})" if data.get("filter_status") else ""
         print(f"ISAs for {data['project_id']}{filt}: {data['total']}")
         for isa in data["agreements"]:
-            print(f"  [{isa.get('status', '?').upper()}] "
-                  f"{isa.get('agreement_type', 'ISA').upper()} "
-                  f"<-> {isa.get('partner_system', 'N/A')} "
-                  f"(expires {isa.get('expiry_date', '?')})")
+            print(
+                f"  [{isa.get('status', '?').upper()}] "
+                f"{isa.get('agreement_type', 'ISA').upper()} "
+                f"<-> {isa.get('partner_system', 'N/A')} "
+                f"(expires {isa.get('expiry_date', '?')})"
+            )
     else:
         print(json.dumps(data, indent=2))
 

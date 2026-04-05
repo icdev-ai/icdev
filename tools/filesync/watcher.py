@@ -15,6 +15,7 @@ from typing import Callable, Optional, Set
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
+
     _HAS_WATCHDOG = True
 except ImportError:
     Observer = None
@@ -72,9 +73,14 @@ class FileWatcher:
     comparing mtime of files.
     """
 
-    def __init__(self, watch_path: str, on_changes: Callable[[Set[str]], None],
-                 debounce_seconds: float = 2.0, recursive: bool = True,
-                 fallback_scan_interval: float = 60.0):
+    def __init__(
+        self,
+        watch_path: str,
+        on_changes: Callable[[Set[str]], None],
+        debounce_seconds: float = 2.0,
+        recursive: bool = True,
+        fallback_scan_interval: float = 60.0,
+    ):
         """Initialize file watcher.
 
         Args:

@@ -58,15 +58,21 @@ def _action_regenerate_artifact(params: Dict) -> Tuple[bool, str]:
         return False, "No tool_cmd specified"
     # Only allow known safe generators
     safe_prefixes = [
-        "tools/compliance/", "tools/dochub/", "tools/compliance/evidence_collector",
+        "tools/compliance/",
+        "tools/dochub/",
+        "tools/compliance/evidence_collector",
     ]
     if not any(tool_cmd.startswith(p) for p in safe_prefixes):
         return False, f"Tool '{tool_cmd}' not in safe generator allowlist"
     cmd = [sys.executable, tool_cmd] + params.get("args", ["--json"])
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120,
-            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(BASE_DIR),
+            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         return result.returncode == 0, result.stdout[-500:] if result.stdout else result.stderr[-300:]
     except subprocess.TimeoutExpired:
@@ -108,8 +114,12 @@ def _action_rerun_tool(params: Dict) -> Tuple[bool, str]:
     cmd = [sys.executable, tool_cmd] + params.get("args", ["--json"])
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=180,
-            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            cwd=str(BASE_DIR),
+            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         return result.returncode == 0, result.stdout[-500:] if result.stdout else result.stderr[-300:]
     except subprocess.TimeoutExpired:
@@ -134,12 +144,15 @@ def _action_reset_circuit_breaker(params: Dict) -> Tuple[bool, str]:
         if not (row["circuit_breaker_open"] if isinstance(row, dict) else row[0]):
             return True, f"Circuit breaker for '{reflex_name}' already closed"
         now = _utcnow_iso()
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE genesis_reflex_state SET
                 consecutive_failures = 0, circuit_breaker_open = 0,
                 circuit_breaker_tripped_at = NULL, updated_at = ?
             WHERE reflex_name = ?
-        """, (now, reflex_name))
+        """,
+            (now, reflex_name),
+        )
         conn.commit()
         return True, f"Circuit breaker reset for '{reflex_name}'"
     except Exception as e:
@@ -153,8 +166,11 @@ def _action_reinit_db_table(params: Dict) -> Tuple[bool, str]:
     try:
         result = subprocess.run(
             [sys.executable, "tools/db/init_icdev_db.py"],
-            capture_output=True, text=True, timeout=60,
-            cwd=str(BASE_DIR), env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(BASE_DIR),
+            env={**os.environ, "PYTHONPATH": str(BASE_DIR)},
         )
         return result.returncode == 0, "DB tables re-initialized"
     except Exception as e:
@@ -179,17 +195,21 @@ def _get_recent_failures(lookback_hours: int = 6) -> List[Dict[str, Any]]:
     conn = get_connection()
     try:
         cutoff = (_utcnow() - timedelta(hours=lookback_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, event_type, details, created_at
             FROM audit_trail
             WHERE event_type LIKE 'error.%'
             AND created_at > ?
             ORDER BY created_at DESC
             LIMIT 50
-        """, (cutoff,)).fetchall()
-        return [dict(r) if hasattr(r, "keys") else {
-            "id": r[0], "event_type": r[1], "details": r[2], "created_at": r[3]
-        } for r in rows]
+        """,
+            (cutoff,),
+        ).fetchall()
+        return [
+            dict(r) if hasattr(r, "keys") else {"id": r[0], "event_type": r[1], "details": r[2], "created_at": r[3]}
+            for r in rows
+        ]
     except Exception as e:
         print(f"  WARN: Could not query failures: {e}")
         return []
@@ -208,11 +228,21 @@ def _get_healing_patterns() -> List[Dict[str, Any]]:
             WHERE confidence >= 0.7
             ORDER BY confidence DESC
         """).fetchall()
-        return [dict(r) if hasattr(r, "keys") else {
-            "id": r[0], "pattern_name": r[1], "error_pattern": r[2],
-            "resolution_type": r[3], "resolution_action": r[4],
-            "confidence": r[5], "success_count": r[6], "failure_count": r[7],
-        } for r in rows]
+        return [
+            dict(r)
+            if hasattr(r, "keys")
+            else {
+                "id": r[0],
+                "pattern_name": r[1],
+                "error_pattern": r[2],
+                "resolution_type": r[3],
+                "resolution_action": r[4],
+                "confidence": r[5],
+                "success_count": r[6],
+                "failure_count": r[7],
+            }
+            for r in rows
+        ]
     except Exception:
         return []
     finally:
@@ -227,11 +257,13 @@ def _get_builtin_patterns() -> List[Dict[str, Any]]:
             "pattern_name": "Stale cATO evidence",
             "error_pattern": "evidence_expired",
             "resolution_type": "regenerate_artifact",
-            "resolution_action": json.dumps({
-                "action": "regenerate_artifact",
-                "tool_cmd": "tools/compliance/evidence_collector.py",
-                "args": ["--project-id", "sparkpilot", "--json"],
-            }),
+            "resolution_action": json.dumps(
+                {
+                    "action": "regenerate_artifact",
+                    "tool_cmd": "tools/compliance/evidence_collector.py",
+                    "args": ["--project-id", "sparkpilot", "--json"],
+                }
+            ),
             "confidence": 0.9,
             "success_count": 0,
             "failure_count": 0,
@@ -241,10 +273,12 @@ def _get_builtin_patterns() -> List[Dict[str, Any]]:
             "pattern_name": "Stale temp files blocking execution",
             "error_pattern": "FileExistsError",
             "resolution_type": "clear_stale_cache",
-            "resolution_action": json.dumps({
-                "action": "clear_stale_cache",
-                "max_age_hours": 48,
-            }),
+            "resolution_action": json.dumps(
+                {
+                    "action": "clear_stale_cache",
+                    "max_age_hours": 48,
+                }
+            ),
             "confidence": 0.95,
             "success_count": 0,
             "failure_count": 0,
@@ -254,9 +288,11 @@ def _get_builtin_patterns() -> List[Dict[str, Any]]:
             "pattern_name": "Missing DB table",
             "error_pattern": "no such table",
             "resolution_type": "reinit_db_table",
-            "resolution_action": json.dumps({
-                "action": "reinit_db_table",
-            }),
+            "resolution_action": json.dumps(
+                {
+                    "action": "reinit_db_table",
+                }
+            ),
             "confidence": 0.9,
             "success_count": 0,
             "failure_count": 0,
@@ -266,9 +302,11 @@ def _get_builtin_patterns() -> List[Dict[str, Any]]:
             "pattern_name": "Genesis reflex circuit breaker tripped",
             "error_pattern": "circuit_breaker_open",
             "resolution_type": "reset_circuit_breaker",
-            "resolution_action": json.dumps({
-                "action": "reset_circuit_breaker",
-            }),
+            "resolution_action": json.dumps(
+                {
+                    "action": "reset_circuit_breaker",
+                }
+            ),
             "confidence": 0.75,
             "success_count": 0,
             "failure_count": 0,
@@ -278,10 +316,12 @@ def _get_builtin_patterns() -> List[Dict[str, Any]]:
             "pattern_name": "Stale PID file blocking daemon",
             "error_pattern": ".pid",
             "resolution_type": "clear_stale_cache",
-            "resolution_action": json.dumps({
-                "action": "clear_stale_cache",
-                "max_age_hours": 1,
-            }),
+            "resolution_action": json.dumps(
+                {
+                    "action": "clear_stale_cache",
+                    "max_age_hours": 1,
+                }
+            ),
             "confidence": 0.85,
             "success_count": 0,
             "failure_count": 0,
@@ -309,18 +349,27 @@ def _match_pattern(failure: Dict, patterns: List[Dict]) -> Optional[Dict]:
     return None
 
 
-def _record_healing_event(failure_id, pattern_id,
-                          action: str, success: bool) -> None:
+def _record_healing_event(failure_id, pattern_id, action: str, success: bool) -> None:
     """Record a healing event in self_healing_events table."""
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO self_healing_events
             (project_id, pattern_id, trigger_source, trigger_data, action_taken,
              outcome, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, ("", str(pattern_id), "genesis_heal", str(failure_id), action,
-              "success" if success else "failed", _utcnow_iso()))
+        """,
+            (
+                "",
+                str(pattern_id),
+                "genesis_heal",
+                str(failure_id),
+                action,
+                "success" if success else "failed",
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
     except Exception as e:
         print(f"  WARN: Could not record healing event: {e}")
@@ -335,19 +384,25 @@ def _update_pattern_confidence(pattern_id, success: bool) -> None:
     conn = get_connection()
     try:
         if success:
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE self_healing_patterns
                 SET success_count = success_count + 1,
                     confidence = MIN(1.0, confidence + 0.02)
                 WHERE id = ?
-            """, (pattern_id,))
+            """,
+                (pattern_id,),
+            )
         else:
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE self_healing_patterns
                 SET failure_count = failure_count + 1,
                     confidence = MAX(0.0, confidence - 0.05)
                 WHERE id = ?
-            """, (pattern_id,))
+            """,
+                (pattern_id,),
+            )
         conn.commit()
     except Exception:
         pass
@@ -373,8 +428,9 @@ def _apply_remediation(pattern: Dict, failure: Dict) -> Tuple[bool, str]:
     handler = ACTION_HANDLERS.get(action_name)
     if not handler:
         # Fallback: log-only for unknown action types
-        print(f"  Heal: matched pattern '{pattern.get('pattern_name', '')}' "
-              f"-> unknown action '{action_name}' (log-only)")
+        print(
+            f"  Heal: matched pattern '{pattern.get('pattern_name', '')}' -> unknown action '{action_name}' (log-only)"
+        )
         return True, f"logged_only:{action_name}"
 
     # Extract reflex_name from failure context for circuit breaker resets
@@ -437,11 +493,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             continue
 
         if healed >= max_heals:
-            matches.append({
-                "failure_id": failure.get("id"),
-                "pattern": match.get("pattern_name"),
-                "status": "rate_limited",
-            })
+            matches.append(
+                {
+                    "failure_id": failure.get("id"),
+                    "pattern": match.get("pattern_name"),
+                    "status": "rate_limited",
+                }
+            )
             continue
 
         success, message = _apply_remediation(match, failure)
@@ -454,14 +512,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         _update_pattern_confidence(match.get("id", 0), success)
 
         healed += 1
-        matches.append({
-            "failure_id": failure.get("id"),
-            "pattern": match.get("pattern_name"),
-            "action": match.get("resolution_type", ""),
-            "status": "healed" if success else "failed",
-            "message": message[:200],
-            "confidence": match.get("confidence"),
-        })
+        matches.append(
+            {
+                "failure_id": failure.get("id"),
+                "pattern": match.get("pattern_name"),
+                "action": match.get("resolution_type", ""),
+                "status": "healed" if success else "failed",
+                "message": message[:200],
+                "confidence": match.get("confidence"),
+            }
+        )
 
     return {
         "success": True,

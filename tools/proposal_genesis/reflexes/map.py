@@ -25,6 +25,7 @@ def _map_opportunity(opp_id: str) -> Dict[str, Any]:
     """Map capabilities for a single opportunity using existing mapper."""
     try:
         from tools.govcon.capability_mapper import map_all_patterns, get_coverage
+
         map_all_patterns(opp_id)
         coverage = get_coverage(opp_id)
         return coverage if isinstance(coverage, dict) else {"status": "ok"}
@@ -53,13 +54,12 @@ def _enrich_with_knowledge_base(opp_id: str) -> Dict[str, Any]:
     """Enrich capability mapping with knowledge base past performance (D-PG-4)."""
     try:
         from tools.govcon.knowledge_base import search_blocks
+
         conn = get_connection()
         try:
             # Get requirement patterns for this opportunity
             rows = conn.execute(
-                "SELECT pattern_text FROM rfp_requirement_patterns "
-                "WHERE opportunity_id = ? LIMIT 20",
-                (opp_id,)
+                "SELECT pattern_text FROM rfp_requirement_patterns WHERE opportunity_id = ? LIMIT 20", (opp_id,)
             ).fetchall()
         finally:
             conn.close()
@@ -118,12 +118,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         # Enrich with knowledge base
         kb_result = _enrich_with_knowledge_base(row["id"])
 
-        mapping_results.append({
-            "opportunity_id": row["id"],
-            "title": row["title"],
-            "coverage": result,
-            "kb_enrichment": kb_result,
-        })
+        mapping_results.append(
+            {
+                "opportunity_id": row["id"],
+                "title": row["title"],
+                "coverage": result,
+                "kb_enrichment": kb_result,
+            }
+        )
 
     avg_coverage = total_coverage / len(rows) if rows else 0
 

@@ -6,6 +6,7 @@ Wrapper script that resolves the ICDEV installation directory, sets up
 sys.path and environment, then starts the Maintenance MCP server.
 Partial capabilities are acceptable -- missing tools are logged, not fatal.
 """
+
 import logging
 import os
 import sys
@@ -37,6 +38,7 @@ def main():
 
     try:
         from tools.mcp.maintenance_server import create_server
+
         server = create_server()
         logger.info("Starting ICDEV Maintenance MCP server (base_dir=%s)", base_dir)
         server.run()
@@ -45,6 +47,7 @@ def main():
         logger.info("Server starting with partial capabilities...")
         try:
             from tools.mcp.maintenance_server import create_server
+
             server = create_server()
             server.run()
         except Exception as exc:

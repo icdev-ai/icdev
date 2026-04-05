@@ -21,13 +21,13 @@ class VectorChunk:
     content: str = ""
     content_hash: str = ""
     embedding: Optional[List[float]] = None
-    source_type: str = ""       # e.g. "innovation_signals", "creative_pain_points"
-    source_id: str = ""         # row ID in source table
-    source_table: str = ""      # actual DB table name
-    chunk_index: int = 0        # position within multi-chunk source
-    total_chunks: int = 1       # total chunks for this source item
+    source_type: str = ""  # e.g. "innovation_signals", "creative_pain_points"
+    source_id: str = ""  # row ID in source table
+    source_table: str = ""  # actual DB table name
+    chunk_index: int = 0  # position within multi-chunk source
+    total_chunks: int = 1  # total chunks for this source item
     metadata: Dict[str, Any] = field(default_factory=dict)
-    tier: str = "hot"           # hot, warm, cold
+    tier: str = "hot"  # hot, warm, cold
     tenant_id: str = ""
     project_id: str = ""
     classification: str = "CUI"
@@ -48,11 +48,11 @@ class SearchResult:
     source_id: str = ""
     source_table: str = ""
     chunk_index: int = 0
-    score: float = 0.0          # cosine similarity score
-    bm25_score: float = 0.0     # BM25 keyword score (filled by retriever)
+    score: float = 0.0  # cosine similarity score
+    bm25_score: float = 0.0  # BM25 keyword score (filled by retriever)
     time_decay_score: float = 0.0
-    rerank_score: float = 0.0   # qwen3 re-rank score
-    final_score: float = 0.0    # composite score after all stages
+    rerank_score: float = 0.0  # qwen3 re-rank score
+    final_score: float = 0.0  # composite score after all stages
     metadata: Dict[str, Any] = field(default_factory=dict)
     tier: str = "hot"
     classification: str = "CUI"

@@ -72,6 +72,7 @@ def _ensure_output_dir(project_id, output_dir=None):
 # OSCAL Exports
 # ============================================================
 
+
 def export_controls_oscal(project_id, output_dir=None, db_path=None):
     """Export control implementations in OSCAL System Security Plan format.
 
@@ -110,13 +111,15 @@ def export_controls_oscal(project_id, output_dir=None, db_path=None):
                     "description": project.get("description", ""),
                     "security-sensitivity-level": "moderate",
                     "system-information": {
-                        "information-types": [{
-                            "title": "Controlled Technical Information",
-                            "categorization": "CUI // SP-CTI",
-                            "confidentiality-impact": {"base": "moderate"},
-                            "integrity-impact": {"base": "moderate"},
-                            "availability-impact": {"base": "low"},
-                        }],
+                        "information-types": [
+                            {
+                                "title": "Controlled Technical Information",
+                                "categorization": "CUI // SP-CTI",
+                                "confidentiality-impact": {"base": "moderate"},
+                                "integrity-impact": {"base": "moderate"},
+                                "availability-impact": {"base": "low"},
+                            }
+                        ],
                     },
                     "status": {"state": project.get("status", "operational")},
                 },
@@ -129,13 +132,13 @@ def export_controls_oscal(project_id, output_dir=None, db_path=None):
                             "props": [
                                 {"name": "implementation-status", "value": c["implementation_status"]},
                             ],
-                            "statements": [{
-                                "statement-id": f"{c['control_id'].lower()}_stmt",
-                                "description": c.get("implementation_description") or "Planned",
-                                "responsible-roles": [
-                                    {"role-id": c.get("responsible_role") or "system-admin"}
-                                ],
-                            }],
+                            "statements": [
+                                {
+                                    "statement-id": f"{c['control_id'].lower()}_stmt",
+                                    "description": c.get("implementation_description") or "Planned",
+                                    "responsible-roles": [{"role-id": c.get("responsible_role") or "system-admin"}],
+                                }
+                            ],
                         }
                         for c in [dict(r) for r in controls]
                     ],
@@ -148,10 +151,15 @@ def export_controls_oscal(project_id, output_dir=None, db_path=None):
         with open(out_file, "w", encoding="utf-8") as f:
             json.dump(oscal_doc, f, indent=2)
 
-        _log_audit(conn, project_id, "export_controls_oscal", {
-            "control_count": len(controls),
-            "output_file": str(out_file),
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_controls_oscal",
+            {
+                "control_count": len(controls),
+                "output_file": str(out_file),
+            },
+        )
         return str(out_file)
     finally:
         conn.close()
@@ -191,29 +199,31 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
                         {"name": "source", "value": "ICDEV Compliance Engine"},
                     ],
                 },
-                "results": [{
-                    "uuid": f"result-{project_id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
-                    "title": "CSSP Assessment",
-                    "description": "DoD Instruction 8530.01 CSSP functional area assessment",
-                    "start": datetime.now(timezone.utc).isoformat() + "Z",
-                    "findings": [
-                        {
-                            "uuid": f"finding-{a['requirement_id']}-{project_id}",
-                            "title": a.get("requirement_id", ""),
-                            "description": a.get("evidence_description") or "Assessment pending",
-                            "props": [
-                                {"name": "functional-area", "value": a.get("functional_area", "")},
-                                {"name": "status", "value": a.get("status", "not_assessed")},
-                            ],
-                            "target": {
-                                "type": "requirement",
-                                "target-id": a.get("requirement_id", ""),
-                                "status": {"state": _map_status_to_oscal(a.get("status", ""))},
-                            },
-                        }
-                        for a in [dict(r) for r in assessments]
-                    ],
-                }],
+                "results": [
+                    {
+                        "uuid": f"result-{project_id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
+                        "title": "CSSP Assessment",
+                        "description": "DoD Instruction 8530.01 CSSP functional area assessment",
+                        "start": datetime.now(timezone.utc).isoformat() + "Z",
+                        "findings": [
+                            {
+                                "uuid": f"finding-{a['requirement_id']}-{project_id}",
+                                "title": a.get("requirement_id", ""),
+                                "description": a.get("evidence_description") or "Assessment pending",
+                                "props": [
+                                    {"name": "functional-area", "value": a.get("functional_area", "")},
+                                    {"name": "status", "value": a.get("status", "not_assessed")},
+                                ],
+                                "target": {
+                                    "type": "requirement",
+                                    "target-id": a.get("requirement_id", ""),
+                                    "status": {"state": _map_status_to_oscal(a.get("status", ""))},
+                                },
+                            }
+                            for a in [dict(r) for r in assessments]
+                        ],
+                    }
+                ],
             }
         }
 
@@ -222,10 +232,15 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
         with open(out_file, "w", encoding="utf-8") as f:
             json.dump(oscal_doc, f, indent=2)
 
-        _log_audit(conn, project_id, "export_assessment_oscal", {
-            "assessment_count": len(assessments),
-            "output_file": str(out_file),
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_assessment_oscal",
+            {
+                "assessment_count": len(assessments),
+                "output_file": str(out_file),
+            },
+        )
         return str(out_file)
     finally:
         conn.close()
@@ -247,6 +262,7 @@ def _map_status_to_oscal(status):
 # ============================================================
 # CSV Exports
 # ============================================================
+
 
 def export_findings_csv(project_id, output_dir=None, db_path=None):
     """Export STIG + security findings as CSV for Xacta import.
@@ -271,31 +287,48 @@ def export_findings_csv(project_id, output_dir=None, db_path=None):
 
         with open(out_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "Finding ID", "STIG ID", "Rule ID", "Severity",
-                "Title", "Status", "Target Type", "Comments",
-                "Assessed By", "Assessed At", "Classification",
-            ])
+            writer.writerow(
+                [
+                    "Finding ID",
+                    "STIG ID",
+                    "Rule ID",
+                    "Severity",
+                    "Title",
+                    "Status",
+                    "Target Type",
+                    "Comments",
+                    "Assessed By",
+                    "Assessed At",
+                    "Classification",
+                ]
+            )
             for row in findings:
                 r = dict(row)
-                writer.writerow([
-                    r.get("finding_id", ""),
-                    r.get("stig_id", ""),
-                    r.get("rule_id", ""),
-                    r.get("severity", ""),
-                    r.get("title", ""),
-                    r.get("status", ""),
-                    r.get("target_type", ""),
-                    r.get("comments", ""),
-                    r.get("assessed_by", ""),
-                    r.get("assessed_at", ""),
-                    "CUI // SP-CTI",
-                ])
+                writer.writerow(
+                    [
+                        r.get("finding_id", ""),
+                        r.get("stig_id", ""),
+                        r.get("rule_id", ""),
+                        r.get("severity", ""),
+                        r.get("title", ""),
+                        r.get("status", ""),
+                        r.get("target_type", ""),
+                        r.get("comments", ""),
+                        r.get("assessed_by", ""),
+                        r.get("assessed_at", ""),
+                        "CUI // SP-CTI",
+                    ]
+                )
 
-        _log_audit(conn, project_id, "export_findings_csv", {
-            "finding_count": len(findings),
-            "output_file": str(out_file),
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_findings_csv",
+            {
+                "finding_count": len(findings),
+                "output_file": str(out_file),
+            },
+        )
         return str(out_file)
     finally:
         conn.close()
@@ -324,33 +357,50 @@ def export_poam_csv(project_id, output_dir=None, db_path=None):
 
         with open(out_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "Weakness ID", "Description", "Severity", "Source",
-                "Control ID", "Status", "Corrective Action",
-                "Milestone Date", "Completion Date",
-                "Responsible Party", "Resources Required", "Classification",
-            ])
+            writer.writerow(
+                [
+                    "Weakness ID",
+                    "Description",
+                    "Severity",
+                    "Source",
+                    "Control ID",
+                    "Status",
+                    "Corrective Action",
+                    "Milestone Date",
+                    "Completion Date",
+                    "Responsible Party",
+                    "Resources Required",
+                    "Classification",
+                ]
+            )
             for row in items:
                 r = dict(row)
-                writer.writerow([
-                    r.get("weakness_id", ""),
-                    r.get("weakness_description", ""),
-                    r.get("severity", ""),
-                    r.get("source", ""),
-                    r.get("control_id", ""),
-                    r.get("status", ""),
-                    r.get("corrective_action", ""),
-                    r.get("milestone_date", ""),
-                    r.get("completion_date", ""),
-                    r.get("responsible_party", ""),
-                    r.get("resources_required", ""),
-                    "CUI // SP-CTI",
-                ])
+                writer.writerow(
+                    [
+                        r.get("weakness_id", ""),
+                        r.get("weakness_description", ""),
+                        r.get("severity", ""),
+                        r.get("source", ""),
+                        r.get("control_id", ""),
+                        r.get("status", ""),
+                        r.get("corrective_action", ""),
+                        r.get("milestone_date", ""),
+                        r.get("completion_date", ""),
+                        r.get("responsible_party", ""),
+                        r.get("resources_required", ""),
+                        "CUI // SP-CTI",
+                    ]
+                )
 
-        _log_audit(conn, project_id, "export_poam_csv", {
-            "poam_count": len(items),
-            "output_file": str(out_file),
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_poam_csv",
+            {
+                "poam_count": len(items),
+                "output_file": str(out_file),
+            },
+        )
         return str(out_file)
     finally:
         conn.close()
@@ -379,30 +429,44 @@ def export_cssp_assessment_csv(project_id, output_dir=None, db_path=None):
 
         with open(out_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow([
-                "Requirement ID", "Functional Area", "Status",
-                "Assessment Date", "Assessor",
-                "Evidence Description", "Evidence Path",
-                "Notes", "Classification",
-            ])
+            writer.writerow(
+                [
+                    "Requirement ID",
+                    "Functional Area",
+                    "Status",
+                    "Assessment Date",
+                    "Assessor",
+                    "Evidence Description",
+                    "Evidence Path",
+                    "Notes",
+                    "Classification",
+                ]
+            )
             for row in assessments:
                 r = dict(row)
-                writer.writerow([
-                    r.get("requirement_id", ""),
-                    r.get("functional_area", ""),
-                    r.get("status", ""),
-                    r.get("assessment_date", ""),
-                    r.get("assessor", ""),
-                    r.get("evidence_description", ""),
-                    r.get("evidence_path", ""),
-                    r.get("notes", ""),
-                    "CUI // SP-CTI",
-                ])
+                writer.writerow(
+                    [
+                        r.get("requirement_id", ""),
+                        r.get("functional_area", ""),
+                        r.get("status", ""),
+                        r.get("assessment_date", ""),
+                        r.get("assessor", ""),
+                        r.get("evidence_description", ""),
+                        r.get("evidence_path", ""),
+                        r.get("notes", ""),
+                        "CUI // SP-CTI",
+                    ]
+                )
 
-        _log_audit(conn, project_id, "export_cssp_csv", {
-            "assessment_count": len(assessments),
-            "output_file": str(out_file),
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_cssp_csv",
+            {
+                "assessment_count": len(assessments),
+                "output_file": str(out_file),
+            },
+        )
         return str(out_file)
     finally:
         conn.close()
@@ -411,6 +475,7 @@ def export_cssp_assessment_csv(project_id, output_dir=None, db_path=None):
 # ============================================================
 # Evidence Package
 # ============================================================
+
 
 def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=None, db_path=None):
     """Create ZIP evidence package for Xacta import.
@@ -461,7 +526,7 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
                 "CLASSIFICATION.txt",
                 "CUI // SP-CTI\n"
                 "This evidence package contains Controlled Unclassified Information.\n"
-                "Handle in accordance with DoD CUI policy.\n"
+                "Handle in accordance with DoD CUI policy.\n",
             )
 
             # Add package metadata
@@ -474,9 +539,14 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
             }
             zf.writestr("metadata.json", json.dumps(metadata, indent=2))
 
-        _log_audit(conn, project_id, "export_evidence_package", {
-            "output_file": str(zip_path),
-        })
+        _log_audit(
+            conn,
+            project_id,
+            "export_evidence_package",
+            {
+                "output_file": str(zip_path),
+            },
+        )
         return str(zip_path)
     finally:
         conn.close()
@@ -485,6 +555,7 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
 # ============================================================
 # Combined Export
 # ============================================================
+
 
 def export_all(project_id, export_format="all", output_dir=None, db_path=None):
     """Export all compliance data for Xacta import.
@@ -539,8 +610,7 @@ def export_all(project_id, export_format="all", output_dir=None, db_path=None):
 def main():
     parser = argparse.ArgumentParser(description="Export compliance data for Xacta 360 import")
     parser.add_argument("--project-id", required=True, help="ICDEV project ID")
-    parser.add_argument("--format", default="all", choices=["oscal", "csv", "all"],
-                        help="Export format (default: all)")
+    parser.add_argument("--format", default="all", choices=["oscal", "csv", "all"], help="Export format (default: all)")
     parser.add_argument("--output-dir", type=Path, help="Output directory")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")

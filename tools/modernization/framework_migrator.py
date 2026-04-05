@@ -64,16 +64,8 @@ def load_framework_patterns(source_framework, target_framework):
         tgt = pattern.get("target_framework", "").lower()
 
         # Flexible matching: allow partial / alias matches
-        src_match = (
-            source_lower in src
-            or src in source_lower
-            or source_lower.replace("-", " ") in src
-        )
-        tgt_match = (
-            target_lower in tgt
-            or tgt in target_lower
-            or target_lower.replace("-", " ") in tgt
-        )
+        src_match = source_lower in src or src in source_lower or source_lower.replace("-", " ") in src
+        tgt_match = target_lower in tgt or tgt in target_lower or target_lower.replace("-", " ") in tgt
 
         if src_match and tgt_match:
             return {
@@ -241,8 +233,17 @@ def _generate_migration_report(source_path, output_path, transformations):
     todo_items = []
     for fp in sorted(output.rglob("*")):
         if fp.is_file() and fp.suffix in (
-            ".java", ".py", ".cs", ".cshtml", ".xml", ".json",
-            ".yaml", ".yml", ".properties", ".proto", ".config",
+            ".java",
+            ".py",
+            ".cs",
+            ".cshtml",
+            ".xml",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".properties",
+            ".proto",
+            ".config",
         ):
             try:
                 text = fp.read_text(encoding="utf-8")
@@ -542,8 +543,7 @@ def migrate_ejb_to_spring(source_path, output_path):
         {
             "pattern": r"import\s+javax\.ejb\.Stateful\s*;",
             "replacement": (
-                "import org.springframework.stereotype.Service;\n"
-                "import org.springframework.context.annotation.Scope;"
+                "import org.springframework.stereotype.Service;\nimport org.springframework.context.annotation.Scope;"
             ),
             "flags": [],
         },
@@ -697,7 +697,7 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
     wcf_transforms = [
         {
             "pattern": r"\[ServiceContract\b[^\]]*\]",
-            "replacement": "[ApiController]\n[Route(\"api/[controller]\")]",
+            "replacement": '[ApiController]\n[Route("api/[controller]")]',
             "flags": [],
         },
         {
@@ -717,10 +717,7 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
         },
         {
             "pattern": r"using\s+System\.ServiceModel\s*;",
-            "replacement": (
-                "using Microsoft.AspNetCore.Mvc;\n"
-                "// TODO [ICDEV-MIGRATION]: System.ServiceModel removed"
-            ),
+            "replacement": ("using Microsoft.AspNetCore.Mvc;\n// TODO [ICDEV-MIGRATION]: System.ServiceModel removed"),
             "flags": [],
         },
         {
@@ -747,14 +744,10 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
             continue
 
         # Collect service interface names
-        svc_matches = re.findall(
-            r"\[ServiceContract[^\]]*\]\s*(?:public\s+)?interface\s+(\w+)", content
-        )
+        svc_matches = re.findall(r"\[ServiceContract[^\]]*\]\s*(?:public\s+)?interface\s+(\w+)", content)
         for svc in svc_matches:
             service_names.append(svc)
-            ops = re.findall(
-                r"\[OperationContract[^\]]*\]\s*\w+\s+(\w+)\s*\(", content
-            )
+            ops = re.findall(r"\[OperationContract[^\]]*\]\s*\w+\s+(\w+)\s*\(", content)
             operation_names[svc].extend(ops)
 
         changes = _apply_file_transforms(csf, wcf_transforms)
@@ -871,9 +864,7 @@ def migrate_wcf_to_aspnet_core(source_path, output_path):
         "_TODO": "Configure TLS certificates and additional service settings",
     }
     appsettings_path = output / "appsettings.json"
-    appsettings_path.write_text(
-        json.dumps(appsettings, indent=2) + "\n", encoding="utf-8"
-    )
+    appsettings_path.write_text(json.dumps(appsettings, indent=2) + "\n", encoding="utf-8")
     transformations["generated_files"].append(str(appsettings_path.relative_to(output)))
 
     return transformations
@@ -928,8 +919,7 @@ def migrate_webforms_to_razor(source_path, output_path):
         {
             "pattern": r"<asp:GridView\b[^>]*>",
             "replacement": (
-                "<!-- TODO [ICDEV-MIGRATION]: GridView replaced with table + @foreach -->\n"
-                "<table class=\"table\">"
+                '<!-- TODO [ICDEV-MIGRATION]: GridView replaced with table + @foreach -->\n<table class="table">'
             ),
             "flags": [],
         },
@@ -967,7 +957,7 @@ def migrate_webforms_to_razor(source_path, output_path):
         # Remove Page directive (will be replaced with @page)
         {
             "pattern": r"<%@\s*Page\s+[^%]*%>",
-            "replacement": '@page\n@model PageModel\n// TODO [ICDEV-MIGRATION]: Set correct PageModel type',
+            "replacement": "@page\n@model PageModel\n// TODO [ICDEV-MIGRATION]: Set correct PageModel type",
             "flags": [],
         },
     ]
@@ -1296,12 +1286,12 @@ def migrate_flask_version(source_path, output_path, from_ver="0", to_ver="3"):
         # JSONEncoder deprecation
         {
             "pattern": r"app\.json_encoder\s*=",
-            "replacement": "# TODO [ICDEV-MIGRATION]: json_encoder removed in Flask 2.3, use app.json_provider_class\n# app.json_encoder =",
+            "replacement": "# TODO [ICDEV-MIGRATION]: json_encoder removed in Flask 2.3, use app.json_provider_class\n# app.json_encoder =",  # noqa: E501
             "flags": [],
         },
         {
             "pattern": r"from\s+flask\.json\s+import\s+JSONEncoder",
-            "replacement": "# TODO [ICDEV-MIGRATION]: JSONEncoder removed in Flask 2.3\n# from flask.json import JSONEncoder",
+            "replacement": "# TODO [ICDEV-MIGRATION]: JSONEncoder removed in Flask 2.3\n# from flask.json import JSONEncoder",  # noqa: E501
             "flags": [],
         },
     ]
@@ -1353,9 +1343,7 @@ def main():
     """CLI entry point for the ICDEV Framework Migration Tool."""
     parser = argparse.ArgumentParser(
         description=(
-            f"{CUI_BANNER}\n"
-            "ICDEV Framework Migration Tool\n"
-            "Transforms legacy framework code to modern equivalents."
+            f"{CUI_BANNER}\nICDEV Framework Migration Tool\nTransforms legacy framework code to modern equivalents."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\
@@ -1425,8 +1413,7 @@ def main():
     # Ensure output is NOT the same as source (safety check)
     if output_path == source_path:
         print(
-            "[ERROR] Output path must differ from source path. "
-            "This tool never modifies source code in place.",
+            "[ERROR] Output path must differ from source path. This tool never modifies source code in place.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1466,15 +1453,11 @@ def main():
     elif func_name == "migrate_django_version":
         _, from_v = _parse_version_hint(args.from_framework)
         _, to_v = _parse_version_hint(args.to_framework)
-        result = migrate_django_version(
-            source_path, output_path, from_ver=from_v or "1", to_ver=to_v or "4"
-        )
+        result = migrate_django_version(source_path, output_path, from_ver=from_v or "1", to_ver=to_v or "4")
     elif func_name == "migrate_flask_version":
         _, from_v = _parse_version_hint(args.from_framework)
         _, to_v = _parse_version_hint(args.to_framework)
-        result = migrate_flask_version(
-            source_path, output_path, from_ver=from_v or "0", to_ver=to_v or "3"
-        )
+        result = migrate_flask_version(source_path, output_path, from_ver=from_v or "0", to_ver=to_v or "3")
     else:
         print(f"[ERROR] Migration function not implemented: {func_name}", file=sys.stderr)
         sys.exit(1)

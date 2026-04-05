@@ -38,9 +38,12 @@ CONFIG_PATH = BASE_DIR / "args" / "mosa_config.yaml"
 def _load_config() -> Dict[str, Any]:
     """Load code_enforcement settings from args/mosa_config.yaml."""
     defaults: Dict[str, Any] = {
-        "enforce_interface_based_design": True, "generate_openapi_specs": True,
-        "enforce_module_boundaries": True, "max_direct_coupling_violations": 0,
-        "check_circular_dependencies": True, "supported_languages": ["python"],
+        "enforce_interface_based_design": True,
+        "generate_openapi_specs": True,
+        "enforce_module_boundaries": True,
+        "max_direct_coupling_violations": 0,
+        "check_circular_dependencies": True,
+        "supported_languages": ["python"],
     }
     if not CONFIG_PATH.exists():
         return defaults
@@ -70,8 +73,7 @@ def _load_config() -> Dict[str, Any]:
                     elif val:
                         cfg[key] = val
                 elif stripped.startswith("- "):
-                    cfg.setdefault("supported_languages", []).append(
-                        stripped[2:].strip().strip('"').strip("'"))
+                    cfg.setdefault("supported_languages", []).append(stripped[2:].strip().strip('"').strip("'"))
         return {**defaults, **cfg}
     except Exception:
         return defaults
@@ -111,18 +113,16 @@ def _extract_imports(filepath: Path) -> List[Dict[str, Any]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                imports.append({"module": alias.name, "line": node.lineno,
-                                "names": [alias.name.split(".")[-1]]})
+                imports.append({"module": alias.name, "line": node.lineno, "names": [alias.name.split(".")[-1]]})
         elif isinstance(node, ast.ImportFrom):
-            imports.append({"module": node.module or "", "line": node.lineno,
-                            "names": [a.name for a in node.names]})
+            imports.append({"module": node.module or "", "line": node.lineno, "names": [a.name for a in node.names]})
     return imports
 
 
 # -- Violation detectors ----------------------------------------------------
 
-def _check_direct_coupling(fp: Path, imports: List[Dict], modules: Dict[str, Path],
-                           own: str, fix: bool) -> List[Dict]:
+
+def _check_direct_coupling(fp: Path, imports: List[Dict], modules: Dict[str, Path], own: str, fix: bool) -> List[Dict]:
     """MOSA-V001: direct import from another module's internal package."""
     violations: List[Dict] = []
     for imp in imports:
@@ -134,8 +134,11 @@ def _check_direct_coupling(fp: Path, imports: List[Dict], modules: Dict[str, Pat
             continue
         if any(p.startswith("_") and p != "__init__" for p in parts[1:]):
             v: Dict[str, Any] = {
-                "id": "MOSA-V001", "type": "direct_coupling_violation",
-                "severity": "HIGH", "file": str(fp), "line": imp["line"],
+                "id": "MOSA-V001",
+                "type": "direct_coupling_violation",
+                "severity": "HIGH",
+                "file": str(fp),
+                "line": imp["line"],
                 "message": f"Direct import from internal module '{imp['module']}'",
             }
             if fix:
@@ -151,20 +154,24 @@ def _check_missing_openapi(fp: Path, fix: bool) -> Optional[Dict]:
     except Exception:
         return None
     api_patterns = [
-        r"@app\.route\(", r"@blueprint\.route\(",
+        r"@app\.route\(",
+        r"@blueprint\.route\(",
         r"@router\.(get|post|put|delete|patch)\(",
-        r"app\.add_url_rule\(", r"APIRouter\(",
+        r"app\.add_url_rule\(",
+        r"APIRouter\(",
     ]
     if not any(re.search(p, source) for p in api_patterns):
         return None
-    spec_names = ["openapi.yaml", "openapi.yml", "openapi.json",
-                  "swagger.yaml", "swagger.json"]
+    spec_names = ["openapi.yaml", "openapi.yml", "openapi.json", "swagger.yaml", "swagger.json"]
     for d in (fp.parent, fp.parent.parent):
         if any((d / s).exists() for s in spec_names):
             return None
     v: Dict[str, Any] = {
-        "id": "MOSA-V002", "type": "missing_openapi_spec",
-        "severity": "MEDIUM", "file": str(fp), "line": 1,
+        "id": "MOSA-V002",
+        "type": "missing_openapi_spec",
+        "severity": "MEDIUM",
+        "file": str(fp),
+        "line": 1,
         "message": f"API module '{fp.name}' has no corresponding OpenAPI spec",
     }
     if fix:
@@ -172,8 +179,9 @@ def _check_missing_openapi(fp: Path, fix: bool) -> Optional[Dict]:
     return v
 
 
-def _check_boundary_violation(fp: Path, imports: List[Dict], modules: Dict[str, Path],
-                              own: str, fix: bool) -> List[Dict]:
+def _check_boundary_violation(
+    fp: Path, imports: List[Dict], modules: Dict[str, Path], own: str, fix: bool
+) -> List[Dict]:
     """MOSA-V003: importing _private-prefixed names across module boundaries."""
     violations: List[Dict] = []
     for imp in imports:
@@ -183,8 +191,11 @@ def _check_boundary_violation(fp: Path, imports: List[Dict], modules: Dict[str, 
         for name in imp["names"]:
             if name.startswith("_") and name != "__init__":
                 v: Dict[str, Any] = {
-                    "id": "MOSA-V003", "type": "module_boundary_violation",
-                    "severity": "HIGH", "file": str(fp), "line": imp["line"],
+                    "id": "MOSA-V003",
+                    "type": "module_boundary_violation",
+                    "severity": "HIGH",
+                    "file": str(fp),
+                    "line": imp["line"],
                     "message": f"Cross-module import of private name '{name}' from '{top}'",
                 }
                 if fix:
@@ -193,8 +204,9 @@ def _check_boundary_violation(fp: Path, imports: List[Dict], modules: Dict[str, 
     return violations
 
 
-def _check_missing_interface(fp: Path, imports: List[Dict], modules: Dict[str, Path],
-                             own: str, fix: bool) -> List[Dict]:
+def _check_missing_interface(
+    fp: Path, imports: List[Dict], modules: Dict[str, Path], own: str, fix: bool
+) -> List[Dict]:
     """MOSA-V004: cross-module dependency without abstract interface (ABC/Protocol)."""
     violations: List[Dict] = []
     for imp in imports:
@@ -208,8 +220,11 @@ def _check_missing_interface(fp: Path, imports: List[Dict], modules: Dict[str, P
                 continue
             if not has_iface and not name.startswith("Abstract"):
                 v: Dict[str, Any] = {
-                    "id": "MOSA-V004", "type": "missing_interface_abstraction",
-                    "severity": "MEDIUM", "file": str(fp), "line": imp["line"],
+                    "id": "MOSA-V004",
+                    "type": "missing_interface_abstraction",
+                    "severity": "MEDIUM",
+                    "file": str(fp),
+                    "line": imp["line"],
                     "message": f"Cross-module import of '{name}' from '{top}' without interface abstraction",
                 }
                 if fix:
@@ -219,8 +234,7 @@ def _check_missing_interface(fp: Path, imports: List[Dict], modules: Dict[str, P
     return violations
 
 
-def _check_circular_imports(modules: Dict[str, Path], project_dir: Path,
-                            fix: bool) -> List[Dict]:
+def _check_circular_imports(modules: Dict[str, Path], project_dir: Path, fix: bool) -> List[Dict]:
     """MOSA-V005: circular import chains via graphlib.TopologicalSorter (D40)."""
     try:
         from graphlib import TopologicalSorter, CycleError
@@ -239,8 +253,11 @@ def _check_circular_imports(modules: Dict[str, Path], project_dir: Path,
         return []
     except CycleError as exc:
         v: Dict[str, Any] = {
-            "id": "MOSA-V005", "type": "circular_import",
-            "severity": "HIGH", "file": str(project_dir), "line": 0,
+            "id": "MOSA-V005",
+            "type": "circular_import",
+            "severity": "HIGH",
+            "file": str(project_dir),
+            "line": 0,
             "message": f"Circular import detected: {exc}",
         }
         if fix:
@@ -249,6 +266,7 @@ def _check_circular_imports(modules: Dict[str, Path], project_dir: Path,
 
 
 # -- Scan orchestrator ------------------------------------------------------
+
 
 def scan_project(project_dir: str, fix_suggestions: bool = False) -> Dict[str, Any]:
     """Run all MOSA code enforcement checks on *project_dir*."""
@@ -296,14 +314,18 @@ def scan_project(project_dir: str, fix_suggestions: bool = False) -> Dict[str, A
 
 # -- Human-readable output -------------------------------------------------
 
+
 def _human_output(result: Dict[str, Any]) -> str:
     """Render scan results as colored terminal output."""
     try:
         from tools.cli.output_formatter import C
     except Exception:
+
         class _C:
             @staticmethod
-            def wrap(t: str, *s: str) -> str: return t
+            def wrap(t: str, *s: str) -> str:
+                return t
+
         C = _C  # type: ignore[assignment]
 
     lines: List[str] = []
@@ -313,9 +335,11 @@ def _human_output(result: Dict[str, Any]) -> str:
     lines.append(f"  Scanned: {result['scan_date']}")
     lines.append(f"  Total violations: {result['total_violations']}")
     sev = result["violations_by_severity"]
-    lines.append(f"  HIGH: {C.wrap(str(sev.get('HIGH', 0)), 'red')}  "
-                 f"MEDIUM: {C.wrap(str(sev.get('MEDIUM', 0)), 'yellow')}  "
-                 f"LOW: {C.wrap(str(sev.get('LOW', 0)), 'green')}")
+    lines.append(
+        f"  HIGH: {C.wrap(str(sev.get('HIGH', 0)), 'red')}  "
+        f"MEDIUM: {C.wrap(str(sev.get('MEDIUM', 0)), 'yellow')}  "
+        f"LOW: {C.wrap(str(sev.get('LOW', 0)), 'green')}"
+    )
     lines.append("")
     for v in result["violations"]:
         clr = {"HIGH": "red", "MEDIUM": "yellow", "LOW": "green"}.get(v["severity"], "dim")
@@ -328,9 +352,11 @@ def _human_output(result: Dict[str, Any]) -> str:
 
 # -- CLI entry point --------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="MOSA Code Enforcer -- scan for Modular Open Systems Approach violations")
+        description="MOSA Code Enforcer -- scan for Modular Open Systems Approach violations"
+    )
     parser.add_argument("--project-dir", required=True, help="Path to the project to scan")
     parser.add_argument("--fix-suggestions", action="store_true", help="Include fix suggestions")
     parser.add_argument("--json", dest="json_output", action="store_true", help="JSON output")

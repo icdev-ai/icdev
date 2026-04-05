@@ -5,6 +5,7 @@ Monitors memory usage and pauses/resumes stream producers when thresholds
 are exceeded. Uses psutil if available, falls back to /proc/self/status,
 then no-op (Windows without psutil = no-op with warning).
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,6 +20,7 @@ def _detect_memory_backend() -> str:
     """Detect available memory monitoring backend."""
     try:
         import psutil  # noqa: F401
+
         return "psutil"
     except ImportError:
         pass
@@ -47,8 +49,7 @@ class BackpressureController:
 
         if self._backend == "none":
             logger.warning(
-                "No memory monitoring available (install psutil for backpressure). "
-                "Backpressure will be disabled."
+                "No memory monitoring available (install psutil for backpressure). Backpressure will be disabled."
             )
 
     def get_memory_bytes(self) -> int:
@@ -115,6 +116,7 @@ class BackpressureController:
         """Get RSS via psutil."""
         try:
             import psutil
+
             return psutil.Process().memory_info().rss
         except Exception:
             return -1

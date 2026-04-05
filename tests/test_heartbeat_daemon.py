@@ -121,12 +121,7 @@ class TestEnsureTable:
         db = tmp_path / "test.db"
         _ensure_table(db)
         conn = sqlite3.connect(str(db))
-        tables = [
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        ]
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         conn.close()
         assert "heartbeat_checks" in tables
 
@@ -184,8 +179,7 @@ class TestCheckFunctions:
         # Insert recent evidence so nothing is overdue
         conn = sqlite3.connect(str(db))
         conn.execute(
-            "INSERT INTO cato_evidence (control_id, evidence_type, collected_at) "
-            "VALUES ('AC-2', 'scan', ?)",
+            "INSERT INTO cato_evidence (control_id, evidence_type, collected_at) VALUES ('AC-2', 'scan', ?)",
             (_utcnow(),),
         )
         conn.commit()
@@ -252,9 +246,7 @@ class TestCheckFunctions:
         )
         conn.commit()
         conn.close()
-        result = check_pending_intake(
-            config={"idle_threshold_hours": 48}, db_path=db
-        )
+        result = check_pending_intake(config={"idle_threshold_hours": 48}, db_path=db)
         assert result["status"] == "ok"
         assert result["count"] == 0
 
@@ -270,9 +262,7 @@ class TestCheckFunctions:
         db = tmp_path / "icdev.db"
         _init_test_db(db)
         # ISA with a far-future expiry
-        future = (datetime.now(timezone.utc) + timedelta(days=365)).strftime(
-            "%Y-%m-%dT%H:%M:%S"
-        )
+        future = (datetime.now(timezone.utc) + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%S")
         conn = sqlite3.connect(str(db))
         conn.execute(
             "INSERT INTO isa_agreements (id, partner_org, status, expiry_date) "
@@ -281,9 +271,7 @@ class TestCheckFunctions:
         )
         conn.commit()
         conn.close()
-        result = check_expiring_isas(
-            config={"expiry_warning_days": 90}, db_path=db
-        )
+        result = check_expiring_isas(config={"expiry_warning_days": 90}, db_path=db)
         assert result["status"] == "ok"
         assert result["count"] == 0
 
@@ -322,9 +310,7 @@ class TestRunSingleCheck:
         run_single_check("agent_health", config=_load_config(), db_path=db)
         conn = sqlite3.connect(str(db))
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM heartbeat_checks WHERE check_type = 'agent_health'"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM heartbeat_checks WHERE check_type = 'agent_health'").fetchall()
         conn.close()
         assert len(rows) >= 1
 

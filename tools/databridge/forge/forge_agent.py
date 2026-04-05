@@ -9,6 +9,7 @@ Entry point for all forge operations. Coordinates:
   Stage 5: sandbox_manager.run_sandbox()
   Stage 6: integration_tester.run_integration_tests()
 """
+
 from __future__ import annotations
 
 import json
@@ -56,38 +57,72 @@ def forge_from_spec(
     # Stage 1: Parse spec
     manifest = parse_spec(content, input_type, source_url)
     spec_id = _store_spec(manifest, content, input_type, tenant_id, db)
-    _audit(db, "connector_forge_spec_parsed", json.dumps({
-        "spec_id": spec_id, "protocol": manifest.protocol,
-        "endpoints": len(manifest.endpoints),
-    }))
+    _audit(
+        db,
+        "connector_forge_spec_parsed",
+        json.dumps(
+            {
+                "spec_id": spec_id,
+                "protocol": manifest.protocol,
+                "endpoints": len(manifest.endpoints),
+            }
+        ),
+    )
 
     # Stage 2: Select base class
     selection = select_base_class(manifest)
 
     # Stage 3: Generate code
     gen_result = generate_connector_code(
-        manifest, selection, connector_name, display_name, use_llm, db_path,
+        manifest,
+        selection,
+        connector_name,
+        display_name,
+        use_llm,
+        db_path,
     )
     code = gen_result["code"]
 
     # Store connector (status=sandboxed)
     connector_id = _store_connector(
-        connector_name, selection.connector_type, selection.base_class,
-        manifest.protocol, code, gen_result["hash"], spec_id,
-        tenant_id, project_id, db,
+        connector_name,
+        selection.connector_type,
+        selection.base_class,
+        manifest.protocol,
+        code,
+        gen_result["hash"],
+        spec_id,
+        tenant_id,
+        project_id,
+        db,
     )
-    _audit(db, "connector_forge_generated", json.dumps({
-        "connector_id": connector_id, "connector_name": connector_name,
-        "method": gen_result["method"], "template": gen_result["template"],
-    }))
+    _audit(
+        db,
+        "connector_forge_generated",
+        json.dumps(
+            {
+                "connector_id": connector_id,
+                "connector_name": connector_name,
+                "method": gen_result["method"],
+                "template": gen_result["template"],
+            }
+        ),
+    )
 
     # Stage 4: Static validation
     val_result = validate_connector_code(code, connector_name)
     _store_validations(connector_id, val_result["gates"], db)
-    _audit(db, "connector_forge_validated", json.dumps({
-        "connector_id": connector_id, "passed": val_result["passed"],
-        "blocking_gates": val_result["blocking_gates"],
-    }))
+    _audit(
+        db,
+        "connector_forge_validated",
+        json.dumps(
+            {
+                "connector_id": connector_id,
+                "passed": val_result["passed"],
+                "blocking_gates": val_result["blocking_gates"],
+            }
+        ),
+    )
 
     if not val_result["passed"]:
         errors.extend([f"Gate {g} failed" for g in val_result["blocking_gates"]])
@@ -108,11 +143,17 @@ def forge_from_spec(
     if run_sandbox_flag:
         _audit(db, "connector_forge_sandbox_started", connector_id)
         sandbox_result = run_sandbox(connector_id, code, connector_name, db_path=db)
-        _audit(db, "connector_forge_sandbox_completed", json.dumps({
-            "connector_id": connector_id,
-            "sandbox_type": sandbox_result["sandbox_type"],
-            "status": sandbox_result["status"],
-        }))
+        _audit(
+            db,
+            "connector_forge_sandbox_completed",
+            json.dumps(
+                {
+                    "connector_id": connector_id,
+                    "sandbox_type": sandbox_result["sandbox_type"],
+                    "status": sandbox_result["status"],
+                }
+            ),
+        )
 
     # Stage 6: Integration test
     int_result = run_integration_tests(connector_id, sandbox_result, manifest, db)
@@ -136,9 +177,7 @@ def get_forge_status(connector_id: str, db_path: Optional[str] = None) -> Dict[s
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute(
-            "SELECT * FROM db_forge_connectors WHERE id = ?", (connector_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM db_forge_connectors WHERE id = ?", (connector_id,)).fetchone()
         conn.close()
         if row:
             return dict(row)
@@ -173,7 +212,7 @@ def list_forge_connectors(
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        sql = "SELECT id, connector_name, connector_type, base_class, protocol, status, created_at FROM db_forge_connectors WHERE tenant_id = ?"
+        sql = "SELECT id, connector_name, connector_type, base_class, protocol, status, created_at FROM db_forge_connectors WHERE tenant_id = ?"  # noqa: E501
         params: List[Any] = [tenant_id]
         if status:
             sql += " AND status = ?"
@@ -216,15 +255,24 @@ def _store_spec(
                (id, input_type, input_source, raw_input, parsed_manifest,
                 detected_protocol, target_base_class, tenant_id, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (spec_id, input_type, manifest.base_url, raw[:50000],
-             json.dumps({
-                 "title": manifest.title,
-                 "protocol": manifest.protocol,
-                 "endpoints": len(manifest.endpoints),
-                 "auth_methods": manifest.auth_methods,
-             }),
-             manifest.protocol, None, tenant_id,
-             datetime.now(timezone.utc).isoformat()),
+            (
+                spec_id,
+                input_type,
+                manifest.base_url,
+                raw[:50000],
+                json.dumps(
+                    {
+                        "title": manifest.title,
+                        "protocol": manifest.protocol,
+                        "endpoints": len(manifest.endpoints),
+                        "auth_methods": manifest.auth_methods,
+                    }
+                ),
+                manifest.protocol,
+                None,
+                tenant_id,
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -255,10 +303,20 @@ def _store_connector(
                 generated_code, code_hash, version, status, spec_id,
                 tenant_id, project_id, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'sandboxed', ?, ?, ?, ?, ?)""",
-            (connector_id, connector_name, connector_type, base_class, protocol,
-             code, code_hash, spec_id, tenant_id, project_id or None,
-             datetime.now(timezone.utc).isoformat(),
-             datetime.now(timezone.utc).isoformat()),
+            (
+                connector_id,
+                connector_name,
+                connector_type,
+                base_class,
+                protocol,
+                code,
+                code_hash,
+                spec_id,
+                tenant_id,
+                project_id or None,
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -281,8 +339,14 @@ def _store_validations(
                 """INSERT INTO db_forge_validations
                    (connector_id, stage, passed, details, duration_ms, run_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (connector_id, gate["stage"], 1 if gate["passed"] else 0,
-                 gate["details"][:2000], gate.get("duration_ms", 0), now),
+                (
+                    connector_id,
+                    gate["stage"],
+                    1 if gate["passed"] else 0,
+                    gate["details"][:2000],
+                    gate.get("duration_ms", 0),
+                    now,
+                ),
             )
         conn.commit()
         conn.close()
@@ -297,8 +361,13 @@ def _audit(db_path: str, event_type: str, details: str) -> None:
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
                VALUES (?, ?, 'connector_forge_agent', ?, ?, ?)""",
-            (f"audit-{uuid.uuid4().hex[:12]}", event_type, event_type,
-             details[:5000], datetime.now(timezone.utc).isoformat()),
+            (
+                f"audit-{uuid.uuid4().hex[:12]}",
+                event_type,
+                event_type,
+                details[:5000],
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         conn.commit()
         conn.close()

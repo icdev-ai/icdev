@@ -110,7 +110,7 @@ class StateTracker:
 
             # Trim old changes to prevent unbounded growth
             if len(changes) > self._max_changes_buffer:
-                self._context_changes[context_id] = changes[-self._max_changes_buffer:]
+                self._context_changes[context_id] = changes[-self._max_changes_buffer :]
 
         # Schedule debounced push for SSE clients
         self._schedule_push(context_id)
@@ -209,10 +209,9 @@ class StateTracker:
             current_version = self._context_versions.get(context_id, 0)
             # Get clients viewing this context
             target_clients = [
-                c for c in self._clients.values()
-                if c.viewing_context == context_id
-                and c.transport == "sse"
-                and c.pushed_version < current_version
+                c
+                for c in self._clients.values()
+                if c.viewing_context == context_id and c.transport == "sse" and c.pushed_version < current_version
             ]
             if not target_clients:
                 return

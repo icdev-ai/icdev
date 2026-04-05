@@ -90,15 +90,17 @@ def detect_tools(directory=None, registry_path=None):
 
         if evidence:
             confidence = min(1.0, len(evidence) * 0.4)
-            detected.append({
-                "tool_id": tool_id,
-                "display_name": config.get("display_name", tool_id),
-                "vendor": config.get("vendor", "unknown"),
-                "confidence": round(confidence, 2),
-                "evidence": evidence,
-                "mcp_support": config.get("mcp_support", False),
-                "skill_format": config.get("skill_format", "none"),
-            })
+            detected.append(
+                {
+                    "tool_id": tool_id,
+                    "display_name": config.get("display_name", tool_id),
+                    "vendor": config.get("vendor", "unknown"),
+                    "confidence": round(confidence, 2),
+                    "evidence": evidence,
+                    "mcp_support": config.get("mcp_support", False),
+                    "skill_format": config.get("skill_format", "none"),
+                }
+            )
 
     # Sort by confidence descending
     detected.sort(key=lambda x: x["confidence"], reverse=True)
@@ -112,9 +114,7 @@ def detect_tools(directory=None, registry_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Detect AI coding tools in the current environment"
-    )
+    parser = argparse.ArgumentParser(description="Detect AI coding tools in the current environment")
     parser.add_argument("--dir", help="Directory to scan")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     parser.add_argument("--registry", help="Path to companion registry YAML")

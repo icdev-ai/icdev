@@ -39,7 +39,7 @@ INJECTION_PATTERNS: List[Dict] = [
     # ── Category 1: Role Hijacking ──
     {
         "name": "role_hijack_ignore_previous",
-        "pattern": r"(?i)(ignore|disregard|forget|abandon|drop)\s+(all\s+)?(previous|prior|above|earlier|existing|system|original)\s+(instructions|prompts|rules|context|guidelines|directives|constraints)",
+        "pattern": r"(?i)(ignore|disregard|forget|abandon|drop)\s+(all\s+)?(previous|prior|above|earlier|existing|system|original)\s+(instructions|prompts|rules|context|guidelines|directives|constraints)",  # noqa: E501
         "category": "role_hijacking",
         "severity": "critical",
         "confidence": 0.95,
@@ -55,7 +55,7 @@ INJECTION_PATTERNS: List[Dict] = [
     },
     {
         "name": "role_hijack_new_instructions",
-        "pattern": r"(?i)(new\s+instructions|updated\s+system\s+prompt|your\s+new\s+role|act\s+as\s+if|pretend\s+you\s+are|roleplay\s+as)",
+        "pattern": r"(?i)(new\s+instructions|updated\s+system\s+prompt|your\s+new\s+role|act\s+as\s+if|pretend\s+you\s+are|roleplay\s+as)",  # noqa: E501
         "category": "role_hijacking",
         "severity": "high",
         "confidence": 0.80,
@@ -63,7 +63,7 @@ INJECTION_PATTERNS: List[Dict] = [
     },
     {
         "name": "role_hijack_jailbreak",
-        "pattern": r"(?i)(DAN|do\s+anything\s+now|developer\s+mode|jailbreak|unrestricted\s+mode|god\s+mode|admin\s+mode)",
+        "pattern": r"(?i)(DAN|do\s+anything\s+now|developer\s+mode|jailbreak|unrestricted\s+mode|god\s+mode|admin\s+mode)",  # noqa: E501
         "category": "role_hijacking",
         "severity": "critical",
         "confidence": 0.90,
@@ -113,7 +113,7 @@ INJECTION_PATTERNS: List[Dict] = [
     # ── Category 3: Instruction Injection ──
     {
         "name": "instruction_override",
-        "pattern": r"(?i)(override|bypass|circumvent|ignore|disable|turn\s+off|deactivate|skip)\s+(your|the|all|my|any|every)\s+(\w+\s+)?(instructions|rules|restrictions|guidelines|filters|safety|guardrails|constraints|policies|limitations)",
+        "pattern": r"(?i)(override|bypass|circumvent|ignore|disable|turn\s+off|deactivate|skip)\s+(your|the|all|my|any|every)\s+(\w+\s+)?(instructions|rules|restrictions|guidelines|filters|safety|guardrails|constraints|policies|limitations)",  # noqa: E501
         "category": "instruction_injection",
         "severity": "critical",
         "confidence": 0.90,
@@ -121,7 +121,7 @@ INJECTION_PATTERNS: List[Dict] = [
     },
     {
         "name": "instruction_do_not_follow",
-        "pattern": r"(?i)do\s+not\s+follow\s+(your|the|any|previous)\s+(instructions|guidelines|rules|training|programming)",
+        "pattern": r"(?i)do\s+not\s+follow\s+(your|the|any|previous)\s+(instructions|guidelines|rules|training|programming)",  # noqa: E501
         "category": "instruction_injection",
         "severity": "critical",
         "confidence": 0.92,
@@ -129,7 +129,7 @@ INJECTION_PATTERNS: List[Dict] = [
     },
     {
         "name": "instruction_secret_mode",
-        "pattern": r"(?i)(enter|switch\s+to|enable|activate)\s+(secret|hidden|debug|test|admin|root|sudo|unrestricted|verbose|developer)\s+(mode|access|state|prompt)",
+        "pattern": r"(?i)(enter|switch\s+to|enable|activate)\s+(secret|hidden|debug|test|admin|root|sudo|unrestricted|verbose|developer)\s+(mode|access|state|prompt)",  # noqa: E501
         "category": "instruction_injection",
         "severity": "high",
         "confidence": 0.85,
@@ -137,7 +137,7 @@ INJECTION_PATTERNS: List[Dict] = [
     },
     {
         "name": "instruction_system_prompt_reveal",
-        "pattern": r"(?i)(reveal|show|display|print|output|repeat|recite|tell\s+me)\s+(me\s+)?(your|the)\s+(system\s+prompt|instructions|initial\s+prompt|original\s+prompt|hidden\s+prompt|internal\s+prompt|internal\s+instructions|configuration|rules)",
+        "pattern": r"(?i)(reveal|show|display|print|output|repeat|recite|tell\s+me)\s+(me\s+)?(your|the)\s+(system\s+prompt|instructions|initial\s+prompt|original\s+prompt|hidden\s+prompt|internal\s+prompt|internal\s+instructions|configuration|rules)",  # noqa: E501
         "category": "instruction_injection",
         "severity": "high",
         "confidence": 0.88,
@@ -221,16 +221,47 @@ INJECTION_PATTERNS: List[Dict] = [
 
 # File extensions to scan
 SCANNABLE_EXTENSIONS = {
-    ".md", ".yaml", ".yml", ".json", ".txt", ".csv",
-    ".py", ".js", ".ts", ".java", ".go", ".rs", ".cs",
-    ".html", ".xml", ".toml", ".cfg", ".ini", ".conf",
-    ".sh", ".bash", ".bat", ".ps1",
-    ".env", ".properties", ".feature", ".gherkin",
+    ".md",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".txt",
+    ".csv",
+    ".py",
+    ".js",
+    ".ts",
+    ".java",
+    ".go",
+    ".rs",
+    ".cs",
+    ".html",
+    ".xml",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".conf",
+    ".sh",
+    ".bash",
+    ".bat",
+    ".ps1",
+    ".env",
+    ".properties",
+    ".feature",
+    ".gherkin",
 }
 
 SKIP_DIRS = {
-    "venv", "node_modules", ".git", "__pycache__", "build", "dist",
-    ".eggs", ".tox", ".mypy_cache", ".pytest_cache", ".tmp",
+    "venv",
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".eggs",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".tmp",
 }
 
 
@@ -279,16 +310,18 @@ class PromptInjectionDetector:
                 end = min(len(text), match.end() + 30)
                 context_snippet = text[start:end].replace("\n", " ")
 
-                findings.append({
-                    "pattern_name": pat["name"],
-                    "category": pat["category"],
-                    "severity": pat["severity"],
-                    "confidence": pat["confidence"],
-                    "match": match.group()[:100],
-                    "position": match.start(),
-                    "context": context_snippet[:200],
-                    "description": pat["description"],
-                })
+                findings.append(
+                    {
+                        "pattern_name": pat["name"],
+                        "category": pat["category"],
+                        "severity": pat["severity"],
+                        "confidence": pat["confidence"],
+                        "match": match.group()[:100],
+                        "position": match.start(),
+                        "context": context_snippet[:200],
+                        "description": pat["description"],
+                    }
+                )
 
         # Deduplicate overlapping matches of same category
         findings = self._deduplicate_findings(findings)
@@ -540,14 +573,10 @@ class PromptInjectionDetector:
                 pass
 
         if blocked_count > 0:
-            blocking_issues.append(
-                f"high_confidence_injection_unresolved: {blocked_count} blocked injection(s)"
-            )
+            blocking_issues.append(f"high_confidence_injection_unresolved: {blocked_count} blocked injection(s)")
 
         if flagged_count > 5:
-            warnings.append(
-                f"flagged_injection_count_high: {flagged_count} flagged injection(s)"
-            )
+            warnings.append(f"flagged_injection_count_high: {flagged_count} flagged injection(s)")
 
         return {
             "passed": len(blocking_issues) == 0,
@@ -584,9 +613,7 @@ class PromptInjectionDetector:
 
         Returns list of findings from decoded payloads.
         """
-        b64_pattern = re.compile(
-            r"(?:[A-Za-z0-9+/]{4}){10,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?"
-        )
+        b64_pattern = re.compile(r"(?:[A-Za-z0-9+/]{4}){10,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?")
         deep_findings = []
 
         for match in b64_pattern.finditer(text):

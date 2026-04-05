@@ -38,6 +38,7 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
     conn = sqlite3.connect(str(_DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -61,6 +62,7 @@ def _audit(conn, action, details="", actor="gap_analyzer"):
 
 
 # ── gap analysis ──────────────────────────────────────────────────────
+
 
 def analyze_gaps():
     """Identify and prioritize all coverage gaps.
@@ -270,6 +272,7 @@ def _generate_action(gap, template):
 
 # ── heatmap ───────────────────────────────────────────────────────────
 
+
 def get_heatmap():
     """Domain × Grade heatmap for visualization."""
     conn = _get_db()
@@ -305,9 +308,7 @@ def get_heatmap():
     for domain, data in heatmap.items():
         total = data["L"] + data["M"] + data["N"]
         if total > 0:
-            data["health_score"] = round(
-                (data["L"] * 1.0 + data["M"] * 0.5 + data["N"] * 0.0) / total, 2
-            )
+            data["health_score"] = round((data["L"] * 1.0 + data["M"] * 0.5 + data["N"] * 0.0) / total, 2)
         else:
             data["health_score"] = 0
 
@@ -315,6 +316,7 @@ def get_heatmap():
 
 
 # ── innovation cross-registration ─────────────────────────────────────
+
 
 def register_gaps_as_innovation_signals():
     """Register high-priority gaps as innovation signals for self-improvement.
@@ -360,11 +362,13 @@ def register_gaps_as_innovation_signals():
                     "",
                     "new",
                     _now(),
-                    json.dumps({
-                        "source": "gap_analyzer",
-                        "frequency": gap["frequency"],
-                        "best_coverage": gap["best_coverage"],
-                    }),
+                    json.dumps(
+                        {
+                            "source": "gap_analyzer",
+                            "frequency": gap["frequency"],
+                            "best_coverage": gap["best_coverage"],
+                        }
+                    ),
                 ),
             )
             registered += 1
@@ -385,6 +389,7 @@ def register_gaps_as_innovation_signals():
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV GovCon Gap Analyzer (D363)")
@@ -433,7 +438,9 @@ def _print_human(result, args):
     if "gaps" in result:
         print("\n  Top Gaps (priority-ranked):")
         for g in result["gaps"][:15]:
-            print(f"  ❌ [{g['domain']:12s}] priority={g['priority']:5.1f}  freq={g['frequency']:3d}  {g['pattern_name'][:45]}")
+            print(
+                f"  ❌ [{g['domain']:12s}] priority={g['priority']:5.1f}  freq={g['frequency']:3d}  {g['pattern_name'][:45]}"  # noqa: E501
+            )
 
     if "recommendations" in result:
         print(f"\n  Recommendations: {result['total_recommendations']}")
@@ -449,7 +456,9 @@ def _print_human(result, args):
         for domain, data in sorted(result["heatmap"].items()):
             health = data["health_score"]
             bar = "🟢" if health >= 0.7 else ("🟡" if health >= 0.4 else "🔴")
-            print(f"  {domain:<15s} {data['L']:>4d} {data['M']:>4d} {data['N']:>4d}   {bar} {health:.2f} {data['total_frequency']:>6d}")
+            print(
+                f"  {domain:<15s} {data['L']:>4d} {data['M']:>4d} {data['N']:>4d}   {bar} {health:.2f} {data['total_frequency']:>6d}"  # noqa: E501
+            )
 
     if "registered" in result:
         print(f"\n  Innovation signals registered: {result['registered']}/{result['total_gaps']}")

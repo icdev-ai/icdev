@@ -28,8 +28,7 @@ def list_metric_snapshots():
 
         if project_id:
             rows = conn.execute(
-                "SELECT * FROM metric_snapshots WHERE project_id = ? "
-                "ORDER BY collected_at DESC LIMIT ?",
+                "SELECT * FROM metric_snapshots WHERE project_id = ? ORDER BY collected_at DESC LIMIT ?",
                 (project_id, limit),
             ).fetchall()
         else:
@@ -65,15 +64,15 @@ def list_alerts():
         rows = conn.execute(query, params).fetchall()
 
         # Summary
-        summary = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM alerts GROUP BY status"
-        ).fetchall()
+        summary = conn.execute("SELECT status, COUNT(*) as cnt FROM alerts GROUP BY status").fetchall()
 
-        return jsonify({
-            "alerts": [dict(r) for r in rows],
-            "total": len(rows),
-            "summary": {r["status"]: r["cnt"] for r in summary},
-        })
+        return jsonify(
+            {
+                "alerts": [dict(r) for r in rows],
+                "total": len(rows),
+                "summary": {r["status"]: r["cnt"] for r in summary},
+            }
+        )
     finally:
         conn.close()
 
@@ -113,29 +112,19 @@ def health_status():
     conn = _get_db()
     try:
         # Firing alerts count
-        firing = conn.execute(
-            "SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'"
-        ).fetchone()
+        firing = conn.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'").fetchone()
 
         # Recent self-healing events (last 24h approximation: last 20)
-        recent_heals = conn.execute(
-            "SELECT COUNT(*) as cnt FROM self_healing_events"
-        ).fetchone()
+        recent_heals = conn.execute("SELECT COUNT(*) as cnt FROM self_healing_events").fetchone()
 
         # Unresolved failures
-        unresolved = conn.execute(
-            "SELECT COUNT(*) as cnt FROM failure_log WHERE resolved = 0"
-        ).fetchone()
+        unresolved = conn.execute("SELECT COUNT(*) as cnt FROM failure_log WHERE resolved = 0").fetchone()
 
         # Active agents
-        active_agents = conn.execute(
-            "SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'"
-        ).fetchone()
+        active_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'").fetchone()
 
         # Total projects
-        total_projects = conn.execute(
-            "SELECT COUNT(*) as cnt FROM projects"
-        ).fetchone()
+        total_projects = conn.execute("SELECT COUNT(*) as cnt FROM projects").fetchone()
 
         health = "healthy"
         if (firing and firing["cnt"] > 0) or (unresolved and unresolved["cnt"] > 5):
@@ -143,13 +132,15 @@ def health_status():
         if firing and firing["cnt"] > 5:
             health = "critical"
 
-        return jsonify({
-            "status": health,
-            "firing_alerts": firing["cnt"] if firing else 0,
-            "self_healing_events": recent_heals["cnt"] if recent_heals else 0,
-            "unresolved_failures": unresolved["cnt"] if unresolved else 0,
-            "active_agents": active_agents["cnt"] if active_agents else 0,
-            "total_projects": total_projects["cnt"] if total_projects else 0,
-        })
+        return jsonify(
+            {
+                "status": health,
+                "firing_alerts": firing["cnt"] if firing else 0,
+                "self_healing_events": recent_heals["cnt"] if recent_heals else 0,
+                "unresolved_failures": unresolved["cnt"] if unresolved else 0,
+                "active_agents": active_agents["cnt"] if active_agents else 0,
+                "total_projects": total_projects["cnt"] if total_projects else 0,
+            }
+        )
     finally:
         conn.close()

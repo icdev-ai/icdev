@@ -66,6 +66,7 @@ def test_db():
 # Pattern data
 # ---------------------------------------------------------------------------
 
+
 class TestPatternData:
     def test_has_10_patterns(self):
         assert len(EXTERNAL_PATTERNS) == 10
@@ -90,6 +91,7 @@ class TestPatternData:
 # Scoring weights
 # ---------------------------------------------------------------------------
 
+
 class TestScoringWeights:
     def test_weights_sum_to_one(self):
         total = sum(SCORING_WEIGHTS.values())
@@ -104,6 +106,7 @@ class TestScoringWeights:
 # ---------------------------------------------------------------------------
 # Content hash
 # ---------------------------------------------------------------------------
+
 
 class TestContentHash:
     def test_consistent(self):
@@ -125,6 +128,7 @@ class TestContentHash:
 # Register single pattern
 # ---------------------------------------------------------------------------
 
+
 class TestRegisterPattern:
     def test_register_single(self, test_db):
         result = register_pattern(EXTERNAL_PATTERNS[0], test_db)
@@ -144,6 +148,7 @@ class TestRegisterPattern:
 # Register all
 # ---------------------------------------------------------------------------
 
+
 class TestRegisterAll:
     def test_register_all(self, test_db):
         result = register_all(test_db)
@@ -162,6 +167,7 @@ class TestRegisterAll:
 # ---------------------------------------------------------------------------
 # Score patterns
 # ---------------------------------------------------------------------------
+
 
 class TestScorePatterns:
     def test_score_all(self):
@@ -184,6 +190,7 @@ class TestScorePatterns:
 # ---------------------------------------------------------------------------
 # Implementation status
 # ---------------------------------------------------------------------------
+
 
 class TestImplementationStatus:
     def test_all_implemented(self):

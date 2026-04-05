@@ -210,9 +210,7 @@ def bundle_swft_evidence(
             },
             "integrity": {
                 "digest_algorithm": "sha256",
-                "bundle_hash": hashlib.sha256(
-                    json.dumps(artifacts, sort_keys=True, default=str).encode()
-                ).hexdigest(),
+                "bundle_hash": hashlib.sha256(json.dumps(artifacts, sort_keys=True, default=str).encode()).hexdigest(),
             },
         }
 
@@ -250,13 +248,15 @@ def validate_swft_bundle(
 
     for category, artifact in bundle["artifacts"].items():
         if artifact["required"] and not artifact["available"]:
-            gaps.append({
-                "category": category,
-                "description": artifact["description"],
-                "severity": "blocking",
-            })
+            gaps.append(
+                {
+                    "category": category,
+                    "description": artifact["description"],
+                    "severity": "blocking",
+                }
+            )
             rec_map = {
-                "provenance": "Run: python tools/compliance/slsa_attestation_generator.py --project-id {pid} --generate",
+                "provenance": "Run: python tools/compliance/slsa_attestation_generator.py --project-id {pid} --generate",  # noqa: E501
                 "sbom": "Run: python tools/compliance/sbom_generator.py --project-id {pid}",
                 "vex": "Run: python tools/compliance/slsa_attestation_generator.py --project-id {pid} --vex",
                 "sast_results": "Run: python tools/security/sast_runner.py --project-dir <path>",
@@ -264,15 +264,15 @@ def validate_swft_bundle(
                 "secret_detection": "Run: python tools/security/secret_detector.py --project-dir <path>",
                 "compliance_assessment": "Run: python tools/testing/production_audit.py --json",
             }
-            recommendations.append(
-                rec_map.get(category, f"Generate {category} evidence").format(pid=project_id)
-            )
+            recommendations.append(rec_map.get(category, f"Generate {category} evidence").format(pid=project_id))
         elif not artifact["required"] and not artifact["available"]:
-            gaps.append({
-                "category": category,
-                "description": artifact["description"],
-                "severity": "warning",
-            })
+            gaps.append(
+                {
+                    "category": category,
+                    "description": artifact["description"],
+                    "severity": "warning",
+                }
+            )
 
     return {
         "project_id": project_id,
@@ -287,9 +287,7 @@ def validate_swft_bundle(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="DoD SWFT Evidence Bundler"
-    )
+    parser = argparse.ArgumentParser(description="DoD SWFT Evidence Bundler")
     parser.add_argument("--project-id", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--bundle", action="store_true", help="Bundle SWFT evidence")
     parser.add_argument("--validate", action="store_true", help="Validate SWFT evidence completeness")

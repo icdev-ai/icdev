@@ -66,9 +66,11 @@ VALID_DECISIONS = {"approved", "rejected", "conditional"}
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
@@ -77,13 +79,12 @@ except ImportError:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -112,8 +113,8 @@ def _resolve_approval_type(raw_type):
 # submit_for_approval
 # ---------------------------------------------------------------------------
 
-def submit_for_approval(session_id, approval_type, submitted_by, reviewers,
-                        conditions=None, db_path=None):
+
+def submit_for_approval(session_id, approval_type, submitted_by, reviewers, conditions=None, db_path=None):
     """Submit a workflow item for approval.
 
     Args:
@@ -158,11 +159,21 @@ def submit_for_approval(session_id, approval_type, submitted_by, reviewers,
                 submitted_by, submitted_at, reviewers, current_reviewer,
                 conditions, classification, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (approval_id, session_id, project_id, resolved_type, "pending",
-             submitted_by, now, json.dumps(reviewers),
-             reviewers[0] if reviewers else None,
-             json.dumps(conditions) if conditions else None,
-             "CUI", now, now),
+            (
+                approval_id,
+                session_id,
+                project_id,
+                resolved_type,
+                "pending",
+                submitted_by,
+                now,
+                json.dumps(reviewers),
+                reviewers[0] if reviewers else None,
+                json.dumps(conditions) if conditions else None,
+                "CUI",
+                now,
+                now,
+            ),
         )
         conn.commit()
 
@@ -195,6 +206,7 @@ def submit_for_approval(session_id, approval_type, submitted_by, reviewers,
 # ---------------------------------------------------------------------------
 # review_approval
 # ---------------------------------------------------------------------------
+
 
 def review_approval(approval_id, reviewer, decision, rationale, db_path=None):
     """Review and decide on an approval workflow.
@@ -248,12 +260,14 @@ def review_approval(approval_id, reviewer, decision, rationale, db_path=None):
 
         # Build approval chain
         existing_chain = json.loads(row["approval_chain"] or "[]")
-        existing_chain.append({
-            "reviewer": reviewer,
-            "decision": decision,
-            "rationale": rationale,
-            "decided_at": now,
-        })
+        existing_chain.append(
+            {
+                "reviewer": reviewer,
+                "decision": decision,
+                "rationale": rationale,
+                "decided_at": now,
+            }
+        )
 
         conn.execute(
             """UPDATE approval_workflows
@@ -261,8 +275,7 @@ def review_approval(approval_id, reviewer, decision, rationale, db_path=None):
                    decision_rationale = ?, decided_at = ?,
                    approval_chain = ?, updated_at = ?
                WHERE id = ?""",
-            (new_status, rationale, now,
-             json.dumps(existing_chain), now, approval_id),
+            (new_status, rationale, now, json.dumps(existing_chain), now, approval_id),
         )
         conn.commit()
 
@@ -304,6 +317,7 @@ def review_approval(approval_id, reviewer, decision, rationale, db_path=None):
 # get_pending
 # ---------------------------------------------------------------------------
 
+
 def get_pending(project_id=None, reviewer=None, db_path=None):
     """List pending approval workflows.
 
@@ -341,18 +355,20 @@ def get_pending(project_id=None, reviewer=None, db_path=None):
             if reviewer and reviewer not in reviewers_list:
                 continue
 
-            pending.append({
-                "approval_id": r_dict["id"],
-                "session_id": r_dict["session_id"],
-                "project_id": r_dict["project_id"],
-                "approval_type": r_dict["approval_type"],
-                "status": r_dict["status"],
-                "submitted_by": r_dict["submitted_by"],
-                "submitted_at": r_dict["submitted_at"],
-                "reviewers": reviewers_list,
-                "current_reviewer": r_dict["current_reviewer"],
-                "conditions": json.loads(r_dict["conditions"] or "null"),
-            })
+            pending.append(
+                {
+                    "approval_id": r_dict["id"],
+                    "session_id": r_dict["session_id"],
+                    "project_id": r_dict["project_id"],
+                    "approval_type": r_dict["approval_type"],
+                    "status": r_dict["status"],
+                    "submitted_by": r_dict["submitted_by"],
+                    "submitted_at": r_dict["submitted_at"],
+                    "reviewers": reviewers_list,
+                    "current_reviewer": r_dict["current_reviewer"],
+                    "conditions": json.loads(r_dict["conditions"] or "null"),
+                }
+            )
 
         return {
             "total_pending": len(pending),
@@ -367,6 +383,7 @@ def get_pending(project_id=None, reviewer=None, db_path=None):
 # ---------------------------------------------------------------------------
 # get_approval
 # ---------------------------------------------------------------------------
+
 
 def get_approval(approval_id, db_path=None):
     """Get details of a single approval workflow.
@@ -420,6 +437,7 @@ def get_approval(approval_id, db_path=None):
 # list_approvals
 # ---------------------------------------------------------------------------
 
+
 def list_approvals(session_id, db_path=None):
     """List all approvals for a session.
 
@@ -445,18 +463,20 @@ def list_approvals(session_id, db_path=None):
         approvals = []
         for r in rows:
             r_dict = dict(r)
-            approvals.append({
-                "approval_id": r_dict["id"],
-                "session_id": r_dict["session_id"],
-                "project_id": r_dict["project_id"],
-                "approval_type": r_dict["approval_type"],
-                "status": r_dict["status"],
-                "submitted_by": r_dict["submitted_by"],
-                "submitted_at": r_dict["submitted_at"],
-                "reviewers": json.loads(r_dict["reviewers"] or "[]"),
-                "decided_at": r_dict["decided_at"],
-                "decision_rationale": r_dict["decision_rationale"],
-            })
+            approvals.append(
+                {
+                    "approval_id": r_dict["id"],
+                    "session_id": r_dict["session_id"],
+                    "project_id": r_dict["project_id"],
+                    "approval_type": r_dict["approval_type"],
+                    "status": r_dict["status"],
+                    "submitted_by": r_dict["submitted_by"],
+                    "submitted_at": r_dict["submitted_at"],
+                    "reviewers": json.loads(r_dict["reviewers"] or "[]"),
+                    "decided_at": r_dict["decided_at"],
+                    "decision_rationale": r_dict["decision_rationale"],
+                }
+            )
 
         # Summary counts
         status_counts = {}
@@ -477,10 +497,9 @@ def list_approvals(session_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Approval workflow manager for ICDEV RICOAS"
-    )
+    parser = argparse.ArgumentParser(description="Approval workflow manager for ICDEV RICOAS")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Actions
@@ -503,8 +522,7 @@ def main():
 
     # Review args
     parser.add_argument("--reviewer", help="Reviewer identity")
-    parser.add_argument("--decision", choices=["approved", "rejected", "conditional"],
-                        help="Approval decision")
+    parser.add_argument("--decision", choices=["approved", "rejected", "conditional"], help="Approval decision")
     parser.add_argument("--rationale", help="Decision rationale")
 
     args = parser.parse_args()

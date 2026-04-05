@@ -159,8 +159,7 @@ def main():
     print("  python tools/creative/creative_engine.py --scan --all --json")
     print("=" * 60)
 
-    return {"registered": result["stored"], "confirmed": confirmed_count,
-            "total": len(final)}
+    return {"registered": result["stored"], "confirmed": confirmed_count, "total": len(final)}
 
 
 if __name__ == "__main__":

@@ -55,14 +55,12 @@ VALIDATION_AREAS = ["TEST", "INT"]
 # Database helpers
 # -----------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -70,9 +68,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data from the projects table."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -82,11 +78,13 @@ def _get_project(conn, project_id):
 # Configuration helpers
 # -----------------------------------------------------------------
 
+
 def _load_cui_config():
     """Load CUI marking configuration."""
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -141,6 +139,7 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 # -----------------------------------------------------------------
 # Auto-check helper: walk project files matching extensions
 # -----------------------------------------------------------------
+
 
 def _scan_files(project_dir, extensions, patterns, threshold=1):
     """Scan project files for regex patterns.
@@ -215,6 +214,7 @@ def _dir_or_file_exists(project_dir, dir_names=None, glob_patterns=None):
 #    "details": "specifics"}
 # -----------------------------------------------------------------
 
+
 def _check_req_completeness(project_dir):
     """IVV-01: Requirements Completeness.
 
@@ -229,8 +229,12 @@ def _check_req_completeness(project_dir):
     req_docs = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "requirements.md", "REQUIREMENTS.md", "requirements.txt",
-            "requirements.rst", "functional-requirements*", "non-functional-requirements*",
+            "requirements.md",
+            "REQUIREMENTS.md",
+            "requirements.txt",
+            "requirements.rst",
+            "functional-requirements*",
+            "non-functional-requirements*",
         ],
     )
     if req_docs:
@@ -240,8 +244,11 @@ def _check_req_completeness(project_dir):
     user_stories = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "user-stories.md", "user_stories.md", "USER_STORIES.md",
-            "user-stories*.md", "stories*.md",
+            "user-stories.md",
+            "user_stories.md",
+            "USER_STORIES.md",
+            "user-stories*.md",
+            "stories*.md",
         ],
     )
     if user_stories:
@@ -268,18 +275,14 @@ def _check_req_completeness(project_dir):
     if count >= 2:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Requirements completeness: {count} types of requirements "
-                f"documentation found."
-            ),
+            "evidence": (f"Requirements completeness: {count} types of requirements documentation found."),
             "details": "; ".join(all_evidence),
         }
     elif count == 1:
         return {
             "status": "partially_satisfied",
             "evidence": (
-                "Only 1 type of requirements documentation found. "
-                "At least 2 types required for full completeness."
+                "Only 1 type of requirements documentation found. At least 2 types required for full completeness."
             ),
             "details": "; ".join(all_evidence),
         }
@@ -288,8 +291,7 @@ def _check_req_completeness(project_dir):
             "status": "not_satisfied",
             "evidence": "No requirements documentation found.",
             "details": (
-                "Expected: requirements.md, user-stories.md, *.feature files, "
-                "or docs/requirements/ directory."
+                "Expected: requirements.md, user-stories.md, *.feature files, or docs/requirements/ directory."
             ),
         }
 
@@ -343,8 +345,7 @@ def _check_req_consistency(project_dir):
         return {
             "status": "satisfied",
             "evidence": (
-                f"Requirements consistency: {matched}/{total} features "
-                f"({ratio:.0%}) have matching test files."
+                f"Requirements consistency: {matched}/{total} features ({ratio:.0%}) have matching test files."
             ),
             "details": "Threshold: >80%. All features are consistent with test naming.",
         }
@@ -352,24 +353,18 @@ def _check_req_consistency(project_dir):
         return {
             "status": "partially_satisfied",
             "evidence": (
-                f"Requirements consistency: {matched}/{total} features "
-                f"({ratio:.0%}) have matching test files."
+                f"Requirements consistency: {matched}/{total} features ({ratio:.0%}) have matching test files."
             ),
-            "details": (
-                f"Threshold: >80% for full compliance. "
-                f"Unmatched: {', '.join(unmatched_features[:5])}"
-            ),
+            "details": (f"Threshold: >80% for full compliance. Unmatched: {', '.join(unmatched_features[:5])}"),
         }
     else:
         return {
             "status": "not_satisfied",
             "evidence": (
-                f"Requirements consistency: only {matched}/{total} features "
-                f"({ratio:.0%}) have matching test files."
+                f"Requirements consistency: only {matched}/{total} features ({ratio:.0%}) have matching test files."
             ),
             "details": (
-                f"Most feature files lack corresponding test files. "
-                f"Unmatched: {', '.join(unmatched_features[:10])}"
+                f"Most feature files lack corresponding test files. Unmatched: {', '.join(unmatched_features[:10])}"
             ),
         }
 
@@ -429,34 +424,23 @@ def _check_req_testability(project_dir):
     if ratio >= 1.0:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"All {total} feature file(s) have corresponding step "
-                f"implementation files."
-            ),
+            "evidence": (f"All {total} feature file(s) have corresponding step implementation files."),
             "details": "Step files found for every .feature file.",
         }
     elif ratio > 0.7:
         return {
             "status": "partially_satisfied",
-            "evidence": (
-                f"Testability: {matched}/{total} features ({ratio:.0%}) "
-                f"have step implementations."
-            ),
+            "evidence": (f"Testability: {matched}/{total} features ({ratio:.0%}) have step implementations."),
             "details": (
-                f"Threshold: 100% for full compliance, >70% for partial. "
-                f"Missing steps for: {', '.join(unmatched[:5])}"
+                f"Threshold: 100% for full compliance, >70% for partial. Missing steps for: {', '.join(unmatched[:5])}"
             ),
         }
     else:
         return {
             "status": "not_satisfied",
-            "evidence": (
-                f"Testability: only {matched}/{total} features ({ratio:.0%}) "
-                f"have step implementations."
-            ),
+            "evidence": (f"Testability: only {matched}/{total} features ({ratio:.0%}) have step implementations."),
             "details": (
-                f"Most feature files lack corresponding step definitions. "
-                f"Missing: {', '.join(unmatched[:10])}"
+                f"Most feature files lack corresponding step definitions. Missing: {', '.join(unmatched[:10])}"
             ),
         }
 
@@ -471,16 +455,27 @@ def _check_design_architecture(project_dir):
     found_docs = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "architecture.md", "ARCHITECTURE.md", "system_design.md",
-            "SYSTEM_DESIGN.md", "system-design.md", "design.md",
-            "DESIGN.md", "architecture.rst", "system_architecture*",
+            "architecture.md",
+            "ARCHITECTURE.md",
+            "system_design.md",
+            "SYSTEM_DESIGN.md",
+            "system-design.md",
+            "design.md",
+            "DESIGN.md",
+            "architecture.rst",
+            "system_architecture*",
         ],
     )
     found_dirs = _dir_or_file_exists(
         project_dir,
         dir_names=[
-            "architecture", "docs/architecture", "docs/design",
-            "design", "adr", "docs/adr", "doc/architecture",
+            "architecture",
+            "docs/architecture",
+            "docs/design",
+            "design",
+            "adr",
+            "docs/adr",
+            "doc/architecture",
         ],
     )
     all_found = list(set(found_docs + found_dirs))
@@ -488,12 +483,8 @@ def _check_design_architecture(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Architecture documentation found: {len(all_found)} artifact(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in all_found[:5]
-            ),
+            "evidence": (f"Architecture documentation found: {len(all_found)} artifact(s)."),
+            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
     return {
         "status": "not_satisfied",
@@ -515,9 +506,15 @@ def _check_independent_sast(project_dir):
     found_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "*sast*report*", "*bandit*report*", "*.sarif",
-            "*sast*result*", "*sonarqube*report*", "*semgrep*",
-            "*codeql*", "*sast*.json", "*sast*.xml",
+            "*sast*report*",
+            "*bandit*report*",
+            "*.sarif",
+            "*sast*result*",
+            "*sonarqube*report*",
+            "*semgrep*",
+            "*codeql*",
+            "*sast*.json",
+            "*sast*.xml",
         ],
     )
 
@@ -527,28 +524,19 @@ def _check_independent_sast(project_dir):
         r"bandit.*results|severity.*confidence.*location",
         r"sonarqube|sonarlint|checkmarx|fortify|coverity",
     ]
-    matched, _ = _scan_files(
-        project_dir, (".json", ".xml", ".sarif"), sast_patterns
-    )
+    matched, _ = _scan_files(project_dir, (".json", ".xml", ".sarif"), sast_patterns)
 
     all_found = list(set(found_files + matched))
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"SAST results found: {len(all_found)} artifact(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in all_found[:5]
-            ),
+            "evidence": (f"SAST results found: {len(all_found)} artifact(s)."),
+            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
     return {
         "status": "not_satisfied",
         "evidence": "No SAST scan results detected in the project.",
-        "details": (
-            "Expected: *sast*report*, *bandit*report*, *.sarif files, "
-            "or SAST tool output in JSON/XML."
-        ),
+        "details": ("Expected: *sast*report*, *bandit*report*, *.sarif files, or SAST tool output in JSON/XML."),
     }
 
 
@@ -563,33 +551,35 @@ def _check_coding_standards(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            ".flake8", ".pylintrc", ".eslintrc*", "tslint.json",
-            ".prettierrc*", ".stylelintrc*", ".editorconfig",
-            "ruff.toml", ".ruff.toml", ".bandit",
+            ".flake8",
+            ".pylintrc",
+            ".eslintrc*",
+            "tslint.json",
+            ".prettierrc*",
+            ".stylelintrc*",
+            ".editorconfig",
+            "ruff.toml",
+            ".ruff.toml",
+            ".bandit",
         ],
     )
     if found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Coding standards configuration found: {len(found)} config file(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in found[:5]
-            ),
+            "evidence": (f"Coding standards configuration found: {len(found)} config file(s)."),
+            "details": "; ".join(os.path.basename(f) for f in found[:5]),
         }
 
     # Check pyproject.toml for linter sections
-    pyproject_files = _dir_or_file_exists(
-        project_dir, glob_patterns=["pyproject.toml"]
-    )
+    pyproject_files = _dir_or_file_exists(project_dir, glob_patterns=["pyproject.toml"])
     for pp_path in pyproject_files:
         try:
             with open(pp_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             if re.search(
                 r"\[tool\.(ruff|black|flake8|pylint|isort|mypy)\]",
-                content, re.IGNORECASE,
+                content,
+                re.IGNORECASE,
             ):
                 return {
                     "status": "satisfied",
@@ -600,9 +590,7 @@ def _check_coding_standards(project_dir):
             continue
 
     # Check setup.cfg for [flake8] section
-    setup_cfg_files = _dir_or_file_exists(
-        project_dir, glob_patterns=["setup.cfg"]
-    )
+    setup_cfg_files = _dir_or_file_exists(project_dir, glob_patterns=["setup.cfg"])
     for sc_path in setup_cfg_files:
         try:
             with open(sc_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -620,8 +608,7 @@ def _check_coding_standards(project_dir):
         "status": "not_satisfied",
         "evidence": "No coding standards or linter configuration found.",
         "details": (
-            "Expected: .flake8, .pylintrc, .eslintrc*, tslint.json, "
-            "or [tool.ruff]/[tool.black] in pyproject.toml."
+            "Expected: .flake8, .pylintrc, .eslintrc*, tslint.json, or [tool.ruff]/[tool.black] in pyproject.toml."
         ),
     }
 
@@ -637,9 +624,13 @@ def _check_code_review_completion(project_dir):
     found_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "CODEOWNERS", ".github/CODEOWNERS", ".gitlab/CODEOWNERS",
-            "pull_request_template.md", "PULL_REQUEST_TEMPLATE.md",
-            "merge_request_template*", ".github/pull_request_template*",
+            "CODEOWNERS",
+            ".github/CODEOWNERS",
+            ".gitlab/CODEOWNERS",
+            "pull_request_template.md",
+            "PULL_REQUEST_TEMPLATE.md",
+            "merge_request_template*",
+            ".github/pull_request_template*",
             ".gitlab/merge_request_templates/*",
         ],
     )
@@ -647,12 +638,8 @@ def _check_code_review_completion(project_dir):
     if found_files:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Code review infrastructure found: {len(found_files)} artifact(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in found_files[:5]
-            ),
+            "evidence": (f"Code review infrastructure found: {len(found_files)} artifact(s)."),
+            "details": "; ".join(os.path.basename(f) for f in found_files[:5]),
         }
 
     # Scan CI/pipeline files for review requirements
@@ -667,12 +654,8 @@ def _check_code_review_completion(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Code review enforcement patterns found in {len(matched)} file(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in matched[:5]
-            ),
+            "evidence": (f"Code review enforcement patterns found in {len(matched)} file(s)."),
+            "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
     if total == 0:
@@ -686,8 +669,7 @@ def _check_code_review_completion(project_dir):
         "status": "not_satisfied",
         "evidence": "No code review infrastructure or enforcement detected.",
         "details": (
-            "Expected: CODEOWNERS, pull_request_template.md, or "
-            "approval_required patterns in CI configuration."
+            "Expected: CODEOWNERS, pull_request_template.md, or approval_required patterns in CI configuration."
         ),
     }
 
@@ -704,32 +686,30 @@ def _check_complexity_metrics(project_dir):
     found = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            ".complexity", "complexity-report*", "*complexity*report*",
-            "radon-report*", "*radon*",
+            ".complexity",
+            "complexity-report*",
+            "*complexity*report*",
+            "radon-report*",
+            "*radon*",
         ],
     )
     if found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Complexity measurement artifacts found: {len(found)} item(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in found[:5]
-            ),
+            "evidence": (f"Complexity measurement artifacts found: {len(found)} item(s)."),
+            "details": "; ".join(os.path.basename(f) for f in found[:5]),
         }
 
     # Check pyproject.toml for radon/complexity config
-    pyproject_files = _dir_or_file_exists(
-        project_dir, glob_patterns=["pyproject.toml"]
-    )
+    pyproject_files = _dir_or_file_exists(project_dir, glob_patterns=["pyproject.toml"])
     for pp_path in pyproject_files:
         try:
             with open(pp_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             if re.search(
                 r"\[tool\.radon\]|max.complexity|mccabe|cyclomatic",
-                content, re.IGNORECASE,
+                content,
+                re.IGNORECASE,
             ):
                 return {
                     "status": "satisfied",
@@ -740,9 +720,7 @@ def _check_complexity_metrics(project_dir):
             continue
 
     # Check setup.cfg for complexity settings
-    setup_cfg_files = _dir_or_file_exists(
-        project_dir, glob_patterns=["setup.cfg"]
-    )
+    setup_cfg_files = _dir_or_file_exists(project_dir, glob_patterns=["setup.cfg"])
     for sc_path in setup_cfg_files:
         try:
             with open(sc_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -777,10 +755,7 @@ def _check_complexity_metrics(project_dir):
     return {
         "status": "not_satisfied",
         "evidence": "No complexity measurement tooling or configuration detected.",
-        "details": (
-            "Expected: radon configuration, max-complexity in linter config, "
-            "or complexity-report artifacts."
-        ),
+        "details": ("Expected: radon configuration, max-complexity in linter config, or complexity-report artifacts."),
     }
 
 
@@ -800,9 +775,14 @@ def _check_test_coverage(project_dir):
     found_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "coverage.xml", ".coverage", "coverage-report*",
-            "lcov.info", "cobertura.xml", "coverage.json",
-            "*coverage*report*", ".coveragerc",
+            "coverage.xml",
+            ".coverage",
+            "coverage-report*",
+            "lcov.info",
+            "cobertura.xml",
+            "coverage.json",
+            "*coverage*report*",
+            ".coveragerc",
         ],
     )
 
@@ -810,20 +790,18 @@ def _check_test_coverage(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Test coverage artifacts found: {len(all_found)} item(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in all_found[:5]
-            ),
+            "evidence": (f"Test coverage artifacts found: {len(all_found)} item(s)."),
+            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
     # Check requirements for coverage tools
     req_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "requirements*.txt", "requirements/*.txt",
-            "Pipfile", "Pipfile.lock",
+            "requirements*.txt",
+            "requirements/*.txt",
+            "Pipfile",
+            "Pipfile.lock",
         ],
     )
     for rf_path in req_files:
@@ -840,16 +818,15 @@ def _check_test_coverage(project_dir):
             continue
 
     # Check pyproject.toml for coverage config
-    pyproject_files = _dir_or_file_exists(
-        project_dir, glob_patterns=["pyproject.toml"]
-    )
+    pyproject_files = _dir_or_file_exists(project_dir, glob_patterns=["pyproject.toml"])
     for pp_path in pyproject_files:
         try:
             with open(pp_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             if re.search(
                 r"\[tool\.coverage\]|\[tool\.pytest.*cov|--cov|coverage",
-                content, re.IGNORECASE,
+                content,
+                re.IGNORECASE,
             ):
                 return {
                     "status": "satisfied",
@@ -862,10 +839,7 @@ def _check_test_coverage(project_dir):
     return {
         "status": "not_satisfied",
         "evidence": "No test coverage reports or configuration detected.",
-        "details": (
-            "Expected: htmlcov/, coverage.xml, .coverage, lcov.info, "
-            "or pytest-cov in requirements."
-        ),
+        "details": ("Expected: htmlcov/, coverage.xml, .coverage, lcov.info, or pytest-cov in requirements."),
     }
 
 
@@ -881,8 +855,12 @@ def _check_test_plan(project_dir):
     plan_docs = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "test-plan.md", "TEST_PLAN.md", "test_plan.md",
-            "test-plan.rst", "testing-plan*", "test-strategy*",
+            "test-plan.md",
+            "TEST_PLAN.md",
+            "test_plan.md",
+            "test-plan.rst",
+            "testing-plan*",
+            "test-strategy*",
             "TEST_STRATEGY*",
         ],
     )
@@ -895,12 +873,8 @@ def _check_test_plan(project_dir):
         all_found = list(set(plan_docs + plan_dirs))
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Test plan documentation found: {len(all_found)} artifact(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in all_found[:5]
-            ),
+            "evidence": (f"Test plan documentation found: {len(all_found)} artifact(s)."),
+            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
     # Check for structured tests/ directory
@@ -912,55 +886,50 @@ def _check_test_plan(project_dir):
     for td in all_test_dirs:
         # Check for organized subdirectories
         subdirs = [
-            child.name for child in td.iterdir()
-            if child.is_dir() and child.name in (
-                "unit", "integration", "e2e", "functional",
-                "acceptance", "smoke", "performance", "security",
+            child.name
+            for child in td.iterdir()
+            if child.is_dir()
+            and child.name
+            in (
+                "unit",
+                "integration",
+                "e2e",
+                "functional",
+                "acceptance",
+                "smoke",
+                "performance",
+                "security",
             )
         ]
         if subdirs:
             return {
                 "status": "satisfied",
                 "evidence": (
-                    f"Structured test directory found at {td.name}/ with "
-                    f"subdirectories: {', '.join(subdirs)}."
+                    f"Structured test directory found at {td.name}/ with subdirectories: {', '.join(subdirs)}."
                 ),
                 "details": f"Path: {td}",
             }
 
         # Check for at least 3 test files
-        test_file_count = sum(
-            1 for f in td.iterdir()
-            if f.is_file() and f.name.startswith("test_")
-        )
+        test_file_count = sum(1 for f in td.iterdir() if f.is_file() and f.name.startswith("test_"))
         if test_file_count >= 3:
             return {
                 "status": "satisfied",
-                "evidence": (
-                    f"Test directory found with {test_file_count} test file(s)."
-                ),
+                "evidence": (f"Test directory found with {test_file_count} test file(s)."),
                 "details": f"Path: {td}",
             }
 
     if all_test_dirs:
         return {
             "status": "partially_satisfied",
-            "evidence": (
-                "Test directory exists but lacks structured organization."
-            ),
-            "details": (
-                "Expected: tests/ with unit/, integration/, e2e/ subdirectories "
-                "or at least 3 test files."
-            ),
+            "evidence": ("Test directory exists but lacks structured organization."),
+            "details": ("Expected: tests/ with unit/, integration/, e2e/ subdirectories or at least 3 test files."),
         }
 
     return {
         "status": "not_satisfied",
         "evidence": "No test plan documentation or structured tests/ directory found.",
-        "details": (
-            "Expected: test-plan.md, docs/testing/, or tests/ directory "
-            "with organized subdirectories."
-        ),
+        "details": ("Expected: test-plan.md, docs/testing/, or tests/ directory with organized subdirectories."),
     }
 
 
@@ -992,21 +961,15 @@ def _check_security_tests(project_dir):
             r"it\s*\(\s*['\"].*(?:security|auth|inject|xss|csrf|permission|access)",
             r"describe\s*\(\s*['\"].*(?:security|auth|inject|xss|csrf|permission|access)",
         ]
-        matched, _ = _scan_files(
-            project_dir, (".py", ".js", ".ts"), content_patterns
-        )
+        matched, _ = _scan_files(project_dir, (".py", ".js", ".ts"), content_patterns)
         security_test_files = matched
 
     count = len(security_test_files)
     if count >= 2:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Security test coverage: {count} security-specific test file(s) found."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in security_test_files[:5]
-            ),
+            "evidence": (f"Security test coverage: {count} security-specific test file(s) found."),
+            "details": "; ".join(os.path.basename(f) for f in security_test_files[:5]),
         }
     elif count == 1:
         return {
@@ -1022,8 +985,7 @@ def _check_security_tests(project_dir):
             "status": "not_satisfied",
             "evidence": "No security-specific test files detected.",
             "details": (
-                "Expected: test files containing security, auth, injection, "
-                "xss, csrf, permission, or access patterns."
+                "Expected: test files containing security, auth, injection, xss, csrf, permission, or access patterns."
             ),
         }
 
@@ -1082,35 +1044,20 @@ def _check_bdd_coverage(project_dir):
     if ratio >= 1.0:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"BDD coverage: all {total} feature file(s) have "
-                f"corresponding step implementations."
-            ),
+            "evidence": (f"BDD coverage: all {total} feature file(s) have corresponding step implementations."),
             "details": "Full BDD coverage achieved.",
         }
     elif ratio > 0.7:
         return {
             "status": "partially_satisfied",
-            "evidence": (
-                f"BDD coverage: {matched}/{total} features ({ratio:.0%}) "
-                f"have step implementations."
-            ),
-            "details": (
-                f"Threshold: 100% for full compliance. "
-                f"Missing steps for: {', '.join(unmatched[:5])}"
-            ),
+            "evidence": (f"BDD coverage: {matched}/{total} features ({ratio:.0%}) have step implementations."),
+            "details": (f"Threshold: 100% for full compliance. Missing steps for: {', '.join(unmatched[:5])}"),
         }
     else:
         return {
             "status": "not_satisfied",
-            "evidence": (
-                f"BDD coverage: only {matched}/{total} features ({ratio:.0%}) "
-                f"have step implementations."
-            ),
-            "details": (
-                f"Majority of features lack step definitions. "
-                f"Missing: {', '.join(unmatched[:10])}"
-            ),
+            "evidence": (f"BDD coverage: only {matched}/{total} features ({ratio:.0%}) have step implementations."),
+            "details": (f"Majority of features lack step definitions. Missing: {', '.join(unmatched[:10])}"),
         }
 
 
@@ -1124,16 +1071,27 @@ def _check_e2e_tests(project_dir):
     found_dirs = _dir_or_file_exists(
         project_dir,
         dir_names=[
-            "e2e", "integration", "end-to-end", "end_to_end",
-            "tests/e2e", "tests/integration", "test/e2e", "test/integration",
+            "e2e",
+            "integration",
+            "end-to-end",
+            "end_to_end",
+            "tests/e2e",
+            "tests/integration",
+            "test/e2e",
+            "test/integration",
         ],
     )
     found_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "playwright.config.*", "cypress.config.*", "cypress.json",
-            "wdio.conf.*", "protractor.conf.*", "selenium.conf*",
-            "nightwatch.conf.*", "testcafe*",
+            "playwright.config.*",
+            "cypress.config.*",
+            "cypress.json",
+            "wdio.conf.*",
+            "protractor.conf.*",
+            "selenium.conf*",
+            "nightwatch.conf.*",
+            "testcafe*",
         ],
     )
 
@@ -1141,12 +1099,8 @@ def _check_e2e_tests(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"E2E test infrastructure found: {len(all_found)} artifact(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in all_found[:5]
-            ),
+            "evidence": (f"E2E test infrastructure found: {len(all_found)} artifact(s)."),
+            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
 
     # Check for E2E-flavored test files
@@ -1155,18 +1109,12 @@ def _check_e2e_tests(project_dir):
         r"describe.*['\"]e2e|describe.*['\"]integration|describe.*['\"]end.to.end",
         r"def\s+test_.*(?:e2e|integration|end_to_end|workflow|journey)",
     ]
-    matched, _ = _scan_files(
-        project_dir, (".py", ".js", ".ts"), e2e_patterns
-    )
+    matched, _ = _scan_files(project_dir, (".py", ".js", ".ts"), e2e_patterns)
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"E2E test patterns found in {len(matched)} file(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in matched[:5]
-            ),
+            "evidence": (f"E2E test patterns found in {len(matched)} file(s)."),
+            "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
     return {
@@ -1189,18 +1137,27 @@ def _check_rtm_exists(project_dir):
     found_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "traceability_matrix*", "traceability-matrix*",
-            "rtm.md", "RTM.md", "RTM.*", "rtm.*",
-            "requirements-traceability*", "requirements_traceability*",
-            "trace-matrix*", "trace_matrix*",
+            "traceability_matrix*",
+            "traceability-matrix*",
+            "rtm.md",
+            "RTM.md",
+            "RTM.*",
+            "rtm.*",
+            "requirements-traceability*",
+            "requirements_traceability*",
+            "trace-matrix*",
+            "trace_matrix*",
             "traceability*",
         ],
     )
     found_dirs = _dir_or_file_exists(
         project_dir,
         dir_names=[
-            "rtm", "compliance/rtm", "docs/rtm",
-            "traceability", "docs/traceability",
+            "rtm",
+            "compliance/rtm",
+            "docs/rtm",
+            "traceability",
+            "docs/traceability",
         ],
     )
 
@@ -1208,12 +1165,8 @@ def _check_rtm_exists(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Requirements Traceability Matrix found: {len(all_found)} artifact(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in all_found[:5]
-            ),
+            "evidence": (f"Requirements Traceability Matrix found: {len(all_found)} artifact(s)."),
+            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
     return {
         "status": "not_satisfied",
@@ -1235,10 +1188,14 @@ def _check_pipeline_security(project_dir):
     ci_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            ".gitlab-ci.yml", ".github/workflows/*.yml",
-            ".github/workflows/*.yaml", "Jenkinsfile",
-            "azure-pipelines.yml", ".circleci/config.yml",
-            "bitbucket-pipelines.yml", ".buildkite/pipeline.yml",
+            ".gitlab-ci.yml",
+            ".github/workflows/*.yml",
+            ".github/workflows/*.yaml",
+            "Jenkinsfile",
+            "azure-pipelines.yml",
+            ".circleci/config.yml",
+            "bitbucket-pipelines.yml",
+            ".buildkite/pipeline.yml",
         ],
     )
 
@@ -1246,10 +1203,7 @@ def _check_pipeline_security(project_dir):
         return {
             "status": "not_satisfied",
             "evidence": "No CI/CD pipeline configuration files detected.",
-            "details": (
-                "Expected: .gitlab-ci.yml, .github/workflows/*.yml, "
-                "Jenkinsfile, or azure-pipelines.yml."
-            ),
+            "details": ("Expected: .gitlab-ci.yml, .github/workflows/*.yml, Jenkinsfile, or azure-pipelines.yml."),
         }
 
     # Scan CI files for security-related stages/jobs
@@ -1274,21 +1228,13 @@ def _check_pipeline_security(project_dir):
     if security_found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Pipeline security stages found in {len(security_found)} "
-                f"CI/CD configuration file(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in security_found[:5]
-            ),
+            "evidence": (f"Pipeline security stages found in {len(security_found)} CI/CD configuration file(s)."),
+            "details": "; ".join(os.path.basename(f) for f in security_found[:5]),
         }
 
     return {
         "status": "partially_satisfied",
-        "evidence": (
-            f"CI/CD configuration found ({len(ci_files)} file(s)) but "
-            f"no security stages detected."
-        ),
+        "evidence": (f"CI/CD configuration found ({len(ci_files)} file(s)) but no security stages detected."),
         "details": (
             "Pipeline exists but lacks security stages. Expected: SAST, "
             "dependency audit, secret detection, or container scanning stages."
@@ -1307,8 +1253,11 @@ def _check_artifact_integrity(project_dir):
     sbom_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "*sbom*.json", "*bom*.xml", "*sbom*.xml",
-            "*cyclonedx*", "*spdx*",
+            "*sbom*.json",
+            "*bom*.xml",
+            "*sbom*.xml",
+            "*cyclonedx*",
+            "*spdx*",
         ],
     )
 
@@ -1316,10 +1265,19 @@ def _check_artifact_integrity(project_dir):
     integrity_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "SHA256SUMS", "*.sha256", "*.sha512", "*.sig",
-            "*.asc", "*.gpg", "checksums*", "CHECKSUMS*",
-            "*cosign*", "*sigstore*", "*.intoto.jsonl",
-            "*.provenance", "*provenance*.json",
+            "SHA256SUMS",
+            "*.sha256",
+            "*.sha512",
+            "*.sig",
+            "*.asc",
+            "*.gpg",
+            "checksums*",
+            "CHECKSUMS*",
+            "*cosign*",
+            "*sigstore*",
+            "*.intoto.jsonl",
+            "*.provenance",
+            "*provenance*.json",
         ],
     )
 
@@ -1327,19 +1285,14 @@ def _check_artifact_integrity(project_dir):
     if all_found:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Artifact integrity mechanisms found: {len(all_found)} artifact(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in all_found[:5]
-            ),
+            "evidence": (f"Artifact integrity mechanisms found: {len(all_found)} artifact(s)."),
+            "details": "; ".join(os.path.basename(f) for f in all_found[:5]),
         }
     return {
         "status": "not_satisfied",
         "evidence": "No artifact integrity mechanisms detected (SBOM, checksums, signatures).",
         "details": (
-            "Expected: SBOM files, SHA256SUMS, *.sha256, *.sig, "
-            "cosign signatures, or provenance attestations."
+            "Expected: SBOM files, SHA256SUMS, *.sha256, *.sig, cosign signatures, or provenance attestations."
         ),
     }
 
@@ -1373,58 +1326,50 @@ def _check_config_hardening(project_dir):
             continue
 
         checks = {
-            "non_root_user": bool(
-                re.search(r"USER\s+(?!root)\S+", content)
-            ),
+            "non_root_user": bool(re.search(r"USER\s+(?!root)\S+", content)),
             "drop_capabilities": bool(
                 re.search(
                     r"drop.*ALL|securityContext.*drop|cap_drop",
-                    content, re.IGNORECASE | re.DOTALL,
+                    content,
+                    re.IGNORECASE | re.DOTALL,
                 )
             ),
             "read_only_rootfs": bool(
                 re.search(
                     r"readOnlyRootFilesystem|read.only",
-                    content, re.IGNORECASE,
+                    content,
+                    re.IGNORECASE,
                 )
             ),
             "minimal_base": bool(
                 re.search(
                     r"FROM.*(:slim|:alpine|-slim|-minimal|distroless|hardened)",
-                    content, re.IGNORECASE,
+                    content,
+                    re.IGNORECASE,
                 )
             ),
         }
         passed = sum(checks.values())
         if passed >= 2:
             hardened_count += 1
-            hardening_evidence.append(
-                f"{os.path.basename(df_path)}: {passed}/4 hardening checks passed"
-            )
+            hardening_evidence.append(f"{os.path.basename(df_path)}: {passed}/4 hardening checks passed")
 
     if hardened_count == len(dockerfiles):
         return {
             "status": "satisfied",
-            "evidence": (
-                f"All {hardened_count} Dockerfile(s) show STIG hardening patterns."
-            ),
+            "evidence": (f"All {hardened_count} Dockerfile(s) show STIG hardening patterns."),
             "details": "; ".join(hardening_evidence),
         }
     elif hardened_count > 0:
         return {
             "status": "partially_satisfied",
-            "evidence": (
-                f"{hardened_count}/{len(dockerfiles)} Dockerfile(s) show hardening."
-            ),
+            "evidence": (f"{hardened_count}/{len(dockerfiles)} Dockerfile(s) show hardening."),
             "details": "; ".join(hardening_evidence),
         }
     return {
         "status": "not_satisfied",
         "evidence": "Dockerfiles found but lack STIG hardening patterns.",
-        "details": (
-            "Expected: non-root USER, drop ALL capabilities, "
-            "read-only rootfs, minimal base image."
-        ),
+        "details": ("Expected: non-root USER, drop ALL capabilities, read-only rootfs, minimal base image."),
     }
 
 
@@ -1440,19 +1385,19 @@ def _check_rollback_capability(project_dir):
     found_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[
-            "*rollback*", "rollback.*", "rollback_*.py",
-            "rollback_*.sh", "*rollback*.yml", "*rollback*.yaml",
+            "*rollback*",
+            "rollback.*",
+            "rollback_*.py",
+            "rollback_*.sh",
+            "*rollback*.yml",
+            "*rollback*.yaml",
         ],
     )
     if found_files:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Rollback artifacts found: {len(found_files)} item(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in found_files[:5]
-            ),
+            "evidence": (f"Rollback artifacts found: {len(found_files)} item(s)."),
+            "details": "; ".join(os.path.basename(f) for f in found_files[:5]),
         }
 
     # Scan K8s manifests and IaC for rollback patterns
@@ -1470,12 +1415,8 @@ def _check_rollback_capability(project_dir):
     if matched:
         return {
             "status": "satisfied",
-            "evidence": (
-                f"Rollback patterns found in {len(matched)} file(s)."
-            ),
-            "details": "; ".join(
-                os.path.basename(f) for f in matched[:5]
-            ),
+            "evidence": (f"Rollback patterns found in {len(matched)} file(s)."),
+            "details": "; ".join(os.path.basename(f) for f in matched[:5]),
         }
 
     if total == 0:
@@ -1525,6 +1466,7 @@ AUTO_CHECKS = {
 # Status mapping helpers
 # -----------------------------------------------------------------
 
+
 def _map_check_status(check_status):
     """Map auto-check result status to IV&V assessment status.
 
@@ -1559,6 +1501,7 @@ def _map_priority_to_severity(priority):
 # Core assessment function
 # -----------------------------------------------------------------
 
+
 def run_ivv_assessment(
     project_id,
     process_area="all",
@@ -1592,23 +1535,16 @@ def run_ivv_assessment(
 
         # Filter by process area if specified
         if process_area != "all":
-            requirements = [
-                r for r in requirements
-                if r["process_area"] == process_area
-            ]
+            requirements = [r for r in requirements if r["process_area"] == process_area]
             if not requirements:
                 raise ValueError(
-                    f"No requirements found for process area '{process_area}'. "
-                    f"Valid areas: {', '.join(PROCESS_AREAS)}."
+                    f"No requirements found for process area '{process_area}'. Valid areas: {', '.join(PROCESS_AREAS)}."
                 )
 
         # Resolve project directory for auto-checks
         if project_dir and Path(project_dir).is_dir():
             can_auto_check = True
-        elif (
-            project.get("directory_path")
-            and Path(project["directory_path"]).is_dir()
-        ):
+        elif project.get("directory_path") and Path(project["directory_path"]).is_dir():
             project_dir = project["directory_path"]
             can_auto_check = True
         else:
@@ -1642,16 +1578,12 @@ def run_ivv_assessment(
                         notes = "Auto-check failed; manual review required."
                 else:
                     ivv_status = "not_assessed"
-                    evidence = (
-                        "No automated check implemented for this requirement."
-                    )
+                    evidence = "No automated check implemented for this requirement."
                     notes = "Manual review required."
 
             elif automation_level == "auto" and not can_auto_check:
                 ivv_status = "not_assessed"
-                evidence = (
-                    "No project directory available for automated scanning."
-                )
+                evidence = "No project directory available for automated scanning."
                 notes = "Provide --project-dir to enable auto-checks."
 
             elif automation_level == "semi" and can_auto_check:
@@ -1662,22 +1594,14 @@ def run_ivv_assessment(
                         ivv_status = _map_check_status(check_status)
                         evidence = check_result["evidence"]
                         details = check_result.get("details", "")
-                        notes = (
-                            "Semi-automated check completed. "
-                            "Manual review required to verify full compliance."
-                        )
+                        notes = "Semi-automated check completed. Manual review required to verify full compliance."
                     except Exception as e:
                         ivv_status = "not_assessed"
                         evidence = f"Partial auto-check error: {e}"
-                        notes = (
-                            "Semi-automated check failed; "
-                            "full manual review required."
-                        )
+                        notes = "Semi-automated check failed; full manual review required."
                 else:
                     ivv_status = "not_assessed"
-                    evidence = (
-                        "Semi-automated: no automated component implemented."
-                    )
+                    evidence = "Semi-automated: no automated component implemented."
                     notes = (
                         f"Manual review required. Evidence needed: "
                         f"{req.get('evidence_required', 'See requirement description.')}"
@@ -1685,9 +1609,7 @@ def run_ivv_assessment(
 
             elif automation_level == "semi" and not can_auto_check:
                 ivv_status = "not_assessed"
-                evidence = (
-                    "Semi-automated check requires project directory."
-                )
+                evidence = "Semi-automated check requires project directory."
                 notes = (
                     f"Manual review required. Evidence needed: "
                     f"{req.get('evidence_required', 'See requirement description.')}"
@@ -1739,14 +1661,12 @@ def run_ivv_assessment(
                         ivv_status,
                         evidence,
                         details if details else None,
-                        json.dumps({
-                            "automation_level": automation_level,
-                            "check_function": (
-                                AUTO_CHECKS[req_id].__name__
-                                if req_id in AUTO_CHECKS
-                                else None
-                            ),
-                        }),
+                        json.dumps(
+                            {
+                                "automation_level": automation_level,
+                                "check_function": (AUTO_CHECKS[req_id].__name__ if req_id in AUTO_CHECKS else None),
+                            }
+                        ),
                         notes if notes else None,
                         now.isoformat(),
                     ),
@@ -1759,26 +1679,15 @@ def run_ivv_assessment(
 
             # -- Generate findings for failed checks --
             if ivv_status == "fail":
-                finding_id = (
-                    f"IVV-F-{project_id[:8]}-{req_id}-"
-                    f"{now.strftime('%Y%m%d')}"
-                )
-                severity = _map_priority_to_severity(
-                    req.get("priority", "medium")
-                )
+                finding_id = f"IVV-F-{project_id[:8]}-{req_id}-{now.strftime('%Y%m%d')}"
+                severity = _map_priority_to_severity(req.get("priority", "medium"))
                 finding = {
                     "finding_id": finding_id,
                     "severity": severity,
                     "process_area": req["process_area"],
                     "title": f"IV&V Finding: {req['title']}",
-                    "description": (
-                        f"Requirement {req_id} ({req['title']}) failed "
-                        f"IV&V assessment. {evidence}"
-                    ),
-                    "recommendation": (
-                        f"Address the following: "
-                        f"{req.get('evidence_required', req['description'])}"
-                    ),
+                    "description": (f"Requirement {req_id} ({req['title']}) failed IV&V assessment. {evidence}"),
+                    "recommendation": (f"Address the following: {req.get('evidence_required', req['description'])}"),
                 }
                 findings.append(finding)
 
@@ -1824,9 +1733,13 @@ def run_ivv_assessment(
             area = r["process_area"]
             if area not in summary:
                 summary[area] = {
-                    "total": 0, "pass": 0, "partial": 0,
-                    "fail": 0, "not_assessed": 0,
-                    "not_applicable": 0, "deferred": 0,
+                    "total": 0,
+                    "pass": 0,
+                    "partial": 0,
+                    "fail": 0,
+                    "not_assessed": 0,
+                    "not_applicable": 0,
+                    "deferred": 0,
                 }
             summary[area]["total"] += 1
             st = r["status"]
@@ -1842,56 +1755,33 @@ def run_ivv_assessment(
             deferred = s.get("deferred", 0)
             assessable = total - na - deferred
             if assessable > 0:
-                score = 100.0 * (
-                    s.get("pass", 0) + s.get("partial", 0) * 0.5
-                ) / assessable
+                score = 100.0 * (s.get("pass", 0) + s.get("partial", 0) * 0.5) / assessable
             else:
                 score = 0.0
             code = PROCESS_AREA_CODES.get(area, area[:4].upper())
             area_scores[code] = round(score, 1)
 
         # Verification score: average of REQ, DES, CODE, RTM, SEC, BLD, PROC
-        verification_scores = [
-            area_scores[code]
-            for code in VERIFICATION_AREAS
-            if code in area_scores
-        ]
+        verification_scores = [area_scores[code] for code in VERIFICATION_AREAS if code in area_scores]
         verification_score = (
-            round(sum(verification_scores) / len(verification_scores), 1)
-            if verification_scores
-            else 0.0
+            round(sum(verification_scores) / len(verification_scores), 1) if verification_scores else 0.0
         )
 
         # Validation score: average of TEST, INT
-        validation_scores = [
-            area_scores[code]
-            for code in VALIDATION_AREAS
-            if code in area_scores
-        ]
-        validation_score = (
-            round(sum(validation_scores) / len(validation_scores), 1)
-            if validation_scores
-            else 0.0
-        )
+        validation_scores = [area_scores[code] for code in VALIDATION_AREAS if code in area_scores]
+        validation_score = round(sum(validation_scores) / len(validation_scores), 1) if validation_scores else 0.0
 
         # Overall score: 0.6 * verification + 0.4 * validation
-        overall_score = round(
-            0.6 * verification_score + 0.4 * validation_score, 1
-        )
+        overall_score = round(0.6 * verification_score + 0.4 * validation_score, 1)
 
         # -- Gate evaluation: 0 critical findings = PASS --
-        critical_findings = [
-            f for f in findings if f["severity"] == "critical"
-        ]
+        critical_findings = [f for f in findings if f["severity"] == "critical"]
         gate_passed = len(critical_findings) == 0
         gate_result = {
             "evaluated": gate,
             "passed": gate_passed,
             "critical_findings_count": len(critical_findings),
-            "critical_findings": [
-                f"{f['finding_id']}: {f['title']}"
-                for f in critical_findings
-            ],
+            "critical_findings": [f"{f['finding_id']}: {f['title']}" for f in critical_findings],
             "reason": (
                 "PASS: 0 critical IV&V findings"
                 if gate_passed
@@ -1941,12 +1831,8 @@ def run_ivv_assessment(
 
         # -- Generate CUI-marked Markdown report --
         cui_config = _load_cui_config()
-        doc_header = cui_config.get(
-            "document_header", "CUI // SP-CTI"
-        ).strip()
-        doc_footer = cui_config.get(
-            "document_footer", "CUI // SP-CTI"
-        ).strip()
+        doc_header = cui_config.get("document_header", "CUI // SP-CTI").strip()
+        doc_footer = cui_config.get("document_footer", "CUI // SP-CTI").strip()
 
         lines = [
             doc_header,
@@ -1958,10 +1844,7 @@ def run_ivv_assessment(
             "**Assessor:** ICDEV IV&V Engine (automated)",
             f"**Process Area Scope:** {process_area}",
             "**IEEE 1012 Version:** IEEE 1012-2016",
-            (
-                f"**Source Standards:** "
-                f"{metadata.get('source', 'IEEE 1012-2016, DoDI 5000.87, DoDI 8510.01')}"
-            ),
+            (f"**Source Standards:** {metadata.get('source', 'IEEE 1012-2016, DoDI 5000.87, DoDI 8510.01')}"),
             "**Classification:** CUI // SP-CTI",
             "",
             "---",
@@ -1971,19 +1854,17 @@ def run_ivv_assessment(
         ]
 
         # Summary table
-        lines.append(
-            "| Process Area | Total | Pass | Partial | Fail "
-            "| Not Assessed | N/A | Deferred | Score |"
-        )
-        lines.append(
-            "|--------------|-------|------|---------|------"
-            "|--------------|-----|----------|-------|"
-        )
+        lines.append("| Process Area | Total | Pass | Partial | Fail | Not Assessed | N/A | Deferred | Score |")
+        lines.append("|--------------|-------|------|---------|------|--------------|-----|----------|-------|")
 
         grand_total = {
-            "total": 0, "pass": 0, "partial": 0,
-            "fail": 0, "not_assessed": 0,
-            "not_applicable": 0, "deferred": 0,
+            "total": 0,
+            "pass": 0,
+            "partial": 0,
+            "fail": 0,
+            "not_assessed": 0,
+            "not_applicable": 0,
+            "deferred": 0,
         }
 
         for area in PROCESS_AREAS:
@@ -2013,56 +1894,53 @@ def run_ivv_assessment(
         lines.append("")
 
         # Scores section
-        lines.extend([
-            "## IV&V Scores",
-            "",
-            "| Metric | Score |",
-            "|--------|-------|",
-            f"| Verification Score | {verification_score:.1f}% |",
-            f"| Validation Score | {validation_score:.1f}% |",
-            f"| **Overall IV&V Score** | **{overall_score:.1f}%** |",
-            "",
-            (
-                "*Scoring: Overall = 0.6 x Verification + 0.4 x Validation. "
-                "Per-area = 100 x (pass + partial x 0.5) / assessable.*"
-            ),
-            "",
-        ])
+        lines.extend(
+            [
+                "## IV&V Scores",
+                "",
+                "| Metric | Score |",
+                "|--------|-------|",
+                f"| Verification Score | {verification_score:.1f}% |",
+                f"| Validation Score | {validation_score:.1f}% |",
+                f"| **Overall IV&V Score** | **{overall_score:.1f}%** |",
+                "",
+                (
+                    "*Scoring: Overall = 0.6 x Verification + 0.4 x Validation. "
+                    "Per-area = 100 x (pass + partial x 0.5) / assessable.*"
+                ),
+                "",
+            ]
+        )
 
         # Area score breakdown
-        lines.extend([
-            "### Score Breakdown by Area",
-            "",
-            "| Area Code | Score |",
-            "|-----------|-------|",
-        ])
+        lines.extend(
+            [
+                "### Score Breakdown by Area",
+                "",
+                "| Area Code | Score |",
+                "|-----------|-------|",
+            ]
+        )
         for area in PROCESS_AREAS:
             code = PROCESS_AREA_CODES.get(area, "")
             if code in area_scores:
-                category = (
-                    "Verification" if code in VERIFICATION_AREAS
-                    else "Validation"
-                )
-                lines.append(
-                    f"| {code} ({area}) | {area_scores[code]:.1f}% "
-                    f"[{category}] |"
-                )
+                category = "Verification" if code in VERIFICATION_AREAS else "Validation"
+                lines.append(f"| {code} ({area}) | {area_scores[code]:.1f}% [{category}] |")
         lines.append("")
 
         # Gate evaluation section
         if gate:
             gate_label = "PASS" if gate_result["passed"] else "**FAIL**"
-            lines.extend([
-                "## IV&V Gate Evaluation",
-                "",
-                f"**Gate Result:** {gate_label}",
-                "**Criteria:** 0 critical IV&V findings",
-                (
-                    f"**Critical Findings:** "
-                    f"{gate_result['critical_findings_count']}"
-                ),
-                "",
-            ])
+            lines.extend(
+                [
+                    "## IV&V Gate Evaluation",
+                    "",
+                    f"**Gate Result:** {gate_label}",
+                    "**Criteria:** 0 critical IV&V findings",
+                    (f"**Critical Findings:** {gate_result['critical_findings_count']}"),
+                    "",
+                ]
+            )
             if gate_result["critical_findings"]:
                 lines.append("**Critical Findings:**")
                 for cf in gate_result["critical_findings"]:
@@ -2070,38 +1948,44 @@ def run_ivv_assessment(
                 lines.append("")
 
         # Certification status
-        lines.extend([
-            "## IV&V Certification Status",
-            "",
-            f"**Status:** {cert_status.replace('_', ' ').title()}",
-            f"**Open Findings:** {open_count}",
-            f"**Critical Findings:** {critical_count}",
-            "",
-        ])
+        lines.extend(
+            [
+                "## IV&V Certification Status",
+                "",
+                f"**Status:** {cert_status.replace('_', ' ').title()}",
+                f"**Open Findings:** {open_count}",
+                f"**Critical Findings:** {critical_count}",
+                "",
+            ]
+        )
 
         # Findings section
         if findings:
-            lines.extend([
-                "---",
-                "",
-                "## IV&V Findings",
-                "",
-            ])
-            for f in findings:
-                lines.extend([
-                    f"### {f['finding_id']}",
-                    "",
-                    f"**Severity:** {f['severity'].upper()}  ",
-                    f"**Process Area:** {f['process_area']}  ",
-                    f"**Title:** {f['title']}",
-                    "",
-                    f"**Description:** {f['description']}",
-                    "",
-                    f"**Recommendation:** {f['recommendation']}",
-                    "",
+            lines.extend(
+                [
                     "---",
                     "",
-                ])
+                    "## IV&V Findings",
+                    "",
+                ]
+            )
+            for f in findings:
+                lines.extend(
+                    [
+                        f"### {f['finding_id']}",
+                        "",
+                        f"**Severity:** {f['severity'].upper()}  ",
+                        f"**Process Area:** {f['process_area']}  ",
+                        f"**Title:** {f['title']}",
+                        "",
+                        f"**Description:** {f['description']}",
+                        "",
+                        f"**Recommendation:** {f['recommendation']}",
+                        "",
+                        "---",
+                        "",
+                    ]
+                )
 
         lines.extend(["---", ""])
 
@@ -2110,9 +1994,7 @@ def run_ivv_assessment(
         lines.append("")
 
         for area in PROCESS_AREAS:
-            area_results = [
-                r for r in results if r["process_area"] == area
-            ]
+            area_results = [r for r in results if r["process_area"] == area]
             if not area_results:
                 continue
 
@@ -2125,24 +2007,22 @@ def run_ivv_assessment(
                 status_display = r["status"].replace("_", " ").title()
                 priority_display = r["priority"].upper()
                 vtype_display = r["verification_type"].title()
-                nist_str = (
-                    ", ".join(r["nist_controls"])
-                    if r["nist_controls"]
-                    else "N/A"
-                )
+                nist_str = ", ".join(r["nist_controls"]) if r["nist_controls"] else "N/A"
 
-                lines.extend([
-                    f"#### {r['requirement_id']}: {r['title']}",
-                    "",
-                    f"**Type:** {vtype_display}  ",
-                    f"**Priority:** {priority_display}  ",
-                    f"**Status:** {status_display}  ",
-                    f"**Automation Level:** {r['automation_level']}  ",
-                    f"**NIST Controls:** {nist_str}",
-                    "",
-                    f"**Evidence:** {r['evidence']}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"#### {r['requirement_id']}: {r['title']}",
+                        "",
+                        f"**Type:** {vtype_display}  ",
+                        f"**Priority:** {priority_display}  ",
+                        f"**Status:** {status_display}  ",
+                        f"**Automation Level:** {r['automation_level']}  ",
+                        f"**NIST Controls:** {nist_str}",
+                        "",
+                        f"**Evidence:** {r['evidence']}",
+                        "",
+                    ]
+                )
                 if r["details"]:
                     lines.append(f"**Details:** {r['details']}")
                     lines.append("")
@@ -2167,16 +2047,8 @@ def run_ivv_assessment(
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        area_suffix = (
-            process_area.lower().replace(" ", "_").replace("/", "_")
-            if process_area != "all"
-            else "all"
-        )
-        out_file = (
-            out_dir
-            / f"ivv_1012_{project_id}_{area_suffix}_"
-            f"{now.strftime('%Y%m%d_%H%M%S')}.md"
-        )
+        area_suffix = process_area.lower().replace(" ", "_").replace("/", "_") if process_area != "all" else "all"
+        out_file = out_dir / f"ivv_1012_{project_id}_{area_suffix}_{now.strftime('%Y%m%d_%H%M%S')}.md"
 
         with open(out_file, "w", encoding="utf-8") as f:
             f.write(content)
@@ -2254,11 +2126,10 @@ def run_ivv_assessment(
 # Public alias
 # -----------------------------------------------------------------
 
+
 def assess_project(project_id, process_area="all", **kwargs):
     """Alias for run_ivv_assessment for convenient programmatic use."""
-    return run_ivv_assessment(
-        project_id, process_area=process_area, **kwargs
-    )
+    return run_ivv_assessment(project_id, process_area=process_area, **kwargs)
 
 
 # -----------------------------------------------------------------
@@ -2266,12 +2137,8 @@ def assess_project(project_id, process_area="all", **kwargs):
 # -----------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run IV&V assessment per IEEE 1012"
-    )
-    parser.add_argument(
-        "--project-id", required=True, help="Project ID"
-    )
+    parser = argparse.ArgumentParser(description="Run IV&V assessment per IEEE 1012")
+    parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument(
         "--process-area",
         default="all",
@@ -2309,14 +2176,19 @@ if __name__ == "__main__":
             output_path=args.output_dir,
             db_path=args.db_path,
         )
-        print(json.dumps({
-            "output_file": result.get("output_file"),
-            "scores": result.get("scores"),
-            "summary": result.get("summary"),
-            "gate_result": result.get("gate_result"),
-            "certification_status": result.get("certification_status"),
-            "findings_count": len(result.get("findings", [])),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "output_file": result.get("output_file"),
+                    "scores": result.get("scores"),
+                    "summary": result.get("summary"),
+                    "gate_result": result.get("gate_result"),
+                    "certification_status": result.get("certification_status"),
+                    "findings_count": len(result.get("findings", [])),
+                },
+                indent=2,
+            )
+        )
 
         if args.gate and not result["gate_result"]["passed"]:
             sys.exit(1)

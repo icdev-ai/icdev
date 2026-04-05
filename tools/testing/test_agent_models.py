@@ -35,9 +35,9 @@ Keep your response brief."""
 
 def test_model(model: str, run_id: str) -> tuple:
     """Test a specific model and return (success, message)."""
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Testing model: {model}")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     output_file = str(PROJECT_ROOT / "agents" / run_id / f"agent_test_{model}.jsonl")
 
@@ -81,10 +81,7 @@ def main():
     all_success = True
 
     with ThreadPoolExecutor(max_workers=len(MODELS)) as executor:
-        future_to_model = {
-            executor.submit(test_model, model, run_id): model
-            for model in MODELS
-        }
+        future_to_model = {executor.submit(test_model, model, run_id): model for model in MODELS}
 
         for future in as_completed(future_to_model):
             model = future_to_model[future]
@@ -97,9 +94,9 @@ def main():
                 results[model] = (False, f"Exception: {str(e)}")
                 all_success = False
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print("Test Summary")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     for model in MODELS:
         if model in results:

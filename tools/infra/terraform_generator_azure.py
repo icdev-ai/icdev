@@ -32,6 +32,7 @@ def _render(template_str: str, ctx: dict) -> str:
         result = result.replace("{{" + key + "}}", str(val))
     return result
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -219,9 +220,7 @@ def generate_base(project_path: str, project_config: dict = None) -> list:
     environment = config.get("environment", "dev")
     # Storage account names: lowercase alphanumeric, max 24 chars
     sanitized = project_name.replace("-", "").replace("_", "")[:14]
-    storage_account_name = config.get(
-        "storage_account_name", f"{sanitized}tfstate"
-    )
+    storage_account_name = config.get("storage_account_name", f"{sanitized}tfstate")
 
     tf_dir = Path(project_path) / "terraform"
     ctx = {
@@ -1192,9 +1191,7 @@ def generate(project_path: str, project_config: dict = None) -> list:
 # ---------------------------------------------------------------------------
 def main():
     """CLI entry point for Azure Government Terraform generation."""
-    parser = argparse.ArgumentParser(
-        description="Generate Terraform for Azure Government (AzureUSGovernment)"
-    )
+    parser = argparse.ArgumentParser(description="Generate Terraform for Azure Government (AzureUSGovernment)")
     parser.add_argument(
         "--project-path",
         required=True,

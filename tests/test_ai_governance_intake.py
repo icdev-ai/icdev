@@ -33,6 +33,7 @@ from ai_governance_scorer import (  # noqa: E402
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def conn():
     """In-memory SQLite with all tables needed by ai_governance_scorer."""
@@ -82,6 +83,7 @@ def empty_conn():
 # ===========================================================================
 # Keyword detection — _detect_ai_governance_signals
 # ===========================================================================
+
 
 class TestDetectAIGovernanceSignalsPillars:
     """Test each governance pillar keyword detection."""
@@ -173,8 +175,10 @@ class TestDetectAIGovernanceSignalsMisc:
         assert result["pillar_count"] == 0
 
     def test_multiple_pillars_detected(self):
-        text = ("We use a machine learning model and need model card documentation, "
-                "plus human oversight for decisions and transparency to users")
+        text = (
+            "We use a machine learning model and need model card documentation, "
+            "plus human oversight for decisions and transparency to users"
+        )
         result = _detect_ai_governance_signals(text)
         assert result["ai_governance_detected"] is True
         # Should detect at least ai_inventory, model_documentation, human_oversight, transparency
@@ -192,8 +196,14 @@ class TestDetectAIGovernanceSignalsMisc:
         )
         result = _detect_ai_governance_signals(text)
         assert result["pillar_count"] == 6
-        expected = {"ai_inventory", "model_documentation", "human_oversight",
-                    "impact_assessment", "transparency", "accountability"}
+        expected = {
+            "ai_inventory",
+            "model_documentation",
+            "human_oversight",
+            "impact_assessment",
+            "transparency",
+            "accountability",
+        }
         assert set(result["detected_pillars"]) == expected
 
     def test_absence_signals_not_confused_with_positive(self):
@@ -227,6 +237,7 @@ class TestDetectAIGovernanceSignalsMisc:
 # Config file loading
 # ===========================================================================
 
+
 class TestConfigLoading:
     """Test ai_governance_config.yaml loading."""
 
@@ -237,6 +248,7 @@ class TestConfigLoading:
     def test_config_loads_valid_yaml(self):
         config_path = ROOT / "args" / "ai_governance_config.yaml"
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
         assert "ai_governance" in cfg
@@ -247,11 +259,18 @@ class TestConfigLoading:
     def test_config_has_six_pillars(self):
         config_path = ROOT / "args" / "ai_governance_config.yaml"
         import yaml
+
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
         pillars = cfg["ai_governance"]["intake_detection"]["keywords_by_pillar"]
-        expected = {"ai_inventory", "model_documentation", "human_oversight",
-                    "impact_assessment", "transparency", "accountability"}
+        expected = {
+            "ai_inventory",
+            "model_documentation",
+            "human_oversight",
+            "impact_assessment",
+            "transparency",
+            "accountability",
+        }
         assert set(pillars.keys()) == expected
 
     def test_load_gov_config_returns_weights(self):
@@ -268,6 +287,7 @@ class TestConfigLoading:
 # AI Governance Scorer — score_ai_governance_readiness
 # ===========================================================================
 
+
 class TestScoreAIGovernanceReadiness:
     """Test the AI governance readiness scorer."""
 
@@ -281,9 +301,12 @@ class TestScoreAIGovernanceReadiness:
         result = score_ai_governance_readiness("proj-empty", conn=conn)
         gap_components = [g["component"] for g in result["gaps"]]
         expected = [
-            "inventory_registered", "model_cards_present",
-            "oversight_plan_exists", "impact_assessment_done",
-            "caio_designated", "transparency_frameworks_selected",
+            "inventory_registered",
+            "model_cards_present",
+            "oversight_plan_exists",
+            "impact_assessment_done",
+            "caio_designated",
+            "transparency_frameworks_selected",
         ]
         for comp in expected:
             assert comp in gap_components, f"Missing gap: {comp}"
@@ -372,26 +395,36 @@ class TestScoreAIGovernanceReadiness:
 # Readiness scorer integration — 7th dimension
 # ===========================================================================
 
+
 class TestReadinessScorer7thDimension:
     """Test that _load_weights includes ai_governance_readiness."""
 
     def test_load_weights_returns_seven_dimensions(self):
         sys.path.insert(0, str(ROOT / "tools" / "requirements"))
         from readiness_scorer import _load_weights
+
         weights = _load_weights()
-        assert "ai_governance_readiness" in weights, \
-            "_load_weights should include ai_governance_readiness"
+        assert "ai_governance_readiness" in weights, "_load_weights should include ai_governance_readiness"
         assert isinstance(weights["ai_governance_readiness"], (int, float))
 
     def test_load_weights_ai_governance_weight_value(self):
         from readiness_scorer import _load_weights
+
         weights = _load_weights()
         # Per ricoas_config.yaml, should be 0.10
         assert weights["ai_governance_readiness"] == pytest.approx(0.10, abs=0.02)
 
     def test_load_weights_all_dimensions_present(self):
         from readiness_scorer import _load_weights
+
         weights = _load_weights()
-        expected = {"completeness", "clarity", "feasibility", "compliance",
-                    "testability", "devsecops_readiness", "ai_governance_readiness"}
+        expected = {
+            "completeness",
+            "clarity",
+            "feasibility",
+            "compliance",
+            "testability",
+            "devsecops_readiness",
+            "ai_governance_readiness",
+        }
         assert expected.issubset(set(weights.keys()))

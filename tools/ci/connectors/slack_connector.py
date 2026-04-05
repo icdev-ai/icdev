@@ -82,11 +82,14 @@ class SlackConnector(ChatConnectorAdapter):
             return False
 
         sig_basestring = f"v0:{timestamp}:{raw_body.decode('utf-8', errors='replace')}"
-        computed = "v0=" + hmac.new(
-            self._signing_secret.encode("utf-8"),
-            sig_basestring.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
+        computed = (
+            "v0="
+            + hmac.new(
+                self._signing_secret.encode("utf-8"),
+                sig_basestring.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+        )
 
         return hmac.compare_digest(computed, sig_value)
 
@@ -128,7 +131,10 @@ class SlackConnector(ChatConnectorAdapter):
         return EventEnvelope.from_slack_event(raw_payload)
 
     def send_message(
-        self, channel_id: str, text: str, thread_id: str = None,
+        self,
+        channel_id: str,
+        text: str,
+        thread_id: str = None,
     ) -> bool:
         """Send message to Slack channel/thread.
 
@@ -188,6 +194,7 @@ class SlackConnector(ChatConnectorAdapter):
             secret_name = ref.split(":", 2)[-1]
             try:
                 import boto3
+
                 client = boto3.client("secretsmanager", region_name="us-gov-west-1")
                 response = client.get_secret_value(SecretId=secret_name)
                 return response.get("SecretString", "")

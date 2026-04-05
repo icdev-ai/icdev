@@ -39,6 +39,7 @@ def _now() -> str:
 
 # ── Label Single Example ─────────────────────────────────────────────
 
+
 def label_example(
     example_id: int,
     quality_score: float = 0.0,
@@ -75,8 +76,7 @@ def label_example(
                SET quality_score = ?, compliance_score = ?, relevance_score = ?,
                    approved = ?, labeled_by = ?, labeled_at = ?
                WHERE id = ?""",
-            (quality_score, compliance_score, relevance_score,
-             1 if approved else 0, labeled_by, _now(), example_id),
+            (quality_score, compliance_score, relevance_score, 1 if approved else 0, labeled_by, _now(), example_id),
         )
         conn.commit()
         return {
@@ -94,6 +94,7 @@ def label_example(
 
 
 # ── Batch Operations ─────────────────────────────────────────────────
+
 
 def batch_approve(
     dataset_id: str,
@@ -151,6 +152,7 @@ def batch_reject(
 
 
 # ── Queries ──────────────────────────────────────────────────────────
+
 
 def get_unlabeled(
     dataset_id: str,
@@ -252,6 +254,7 @@ def get_labeling_summary(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tuning labeling backend")

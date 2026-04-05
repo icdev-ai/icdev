@@ -31,7 +31,7 @@ class TestFindSentenceBoundary:
     def test_finds_period(self):
         text = "First sentence. Second sentence."
         pos = _find_sentence_boundary(text, 15)
-        assert text[pos - 1:pos] in (" ", "S")  # Should be after ". "
+        assert text[pos - 1 : pos] in (" ", "S")  # Should be after ". "
 
     def test_no_boundary_falls_to_whitespace(self):
         text = "word1 word2 word3 word4"
@@ -108,8 +108,8 @@ class TestChunkContent:
         )
         if len(chunks) >= 2:
             # Check that chunks share some content (overlap)
-            c0_end = chunks[0].content[-50:]
-            c1_start = chunks[1].content[:50]
+            chunks[0].content[-50:]
+            chunks[1].content[:50]
             # The overlap means the end of chunk 0 should appear near the start of chunk 1
             # (exact overlap depends on sentence boundary finding)
             assert len(chunks) > 1
@@ -124,8 +124,10 @@ class TestChunkFields:
     def test_basic_field_chunking(self):
         fields = {"title": "My Title", "description": "A detailed description"}
         chunks = chunk_fields(
-            fields, ["title", "description"],
-            source_type="test", source_id="42",
+            fields,
+            ["title", "description"],
+            source_type="test",
+            source_id="42",
         )
         assert len(chunks) >= 1
         assert "title: My Title" in chunks[0].content
@@ -145,8 +147,11 @@ class TestChunkFields:
     def test_source_metadata(self):
         fields = {"name": "test"}
         chunks = chunk_fields(
-            fields, ["name"],
-            source_type="signals", source_id="99", source_table="innovation_signals",
+            fields,
+            ["name"],
+            source_type="signals",
+            source_id="99",
+            source_table="innovation_signals",
         )
         assert chunks[0].source_type == "signals"
         assert chunks[0].source_id == "99"

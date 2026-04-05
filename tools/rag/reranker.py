@@ -72,15 +72,15 @@ def rerank_results(
             result = results[idx]
             result.rerank_score = raw_score / max_rerank
             # Weighted blend (D-RAG-20): configurable instead of naive average
-            result.final_score = (
-                (1.0 - rerank_weight) * result.final_score
-                + rerank_weight * result.rerank_score
-            )
+            result.final_score = (1.0 - rerank_weight) * result.final_score + rerank_weight * result.rerank_score
             reranked.append(result)
 
         logger.debug(
             "Re-ranked %d→%d results via %s (weight=%.2f)",
-            len(results), len(reranked), provider.provider_name, rerank_weight,
+            len(results),
+            len(reranked),
+            provider.provider_name,
+            rerank_weight,
         )
         return reranked
 

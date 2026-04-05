@@ -154,16 +154,11 @@ class HealthBaseConnector(DataConnector):
 
         if proto == HealthProtocol.FHIR_REST and self._session:
             try:
-                resp = self._session.get(
-                    f"{self._base}/metadata", timeout=10
-                )
+                resp = self._session.get(f"{self._base}/metadata", timeout=10)
                 return {
                     "status": "healthy" if resp.status_code < 400 else "unhealthy",
                     "latency_ms": int((time.time() - start) * 1000),
-                    "fhir_version": resp.json()
-                    .get("fhirVersion", "unknown")
-                    if resp.status_code < 400
-                    else "unknown",
+                    "fhir_version": resp.json().get("fhirVersion", "unknown") if resp.status_code < 400 else "unknown",
                 }
             except Exception as exc:
                 return {"status": "unhealthy", "message": str(exc)}
@@ -193,9 +188,7 @@ class HealthBaseConnector(DataConnector):
             return self._read_hl7v2(request)
         if proto == HealthProtocol.CDA_XML:
             return self._read_cda(request)
-        return ConnectorResponse(
-            status="error", errors=[f"Unsupported protocol: {proto}"]
-        )
+        return ConnectorResponse(status="error", errors=[f"Unsupported protocol: {proto}"])
 
     def _read_fhir(self, request: ConnectorRequest) -> ConnectorResponse:
         """Read FHIR resources. table_name = resource type (e.g. 'Patient')."""
@@ -231,12 +224,8 @@ class HealthBaseConnector(DataConnector):
                         {
                             "resource_type": resource.get("resourceType", ""),
                             "id": resource.get("id", ""),
-                            "meta_version": resource.get("meta", {}).get(
-                                "versionId", ""
-                            ),
-                            "meta_last_updated": resource.get("meta", {}).get(
-                                "lastUpdated", ""
-                            ),
+                            "meta_version": resource.get("meta", {}).get("versionId", ""),
+                            "meta_last_updated": resource.get("meta", {}).get("lastUpdated", ""),
                             "raw_json": str(resource),
                         }
                     )
@@ -339,11 +328,7 @@ class HealthBaseConnector(DataConnector):
             rows = [
                 {
                     "document_id": root.get("id", ""),
-                    "title": (
-                        root.find(".//{urn:hl7-org:v3}title")
-                        or ET.Element("x")
-                    ).text
-                    or "",
+                    "title": (root.find(".//{urn:hl7-org:v3}title") or ET.Element("x")).text or "",
                     "raw_xml": resp.text[:10000],
                 }
             ]

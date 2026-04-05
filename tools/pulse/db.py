@@ -208,9 +208,14 @@ def init_db():
 
 # Tables that have a created_at column
 _TABLES_WITH_CREATED_AT = {
-    "pulse_posts", "pulse_authors", "pulse_topic_clusters",
-    "pulse_post_reviews", "pulse_schedule_log", "pulse_sam_article_log",
-    "pulse_demand_signals", "pulse_capability_graph",
+    "pulse_posts",
+    "pulse_authors",
+    "pulse_topic_clusters",
+    "pulse_post_reviews",
+    "pulse_schedule_log",
+    "pulse_sam_article_log",
+    "pulse_demand_signals",
+    "pulse_capability_graph",
 }
 
 
@@ -282,9 +287,7 @@ def get_row(table: str, row_id: str) -> dict | None:
 def get_existing_titles() -> list[str]:
     """Return all existing post titles (for duplicate prevention)."""
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT title FROM pulse_posts ORDER BY created_at DESC LIMIT 200"
-        ).fetchall()
+        rows = conn.execute("SELECT title FROM pulse_posts ORDER BY created_at DESC LIMIT 200").fetchall()
         return [r["title"] for r in rows if r["title"]]
 
 

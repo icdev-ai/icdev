@@ -25,6 +25,7 @@ def tracker():
 # Client management
 # ---------------------------------------------------------------------------
 
+
 class TestClientRegistration:
     def test_register_client(self, tracker):
         client = tracker.register_client("c-1")
@@ -54,6 +55,7 @@ class TestClientRegistration:
 # Version tracking
 # ---------------------------------------------------------------------------
 
+
 class TestVersionTracking:
     def test_initial_version_is_zero(self, tracker):
         assert tracker.get_version("ctx-1") == 0
@@ -79,6 +81,7 @@ class TestVersionTracking:
 # ---------------------------------------------------------------------------
 # Incremental updates
 # ---------------------------------------------------------------------------
+
 
 class TestIncrementalUpdates:
     def test_get_updates_all(self, tracker):
@@ -122,6 +125,7 @@ class TestIncrementalUpdates:
 # Buffer management
 # ---------------------------------------------------------------------------
 
+
 class TestBufferManagement:
     def test_max_changes_buffer(self):
         tracker = StateTracker(debounce_ms=1, max_changes_buffer=5)
@@ -137,6 +141,7 @@ class TestBufferManagement:
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
+
 
 class TestDiagnostics:
     def test_diagnostics(self, tracker):

@@ -649,7 +649,7 @@ ARTIFACT_REGISTRY_OUTPUTS = """\
 {{ cui_header }}
 output "repository_url" {
   description = "Artifact Registry repository URL"
-  value       = "$${var.region}-docker.pkg.dev/$${var.gcp_project_id}/$${google_artifact_registry_repository.this.repository_id}"
+  value       = "$${var.region}-docker.pkg.dev/$${var.gcp_project_id}/$${google_artifact_registry_repository.this.repository_id}"  # noqa: E501
 }
 
 output "repository_id" {
@@ -844,9 +844,7 @@ def generate(project_path: str, project_config: dict = None) -> list:
         List of absolute file paths generated.
     """
     config = project_config or {}
-    components_str = config.get(
-        "components", "base,vpc,cloud_sql,artifact_registry,secret_manager"
-    )
+    components_str = config.get("components", "base,vpc,cloud_sql,artifact_registry,secret_manager")
     components = [c.strip() for c in components_str.split(",")]
 
     generators = {
@@ -870,12 +868,8 @@ def generate(project_path: str, project_config: dict = None) -> list:
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate Terraform for GCP Government (Assured Workloads)"
-    )
-    parser.add_argument(
-        "--project-path", required=True, help="Target project directory"
-    )
+    parser = argparse.ArgumentParser(description="Generate Terraform for GCP Government (Assured Workloads)")
+    parser.add_argument("--project-path", required=True, help="Target project directory")
     parser.add_argument(
         "--components",
         default="base,vpc,cloud_sql,artifact_registry,secret_manager",
@@ -897,12 +891,8 @@ def main():
         default="my-assured-project",
         help="GCP project ID (Assured Workloads)",
     )
-    parser.add_argument(
-        "--db-name", default="appdb", help="Database name for Cloud SQL module"
-    )
-    parser.add_argument(
-        "--json", action="store_true", help="Output results as JSON"
-    )
+    parser.add_argument("--db-name", default="appdb", help="Database name for Cloud SQL module")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON")
     args = parser.parse_args()
 
     config = {
@@ -934,14 +924,19 @@ def main():
                 print(f"[terraform-gcp] Unknown component: {comp}")
 
     if args.json:
-        print(json.dumps({
-            "status": "success",
-            "provider": "gcp",
-            "region": "us-east4",
-            "components": components,
-            "files_generated": len(all_files),
-            "files": all_files,
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "status": "success",
+                    "provider": "gcp",
+                    "region": "us-east4",
+                    "components": components,
+                    "files_generated": len(all_files),
+                    "files": all_files,
+                },
+                indent=2,
+            )
+        )
     else:
         print(f"\n[terraform-gcp] Total files generated: {len(all_files)}")
         for f in all_files:

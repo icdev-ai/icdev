@@ -32,6 +32,7 @@ _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
     conn = sqlite3.connect(str(_DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -55,6 +56,7 @@ def _audit(conn, action, details="", actor="compliance_populator"):
 
 
 # ── compliance matrix population ──────────────────────────────────────
+
 
 def populate_compliance_matrix(opportunity_id):
     """Auto-populate L/M/N compliance matrix for an opportunity.
@@ -105,15 +107,19 @@ def populate_compliance_matrix(opportunity_id):
                             item["grade"],
                             f"Auto-populated: {item['best_capability']} (score={item['coverage_score']:.2f})",
                             item.get("evidence", "")[:500],
-                            _now(), _now(),
+                            _now(),
+                            _now(),
                         ),
                     )
                     populated += 1
             except Exception:
                 pass
 
-    _audit(conn, "populate_matrix",
-           f"Opportunity {opportunity_id}: L={matrix_result['L_compliant']} M={matrix_result['M_partial']} N={matrix_result['N_gap']}")
+    _audit(
+        conn,
+        "populate_matrix",
+        f"Opportunity {opportunity_id}: L={matrix_result['L_compliant']} M={matrix_result['M_partial']} N={matrix_result['N_gap']}",  # noqa: E501
+    )
     conn.commit()
     conn.close()
 
@@ -199,16 +205,18 @@ def export_matrix(opportunity_id):
     # Format as exportable table
     rows = []
     for i, item in enumerate(matrix_result.get("matrix", []), 1):
-        rows.append({
-            "row": i,
-            "requirement": item["statement"],
-            "domain": item["domain"],
-            "type": item["statement_type"],
-            "grade": item["grade"],
-            "capability": item["best_capability"],
-            "score": item["coverage_score"],
-            "evidence": item["evidence"],
-        })
+        rows.append(
+            {
+                "row": i,
+                "requirement": item["statement"],
+                "domain": item["domain"],
+                "type": item["statement_type"],
+                "grade": item["grade"],
+                "capability": item["best_capability"],
+                "score": item["coverage_score"],
+                "evidence": item["evidence"],
+            }
+        )
 
     return {
         "status": "ok",
@@ -225,6 +233,7 @@ def export_matrix(opportunity_id):
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV GovCon Compliance Populator (D365)")

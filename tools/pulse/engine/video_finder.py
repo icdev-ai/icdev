@@ -17,9 +17,9 @@ import requests
 from bs4 import BeautifulSoup
 
 
-
 def _is_air_gapped() -> bool:
     return os.environ.get("ICDEV_ENVIRONMENT", "").lower() == "air-gapped"
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,20 +28,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 USER_AGENTS = [
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/131.0.0.0 Safari/537.36"
-    ),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
     (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/130.0.0.0 Safari/537.36"
     ),
-    (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) "
-        "Gecko/20100101 Firefox/128.0"
-    ),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"),
 ]
 
 DDG_URL = "https://html.duckduckgo.com/html/"
@@ -99,10 +92,7 @@ def _session() -> requests.Session:
     s.headers.update(
         {
             "User-Agent": random.choice(USER_AGENTS),
-            "Accept": (
-                "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8"
-            ),
+            "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
             "Accept-Language": "en-US,en;q=0.9",
         }
     )
@@ -218,9 +208,7 @@ def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
     seen_ids: set[str] = set()
 
     for section in contents:
-        items = (
-            section.get("itemSectionRenderer", {}).get("contents", [])
-        )
+        items = section.get("itemSectionRenderer", {}).get("contents", [])
         for item in items:
             if len(results) >= max_results:
                 break
@@ -239,15 +227,11 @@ def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
             title = "".join(r.get("text", "") for r in title_runs)
 
             # Channel
-            channel_runs = (
-                renderer.get("ownerText", {}).get("runs", [])
-            )
+            channel_runs = renderer.get("ownerText", {}).get("runs", [])
             channel = "".join(r.get("text", "") for r in channel_runs)
 
             # Thumbnail
-            thumbnails = (
-                renderer.get("thumbnail", {}).get("thumbnails", [])
-            )
+            thumbnails = renderer.get("thumbnail", {}).get("thumbnails", [])
             thumbnail_url = thumbnails[-1]["url"] if thumbnails else ""
 
             url = f"https://www.youtube.com/watch?v={video_id}"
@@ -266,9 +250,7 @@ def _search_youtube(query: str, max_results: int = 5) -> list[dict]:
         if len(results) >= max_results:
             break
 
-    logger.info(
-        "YouTube search %r: found %d videos", query, len(results)
-    )
+    logger.info("YouTube search %r: found %d videos", query, len(results))
     return results
 
 
@@ -321,9 +303,7 @@ def _get_vimeo_oembed(video_url: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def _search_ddg_videos(
-    query: str, platform: str, max_results: int = 5
-) -> list[dict]:
+def _search_ddg_videos(query: str, platform: str, max_results: int = 5) -> list[dict]:
     """Search DuckDuckGo with site: filter for video URLs.
 
     Used as a fallback when direct platform scraping fails.
@@ -340,6 +320,7 @@ def _search_ddg_videos(
 
     # Share circuit breaker with researcher module
     from tools.pulse.engine.researcher import _ddg_circuit_open
+
     if _ddg_circuit_open:
         logger.debug("DDG circuit open — skipping video search for %r", query)
         return results
@@ -355,6 +336,7 @@ def _search_ddg_videos(
         logger.warning("DuckDuckGo video search failed for %r: %s", query, exc)
         if "timeout" in str(exc).lower() or "connect" in str(exc).lower():
             import tools.pulse.engine.researcher as _res
+
             _res._ddg_circuit_open = True
             logger.warning("DDG circuit breaker OPEN from video_finder")
         return results
@@ -599,9 +581,7 @@ def find_videos_for_post(pain_points: list[str]) -> list[dict]:
         try:
             results = search_videos(pain_point, max_results=per_point)
         except Exception as exc:
-            logger.error(
-                "Video search failed for pain point %r: %s", pain_point, exc
-            )
+            logger.error("Video search failed for pain point %r: %s", pain_point, exc)
             continue
 
         for video in results:

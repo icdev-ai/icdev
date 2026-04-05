@@ -25,6 +25,7 @@ def _extract_for_opportunity(opp_id: str) -> Dict[str, Any]:
     """Extract shall statements for a single opportunity."""
     try:
         from tools.govcon.requirement_extractor import extract_and_store
+
         result = extract_and_store(opp_id)
         return result if isinstance(result, dict) else {"status": "ok", "extracted": 0}
     except ImportError:
@@ -38,8 +39,7 @@ def _re_extract_amendments() -> Dict[str, Any]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT DISTINCT opportunity_id FROM pg_amendment_diffs "
-            "WHERE re_extracted = 0 LIMIT 10"
+            "SELECT DISTINCT opportunity_id FROM pg_amendment_diffs WHERE re_extracted = 0 LIMIT 10"
         ).fetchall()
 
         re_extracted = 0
@@ -48,10 +48,7 @@ def _re_extract_amendments() -> Dict[str, Any]:
             result = _extract_for_opportunity(opp_id)
             if result.get("status") != "error":
                 # Mark amendment diffs as re-extracted
-                conn.execute(
-                    "UPDATE pg_amendment_diffs SET re_extracted = 1 WHERE opportunity_id = ?",
-                    (opp_id,)
-                )
+                conn.execute("UPDATE pg_amendment_diffs SET re_extracted = 1 WHERE opportunity_id = ?", (opp_id,))
                 conn.commit()
                 re_extracted += 1
 
@@ -92,11 +89,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         result = _extract_for_opportunity(row["id"])
         extracted = result.get("extracted", result.get("total", 0))
         total_extracted += extracted if isinstance(extracted, int) else 0
-        extraction_results.append({
-            "opportunity_id": row["id"],
-            "title": row["title"],
-            "result": result,
-        })
+        extraction_results.append(
+            {
+                "opportunity_id": row["id"],
+                "title": row["title"],
+                "result": result,
+            }
+        )
 
     # Also re-extract from amended opportunities
     amend_result = _re_extract_amendments()

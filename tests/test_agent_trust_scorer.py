@@ -243,9 +243,7 @@ class TestAgentTrustScorer:
         scorer = AgentTrustScorer(db_path=trust_db, config=default_config)
         scorer.compute_score("agent-store")
         conn = sqlite3.connect(str(trust_db))
-        row = conn.execute(
-            "SELECT COUNT(*) FROM agent_trust_scores WHERE agent_id = 'agent-store'"
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) FROM agent_trust_scores WHERE agent_id = 'agent-store'").fetchone()
         conn.close()
         assert row[0] > 0
 

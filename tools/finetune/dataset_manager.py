@@ -8,7 +8,7 @@ APPEND-ONLY (D6). Each version is a frozen snapshot (content-hashed).
 Usage:
     python tools/finetune/dataset_manager.py --create --name "proposal-v1" --purpose proposal_drafting --json
     python tools/finetune/dataset_manager.py --list --json
-    python tools/finetune/dataset_manager.py --add-example --dataset-id "ds-xxx" --user-input "..." --expected-output "..." --json
+    python tools/finetune/dataset_manager.py --add-example --dataset-id "ds-xxx" --user-input "..." --expected-output "..." --json  # noqa: E501
     python tools/finetune/dataset_manager.py --export --dataset-id "ds-xxx" --output data/finetune/export.jsonl --json
     python tools/finetune/dataset_manager.py --stats --dataset-id "ds-xxx" --json
 """
@@ -60,6 +60,7 @@ def _audit(conn: sqlite3.Connection, project_id: str, event_type: str, details: 
 
 # ── Dataset CRUD ──────────────────────────────────────────────────────
 
+
 def create_dataset(
     name: str,
     purpose: str = "general",
@@ -85,11 +86,26 @@ def create_dataset(
                (id, name, description, purpose, base_model, version, example_count,
                 classification, tenant_id, project_id, created_by, status, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, 'draft', ?, ?)""",
-            (ds_id, name, description, purpose, base_model, classification,
-             tenant_id, project_id, created_by, now, now),
+            (
+                ds_id,
+                name,
+                description,
+                purpose,
+                base_model,
+                classification,
+                tenant_id,
+                project_id,
+                created_by,
+                now,
+                now,
+            ),
         )
-        _audit(conn, project_id, "finetune_dataset_created",
-               json.dumps({"dataset_id": ds_id, "name": name, "purpose": purpose}))
+        _audit(
+            conn,
+            project_id,
+            "finetune_dataset_created",
+            json.dumps({"dataset_id": ds_id, "name": name, "purpose": purpose}),
+        )
         conn.commit()
         return {"success": True, "dataset_id": ds_id, "name": name, "purpose": purpose}
     except Exception as e:
@@ -168,6 +184,7 @@ def update_dataset_status(
 
 # ── Example Management (APPEND-ONLY) ─────────────────────────────────
 
+
 def add_example(
     dataset_id: str,
     user_input: str,
@@ -204,9 +221,20 @@ def add_example(
                 source_chunk_id, source_document_id, content_hash, classification,
                 tenant_id, project_id, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (dataset_id, system_prompt, user_input, expected_output, source,
-             source_chunk_id, source_document_id, chash, classification,
-             tenant_id, project_id, _now()),
+            (
+                dataset_id,
+                system_prompt,
+                user_input,
+                expected_output,
+                source,
+                source_chunk_id,
+                source_document_id,
+                chash,
+                classification,
+                tenant_id,
+                project_id,
+                _now(),
+            ),
         )
 
         # Update example count
@@ -357,6 +385,7 @@ def get_dataset_stats(dataset_id: str, db_path: Optional[Path] = None) -> Dict[s
 
 # ── JSONL Export ──────────────────────────────────────────────────────
 
+
 def export_jsonl(
     dataset_id: str,
     output_path: str,
@@ -382,7 +411,10 @@ def export_jsonl(
 
         rows = conn.execute(query, params).fetchall()
         if not rows:
-            return {"success": False, "error": "No examples to export (none approved)" if approved_only else "Dataset is empty"}
+            return {
+                "success": False,
+                "error": "No examples to export (none approved)" if approved_only else "Dataset is empty",
+            }
 
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -421,6 +453,7 @@ def export_jsonl(
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="Fine-tuning dataset manager")
     parser.add_argument("--create", action="store_true", help="Create a new dataset")
@@ -456,31 +489,43 @@ def main():
 
     if args.create:
         result = create_dataset(
-            name=args.name, purpose=args.purpose, description=args.description,
-            base_model=args.base_model, classification=args.classification,
-            tenant_id=args.tenant_id, project_id=args.project_id,
+            name=args.name,
+            purpose=args.purpose,
+            description=args.description,
+            base_model=args.base_model,
+            classification=args.classification,
+            tenant_id=args.tenant_id,
+            project_id=args.project_id,
         )
     elif args.list:
         result = list_datasets(
-            tenant_id=args.tenant_id, project_id=args.project_id,
+            tenant_id=args.tenant_id,
+            project_id=args.project_id,
         )
     elif args.get:
         result = get_dataset(args.dataset_id)
     elif args.add_example:
         result = add_example(
-            dataset_id=args.dataset_id, user_input=args.user_input,
-            expected_output=args.expected_output, system_prompt=args.system_prompt,
-            source=args.source, classification=args.classification,
-            tenant_id=args.tenant_id, project_id=args.project_id,
+            dataset_id=args.dataset_id,
+            user_input=args.user_input,
+            expected_output=args.expected_output,
+            system_prompt=args.system_prompt,
+            source=args.source,
+            classification=args.classification,
+            tenant_id=args.tenant_id,
+            project_id=args.project_id,
         )
     elif args.list_examples:
         result = list_examples(
-            dataset_id=args.dataset_id, approved_only=args.approved_only,
-            limit=args.limit, offset=args.offset,
+            dataset_id=args.dataset_id,
+            approved_only=args.approved_only,
+            limit=args.limit,
+            offset=args.offset,
         )
     elif args.export:
         result = export_jsonl(
-            dataset_id=args.dataset_id, output_path=args.output,
+            dataset_id=args.dataset_id,
+            output_path=args.output,
             approved_only=args.approved_only,
         )
     elif args.stats:

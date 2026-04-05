@@ -32,8 +32,10 @@ except ImportError:
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         pass
+
 
 logger = logging.getLogger("icdev.session_purpose")
 
@@ -41,6 +43,7 @@ logger = logging.getLogger("icdev.session_purpose")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
@@ -87,8 +90,15 @@ def _ensure_table(db_path=None):
 # Public API
 # ---------------------------------------------------------------------------
 
-def declare(purpose: str, project_id: str = None, declared_by: str = "user",
-            scope: str = "session", metadata: dict = None, db_path=None) -> dict:
+
+def declare(
+    purpose: str,
+    project_id: str = None,
+    declared_by: str = "user",
+    scope: str = "session",
+    metadata: dict = None,
+    db_path=None,
+) -> dict:
     """Declare a session purpose.
 
     Args:
@@ -113,8 +123,7 @@ def declare(purpose: str, project_id: str = None, declared_by: str = "user",
             """INSERT INTO session_purposes
                (id, project_id, purpose, purpose_hash, declared_by, scope, metadata, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (purpose_id, project_id, purpose, _hash(purpose),
-             declared_by, scope, json.dumps(metadata or {}), now),
+            (purpose_id, project_id, purpose, _hash(purpose), declared_by, scope, json.dumps(metadata or {}), now),
         )
         conn.commit()
     finally:
@@ -124,8 +133,7 @@ def declare(purpose: str, project_id: str = None, declared_by: str = "user",
         event_type="session.purpose_declared",
         actor=declared_by,
         action=f"Session purpose declared: {purpose[:80]}",
-        details={"purpose_id": purpose_id, "project_id": project_id,
-                 "purpose_hash": _hash(purpose), "scope": scope},
+        details={"purpose_id": purpose_id, "project_id": project_id, "purpose_hash": _hash(purpose), "scope": scope},
         classification="CUI",
     )
 
@@ -270,13 +278,11 @@ def history(project_id: str = None, limit: int = 20, db_path=None) -> list:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI for session purpose management."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV Session Purpose — intent tracking for NIST AU-3 traceability"
-    )
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser = argparse.ArgumentParser(description="ICDEV Session Purpose — intent tracking for NIST AU-3 traceability")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     parser.add_argument("--project-id", help="Project context")
 
     sub = parser.add_subparsers(dest="command", help="Purpose command")
@@ -284,8 +290,7 @@ def main():
     # Declare
     p_declare = sub.add_parser("declare", help="Declare session purpose")
     p_declare.add_argument("--purpose", required=True, help="Purpose text")
-    p_declare.add_argument("--scope", default="session",
-                           choices=["session", "workflow", "task"])
+    p_declare.add_argument("--scope", default="session", choices=["session", "workflow", "task"])
     p_declare.add_argument("--declared-by", default="user")
 
     # Active

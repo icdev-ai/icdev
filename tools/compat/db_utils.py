@@ -119,10 +119,7 @@ def get_db_connection(
     """
     path = get_icdev_db_path(db_path)
     if validate and not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     if row_factory:
         conn.row_factory = sqlite3.Row

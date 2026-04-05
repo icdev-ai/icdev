@@ -66,6 +66,7 @@ def _safe_query(conn, sql, params=()):
 # Agent Grid
 # =====================================================================
 
+
 @orchestration_api.route("/agents")
 def get_agent_grid():
     """Return all agents with current status, active task, and context usage."""
@@ -142,6 +143,7 @@ def get_agent_grid():
 # Workflows
 # =====================================================================
 
+
 @orchestration_api.route("/workflows")
 def get_workflows():
     """Return active and recent workflows."""
@@ -205,6 +207,7 @@ def get_workflows():
 # Workflow DAG
 # =====================================================================
 
+
 @orchestration_api.route("/workflows/<workflow_id>/dag")
 def get_workflow_dag(workflow_id):
     """Return DAG structure for SVG rendering."""
@@ -224,13 +227,15 @@ def get_workflow_dag(workflow_id):
         nodes = []
         edges = []
         for st in subtasks:
-            nodes.append({
-                "id": st["id"],
-                "agent": st.get("agent_id", ""),
-                "status": st.get("status", "pending"),
-                "label": st.get("skill_id") or st.get("description") or st["id"][:8],
-                "duration_ms": st.get("duration_ms"),
-            })
+            nodes.append(
+                {
+                    "id": st["id"],
+                    "agent": st.get("agent_id", ""),
+                    "status": st.get("status", "pending"),
+                    "label": st.get("skill_id") or st.get("description") or st["id"][:8],
+                    "duration_ms": st.get("duration_ms"),
+                }
+            )
             # Parse dependencies
             deps = st.get("depends_on")
             if deps:
@@ -257,6 +262,7 @@ def get_workflow_dag(workflow_id):
 # =====================================================================
 # Mailbox
 # =====================================================================
+
 
 @orchestration_api.route("/mailbox")
 def get_mailbox():
@@ -322,13 +328,15 @@ def stream_mailbox():
 
             time.sleep(3)  # D99: SSE debounced to 3-second batches
 
-    return Response(generate(), mimetype="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return Response(
+        generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 
 # =====================================================================
 # Stats
 # =====================================================================
+
 
 @orchestration_api.route("/stats")
 def get_stats():
@@ -365,22 +373,24 @@ def get_stats():
         # Average response time from completed subtasks
         avg_row = _safe_query(
             conn,
-            "SELECT AVG(duration_ms) as avg_ms FROM agent_subtasks WHERE status = 'completed' AND duration_ms IS NOT NULL",
+            "SELECT AVG(duration_ms) as avg_ms FROM agent_subtasks WHERE status = 'completed' AND duration_ms IS NOT NULL",  # noqa: E501
         )
         avg_response_ms = round(avg_row[0]["avg_ms"] or 0) if avg_row and avg_row[0].get("avg_ms") else 0
 
         conn.close()
-        return jsonify({
-            "status": "ok",
-            "active_workflows": active_workflows,
-            "total_agents": total_agents,
-            "agents_running": agents_running,
-            "subtasks_pending": subtasks_pending,
-            "subtasks_completed": subtasks_completed,
-            "subtasks_failed": subtasks_failed,
-            "mailbox_unread": mailbox_unread,
-            "avg_response_ms": avg_response_ms,
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "active_workflows": active_workflows,
+                "total_agents": total_agents,
+                "agents_running": agents_running,
+                "subtasks_pending": subtasks_pending,
+                "subtasks_completed": subtasks_completed,
+                "subtasks_failed": subtasks_failed,
+                "mailbox_unread": mailbox_unread,
+                "avg_response_ms": avg_response_ms,
+            }
+        )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -388,6 +398,7 @@ def get_stats():
 # =====================================================================
 # Collaboration History
 # =====================================================================
+
 
 @orchestration_api.route("/collaboration")
 def get_collaboration():
@@ -417,6 +428,7 @@ def get_collaboration():
 # Prompt Chains (graceful — table may not exist)
 # =====================================================================
 
+
 @orchestration_api.route("/chains")
 def get_prompt_chains():
     """Return prompt chain execution history (if table exists)."""
@@ -445,6 +457,7 @@ def get_prompt_chains():
 # =====================================================================
 # ATLAS Critiques (graceful — table may not exist)
 # =====================================================================
+
 
 @orchestration_api.route("/critiques")
 def get_critiques():

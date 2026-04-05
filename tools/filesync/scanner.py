@@ -42,10 +42,7 @@ def configure_hash(algorithm: str = "sha256", fips_mode: bool = False):
     global _hash_algorithm, _fips_mode
     algo = algorithm.lower()
     if fips_mode and algo not in FIPS_ALGORITHMS:
-        raise ValueError(
-            f"Algorithm '{algo}' is not FIPS 140-2 approved. "
-            f"Allowed: {', '.join(FIPS_ALGORITHMS)}"
-        )
+        raise ValueError(f"Algorithm '{algo}' is not FIPS 140-2 approved. Allowed: {', '.join(FIPS_ALGORITHMS)}")
     if algo not in SUPPORTED_ALGORITHMS:
         raise ValueError(f"Unsupported algorithm '{algo}'. Allowed: {', '.join(SUPPORTED_ALGORITHMS)}")
     _hash_algorithm = algo
@@ -71,9 +68,13 @@ def compute_file_hash(data: bytes, algorithm: str = None) -> str:
     return hashlib.new(algo, data).hexdigest()
 
 
-def compute_file_hash_chunked(provider: SyncTargetProvider, base_path: str,
-                               relative_path: str, chunk_size: int = HASH_BLOCK_SIZE,
-                               algorithm: str = None) -> Optional[str]:
+def compute_file_hash_chunked(
+    provider: SyncTargetProvider,
+    base_path: str,
+    relative_path: str,
+    chunk_size: int = HASH_BLOCK_SIZE,
+    algorithm: str = None,
+) -> Optional[str]:
     """Compute hash by reading the file in chunks (memory-efficient for large files).
 
     Args:
@@ -93,15 +94,18 @@ def compute_file_hash_chunked(provider: SyncTargetProvider, base_path: str,
     h = hashlib.new(algo)
     offset = 0
     while offset < len(data):
-        h.update(data[offset:offset + chunk_size])
+        h.update(data[offset : offset + chunk_size])
         offset += chunk_size
     return h.hexdigest()
 
 
-def scan_directory(provider: SyncTargetProvider, base_path: str,
-                   ignore_file: str = ".syncignore",
-                   cached_state: Optional[Dict[str, Dict]] = None,
-                   fast_skip_mtime: bool = True) -> Dict[str, Dict]:
+def scan_directory(
+    provider: SyncTargetProvider,
+    base_path: str,
+    ignore_file: str = ".syncignore",
+    cached_state: Optional[Dict[str, Dict]] = None,
+    fast_skip_mtime: bool = True,
+) -> Dict[str, Dict]:
     """Scan a directory tree and build a manifest.
 
     Args:
@@ -132,9 +136,7 @@ def scan_directory(provider: SyncTargetProvider, base_path: str,
         # Fast-skip: if mtime and size match cached state, reuse cached hash
         if fast_skip_mtime and cached_state and rel in cached_state:
             cached = cached_state[rel]
-            if (cached.get("size") == size and
-                    cached.get("mtime_epoch") == mtime and
-                    cached.get("hash")):
+            if cached.get("size") == size and cached.get("mtime_epoch") == mtime and cached.get("hash"):
                 manifest[rel] = {
                     "hash": cached["hash"],
                     "size": size,

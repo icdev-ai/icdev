@@ -38,6 +38,7 @@ def _generate_id(prefix: str = "pg") -> str:
 # Source: Approved proposal drafts with quality scores
 # ---------------------------------------------------------------------------
 
+
 def _get_publishable_drafts(limit: int = 5) -> List[Dict]:
     """Find approved proposal drafts that haven't been published to Pulse yet.
 
@@ -48,7 +49,8 @@ def _get_publishable_drafts(limit: int = 5) -> List[Dict]:
     """
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT psd.id AS draft_id,
                    psd.opportunity_id,
                    psd.section_id,
@@ -72,7 +74,9 @@ def _get_publishable_drafts(limit: int = 5) -> List[Dict]:
             AND ppl.id IS NULL
             ORDER BY pqs.overall_score DESC, psd.created_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """,
+            (limit,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -84,7 +88,8 @@ def _get_knowledge_blocks(opportunity_id: str) -> List[Dict]:
     """Pull reusable knowledge base blocks for an opportunity."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, title, content, domain_category, category
             FROM proposal_knowledge_base
             WHERE status = 'active'
@@ -95,7 +100,9 @@ def _get_knowledge_blocks(opportunity_id: str) -> List[Dict]:
             )
             ORDER BY usage_count DESC
             LIMIT 5
-        """, (opportunity_id,)).fetchall()
+        """,
+            (opportunity_id,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -106,6 +113,7 @@ def _get_knowledge_blocks(opportunity_id: str) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Case study generation (deterministic, scanner-tier)
 # ---------------------------------------------------------------------------
+
 
 def _generate_case_study(draft: Dict, kb_blocks: List[Dict]) -> Dict[str, str]:
     """Generate a case study article from an approved proposal draft.
@@ -187,14 +195,41 @@ def _generate_case_study(draft: Dict, kb_blocks: List[Dict]) -> Dict[str, str]:
 def _extract_capabilities(text: str) -> List[str]:
     """Extract capability keywords from proposal content."""
     capability_keywords = [
-        "zero trust", "FedRAMP", "ATO", "DevSecOps", "NIST 800-53",
-        "continuous monitoring", "STIG", "SBOM", "CI/CD", "microservices",
-        "containerization", "Kubernetes", "cloud migration", "data analytics",
-        "machine learning", "cybersecurity", "risk management", "compliance",
-        "agile", "SAFe", "SysML", "digital thread", "MBSE",
-        "identity management", "encryption", "PKI", "CAC/PIV",
-        "incident response", "threat modeling", "vulnerability management",
-        "supply chain", "SCRM", "CMMC", "IL4", "IL5",
+        "zero trust",
+        "FedRAMP",
+        "ATO",
+        "DevSecOps",
+        "NIST 800-53",
+        "continuous monitoring",
+        "STIG",
+        "SBOM",
+        "CI/CD",
+        "microservices",
+        "containerization",
+        "Kubernetes",
+        "cloud migration",
+        "data analytics",
+        "machine learning",
+        "cybersecurity",
+        "risk management",
+        "compliance",
+        "agile",
+        "SAFe",
+        "SysML",
+        "digital thread",
+        "MBSE",
+        "identity management",
+        "encryption",
+        "PKI",
+        "CAC/PIV",
+        "incident response",
+        "threat modeling",
+        "vulnerability management",
+        "supply chain",
+        "SCRM",
+        "CMMC",
+        "IL4",
+        "IL5",
     ]
     found = []
     text_lower = text.lower() if text else ""
@@ -210,7 +245,7 @@ def _extract_challenge(text: str, agency: str) -> str:
         return f"{agency} required a modern, compliant solution to address mission-critical needs."
 
     # Take first 2-3 sentences as challenge context
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     challenge_sentences = sentences[:3]
     challenge = " ".join(challenge_sentences)
 
@@ -226,9 +261,9 @@ def _extract_approach(text: str, capabilities: List[str]) -> str:
         return "ICDEV delivered a comprehensive solution leveraging proven methodologies."
 
     # Take middle portion of content as approach
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     mid = len(sentences) // 3
-    approach_sentences = sentences[mid:mid + 4]
+    approach_sentences = sentences[mid : mid + 4]
     approach = " ".join(approach_sentences) if approach_sentences else text[:400]
 
     if capabilities:
@@ -244,8 +279,8 @@ def _extract_approach(text: str, capabilities: List[str]) -> str:
 def _sanitize_title(title: str) -> str:
     """Clean title for article use."""
     # Remove solicitation numbers and excessive detail
-    title = re.sub(r'\b[A-Z0-9]{2,}-\d{2}-[A-Z]-\d+\b', '', title)
-    title = re.sub(r'\s+', ' ', title).strip()
+    title = re.sub(r"\b[A-Z0-9]{2,}-\d{2}-[A-Z]-\d+\b", "", title)
+    title = re.sub(r"\s+", " ", title).strip()
     if len(title) > 120:
         title = title[:117] + "..."
     return title
@@ -254,15 +289,16 @@ def _sanitize_title(title: str) -> str:
 def _slugify(text: str) -> str:
     """Convert text to URL-friendly slug."""
     slug = text.lower()
-    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
-    slug = re.sub(r'[\s]+', '-', slug)
-    slug = re.sub(r'-+', '-', slug)
-    return slug[:80].strip('-')
+    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = re.sub(r"[\s]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug[:80].strip("-")
 
 
 # ---------------------------------------------------------------------------
 # Stage article + create link
 # ---------------------------------------------------------------------------
+
 
 def _stage_article(article: Dict, draft: Dict) -> Optional[str]:
     """Stage a case study article in pulse_posts as draft."""
@@ -290,23 +326,26 @@ def _stage_article(article: Dict, draft: Dict) -> Optional[str]:
                 )
             """)
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pulse_posts
                 (id, title, slug, status, topic, body_markdown,
                  readability_score, author_id, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            post_id,
-            article["title"][:300],
-            article["slug"],
-            "draft",  # NEVER auto-publish (D-GEN principle)
-            article.get("domain", "general"),
-            article["body"],
-            draft.get("quality_score", 0) or 0,
-            "pg_publish",
-            now,
-            now,
-        ))
+        """,
+            (
+                post_id,
+                article["title"][:300],
+                article["slug"],
+                "draft",  # NEVER auto-publish (D-GEN principle)
+                article.get("domain", "general"),
+                article["body"],
+                draft.get("quality_score", 0) or 0,
+                "pg_publish",
+                now,
+                now,
+            ),
+        )
         conn.commit()
         return post_id
     except Exception:
@@ -327,20 +366,23 @@ def _create_pulse_link(
     link_id = _generate_id("pglink")
     now = _utcnow_iso()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pg_pulse_proposal_links
                 (id, pulse_post_id, opportunity_id, section_id,
                  link_type, relevance_score, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            link_id,
-            post_id,
-            opportunity_id,
-            section_id,
-            link_type,
-            relevance_score,
-            now,
-        ))
+        """,
+            (
+                link_id,
+                post_id,
+                opportunity_id,
+                section_id,
+                link_type,
+                relevance_score,
+                now,
+            ),
+        )
         conn.commit()
         return link_id
     except Exception:
@@ -384,6 +426,7 @@ def _audit_publish(
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Publish Reflex (R12).
@@ -434,7 +477,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         if not post_id:
             errors += 1
             _audit_publish(
-                "article_stage_failed", opp_id,
+                "article_stage_failed",
+                opp_id,
                 {"draft_id": draft.get("draft_id", ""), "title": article.get("title", "")},
                 success=False,
             )
@@ -454,7 +498,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         # Audit success
         _audit_publish(
-            "article_staged", opp_id,
+            "article_staged",
+            opp_id,
             {
                 "post_id": post_id,
                 "link_id": link_id,

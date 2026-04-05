@@ -35,7 +35,7 @@ def backoff_delay(
     Algorithm: min(cap, base * 2^attempt) * random(0.5, 1.0)
     Prevents thundering herd when multiple callers retry simultaneously.
     """
-    delay = min(max_delay, base_delay * (2 ** attempt))
+    delay = min(max_delay, base_delay * (2**attempt))
     return delay * random.uniform(0.5, 1.0)
 
 

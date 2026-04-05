@@ -27,8 +27,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # Core fields persisted to state file
 CORE_FIELDS = {
-    "run_id", "issue_number", "branch_name", "plan_file",
-    "issue_class", "platform", "project_id",
+    "run_id",
+    "issue_number",
+    "branch_name",
+    "plan_file",
+    "issue_class",
+    "platform",
+    "project_id",
 }
 
 

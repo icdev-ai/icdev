@@ -29,7 +29,7 @@ def init_socketio(app):
     global _socketio
 
     try:
-        from flask_socketio import SocketIO, emit, join_room
+        from flask_socketio import SocketIO, emit, join_room  # noqa: F401
 
         _socketio = SocketIO(
             app,
@@ -56,9 +56,7 @@ def init_socketio(app):
         return _socketio
 
     except ImportError:
-        app.logger.info(
-            "flask-socketio not installed — WebSocket disabled, using HTTP polling"
-        )
+        app.logger.info("flask-socketio not installed — WebSocket disabled, using HTTP polling")
         return None
 
 

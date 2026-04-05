@@ -138,13 +138,15 @@ def list_templates() -> list:
             with open(f, "r", encoding="utf-8") as fh:
                 data = yaml.safe_load(fh)
             if data and "steps" in data:
-                templates.append({
-                    "name": f.stem,
-                    "description": data.get("description", ""),
-                    "steps": len(data["steps"]),
-                    "category": data.get("category", "general"),
-                    "file": str(f),
-                })
+                templates.append(
+                    {
+                        "name": f.stem,
+                        "description": data.get("description", ""),
+                        "steps": len(data["steps"]),
+                        "category": data.get("category", "general"),
+                        "file": str(f),
+                    }
+                )
         except Exception:
             continue
 
@@ -186,16 +188,18 @@ def compose_workflow(
         step_overrides = overrides.get(step_id, {})
         cmd = _build_command(step, project_id, step_overrides)
 
-        plan_steps.append({
-            "id": step_id,
-            "name": step.get("name", step_id),
-            "tool": step.get("tool", ""),
-            "depends_on": step.get("depends_on", []),
-            "command": cmd,
-            "description": step.get("description", ""),
-            "required": step.get("required", True),
-            "timeout_seconds": step.get("timeout", 300),
-        })
+        plan_steps.append(
+            {
+                "id": step_id,
+                "name": step.get("name", step_id),
+                "tool": step.get("tool", ""),
+                "depends_on": step.get("depends_on", []),
+                "command": cmd,
+                "description": step.get("description", ""),
+                "required": step.get("required", True),
+                "timeout_seconds": step.get("timeout", 300),
+            }
+        )
 
     return {
         "workflow_id": f"wf-{uuid.uuid4().hex[:8]}",
@@ -316,9 +320,7 @@ def execute_workflow(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Cross-Phase Workflow Composer (D343)"
-    )
+    parser = argparse.ArgumentParser(description="Cross-Phase Workflow Composer (D343)")
     parser.add_argument("--template", help="Workflow template name")
     parser.add_argument("--project-id", help="Project ID", dest="project_id")
     parser.add_argument("--list", action="store_true", help="List available templates")

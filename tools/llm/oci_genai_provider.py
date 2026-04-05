@@ -44,6 +44,7 @@ try:
         OnDemandServingMode,
         DedicatedServingMode,
     )
+
     HAS_OCI = True
 except ImportError:
     oci = None  # type: ignore[assignment]
@@ -51,7 +52,8 @@ except ImportError:
 
 
 def _build_cohere_messages(
-    messages: List[Dict[str, Any]], system_prompt: str = "",
+    messages: List[Dict[str, Any]],
+    system_prompt: str = "",
 ) -> Dict[str, Any]:
     """Build Cohere chat request parameters from universal messages.
 
@@ -76,10 +78,12 @@ def _build_cohere_messages(
             content = "\n".join(text_parts)
 
         cohere_role = "USER" if role == "user" else "CHATBOT"
-        chat_history.append({
-            "role": cohere_role,
-            "message": content,
-        })
+        chat_history.append(
+            {
+                "role": cohere_role,
+                "message": content,
+            }
+        )
 
     # Extract the last user message
     if chat_history and chat_history[-1]["role"] == "USER":
@@ -98,7 +102,8 @@ def _build_cohere_messages(
 
 
 def _build_generic_messages(
-    messages: List[Dict[str, Any]], system_prompt: str = "",
+    messages: List[Dict[str, Any]],
+    system_prompt: str = "",
 ) -> List[Dict[str, str]]:
     """Build generic (Llama-style) chat messages from universal format.
 
@@ -148,15 +153,11 @@ class OCIGenAIProvider(LLMProvider):
         serving_mode: str = "on_demand",
         dedicated_endpoint_id: str = "",
     ):
-        self._compartment_id = compartment_id or os.environ.get(
-            "OCI_COMPARTMENT_ID", ""
-        )
+        self._compartment_id = compartment_id or os.environ.get("OCI_COMPARTMENT_ID", "")
         self._region = region or os.environ.get("OCI_REGION", "")
         self._config_profile = config_profile
         self._serving_mode = serving_mode
-        self._dedicated_endpoint_id = dedicated_endpoint_id or os.environ.get(
-            "OCI_GENAI_DEDICATED_ENDPOINT", ""
-        )
+        self._dedicated_endpoint_id = dedicated_endpoint_id or os.environ.get("OCI_GENAI_DEDICATED_ENDPOINT", "")
         self._client = None
 
     @property
@@ -169,15 +170,11 @@ class OCIGenAIProvider(LLMProvider):
             return self._client
 
         if not HAS_OCI:
-            raise ImportError(
-                "oci SDK required for OCI GenAI. "
-                "Install: pip install oci"
-            )
+            raise ImportError("oci SDK required for OCI GenAI. Install: pip install oci")
 
         if not self._compartment_id:
             raise ValueError(
-                "OCI compartment ID required. Set OCI_COMPARTMENT_ID "
-                "or pass compartment_id= to constructor."
+                "OCI compartment ID required. Set OCI_COMPARTMENT_ID or pass compartment_id= to constructor."
             )
 
         try:
@@ -186,32 +183,23 @@ class OCIGenAIProvider(LLMProvider):
                 config["region"] = self._region
         except Exception:
             # Fall back to instance principal or resource principal
-            logger.info(
-                "OCI config file not found, using instance principal"
-            )
+            logger.info("OCI config file not found, using instance principal")
             config = {}
 
         service_endpoint = None
         if self._region:
-            service_endpoint = (
-                f"https://inference.generativeai.{self._region}"
-                f".oci.oraclecloud.com"
-            )
+            service_endpoint = f"https://inference.generativeai.{self._region}.oci.oraclecloud.com"
 
         client_kwargs: Dict[str, Any] = {}
         if service_endpoint:
             client_kwargs["service_endpoint"] = service_endpoint
 
         if config:
-            self._client = GenerativeAiInferenceClient(
-                config, **client_kwargs
-            )
+            self._client = GenerativeAiInferenceClient(config, **client_kwargs)
         else:
             # Instance principal auth
             signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-            self._client = GenerativeAiInferenceClient(
-                {}, signer=signer, **client_kwargs
-            )
+            self._client = GenerativeAiInferenceClient({}, signer=signer, **client_kwargs)
 
         return self._client
 
@@ -225,14 +213,10 @@ class OCIGenAIProvider(LLMProvider):
             raise ImportError("oci SDK required")
 
         if self._serving_mode == "dedicated" and self._dedicated_endpoint_id:
-            return DedicatedServingMode(
-                endpoint_id=self._dedicated_endpoint_id
-            )
+            return DedicatedServingMode(endpoint_id=self._dedicated_endpoint_id)
         return OnDemandServingMode(model_id=model_id)
 
-    def invoke(
-        self, request: LLMRequest, model_id: str, model_config: dict
-    ) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke OCI GenAI Chat API."""
         client = self._get_client()
         start_time = time.time()
@@ -244,9 +228,7 @@ class OCIGenAIProvider(LLMProvider):
 
         # Build request based on model type
         if self._is_cohere_model(model_id):
-            cohere_params = _build_cohere_messages(
-                request.messages, request.system_prompt
-            )
+            cohere_params = _build_cohere_messages(request.messages, request.system_prompt)
             chat_request = CohereChatRequest(
                 message=cohere_params["message"],
                 chat_history=cohere_params.get("chat_history"),
@@ -257,9 +239,7 @@ class OCIGenAIProvider(LLMProvider):
             )
         else:
             # Generic (Llama) format
-            generic_messages = _build_generic_messages(
-                request.messages, request.system_prompt
-            )
+            generic_messages = _build_generic_messages(request.messages, request.system_prompt)
             chat_request = GenericChatRequest(
                 messages=generic_messages,
                 max_tokens=effective_max,
@@ -290,19 +270,19 @@ class OCIGenAIProvider(LLMProvider):
         if self._is_cohere_model(model_id):
             # Cohere response
             resp.content = getattr(chat_response, "text", "") or ""
-            resp.stop_reason = getattr(
-                chat_response, "finish_reason", ""
-            ) or ""
+            resp.stop_reason = getattr(chat_response, "finish_reason", "") or ""
 
             # Tool calls from Cohere
             tool_calls = getattr(chat_response, "tool_calls", None)
             if tool_calls:
                 for tc in tool_calls:
-                    resp.tool_calls.append({
-                        "id": getattr(tc, "id", f"call_{len(resp.tool_calls)}"),
-                        "name": getattr(tc, "name", ""),
-                        "input": getattr(tc, "parameters", {}),
-                    })
+                    resp.tool_calls.append(
+                        {
+                            "id": getattr(tc, "id", f"call_{len(resp.tool_calls)}"),
+                            "name": getattr(tc, "name", ""),
+                            "input": getattr(tc, "parameters", {}),
+                        }
+                    )
         else:
             # Generic (Llama) response
             choices = getattr(chat_response, "choices", [])
@@ -319,19 +299,13 @@ class OCIGenAIProvider(LLMProvider):
                             if hasattr(block, "text"):
                                 text_parts.append(block.text)
                         resp.content = "\n".join(text_parts)
-                resp.stop_reason = getattr(
-                    choice, "finish_reason", ""
-                ) or ""
+                resp.stop_reason = getattr(choice, "finish_reason", "") or ""
 
         # Token usage (if available)
         usage = getattr(response.data, "model_usage", None)
         if usage:
-            resp.input_tokens = getattr(
-                usage, "prompt_tokens", 0
-            ) or 0
-            resp.output_tokens = getattr(
-                usage, "completion_tokens", 0
-            ) or 0
+            resp.input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            resp.output_tokens = getattr(usage, "completion_tokens", 0) or 0
 
         # Try parsing structured output
         if resp.content.strip().startswith(("{", "[")):
@@ -342,9 +316,7 @@ class OCIGenAIProvider(LLMProvider):
 
         return resp
 
-    def invoke_streaming(
-        self, request: LLMRequest, model_id: str, model_config: dict
-    ) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke OCI GenAI with streaming response.
 
         Note: OCI GenAI streaming uses server-sent events.
@@ -361,9 +333,7 @@ class OCIGenAIProvider(LLMProvider):
             serving_mode = self._get_serving_mode(model_id)
 
             if self._is_cohere_model(model_id):
-                cohere_params = _build_cohere_messages(
-                    request.messages, request.system_prompt
-                )
+                cohere_params = _build_cohere_messages(request.messages, request.system_prompt)
                 chat_request = CohereChatRequest(
                     message=cohere_params["message"],
                     chat_history=cohere_params.get("chat_history"),
@@ -373,9 +343,7 @@ class OCIGenAIProvider(LLMProvider):
                     is_stream=True,
                 )
             else:
-                generic_messages = _build_generic_messages(
-                    request.messages, request.system_prompt
-                )
+                generic_messages = _build_generic_messages(request.messages, request.system_prompt)
                 chat_request = GenericChatRequest(
                     messages=generic_messages,
                     max_tokens=effective_max,

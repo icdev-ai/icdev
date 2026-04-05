@@ -4,6 +4,7 @@
 Moves forge connectors through the status state machine:
   sandboxed → promoted → published → deprecated
 """
+
 from __future__ import annotations
 
 import logging
@@ -70,8 +71,7 @@ def promote_connector(
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
                VALUES (?, 'connector_forge_promoted', ?, 'promote', ?, ?)""",
-            (f"audit-{uuid.uuid4().hex[:12]}", promoted_by,
-             f"Promoted {row['connector_name']} ({connector_id})", now),
+            (f"audit-{uuid.uuid4().hex[:12]}", promoted_by, f"Promoted {row['connector_name']} ({connector_id})", now),
         )
 
         conn.commit()
@@ -80,6 +80,7 @@ def promote_connector(
         # Load into in-memory registry
         try:
             from tools.databridge.registry import load_forge_connectors
+
             loaded = load_forge_connectors(db_path=db)
             logger.info("Loaded %d forge connectors after promotion", loaded)
         except Exception as exc:

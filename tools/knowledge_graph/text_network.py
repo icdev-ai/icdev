@@ -46,6 +46,7 @@ ICDEV_DB = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.d
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -53,116 +54,125 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 # =========================================================================
 # CONSTANTS
 # =========================================================================
 ENTITY_TYPES = (
-    "organization", "system", "control", "requirement",
-    "component", "person", "document", "standard",
+    "organization",
+    "system",
+    "control",
+    "requirement",
+    "component",
+    "person",
+    "document",
+    "standard",
 )
 
 RELATIONSHIP_TYPES = (
-    "DEPLOYED_ON", "MEMBER_OF", "OPERATES", "RUNS",
-    "SATISFIES", "PROTECTS", "REFERENCES", "IMPLEMENTS",
+    "DEPLOYED_ON",
+    "MEMBER_OF",
+    "OPERATES",
+    "RUNS",
+    "SATISFIES",
+    "PROTECTS",
+    "REFERENCES",
+    "IMPLEMENTS",
     "DEPENDS_ON",
 )
 
 # Verb phrase -> relationship type mapping
 VERB_MAP = {
-    "implements":   "IMPLEMENTS",
-    "implement":    "IMPLEMENTS",
+    "implements": "IMPLEMENTS",
+    "implement": "IMPLEMENTS",
     "implementing": "IMPLEMENTS",
-    "satisfies":    "SATISFIES",
-    "satisfy":      "SATISFIES",
-    "satisfying":   "SATISFIES",
-    "protects":     "PROTECTS",
-    "protect":      "PROTECTS",
-    "protecting":   "PROTECTS",
-    "depends on":   "DEPENDS_ON",
-    "depend on":    "DEPENDS_ON",
+    "satisfies": "SATISFIES",
+    "satisfy": "SATISFIES",
+    "satisfying": "SATISFIES",
+    "protects": "PROTECTS",
+    "protect": "PROTECTS",
+    "protecting": "PROTECTS",
+    "depends on": "DEPENDS_ON",
+    "depend on": "DEPENDS_ON",
     "depending on": "DEPENDS_ON",
-    "requires":     "DEPENDS_ON",
-    "references":   "REFERENCES",
-    "reference":    "REFERENCES",
-    "referencing":  "REFERENCES",
-    "runs":         "RUNS",
-    "runs on":      "RUNS",
-    "running":      "RUNS",
-    "operates":     "OPERATES",
-    "operating":    "OPERATES",
-    "deployed on":  "DEPLOYED_ON",
-    "deploys to":   "DEPLOYED_ON",
-    "member of":    "MEMBER_OF",
-    "belongs to":   "MEMBER_OF",
+    "requires": "DEPENDS_ON",
+    "references": "REFERENCES",
+    "reference": "REFERENCES",
+    "referencing": "REFERENCES",
+    "runs": "RUNS",
+    "runs on": "RUNS",
+    "running": "RUNS",
+    "operates": "OPERATES",
+    "operating": "OPERATES",
+    "deployed on": "DEPLOYED_ON",
+    "deploys to": "DEPLOYED_ON",
+    "member of": "MEMBER_OF",
+    "belongs to": "MEMBER_OF",
 }
 
 # =========================================================================
 # ENTITY EXTRACTION PATTERNS (compiled for performance)
 # =========================================================================
 # NIST-style control IDs: AC-2, SC-13, AU-2(1), SI-4.a
-_RE_CONTROL = re.compile(
-    r'\b([A-Z]{2,3}-\d{1,2}(?:\(\d+\))?(?:\.[a-z])?)\b'
-)
+_RE_CONTROL = re.compile(r"\b([A-Z]{2,3}-\d{1,2}(?:\(\d+\))?(?:\.[a-z])?)\b")
 
 # Requirement patterns: REQ-001, SHALL/MUST statements
-_RE_REQUIREMENT_ID = re.compile(r'\b(REQ-\d{2,5})\b')
+_RE_REQUIREMENT_ID = re.compile(r"\b(REQ-\d{2,5})\b")
 _RE_SHALL_MUST = re.compile(
-    r'(?:system|application|platform|service)\s+'
-    r'(SHALL|MUST)\s+(.{10,80}?)(?:\.|;|$)',
+    r"(?:system|application|platform|service)\s+"
+    r"(SHALL|MUST)\s+(.{10,80}?)(?:\.|;|$)",
     re.IGNORECASE,
 )
 
 # Standard bodies / standards
 _RE_STANDARD = re.compile(
-    r'\b(NIST\s+(?:SP\s+)?(?:800-\d{2,3}(?:\s+Rev\s*\d)?|AI\s+\d{3}(?:-\d)?|RMF)'
-    r'|ISO(?:/IEC)?\s+\d{4,5}(?::\d{4})?'
-    r'|FIPS\s+\d{2,3}(?:-\d)?'
-    r'|CISA\s+S[bB]D'
-    r'|OWASP\s+(?:LLM|Agentic|ASI|Top\s*10)'
-    r'|FedRAMP(?:\s+\w+)?'
-    r'|CMMC(?:\s+Level\s*\d)?'
-    r'|CJIS(?:\s+Security)?'
-    r'|HIPAA(?:\s+Security)?'
-    r'|SOC\s*2'
-    r'|PCI\s+DSS'
-    r'|MITRE\s+ATLAS)\b',
+    r"\b(NIST\s+(?:SP\s+)?(?:800-\d{2,3}(?:\s+Rev\s*\d)?|AI\s+\d{3}(?:-\d)?|RMF)"
+    r"|ISO(?:/IEC)?\s+\d{4,5}(?::\d{4})?"
+    r"|FIPS\s+\d{2,3}(?:-\d)?"
+    r"|CISA\s+S[bB]D"
+    r"|OWASP\s+(?:LLM|Agentic|ASI|Top\s*10)"
+    r"|FedRAMP(?:\s+\w+)?"
+    r"|CMMC(?:\s+Level\s*\d)?"
+    r"|CJIS(?:\s+Security)?"
+    r"|HIPAA(?:\s+Security)?"
+    r"|SOC\s*2"
+    r"|PCI\s+DSS"
+    r"|MITRE\s+ATLAS)\b",
     re.IGNORECASE,
 )
 
 # Document artifact types
-_RE_DOCUMENT = re.compile(
-    r'\b(SSP|POAM|POA&M|SBOM|STIG|CONOPS|CDD|SOW|RTM|ICD|TSP|OSCAL|ATO)\b'
-)
+_RE_DOCUMENT = re.compile(r"\b(SSP|POAM|POA&M|SBOM|STIG|CONOPS|CDD|SOW|RTM|ICD|TSP|OSCAL|ATO)\b")
 
 # Organizations: capitalized multi-word near keywords
 _RE_ORG_KEYWORD = re.compile(
-    r'\b((?:Department|Agency|Office|Bureau|Division|Command|Directorate)'
-    r'\s+(?:of\s+)?(?:[A-Z][a-z]+\s*){1,4})\b'
+    r"\b((?:Department|Agency|Office|Bureau|Division|Command|Directorate)"
+    r"\s+(?:of\s+)?(?:[A-Z][a-z]+\s*){1,4})\b"
 )
 _RE_ORG_ABBREV = re.compile(
-    r'\b(DoD|DHS|DISA|NSA|CISA|NASA|FAA|FBI|CIA|NGA|NRO|USCYBERCOM'
-    r'|NIST|OMB|GSA|OPM|VA|HHS|CMS|ONC|FTC|SEC|FINRA|CFTC)\b'
+    r"\b(DoD|DHS|DISA|NSA|CISA|NASA|FAA|FBI|CIA|NGA|NRO|USCYBERCOM"
+    r"|NIST|OMB|GSA|OPM|VA|HHS|CMS|ONC|FTC|SEC|FINRA|CFTC)\b"
 )
 
 # Systems: one to four capitalized tokens (proper nouns) immediately preceding
 # a system keyword.  Case-sensitive on the name to avoid matching verbs/articles.
 _RE_SYSTEM = re.compile(
-    r'(?<!\w)([A-Z][a-zA-Z0-9]{2,}(?:\s+[A-Z][a-zA-Z0-9]{2,}){0,3})\s+'
-    r'(?:system|platform|application|service|tool|framework)\b',
+    r"(?<!\w)([A-Z][a-zA-Z0-9]{2,}(?:\s+[A-Z][a-zA-Z0-9]{2,}){0,3})\s+"
+    r"(?:system|platform|application|service|tool|framework)\b",
 )
 
 # Components: a proper noun or technical term (at least 3 chars) preceding
 # a component keyword.
 _RE_COMPONENT = re.compile(
-    r'\b([A-Za-z][a-zA-Z0-9_-]{2,}(?:\s+[a-zA-Z0-9_-]{2,}){0,2})\s+'
-    r'(?:component|module|library|package|plugin|extension)\b',
+    r"\b([A-Za-z][a-zA-Z0-9_-]{2,}(?:\s+[a-zA-Z0-9_-]{2,}){0,2})\s+"
+    r"(?:component|module|library|package|plugin|extension)\b",
     re.IGNORECASE,
 )
 
 # Persons: near person keywords (simple heuristic)
 _RE_PERSON = re.compile(
-    r'(?:user|admin|administrator|operator|officer|analyst|engineer|manager'
-    r'|developer|architect)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b'
+    r"(?:user|admin|administrator|operator|officer|analyst|engineer|manager"
+    r"|developer|architect)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b"
 )
 
 
@@ -242,6 +252,7 @@ def _ensure_tables(conn=None):
 
 # Words to strip from entity label starts (articles, prepositions, etc.)
 _STRIP_PREFIXES = {"the", "a", "an", "this", "that", "each", "every", "its"}
+
 
 # =========================================================================
 # ENTITY EXTRACTION
@@ -337,7 +348,7 @@ def _extract_relationships(text, entities):
     sorted_labels = sorted(entity_lookup.keys(), key=len, reverse=True)
 
     # Split text into sentences (simple heuristic)
-    sentences = re.split(r'[.;!\n]+', text)
+    sentences = re.split(r"[.;!\n]+", text)
 
     relationships = []
     seen_edges = set()
@@ -410,10 +421,15 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
     conn.execute(
         "INSERT INTO kg_graphs (id, project_id, name, description, metadata, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (graph_id, project_id, name,
-         f"Auto-extracted from text ({len(text)} chars)",
-         json.dumps({"content_hash": content_hash, "source": "text_network"}),
-         now, now),
+        (
+            graph_id,
+            project_id,
+            name,
+            f"Auto-extracted from text ({len(text)} chars)",
+            json.dumps({"content_hash": content_hash, "source": "text_network"}),
+            now,
+            now,
+        ),
     )
 
     # --- Entity extraction ---------------------------------------------------
@@ -424,8 +440,7 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
         node_id = _kg_id()
         node_map[label] = node_id
         conn.execute(
-            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (node_id, graph_id, label, etype, "{}", now),
         )
 
@@ -444,13 +459,15 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (edge_id, graph_id, src_id, tgt_id, rel_type, 1.0, "{}", now),
         )
-        edge_records.append({
-            "id": edge_id,
-            "source": src_label,
-            "target": tgt_label,
-            "relationship": rel_type,
-            "weight": 1.0,
-        })
+        edge_records.append(
+            {
+                "id": edge_id,
+                "source": src_label,
+                "target": tgt_label,
+                "relationship": rel_type,
+                "weight": 1.0,
+            }
+        )
 
     # --- Update counts -------------------------------------------------------
     entity_count = len(raw_entities)
@@ -473,10 +490,7 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
             details={"graph_id": graph_id},
         )
 
-    entity_list = [
-        {"label": label, "entity_type": etype}
-        for label, etype in raw_entities
-    ]
+    entity_list = [{"label": label, "entity_type": etype} for label, etype in raw_entities]
 
     return {
         "status": "ok",
@@ -503,8 +517,8 @@ def get_graph(graph_id):
     graph = dict(row)
 
     nodes = [
-        dict(r) for r in
-        conn.execute(
+        dict(r)
+        for r in conn.execute(
             "SELECT id, label, entity_type, properties, centrality, created_at "
             "FROM kg_nodes WHERE graph_id = ? ORDER BY entity_type, label",
             (graph_id,),
@@ -512,8 +526,8 @@ def get_graph(graph_id):
     ]
 
     edges = [
-        dict(r) for r in
-        conn.execute(
+        dict(r)
+        for r in conn.execute(
             "SELECT e.id, e.relationship, e.weight, e.properties, e.created_at, "
             "       s.label AS source_label, t.label AS target_label "
             "FROM kg_edges e "
@@ -592,16 +606,11 @@ def main():
     )
     parser.add_argument("--text", type=str, help="Input text to analyse.")
     parser.add_argument("--file", type=str, help="Path to a text file to read.")
-    parser.add_argument("--project-id", type=str, default="default",
-                        help="ICDEV project identifier.")
-    parser.add_argument("--graph-name", type=str, default=None,
-                        help="Optional human-readable graph name.")
-    parser.add_argument("--graph-id", type=str, default=None,
-                        help="Retrieve an existing graph by ID.")
-    parser.add_argument("--search", type=str, default=None,
-                        help="Search node labels across graphs.")
-    parser.add_argument("--json", action="store_true",
-                        help="Output results as formatted JSON.")
+    parser.add_argument("--project-id", type=str, default="default", help="ICDEV project identifier.")
+    parser.add_argument("--graph-name", type=str, default=None, help="Optional human-readable graph name.")
+    parser.add_argument("--graph-id", type=str, default=None, help="Retrieve an existing graph by ID.")
+    parser.add_argument("--search", type=str, default=None, help="Search node labels across graphs.")
+    parser.add_argument("--json", action="store_true", help="Output results as formatted JSON.")
 
     args = parser.parse_args()
 
@@ -623,7 +632,9 @@ def main():
                 sys.exit(1)
             text = fpath.read_text(encoding="utf-8", errors="replace")
         result = extract_entities_and_relationships(
-            text, args.project_id, graph_name=args.graph_name,
+            text,
+            args.project_id,
+            graph_name=args.graph_name,
         )
     else:
         parser.print_help()

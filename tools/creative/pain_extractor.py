@@ -55,12 +55,14 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -68,28 +70,152 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 # =========================================================================
 # CONSTANTS
 # =========================================================================
 # Hardcoded English stopwords (~100 common words) — no NLTK dependency needed
-STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "been", "by", "but",
-    "can", "could", "did", "do", "does", "for", "from", "had", "has",
-    "have", "he", "her", "him", "his", "how", "i", "if", "in", "into",
-    "is", "it", "its", "just", "may", "me", "might", "more", "most",
-    "must", "my", "no", "nor", "not", "of", "on", "or", "our", "out",
-    "own", "re", "s", "she", "should", "so", "some", "such", "t",
-    "than", "that", "the", "their", "them", "then", "there", "these",
-    "they", "this", "those", "through", "to", "too", "up", "us",
-    "very", "was", "we", "were", "what", "when", "where", "which",
-    "while", "who", "whom", "why", "will", "with", "would", "you",
-    "your", "about", "above", "after", "again", "all", "also", "am",
-    "any", "because", "before", "being", "between", "both", "during",
-    "each", "few", "further", "get", "got", "here", "how", "itself",
-    "let", "like", "make", "many", "much", "new", "now", "off", "old",
-    "one", "only", "other", "over", "same", "set", "since", "still",
-    "take", "two", "under", "use", "used", "using", "way", "well",
-})
+STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "by",
+        "but",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "just",
+        "may",
+        "me",
+        "might",
+        "more",
+        "most",
+        "must",
+        "my",
+        "no",
+        "nor",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "out",
+        "own",
+        "re",
+        "s",
+        "she",
+        "should",
+        "so",
+        "some",
+        "such",
+        "t",
+        "than",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "up",
+        "us",
+        "very",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "why",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
+        "about",
+        "above",
+        "after",
+        "again",
+        "all",
+        "also",
+        "am",
+        "any",
+        "because",
+        "before",
+        "being",
+        "between",
+        "both",
+        "during",
+        "each",
+        "few",
+        "further",
+        "get",
+        "got",
+        "here",
+        "how",
+        "itself",
+        "let",
+        "like",
+        "make",
+        "many",
+        "much",
+        "new",
+        "now",
+        "off",
+        "old",
+        "one",
+        "only",
+        "other",
+        "over",
+        "same",
+        "set",
+        "since",
+        "still",
+        "take",
+        "two",
+        "under",
+        "use",
+        "used",
+        "using",
+        "way",
+        "well",
+    }
+)
 
 # Minimum keyword length to consider
 MIN_KEYWORD_LEN = 3
@@ -98,9 +224,21 @@ TOP_KEYWORDS_PER_SIGNAL = 10
 
 # Valid categories matching creative_pain_points CHECK constraint
 VALID_CATEGORIES = (
-    "ux", "performance", "integration", "pricing", "compliance",
-    "security", "reporting", "customization", "support", "scalability",
-    "documentation", "onboarding", "api", "automation", "other",
+    "ux",
+    "performance",
+    "integration",
+    "pricing",
+    "compliance",
+    "security",
+    "reporting",
+    "customization",
+    "support",
+    "scalability",
+    "documentation",
+    "onboarding",
+    "api",
+    "automation",
+    "other",
 )
 
 # Severity indicator phrases — maps indicator text to severity level
@@ -140,75 +278,292 @@ SEVERITY_MAP = {
 
 # Negative indicator phrases — signal that text contains a pain point
 _NEGATIVE_INDICATORS = [
-    "frustrating", "annoying", "painful", "difficult", "confusing",
-    "slow", "broken", "buggy", "missing", "lack", "lacking", "fails",
-    "failure", "error", "crash", "unusable", "terrible", "awful",
-    "horrible", "poor", "worst", "hate", "impossible", "complicated",
-    "unintuitive", "unreliable", "inconsistent", "clunky", "bloated",
-    "outdated", "deprecated", "workaround", "hack", "kludge",
-    "deal breaker", "showstopper", "blocking",
+    "frustrating",
+    "annoying",
+    "painful",
+    "difficult",
+    "confusing",
+    "slow",
+    "broken",
+    "buggy",
+    "missing",
+    "lack",
+    "lacking",
+    "fails",
+    "failure",
+    "error",
+    "crash",
+    "unusable",
+    "terrible",
+    "awful",
+    "horrible",
+    "poor",
+    "worst",
+    "hate",
+    "impossible",
+    "complicated",
+    "unintuitive",
+    "unreliable",
+    "inconsistent",
+    "clunky",
+    "bloated",
+    "outdated",
+    "deprecated",
+    "workaround",
+    "hack",
+    "kludge",
+    "deal breaker",
+    "showstopper",
+    "blocking",
 ]
 
 # Feature request indicators — signal that text requests missing capability
 _FEATURE_REQUEST_INDICATORS = [
-    "wish", "would be nice", "should have", "need", "needs",
-    "missing feature", "feature request", "please add", "want",
-    "looking for", "hoping for", "expected", "supposed to",
-    "why can't", "why doesn't", "no way to", "cannot",
-    "doesn't support", "does not support", "not supported",
-    "no support for", "unable to", "limitation",
+    "wish",
+    "would be nice",
+    "should have",
+    "need",
+    "needs",
+    "missing feature",
+    "feature request",
+    "please add",
+    "want",
+    "looking for",
+    "hoping for",
+    "expected",
+    "supposed to",
+    "why can't",
+    "why doesn't",
+    "no way to",
+    "cannot",
+    "doesn't support",
+    "does not support",
+    "not supported",
+    "no support for",
+    "unable to",
+    "limitation",
 ]
 
 # Positive words for sentiment analysis
 _POSITIVE_WORDS = [
-    "great", "excellent", "love", "amazing", "perfect", "easy",
-    "intuitive", "powerful", "best", "recommend", "helpful",
+    "great",
+    "excellent",
+    "love",
+    "amazing",
+    "perfect",
+    "easy",
+    "intuitive",
+    "powerful",
+    "best",
+    "recommend",
+    "helpful",
 ]
 
 # Category keyword mapping for classification
 _CATEGORY_KEYWORDS = {
-    "ux": ["ui", "ux", "interface", "design", "layout", "navigation",
-           "confusing", "unintuitive", "user experience", "usability",
-           "workflow", "dashboard", "click", "button", "screen"],
-    "performance": ["slow", "timeout", "latency", "memory", "cpu",
-                    "bottleneck", "throughput", "scalability", "speed",
-                    "lag", "freeze", "hang", "resource", "load time"],
-    "integration": ["integrate", "integration", "connect", "connector",
-                    "webhook", "sync", "import", "export", "third-party",
-                    "plugin", "extension", "interop", "compatibility"],
-    "pricing": ["price", "pricing", "cost", "expensive", "cheap",
-                "subscription", "license", "tier", "plan", "billing",
-                "free", "paid", "premium", "enterprise"],
-    "compliance": ["compliance", "nist", "fedramp", "cmmc", "stig",
-                   "ato", "audit", "regulation", "certification",
-                   "standard", "framework", "control", "accreditation"],
-    "security": ["security", "vulnerability", "exploit", "injection",
-                 "authentication", "authorization", "encryption", "tls",
-                 "certificate", "permission", "access control", "cve"],
-    "reporting": ["report", "reporting", "dashboard", "analytics",
-                  "metrics", "chart", "graph", "visualization", "data",
-                  "insight", "export", "csv", "pdf"],
-    "customization": ["customize", "customization", "configuration",
-                      "config", "template", "theme", "personalize",
-                      "flexible", "configurable", "settings", "options"],
-    "support": ["support", "documentation", "help", "customer service",
-                "response time", "ticket", "issue", "contact",
-                "knowledge base", "community", "forum"],
-    "scalability": ["scale", "scalability", "growth", "enterprise",
-                    "large", "volume", "concurrent", "cluster",
-                    "distributed", "horizontal", "vertical", "capacity"],
-    "documentation": ["documentation", "docs", "readme", "guide",
-                      "tutorial", "example", "sample", "reference",
-                      "api docs", "changelog", "wiki"],
-    "onboarding": ["onboarding", "getting started", "setup", "install",
-                   "installation", "first time", "learning curve",
-                   "tutorial", "quickstart", "beginner"],
-    "api": ["api", "endpoint", "rest", "graphql", "sdk", "client",
-            "library", "rate limit", "pagination", "versioning",
-            "swagger", "openapi", "grpc"],
-    "automation": ["automation", "automate", "pipeline", "ci", "cd",
-                   "workflow", "schedule", "cron", "batch", "trigger",
-                   "script", "cli", "command line"],
+    "ux": [
+        "ui",
+        "ux",
+        "interface",
+        "design",
+        "layout",
+        "navigation",
+        "confusing",
+        "unintuitive",
+        "user experience",
+        "usability",
+        "workflow",
+        "dashboard",
+        "click",
+        "button",
+        "screen",
+    ],
+    "performance": [
+        "slow",
+        "timeout",
+        "latency",
+        "memory",
+        "cpu",
+        "bottleneck",
+        "throughput",
+        "scalability",
+        "speed",
+        "lag",
+        "freeze",
+        "hang",
+        "resource",
+        "load time",
+    ],
+    "integration": [
+        "integrate",
+        "integration",
+        "connect",
+        "connector",
+        "webhook",
+        "sync",
+        "import",
+        "export",
+        "third-party",
+        "plugin",
+        "extension",
+        "interop",
+        "compatibility",
+    ],
+    "pricing": [
+        "price",
+        "pricing",
+        "cost",
+        "expensive",
+        "cheap",
+        "subscription",
+        "license",
+        "tier",
+        "plan",
+        "billing",
+        "free",
+        "paid",
+        "premium",
+        "enterprise",
+    ],
+    "compliance": [
+        "compliance",
+        "nist",
+        "fedramp",
+        "cmmc",
+        "stig",
+        "ato",
+        "audit",
+        "regulation",
+        "certification",
+        "standard",
+        "framework",
+        "control",
+        "accreditation",
+    ],
+    "security": [
+        "security",
+        "vulnerability",
+        "exploit",
+        "injection",
+        "authentication",
+        "authorization",
+        "encryption",
+        "tls",
+        "certificate",
+        "permission",
+        "access control",
+        "cve",
+    ],
+    "reporting": [
+        "report",
+        "reporting",
+        "dashboard",
+        "analytics",
+        "metrics",
+        "chart",
+        "graph",
+        "visualization",
+        "data",
+        "insight",
+        "export",
+        "csv",
+        "pdf",
+    ],
+    "customization": [
+        "customize",
+        "customization",
+        "configuration",
+        "config",
+        "template",
+        "theme",
+        "personalize",
+        "flexible",
+        "configurable",
+        "settings",
+        "options",
+    ],
+    "support": [
+        "support",
+        "documentation",
+        "help",
+        "customer service",
+        "response time",
+        "ticket",
+        "issue",
+        "contact",
+        "knowledge base",
+        "community",
+        "forum",
+    ],
+    "scalability": [
+        "scale",
+        "scalability",
+        "growth",
+        "enterprise",
+        "large",
+        "volume",
+        "concurrent",
+        "cluster",
+        "distributed",
+        "horizontal",
+        "vertical",
+        "capacity",
+    ],
+    "documentation": [
+        "documentation",
+        "docs",
+        "readme",
+        "guide",
+        "tutorial",
+        "example",
+        "sample",
+        "reference",
+        "api docs",
+        "changelog",
+        "wiki",
+    ],
+    "onboarding": [
+        "onboarding",
+        "getting started",
+        "setup",
+        "install",
+        "installation",
+        "first time",
+        "learning curve",
+        "tutorial",
+        "quickstart",
+        "beginner",
+    ],
+    "api": [
+        "api",
+        "endpoint",
+        "rest",
+        "graphql",
+        "sdk",
+        "client",
+        "library",
+        "rate limit",
+        "pagination",
+        "versioning",
+        "swagger",
+        "openapi",
+        "grpc",
+    ],
+    "automation": [
+        "automation",
+        "automate",
+        "pipeline",
+        "ci",
+        "cd",
+        "workflow",
+        "schedule",
+        "cron",
+        "batch",
+        "trigger",
+        "script",
+        "cli",
+        "command line",
+    ],
 }
 
 # Regex for keyword tokenization
@@ -533,17 +888,19 @@ def cluster_pain_points(pain_points, min_shared_keywords=3):
     n = len(pain_points)
     if n == 1:
         pp = pain_points[0]
-        return [{
-            "title": pp["title"],
-            "description": pp["description"],
-            "category": pp["category"],
-            "keywords": pp["keywords"],
-            "keyword_fingerprint": pp["keyword_fingerprint"],
-            "severity": pp["severity"],
-            "signal_ids": [pp["signal_id"]] if pp.get("signal_id") else [],
-            "competitor_ids": [pp["competitor_id"]] if pp.get("competitor_id") else [],
-            "frequency": 1,
-        }]
+        return [
+            {
+                "title": pp["title"],
+                "description": pp["description"],
+                "category": pp["category"],
+                "keywords": pp["keywords"],
+                "keyword_fingerprint": pp["keyword_fingerprint"],
+                "severity": pp["severity"],
+                "signal_ids": [pp["signal_id"]] if pp.get("signal_id") else [],
+                "competitor_ids": [pp["competitor_id"]] if pp.get("competitor_id") else [],
+                "frequency": 1,
+            }
+        ]
 
     # Union-find data structure
     parent = list(range(n))
@@ -628,17 +985,19 @@ def cluster_pain_points(pain_points, min_shared_keywords=3):
         # Fingerprint: hash of sorted union keywords
         fingerprint = _keyword_fingerprint(all_keywords_sorted)
 
-        consolidated.append({
-            "title": best_title,
-            "description": best_description,
-            "category": best_category,
-            "keywords": all_keywords_sorted,
-            "keyword_fingerprint": fingerprint,
-            "severity": best_severity,
-            "signal_ids": signal_ids,
-            "competitor_ids": competitor_ids,
-            "frequency": len(cluster_pps),
-        })
+        consolidated.append(
+            {
+                "title": best_title,
+                "description": best_description,
+                "category": best_category,
+                "keywords": all_keywords_sorted,
+                "keyword_fingerprint": fingerprint,
+                "severity": best_severity,
+                "signal_ids": signal_ids,
+                "competitor_ids": competitor_ids,
+                "frequency": len(cluster_pps),
+            }
+        )
 
     return consolidated
 
@@ -688,16 +1047,12 @@ def merge_with_existing(new_pain_points, db_path=None):
             if existing:
                 # Merge: combine signal_ids, increment frequency
                 existing_signal_ids = json.loads(existing["signal_ids"] or "[]")
-                existing_competitor_ids = json.loads(
-                    existing["competitor_ids"] if existing["competitor_ids"] else "[]"
-                )
+                existing_competitor_ids = json.loads(existing["competitor_ids"] if existing["competitor_ids"] else "[]")
                 existing_keywords = json.loads(existing["keywords"] or "[]")
 
                 # Union signal IDs
                 merged_signal_ids = list(set(existing_signal_ids + pp["signal_ids"]))
-                merged_competitor_ids = list(
-                    set(existing_competitor_ids + pp.get("competitor_ids", []))
-                )
+                merged_competitor_ids = list(set(existing_competitor_ids + pp.get("competitor_ids", [])))
                 merged_keywords = sorted(set(existing_keywords + pp["keywords"]))
                 merged_frequency = existing["frequency"] + pp["frequency"]
                 first_seen = existing["first_seen"]
@@ -791,9 +1146,7 @@ def extract_all_new(db_path=None):
 
     try:
         # Get all signal IDs already referenced in pain points
-        existing_rows = conn.execute(
-            "SELECT signal_ids FROM creative_pain_points"
-        ).fetchall()
+        existing_rows = conn.execute("SELECT signal_ids FROM creative_pain_points").fetchall()
 
         processed_ids = set()
         for row in existing_rows:
@@ -820,15 +1173,12 @@ def extract_all_new(db_path=None):
             }
 
         # Filter to unprocessed signals
-        unprocessed = [
-            dict(row) for row in all_signals if row["id"] not in processed_ids
-        ]
+        unprocessed = [dict(row) for row in all_signals if row["id"] not in processed_ids]
 
         if not unprocessed:
             # Count total stored for the response
             total_row = conn.execute(
-                "SELECT COUNT(DISTINCT keyword_fingerprint) as cnt "
-                "FROM creative_pain_points"
+                "SELECT COUNT(DISTINCT keyword_fingerprint) as cnt FROM creative_pain_points"
             ).fetchone()
             total_stored = total_row["cnt"] if total_row else 0
             return {
@@ -983,16 +1333,14 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
 
         if category:
             if category not in VALID_CATEGORIES:
-                return {"error": f"Invalid category: {category}. "
-                        f"Valid: {', '.join(VALID_CATEGORIES)}"}
+                return {"error": f"Invalid category: {category}. Valid: {', '.join(VALID_CATEGORIES)}"}
             conditions.append("cp.category = ?")
             params.append(category)
 
         if severity:
             valid_severities = ("critical", "high", "medium", "low")
             if severity not in valid_severities:
-                return {"error": f"Invalid severity: {severity}. "
-                        f"Valid: {', '.join(valid_severities)}"}
+                return {"error": f"Invalid severity: {severity}. Valid: {', '.join(valid_severities)}"}
             conditions.append("cp.severity = ?")
             params.append(severity)
 
@@ -1006,30 +1354,27 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
 
         pain_points = []
         for row in rows:
-            pain_points.append({
-                "id": row["id"],
-                "title": row["title"],
-                "description": row["description"],
-                "category": row["category"],
-                "frequency": row["frequency"],
-                "severity": row["severity"],
-                "status": row["status"],
-                "keywords": json.loads(row["keywords"]) if row["keywords"] else [],
-                "signal_ids": json.loads(row["signal_ids"]) if row["signal_ids"] else [],
-                "competitor_ids": (
-                    json.loads(row["competitor_ids"])
-                    if row["competitor_ids"]
-                    else []
-                ),
-                "composite_score": row["composite_score"],
-                "first_seen": row["first_seen"],
-                "last_seen": row["last_seen"],
-            })
+            pain_points.append(
+                {
+                    "id": row["id"],
+                    "title": row["title"],
+                    "description": row["description"],
+                    "category": row["category"],
+                    "frequency": row["frequency"],
+                    "severity": row["severity"],
+                    "status": row["status"],
+                    "keywords": json.loads(row["keywords"]) if row["keywords"] else [],
+                    "signal_ids": json.loads(row["signal_ids"]) if row["signal_ids"] else [],
+                    "competitor_ids": (json.loads(row["competitor_ids"]) if row["competitor_ids"] else []),
+                    "composite_score": row["composite_score"],
+                    "first_seen": row["first_seen"],
+                    "last_seen": row["last_seen"],
+                }
+            )
 
         # Summary stats
         total_row = conn.execute(
-            "SELECT COUNT(DISTINCT keyword_fingerprint) as cnt "
-            "FROM creative_pain_points"
+            "SELECT COUNT(DISTINCT keyword_fingerprint) as cnt FROM creative_pain_points"
         ).fetchone()
         total_unique = total_row["cnt"] if total_row else 0
 
@@ -1076,9 +1421,7 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -1098,19 +1441,27 @@ def main():
     )
 
     parser.add_argument(
-        "--signal-id", type=str, default=None,
+        "--signal-id",
+        type=str,
+        default=None,
         help="Signal ID for --extract command (e.g., 'csig-xxx')",
     )
     parser.add_argument(
-        "--category", type=str, default=None,
+        "--category",
+        type=str,
+        default=None,
         help="Filter by category (e.g., 'ux', 'performance', 'security')",
     )
     parser.add_argument(
-        "--severity", type=str, default=None,
+        "--severity",
+        type=str,
+        default=None,
         help="Filter by severity ('critical', 'high', 'medium', 'low')",
     )
     parser.add_argument(
-        "--limit", type=int, default=50,
+        "--limit",
+        type=int,
+        default=50,
         help="Maximum results for --list (default: 50)",
     )
 
@@ -1121,13 +1472,9 @@ def main():
             result = extract_all_new(db_path=args.db_path)
         elif args.extract:
             if not args.signal_id:
-                print(
-                    "ERROR: --extract requires --signal-id", file=sys.stderr
-                )
+                print("ERROR: --extract requires --signal-id", file=sys.stderr)
                 sys.exit(1)
-            result = extract_from_signal(
-                signal_id=args.signal_id, db_path=args.db_path
-            )
+            result = extract_from_signal(signal_id=args.signal_id, db_path=args.db_path)
         elif args.list:
             result = list_pain_points(
                 category=args.category,
@@ -1194,9 +1541,7 @@ def _print_human(args, result):
         print(f"  Total unique: {result.get('total_unique', 0)}")
         print(f"  Returned:     {result.get('returned', 0)}")
         filters = result.get("filters", {})
-        active_filters = [
-            f"{k}={v}" for k, v in filters.items() if v is not None
-        ]
+        active_filters = [f"{k}={v}" for k, v in filters.items() if v is not None]
         if active_filters:
             print(f"  Filters:      {', '.join(active_filters)}")
 
@@ -1216,8 +1561,7 @@ def _print_human(args, result):
             for sev in sev_order:
                 cnt = sev_dist.get(sev, 0)
                 if cnt > 0:
-                    icon = {"critical": "[!!!]", "high": "[!! ]",
-                            "medium": "[ ! ]", "low": "[   ]"}.get(sev, "[   ]")
+                    icon = {"critical": "[!!!]", "high": "[!! ]", "medium": "[ ! ]", "low": "[   ]"}.get(sev, "[   ]")
                     print(f"    {icon} {sev:10s} {cnt:4d}")
 
         # Pain points
@@ -1230,10 +1574,7 @@ def _print_human(args, result):
                 "low": "[LOW]",
             }.get(pp.get("severity", "medium"), "[???]")
             freq = pp.get("frequency", 1)
-            print(
-                f"  {sev_icon} {pp['title'][:60]}"
-                f"  ({pp['category']}, freq={freq})"
-            )
+            print(f"  {sev_icon} {pp['title'][:60]}  ({pp['category']}, freq={freq})")
             kws = ", ".join(pp.get("keywords", [])[:5])
             print(f"         keywords: {kws}")
 

@@ -22,14 +22,12 @@ SIEM_TEMPLATES_DIR = BASE_DIR / "context" / "compliance" / "siem_config_template
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -41,6 +39,7 @@ def _load_cui_config():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -66,24 +65,26 @@ def _load_project_defaults():
     if defaults_path.exists():
         try:
             import yaml
+
             with open(defaults_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
             # Flatten monitoring section into defaults
             monitoring = data.get("monitoring", {})
             infra = data.get("infrastructure", {})
-            defaults.update({
-                "log_aggregator": monitoring.get("log_aggregator", ["elk", "splunk"]),
-                "metrics": monitoring.get("metrics", "prometheus"),
-                "dashboards": monitoring.get("dashboards", "grafana"),
-                "self_healing": monitoring.get("self_healing", True),
-                "cloud": infra.get("cloud", "aws-govcloud"),
-                "region": infra.get("region", "us-gov-west-1"),
-            })
+            defaults.update(
+                {
+                    "log_aggregator": monitoring.get("log_aggregator", ["elk", "splunk"]),
+                    "metrics": monitoring.get("metrics", "prometheus"),
+                    "dashboards": monitoring.get("dashboards", "grafana"),
+                    "self_healing": monitoring.get("self_healing", True),
+                    "cloud": infra.get("cloud", "aws-govcloud"),
+                    "region": infra.get("region", "us-gov-west-1"),
+                }
+            )
         except ImportError:
             pass
         except Exception as exc:
-            print(f"Warning: Could not load project_defaults.yaml: {exc}",
-                  file=sys.stderr)
+            print(f"Warning: Could not load project_defaults.yaml: {exc}", file=sys.stderr)
     return defaults
 
 
@@ -106,27 +107,38 @@ def _load_log_sources():
             data = json.loads(content)
             return data if isinstance(data, list) else data.get("sources", [])
         except json.JSONDecodeError:
-            print("Warning: log_sources.json is invalid JSON, using defaults.",
-                  file=sys.stderr)
+            print("Warning: log_sources.json is invalid JSON, using defaults.", file=sys.stderr)
 
     # Built-in required log sources per DI 8530.01
     return [
-        {"name": "application", "path": "logs/*.log", "required": True,
-         "description": "Application logs"},
-        {"name": "auth", "path": "/var/log/auth.log", "required": True,
-         "description": "Authentication/authorization events"},
-        {"name": "audit", "path": "/var/log/audit/audit.log", "required": True,
-         "description": "OS audit subsystem events"},
-        {"name": "syslog", "path": "/var/log/syslog", "required": True,
-         "description": "System log messages"},
-        {"name": "container", "path": "/var/log/containers/*.log", "required": True,
-         "description": "Container runtime logs"},
-        {"name": "access", "path": "logs/access.log", "required": False,
-         "description": "HTTP access logs"},
-        {"name": "error", "path": "logs/error.log", "required": False,
-         "description": "HTTP error logs"},
-        {"name": "database", "path": "/var/log/postgresql/*.log", "required": False,
-         "description": "Database query/audit logs"},
+        {"name": "application", "path": "logs/*.log", "required": True, "description": "Application logs"},
+        {
+            "name": "auth",
+            "path": "/var/log/auth.log",
+            "required": True,
+            "description": "Authentication/authorization events",
+        },
+        {
+            "name": "audit",
+            "path": "/var/log/audit/audit.log",
+            "required": True,
+            "description": "OS audit subsystem events",
+        },
+        {"name": "syslog", "path": "/var/log/syslog", "required": True, "description": "System log messages"},
+        {
+            "name": "container",
+            "path": "/var/log/containers/*.log",
+            "required": True,
+            "description": "Container runtime logs",
+        },
+        {"name": "access", "path": "logs/access.log", "required": False, "description": "HTTP access logs"},
+        {"name": "error", "path": "logs/error.log", "required": False, "description": "HTTP error logs"},
+        {
+            "name": "database",
+            "path": "/var/log/postgresql/*.log",
+            "required": False,
+            "description": "Database query/audit logs",
+        },
     ]
 
 
@@ -149,10 +161,12 @@ def _detect_log_paths(project_dir):
 
 def _substitute_template(content, variables):
     """Replace {{VARIABLE}} placeholders in template content."""
+
     def replacer(match):
         key = match.group(1)
         return str(variables.get(key, match.group(0)))
-    return re.sub(r'\{\{(\w+)\}\}', replacer, content)
+
+    return re.sub(r"\{\{(\w+)\}\}", replacer, content)
 
 
 def _log_audit_event(conn, project_id, action, details, affected_files=None):
@@ -181,6 +195,7 @@ def _log_audit_event(conn, project_id, action, details, affected_files=None):
 # ---------------------------------------------------------------------------
 # Core functions
 # ---------------------------------------------------------------------------
+
 
 def generate_siem_config(
     project_dir,
@@ -221,7 +236,7 @@ def generate_siem_config(
 
     # Auto-detect project properties
     system_name = project_id or project_dir.name
-    system_name = re.sub(r'[^a-zA-Z0-9_-]', '-', system_name).lower()
+    system_name = re.sub(r"[^a-zA-Z0-9_-]", "-", system_name).lower()
     app_log_path, auth_log_path = _detect_log_paths(project_dir)
 
     # Build substitution variables
@@ -254,8 +269,7 @@ def generate_siem_config(
     for target in siem_targets:
         template_name = template_map.get(target)
         if not template_name:
-            print(f"Warning: Unknown SIEM target '{target}', skipping.",
-                  file=sys.stderr)
+            print(f"Warning: Unknown SIEM target '{target}', skipping.", file=sys.stderr)
             continue
 
         template_content = _load_template(template_name)
@@ -275,8 +289,13 @@ def generate_siem_config(
 
     # Generate summary report with CUI markings
     report_path = _generate_report(
-        output_dir, cui_config, siem_targets, system_name,
-        log_sources, validation, generated_files,
+        output_dir,
+        cui_config,
+        siem_targets,
+        system_name,
+        log_sources,
+        validation,
+        generated_files,
     )
     generated_files.append(str(report_path))
 
@@ -285,16 +304,21 @@ def generate_siem_config(
     if db_path or DB_PATH.exists():
         try:
             conn = _get_connection(db_path)
-            _log_audit_event(conn, project_id, "SIEM configs generated", {
-                "system_name": system_name,
-                "targets": siem_targets,
-                "files_generated": len(generated_files),
-                "log_sources_configured": validation["log_sources_configured"],
-                "log_sources_required": validation["log_sources_required"],
-            }, generated_files)
+            _log_audit_event(
+                conn,
+                project_id,
+                "SIEM configs generated",
+                {
+                    "system_name": system_name,
+                    "targets": siem_targets,
+                    "files_generated": len(generated_files),
+                    "log_sources_configured": validation["log_sources_configured"],
+                    "log_sources_required": validation["log_sources_required"],
+                },
+                generated_files,
+            )
         except FileNotFoundError:
-            print("Warning: Database not found; audit event not logged.",
-                  file=sys.stderr)
+            print("Warning: Database not found; audit event not logged.", file=sys.stderr)
         finally:
             if conn:
                 conn.close()
@@ -461,9 +485,7 @@ def _validate_log_sources(log_sources, variables):
         for var_key in ("app_log_path", "auth_log_path", "project_dir"):
             var_val = variables.get(var_key, "")
             if var_val and (
-                source_path.startswith(var_val)
-                or var_val in source_path
-                or source_path.startswith("/var/log")
+                source_path.startswith(var_val) or var_val in source_path or source_path.startswith("/var/log")
             ):
                 found = True
                 break
@@ -483,8 +505,13 @@ def _validate_log_sources(log_sources, variables):
 
 
 def _generate_report(
-    output_dir, cui_config, siem_targets, system_name,
-    log_sources, validation, generated_files,
+    output_dir,
+    cui_config,
+    siem_targets,
+    system_name,
+    log_sources,
+    validation,
+    generated_files,
 ):
     """Generate the siem-config-report.md summary document."""
     now = datetime.now(timezone.utc)
@@ -523,10 +550,13 @@ def _generate_report(
     # Validation results
     lines.append("## Validation Results")
     lines.append("")
-    lines.append(f"- Log sources configured: **{validation['log_sources_configured']}** "
-                 f"/ {validation['log_sources_total']}")
-    lines.append(f"- Required sources present: **{validation['log_sources_required'] - len(validation['missing_sources'])}** "
-                 f"/ {validation['log_sources_required']}")
+    lines.append(
+        f"- Log sources configured: **{validation['log_sources_configured']}** / {validation['log_sources_total']}"
+    )
+    lines.append(
+        f"- Required sources present: **{validation['log_sources_required'] - len(validation['missing_sources'])}** "
+        f"/ {validation['log_sources_required']}"
+    )
     if validation["missing_sources"]:
         lines.append(f"- **Missing required sources:** {', '.join(validation['missing_sources'])}")
     else:
@@ -540,8 +570,16 @@ def _generate_report(
     lines.append("|-------------|-------------|--------|")
     di_requirements = [
         ("DE-2", "Continuous monitoring of security events", "Covered" if siem_targets else "Not configured"),
-        ("DE-3", "Event correlation and analysis", "Covered" if "elk" in siem_targets or "splunk" in siem_targets else "Not configured"),
-        ("AU-6", "Audit review, analysis, and reporting", "Covered" if validation["all_required_present"] else "Partial"),
+        (
+            "DE-3",
+            "Event correlation and analysis",
+            "Covered" if "elk" in siem_targets or "splunk" in siem_targets else "Not configured",
+        ),
+        (
+            "AU-6",
+            "Audit review, analysis, and reporting",
+            "Covered" if validation["all_required_present"] else "Partial",
+        ),
         ("AU-12", "Audit generation", "Covered" if validation["log_sources_configured"] > 0 else "Not configured"),
         ("SI-4", "System monitoring", "Covered" if len(siem_targets) >= 2 else "Partial"),
     ]
@@ -569,6 +607,7 @@ def _generate_report(
 # ---------------------------------------------------------------------------
 # Validation (standalone)
 # ---------------------------------------------------------------------------
+
 
 def validate_siem_config(project_dir):
     """Validate existing SIEM configuration for a project directory.
@@ -628,10 +667,7 @@ def validate_siem_config(project_dir):
 
     result["log_sources_configured"] = configured_count
     result["missing_sources"] = missing
-    result["valid"] = (
-        (result["splunk_configured"] or result["elk_configured"])
-        and len(missing) == 0
-    )
+    result["valid"] = (result["splunk_configured"] or result["elk_configured"]) and len(missing) == 0
 
     return result
 
@@ -641,21 +677,19 @@ def validate_siem_config(project_dir):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate SIEM forwarding configs (Splunk + ELK)"
-    )
-    parser.add_argument("--project-dir", required=True, type=Path,
-                        help="Path to the project directory")
+    parser = argparse.ArgumentParser(description="Generate SIEM forwarding configs (Splunk + ELK)")
+    parser.add_argument("--project-dir", required=True, type=Path, help="Path to the project directory")
     parser.add_argument("--project-id", help="Project ID for DB logging")
-    parser.add_argument("--targets", nargs="+", default=["splunk", "elk"],
-                        choices=["splunk", "elk"],
-                        help="SIEM targets to configure (default: splunk elk)")
-    parser.add_argument("--output-dir", type=Path,
-                        help="Output directory (default: <project-dir>/siem/)")
-    parser.add_argument("--validate-only", action="store_true",
-                        help="Only validate existing config, do not generate")
-    parser.add_argument("--db-path", type=Path, default=DB_PATH,
-                        help="Database path")
+    parser.add_argument(
+        "--targets",
+        nargs="+",
+        default=["splunk", "elk"],
+        choices=["splunk", "elk"],
+        help="SIEM targets to configure (default: splunk elk)",
+    )
+    parser.add_argument("--output-dir", type=Path, help="Output directory (default: <project-dir>/siem/)")
+    parser.add_argument("--validate-only", action="store_true", help="Only validate existing config, do not generate")
+    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 

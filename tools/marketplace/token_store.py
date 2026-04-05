@@ -15,6 +15,7 @@ Usage:
     store_tokens([{"token": {...}, "license_id": "lic-xxx"}])
     active = get_active_slugs()
 """
+
 from __future__ import annotations
 
 import json
@@ -105,6 +106,7 @@ def store_tokens(license_records: List[Dict[str, Any]]) -> int:
     # Invalidate module_runtime cache
     try:
         from tools.marketplace.module_runtime import invalidate_cache
+
         invalidate_cache()
     except Exception:
         pass

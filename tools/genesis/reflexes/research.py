@@ -42,6 +42,7 @@ def _load_feeds() -> List[Dict[str, Any]]:
     """Load feed definitions from context/genesis/feeds.yaml."""
     try:
         import yaml
+
         feeds_path = BASE_DIR / "context" / "genesis" / "feeds.yaml"
         if feeds_path.exists():
             with open(feeds_path, "r", encoding="utf-8") as f:
@@ -108,22 +109,26 @@ def _parse_json_feed(json_text: str) -> List[Dict[str, str]]:
         # CISA KEV format
         if "vulnerabilities" in data:
             for vuln in data["vulnerabilities"][:20]:
-                entries.append({
-                    "title": f"KEV: {vuln.get('cveID', 'Unknown')} — {vuln.get('vendorProject', '')} {vuln.get('product', '')}",
-                    "description": vuln.get("shortDescription", "")[:500],
-                    "link": f"https://nvd.nist.gov/vuln/detail/{vuln.get('cveID', '')}",
-                    "published": vuln.get("dateAdded", ""),
-                })
+                entries.append(
+                    {
+                        "title": f"KEV: {vuln.get('cveID', 'Unknown')} — {vuln.get('vendorProject', '')} {vuln.get('product', '')}",  # noqa: E501
+                        "description": vuln.get("shortDescription", "")[:500],
+                        "link": f"https://nvd.nist.gov/vuln/detail/{vuln.get('cveID', '')}",
+                        "published": vuln.get("dateAdded", ""),
+                    }
+                )
         # Generic JSON array
         elif isinstance(data, list):
             for item in data[:20]:
                 if isinstance(item, dict) and "title" in item:
-                    entries.append({
-                        "title": str(item.get("title", ""))[:200],
-                        "description": str(item.get("description", item.get("summary", "")))[:500],
-                        "link": str(item.get("url", item.get("link", ""))),
-                        "published": str(item.get("date", item.get("published", ""))),
-                    })
+                    entries.append(
+                        {
+                            "title": str(item.get("title", ""))[:200],
+                            "description": str(item.get("description", item.get("summary", "")))[:500],
+                            "link": str(item.get("url", item.get("link", ""))),
+                            "published": str(item.get("date", item.get("published", ""))),
+                        }
+                    )
     except (json.JSONDecodeError, KeyError):
         pass
     return entries
@@ -134,8 +139,7 @@ def _is_duplicate(content_hash: str) -> bool:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?",
-            (content_hash,)
+            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?", (content_hash,)
         ).fetchone()
         return (row["cnt"] if row else 0) > 0
     except Exception:
@@ -148,6 +152,7 @@ def _export_signal(feed_name: str, entry: Dict[str, str]) -> Optional[str]:
     """Export a single research signal as a GKP via the promoter."""
     try:
         from tools.genesis.promoter import export_gkp
+
         result = export_gkp(
             reflex="research",
             artifact_type="research_signal",
@@ -205,11 +210,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         # Skip non-fetchable types
         if feed_type in ("sam_bridge", "html_scrape"):
-            feed_results.append({
-                "feed": feed_name,
-                "status": "skipped",
-                "reason": f"Type '{feed_type}' not yet implemented in Research Reflex",
-            })
+            feed_results.append(
+                {
+                    "feed": feed_name,
+                    "status": "skipped",
+                    "reason": f"Type '{feed_type}' not yet implemented in Research Reflex",
+                }
+            )
             continue
 
         if not url:
@@ -239,12 +246,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 new_count += 1
                 total_signals += 1
 
-        feed_results.append({
-            "feed": feed_name,
-            "status": "ok",
-            "entries_found": len(entries),
-            "new_signals": new_count,
-        })
+        feed_results.append(
+            {
+                "feed": feed_name,
+                "status": "ok",
+                "entries_found": len(entries),
+                "new_signals": new_count,
+            }
+        )
 
     return {
         "success": total_signals > 0 or total_dupes > 0,  # Success if we processed anything

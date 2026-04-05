@@ -118,6 +118,7 @@ class A2AAgentClient:
         # Propagate correlation ID for distributed tracing (D149)
         try:
             from tools.resilience.correlation import get_correlation_id
+
             cid = get_correlation_id()
             if cid:
                 meta["correlation_id"] = cid
@@ -126,6 +127,7 @@ class A2AAgentClient:
         # D285: Propagate W3C traceparent for distributed span linking
         try:
             from tools.observability.trace_context import get_current_context
+
             ctx = get_current_context()
             if ctx:
                 meta["traceparent"] = ctx.to_traceparent()
@@ -151,9 +153,7 @@ class A2AAgentClient:
         body = resp.json()
 
         if "error" in body:
-            raise RuntimeError(
-                f"A2A error ({body['error']['code']}): {body['error']['message']}"
-            )
+            raise RuntimeError(f"A2A error ({body['error']['code']}): {body['error']['message']}")
 
         return body.get("result", body)
 
@@ -220,11 +220,7 @@ class A2AAgentClient:
 
             time.sleep(poll_interval)
 
-        raise TimeoutError(
-            f"Task {task_id} did not complete within {timeout} seconds. "
-            f"Last status: {status}"
-        )
-
+        raise TimeoutError(f"Task {task_id} did not complete within {timeout} seconds. Last status: {status}")
 
     def send_tasks_parallel(
         self,
@@ -331,9 +327,7 @@ def main():
 
         if args.wait and result.get("status") not in ("completed", "failed", "canceled"):
             task_id = result.get("id")
-            result = client.wait_for_completion(
-                agent_url=args.url, task_id=task_id, timeout=args.timeout
-            )
+            result = client.wait_for_completion(agent_url=args.url, task_id=task_id, timeout=args.timeout)
 
         print(json.dumps(result, indent=2))
 

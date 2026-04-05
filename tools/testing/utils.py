@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypeVar, Type, Union, Dict
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 # Project root — tools/testing/utils.py → go up 2 levels
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -55,7 +55,7 @@ def setup_logger(run_id: str, phase: str = "test_run") -> logging.Logger:
     logger.handlers.clear()
 
     # File handler - captures everything
-    file_handler = logging.FileHandler(str(log_file), mode='a')
+    file_handler = logging.FileHandler(str(log_file), mode="a")
     file_handler.setLevel(logging.DEBUG)
 
     # Console handler - INFO and above
@@ -63,13 +63,10 @@ def setup_logger(run_id: str, phase: str = "test_run") -> logging.Logger:
     console_handler.setLevel(logging.INFO)
 
     # Format with timestamp for file
-    file_formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
     # Simpler format for console
-    console_formatter = logging.Formatter('%(message)s')
+    console_formatter = logging.Formatter("%(message)s")
 
     file_handler.setFormatter(file_formatter)
     console_handler.setFormatter(console_formatter)
@@ -108,7 +105,7 @@ def parse_json(text: str, target_type: Type[T] = None) -> Union[T, Any]:
         ValueError: If JSON cannot be parsed from the text
     """
     # Try to extract JSON from markdown code blocks
-    code_block_pattern = r'```(?:json)?\s*\n(.*?)\n```'
+    code_block_pattern = r"```(?:json)?\s*\n(.*?)\n```"
     match = re.search(code_block_pattern, text, re.DOTALL)
 
     if match:
@@ -117,38 +114,38 @@ def parse_json(text: str, target_type: Type[T] = None) -> Union[T, Any]:
         json_str = text.strip()
 
     # Try to find JSON array or object boundaries if not already clean
-    if not (json_str.startswith('[') or json_str.startswith('{')):
+    if not (json_str.startswith("[") or json_str.startswith("{")):
         # Look for JSON array
-        array_start = json_str.find('[')
-        array_end = json_str.rfind(']')
+        array_start = json_str.find("[")
+        array_end = json_str.rfind("]")
 
         # Look for JSON object
-        obj_start = json_str.find('{')
-        obj_end = json_str.rfind('}')
+        obj_start = json_str.find("{")
+        obj_end = json_str.rfind("}")
 
         # Determine which comes first and extract accordingly
         if array_start != -1 and (obj_start == -1 or array_start < obj_start):
             if array_end != -1:
-                json_str = json_str[array_start:array_end + 1]
+                json_str = json_str[array_start : array_end + 1]
         elif obj_start != -1:
             if obj_end != -1:
-                json_str = json_str[obj_start:obj_end + 1]
+                json_str = json_str[obj_start : obj_end + 1]
 
     try:
         result = json.loads(json_str)
 
         # If target_type is provided and has __origin__ (e.g., List[SomeType])
-        if target_type and hasattr(target_type, '__origin__'):
+        if target_type and hasattr(target_type, "__origin__"):
             if target_type.__origin__ is list:
                 item_type = target_type.__args__[0]
-                if hasattr(item_type, 'model_validate'):
+                if hasattr(item_type, "model_validate"):
                     result = [item_type.model_validate(item) for item in result]
-                elif hasattr(item_type, 'parse_obj'):
+                elif hasattr(item_type, "parse_obj"):
                     result = [item_type.parse_obj(item) for item in result]
         elif target_type:
-            if hasattr(target_type, 'model_validate'):
+            if hasattr(target_type, "model_validate"):
                 result = target_type.model_validate(result)
-            elif hasattr(target_type, 'parse_obj'):
+            elif hasattr(target_type, "parse_obj"):
                 result = target_type.parse_obj(result)
 
         return result
@@ -169,23 +166,17 @@ def get_safe_subprocess_env() -> Dict[str, str]:
         # ICDEV Configuration
         "ICDEV_DB_PATH": os.getenv("ICDEV_DB_PATH", str(PROJECT_ROOT / "data" / "icdev.db")),
         "ICDEV_PROJECT_ROOT": os.getenv("ICDEV_PROJECT_ROOT", str(PROJECT_ROOT)),
-
         # Anthropic / Bedrock Configuration
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
         "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
         "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
         "AWS_DEFAULT_REGION": os.getenv("AWS_DEFAULT_REGION", "us-gov-west-1"),
-
         # Claude Code Configuration
         "CLAUDE_CODE_PATH": os.getenv("CLAUDE_CODE_PATH", "claude"),
-        "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": os.getenv(
-            "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR", "true"
-        ),
-
+        "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": os.getenv("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR", "true"),
         # GitLab Configuration (optional)
         "GITLAB_TOKEN": os.getenv("GITLAB_TOKEN"),
         "GITLAB_URL": os.getenv("GITLAB_URL"),
-
         # Essential system environment variables
         "HOME": os.getenv("HOME") or os.getenv("USERPROFILE"),
         "USER": os.getenv("USER") or os.getenv("USERNAME"),
@@ -193,7 +184,6 @@ def get_safe_subprocess_env() -> Dict[str, str]:
         "SHELL": os.getenv("SHELL"),
         "TERM": os.getenv("TERM"),
         "LANG": os.getenv("LANG"),
-
         # Windows-specific — needed for Python user site-packages and gh keyring
         "USERPROFILE": os.getenv("USERPROFILE"),
         "APPDATA": os.getenv("APPDATA"),
@@ -201,14 +191,11 @@ def get_safe_subprocess_env() -> Dict[str, str]:
         "SYSTEMROOT": os.getenv("SYSTEMROOT"),
         "TEMP": os.getenv("TEMP"),
         "TMP": os.getenv("TMP"),
-
         # GitHub CLI — needed for gh auth keyring access
         "GH_TOKEN": os.getenv("GH_TOKEN") or os.getenv("GITHUB_PAT"),
-
         # Python-specific
         "PYTHONPATH": os.getenv("PYTHONPATH"),
         "PYTHONUNBUFFERED": "1",
-
         # Working directory
         "PWD": os.getcwd(),
     }

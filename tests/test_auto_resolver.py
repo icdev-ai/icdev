@@ -125,12 +125,7 @@ class TestEnsureTable:
         db = tmp_path / "test.db"
         _ensure_table(db)
         conn = sqlite3.connect(str(db))
-        tables = [
-            r[0]
-            for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        ]
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         conn.close()
         assert "auto_resolution_log" in tables
 
@@ -263,9 +258,7 @@ class TestResolveAlert:
     def test_resolve_dry_run(self, tmp_path: Path) -> None:
         db = tmp_path / "icdev.db"
         _init_test_db(db)
-        result = resolve_alert(
-            GENERIC_PAYLOAD, source="generic", dry_run=True, db_path=db
-        )
+        result = resolve_alert(GENERIC_PAYLOAD, source="generic", dry_run=True, db_path=db)
         assert isinstance(result, dict)
         assert "resolution_id" in result
         assert result["dry_run"] is True
@@ -275,15 +268,11 @@ class TestResolveAlert:
     def test_resolve_records_in_db(self, tmp_path: Path) -> None:
         db = tmp_path / "icdev.db"
         _init_test_db(db)
-        result = resolve_alert(
-            GENERIC_PAYLOAD, source="generic", dry_run=False, db_path=db
-        )
+        result = resolve_alert(GENERIC_PAYLOAD, source="generic", dry_run=False, db_path=db)
         rid = result["resolution_id"]
         conn = sqlite3.connect(str(db))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM auto_resolution_log WHERE id = ?", (rid,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM auto_resolution_log WHERE id = ?", (rid,)).fetchone()
         conn.close()
         assert row is not None
         assert row["alert_source"] == "generic"
@@ -293,18 +282,14 @@ class TestResolveAlert:
         """Low-confidence generic alert should result in escalation."""
         db = tmp_path / "icdev.db"
         _init_test_db(db)
-        result = resolve_alert(
-            GENERIC_PAYLOAD, source="generic", dry_run=False, db_path=db
-        )
+        result = resolve_alert(GENERIC_PAYLOAD, source="generic", dry_run=False, db_path=db)
         # No matching patterns => escalated
         assert result["resolution_status"] in ("escalated", "suggested")
 
     def test_resolve_sentry_has_analysis(self, tmp_path: Path) -> None:
         db = tmp_path / "icdev.db"
         _init_test_db(db)
-        result = resolve_alert(
-            SENTRY_PAYLOAD, source="sentry", dry_run=True, db_path=db
-        )
+        result = resolve_alert(SENTRY_PAYLOAD, source="sentry", dry_run=True, db_path=db)
         assert "analysis" in result
         analysis = result["analysis"]
         assert "decision" in analysis

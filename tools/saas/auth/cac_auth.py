@@ -6,6 +6,7 @@ In production, nginx or ALB terminates mutual TLS and passes:
   X-Client-Cert-CN: "LAST.FIRST.MIDDLE.EDIPI"
   X-Client-Cert-Serial: "serial_number"
 """
+
 import logging
 import os
 import sqlite3
@@ -46,7 +47,8 @@ def validate_cac_cert(client_cn: str, client_serial: Optional[str] = None) -> Op
 
     try:
         conn = _get_platform_conn()
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT u.id as user_id, u.tenant_id, u.email, u.role, u.status as user_status,
                    t.status as tenant_status, t.tier as tenant_tier,
                    t.impact_level, t.slug as tenant_slug
@@ -54,7 +56,9 @@ def validate_cac_cert(client_cn: str, client_serial: Optional[str] = None) -> Op
             JOIN tenants t ON u.tenant_id = t.id
             WHERE u.cac_cn = ? AND u.auth_method = 'cac_piv'
                   AND u.status = 'active' AND t.status = 'active'
-        """, (client_cn,)).fetchone()
+        """,
+            (client_cn,),
+        ).fetchone()
         conn.close()
 
         if not row:

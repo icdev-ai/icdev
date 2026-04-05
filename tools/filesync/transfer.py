@@ -18,11 +18,18 @@ from tools.filesync.providers.base import SyncTargetProvider
 
 class TransferResult:
     """Result of a single file transfer operation."""
-    __slots__ = ("relative_path", "success", "bytes_transferred", "duration_ms",
-                 "error", "action")
 
-    def __init__(self, relative_path: str, success: bool, bytes_transferred: int = 0,
-                 duration_ms: int = 0, error: str = "", action: str = "copy"):
+    __slots__ = ("relative_path", "success", "bytes_transferred", "duration_ms", "error", "action")
+
+    def __init__(
+        self,
+        relative_path: str,
+        success: bool,
+        bytes_transferred: int = 0,
+        duration_ms: int = 0,
+        error: str = "",
+        action: str = "copy",
+    ):
         self.relative_path = relative_path
         self.success = success
         self.bytes_transferred = bytes_transferred
@@ -57,12 +64,17 @@ def _compress(data: bytes, method: str = "none", level: int = 6) -> bytes:
     return data
 
 
-def transfer_file(source_provider: SyncTargetProvider, source_base: str,
-                   dest_provider: SyncTargetProvider, dest_base: str,
-                   relative_path: str, verify: bool = True,
-                   bandwidth_limit_kbps: int = 0,
-                   compression: str = "none",
-                   compression_level: int = 6) -> TransferResult:
+def transfer_file(
+    source_provider: SyncTargetProvider,
+    source_base: str,
+    dest_provider: SyncTargetProvider,
+    dest_base: str,
+    relative_path: str,
+    verify: bool = True,
+    bandwidth_limit_kbps: int = 0,
+    compression: str = "none",
+    compression_level: int = 6,
+) -> TransferResult:
     """Transfer a single file from source to destination.
 
     Args:
@@ -103,26 +115,27 @@ def transfer_file(source_provider: SyncTargetProvider, source_base: str,
         # Verify transfer
         if verify:
             import hashlib
+
             src_hash = hashlib.sha256(data).hexdigest()
             written = dest_provider.read_file(dest_base, relative_path)
             if written is None:
                 return TransferResult(relative_path, False, error="Verify read-back failed")
             dst_hash = hashlib.sha256(written).hexdigest()
             if src_hash != dst_hash:
-                return TransferResult(relative_path, False,
-                                      error=f"Hash mismatch after transfer: {src_hash} != {dst_hash}")
+                return TransferResult(
+                    relative_path, False, error=f"Hash mismatch after transfer: {src_hash} != {dst_hash}"
+                )
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        return TransferResult(relative_path, True, bytes_transferred=original_size,
-                              duration_ms=elapsed_ms, action="copy")
+        return TransferResult(
+            relative_path, True, bytes_transferred=original_size, duration_ms=elapsed_ms, action="copy"
+        )
     except Exception as e:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        return TransferResult(relative_path, False, duration_ms=elapsed_ms,
-                              error=str(e))
+        return TransferResult(relative_path, False, duration_ms=elapsed_ms, error=str(e))
 
 
-def delete_file(provider: SyncTargetProvider, base_path: str,
-                relative_path: str) -> TransferResult:
+def delete_file(provider: SyncTargetProvider, base_path: str, relative_path: str) -> TransferResult:
     """Delete a file from destination."""
     t0 = time.monotonic()
     try:
@@ -130,16 +143,15 @@ def delete_file(provider: SyncTargetProvider, base_path: str,
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         if ok:
             return TransferResult(relative_path, True, duration_ms=elapsed_ms, action="delete")
-        return TransferResult(relative_path, False, duration_ms=elapsed_ms,
-                              error="Delete returned false", action="delete")
+        return TransferResult(
+            relative_path, False, duration_ms=elapsed_ms, error="Delete returned false", action="delete"
+        )
     except Exception as e:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        return TransferResult(relative_path, False, duration_ms=elapsed_ms,
-                              error=str(e), action="delete")
+        return TransferResult(relative_path, False, duration_ms=elapsed_ms, error=str(e), action="delete")
 
 
-def rename_file(provider: SyncTargetProvider, base_path: str,
-                old_path: str, new_path: str) -> TransferResult:
+def rename_file(provider: SyncTargetProvider, base_path: str, old_path: str, new_path: str) -> TransferResult:
     """Rename a file (for conflict resolution)."""
     t0 = time.monotonic()
     try:
@@ -147,24 +159,26 @@ def rename_file(provider: SyncTargetProvider, base_path: str,
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         if ok:
             return TransferResult(old_path, True, duration_ms=elapsed_ms, action="rename")
-        return TransferResult(old_path, False, duration_ms=elapsed_ms,
-                              error="Rename returned false", action="rename")
+        return TransferResult(old_path, False, duration_ms=elapsed_ms, error="Rename returned false", action="rename")
     except Exception as e:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        return TransferResult(old_path, False, duration_ms=elapsed_ms,
-                              error=str(e), action="rename")
+        return TransferResult(old_path, False, duration_ms=elapsed_ms, error=str(e), action="rename")
 
 
-def execute_actions(actions: List[Dict],
-                    source_provider: SyncTargetProvider, source_base: str,
-                    dest_provider: SyncTargetProvider, dest_base: str,
-                    max_workers: int = 4,
-                    verify: bool = True,
-                    bandwidth_limit_kbps: int = 0,
-                    dry_run: bool = False,
-                    progress_callback: Optional[Callable] = None,
-                    compression: str = "none",
-                    compression_level: int = 6) -> List[TransferResult]:
+def execute_actions(
+    actions: List[Dict],
+    source_provider: SyncTargetProvider,
+    source_base: str,
+    dest_provider: SyncTargetProvider,
+    dest_base: str,
+    max_workers: int = 4,
+    verify: bool = True,
+    bandwidth_limit_kbps: int = 0,
+    dry_run: bool = False,
+    progress_callback: Optional[Callable] = None,
+    compression: str = "none",
+    compression_level: int = 6,
+) -> List[TransferResult]:
     """Execute a list of sync actions using ThreadPoolExecutor.
 
     Args:
@@ -184,9 +198,9 @@ def execute_actions(actions: List[Dict],
     """
     if dry_run:
         return [
-            TransferResult(a["relative_path"], True, bytes_transferred=a.get("size", 0),
-                           action=a["action"])
-            for a in actions if a["action"] not in ("skip", "unchanged")
+            TransferResult(a["relative_path"], True, bytes_transferred=a.get("size", 0), action=a["action"])
+            for a in actions
+            if a["action"] not in ("skip", "unchanged")
         ]
 
     results = []
@@ -201,17 +215,29 @@ def execute_actions(actions: List[Dict],
                 direction = action.get("direction", "source_to_dest")
                 if direction == "dest_to_source":
                     future = executor.submit(
-                        transfer_file, dest_provider, dest_base,
-                        source_provider, source_base, path,
-                        verify, bandwidth_limit_kbps,
-                        compression, compression_level
+                        transfer_file,
+                        dest_provider,
+                        dest_base,
+                        source_provider,
+                        source_base,
+                        path,
+                        verify,
+                        bandwidth_limit_kbps,
+                        compression,
+                        compression_level,
                     )
                 else:
                     future = executor.submit(
-                        transfer_file, source_provider, source_base,
-                        dest_provider, dest_base, path,
-                        verify, bandwidth_limit_kbps,
-                        compression, compression_level
+                        transfer_file,
+                        source_provider,
+                        source_base,
+                        dest_provider,
+                        dest_base,
+                        path,
+                        verify,
+                        bandwidth_limit_kbps,
+                        compression,
+                        compression_level,
                     )
                 futures[future] = action
 

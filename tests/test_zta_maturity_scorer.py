@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.devsecops.zta_maturity_scorer — ZTA 7-pillar maturity scoring."""
@@ -84,8 +85,7 @@ def zta_db(tmp_path):
     conn.row_factory = sqlite3.Row
     conn.executescript(ZTA_SCHEMA)
     conn.execute(
-        "INSERT INTO projects (id, name, type, classification, status, directory_path) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO projects (id, name, type, classification, status, directory_path) VALUES (?, ?, ?, ?, ?, ?)",
         (PROJECT_ID, "ZTA Test", "webapp", "CUI", "active", "/tmp/zta"),
     )
     conn.commit()
@@ -117,6 +117,7 @@ def _patch_config():
 # ---------------------------------------------------------------------------
 # TestScoreToMaturity
 # ---------------------------------------------------------------------------
+
 
 class TestScoreToMaturity:
     """_score_to_maturity: maps a 0.0-1.0 score to a maturity level string."""
@@ -153,6 +154,7 @@ class TestScoreToMaturity:
 # ---------------------------------------------------------------------------
 # TestScorePillar
 # ---------------------------------------------------------------------------
+
 
 class TestScorePillar:
     """score_pillar: score a single ZTA pillar and persist to DB."""
@@ -196,6 +198,7 @@ class TestScorePillar:
 # TestScoreAllPillars
 # ---------------------------------------------------------------------------
 
+
 class TestScoreAllPillars:
     """score_all_pillars: score all 7 pillars and compute weighted aggregate."""
 
@@ -236,6 +239,7 @@ class TestScoreAllPillars:
 # TestGetTrend
 # ---------------------------------------------------------------------------
 
+
 class TestGetTrend:
     """get_trend: retrieve historical ZTA maturity scores."""
 
@@ -260,6 +264,7 @@ class TestGetTrend:
 # ---------------------------------------------------------------------------
 # TestRecommendations
 # ---------------------------------------------------------------------------
+
 
 class TestRecommendations:
     """_generate_recommendation: produce improvement guidance."""

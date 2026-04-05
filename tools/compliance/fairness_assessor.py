@@ -225,12 +225,14 @@ def assess_fairness(
 
             if status == "satisfied":
                 satisfied_count += 1
-            dimension_results.append({
-                "id": dim["id"],
-                "title": dim["title"],
-                "status": status,
-                "evidence": evidence,
-            })
+            dimension_results.append(
+                {
+                    "id": dim["id"],
+                    "title": dim["title"],
+                    "status": status,
+                    "evidence": evidence,
+                }
+            )
 
         total = len(FAIRNESS_DIMENSIONS)
         overall_score = round(satisfied_count / total * 100, 1) if total > 0 else 0

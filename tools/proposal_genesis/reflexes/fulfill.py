@@ -64,11 +64,13 @@ DELIVERABLE_TYPE_TO_CDRL: Dict[str, str] = {
 # Find deliverables due within N days
 # ---------------------------------------------------------------------------
 
+
 def _get_due_deliverables(days_ahead: int = 14) -> List[Dict]:
     """Find deliverables due within N days that haven't been generated yet."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT d.id, d.contract_id, d.cdrl_number, d.did_number,
                    d.title, d.deliverable_type, d.due_date, d.status,
                    d.days_overdue, d.generated_by_tool,
@@ -82,7 +84,9 @@ def _get_due_deliverables(days_ahead: int = 14) -> List[Dict]:
             AND d.due_date IS NOT NULL
             AND d.due_date <= date('now', '+' || ? || ' days')
             ORDER BY d.due_date ASC
-        """, (days_ahead,)).fetchall()
+        """,
+            (days_ahead,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -97,7 +101,8 @@ def _get_stale_documentation(max_age_days: int = 90) -> List[Dict]:
     """
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT d.id, d.contract_id, d.cdrl_number, d.title,
                    d.deliverable_type, d.due_date, d.status,
                    d.generated_by_tool, d.updated_at,
@@ -110,7 +115,9 @@ def _get_stale_documentation(max_age_days: int = 90) -> List[Dict]:
             AND d.generated_by_tool IS NOT NULL
             AND d.updated_at < date('now', '-' || ? || ' days')
             ORDER BY d.updated_at ASC
-        """, (max_age_days,)).fetchall()
+        """,
+            (max_age_days,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -121,6 +128,7 @@ def _get_stale_documentation(max_age_days: int = 90) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # CDRL generation dispatch
 # ---------------------------------------------------------------------------
+
 
 def _resolve_cdrl_type(deliverable: Dict) -> Optional[str]:
     """Determine the CDRL type from deliverable metadata."""
@@ -172,8 +180,8 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
 
     # Build safe environment
     import os
-    env = {k: v for k, v in os.environ.items()
-           if not k.startswith("_") and "SECRET" not in k.upper()}
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_") and "SECRET" not in k.upper()}
 
     try:
         args = [sys.executable, str(tool_full)]
@@ -213,9 +221,15 @@ def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
 # Record generation result
 # ---------------------------------------------------------------------------
 
-def _record_generation(deliverable_id: str, contract_id: str,
-                       cdrl_type: str, tool_path: str,
-                       success: bool, error_msg: Optional[str] = None) -> Optional[str]:
+
+def _record_generation(
+    deliverable_id: str,
+    contract_id: str,
+    cdrl_type: str,
+    tool_path: str,
+    success: bool,
+    error_msg: Optional[str] = None,
+) -> Optional[str]:
     """Write to cpmp_cdrl_generations (append-only)."""
     conn = get_connection()
     gen_id = _generate_id("pgcdrl")
@@ -253,8 +267,7 @@ def _record_generation(deliverable_id: str, contract_id: str,
         conn.close()
 
 
-def _record_compliance_refresh(deliverable_id: str, contract_id: str,
-                               cdrl_type: str) -> None:
+def _record_compliance_refresh(deliverable_id: str, contract_id: str, cdrl_type: str) -> None:
     """Flag a deliverable for compliance refresh in audit trail."""
     conn = get_connection()
     try:
@@ -269,11 +282,13 @@ def _record_compliance_refresh(deliverable_id: str, contract_id: str,
                 "fulfill",
                 "yellow",
                 contract_id,
-                json.dumps({
-                    "deliverable_id": deliverable_id,
-                    "cdrl_type": cdrl_type,
-                    "reason": "documentation_stale",
-                }),
+                json.dumps(
+                    {
+                        "deliverable_id": deliverable_id,
+                        "cdrl_type": cdrl_type,
+                        "reason": "documentation_stale",
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -285,8 +300,7 @@ def _record_compliance_refresh(deliverable_id: str, contract_id: str,
         conn.close()
 
 
-def _audit_fulfill(event_type: str, contract_id: Optional[str],
-                   details: Dict, success: bool) -> None:
+def _audit_fulfill(event_type: str, contract_id: Optional[str], details: Dict, success: bool) -> None:
     """Log fulfill event to audit trail."""
     conn = get_connection()
     try:
@@ -316,6 +330,7 @@ def _audit_fulfill(event_type: str, contract_id: Optional[str],
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Fulfill Reflex (R11).
@@ -369,13 +384,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         else:
             gen_errors += 1
 
-        generation_results.append({
-            "deliverable_id": deliv_id,
-            "cdrl_type": cdrl_type,
-            "success": success,
-            "generation_id": gen_id,
-            "contract_number": deliv.get("contract_number", ""),
-        })
+        generation_results.append(
+            {
+                "deliverable_id": deliv_id,
+                "cdrl_type": cdrl_type,
+                "success": success,
+                "generation_id": gen_id,
+                "contract_number": deliv.get("contract_number", ""),
+            }
+        )
 
         _audit_fulfill(
             "cdrl_generated" if success else "cdrl_generation_failed",
@@ -395,9 +412,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     refreshes_flagged = 0
     for doc in stale_docs:
         cdrl_type = _resolve_cdrl_type(doc) or "documentation"
-        _record_compliance_refresh(
-            doc.get("id", ""), doc.get("contract_id", ""), cdrl_type
-        )
+        _record_compliance_refresh(doc.get("id", ""), doc.get("contract_id", ""), cdrl_type)
         refreshes_flagged += 1
 
     return {

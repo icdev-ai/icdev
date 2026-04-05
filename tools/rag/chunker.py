@@ -32,6 +32,7 @@ def _load_chunk_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, "r") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("rag", {}).get("chunking", {})
@@ -56,14 +57,14 @@ def _find_sentence_boundary(text: str, target_pos: int) -> int:
 
     # Find all sentence boundaries in window
     boundaries = []
-    for m in re.finditer(r'[.!?]\s+', window):
+    for m in re.finditer(r"[.!?]\s+", window):
         abs_pos = search_start + m.end()
         boundaries.append(abs_pos)
 
     if not boundaries:
         # Fall back to nearest whitespace
         for i in range(target_pos, min(target_pos + 100, len(text))):
-            if text[i:i + 1].isspace():
+            if text[i : i + 1].isspace():
                 return i + 1
         return target_pos
 
@@ -102,7 +103,7 @@ def chunk_content(
         return []
 
     cfg = chunk_config or _load_chunk_config()
-    short_threshold = cfg.get("short_threshold_tokens", 500)
+    cfg.get("short_threshold_tokens", 500)
     chunk_size = cfg.get("chunk_size_tokens", 2000)
     overlap_pct = cfg.get("overlap_pct", 0.10)
 
@@ -130,7 +131,7 @@ def chunk_content(
     # Long content: sliding window with overlap
     chunk_chars = chunk_size * CHARS_PER_TOKEN
     overlap_chars = int(chunk_chars * overlap_pct)
-    stride = chunk_chars - overlap_chars
+    chunk_chars - overlap_chars
 
     chunks: list[VectorChunk] = []
     pos = 0

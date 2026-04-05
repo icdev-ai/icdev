@@ -79,18 +79,20 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
         ).fetchall()
 
         for row in rows:
-            status["recent_deployments"].append({
-                "id": row["id"],
-                "environment": row["environment"],
-                "version": row["version"],
-                "status": row["status"],
-                "deployed_by": row["deployed_by"],
-                "health_check_passed": bool(row["health_check_passed"])
-                if row["health_check_passed"] is not None
-                else None,
-                "created_at": row["created_at"],
-                "completed_at": row["completed_at"],
-            })
+            status["recent_deployments"].append(
+                {
+                    "id": row["id"],
+                    "environment": row["environment"],
+                    "version": row["version"],
+                    "status": row["status"],
+                    "deployed_by": row["deployed_by"],
+                    "health_check_passed": bool(row["health_check_passed"])
+                    if row["health_check_passed"] is not None
+                    else None,
+                    "created_at": row["created_at"],
+                    "completed_at": row["completed_at"],
+                }
+            )
 
         # ------------------------------------------------------------------
         # 3. Active alerts
@@ -108,15 +110,17 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
         ).fetchall()
 
         for row in alert_rows:
-            status["active_alerts"].append({
-                "id": row["id"],
-                "severity": row["severity"],
-                "source": row["source"],
-                "title": row["title"],
-                "description": row["description"],
-                "status": row["status"],
-                "created_at": row["created_at"],
-            })
+            status["active_alerts"].append(
+                {
+                    "id": row["id"],
+                    "severity": row["severity"],
+                    "source": row["source"],
+                    "title": row["title"],
+                    "description": row["description"],
+                    "status": row["status"],
+                    "created_at": row["created_at"],
+                }
+            )
 
         # ------------------------------------------------------------------
         # 4. Recent failures (last 24h)
@@ -132,14 +136,16 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
         ).fetchall()
 
         for row in failure_rows:
-            status["recent_failures"].append({
-                "id": row["id"],
-                "source": row["source"],
-                "error_type": row["error_type"],
-                "error_message": row["error_message"],
-                "resolved": bool(row["resolved"]) if row["resolved"] is not None else False,
-                "created_at": row["created_at"],
-            })
+            status["recent_failures"].append(
+                {
+                    "id": row["id"],
+                    "source": row["source"],
+                    "error_type": row["error_type"],
+                    "error_message": row["error_message"],
+                    "resolved": bool(row["resolved"]) if row["resolved"] is not None else False,
+                    "created_at": row["created_at"],
+                }
+            )
 
         # ------------------------------------------------------------------
         # 5. Latest metrics snapshot
@@ -184,9 +190,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
             "failed": deploy_stats["failed"] or 0,
             "rolled_back": deploy_stats["rolled_back"] or 0,
             "success_rate": (
-                round((deploy_stats["succeeded"] or 0) / deploy_stats["total"] * 100, 1)
-                if deploy_stats["total"]
-                else 0
+                round((deploy_stats["succeeded"] or 0) / deploy_stats["total"] * 100, 1) if deploy_stats["total"] else 0
             ),
         }
 
@@ -214,10 +218,15 @@ def _check_k8s_status(project_id: str) -> dict:
         try:
             proc = subprocess.run(
                 [
-                    "kubectl", "get", "pods",
-                    "-n", namespace,
-                    "-l", f"app.kubernetes.io/name={project_id}",
-                    "-o", "json",
+                    "kubectl",
+                    "get",
+                    "pods",
+                    "-n",
+                    namespace,
+                    "-l",
+                    f"app.kubernetes.io/name={project_id}",
+                    "-o",
+                    "json",
                 ],
                 capture_output=True,
                 text=True,
@@ -230,20 +239,19 @@ def _check_k8s_status(project_id: str) -> dict:
                     pod_name = item.get("metadata", {}).get("name", "unknown")
                     phase = item.get("status", {}).get("phase", "Unknown")
                     conditions = item.get("status", {}).get("conditions", [])
-                    ready = any(
-                        c.get("type") == "Ready" and c.get("status") == "True"
-                        for c in conditions
-                    )
+                    ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
                     restarts = 0
                     for cs in item.get("status", {}).get("containerStatuses", []):
                         restarts += cs.get("restartCount", 0)
 
-                    pods.append({
-                        "name": pod_name,
-                        "phase": phase,
-                        "ready": ready,
-                        "restarts": restarts,
-                    })
+                    pods.append(
+                        {
+                            "name": pod_name,
+                            "phase": phase,
+                            "ready": ready,
+                            "restarts": restarts,
+                        }
+                    )
 
                 total = len(pods)
                 ready_count = sum(1 for p in pods if p["ready"])
@@ -343,10 +351,12 @@ def _format_report(status: dict) -> str:
     stats = status.get("deployment_statistics", {})
     if stats:
         lines.append(f"\n  DEPLOYMENT STATISTICS ({stats.get('period', 'N/A')}):")
-        lines.append(f"    Total: {stats.get('total', 0)}  |  "
-                     f"Success: {stats.get('succeeded', 0)}  |  "
-                     f"Failed: {stats.get('failed', 0)}  |  "
-                     f"Rolled back: {stats.get('rolled_back', 0)}")
+        lines.append(
+            f"    Total: {stats.get('total', 0)}  |  "
+            f"Success: {stats.get('succeeded', 0)}  |  "
+            f"Failed: {stats.get('failed', 0)}  |  "
+            f"Rolled back: {stats.get('rolled_back', 0)}"
+        )
         lines.append(f"    Success rate: {stats.get('success_rate', 0)}%")
 
     # Active alerts

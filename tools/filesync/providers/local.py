@@ -31,11 +31,13 @@ class LocalSyncProvider(SyncTargetProvider):
                 try:
                     stat = full.stat()
                     rel = full.relative_to(base).as_posix()
-                    results.append({
-                        "relative_path": rel,
-                        "size": stat.st_size,
-                        "mtime_epoch": stat.st_mtime,
-                    })
+                    results.append(
+                        {
+                            "relative_path": rel,
+                            "size": stat.st_size,
+                            "mtime_epoch": stat.st_mtime,
+                        }
+                    )
                 except (OSError, ValueError):
                     continue
         return results

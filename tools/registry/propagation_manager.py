@@ -75,6 +75,7 @@ MAX_PROPAGATIONS_PER_PI = 10
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -82,8 +83,10 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
     from tools.security.ai_telemetry_logger import AITelemetryLogger
+
     _telemetry = AITelemetryLogger()
 except Exception:
     _telemetry = None
@@ -244,7 +247,7 @@ class PropagationManager:
         if not budget_check.get("within_budget", True):
             return {
                 "error": f"Propagation budget exceeded for {budget_check.get('pi', 'current PI')}. "
-                         f"Used {budget_check.get('used', 0)}/{MAX_PROPAGATIONS_PER_PI}.",
+                f"Used {budget_check.get('used', 0)}/{MAX_PROPAGATIONS_PER_PI}.",
                 "budget": budget_check,
             }
 
@@ -257,8 +260,12 @@ class PropagationManager:
 
         # Validate source_type
         valid_sources = (
-            "innovation", "child_report", "cross_pollination",
-            "security_patch", "compliance_update", "manual",
+            "innovation",
+            "child_report",
+            "cross_pollination",
+            "security_patch",
+            "compliance_update",
+            "manual",
         )
         if source_type not in valid_sources:
             source_type = "manual"
@@ -308,8 +315,7 @@ class PropagationManager:
 
         _audit(
             "propagation.prepared",
-            f"Propagation {propagation_id} prepared for capability {capability_id} "
-            f"-> {len(target_children)} children",
+            f"Propagation {propagation_id} prepared for capability {capability_id} -> {len(target_children)} children",
             result,
         )
 
@@ -331,14 +337,12 @@ class PropagationManager:
 
         current_status = record.get("status")
         if current_status != "prepared":
-            print(f"Cannot approve: status is '{current_status}' (expected 'prepared')",
-                  file=sys.stderr)
+            print(f"Cannot approve: status is '{current_status}' (expected 'prepared')", file=sys.stderr)
             return False
 
         # Verify rollback plan exists (REQ-36-041)
         if not record.get("rollback_plan"):
-            print("Cannot approve: no rollback plan documented (REQ-36-041)",
-                  file=sys.stderr)
+            print("Cannot approve: no rollback plan documented (REQ-36-041)", file=sys.stderr)
             _audit(
                 "propagation.approval.denied",
                 f"Propagation {propagation_id} approval denied: no rollback plan",
@@ -392,7 +396,7 @@ class PropagationManager:
         if current_status != "approved":
             return {
                 "error": f"Cannot execute: status is '{current_status}' "
-                         f"(must be 'approved'). HITL approval required (REQ-36-040).",
+                f"(must be 'approved'). HITL approval required (REQ-36-040).",
             }
 
         # Transition to executing
@@ -486,8 +490,7 @@ class PropagationManager:
 
         _audit(
             "propagation.executed",
-            f"Propagation {propagation_id} executed: "
-            f"{success_count} success, {fail_count} failed",
+            f"Propagation {propagation_id} executed: {success_count} success, {fail_count} failed",
             {
                 "propagation_id": propagation_id,
                 "success_count": success_count,
@@ -505,28 +508,22 @@ class PropagationManager:
                     project_id=capability.get("project_id", "icdev-parent"),
                     interaction_type="capability_propagation",
                     model_id="icdev-evolution-engine",
-                    prompt_hash=hashlib.sha256(
-                        json.dumps(capability, default=str).encode()
-                    ).hexdigest(),
-                    response_hash=hashlib.sha256(
-                        json.dumps(target_child_ids, default=str).encode()
-                    ).hexdigest(),
+                    prompt_hash=hashlib.sha256(json.dumps(capability, default=str).encode()).hexdigest(),
+                    response_hash=hashlib.sha256(json.dumps(target_child_ids, default=str).encode()).hexdigest(),
                     token_count=0,
                     metadata={
                         "capability_id": capability.get("capability_id"),
                         "target_children": target_child_ids,
                         "genome_version_before": genome_before,
                         "genome_version_after": genome_after,
-                    }
+                    },
                 )
             except Exception:
                 pass  # Telemetry is best-effort
 
         return results
 
-    def _propagate_to_child(
-        self, child_id: str, capability_id: str, capability_name: str = None
-    ) -> dict:
+    def _propagate_to_child(self, child_id: str, capability_id: str, capability_name: str = None) -> dict:
         """Propagate a capability to a single child.
 
         In the current implementation, this records the propagation intent in
@@ -574,9 +571,7 @@ class PropagationManager:
 
         return result
 
-    def rollback_propagation(
-        self, propagation_id: str, reason: str = "", rolled_back_by: str = "system"
-    ) -> dict:
+    def rollback_propagation(self, propagation_id: str, reason: str = "", rolled_back_by: str = "system") -> dict:
         """Rollback a completed propagation.
 
         Records the rollback in the propagation log (append-only, D6).
@@ -596,8 +591,7 @@ class PropagationManager:
         current_status = record.get("status")
         if current_status not in ("completed", "failed"):
             return {
-                "error": f"Cannot rollback: status is '{current_status}' "
-                         f"(must be 'completed' or 'failed')",
+                "error": f"Cannot rollback: status is '{current_status}' (must be 'completed' or 'failed')",
             }
 
         conn = self._get_conn()
@@ -644,9 +638,7 @@ class PropagationManager:
         """
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM propagation_log WHERE id = ?", (propagation_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM propagation_log WHERE id = ?", (propagation_id,)).fetchone()
             return dict(row) if row else None
         finally:
             conn.close()
@@ -708,9 +700,7 @@ class PropagationManager:
         """
         conn = self._get_conn()
         try:
-            rows = conn.execute(
-                "SELECT id FROM child_app_registry WHERE status = 'active'"
-            ).fetchall()
+            rows = conn.execute("SELECT id FROM child_app_registry WHERE status = 'active'").fetchall()
             return [row["id"] for row in rows]
         except sqlite3.OperationalError:
             # Table may not exist yet
@@ -767,42 +757,28 @@ def main():
         description="ICDEV Propagation Manager -- deploy capabilities to children with HITL (REQ-36-040)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--prepare", action="store_true",
-                       help="Prepare a propagation plan")
-    group.add_argument("--approve", action="store_true",
-                       help="Approve a prepared propagation (HITL)")
-    group.add_argument("--execute", action="store_true",
-                       help="Execute an approved propagation")
-    group.add_argument("--rollback", action="store_true",
-                       help="Rollback a completed propagation")
-    group.add_argument("--status", action="store_true",
-                       help="Get propagation status")
-    group.add_argument("--list", action="store_true",
-                       help="List all propagations")
+    group.add_argument("--prepare", action="store_true", help="Prepare a propagation plan")
+    group.add_argument("--approve", action="store_true", help="Approve a prepared propagation (HITL)")
+    group.add_argument("--execute", action="store_true", help="Execute an approved propagation")
+    group.add_argument("--rollback", action="store_true", help="Rollback a completed propagation")
+    group.add_argument("--status", action="store_true", help="Get propagation status")
+    group.add_argument("--list", action="store_true", help="List all propagations")
 
     parser.add_argument("--propagation-id", help="Propagation ID")
     parser.add_argument("--capability-id", help="Capability ID (for --prepare)")
     parser.add_argument("--capability-name", help="Capability name (for --prepare)")
-    parser.add_argument("--target-children",
-                        help="JSON array of child IDs (for --prepare)")
-    parser.add_argument("--source-type", default="innovation",
-                        help="Source type (for --prepare)")
+    parser.add_argument("--target-children", help="JSON array of child IDs (for --prepare)")
+    parser.add_argument("--source-type", default="innovation", help="Source type (for --prepare)")
     parser.add_argument("--genome-version", help="Genome version before (for --prepare)")
-    parser.add_argument("--rollback-plan",
-                        help="Rollback plan description (for --prepare)")
-    parser.add_argument("--prepared-by", default="system",
-                        help="Preparer identity")
+    parser.add_argument("--rollback-plan", help="Rollback plan description (for --prepare)")
+    parser.add_argument("--prepared-by", default="system", help="Preparer identity")
     parser.add_argument("--approver", help="Approver identity (for --approve)")
     parser.add_argument("--reason", default="", help="Reason (for --rollback)")
-    parser.add_argument("--rolled-back-by", default="system",
-                        help="Rollback identity")
-    parser.add_argument("--filter-status",
-                        help="Filter by status (for --list)")
+    parser.add_argument("--rolled-back-by", default="system", help="Rollback identity")
+    parser.add_argument("--filter-status", help="Filter by status (for --list)")
 
     args = parser.parse_args()
 
@@ -902,8 +878,7 @@ def main():
                     print(f"ERROR: {result['error']}", file=sys.stderr)
                 elif "approved" in result:
                     ok = result.get("approved", False)
-                    print(f"{'Approved' if ok else 'Approval failed'}: "
-                          f"{result.get('propagation_id')}")
+                    print(f"{'Approved' if ok else 'Approval failed'}: {result.get('propagation_id')}")
                     if ok:
                         print(f"  Approver: {result.get('approver')}")
                 elif "propagation_id" in result and "status" in result:
@@ -911,14 +886,12 @@ def main():
                     print(f"  Capability: {result.get('capability_id', 'N/A')}")
                     print(f"  Status:     {result.get('status', 'N/A')}")
                     print(f"  Source:     {result.get('source_type', 'N/A')}")
-                    tc = result.get("target_count",
-                                    result.get("target_children", "N/A"))
+                    tc = result.get("target_count", result.get("target_children", "N/A"))
                     if isinstance(tc, list):
                         tc = len(tc)
                     print(f"  Targets:    {tc}")
                     if result.get("approved_by"):
-                        print(f"  Approved:   {result.get('approved_by')} "
-                              f"at {result.get('approved_at', '')}")
+                        print(f"  Approved:   {result.get('approved_by')} at {result.get('approved_at', '')}")
                     if result.get("rollback_reason"):
                         print(f"  Rollback:   {result.get('rollback_reason')}")
                 elif "success_count" in result:

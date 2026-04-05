@@ -116,10 +116,7 @@ def get_pg_connection(db_url: str) -> DBAdapter:
         import psycopg2
         import psycopg2.extras
     except ImportError:
-        raise ImportError(
-            "psycopg2 is required for PostgreSQL connections. "
-            "Install with: pip install psycopg2-binary"
-        )
+        raise ImportError("psycopg2 is required for PostgreSQL connections. Install with: pip install psycopg2-binary")
     conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
     return DBAdapter(conn, engine="postgresql")
 

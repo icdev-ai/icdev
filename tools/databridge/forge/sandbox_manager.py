@@ -5,6 +5,7 @@ Docker primary sandbox (--network none, memory/cpu limits).
 Python subprocess fallback (restricted PYTHONPATH, timeout).
 Both paths log to db_forge_sandbox_log (append-only, NIST AU).
 """
+
 from __future__ import annotations
 
 import json
@@ -126,28 +127,39 @@ def _run_docker_sandbox(
         (tmp / "harness.py").write_text(_SANDBOX_HARNESS, encoding="utf-8")
 
         cmd = [
-            "docker", "run", "--rm",
-            "--network", "none",
-            "--memory", "256m",
-            "--cpus", "0.5",
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--memory",
+            "256m",
+            "--cpus",
+            "0.5",
             "--read-only",
-            "--tmpfs", "/tmp",
-            "-v", f"{tmp_dir}:/sandbox:ro",
+            "--tmpfs",
+            "/tmp",
+            "-v",
+            f"{tmp_dir}:/sandbox:ro",
             "python:3.11-slim",
-            "python", "/sandbox/harness.py", "/sandbox/connector.py",
+            "python",
+            "/sandbox/harness.py",
+            "/sandbox/connector.py",
         ]
 
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             duration_ms = int((time.time() - start) * 1000)
 
             if proc.returncode == 0 and proc.stdout.strip():
                 try:
                     result = json.loads(proc.stdout.strip().split("\n")[-1])
-                    _log_event(connector_id, "docker", "stop",
-                               f"Completed: {result['status']}", db_path, duration_ms)
+                    _log_event(connector_id, "docker", "stop", f"Completed: {result['status']}", db_path, duration_ms)
                     return {
                         "sandbox_type": "docker",
                         "status": result["status"],
@@ -169,9 +181,21 @@ def _run_docker_sandbox(
         except subprocess.TimeoutExpired:
             dur = int((time.time() - start) * 1000)
             _log_event(connector_id, "docker", "error", "Timed out", db_path, dur)
-            return {"sandbox_type": "docker", "status": "timeout", "events": [], "duration_ms": dur, "error": "Docker sandbox timed out (60s)"}
+            return {
+                "sandbox_type": "docker",
+                "status": "timeout",
+                "events": [],
+                "duration_ms": dur,
+                "error": "Docker sandbox timed out (60s)",
+            }
         except FileNotFoundError:
-            return {"sandbox_type": "docker", "status": "docker_unavailable", "events": [], "duration_ms": 0, "error": "docker not found"}
+            return {
+                "sandbox_type": "docker",
+                "status": "docker_unavailable",
+                "events": [],
+                "duration_ms": 0,
+                "error": "docker not found",
+            }
 
 
 def _run_subprocess_sandbox(
@@ -191,12 +215,15 @@ def _run_subprocess_sandbox(
 
         project_root = str(Path(__file__).resolve().parents[3])
         import os
+
         env = {**os.environ, "PYTHONPATH": project_root}
 
         try:
             proc = subprocess.run(
                 [sys.executable, str(tmp / "harness.py"), str(tmp / "connector.py")],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True,
+                text=True,
+                timeout=30,
                 env=env,
                 cwd=project_root,
             )
@@ -206,8 +233,9 @@ def _run_subprocess_sandbox(
                 try:
                     # Take last line (harness prints JSON as last line)
                     result = json.loads(proc.stdout.strip().split("\n")[-1])
-                    _log_event(connector_id, "subprocess", "stop",
-                               f"Completed: {result['status']}", db_path, duration_ms)
+                    _log_event(
+                        connector_id, "subprocess", "stop", f"Completed: {result['status']}", db_path, duration_ms
+                    )
                     return {
                         "sandbox_type": "subprocess",
                         "status": result["status"],
@@ -229,7 +257,13 @@ def _run_subprocess_sandbox(
         except subprocess.TimeoutExpired:
             dur = int((time.time() - start) * 1000)
             _log_event(connector_id, "subprocess", "error", "Timed out", db_path, dur)
-            return {"sandbox_type": "subprocess", "status": "timeout", "events": [], "duration_ms": dur, "error": "Subprocess timed out (30s)"}
+            return {
+                "sandbox_type": "subprocess",
+                "status": "timeout",
+                "events": [],
+                "duration_ms": dur,
+                "error": "Subprocess timed out (30s)",
+            }
 
 
 def _log_event(
@@ -248,8 +282,14 @@ def _log_event(
             """INSERT INTO db_forge_sandbox_log
                (connector_id, sandbox_type, event_type, details, duration_ms, logged_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (connector_id, sandbox_type, event_type, details[:2000], duration_ms,
-             datetime.now(timezone.utc).isoformat()),
+            (
+                connector_id,
+                sandbox_type,
+                event_type,
+                details[:2000],
+                duration_ms,
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
         conn.commit()
         conn.close()

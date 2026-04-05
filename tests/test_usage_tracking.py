@@ -130,12 +130,25 @@ def client_unauth(app):
 
 
 def test_totals_returns_aggregated_stats(db_path, client_admin):
-    _seed_usage(db_path, [
-        {"input_tokens": 1000, "output_tokens": 500, "thinking_tokens": 100,
-         "cost_estimate_usd": 0.05, "user_id": "admin-user"},
-        {"input_tokens": 2000, "output_tokens": 1000, "thinking_tokens": 200,
-         "cost_estimate_usd": 0.10, "user_id": "admin-user"},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "thinking_tokens": 100,
+                "cost_estimate_usd": 0.05,
+                "user_id": "admin-user",
+            },
+            {
+                "input_tokens": 2000,
+                "output_tokens": 1000,
+                "thinking_tokens": 200,
+                "cost_estimate_usd": 0.10,
+                "user_id": "admin-user",
+            },
+        ],
+    )
     resp = client_admin.get("/api/usage/totals")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -151,14 +164,14 @@ def test_totals_returns_aggregated_stats(db_path, client_admin):
 
 
 def test_summary_admin_sees_per_user_breakdown(db_path, client_admin):
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "input_tokens": 500, "output_tokens": 200,
-         "cost_estimate_usd": 0.02},
-        {"user_id": "user-bob", "input_tokens": 800, "output_tokens": 400,
-         "cost_estimate_usd": 0.04},
-        {"user_id": "user-alice", "input_tokens": 300, "output_tokens": 100,
-         "cost_estimate_usd": 0.01},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {"user_id": "user-alice", "input_tokens": 500, "output_tokens": 200, "cost_estimate_usd": 0.02},
+            {"user_id": "user-bob", "input_tokens": 800, "output_tokens": 400, "cost_estimate_usd": 0.04},
+            {"user_id": "user-alice", "input_tokens": 300, "output_tokens": 100, "cost_estimate_usd": 0.01},
+        ],
+    )
     resp = client_admin.get("/api/usage/summary")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -179,12 +192,13 @@ def test_summary_admin_sees_per_user_breakdown(db_path, client_admin):
 
 
 def test_summary_non_admin_sees_only_own(db_path, client_user):
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "input_tokens": 500, "output_tokens": 200,
-         "cost_estimate_usd": 0.02},
-        {"user_id": "user-bob", "input_tokens": 800, "output_tokens": 400,
-         "cost_estimate_usd": 0.04},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {"user_id": "user-alice", "input_tokens": 500, "output_tokens": 200, "cost_estimate_usd": 0.02},
+            {"user_id": "user-bob", "input_tokens": 800, "output_tokens": 400, "cost_estimate_usd": 0.04},
+        ],
+    )
     resp = client_user.get("/api/usage/summary")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -201,17 +215,35 @@ def test_summary_non_admin_sees_only_own(db_path, client_user):
 
 
 def test_by_provider_returns_per_model_breakdown(db_path, client_admin):
-    _seed_usage(db_path, [
-        {"model_id": "claude-opus-4-6", "input_tokens": 1000,
-         "output_tokens": 500, "cost_estimate_usd": 0.05,
-         "user_id": "admin-user", "api_key_source": "config"},
-        {"model_id": "gpt-4o", "input_tokens": 2000,
-         "output_tokens": 1000, "cost_estimate_usd": 0.10,
-         "user_id": "admin-user", "api_key_source": "byok"},
-        {"model_id": "claude-opus-4-6", "input_tokens": 500,
-         "output_tokens": 250, "cost_estimate_usd": 0.025,
-         "user_id": "admin-user", "api_key_source": "config"},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {
+                "model_id": "claude-opus-4-6",
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "cost_estimate_usd": 0.05,
+                "user_id": "admin-user",
+                "api_key_source": "config",
+            },
+            {
+                "model_id": "gpt-4o",
+                "input_tokens": 2000,
+                "output_tokens": 1000,
+                "cost_estimate_usd": 0.10,
+                "user_id": "admin-user",
+                "api_key_source": "byok",
+            },
+            {
+                "model_id": "claude-opus-4-6",
+                "input_tokens": 500,
+                "output_tokens": 250,
+                "cost_estimate_usd": 0.025,
+                "user_id": "admin-user",
+                "api_key_source": "config",
+            },
+        ],
+    )
     resp = client_admin.get("/api/usage/by-provider")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -220,8 +252,7 @@ def test_by_provider_returns_per_model_breakdown(db_path, client_admin):
     assert "claude-opus-4-6" in model_ids
     assert "gpt-4o" in model_ids
     # The two opus rows share the same key_source so they aggregate together
-    opus = next(r for r in providers
-                if r["model_id"] == "claude-opus-4-6" and r["key_source"] == "config")
+    opus = next(r for r in providers if r["model_id"] == "claude-opus-4-6" and r["key_source"] == "config")
     assert opus["total_input"] == 1500
     assert opus["request_count"] == 2
 
@@ -234,14 +265,32 @@ def test_by_provider_returns_per_model_breakdown(db_path, client_admin):
 def test_time_series_returns_daily_data(db_path, client_admin):
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     yesterday = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
-    _seed_usage(db_path, [
-        {"created_at": f"{today} 10:00:00", "input_tokens": 100,
-         "output_tokens": 50, "cost_estimate_usd": 0.01, "user_id": "admin-user"},
-        {"created_at": f"{today} 14:00:00", "input_tokens": 200,
-         "output_tokens": 100, "cost_estimate_usd": 0.02, "user_id": "admin-user"},
-        {"created_at": f"{yesterday} 09:00:00", "input_tokens": 300,
-         "output_tokens": 150, "cost_estimate_usd": 0.03, "user_id": "admin-user"},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {
+                "created_at": f"{today} 10:00:00",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost_estimate_usd": 0.01,
+                "user_id": "admin-user",
+            },
+            {
+                "created_at": f"{today} 14:00:00",
+                "input_tokens": 200,
+                "output_tokens": 100,
+                "cost_estimate_usd": 0.02,
+                "user_id": "admin-user",
+            },
+            {
+                "created_at": f"{yesterday} 09:00:00",
+                "input_tokens": 300,
+                "output_tokens": 150,
+                "cost_estimate_usd": 0.03,
+                "user_id": "admin-user",
+            },
+        ],
+    )
     resp = client_admin.get("/api/usage/time-series")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -265,12 +314,25 @@ def test_time_series_returns_daily_data(db_path, client_admin):
 def test_time_series_respects_days_param(db_path, client_admin):
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     old_date = (datetime.now(UTC) - timedelta(days=10)).strftime("%Y-%m-%d")
-    _seed_usage(db_path, [
-        {"created_at": f"{today} 12:00:00", "input_tokens": 100,
-         "output_tokens": 50, "cost_estimate_usd": 0.01, "user_id": "admin-user"},
-        {"created_at": f"{old_date} 12:00:00", "input_tokens": 500,
-         "output_tokens": 250, "cost_estimate_usd": 0.05, "user_id": "admin-user"},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {
+                "created_at": f"{today} 12:00:00",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost_estimate_usd": 0.01,
+                "user_id": "admin-user",
+            },
+            {
+                "created_at": f"{old_date} 12:00:00",
+                "input_tokens": 500,
+                "output_tokens": 250,
+                "cost_estimate_usd": 0.05,
+                "user_id": "admin-user",
+            },
+        ],
+    )
     # Request only last 5 days — the old_date row should be excluded
     resp = client_admin.get("/api/usage/time-series?days=5")
     assert resp.status_code == 200
@@ -352,14 +414,14 @@ def test_estimate_cost_gpt4o_mini():
 
 
 def test_admin_totals_includes_all_users(db_path, client_admin):
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "input_tokens": 100, "output_tokens": 50,
-         "cost_estimate_usd": 0.01},
-        {"user_id": "user-bob", "input_tokens": 200, "output_tokens": 100,
-         "cost_estimate_usd": 0.02},
-        {"user_id": "user-charlie", "input_tokens": 300, "output_tokens": 150,
-         "cost_estimate_usd": 0.03},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {"user_id": "user-alice", "input_tokens": 100, "output_tokens": 50, "cost_estimate_usd": 0.01},
+            {"user_id": "user-bob", "input_tokens": 200, "output_tokens": 100, "cost_estimate_usd": 0.02},
+            {"user_id": "user-charlie", "input_tokens": 300, "output_tokens": 150, "cost_estimate_usd": 0.03},
+        ],
+    )
     resp = client_admin.get("/api/usage/totals")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -370,12 +432,25 @@ def test_admin_totals_includes_all_users(db_path, client_admin):
 
 
 def test_admin_by_provider_includes_all_users(db_path, client_admin):
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "model_id": "claude-opus-4-6",
-         "input_tokens": 100, "output_tokens": 50, "cost_estimate_usd": 0.01},
-        {"user_id": "user-bob", "model_id": "claude-opus-4-6",
-         "input_tokens": 200, "output_tokens": 100, "cost_estimate_usd": 0.02},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {
+                "user_id": "user-alice",
+                "model_id": "claude-opus-4-6",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost_estimate_usd": 0.01,
+            },
+            {
+                "user_id": "user-bob",
+                "model_id": "claude-opus-4-6",
+                "input_tokens": 200,
+                "output_tokens": 100,
+                "cost_estimate_usd": 0.02,
+            },
+        ],
+    )
     resp = client_admin.get("/api/usage/by-provider")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -392,12 +467,13 @@ def test_admin_by_provider_includes_all_users(db_path, client_admin):
 
 
 def test_non_admin_totals_filtered(db_path, client_user):
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "input_tokens": 100, "output_tokens": 50,
-         "cost_estimate_usd": 0.01},
-        {"user_id": "user-bob", "input_tokens": 900, "output_tokens": 450,
-         "cost_estimate_usd": 0.09},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {"user_id": "user-alice", "input_tokens": 100, "output_tokens": 50, "cost_estimate_usd": 0.01},
+            {"user_id": "user-bob", "input_tokens": 900, "output_tokens": 450, "cost_estimate_usd": 0.09},
+        ],
+    )
     resp = client_user.get("/api/usage/totals")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -408,12 +484,25 @@ def test_non_admin_totals_filtered(db_path, client_user):
 
 
 def test_non_admin_by_provider_filtered(db_path, client_user):
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "model_id": "claude-opus-4-6",
-         "input_tokens": 100, "output_tokens": 50, "cost_estimate_usd": 0.01},
-        {"user_id": "user-bob", "model_id": "gpt-4o",
-         "input_tokens": 900, "output_tokens": 450, "cost_estimate_usd": 0.09},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {
+                "user_id": "user-alice",
+                "model_id": "claude-opus-4-6",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost_estimate_usd": 0.01,
+            },
+            {
+                "user_id": "user-bob",
+                "model_id": "gpt-4o",
+                "input_tokens": 900,
+                "output_tokens": 450,
+                "cost_estimate_usd": 0.09,
+            },
+        ],
+    )
     resp = client_user.get("/api/usage/by-provider")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -426,12 +515,25 @@ def test_non_admin_by_provider_filtered(db_path, client_user):
 
 def test_non_admin_time_series_filtered(db_path, client_user):
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "created_at": f"{today} 10:00:00",
-         "input_tokens": 100, "output_tokens": 50, "cost_estimate_usd": 0.01},
-        {"user_id": "user-bob", "created_at": f"{today} 11:00:00",
-         "input_tokens": 900, "output_tokens": 450, "cost_estimate_usd": 0.09},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {
+                "user_id": "user-alice",
+                "created_at": f"{today} 10:00:00",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost_estimate_usd": 0.01,
+            },
+            {
+                "user_id": "user-bob",
+                "created_at": f"{today} 11:00:00",
+                "input_tokens": 900,
+                "output_tokens": 450,
+                "cost_estimate_usd": 0.09,
+            },
+        ],
+    )
     resp = client_user.get("/api/usage/time-series")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -482,12 +584,13 @@ def test_time_series_caps_days_at_90(db_path, client_admin):
 
 def test_summary_admin_can_filter_by_user_id(db_path, client_admin):
     """Admin can pass ?user_id= to view a specific user's summary."""
-    _seed_usage(db_path, [
-        {"user_id": "user-alice", "input_tokens": 500, "output_tokens": 200,
-         "cost_estimate_usd": 0.02},
-        {"user_id": "user-bob", "input_tokens": 800, "output_tokens": 400,
-         "cost_estimate_usd": 0.04},
-    ])
+    _seed_usage(
+        db_path,
+        [
+            {"user_id": "user-alice", "input_tokens": 500, "output_tokens": 200, "cost_estimate_usd": 0.02},
+            {"user_id": "user-bob", "input_tokens": 800, "output_tokens": 400, "cost_estimate_usd": 0.04},
+        ],
+    )
     resp = client_admin.get("/api/usage/summary?user_id=user-bob")
     assert resp.status_code == 200
     data = resp.get_json()

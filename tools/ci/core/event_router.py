@@ -36,11 +36,22 @@ DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
 
 # Valid workflows (mirrors workflow_ops.AVAILABLE_ICDEV_WORKFLOWS)
 AVAILABLE_WORKFLOWS = {
-    "icdev_plan", "icdev_build", "icdev_test", "icdev_review",
-    "icdev_comply", "icdev_secure", "icdev_deploy", "icdev_document",
-    "icdev_patch", "icdev_plan_build", "icdev_plan_build_test",
-    "icdev_plan_build_test_review", "icdev_sdlc",
-    "icdev_intake", "icdev_modernize", "icdev_maintain",
+    "icdev_plan",
+    "icdev_build",
+    "icdev_test",
+    "icdev_review",
+    "icdev_comply",
+    "icdev_secure",
+    "icdev_deploy",
+    "icdev_document",
+    "icdev_patch",
+    "icdev_plan_build",
+    "icdev_plan_build_test",
+    "icdev_plan_build_test_review",
+    "icdev_sdlc",
+    "icdev_intake",
+    "icdev_modernize",
+    "icdev_maintain",
 }
 
 # Workflows that require a prior run_id
@@ -50,6 +61,7 @@ REQUIRE_RUN_ID = {"icdev_build", "icdev_review"}
 def _load_routing_config() -> dict:
     """Load routing config from cicd_config.yaml."""
     import yaml
+
     config_path = PROJECT_ROOT / "args" / "cicd_config.yaml"
     if config_path.exists():
         try:
@@ -172,6 +184,7 @@ class EventRouter:
 
         # 6. Generate or use provided run_id
         from tools.testing.utils import make_run_id
+
         run_id = envelope.run_id or make_run_id()
 
         # 7. Create pipeline run record
@@ -179,6 +192,7 @@ class EventRouter:
 
         # 8. Create/update state
         from tools.ci.modules.state import ICDevState
+
         state = ICDevState.load(run_id)
         state.update(
             run_id=run_id,
@@ -217,16 +231,16 @@ class EventRouter:
         except Exception:
             return None
 
-    def _route_to_conversation(
-        self, envelope: EventEnvelope, active_run_id: str
-    ) -> Optional[dict]:
+    def _route_to_conversation(self, envelope: EventEnvelope, active_run_id: str) -> Optional[dict]:
         """Route a non-command comment to ConversationManager (D135).
 
         Returns result dict if handled, None to fall through to queue.
         """
         # Only handle comment/message event types
         if envelope.event_type not in (
-            "issue_comment", "mr_comment", "chat_message",
+            "issue_comment",
+            "mr_comment",
+            "chat_message",
         ):
             return None
 
@@ -243,10 +257,7 @@ class EventRouter:
                     session_key=envelope.session_key,
                     run_id=active_run_id,
                     platform=envelope.platform,
-                    issue_number=(
-                        int(envelope.session_key)
-                        if envelope.session_key.isdigit() else None
-                    ),
+                    issue_number=(int(envelope.session_key) if envelope.session_key.isdigit() else None),
                     channel_id=envelope.metadata.get("channel_id", ""),
                     thread_ts=envelope.metadata.get(
                         "thread_ts",
@@ -290,8 +301,7 @@ class EventRouter:
             conn = sqlite3.connect(self.db_path)
             # Check queue depth
             cursor = conn.execute(
-                "SELECT COUNT(*) FROM ci_event_queue "
-                "WHERE session_key = ? AND status = 'queued'",
+                "SELECT COUNT(*) FROM ci_event_queue WHERE session_key = ? AND status = 'queued'",
                 (envelope.session_key,),
             )
             count = cursor.fetchone()[0]
@@ -303,8 +313,7 @@ class EventRouter:
                 }
 
             conn.execute(
-                "INSERT INTO ci_event_queue (session_key, event_id, envelope_json, status) "
-                "VALUES (?, ?, ?, 'queued')",
+                "INSERT INTO ci_event_queue (session_key, event_id, envelope_json, status) VALUES (?, ?, ?, 'queued')",
                 (
                     envelope.session_key,
                     envelope.event_id,
@@ -322,9 +331,7 @@ class EventRouter:
             "active_run_id": active_run_id,
         }
 
-    def _create_pipeline_run(
-        self, envelope: EventEnvelope, workflow: str, run_id: str
-    ):
+    def _create_pipeline_run(self, envelope: EventEnvelope, workflow: str, run_id: str):
         """Record a new pipeline run in the database."""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -347,9 +354,7 @@ class EventRouter:
         except Exception:
             pass
 
-    def _launch_workflow(
-        self, workflow: str, issue_number: str, run_id: str, platform: str
-    ):
+    def _launch_workflow(self, workflow: str, issue_number: str, run_id: str, platform: str):
         """Launch a workflow script as a background subprocess."""
         script_path = PROJECT_ROOT / "tools" / "ci" / "workflows" / f"{workflow}.py"
 
@@ -433,8 +438,7 @@ class EventRouter:
             conn = sqlite3.connect(self.db_path)
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "UPDATE ci_event_queue SET status = ?, processed_at = ? "
-                "WHERE id = ?",
+                "UPDATE ci_event_queue SET status = ?, processed_at = ? WHERE id = ?",
                 (status, now, queue_id),
             )
             conn.commit()

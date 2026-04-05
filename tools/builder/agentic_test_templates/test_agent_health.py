@@ -56,8 +56,7 @@ class TestAgentHealth:
         config = _load_agent_config()
         for name, agent in config.get("agents", {}).items():
             port = agent.get("port", 0)
-            assert 1024 <= port <= 65535, \
-                f"Agent '{name}' port {port} outside valid range (1024-65535)"
+            assert 1024 <= port <= 65535, f"Agent '{name}' port {port} outside valid range (1024-65535)"
 
     def test_agent_cards_exist(self):
         """Agent cards should exist in tools/agent/cards/."""
@@ -65,8 +64,9 @@ class TestAgentHealth:
         if cards_dir.exists():
             cards = list(cards_dir.glob("*_card.json"))
             config = _load_agent_config()
-            assert len(cards) >= len(config.get("agents", {})), \
+            assert len(cards) >= len(config.get("agents", {})), (
                 f"Expected {len(config.get('agents', {}))} cards, found {len(cards)}"
+            )
 
     def test_agent_card_structure(self):
         """Each agent card should have required fields."""
@@ -88,8 +88,7 @@ class TestAgentHealth:
         for card_path in cards_dir.glob("*_card.json"):
             with open(card_path) as f:
                 card = json.load(f)
-            assert "authentication" in card or "auth" in card, \
-                f"Card {card_path.name} missing authentication config"
+            assert "authentication" in card or "auth" in card, f"Card {card_path.name} missing authentication config"
 
     @patch("urllib.request.urlopen")
     def test_health_endpoint_mock(self, mock_urlopen):
@@ -103,13 +102,9 @@ class TestAgentHealth:
 
         config = _load_agent_config()
         for name, agent in config.get("agents", {}).items():
-            endpoint = agent.get(
-                "health_endpoint",
-                f"https://localhost:{agent['port']}/health"
-            )
+            endpoint = agent.get("health_endpoint", f"https://localhost:{agent['port']}/health")
             # In real test, would call endpoint; here we verify config
-            assert endpoint.startswith("https://"), \
-                f"Agent '{name}' health not HTTPS"
+            assert endpoint.startswith("https://"), f"Agent '{name}' health not HTTPS"
 
     @patch("urllib.request.urlopen")
     def test_health_response_structure(self, mock_urlopen):
@@ -123,6 +118,7 @@ class TestAgentHealth:
         mock_urlopen.return_value = mock_response
 
         import urllib.request
+
         resp = urllib.request.urlopen("https://localhost:8443/health")
         data = json.loads(resp.read().decode())
         assert "status" in data, "Health response missing 'status' field"

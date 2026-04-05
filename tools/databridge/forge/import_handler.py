@@ -5,6 +5,7 @@ Downloads a connector from the marketplace, validates it, and registers
 in db_forge_connectors. Imported connectors start as 'sandboxed' and
 must be promoted via the normal workflow.
 """
+
 from __future__ import annotations
 
 import json
@@ -86,16 +87,17 @@ def import_community_connector(
                 tenant_id, created_at, updated_at)
                VALUES (?, ?, 'saas_api', 'imported', 'rest', ?, ?, 1, 'sandboxed',
                        ?, ?, ?, ?)""",
-            (connector_id, connector_name, code, code_hash, slug,
-             tenant_id, now, now),
+            (connector_id, connector_name, code, code_hash, slug, tenant_id, now, now),
         )
 
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
                VALUES (?, 'connector_forge_imported', 'import_handler', 'import', ?, ?)""",
-            (f"audit-{uuid.uuid4().hex[:12]}",
-             json.dumps({"connector_id": connector_id, "slug": slug, "connector_name": connector_name}),
-             now),
+            (
+                f"audit-{uuid.uuid4().hex[:12]}",
+                json.dumps({"connector_id": connector_id, "slug": slug, "connector_name": connector_name}),
+                now,
+            ),
         )
 
         conn.commit()

@@ -38,22 +38,38 @@ KEYWORD_CONTROL_MAP = {
 }
 
 STEREOTYPE_CONTROL_MAP = {
-    "security": ["AC", "SC", "SI"], "authentication": ["AC", "IA"],
-    "authorization": ["AC"], "encryption": ["SC"], "logging": ["AU"],
-    "audit": ["AU"], "monitoring": ["AU", "SI"], "configuration": ["CM"],
-    "deployment": ["CM"], "incident": ["IR"], "compliance": ["CA"],
-    "risk": ["RA"], "network": ["SC"], "boundary": ["SC"],
-    "identity": ["IA"], "backup": ["MP"], "maintenance": ["MA"],
-    "physical": ["PE"], "planning": ["PL"], "validation": ["SI"],
+    "security": ["AC", "SC", "SI"],
+    "authentication": ["AC", "IA"],
+    "authorization": ["AC"],
+    "encryption": ["SC"],
+    "logging": ["AU"],
+    "audit": ["AU"],
+    "monitoring": ["AU", "SI"],
+    "configuration": ["CM"],
+    "deployment": ["CM"],
+    "incident": ["IR"],
+    "compliance": ["CA"],
+    "risk": ["RA"],
+    "network": ["SC"],
+    "boundary": ["SC"],
+    "identity": ["IA"],
+    "backup": ["MP"],
+    "maintenance": ["MA"],
+    "physical": ["PE"],
+    "planning": ["PL"],
+    "validation": ["SI"],
     "integrity": ["SI"],
 }
 
 ELEMENT_TYPE_HINTS = {
-    "state_machine": ["CM"], "interface_block": ["SC"],
-    "port": ["SC"], "connector": ["SC"],
+    "state_machine": ["CM"],
+    "interface_block": ["SC"],
+    "port": ["SC"],
+    "connector": ["SC"],
 }
 
 # -- DB helpers ----------------------------------------------------------------
+
 
 def _get_connection(db_path=None):
     path = db_path or DB_PATH
@@ -74,13 +90,21 @@ def _verify_project(conn, project_id):
 def _log_audit(project_id, action, details, db_path=None):
     if audit_log_event is not None:
         try:
-            audit_log_event(event_type="compliance_check", actor="icdev-mbse-engine",
-                            action=action, project_id=project_id, details=details,
-                            classification="CUI", db_path=db_path)
+            audit_log_event(
+                event_type="compliance_check",
+                actor="icdev-mbse-engine",
+                action=action,
+                project_id=project_id,
+                details=details,
+                classification="CUI",
+                db_path=db_path,
+            )
         except Exception:
             pass
 
+
 # -- Core matching logic -------------------------------------------------------
+
 
 def _match_keywords(text: str) -> list:
     """Match text against KEYWORD_CONTROL_MAP, return list of matching family codes."""
@@ -119,7 +143,8 @@ def _create_thread_link(conn, project_id, source_id, target_id, confidence=0.7, 
            (project_id, source_type, source_id, target_type, target_id,
             link_type, confidence, evidence, created_by)
            VALUES (?, 'sysml_element', ?, 'nist_control', ?, 'maps_to', ?, ?, 'icdev-mbse-engine')""",
-        (project_id, source_id, target_id, confidence, evidence))
+        (project_id, source_id, target_id, confidence, evidence),
+    )
     return cur.rowcount > 0
 
 
@@ -135,7 +160,9 @@ def _build_evidence(family, name_fams, desc_fams, type_fams, stereo_fams, etype,
         parts.append(f"stereotype:{stereotype}")
     return "; ".join(parts) or "keyword-mapping"
 
+
 # -- Public API ----------------------------------------------------------------
+
 
 def map_element_to_controls(project_id: str, element_id: str, db_path=None) -> dict:
     """Map a single SysML element to NIST controls. Creates digital_thread_links
@@ -143,8 +170,9 @@ def map_element_to_controls(project_id: str, element_id: str, db_path=None) -> d
     conn = _get_connection(db_path)
     try:
         _verify_project(conn, project_id)
-        row = conn.execute("SELECT * FROM sysml_elements WHERE id = ? AND project_id = ?",
-                           (element_id, project_id)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM sysml_elements WHERE id = ? AND project_id = ?", (element_id, project_id)
+        ).fetchone()
         if not row:
             raise ValueError(f"SysML element '{element_id}' not found in project '{project_id}'.")
         elem = dict(row)
@@ -160,19 +188,26 @@ def map_element_to_controls(project_id: str, element_id: str, db_path=None) -> d
         for family in sorted(all_families):
             ctrl_ids = _get_controls_for_family(family, conn) or [f"{family}-*"]
             for cid in ctrl_ids:
-                ev = _build_evidence(family, name_fams, desc_fams, type_fams, stereo_fams,
-                                     etype, elem.get("stereotype", ""))
+                ev = _build_evidence(
+                    family, name_fams, desc_fams, type_fams, stereo_fams, etype, elem.get("stereotype", "")
+                )
                 if _create_thread_link(conn, project_id, element_id, cid, 0.7, ev):
                     links_created += 1
                 controls_mapped.append(cid)
         conn.commit()
 
-        result = {"element_id": element_id, "element_name": elem.get("name", ""),
-                  "element_type": etype, "families_matched": sorted(all_families),
-                  "controls_mapped": controls_mapped, "links_created": links_created,
-                  "count": len(controls_mapped)}
-        _log_audit(project_id, f"Mapped '{elem.get('name', element_id)}' to {len(controls_mapped)} control(s)",
-                   result, db_path)
+        result = {
+            "element_id": element_id,
+            "element_name": elem.get("name", ""),
+            "element_type": etype,
+            "families_matched": sorted(all_families),
+            "controls_mapped": controls_mapped,
+            "links_created": links_created,
+            "count": len(controls_mapped),
+        }
+        _log_audit(
+            project_id, f"Mapped '{elem.get('name', element_id)}' to {len(controls_mapped)} control(s)", result, db_path
+        )
         return result
     finally:
         conn.close()
@@ -185,11 +220,16 @@ def map_all_elements(project_id: str, db_path=None) -> dict:
     try:
         _verify_project(conn, project_id)
         elements = conn.execute(
-            "SELECT id, name, element_type, description, stereotype FROM sysml_elements WHERE project_id = ? ORDER BY element_type, name",
-            (project_id,)).fetchall()
-        already = {r["source_id"] for r in conn.execute(
-            "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",
-            (project_id,)).fetchall()}
+            "SELECT id, name, element_type, description, stereotype FROM sysml_elements WHERE project_id = ? ORDER BY element_type, name",  # noqa: E501
+            (project_id,),
+        ).fetchall()
+        already = {
+            r["source_id"]
+            for r in conn.execute(
+                "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                (project_id,),
+            ).fetchall()
+        }
 
         processed, mapped, total_links, skipped = 0, 0, 0, 0
         for e in elements:
@@ -215,8 +255,12 @@ def map_all_elements(project_id: str, db_path=None) -> dict:
                     if _create_thread_link(conn, project_id, eid, cid, 0.7, ev):
                         total_links += 1
         conn.commit()
-        result = {"elements_processed": processed, "elements_mapped": mapped,
-                  "links_created": total_links, "skipped": skipped}
+        result = {
+            "elements_processed": processed,
+            "elements_mapped": mapped,
+            "links_created": total_links,
+            "skipped": skipped,
+        }
         _log_audit(project_id, f"Batch mapped {mapped} element(s), {total_links} link(s)", result, db_path)
         return result
     finally:
@@ -232,9 +276,13 @@ def get_control_coverage_from_model(project_id: str, db_path=None) -> dict:
         all_ids = sorted({r["control_id"] for r in pc})
         if not all_ids:
             all_ids = [r["id"] for r in conn.execute("SELECT id FROM compliance_controls ORDER BY id").fetchall()]
-        covered_set = {r["target_id"] for r in conn.execute(
-            "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",
-            (project_id,)).fetchall()}
+        covered_set = {
+            r["target_id"]
+            for r in conn.execute(
+                "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                (project_id,),
+            ).fetchall()
+        }
         covered = sorted(c for c in all_ids if c in covered_set)
         uncovered = sorted(c for c in all_ids if c not in covered_set)
         total = len(all_ids)
@@ -247,8 +295,14 @@ def get_control_coverage_from_model(project_id: str, db_path=None) -> dict:
             by_family[f]["covered" if cid in covered_set else "uncovered"] += 1
         for v in by_family.values():
             v["coverage_pct"] = round(100.0 * v["covered"] / v["total"], 1) if v["total"] else 0.0
-        return {"total_controls": total, "covered_controls": len(covered), "coverage_pct": pct,
-                "covered": covered, "uncovered": uncovered, "by_family": by_family}
+        return {
+            "total_controls": total,
+            "covered_controls": len(covered),
+            "coverage_pct": pct,
+            "covered": covered,
+            "uncovered": uncovered,
+            "by_family": by_family,
+        }
     finally:
         conn.close()
 
@@ -259,13 +313,21 @@ def get_unmapped_controls(project_id: str, db_path=None) -> dict:
     try:
         _verify_project(conn, project_id)
         ctrls = conn.execute(
-            "SELECT pc.control_id, cc.family, cc.title FROM project_controls pc LEFT JOIN compliance_controls cc ON pc.control_id = cc.id WHERE pc.project_id = ? ORDER BY pc.control_id",
-            (project_id,)).fetchall()
-        mapped = {r["target_id"] for r in conn.execute(
-            "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",
-            (project_id,)).fetchall()}
-        unmapped = [{"id": c["control_id"], "family": c["family"] or "", "title": c["title"] or ""}
-                    for c in ctrls if c["control_id"] not in mapped]
+            "SELECT pc.control_id, cc.family, cc.title FROM project_controls pc LEFT JOIN compliance_controls cc ON pc.control_id = cc.id WHERE pc.project_id = ? ORDER BY pc.control_id",  # noqa: E501
+            (project_id,),
+        ).fetchall()
+        mapped = {
+            r["target_id"]
+            for r in conn.execute(
+                "SELECT DISTINCT target_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                (project_id,),
+            ).fetchall()
+        }
+        unmapped = [
+            {"id": c["control_id"], "family": c["family"] or "", "title": c["title"] or ""}
+            for c in ctrls
+            if c["control_id"] not in mapped
+        ]
         return {"unmapped_count": len(unmapped), "controls": unmapped}
     finally:
         conn.close()
@@ -277,13 +339,21 @@ def get_unmapped_elements(project_id: str, db_path=None) -> dict:
     try:
         _verify_project(conn, project_id)
         elems = conn.execute(
-            "SELECT id, name, element_type, stereotype FROM sysml_elements WHERE project_id = ? ORDER BY element_type, name",
-            (project_id,)).fetchall()
-        mapped = {r["source_id"] for r in conn.execute(
-            "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",
-            (project_id,)).fetchall()}
-        unmapped = [{"id": e["id"], "name": e["name"], "element_type": e["element_type"],
-                     "stereotype": e["stereotype"] or ""} for e in elems if e["id"] not in mapped]
+            "SELECT id, name, element_type, stereotype FROM sysml_elements WHERE project_id = ? ORDER BY element_type, name",  # noqa: E501
+            (project_id,),
+        ).fetchall()
+        mapped = {
+            r["source_id"]
+            for r in conn.execute(
+                "SELECT DISTINCT source_id FROM digital_thread_links WHERE project_id = ? AND source_type = 'sysml_element' AND target_type = 'nist_control' AND link_type = 'maps_to'",  # noqa: E501
+                (project_id,),
+            ).fetchall()
+        }
+        unmapped = [
+            {"id": e["id"], "name": e["name"], "element_type": e["element_type"], "stereotype": e["stereotype"] or ""}
+            for e in elems
+            if e["id"] not in mapped
+        ]
         return {"unmapped_count": len(unmapped), "elements": unmapped}
     finally:
         conn.close()
@@ -311,34 +381,54 @@ def generate_mapping_report(project_id: str, db_path=None) -> str:
                WHERE dtl.project_id = ? AND dtl.source_type = 'sysml_element'
                  AND dtl.target_type = 'nist_control' AND dtl.link_type = 'maps_to'
                ORDER BY se.element_type, se.name, dtl.target_id""",
-            (project_id,)).fetchall()
+            (project_id,),
+        ).fetchall()
     finally:
         conn.close()
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    L = ["CUI // SP-CTI", "", "# Model-to-Control Mapping Report", "",
-         f"**Project:** {name}", f"**Project ID:** {project_id}",
-         f"**Generated:** {now}", "**Classification:** CUI // SP-CTI", "", "---", "",
-         "## 1. Coverage Summary", "",
-         "| Metric | Value |", "|--------|-------|",
-         f"| Total Controls | {cov['total_controls']} |",
-         f"| Covered by Model | {cov['covered_controls']} |",
-         f"| Coverage | {cov['coverage_pct']}% |",
-         f"| Unmapped Controls | {uc['unmapped_count']} |",
-         f"| Unmapped Elements | {ue['unmapped_count']} |", "",
-         "## 2. Coverage by Family", "",
-         "| Family | Total | Covered | Coverage |", "|--------|------:|--------:|---------:|"]
+    L = [
+        "CUI // SP-CTI",
+        "",
+        "# Model-to-Control Mapping Report",
+        "",
+        f"**Project:** {name}",
+        f"**Project ID:** {project_id}",
+        f"**Generated:** {now}",
+        "**Classification:** CUI // SP-CTI",
+        "",
+        "---",
+        "",
+        "## 1. Coverage Summary",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
+        f"| Total Controls | {cov['total_controls']} |",
+        f"| Covered by Model | {cov['covered_controls']} |",
+        f"| Coverage | {cov['coverage_pct']}% |",
+        f"| Unmapped Controls | {uc['unmapped_count']} |",
+        f"| Unmapped Elements | {ue['unmapped_count']} |",
+        "",
+        "## 2. Coverage by Family",
+        "",
+        "| Family | Total | Covered | Coverage |",
+        "|--------|------:|--------:|---------:|",
+    ]
     for f in sorted(cov.get("by_family", {})):
         d = cov["by_family"][f]
         L.append(f"| {f} | {d['total']} | {d['covered']} | {d['coverage_pct']}% |")
     L += ["", "## 3. Element-to-Control Mappings", ""]
     if links:
-        L += ["| Element | Type | Stereotype | Control | Confidence | Evidence |",
-              "|---------|------|------------|---------|------------|----------|"]
+        L += [
+            "| Element | Type | Stereotype | Control | Confidence | Evidence |",
+            "|---------|------|------------|---------|------------|----------|",
+        ]
         for lk in links:
-            L.append(f"| {(lk['element_name'] or '')[:30]} | {lk['element_type'] or ''} "
-                     f"| {lk['stereotype'] or '--'} | {lk['target_id']} "
-                     f"| {lk['confidence']:.1f} | {(lk['evidence'] or '')[:40]} |")
+            L.append(
+                f"| {(lk['element_name'] or '')[:30]} | {lk['element_type'] or ''} "
+                f"| {lk['stereotype'] or '--'} | {lk['target_id']} "
+                f"| {lk['confidence']:.1f} | {(lk['evidence'] or '')[:40]} |"
+            )
     else:
         L.append("*No model-to-control mappings found.*")
     L += ["", "## 4. Unmapped Controls (Gaps)", ""]
@@ -358,7 +448,9 @@ def generate_mapping_report(project_id: str, db_path=None) -> str:
     L += ["", "---", "", f"*Generated by ICDEV Model-Control Mapper on {now}*", "", "CUI // SP-CTI"]
     return "\n".join(L)
 
+
 # -- CLI -----------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Map SysML model elements to NIST 800-53 controls")
@@ -379,15 +471,19 @@ def main():
             if args.json:
                 print(json.dumps(r, indent=2))
             else:
-                print(f"Mapped '{r['element_name']}' ({r['element_type']}) -> {r['count']} controls "
-                      f"[families: {', '.join(r['families_matched'])}] ({r['links_created']} new links)")
+                print(
+                    f"Mapped '{r['element_name']}' ({r['element_type']}) -> {r['count']} controls "
+                    f"[families: {', '.join(r['families_matched'])}] ({r['links_created']} new links)"
+                )
         elif args.map_all:
             r = map_all_elements(args.project_id, db_path=db_path)
             if args.json:
                 print(json.dumps(r, indent=2))
             else:
-                print(f"Processed: {r['elements_processed']} | Mapped: {r['elements_mapped']} | "
-                      f"Links: {r['links_created']} | Skipped: {r['skipped']}")
+                print(
+                    f"Processed: {r['elements_processed']} | Mapped: {r['elements_mapped']} | "
+                    f"Links: {r['links_created']} | Skipped: {r['skipped']}"
+                )
         elif args.coverage:
             r = get_control_coverage_from_model(args.project_id, db_path=db_path)
             if args.json:

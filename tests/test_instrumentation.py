@@ -22,6 +22,7 @@ import pytest
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def mock_tracer():
     """Patch get_tracer() to return a mock tracer for all tests."""
@@ -39,6 +40,7 @@ def mock_tracer():
 # ---------------------------------------------------------------------------
 # @traced() Tests
 # ---------------------------------------------------------------------------
+
 
 class TestTraced:
     def test_basic_decoration(self, mock_tracer):
@@ -202,6 +204,7 @@ class TestTraced:
 # @traced_generator() Tests
 # ---------------------------------------------------------------------------
 
+
 class TestTracedGenerator:
     def test_generator_decoration(self):
         from icdev.tools.observability.instrumentation import traced_generator
@@ -211,6 +214,7 @@ class TestTracedGenerator:
         mock_t.start_span.return_value = mock_span
 
         with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+
             @traced_generator()
             def gen_func():
                 yield 1
@@ -231,6 +235,7 @@ class TestTracedGenerator:
         mock_t.start_span.return_value = mock_span
 
         with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+
             @traced_generator()
             def bad_gen():
                 yield 1
@@ -252,6 +257,7 @@ class TestTracedGenerator:
         mock_t.start_span.return_value = mock_span
 
         with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+
             @traced_generator()
             def empty_gen():
                 return

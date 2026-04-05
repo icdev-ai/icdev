@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
@@ -113,6 +114,7 @@ dashboard API.  All interactions are logged per NIST AU-2.
 # Slug helpers
 # ---------------------------------------------------------------------------
 
+
 class TestSlugify:
     def test_basic(self):
         assert _slugify("Dashboard Kanban") == "dashboard-kanban"
@@ -130,6 +132,7 @@ class TestSlugify:
 # ---------------------------------------------------------------------------
 # Metadata parsing
 # ---------------------------------------------------------------------------
+
 
 class TestParseSpecMetadata:
     def test_extracts_issue_number(self):
@@ -157,6 +160,7 @@ class TestParseSpecMetadata:
 # Section parsing
 # ---------------------------------------------------------------------------
 
+
 class TestParseSpecSections:
     def test_returns_dict(self):
         sections = _parse_spec_sections(SAMPLE_SPEC)
@@ -166,8 +170,11 @@ class TestParseSpecSections:
     def test_all_major_sections_present(self):
         sections = _parse_spec_sections(SAMPLE_SPEC)
         expected = [
-            "metadata", "feature description", "user story",
-            "solution statement", "ato impact assessment",
+            "metadata",
+            "feature description",
+            "user story",
+            "solution statement",
+            "ato impact assessment",
         ]
         for name in expected:
             assert name in sections, f"Missing section: {name}"
@@ -176,6 +183,7 @@ class TestParseSpecSections:
 # ---------------------------------------------------------------------------
 # Dependency detection
 # ---------------------------------------------------------------------------
+
 
 class TestHasDependency:
     def test_detects_depends_on(self):
@@ -191,6 +199,7 @@ class TestHasDependency:
 # ---------------------------------------------------------------------------
 # Plan extraction
 # ---------------------------------------------------------------------------
+
 
 class TestExtractPlan:
     def test_extracts_phases(self):
@@ -208,6 +217,7 @@ class TestExtractPlan:
 # ---------------------------------------------------------------------------
 # Task extraction with [P] markers
 # ---------------------------------------------------------------------------
+
 
 class TestExtractTasks:
     def test_extracts_steps(self):
@@ -251,6 +261,7 @@ class TestExtractTasks:
 # init_spec_dir
 # ---------------------------------------------------------------------------
 
+
 class TestInitSpecDir:
     def test_creates_directory(self, tmp_path):
         result = init_spec_dir("99", "test-feature", specs_dir=tmp_path)
@@ -265,7 +276,8 @@ class TestInitSpecDir:
 
     def test_with_spec_content(self, tmp_path):
         result = init_spec_dir(
-            "3", "dashboard-kanban",
+            "3",
+            "dashboard-kanban",
             spec_content=SAMPLE_SPEC,
             specs_dir=tmp_path,
         )
@@ -282,6 +294,7 @@ class TestInitSpecDir:
 # ---------------------------------------------------------------------------
 # migrate_flat_spec
 # ---------------------------------------------------------------------------
+
 
 class TestMigrateFlatSpec:
     def test_migrates_successfully(self, tmp_path):
@@ -313,6 +326,7 @@ class TestMigrateFlatSpec:
 # migrate_all
 # ---------------------------------------------------------------------------
 
+
 class TestMigrateAll:
     def test_migrates_multiple(self, tmp_path):
         for i in range(3):
@@ -336,6 +350,7 @@ class TestMigrateAll:
 # get_status
 # ---------------------------------------------------------------------------
 
+
 class TestGetStatus:
     def test_complete_directory(self, tmp_path):
         spec_dir = tmp_path / "3-test"
@@ -357,6 +372,7 @@ class TestGetStatus:
 # ---------------------------------------------------------------------------
 # list_all_specs
 # ---------------------------------------------------------------------------
+
 
 class TestListAllSpecs:
     def test_lists_directories_and_flat(self, tmp_path):
@@ -380,6 +396,7 @@ class TestListAllSpecs:
 # ---------------------------------------------------------------------------
 # register_spec (DB integration)
 # ---------------------------------------------------------------------------
+
 
 def _init_organizer_db(db_path: Path):
     """Create minimal schema for spec_organizer DB tests."""
@@ -448,6 +465,7 @@ class TestRegisterSpec:
 # update_checklist
 # ---------------------------------------------------------------------------
 
+
 class TestUpdateChecklist:
     def test_writes_file(self, tmp_path):
         spec_dir = tmp_path / "3-test"
@@ -471,6 +489,7 @@ class TestUpdateChecklist:
 # ---------------------------------------------------------------------------
 # update_constitution_check
 # ---------------------------------------------------------------------------
+
 
 class TestUpdateConstitutionCheck:
     def test_writes_pass(self, tmp_path):

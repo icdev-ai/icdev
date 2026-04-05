@@ -99,18 +99,14 @@ def main():
         vcs.comment_on_issue(
             int(issue_number),
             format_issue_message(
-                run_id, AGENT_REVIEWER,
-                f"## Code Review Complete\n\n{review_result['output'][:2000]}"
+                run_id, AGENT_REVIEWER, f"## Code Review Complete\n\n{review_result['output'][:2000]}"
             ),
         )
     else:
         logger.warning(f"Review found issues: {review_result['output'][:500]}")
         vcs.comment_on_issue(
             int(issue_number),
-            format_issue_message(
-                run_id, AGENT_REVIEWER,
-                f"## Code Review Issues\n\n{review_result['output'][:2000]}"
-            ),
+            format_issue_message(run_id, AGENT_REVIEWER, f"## Code Review Issues\n\n{review_result['output'][:2000]}"),
         )
 
     # Commit review artifacts

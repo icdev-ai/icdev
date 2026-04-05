@@ -30,14 +30,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CUI_BANNER = "CUI // SP-CTI"
 
 EXCLUDE_DIRS = {
-    "__pycache__", ".git", "node_modules", ".venv", "venv", "env",
-    ".tox", ".mypy_cache", ".pytest_cache", "dist", "build", ".tmp",
+    "__pycache__",
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    "env",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".tmp",
 }
 
 
 # ---------------------------------------------------------------------------
 # AST helpers
 # ---------------------------------------------------------------------------
+
 
 def _annotation_text(node, source: str) -> Optional[str]:
     """Extract annotation text from an AST node."""
@@ -120,6 +131,7 @@ def _extract_dict_value_schema(node) -> List[str]:
 # Main visitor
 # ---------------------------------------------------------------------------
 
+
 class APISurfaceVisitor(ast.NodeVisitor):
     """Walk a Python AST and collect the public API surface."""
 
@@ -137,12 +149,14 @@ class APISurfaceVisitor(ast.NodeVisitor):
 
     def visit_Import(self, node):
         for alias in node.names:
-            self.imports.append({
-                "module": alias.name,
-                "names": [alias.name.split(".")[-1]],
-                "alias": alias.asname,
-                "line": node.lineno,
-            })
+            self.imports.append(
+                {
+                    "module": alias.name,
+                    "names": [alias.name.split(".")[-1]],
+                    "alias": alias.asname,
+                    "line": node.lineno,
+                }
+            )
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):
@@ -153,14 +167,16 @@ class APISurfaceVisitor(ast.NodeVisitor):
                 self.future_annotations = True
             return
         names = []
-        for alias in (node.names or []):
+        for alias in node.names or []:
             names.append(alias.name)
-        self.imports.append({
-            "module": module,
-            "names": names,
-            "alias": None,
-            "line": node.lineno,
-        })
+        self.imports.append(
+            {
+                "module": module,
+                "names": names,
+                "alias": None,
+                "line": node.lineno,
+            }
+        )
         self.generic_visit(node)
 
     # -- Assignments (constants, dicts, __all__) --
@@ -180,27 +196,33 @@ class APISurfaceVisitor(ast.NodeVisitor):
                 continue
 
             # Dict constants (UPPER_CASE or common patterns)
-            if isinstance(node.value, ast.Dict) and (_is_upper_name(name) or name.endswith("_REGISTRY") or name.endswith("_MAP")):
+            if isinstance(node.value, ast.Dict) and (
+                _is_upper_name(name) or name.endswith("_REGISTRY") or name.endswith("_MAP")
+            ):
                 keys = _extract_dict_keys(node.value)
                 value_schema = _extract_dict_value_schema(node.value)
-                self.dict_constants.append({
-                    "name": name,
-                    "keys": keys,
-                    "key_count": len(keys),
-                    "value_schema": value_schema if value_schema else None,
-                    "line": node.lineno,
-                })
+                self.dict_constants.append(
+                    {
+                        "name": name,
+                        "keys": keys,
+                        "key_count": len(keys),
+                        "value_schema": value_schema if value_schema else None,
+                        "line": node.lineno,
+                    }
+                )
                 continue
 
             # Scalar constants
             if _is_upper_name(name) and isinstance(node.value, ast.Constant):
                 val = node.value.value
-                self.constants.append({
-                    "name": name,
-                    "type": type(val).__name__ if val is not None else "NoneType",
-                    "value": repr(val),
-                    "line": node.lineno,
-                })
+                self.constants.append(
+                    {
+                        "name": name,
+                        "type": type(val).__name__ if val is not None else "NoneType",
+                        "value": repr(val),
+                        "line": node.lineno,
+                    }
+                )
 
         self.generic_visit(node)
 
@@ -214,22 +236,26 @@ class APISurfaceVisitor(ast.NodeVisitor):
         if node.value and isinstance(node.value, ast.Dict) and (_is_upper_name(name) or name.endswith("_REGISTRY")):
             keys = _extract_dict_keys(node.value)
             value_schema = _extract_dict_value_schema(node.value)
-            self.dict_constants.append({
-                "name": name,
-                "type_annotation": ann,
-                "keys": keys,
-                "key_count": len(keys),
-                "value_schema": value_schema if value_schema else None,
-                "line": node.lineno,
-            })
+            self.dict_constants.append(
+                {
+                    "name": name,
+                    "type_annotation": ann,
+                    "keys": keys,
+                    "key_count": len(keys),
+                    "value_schema": value_schema if value_schema else None,
+                    "line": node.lineno,
+                }
+            )
         elif _is_upper_name(name) and node.value and isinstance(node.value, ast.Constant):
             val = node.value.value
-            self.constants.append({
-                "name": name,
-                "type": ann or (type(val).__name__ if val is not None else "NoneType"),
-                "value": repr(val),
-                "line": node.lineno,
-            })
+            self.constants.append(
+                {
+                    "name": name,
+                    "type": ann or (type(val).__name__ if val is not None else "NoneType"),
+                    "value": repr(val),
+                    "line": node.lineno,
+                }
+            )
 
         self.generic_visit(node)
 
@@ -248,25 +274,25 @@ class APISurfaceVisitor(ast.NodeVisitor):
         decorators = [_decorator_name(d) for d in node.decorator_list]
         docstring = ast.get_docstring(node)
 
-        self.functions.append({
-            "name": node.name,
-            "parameters": params,
-            "return_type": return_type,
-            "decorators": decorators,
-            "docstring": docstring.split("\n")[0].strip() if docstring else None,
-            "is_async": is_async,
-            "is_public": not node.name.startswith("_"),
-            "line": node.lineno,
-        })
+        self.functions.append(
+            {
+                "name": node.name,
+                "parameters": params,
+                "return_type": return_type,
+                "decorators": decorators,
+                "docstring": docstring.split("\n")[0].strip() if docstring else None,
+                "is_async": is_async,
+                "is_public": not node.name.startswith("_"),
+                "line": node.lineno,
+            }
+        )
         # Do NOT generic_visit — skip nested functions/classes inside functions
 
     # -- Classes --
 
     def visit_ClassDef(self, node):
         decorators = [_decorator_name(d) for d in node.decorator_list]
-        is_dataclass = any(
-            d in ("dataclass", "dataclasses.dataclass") for d in decorators
-        )
+        is_dataclass = any(d in ("dataclass", "dataclasses.dataclass") for d in decorators)
         bases = []
         for base in node.bases:
             if isinstance(base, ast.Name):
@@ -315,10 +341,7 @@ class APISurfaceVisitor(ast.NodeVisitor):
                     elif "staticmethod" in method_decorators:
                         static_methods.append(item.name)
                     else:
-                        is_abstract = any(
-                            d in ("abstractmethod", "abc.abstractmethod")
-                            for d in method_decorators
-                        )
+                        is_abstract = any(d in ("abstractmethod", "abc.abstractmethod") for d in method_decorators)
                         params = self._extract_params(item.args, skip_self=True)
                         return_type = _annotation_text(item.returns, self.source)
                         method_info: Dict[str, Any] = {
@@ -437,6 +460,7 @@ class APISurfaceVisitor(ast.NodeVisitor):
 # ---------------------------------------------------------------------------
 # Extraction orchestrators
 # ---------------------------------------------------------------------------
+
 
 def _compute_mock_targets(imports: List[Dict[str, Any]]) -> List[str]:
     """Compute mock.patch target paths from imports."""
@@ -565,6 +589,7 @@ def extract_directory(
 # Markdown formatter
 # ---------------------------------------------------------------------------
 
+
 def format_markdown(surface: Dict[str, Any]) -> str:
     """Format API surface as concise human-readable markdown."""
     if "error" in surface:
@@ -613,9 +638,7 @@ def format_markdown(surface: Dict[str, Any]) -> str:
     if surface.get("functions"):
         lines.append("### Functions")
         for fn in surface["functions"]:
-            params_str = ", ".join(
-                _format_param(p) for p in fn["parameters"]
-            )
+            params_str = ", ".join(_format_param(p) for p in fn["parameters"])
             ret = f" -> {fn['return_type']}" if fn.get("return_type") else ""
             async_prefix = "async " if fn.get("is_async") else ""
             lines.append(f"- `{async_prefix}{fn['name']}({params_str}){ret}` (line {fn['line']})")
@@ -700,20 +723,17 @@ def _format_param(p: Dict[str, Any]) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extract public API surface from Python modules (D-API-1)",
     )
     parser.add_argument("--file", help="Extract from a single Python file")
     parser.add_argument("--dir", help="Extract from all Python files in a directory")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output (default)")
-    parser.add_argument("--human", action="store_true",
-                        help="Human-readable markdown output")
-    parser.add_argument("--mock-targets", action="store_true",
-                        help="Only output mock targets")
-    parser.add_argument("--include-private", action="store_true",
-                        help="Include _prefixed names")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output (default)")
+    parser.add_argument("--human", action="store_true", help="Human-readable markdown output")
+    parser.add_argument("--mock-targets", action="store_true", help="Only output mock targets")
+    parser.add_argument("--include-private", action="store_true", help="Include _prefixed names")
 
     args = parser.parse_args()
 

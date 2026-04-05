@@ -38,6 +38,7 @@ def _import_tool(module_path, func_name):
     """Dynamically import a function (graceful fallback)."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -130,8 +131,7 @@ def handle_research_review_dossier(args: dict) -> dict:
         return {"error": "dossier_id, reviewer, and decision are required"}
     func = _import_tool("tools.research.dossier_generator", "review_dossier")
     if func:
-        return func(dossier_id=dossier_id, reviewer=reviewer, decision=decision,
-                     notes=notes, db_path=str(DB_PATH))
+        return func(dossier_id=dossier_id, reviewer=reviewer, decision=decision, notes=notes, db_path=str(DB_PATH))
     return {"error": "dossier_generator not available"}
 
 
@@ -146,7 +146,7 @@ def handle_research_list_verticals(args: dict) -> dict:
 def handle_research_get_challenges(args: dict) -> dict:
     """Get scored challenges for a session."""
     session_id = args.get("session_id")
-    severity = args.get("severity")
+    args.get("severity")
     limit = args.get("limit", 50)
     if not session_id:
         return {"error": "session_id is required"}
@@ -188,11 +188,14 @@ def handle_research_trigger_fitness(args: dict) -> dict:
         if not session:
             return {"error": f"Session not found: {session_id}"}
         if session["status"] != "reviewed":
-            return {"error": f"Session must be in 'reviewed' status (current: {session['status']}). "
-                    "Run research_review_dossier first."}
+            return {
+                "error": f"Session must be in 'reviewed' status (current: {session['status']}). "
+                "Run research_review_dossier first."
+            }
 
         # Update session to child_app_triggered
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         conn.execute(
             "UPDATE research_sessions SET status = ?, updated_at = ? WHERE id = ?",
@@ -221,14 +224,21 @@ if __name__ == "__main__":
 
     server.register_tool(
         name="research_create_session",
-        description="Create a new industry research session for a vertical (trading, healthcare, defense, fintech, cybersecurity, logistics)",
+        description="Create a new industry research session for a vertical (trading, healthcare, defense, fintech, cybersecurity, logistics)",  # noqa: E501
         handler=handle_research_create_session,
         input_schema={
             "type": "object",
             "properties": {
-                "vertical": {"type": "string", "description": "Vertical slug (trading, healthcare, defense, fintech, cybersecurity, logistics)"},
+                "vertical": {
+                    "type": "string",
+                    "description": "Vertical slug (trading, healthcare, defense, fintech, cybersecurity, logistics)",
+                },
                 "name": {"type": "string", "description": "Session name"},
-                "focus_areas": {"type": "array", "items": {"type": "string"}, "description": "Optional focus area keywords"},
+                "focus_areas": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional focus area keywords",
+                },
             },
             "required": ["vertical"],
         },
@@ -236,7 +246,7 @@ if __name__ == "__main__":
 
     server.register_tool(
         name="research_run_stage",
-        description="Run a specific pipeline stage (SCOPE, LANDSCAPE, REGULATE, COMMUNITY, ACADEMIC, BUILD_BUY, SYNTHESIZE, FORECAST, DOSSIER)",
+        description="Run a specific pipeline stage (SCOPE, LANDSCAPE, REGULATE, COMMUNITY, ACADEMIC, BUILD_BUY, SYNTHESIZE, FORECAST, DOSSIER)",  # noqa: E501
         handler=handle_research_run_stage,
         input_schema={
             "type": "object",
@@ -250,7 +260,7 @@ if __name__ == "__main__":
 
     server.register_tool(
         name="research_run_pipeline",
-        description="Run full 9-stage research pipeline: SCOPE → LANDSCAPE → REGULATE → COMMUNITY → ACADEMIC → BUILD_BUY → SYNTHESIZE → DOSSIER",
+        description="Run full 9-stage research pipeline: SCOPE → LANDSCAPE → REGULATE → COMMUNITY → ACADEMIC → BUILD_BUY → SYNTHESIZE → DOSSIER",  # noqa: E501
         handler=handle_research_run_pipeline,
         input_schema={
             "type": "object",
@@ -268,7 +278,10 @@ if __name__ == "__main__":
         input_schema={
             "type": "object",
             "properties": {
-                "session_id": {"type": "string", "description": "Session ID for specific status, or omit for engine overview"},
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID for specific status, or omit for engine overview",
+                },
             },
         },
     )
@@ -280,7 +293,10 @@ if __name__ == "__main__":
         input_schema={
             "type": "object",
             "properties": {
-                "status": {"type": "string", "description": "Filter by status (created, scoping, scanning, synthesizing, dossier_ready, reviewed, child_app_triggered, archived)"},
+                "status": {
+                    "type": "string",
+                    "description": "Filter by status (created, scoping, scanning, synthesizing, dossier_ready, reviewed, child_app_triggered, archived)",  # noqa: E501
+                },
             },
         },
     )
@@ -352,7 +368,7 @@ if __name__ == "__main__":
 
     server.register_tool(
         name="research_trigger_fitness",
-        description="Trigger child app fitness assessment from an approved research dossier (requires prior HITL review)",
+        description="Trigger child app fitness assessment from an approved research dossier (requires prior HITL review)",  # noqa: E501
         handler=handle_research_trigger_fitness,
         input_schema={
             "type": "object",

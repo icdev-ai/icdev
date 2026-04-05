@@ -47,6 +47,7 @@ SHORTCUT_NAME = "ICDEVFileSyncDaemon.vbs"
 # WINDOWS — Startup folder VBS launcher (no admin required)
 # =========================================================================
 
+
 def _install_windows() -> Dict:
     """Place a VBS launcher in the Windows Startup folder.
 
@@ -63,8 +64,7 @@ def _install_windows() -> Dict:
 
     startup_dir = _get_startup_folder()
     if not startup_dir.exists():
-        return {"status": "error",
-                "error": f"Startup folder not found: {startup_dir}"}
+        return {"status": "error", "error": f"Startup folder not found: {startup_dir}"}
 
     vbs_path = startup_dir / SHORTCUT_NAME
 
@@ -84,7 +84,7 @@ WshShell.Run """{pythonw}"" ""{engine_path}"" --daemon", 0, False
         "python": pythonw,
         "script": engine_path,
         "working_directory": str(BASE_DIR),
-        "message": f"Startup script installed at: {vbs_path}\nDaemon will auto-start on next logon (no admin required).",
+        "message": f"Startup script installed at: {vbs_path}\nDaemon will auto-start on next logon (no admin required).",  # noqa: E501
     }
 
 
@@ -94,8 +94,7 @@ def _uninstall_windows() -> Dict:
     vbs_path = startup_dir / SHORTCUT_NAME
 
     if not vbs_path.exists():
-        return {"status": "not_found",
-                "message": "FileSync startup script not found. Nothing to remove."}
+        return {"status": "not_found", "message": "FileSync startup script not found. Nothing to remove."}
 
     vbs_path.unlink()
     return {
@@ -111,18 +110,20 @@ def _status_windows() -> Dict:
     vbs_path = startup_dir / SHORTCUT_NAME
 
     if not vbs_path.exists():
-        return {"status": "not_installed",
-                "message": "FileSync daemon is NOT registered for auto-start.",
-                "startup_folder": str(startup_dir)}
+        return {
+            "status": "not_installed",
+            "message": "FileSync daemon is NOT registered for auto-start.",
+            "startup_folder": str(startup_dir),
+        }
 
     # Check if daemon process is currently running
     daemon_running = False
     try:
         result = subprocess.run(
-            ["wmic", "process", "where",
-             "CommandLine like '%sync_engine%--daemon%'",
-             "get", "ProcessId"],
-            capture_output=True, text=True, timeout=5,
+            ["wmic", "process", "where", "CommandLine like '%sync_engine%--daemon%'", "get", "ProcessId"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         pids = [l.strip() for l in result.stdout.strip().split("\n") if l.strip().isdigit()]
         daemon_running = len(pids) > 0
@@ -134,13 +135,14 @@ def _status_windows() -> Dict:
         "vbs_path": str(vbs_path),
         "daemon_running": daemon_running,
         "message": f"FileSync daemon IS registered for auto-start on logon. "
-                   f"Daemon currently {'RUNNING' if daemon_running else 'NOT running'}.",
+        f"Daemon currently {'RUNNING' if daemon_running else 'NOT running'}.",
     }
 
 
 # =========================================================================
 # LINUX — systemd user unit
 # =========================================================================
+
 
 def _install_linux() -> Dict:
     """Generate and install a systemd user service."""
@@ -172,7 +174,8 @@ WantedBy=default.target
     subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
     result = subprocess.run(
         ["systemctl", "--user", "enable", SYSTEMD_UNIT],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         return {"status": "error", "error": result.stderr.strip()}
@@ -180,7 +183,8 @@ WantedBy=default.target
     # Start it now
     subprocess.run(
         ["systemctl", "--user", "start", SYSTEMD_UNIT],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
     return {
@@ -207,13 +211,15 @@ def _status_linux() -> Dict:
     """Check systemd user service status."""
     result = subprocess.run(
         ["systemctl", "--user", "is-active", SYSTEMD_UNIT],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     active = result.stdout.strip()
 
     result2 = subprocess.run(
         ["systemctl", "--user", "is-enabled", SYSTEMD_UNIT],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     enabled = result2.stdout.strip()
 
@@ -222,14 +228,16 @@ def _status_linux() -> Dict:
         "status": "installed" if installed else "not_installed",
         "active": active,
         "enabled": enabled,
-        "message": f"Service is {active}, {enabled}." if installed
-                   else "FileSync daemon is NOT registered for auto-start.",
+        "message": f"Service is {active}, {enabled}."
+        if installed
+        else "FileSync daemon is NOT registered for auto-start.",
     }
 
 
 # =========================================================================
 # MACOS — launchd plist
 # =========================================================================
+
 
 def _install_macos() -> Dict:
     """Generate and install a launchd user agent plist."""
@@ -263,9 +271,9 @@ def _install_macos() -> Dict:
         <false/>
     </dict>
     <key>StandardOutPath</key>
-    <string>{Path.home() / '.icdev' / 'filesync-daemon.log'}</string>
+    <string>{Path.home() / ".icdev" / "filesync-daemon.log"}</string>
     <key>StandardErrorPath</key>
-    <string>{Path.home() / '.icdev' / 'filesync-daemon.err'}</string>
+    <string>{Path.home() / ".icdev" / "filesync-daemon.err"}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONIOENCODING</key>
@@ -295,11 +303,11 @@ def _uninstall_macos() -> Dict:
 def _status_macos() -> Dict:
     plist_path = Path.home() / "Library" / "LaunchAgents" / "com.icdev.filesync.plist"
     if not plist_path.exists():
-        return {"status": "not_installed",
-                "message": "FileSync daemon is NOT registered for auto-start."}
+        return {"status": "not_installed", "message": "FileSync daemon is NOT registered for auto-start."}
     result = subprocess.run(
         ["launchctl", "list", "com.icdev.filesync"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     running = result.returncode == 0
     return {
@@ -312,6 +320,7 @@ def _status_macos() -> Dict:
 # =========================================================================
 # DISPATCH
 # =========================================================================
+
 
 def install_service() -> Dict:
     """Install FileSync daemon as a persistent OS service."""

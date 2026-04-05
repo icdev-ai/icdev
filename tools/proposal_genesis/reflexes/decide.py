@@ -45,14 +45,15 @@ SCORE_WEIGHTS = {
 }
 
 # Decision thresholds
-BID_THRESHOLD = 0.60       # >= 0.60 → bid
-NO_BID_THRESHOLD = 0.35    # < 0.35 → no_bid
+BID_THRESHOLD = 0.60  # >= 0.60 → bid
+NO_BID_THRESHOLD = 0.35  # < 0.35 → no_bid
 # 0.35 - 0.59 → deferred (needs further evaluation)
 
 
 # ---------------------------------------------------------------------------
 # Calibration feedback loop (D-PG-9)
 # ---------------------------------------------------------------------------
+
 
 def _get_calibrated_weights() -> Dict[str, float]:
     """Load calibrated weights from DB, falling back to defaults.
@@ -63,11 +64,11 @@ def _get_calibrated_weights() -> Dict[str, float]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT value FROM pg_proposal_genesis_config "
-            "WHERE key = 'calibrated_score_weights'"
+            "SELECT value FROM pg_proposal_genesis_config WHERE key = 'calibrated_score_weights'"
         ).fetchone()
         if row:
             import json as _json
+
             calibrated = _json.loads(row["value"])
             # Validate keys match
             if set(calibrated.keys()) == set(SCORE_WEIGHTS.keys()):
@@ -123,6 +124,7 @@ def calibrate_weights() -> Dict[str, Any]:
     for row in rows:
         try:
             import json as _json
+
             breakdown = _json.loads(row["score_breakdown"])
         except (TypeError, ValueError):
             continue
@@ -157,10 +159,10 @@ def calibrate_weights() -> Dict[str, Any]:
     conn = get_connection()
     try:
         import json as _json
+
         now = _utcnow_iso()
         conn.execute(
-            "INSERT OR REPLACE INTO pg_proposal_genesis_config "
-            "(key, value, updated_at) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO pg_proposal_genesis_config (key, value, updated_at) VALUES (?, ?, ?)",
             ("calibrated_score_weights", _json.dumps(new_weights), now),
         )
         conn.commit()
@@ -183,6 +185,7 @@ def calibrate_weights() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Gather opportunity data for scoring
 # ---------------------------------------------------------------------------
+
 
 def _get_undecided_opportunities() -> List[Dict]:
     """Find tracked opportunities without a bid decision."""
@@ -211,13 +214,16 @@ def _get_capability_coverage(opportunity_id: str) -> float:
     """Get capability mapping coverage score for an opportunity."""
     conn = get_connection()
     try:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT COUNT(*) as total,
                    SUM(CASE WHEN capability_match IS NOT NULL
                         AND capability_match != '' THEN 1 ELSE 0 END) as matched
             FROM rfp_shall_statements
             WHERE opportunity_id = ?
-        """, (opportunity_id,)).fetchone()
+        """,
+            (opportunity_id,),
+        ).fetchone()
         if not row or row["total"] == 0:
             return 0.0
         return min(1.0, row["matched"] / row["total"])
@@ -231,12 +237,15 @@ def _get_quality_score_avg(opportunity_id: str) -> float:
     """Get average quality score for drafts on this opportunity."""
     conn = get_connection()
     try:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT AVG(composite_score) as avg_score
             FROM pg_proposal_quality_scores
             WHERE opportunity_id = ?
             AND composite_score IS NOT NULL
-        """, (opportunity_id,)).fetchone()
+        """,
+            (opportunity_id,),
+        ).fetchone()
         if not row or row["avg_score"] is None:
             return 0.0
         return min(1.0, row["avg_score"] / 100.0)
@@ -250,12 +259,15 @@ def _get_capture_plan_status(opportunity_id: str) -> Optional[Dict]:
     """Get capture plan data for strategic scoring."""
     conn = get_connection()
     try:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT status, win_strategy, teaming_strategy
             FROM pg_capture_plans
             WHERE opportunity_id = ?
             ORDER BY updated_at DESC LIMIT 1
-        """, (opportunity_id,)).fetchone()
+        """,
+            (opportunity_id,),
+        ).fetchone()
         return dict(row) if row else None
     except Exception:
         return None
@@ -268,14 +280,17 @@ def _get_engagement_score(opportunity_id: str) -> float:
     conn = get_connection()
     try:
         # Get agency from opportunity, then find engagement score
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT es.composite_score
             FROM pg_crm_engagement_scores es
             JOIN pg_crm_accounts a ON a.id = es.account_id
             JOIN sam_gov_opportunities o ON LOWER(o.agency) = LOWER(a.agency)
             WHERE o.id = ?
             ORDER BY es.created_at DESC LIMIT 1
-        """, (opportunity_id,)).fetchone()
+        """,
+            (opportunity_id,),
+        ).fetchone()
         return row["composite_score"] / 100.0 if row else 0.0
     except Exception:
         return 0.0
@@ -287,11 +302,14 @@ def _get_teaming_fit(opportunity_id: str) -> float:
     """Get best teaming partner fit score."""
     conn = get_connection()
     try:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT MAX(fit_score) as best_fit
             FROM pg_teaming_assessments
             WHERE opportunity_id = ?
-        """, (opportunity_id,)).fetchone()
+        """,
+            (opportunity_id,),
+        ).fetchone()
         return row["best_fit"] / 100.0 if row and row["best_fit"] else 0.0
     except Exception:
         return 0.0
@@ -302,6 +320,7 @@ def _get_teaming_fit(opportunity_id: str) -> float:
 # ---------------------------------------------------------------------------
 # Score computation
 # ---------------------------------------------------------------------------
+
 
 def score_opportunity(opp: Dict) -> Dict:
     """Score an opportunity across 6 dimensions.
@@ -324,8 +343,7 @@ def score_opportunity(opp: Dict) -> Dict:
     # Dimension 4: Compliance Readiness (set-aside match + NAICS familiarity)
     compliance = 0.5  # baseline
     set_aside = (opp.get("set_aside") or "").lower()
-    if set_aside in ("total small business", "8(a)", "hubzone",
-                     "sdvosb", "wosb", "edwosb"):
+    if set_aside in ("total small business", "8(a)", "hubzone", "sdvosb", "wosb", "edwosb"):
         compliance += 0.2  # small biz set-asides = compliance advantage
     naics = opp.get("naics_code") or ""
     if naics.startswith("5415") or naics.startswith("5112"):
@@ -369,9 +387,7 @@ def score_opportunity(opp: Dict) -> Dict:
         "strategic_alignment": strategic,
     }
     weights = _get_calibrated_weights()
-    composite = sum(
-        dimensions[k] * weights[k] for k in weights
-    )
+    composite = sum(dimensions[k] * weights[k] for k in weights)
 
     # Decision
     if composite >= BID_THRESHOLD:
@@ -411,6 +427,7 @@ def score_opportunity(opp: Dict) -> Dict:
 # Store decision
 # ---------------------------------------------------------------------------
 
+
 def _store_decision(opportunity_id: str, result: Dict) -> Optional[str]:
     """Write bid decision to pg_bid_decisions."""
     conn = get_connection()
@@ -441,8 +458,7 @@ def _store_decision(opportunity_id: str, result: Dict) -> Optional[str]:
         conn.close()
 
 
-def _audit_decide(event_type: str, opportunity_id: Optional[str],
-                  details: Dict, success: bool) -> None:
+def _audit_decide(event_type: str, opportunity_id: Optional[str], details: Dict, success: bool) -> None:
     """Log decide event to audit trail."""
     conn = get_connection()
     try:
@@ -473,6 +489,7 @@ def _audit_decide(event_type: str, opportunity_id: Optional[str],
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Decide Reflex (R9).
 
@@ -501,12 +518,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         if dec_id:
             decided += 1
-            decisions_made.append({
-                "opportunity_id": opp_id,
-                "decision": result["decision"],
-                "win_probability": result["win_probability"],
-                "decision_id": dec_id,
-            })
+            decisions_made.append(
+                {
+                    "opportunity_id": opp_id,
+                    "decision": result["decision"],
+                    "win_probability": result["win_probability"],
+                    "decision_id": dec_id,
+                }
+            )
 
         _audit_decide(
             f"bid_decision_{result['decision']}",
@@ -528,10 +547,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "decisions_scored": min(len(opportunities), max_decisions),
             "decisions_stored": decided,
             "bid": sum(1 for d in decisions_made if d["decision"] == "bid"),
-            "no_bid": sum(1 for d in decisions_made
-                         if d["decision"] == "no_bid"),
-            "deferred": sum(1 for d in decisions_made
-                            if d["decision"] == "deferred"),
+            "no_bid": sum(1 for d in decisions_made if d["decision"] == "no_bid"),
+            "deferred": sum(1 for d in decisions_made if d["decision"] == "deferred"),
             "calibration": calibration,
             "decisions": decisions_made,
         },

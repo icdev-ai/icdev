@@ -15,6 +15,7 @@ TEMPLATE_DIR = BASE_DIR / "args" / "workflow_templates"
 # Template Validation Tests
 # ---------------------------------------------------------------------------
 
+
 class TestTemplates:
     """Validate all workflow templates."""
 
@@ -68,6 +69,7 @@ class TestTemplates:
 
     def test_no_circular_dependencies(self):
         from icdev.tools.orchestration.workflow_composer import _resolve_dag
+
         for f in TEMPLATE_DIR.glob("*.yaml"):
             data = yaml.safe_load(f.read_text(encoding="utf-8"))
             # Should not raise CycleError
@@ -79,11 +81,13 @@ class TestTemplates:
 # Workflow Composer Logic Tests
 # ---------------------------------------------------------------------------
 
+
 class TestWorkflowComposer:
     """Test workflow composition logic."""
 
     def test_list_templates(self):
         from icdev.tools.orchestration.workflow_composer import list_templates
+
         templates = list_templates()
         assert len(templates) >= 4
         names = [t["name"] for t in templates]
@@ -92,6 +96,7 @@ class TestWorkflowComposer:
 
     def test_compose_workflow(self):
         from icdev.tools.orchestration.workflow_composer import compose_workflow
+
         plan = compose_workflow("ato_acceleration", "proj-test")
         assert plan["template"] == "ato_acceleration"
         assert plan["project_id"] == "proj-test"
@@ -101,6 +106,7 @@ class TestWorkflowComposer:
 
     def test_compose_respects_dag_order(self):
         from icdev.tools.orchestration.workflow_composer import compose_workflow
+
         plan = compose_workflow("ato_acceleration", "proj-test")
         step_ids = [s["id"] for s in plan["steps"]]
         # categorize must come before assess
@@ -110,6 +116,7 @@ class TestWorkflowComposer:
 
     def test_compose_with_overrides(self):
         from icdev.tools.orchestration.workflow_composer import compose_workflow
+
         overrides = {"categorize": {"method": "cnssi_1253"}}
         plan = compose_workflow("ato_acceleration", "proj-test", overrides=overrides)
         cat_step = next(s for s in plan["steps"] if s["id"] == "categorize")
@@ -117,6 +124,7 @@ class TestWorkflowComposer:
 
     def test_execute_dry_run(self):
         from icdev.tools.orchestration.workflow_composer import compose_workflow, execute_workflow
+
         plan = compose_workflow("ato_acceleration", "proj-test")
         result = execute_workflow(plan, dry_run=True)
         assert result["dry_run"] is True
@@ -126,6 +134,7 @@ class TestWorkflowComposer:
 
     def test_missing_template_raises(self):
         from icdev.tools.orchestration.workflow_composer import compose_workflow
+
         with pytest.raises(FileNotFoundError):
             compose_workflow("nonexistent_template", "proj-test")
 
@@ -134,11 +143,13 @@ class TestWorkflowComposer:
 # DAG Resolution Tests
 # ---------------------------------------------------------------------------
 
+
 class TestDAGResolution:
     """Test topological sort and DAG handling."""
 
     def test_simple_dag(self):
         from icdev.tools.orchestration.workflow_composer import _resolve_dag
+
         steps = [
             {"id": "a", "depends_on": []},
             {"id": "b", "depends_on": ["a"]},
@@ -150,6 +161,7 @@ class TestDAGResolution:
 
     def test_parallel_dag(self):
         from icdev.tools.orchestration.workflow_composer import _resolve_dag
+
         steps = [
             {"id": "a"},
             {"id": "b"},
@@ -162,6 +174,7 @@ class TestDAGResolution:
     def test_cycle_detection(self):
         from graphlib import CycleError
         from icdev.tools.orchestration.workflow_composer import _resolve_dag
+
         steps = [
             {"id": "a", "depends_on": ["c"]},
             {"id": "b", "depends_on": ["a"]},

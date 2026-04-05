@@ -45,6 +45,7 @@ except ImportError:
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping audit event")
 
@@ -483,9 +484,9 @@ CAPABILITY_SOURCES: Dict[str, List[str]] = {
     "infrastructure": ["tools/infra", "k8s", "docker"],  # D-CHILD-8: fixed key + k8s/docker
     "db": ["tools/db"],
     "project": ["tools/project"],
-    "llm": ["tools/llm"],        # D-CHILD-9: LLM router is fundamental infra
-    "compat": ["tools/compat"],   # D-CHILD-9: platform compatibility
-    "cli": ["tools/cli"],         # D-CHILD-9: CLI output formatter
+    "llm": ["tools/llm"],  # D-CHILD-9: LLM router is fundamental infra
+    "compat": ["tools/compat"],  # D-CHILD-9: platform compatibility
+    "cli": ["tools/cli"],  # D-CHILD-9: CLI output formatter
     # D-CHILD-1: Enterprise capability sources
     "ricoas": ["tools/requirements"],
     "supply_chain": ["tools/supply_chain"],
@@ -533,6 +534,7 @@ DIRECTORY_ADAPTATIONS: Dict[str, List[str]] = {
 # HELPER FUNCTIONS
 # ============================================================
 
+
 def _load_yaml(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
     """Load YAML configuration with fallback to hardcoded defaults.
 
@@ -576,8 +578,7 @@ def _compute_blueprint_hash(blueprint: Dict[str, Any]) -> str:
     Returns:
         Hex-encoded SHA-256 hash string.
     """
-    hashable = {k: v for k, v in blueprint.items()
-                if k not in ("blueprint_hash", "generated_at")}
+    hashable = {k: v for k, v in blueprint.items() if k not in ("blueprint_hash", "generated_at")}
     serialized = json.dumps(hashable, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
@@ -598,14 +599,14 @@ def _safe_get_score(scorecard: Dict[str, Any], dimension: str, default: int = 0)
     try:
         return int(value)
     except (TypeError, ValueError):
-        logger.warning("Non-integer score for %s: %s — using default %d",
-                       dimension, value, default)
+        logger.warning("Non-integer score for %s: %s — using default %d", dimension, value, default)
         return default
 
 
 # ============================================================
 # CORE FUNCTIONS
 # ============================================================
+
 
 def resolve_capabilities(
     scorecard: Dict[str, Any],
@@ -672,15 +673,9 @@ def resolve_capabilities(
         enabled = False
 
         if cap_name == "compliance":
-            enabled = (
-                compliance_score >= 6
-                or user_decisions.get("ato_required", False)
-            )
+            enabled = compliance_score >= 6 or user_decisions.get("ato_required", False)
         elif cap_name == "security":
-            enabled = (
-                overall_score >= 5
-                or user_decisions.get("security_required", False)
-            )
+            enabled = overall_score >= 5 or user_decisions.get("security_required", False)
         elif cap_name == "mbse":
             enabled = user_decisions.get("mbse_enabled", False)
         elif cap_name == "dashboard":
@@ -695,10 +690,7 @@ def resolve_capabilities(
             enabled = False
         # D-CHILD-1: Enterprise capability resolution
         elif cap_name == "ricoas":
-            enabled = (
-                compliance_score >= 7
-                or user_decisions.get("ricoas_enabled", False)
-            )
+            enabled = compliance_score >= 7 or user_decisions.get("ricoas_enabled", False)
         elif cap_name == "supply_chain":
             # Auto-follows RICOAS
             enabled = capabilities.get("ricoas", False)
@@ -706,24 +698,15 @@ def resolve_capabilities(
             # Auto-follows RICOAS
             enabled = capabilities.get("ricoas", False)
         elif cap_name == "devsecops_zta":
-            enabled = (
-                compliance_score >= 6
-                or user_decisions.get("devsecops_enabled", False)
-            )
+            enabled = compliance_score >= 6 or user_decisions.get("devsecops_enabled", False)
         elif cap_name == "ai_security":
-            enabled = (
-                overall_score >= 5
-                or user_decisions.get("ai_security_required", False)
-            )
+            enabled = overall_score >= 5 or user_decisions.get("ai_security_required", False)
         elif cap_name == "ai_governance":
             enabled = user_decisions.get("ai_governance_enabled", False)
         elif cap_name == "observability":
             enabled = overall_score >= 4
         elif cap_name == "code_intelligence":
-            enabled = (
-                overall_score >= 5
-                or user_decisions.get("code_intelligence_enabled", False)
-            )
+            enabled = overall_score >= 5 or user_decisions.get("code_intelligence_enabled", False)
         elif cap_name == "rag":
             enabled = user_decisions.get("rag_enabled", False)
         elif cap_name == "fine_tuning":
@@ -741,8 +724,7 @@ def resolve_capabilities(
             previous = capabilities[cap_name]
             capabilities[cap_name] = bool(override_value)
             if previous != capabilities[cap_name]:
-                logger.info("User override: %s %s -> %s",
-                            cap_name, previous, capabilities[cap_name])
+                logger.info("User override: %s %s -> %s", cap_name, previous, capabilities[cap_name])
 
     # Parent-only capabilities — NEVER enabled in child apps regardless of overrides
     capabilities["modernization"] = False
@@ -752,8 +734,7 @@ def resolve_capabilities(
     # session purpose — core GOTCHA separation of concerns)
     capabilities["orchestration"] = True
 
-    logger.info("Resolved capabilities: %s",
-                {k: v for k, v in capabilities.items() if v})
+    logger.info("Resolved capabilities: %s", {k: v for k, v in capabilities.items() if v})
     return capabilities
 
 
@@ -780,37 +761,42 @@ def build_agent_roster(
     # Always include core agents
     for agent_def in CORE_AGENTS:
         port = agent_def["base_port"] + port_offset
-        roster.append({
-            "name": agent_def["name"],
-            "port": port,
-            "role": agent_def["role"],
-            "health_endpoint": f"https://localhost:{port}/health",
-            "agent_card_path": "/.well-known/agent.json",
-            "core": True,
-        })
+        roster.append(
+            {
+                "name": agent_def["name"],
+                "port": port,
+                "role": agent_def["role"],
+                "health_endpoint": f"https://localhost:{port}/health",
+                "agent_card_path": "/.well-known/agent.json",
+                "core": True,
+            }
+        )
 
     # Conditionally include domain agents
     for agent_def in CONDITIONAL_AGENTS:
         required_cap = agent_def.get("requires", "")
         if capabilities.get(required_cap, False):
             port = agent_def["base_port"] + port_offset
-            roster.append({
-                "name": agent_def["name"],
-                "port": port,
-                "role": agent_def["role"],
-                "health_endpoint": f"https://localhost:{port}/health",
-                "agent_card_path": "/.well-known/agent.json",
-                "core": False,
-            })
+            roster.append(
+                {
+                    "name": agent_def["name"],
+                    "port": port,
+                    "role": agent_def["role"],
+                    "health_endpoint": f"https://localhost:{port}/health",
+                    "agent_card_path": "/.well-known/agent.json",
+                    "core": False,
+                }
+            )
             logger.debug("Added conditional agent: %s (port %d)", agent_def["name"], port)
         else:
-            logger.debug("Skipped agent %s — capability '%s' not enabled",
-                         agent_def["name"], required_cap)
+            logger.debug("Skipped agent %s — capability '%s' not enabled", agent_def["name"], required_cap)
 
-    logger.info("Agent roster: %d agents (%d core, %d conditional)",
-                len(roster),
-                sum(1 for a in roster if a.get("core")),
-                sum(1 for a in roster if not a.get("core")))
+    logger.info(
+        "Agent roster: %d agents (%d core, %d conditional)",
+        len(roster),
+        sum(1 for a in roster if a.get("core")),
+        sum(1 for a in roster if not a.get("core")),
+    )
     return roster
 
 
@@ -837,16 +823,36 @@ def build_file_manifest(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # Always-included directories
     always_include = [
-        "core", "memory", "knowledge", "db", "project",
-        "infrastructure", "llm", "compat", "cli",  # D-CHILD-8/9: fundamental infra
+        "core",
+        "memory",
+        "knowledge",
+        "db",
+        "project",
+        "infrastructure",
+        "llm",
+        "compat",
+        "cli",  # D-CHILD-8/9: fundamental infra
     ]
 
     # Conditionally included based on capabilities
-    conditional = ["multi_agent", "compliance", "security", "ai_security",
-                    "mbse", "cicd", "testing", "dashboard", "maintenance",
-                    # D-CHILD-1: Enterprise capabilities
-                    "ricoas", "supply_chain", "simulation", "devsecops_zta",
-                    "observability", "code_intelligence"]
+    conditional = [
+        "multi_agent",
+        "compliance",
+        "security",
+        "ai_security",
+        "mbse",
+        "cicd",
+        "testing",
+        "dashboard",
+        "maintenance",
+        # D-CHILD-1: Enterprise capabilities
+        "ricoas",
+        "supply_chain",
+        "simulation",
+        "devsecops_zta",
+        "observability",
+        "code_intelligence",
+    ]
 
     included_caps = always_include.copy()
     for cap in conditional:
@@ -857,12 +863,14 @@ def build_file_manifest(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
         source_dirs = CAPABILITY_SOURCES.get(cap_name, [])
         for source_dir in source_dirs:
             adaptations = DIRECTORY_ADAPTATIONS.get(source_dir, ["app_name_replace"])
-            manifest.append({
-                "source": source_dir,
-                "dest": source_dir,
-                "capability": cap_name,
-                "adaptations": adaptations,
-            })
+            manifest.append(
+                {
+                    "source": source_dir,
+                    "dest": source_dir,
+                    "capability": cap_name,
+                    "adaptations": adaptations,
+                }
+            )
 
     # Always include top-level config files
     config_files = [
@@ -888,59 +896,68 @@ def build_file_manifest(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # Conditionally include compliance/security config files
     if capabilities.get("compliance", False):
-        config_files.extend([
-            {
-                "source": "args/cui_markings.yaml",
-                "dest": "args/cui_markings.yaml",
-                "capability": "compliance",
-                "adaptations": ["classification_update"],
-            },
-            {
-                "source": "args/security_gates.yaml",
-                "dest": "args/security_gates.yaml",
-                "capability": "compliance",
-                "adaptations": ["threshold_adjust"],
-            },
-        ])
+        config_files.extend(
+            [
+                {
+                    "source": "args/cui_markings.yaml",
+                    "dest": "args/cui_markings.yaml",
+                    "capability": "compliance",
+                    "adaptations": ["classification_update"],
+                },
+                {
+                    "source": "args/security_gates.yaml",
+                    "dest": "args/security_gates.yaml",
+                    "capability": "compliance",
+                    "adaptations": ["threshold_adjust"],
+                },
+            ]
+        )
 
     manifest.extend(config_files)
 
     # Goals directory — include essential goals that map to enabled capabilities
     goals_to_include = _resolve_goals_for_capabilities(capabilities)
     for goal_name in goals_to_include:
-        manifest.append({
-            "source": f"goals/{goal_name}.md",
-            "dest": f"goals/{goal_name}.md",
-            "capability": "core",
-            "adaptations": ["app_name_replace"],
-        })
+        manifest.append(
+            {
+                "source": f"goals/{goal_name}.md",
+                "dest": f"goals/{goal_name}.md",
+                "capability": "core",
+                "adaptations": ["app_name_replace"],
+            }
+        )
 
     # Always include goals/manifest.md
-    manifest.append({
-        "source": "goals/manifest.md",
-        "dest": "goals/manifest.md",
-        "capability": "core",
-        "adaptations": ["goal_filter", "app_name_replace"],
-    })
+    manifest.append(
+        {
+            "source": "goals/manifest.md",
+            "dest": "goals/manifest.md",
+            "capability": "core",
+            "adaptations": ["goal_filter", "app_name_replace"],
+        }
+    )
 
     # Context files
-    manifest.append({
-        "source": "context/",
-        "dest": "context/",
-        "capability": "core",
-        "adaptations": ["selective_copy"],
-    })
+    manifest.append(
+        {
+            "source": "context/",
+            "dest": "context/",
+            "capability": "core",
+            "adaptations": ["selective_copy"],
+        }
+    )
 
     # Hard prompts
-    manifest.append({
-        "source": "hardprompts/",
-        "dest": "hardprompts/",
-        "capability": "core",
-        "adaptations": ["selective_copy"],
-    })
+    manifest.append(
+        {
+            "source": "hardprompts/",
+            "dest": "hardprompts/",
+            "capability": "core",
+            "adaptations": ["selective_copy"],
+        }
+    )
 
-    logger.info("File manifest: %d entries for %d capabilities",
-                len(manifest), len(included_caps))
+    logger.info("File manifest: %d entries for %d capabilities", len(manifest), len(included_caps))
     return manifest
 
 
@@ -1052,23 +1069,28 @@ def resolve_csp_mcp_servers(
             else:
                 server_name = str(server_def)
                 description = ""
-            selected_servers.append({
-                "name": server_name,
-                "description": description,
-                "provider": provider_name,
-                "category": category,
-            })
+            selected_servers.append(
+                {
+                    "name": server_name,
+                    "description": description,
+                    "provider": provider_name,
+                    "category": category,
+                }
+            )
 
-    logger.info("CSP MCP servers for %s: %d selected from %d categories",
-                provider_name,
-                len(selected_servers),
-                len(included_categories))
+    logger.info(
+        "CSP MCP servers for %s: %d selected from %d categories",
+        provider_name,
+        len(selected_servers),
+        len(included_categories),
+    )
     return selected_servers
 
 
 # ============================================================
 # MAIN ORCHESTRATOR
 # ============================================================
+
 
 def generate_blueprint(
     scorecard: Dict[str, Any],
@@ -1185,10 +1207,7 @@ def generate_blueprint(
         "phases": ["architect", "trace", "link", "assemble", "stress_test"],
         # ATLAS-CR: auto-enable adversarial critique for IL5+ child apps
         "critique_enabled": impact_level in ("IL5", "IL6"),
-        "critique_rag_augmented": (
-            impact_level in ("IL5", "IL6")
-            and capabilities.get("rag", False)
-        ),
+        "critique_rag_augmented": (impact_level in ("IL5", "IL6") and capabilities.get("rag", False)),
     }
     if atlas_config["model_phase"]:
         atlas_config["phases"].insert(0, "model")
@@ -1218,9 +1237,7 @@ def generate_blueprint(
             "component": scorecard.get("component", "unknown"),
             "overall_score": scorecard.get("overall_score", 0.0),
             "scores": scorecard.get("scores", {}),
-            "architecture": scorecard.get("recommendations", {}).get(
-                "architecture", "traditional"
-            ),
+            "architecture": scorecard.get("recommendations", {}).get("architecture", "traditional"),
         },
         "capabilities": capabilities,
         "agents": agents,
@@ -1234,7 +1251,7 @@ def generate_blueprint(
         "atlas_config": atlas_config,
         "grandchild_prevention": grandchild_prevention,
         "file_manifest": [],  # Populated below
-        "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
+        "generated_at": datetime.now(tz=__import__("datetime").timezone.utc).isoformat(),
         "demo_mode": demo_mode,
         "generated_by": "icdev/app_blueprint",
         "blueprint_hash": "",  # Computed below
@@ -1273,18 +1290,18 @@ def _log_blueprint_audit(blueprint: Dict[str, Any]) -> None:
             actor="builder/app_blueprint",
             action=f"Generated blueprint for '{blueprint.get('app_name', 'unknown')}'",
             project_id=blueprint.get("blueprint_id", ""),
-            details=json.dumps({
-                "blueprint_id": blueprint.get("blueprint_id"),
-                "app_name": blueprint.get("app_name"),
-                "impact_level": blueprint.get("impact_level"),
-                "capabilities_enabled": sum(
-                    1 for v in blueprint.get("capabilities", {}).values() if v
-                ),
-                "agent_count": len(blueprint.get("agents", [])),
-                "manifest_entries": len(blueprint.get("file_manifest", [])),
-                "cloud_provider": blueprint.get("cloud_provider", {}).get("provider"),
-                "blueprint_hash": blueprint.get("blueprint_hash", "")[:32],
-            }),
+            details=json.dumps(
+                {
+                    "blueprint_id": blueprint.get("blueprint_id"),
+                    "app_name": blueprint.get("app_name"),
+                    "impact_level": blueprint.get("impact_level"),
+                    "capabilities_enabled": sum(1 for v in blueprint.get("capabilities", {}).values() if v),
+                    "agent_count": len(blueprint.get("agents", [])),
+                    "manifest_entries": len(blueprint.get("file_manifest", [])),
+                    "cloud_provider": blueprint.get("cloud_provider", {}).get("provider"),
+                    "blueprint_hash": blueprint.get("blueprint_hash", "")[:32],
+                }
+            ),
         )
     except Exception as e:
         logger.debug("Audit log failed: %s", e)
@@ -1305,6 +1322,7 @@ def _persist_blueprint(blueprint: Dict[str, Any]) -> bool:
 
     try:
         import sqlite3
+
         conn = sqlite3.connect(str(DB_PATH))
         conn.execute(
             """INSERT OR REPLACE INTO app_blueprints
@@ -1400,6 +1418,7 @@ def _parse_user_decisions(raw: str) -> Dict[str, Any]:
 # CLI ENTRY POINT
 # ============================================================
 
+
 def main():
     """CLI entry point for the App Blueprint Engine."""
     logging.basicConfig(
@@ -1418,8 +1437,8 @@ def main():
     parser.add_argument(
         "--user-decisions",
         required=True,
-        help='User decisions as JSON string or path to JSON file '
-             '(e.g., \'{"ato_required": true, "mbse_enabled": false}\')',
+        help="User decisions as JSON string or path to JSON file "
+        '(e.g., \'{"ato_required": true, "mbse_enabled": false}\')',
     )
     parser.add_argument(
         "--app-name",
@@ -1476,7 +1495,8 @@ def main():
         help="Persist blueprint to ICDEV database",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable debug logging",
     )
@@ -1556,16 +1576,16 @@ def _print_blueprint_summary(blueprint: Dict[str, Any]) -> None:
     cloud = blueprint.get("cloud_provider", {})
     scorecard = blueprint.get("fitness_scorecard", {})
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  APP BLUEPRINT: {blueprint.get('app_name', 'unknown')}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"  Blueprint ID:    {blueprint.get('blueprint_id', 'N/A')}")
     print(f"  Classification:  {blueprint.get('classification', 'N/A')}")
     print(f"  Impact Level:    {blueprint.get('impact_level', 'N/A')}")
     print(f"  Architecture:    {scorecard.get('architecture', 'N/A').upper()}")
     print(f"  Overall Score:   {scorecard.get('overall_score', 0.0):.2f} / 10.0")
     print(f"  Hash:            {blueprint.get('blueprint_hash', 'N/A')[:32]}...")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     print(f"\n  Capabilities ({sum(1 for v in caps.values() if v)} enabled):")
     for cap_name, enabled in sorted(caps.items()):
@@ -1590,12 +1610,13 @@ def _print_blueprint_summary(blueprint: Dict[str, Any]) -> None:
         print(f"    - {goal}")
 
     print(f"\n  File Manifest: {len(manifest)} entries")
-    print(f"  Grandchild Prevention: "
-          f"{'ENABLED' if blueprint.get('grandchild_prevention', {}).get('enabled') else 'DISABLED'}")
-    print(f"  Parent Callback: "
-          f"{'ENABLED' if blueprint.get('parent_callback', {}).get('enabled') else 'DISABLED'}")
+    print(
+        f"  Grandchild Prevention: "
+        f"{'ENABLED' if blueprint.get('grandchild_prevention', {}).get('enabled') else 'DISABLED'}"
+    )
+    print(f"  Parent Callback: {'ENABLED' if blueprint.get('parent_callback', {}).get('enabled') else 'DISABLED'}")
     print(f"\n  Generated: {blueprint.get('generated_at', 'N/A')}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
 
 if __name__ == "__main__":

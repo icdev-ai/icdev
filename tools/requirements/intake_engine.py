@@ -42,9 +42,11 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:
         return -1
 
@@ -53,9 +55,7 @@ def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -72,6 +72,7 @@ def _load_config():
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, "r", encoding="utf-8") as f:
                 return yaml.safe_load(f)
         except ImportError:
@@ -111,6 +112,7 @@ def _load_persona(role, custom_role_description=None):
         return None
     try:
         import yaml
+
         with open(persona_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except ImportError:
@@ -152,6 +154,7 @@ _HAS_LLM = False
 try:
     from tools.llm import get_router
     from tools.llm.provider import LLMRequest as _LLMRequest
+
     _HAS_LLM = True
 except ImportError:
     pass
@@ -209,15 +212,19 @@ def _generate_persona_response(session_data, message, signals, conn):
             msg_role = "assistant" if r["role"] == "analyst" else "user"
             if r["role"] == "system":
                 continue
-            conversation_messages.append({
-                "role": msg_role,
-                "content": r["content"],
-            })
+            conversation_messages.append(
+                {
+                    "role": msg_role,
+                    "content": r["content"],
+                }
+            )
         # Add current customer message
-        conversation_messages.append({
-            "role": "user",
-            "content": message,
-        })
+        conversation_messages.append(
+            {
+                "role": "user",
+                "content": message,
+            }
+        )
 
         # Build system prompt with persona + session context
         goal = ctx.get("goal", "build")
@@ -249,9 +256,7 @@ def _generate_persona_response(session_data, message, signals, conn):
             )
 
         if readiness:
-            system_parts.append(
-                f"Readiness score: {readiness.get('overall', 0):.0%}"
-            )
+            system_parts.append(f"Readiness score: {readiness.get('overall', 0):.0%}")
             # Show per-dimension scores so the agent targets weak areas
             dims = {
                 "completeness": readiness.get("completeness", 0),
@@ -348,13 +353,9 @@ def _generate_persona_response(session_data, message, signals, conn):
                         sections = json.loads(d["extracted_sections"])
                         if isinstance(sections, dict):
                             if sections.get("description"):
-                                system_parts.append(
-                                    f"  Content: {sections['description'][:300]}"
-                                )
+                                system_parts.append(f"  Content: {sections['description'][:300]}")
                             if sections.get("category"):
-                                system_parts.append(
-                                    f"  Category: {sections['category']}"
-                                )
+                                system_parts.append(f"  Category: {sections['category']}")
                     except (json.JSONDecodeError, TypeError):
                         pass
             # Include document-extracted requirements as context
@@ -368,9 +369,7 @@ def _generate_persona_response(session_data, message, signals, conn):
                 system_parts.append("Requirements from documents:")
                 for dr in doc_reqs:
                     d = dict(dr)
-                    system_parts.append(
-                        f"  - [{d['requirement_type'].upper()}] {d['raw_text'][:120]}"
-                    )
+                    system_parts.append(f"  - [{d['requirement_type'].upper()}] {d['raw_text'][:120]}")
             system_parts.append(
                 "Reference the uploaded document content when asking follow-up "
                 "questions. Use extracted requirements as context to ask deeper, "
@@ -381,26 +380,18 @@ def _generate_persona_response(session_data, message, signals, conn):
         signal_notes = []
         extracted_reqs = signals.get("extracted_reqs", [])
         if extracted_reqs:
-            signal_notes.append(
-                f"Extracted {len(extracted_reqs)} requirement(s) this turn."
-            )
+            signal_notes.append(f"Extracted {len(extracted_reqs)} requirement(s) this turn.")
         ambiguities = signals.get("ambiguities", [])
         if ambiguities:
             terms = [a["phrase"] for a in ambiguities]
-            signal_notes.append(
-                f"Ambiguous terms detected: {', '.join(terms)}"
-            )
+            signal_notes.append(f"Ambiguous terms detected: {', '.join(terms)}")
         boundary_flags = signals.get("boundary_flags", [])
         if boundary_flags:
             tiers = [f["tier"] for f in boundary_flags]
-            signal_notes.append(
-                f"ATO boundary flags: {', '.join(tiers)}"
-            )
+            signal_notes.append(f"ATO boundary flags: {', '.join(tiers)}")
         gap_signals = signals.get("gap_signals", [])
         if gap_signals:
-            signal_notes.append(
-                f"Gap signals: {'; '.join(gap_signals[:3])}"
-            )
+            signal_notes.append(f"Gap signals: {'; '.join(gap_signals[:3])}")
         if signal_notes:
             system_parts.append("")
             system_parts.append("--- This Turn ---")
@@ -412,9 +403,7 @@ def _generate_persona_response(session_data, message, signals, conn):
             system_parts.append("")
             system_parts.append("--- Priority Clarification Questions ---")
             for cq in clarifications[:3]:
-                system_parts.append(
-                    f"  [P{cq.get('priority', '?')}] {cq.get('question', '')}"
-                )
+                system_parts.append(f"  [P{cq.get('priority', '?')}] {cq.get('question', '')}")
             system_parts.append(
                 "IMPORTANT: Weave ONE of these clarification questions into your "
                 "response naturally. Do not ask all at once."
@@ -426,12 +415,9 @@ def _generate_persona_response(session_data, message, signals, conn):
             system_parts.append("")
             system_parts.append("--- Parallel Execution Opportunities ---")
             system_parts.append(
-                f"Detected {len(parallel_opps)} group(s) of independent tasks "
-                "that could run concurrently."
+                f"Detected {len(parallel_opps)} group(s) of independent tasks that could run concurrently."
             )
-            system_parts.append(
-                "Mention this when discussing implementation timeline."
-            )
+            system_parts.append("Mention this when discussing implementation timeline.")
 
         system_parts.append("")
         system_parts.append(
@@ -463,6 +449,7 @@ def _generate_persona_response(session_data, message, signals, conn):
 # ---------------------------------------------------------------------------
 # Session management
 # ---------------------------------------------------------------------------
+
 
 def create_session(
     project_id: str,
@@ -518,8 +505,7 @@ def create_session(
            (id, project_id, customer_name, customer_org, session_status,
             classification, impact_level, created_by)
            VALUES (?, ?, ?, ?, 'active', ?, ?, ?)""",
-        (session_id, project_id, customer_name, customer_org,
-         classification, impact_level, created_by),
+        (session_id, project_id, customer_name, customer_org, classification, impact_level, created_by),
     )
 
     # Store session context (role, goal, frameworks, custom description)
@@ -529,20 +515,24 @@ def create_session(
         "selected_frameworks": selected_frameworks or [],
         "custom_role_description": custom_role_description,
     }
-    conn.execute("UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
-                 (json.dumps(context), session_id))
+    conn.execute("UPDATE intake_sessions SET context_summary = ? WHERE id = ?", (json.dumps(context), session_id))
 
     # Insert initial system turn
     conn.execute(
         """INSERT INTO intake_conversation
            (session_id, turn_number, role, content, content_type)
            VALUES (?, 0, 'system', ?, 'text')""",
-        (session_id, json.dumps({
-            "event": "session_created",
-            "project_id": project_id,
-            "customer_name": customer_name,
-            "impact_level": impact_level,
-        })),
+        (
+            session_id,
+            json.dumps(
+                {
+                    "event": "session_created",
+                    "project_id": project_id,
+                    "customer_name": customer_name,
+                    "impact_level": impact_level,
+                }
+            ),
+        ),
     )
 
     # Generate persona-appropriate welcome message
@@ -630,9 +620,7 @@ def create_session(
 def get_session(session_id: str, db_path=None) -> dict:
     """Get session status and summary."""
     conn = _get_connection(db_path)
-    row = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not row:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -673,9 +661,7 @@ def get_session(session_id: str, db_path=None) -> dict:
 def resume_session(session_id: str, db_path=None) -> dict:
     """Resume a paused session. Returns context summary and last state."""
     conn = _get_connection(db_path)
-    row = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not row:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -683,9 +669,7 @@ def resume_session(session_id: str, db_path=None) -> dict:
     session = dict(row)
     if session["session_status"] not in ("active", "paused"):
         conn.close()
-        raise ValueError(
-            f"Session '{session_id}' is {session['session_status']}, cannot resume."
-        )
+        raise ValueError(f"Session '{session_id}' is {session['session_status']}, cannot resume.")
 
     # Get last 5 conversation turns for context
     recent_turns = conn.execute(
@@ -734,8 +718,8 @@ def resume_session(session_id: str, db_path=None) -> dict:
         "recent_turns": recent_turns,
         "requirements": req_summary,
         "message": f"Session resumed. You have {len(req_summary)} requirements captured "
-                   f"with readiness score {session.get('readiness_score', 0.0):.1%}. "
-                   f"Where would you like to continue?",
+        f"with readiness score {session.get('readiness_score', 0.0):.1%}. "
+        f"Where would you like to continue?",
     }
 
 
@@ -755,6 +739,7 @@ def pause_session(session_id: str, db_path=None) -> dict:
 # Conversation processing
 # ---------------------------------------------------------------------------
 
+
 def process_turn(
     session_id: str,
     customer_message: str,
@@ -770,9 +755,7 @@ def process_turn(
     conn = _get_connection(db_path)
 
     # Verify session exists and is active
-    session = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -798,9 +781,7 @@ def process_turn(
     )
 
     # --- Requirement extraction (deterministic keyword analysis) ---
-    extracted_reqs = _extract_requirements_from_text(
-        customer_message, session_id, turn_number, conn
-    )
+    extracted_reqs = _extract_requirements_from_text(customer_message, session_id, turn_number, conn)
 
     # --- URL detection and content fetching ---
     url_contents = _extract_and_fetch_urls(customer_message)
@@ -841,7 +822,7 @@ def process_turn(
     mosa_signals = _detect_mosa_signals(customer_message, session_data)
 
     # --- Dev profile signals (Phase 34, D184-D188) ---
-    dev_profile_signals = _detect_dev_profile_signals(customer_message, session_data)
+    _detect_dev_profile_signals(customer_message, session_data)
 
     # --- AI governance signals (Phase 50, D322) ---
     ai_governance_signals = _detect_ai_governance_signals(customer_message, session_data)
@@ -850,9 +831,12 @@ def process_turn(
     clarification_signals = []
     try:
         from tools.requirements.clarification_engine import analyze_requirements_clarity
+
         db_path_resolved = db_path or DB_PATH
         clarity_result = analyze_requirements_clarity(
-            session_id, max_questions=3, db_path=db_path_resolved,
+            session_id,
+            max_questions=3,
+            db_path=db_path_resolved,
         )
         clarification_signals = clarity_result.get("questions", [])
     except (ImportError, Exception):
@@ -862,6 +846,7 @@ def process_turn(
     parallel_opportunities = []
     try:
         from tools.requirements.decomposition_engine import detect_parallel_groups
+
         db_path_resolved = db_path or DB_PATH
         parallel_opportunities = detect_parallel_groups(session_id, db_path=db_path_resolved)
     except (ImportError, Exception):
@@ -887,6 +872,7 @@ def process_turn(
     bdd_previews = []
     try:
         from tools.requirements.decomposition_engine import generate_bdd_criteria
+
         for req in extracted_reqs:
             gherkin = generate_bdd_criteria(req["raw_text"], req["requirement_type"])
             bdd_previews.append({"requirement": req["raw_text"][:80], "gherkin": gherkin})
@@ -927,9 +913,7 @@ def process_turn(
         "clarification_signals": clarification_signals,
         "parallel_opportunities": parallel_opportunities,
     }
-    persona_response = _generate_persona_response(
-        session_data, customer_message, persona_signals, conn
-    )
+    persona_response = _generate_persona_response(session_data, customer_message, persona_signals, conn)
 
     if persona_response is not None:
         analyst_response = persona_response
@@ -938,13 +922,9 @@ def process_turn(
         response_parts = []
 
         if extracted_reqs:
-            response_parts.append(
-                f"I captured {len(extracted_reqs)} requirement(s) from what you described."
-            )
+            response_parts.append(f"I captured {len(extracted_reqs)} requirement(s) from what you described.")
             for req in extracted_reqs:
-                response_parts.append(
-                    f"  - [{req['requirement_type'].upper()}] {req['raw_text'][:100]}"
-                )
+                response_parts.append(f"  - [{req['requirement_type'].upper()}] {req['raw_text'][:100]}")
 
         if url_contents:
             response_parts.append("\nI reviewed the link(s) you shared:")
@@ -957,9 +937,7 @@ def process_turn(
                     response_parts.append(f"    Content: {summary_short}")
 
         if ambiguities:
-            response_parts.append(
-                f"\nI noticed {len(ambiguities)} term(s) that need clarification:"
-            )
+            response_parts.append(f"\nI noticed {len(ambiguities)} term(s) that need clarification:")
             for amb in ambiguities:
                 response_parts.append(f"  - '{amb['phrase']}': {amb['clarification']}")
 
@@ -976,10 +954,7 @@ def process_turn(
         if devsecops_signals.get("detected_stages"):
             stages = devsecops_signals["detected_stages"]
             maturity = devsecops_signals.get("maturity_estimate", "unknown")
-            response_parts.append(
-                f"\nDevSecOps signals detected: {', '.join(stages)} "
-                f"(estimated maturity: {maturity})"
-            )
+            response_parts.append(f"\nDevSecOps signals detected: {', '.join(stages)} (estimated maturity: {maturity})")
         elif devsecops_signals.get("greenfield"):
             response_parts.append(
                 "\nNo existing DevSecOps tooling detected — "
@@ -1012,15 +987,21 @@ def process_turn(
                     f"  MOSA pillars identified: {', '.join(p.replace('_', ' ') for p in mosa_pillars)}"
                 )
             # Probe for missing MOSA pillars
-            all_pillars = {"modular_architecture", "open_standards", "open_interfaces",
-                           "data_rights", "competitive_sourcing", "continuous_assessment"}
+            all_pillars = {
+                "modular_architecture",
+                "open_standards",
+                "open_interfaces",
+                "data_rights",
+                "competitive_sourcing",
+                "continuous_assessment",
+            }
             missing = all_pillars - set(mosa_pillars)
             if missing and len(mosa_pillars) < 4:
                 probes = {
                     "open_interfaces": "Do you have existing Interface Control Documents (ICDs) or API specifications?",
                     "data_rights": "What are the government data rights requirements? (GPR, unlimited rights, etc.)",
                     "competitive_sourcing": "Is multi-vendor replaceability a requirement?",
-                    "open_standards": "Which standard protocols/data formats will be used? (REST/OpenAPI, gRPC, JSON, Protobuf)",
+                    "open_standards": "Which standard protocols/data formats will be used? (REST/OpenAPI, gRPC, JSON, Protobuf)",  # noqa: E501
                     "modular_architecture": "Is the system designed with modular, loosely-coupled components?",
                     "continuous_assessment": "Will there be ongoing architecture reviews and modularity metrics?",
                 }
@@ -1040,23 +1021,28 @@ def process_turn(
                 )
             else:
                 response_parts.append(
-                    "\nAI/ML system usage detected. AI governance framework will be "
-                    "included in compliance assessment."
+                    "\nAI/ML system usage detected. AI governance framework will be included in compliance assessment."
                 )
             if gov_pillars:
                 response_parts.append(
                     f"  AI governance pillars identified: {', '.join(p.replace('_', ' ') for p in gov_pillars)}"
                 )
             # Probe for missing governance pillars
-            all_gov_pillars = {"ai_inventory", "model_documentation", "human_oversight",
-                               "impact_assessment", "transparency", "accountability"}
+            all_gov_pillars = {
+                "ai_inventory",
+                "model_documentation",
+                "human_oversight",
+                "impact_assessment",
+                "transparency",
+                "accountability",
+            }
             missing_gov = all_gov_pillars - set(gov_pillars)
             if missing_gov and len(gov_pillars) < 4:
                 gov_probes = {
-                    "ai_inventory": "Does this system use AI/ML models? If so, what types (classification, NLP, recommendation, generation)?",
+                    "ai_inventory": "Does this system use AI/ML models? If so, what types (classification, NLP, recommendation, generation)?",  # noqa: E501
                     "model_documentation": "Are there existing model cards or documentation for the AI models used?",
                     "human_oversight": "What human oversight is in place for AI decisions? Is there an appeal process?",
-                    "impact_assessment": "Has an algorithmic impact assessment been conducted? Does the AI make rights-impacting decisions?",
+                    "impact_assessment": "Has an algorithmic impact assessment been conducted? Does the AI make rights-impacting decisions?",  # noqa: E501
                     "transparency": "Are users notified when AI is making or supporting decisions?",
                     "accountability": "Is there a designated Chief AI Officer (CAIO) or responsible official?",
                 }
@@ -1094,16 +1080,14 @@ def process_turn(
 
             followup_questions = {
                 "completeness": (
-                    missing_qs[0] if missing_qs else
-                    "What other capabilities or workflows should this system support?"
+                    missing_qs[0] if missing_qs else "What other capabilities or workflows should this system support?"
                 ),
                 "clarity": (
                     "Could you quantify some of the requirements? "
                     "For example, expected number of users, response times, or data volumes."
                 ),
                 "feasibility": (
-                    "What's the target timeline, team size, "
-                    "and hosting environment? Any technology constraints?"
+                    "What's the target timeline, team size, and hosting environment? Any technology constraints?"
                 ),
                 "compliance": (
                     "What security requirements apply? "
@@ -1132,9 +1116,13 @@ def process_turn(
                 "independent tasks that could run in parallel to speed up delivery."
             )
 
-        analyst_response = "\n".join(response_parts) if response_parts else (
-            "Thank you. Could you tell me more about the specific capabilities "
-            "you need? For example, what are the key user workflows?"
+        analyst_response = (
+            "\n".join(response_parts)
+            if response_parts
+            else (
+                "Thank you. Could you tell me more about the specific capabilities "
+                "you need? For example, what are the key user workflows?"
+            )
         )
 
     # Store analyst turn
@@ -1148,23 +1136,25 @@ def process_turn(
             analyst_turn,
             analyst_response,
             json.dumps([r["id"] for r in extracted_reqs]) if extracted_reqs else None,
-            json.dumps({
-                "ambiguities_found": len(ambiguities),
-                "requirements_extracted": len(extracted_reqs),
-                "boundary_flags": len(boundary_flags),
-                "devsecops_stages_detected": devsecops_signals.get("detected_stages", []),
-                "devsecops_maturity_estimate": devsecops_signals.get("maturity_estimate"),
-                "zta_detected": zta_signals.get("zta_detected", False),
-                "zta_pillars_detected": zta_signals.get("detected_pillars", []),
-                "mosa_detected": mosa_signals.get("mosa_detected", False),
-                "mosa_dod_ic_detected": mosa_signals.get("dod_ic_detected", False),
-                "mosa_pillars_detected": mosa_signals.get("detected_pillars", []),
-                "ai_governance_detected": ai_governance_signals.get("ai_governance_detected", False),
-                "ai_governance_pillars_detected": ai_governance_signals.get("detected_pillars", []),
-                "ai_governance_federal_agency": ai_governance_signals.get("federal_agency_detected", False),
-                "clarification_questions": len(clarification_signals),
-                "parallel_groups": len(parallel_opportunities),
-            }),
+            json.dumps(
+                {
+                    "ambiguities_found": len(ambiguities),
+                    "requirements_extracted": len(extracted_reqs),
+                    "boundary_flags": len(boundary_flags),
+                    "devsecops_stages_detected": devsecops_signals.get("detected_stages", []),
+                    "devsecops_maturity_estimate": devsecops_signals.get("maturity_estimate"),
+                    "zta_detected": zta_signals.get("zta_detected", False),
+                    "zta_pillars_detected": zta_signals.get("detected_pillars", []),
+                    "mosa_detected": mosa_signals.get("mosa_detected", False),
+                    "mosa_dod_ic_detected": mosa_signals.get("dod_ic_detected", False),
+                    "mosa_pillars_detected": mosa_signals.get("detected_pillars", []),
+                    "ai_governance_detected": ai_governance_signals.get("ai_governance_detected", False),
+                    "ai_governance_pillars_detected": ai_governance_signals.get("detected_pillars", []),
+                    "ai_governance_federal_agency": ai_governance_signals.get("federal_agency_detected", False),
+                    "clarification_questions": len(clarification_signals),
+                    "parallel_groups": len(parallel_opportunities),
+                }
+            ),
             session_data.get("classification", "CUI"),
         ),
     )
@@ -1209,29 +1199,81 @@ def process_turn(
 # Requirement type detection keywords
 _REQ_TYPE_KEYWORDS = {
     "security": [
-        "authenticate", "authorize", "encrypt", "CAC", "PIV", "MFA",
-        "FIPS", "STIG", "access control", "audit log", "credential",
-        "certificate", "PKI", "RBAC", "permission", "classification",
+        "authenticate",
+        "authorize",
+        "encrypt",
+        "CAC",
+        "PIV",
+        "MFA",
+        "FIPS",
+        "STIG",
+        "access control",
+        "audit log",
+        "credential",
+        "certificate",
+        "PKI",
+        "RBAC",
+        "permission",
+        "classification",
     ],
     "performance": [
-        "response time", "latency", "throughput", "concurrent",
-        "availability", "uptime", "SLA", "load", "capacity",
+        "response time",
+        "latency",
+        "throughput",
+        "concurrent",
+        "availability",
+        "uptime",
+        "SLA",
+        "load",
+        "capacity",
     ],
     "interface": [
-        "integrate", "interface", "API", "REST", "SOAP", "feed",
-        "import", "export", "connect", "external system", "third-party",
+        "integrate",
+        "interface",
+        "API",
+        "REST",
+        "SOAP",
+        "feed",
+        "import",
+        "export",
+        "connect",
+        "external system",
+        "third-party",
     ],
     "data": [
-        "database", "data store", "retention", "backup", "archive",
-        "migrate data", "data format", "schema", "CUI data",
+        "database",
+        "data store",
+        "retention",
+        "backup",
+        "archive",
+        "migrate data",
+        "data format",
+        "schema",
+        "CUI data",
     ],
     "compliance": [
-        "NIST", "FedRAMP", "CMMC", "ATO", "SSP", "POAM",
-        "STIG", "RMF", "accreditation", "authorization boundary",
+        "NIST",
+        "FedRAMP",
+        "CMMC",
+        "ATO",
+        "SSP",
+        "POAM",
+        "STIG",
+        "RMF",
+        "accreditation",
+        "authorization boundary",
     ],
     "non_functional": [
-        "scalab", "reliab", "maintainab", "portab", "usab",
-        "accessibility", "WCAG", "Section 508", "i18n", "l10n",
+        "scalab",
+        "reliab",
+        "maintainab",
+        "portab",
+        "usab",
+        "accessibility",
+        "WCAG",
+        "Section 508",
+        "i18n",
+        "l10n",
     ],
 }
 
@@ -1256,9 +1298,23 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
         # Check if this sentence contains requirement-like language
         has_req_signal = any(
             kw in lower
-            for kw in ["need", "want", "must", "shall", "should", "require",
-                       "able to", "capability", "feature", "support", "provide",
-                       "enable", "allow", "system will", "system shall"]
+            for kw in [
+                "need",
+                "want",
+                "must",
+                "shall",
+                "should",
+                "require",
+                "able to",
+                "capability",
+                "feature",
+                "support",
+                "provide",
+                "enable",
+                "allow",
+                "system will",
+                "system shall",
+            ]
         )
         if not has_req_signal:
             continue
@@ -1289,16 +1345,17 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
                (id, session_id, source_turn, raw_text, requirement_type,
                 priority, status, classification)
                VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
-            (req_id, session_id, turn_number, sentence.strip(), req_type,
-             priority, req_classification),
+            (req_id, session_id, turn_number, sentence.strip(), req_type, priority, req_classification),
         )
 
-        extracted.append({
-            "id": req_id,
-            "raw_text": sentence.strip(),
-            "requirement_type": req_type,
-            "priority": priority,
-        })
+        extracted.append(
+            {
+                "id": req_id,
+                "raw_text": sentence.strip(),
+                "requirement_type": req_type,
+                "priority": priority,
+            }
+        )
 
     return extracted
 
@@ -1311,16 +1368,14 @@ def _analyze_conversation_coverage(session_id, conn):
     """
     # Gather all customer messages
     rows = conn.execute(
-        "SELECT content FROM intake_conversation "
-        "WHERE session_id = ? AND role = 'customer' ORDER BY turn_number",
+        "SELECT content FROM intake_conversation WHERE session_id = ? AND role = 'customer' ORDER BY turn_number",
         (session_id,),
     ).fetchall()
     all_text = " ".join(dict(r)["content"] for r in rows).lower()
 
     # Also include requirements extracted from uploaded documents
     doc_reqs = conn.execute(
-        "SELECT raw_text FROM intake_requirements "
-        "WHERE session_id = ? AND source_document IS NOT NULL",
+        "SELECT raw_text FROM intake_requirements WHERE session_id = ? AND source_document IS NOT NULL",
         (session_id,),
     ).fetchall()
     if doc_reqs:
@@ -1330,74 +1385,173 @@ def _analyze_conversation_coverage(session_id, conn):
     # Topic detection with specific follow-up questions
     topics = {
         "users_roles": {
-            "keywords": ["user", "role", "agent", "admin", "operator", "analyst",
-                         "viewer", "customer", "personnel", "staff"],
+            "keywords": [
+                "user",
+                "role",
+                "agent",
+                "admin",
+                "operator",
+                "analyst",
+                "viewer",
+                "customer",
+                "personnel",
+                "staff",
+            ],
             "covered_question": None,
             "gap_question": "Who will use this system? What are the distinct user roles and their permissions?",
         },
         "workflow": {
-            "keywords": ["workflow", "process", "step", "flow", "sequence",
-                         "procedure", "pipeline", "task"],
+            "keywords": ["workflow", "process", "step", "flow", "sequence", "procedure", "pipeline", "task"],
             "covered_question": None,
             "gap_question": "What's the primary user workflow from start to finish?",
         },
         "data_model": {
-            "keywords": ["data", "database", "record", "field", "store", "table",
-                         "schema", "entity", "model", "input", "output"],
+            "keywords": [
+                "data",
+                "database",
+                "record",
+                "field",
+                "store",
+                "table",
+                "schema",
+                "entity",
+                "model",
+                "input",
+                "output",
+            ],
             "covered_question": None,
             "gap_question": "What data does the system manage? What are the key entities and their relationships?",
         },
         "integration": {
-            "keywords": ["integrate", "api", "rest", "connect", "external",
-                         "third-party", "system", "mcp", "soap", "feed"],
+            "keywords": [
+                "integrate",
+                "api",
+                "rest",
+                "connect",
+                "external",
+                "third-party",
+                "system",
+                "mcp",
+                "soap",
+                "feed",
+            ],
             "covered_question": None,
             "gap_question": "What external systems does this integrate with? What protocols (REST, MCP, file)?",
         },
         "performance": {
-            "keywords": ["performance", "sla", "uptime", "latency", "response time",
-                         "concurrent", "throughput", "availability", "99"],
+            "keywords": [
+                "performance",
+                "sla",
+                "uptime",
+                "latency",
+                "response time",
+                "concurrent",
+                "throughput",
+                "availability",
+                "99",
+            ],
             "covered_question": None,
             "gap_question": "What are the performance requirements? (SLA, response times, concurrent users)",
         },
         "security_auth": {
-            "keywords": ["security", "auth", "login", "cac", "piv", "mfa",
-                         "encrypt", "fips", "access control", "rbac", "permission"],
+            "keywords": [
+                "security",
+                "auth",
+                "login",
+                "cac",
+                "piv",
+                "mfa",
+                "encrypt",
+                "fips",
+                "access control",
+                "rbac",
+                "permission",
+            ],
             "covered_question": None,
-            "gap_question": "How do users authenticate? (CAC/PIV, MFA, username/password) What access controls are needed?",
+            "gap_question": "How do users authenticate? (CAC/PIV, MFA, username/password) What access controls are needed?",  # noqa: E501
         },
         "error_handling": {
-            "keywords": ["error", "fail", "exception", "retry", "fallback",
-                         "validation", "invalid", "reject", "deny"],
+            "keywords": ["error", "fail", "exception", "retry", "fallback", "validation", "invalid", "reject", "deny"],
             "covered_question": None,
-            "gap_question": "What happens when something goes wrong? (validation failures, system errors, invalid inputs)",
+            "gap_question": "What happens when something goes wrong? (validation failures, system errors, invalid inputs)",  # noqa: E501
         },
         "reporting": {
-            "keywords": ["report", "dashboard", "metric", "analytics", "audit",
-                         "log", "history", "export", "csv", "pdf"],
+            "keywords": [
+                "report",
+                "dashboard",
+                "metric",
+                "analytics",
+                "audit",
+                "log",
+                "history",
+                "export",
+                "csv",
+                "pdf",
+            ],
             "covered_question": None,
             "gap_question": "Does the system need reporting, audit trails, or dashboards? What metrics matter?",
         },
         "deployment": {
-            "keywords": ["deploy", "host", "cloud", "aws", "govcloud", "on-prem",
-                         "environment", "staging", "production", "docker", "k8s"],
+            "keywords": [
+                "deploy",
+                "host",
+                "cloud",
+                "aws",
+                "govcloud",
+                "on-prem",
+                "environment",
+                "staging",
+                "production",
+                "docker",
+                "k8s",
+            ],
             "covered_question": None,
-            "gap_question": "Where will this be deployed? (AWS GovCloud, on-prem, hybrid) What environments are needed?",
+            "gap_question": "Where will this be deployed? (AWS GovCloud, on-prem, hybrid) What environments are needed?",  # noqa: E501
         },
         "ui_ux": {
-            "keywords": ["ui", "ux", "interface", "screen", "page", "form",
-                         "button", "design", "mobile", "responsive", "intuitive"],
+            "keywords": [
+                "ui",
+                "ux",
+                "interface",
+                "screen",
+                "page",
+                "form",
+                "button",
+                "design",
+                "mobile",
+                "responsive",
+                "intuitive",
+            ],
             "covered_question": None,
-            "gap_question": "What should the user interface look like? (web app, mobile, desktop) Any specific UX requirements?",
+            "gap_question": "What should the user interface look like? (web app, mobile, desktop) Any specific UX requirements?",  # noqa: E501
         },
         "ai_governance": {
-            "keywords": ["ai system", "machine learning", "ml model", "deep learning",
-                         "neural network", "nlp", "computer vision", "recommendation engine",
-                         "predictive model", "automated decision", "algorithmic", "chatbot",
-                         "generative ai", "llm", "foundation model", "model card",
-                         "human oversight", "impact assessment", "ai governance",
-                         "responsible ai", "caio", "chief ai officer"],
+            "keywords": [
+                "ai system",
+                "machine learning",
+                "ml model",
+                "deep learning",
+                "neural network",
+                "nlp",
+                "computer vision",
+                "recommendation engine",
+                "predictive model",
+                "automated decision",
+                "algorithmic",
+                "chatbot",
+                "generative ai",
+                "llm",
+                "foundation model",
+                "model card",
+                "human oversight",
+                "impact assessment",
+                "ai governance",
+                "responsible ai",
+                "caio",
+                "chief ai officer",
+            ],
             "covered_question": None,
-            "gap_question": "Does this system use AI/ML? If so, what governance is needed (model documentation, human oversight, impact assessments)?",
+            "gap_question": "Does this system use AI/ML? If so, what governance is needed (model documentation, human oversight, impact assessments)?",  # noqa: E501
         },
     }
 
@@ -1431,9 +1585,7 @@ def _extract_and_fetch_urls(text):
     Returns a list of dicts: [{"url": "...", "title": "...", "summary": "..."}]
     Only fetches HTTP/HTTPS URLs.  Best-effort — failures return a note.
     """
-    url_pattern = re.compile(
-        r'https?://[^\s<>\"\')]+', re.IGNORECASE
-    )
+    url_pattern = re.compile(r"https?://[^\s<>\"\')]+", re.IGNORECASE)
     urls = url_pattern.findall(text)
     if not urls:
         return []
@@ -1448,10 +1600,14 @@ def _extract_and_fetch_urls(text):
 
     for url in urls[:3]:  # limit to 3 URLs per message
         try:
-            resp = _requests.get(url, timeout=10, headers={
-                "User-Agent": "ICDEV-Intake-Agent/1.0",
-                "Accept": "text/html,application/json,text/plain",
-            })
+            resp = _requests.get(
+                url,
+                timeout=10,
+                headers={
+                    "User-Agent": "ICDEV-Intake-Agent/1.0",
+                    "Accept": "text/html,application/json,text/plain",
+                },
+            )
             resp.raise_for_status()
             content_type = resp.headers.get("Content-Type", "")
 
@@ -1477,31 +1633,26 @@ def _extract_and_fetch_urls(text):
             else:
                 # HTML — extract title and meta description / first text
                 body = resp.text[:50000]
-                title_match = re.search(r'<title[^>]*>([^<]+)</title>', body, re.I)
+                title_match = re.search(r"<title[^>]*>([^<]+)</title>", body, re.I)
                 title = title_match.group(1).strip() if title_match else ""
 
                 # Try meta description
-                meta_match = re.search(
-                    r'<meta\s+[^>]*name=["\']description["\']\s+content=["\']([^"\']+)',
-                    body, re.I
-                )
+                meta_match = re.search(r'<meta\s+[^>]*name=["\']description["\']\s+content=["\']([^"\']+)', body, re.I)
                 if not meta_match:
                     meta_match = re.search(
-                        r'<meta\s+[^>]*content=["\']([^"\']+)["\'][^>]*name=["\']description',
-                        body, re.I
+                        r'<meta\s+[^>]*content=["\']([^"\']+)["\'][^>]*name=["\']description', body, re.I
                     )
                 desc = meta_match.group(1).strip() if meta_match else ""
 
                 # Try README or about-section text for GitHub-like pages
                 readme_match = re.search(
-                    r'<article[^>]*class="[^"]*markdown-body[^"]*"[^>]*>(.*?)</article>',
-                    body, re.I | re.S
+                    r'<article[^>]*class="[^"]*markdown-body[^"]*"[^>]*>(.*?)</article>', body, re.I | re.S
                 )
                 readme_text = ""
                 if readme_match:
                     # Strip HTML tags for plain text
-                    raw = re.sub(r'<[^>]+>', ' ', readme_match.group(1))
-                    raw = re.sub(r'\s+', ' ', raw).strip()
+                    raw = re.sub(r"<[^>]+>", " ", readme_match.group(1))
+                    raw = re.sub(r"\s+", " ", raw).strip()
                     readme_text = raw[:800]
 
                 if readme_text:
@@ -1510,10 +1661,10 @@ def _extract_and_fetch_urls(text):
                     summary = desc
                 else:
                     # Fallback: strip tags from first visible text
-                    stripped = re.sub(r'<script[^>]*>.*?</script>', '', body, flags=re.S | re.I)
-                    stripped = re.sub(r'<style[^>]*>.*?</style>', '', stripped, flags=re.S | re.I)
-                    stripped = re.sub(r'<[^>]+>', ' ', stripped)
-                    stripped = re.sub(r'\s+', ' ', stripped).strip()
+                    stripped = re.sub(r"<script[^>]*>.*?</script>", "", body, flags=re.S | re.I)
+                    stripped = re.sub(r"<style[^>]*>.*?</style>", "", stripped, flags=re.S | re.I)
+                    stripped = re.sub(r"<[^>]+>", " ", stripped)
+                    stripped = re.sub(r"\s+", " ", stripped).strip()
                     summary = stripped[:500] if stripped else "(no readable content)"
 
             results.append({"url": url, "title": title, "summary": summary[:1000]})
@@ -1538,29 +1689,32 @@ def _detect_ambiguities_in_text(text):
     else:
         # Fallback minimal patterns
         patterns = [
-            {"phrase": "as needed", "severity": "high",
-             "clarification": "Define specific conditions that trigger this action."},
-            {"phrase": "appropriate", "severity": "high",
-             "clarification": "Define measurable criteria."},
-            {"phrase": "timely", "severity": "high",
-             "clarification": "Specify an exact time threshold."},
-            {"phrase": "user-friendly", "severity": "medium",
-             "clarification": "Define specific usability criteria."},
-            {"phrase": "fast", "severity": "high",
-             "clarification": "Specify a measurable target."},
-            {"phrase": "secure", "severity": "critical",
-             "clarification": "Specify security requirements: FIPS, STIG, controls."},
-            {"phrase": "scalable", "severity": "medium",
-             "clarification": "Define target scale: users, data volume."},
+            {
+                "phrase": "as needed",
+                "severity": "high",
+                "clarification": "Define specific conditions that trigger this action.",
+            },
+            {"phrase": "appropriate", "severity": "high", "clarification": "Define measurable criteria."},
+            {"phrase": "timely", "severity": "high", "clarification": "Specify an exact time threshold."},
+            {"phrase": "user-friendly", "severity": "medium", "clarification": "Define specific usability criteria."},
+            {"phrase": "fast", "severity": "high", "clarification": "Specify a measurable target."},
+            {
+                "phrase": "secure",
+                "severity": "critical",
+                "clarification": "Specify security requirements: FIPS, STIG, controls.",
+            },
+            {"phrase": "scalable", "severity": "medium", "clarification": "Define target scale: users, data volume."},
         ]
 
     for pattern in patterns:
         if pattern["phrase"].lower() in lower:
-            ambiguities.append({
-                "phrase": pattern["phrase"],
-                "severity": pattern.get("severity", "medium"),
-                "clarification": pattern.get("clarification", "Please clarify this term."),
-            })
+            ambiguities.append(
+                {
+                    "phrase": pattern["phrase"],
+                    "severity": pattern.get("severity", "medium"),
+                    "clarification": pattern.get("clarification", "Please clarify this term."),
+                }
+            )
 
     return ambiguities
 
@@ -1575,8 +1729,7 @@ def _detect_gap_signals(text, session_id, conn):
     protocol_terms = ["rest", "api", "soap", "message queue", "file", "isa", "mou"]
     if any(t in lower for t in interface_terms) and not any(t in lower for t in protocol_terms):
         signals.append(
-            "External system mentioned without interface protocol — "
-            "ask about REST/SOAP/MQ and ISA/MOU requirements"
+            "External system mentioned without interface protocol — ask about REST/SOAP/MQ and ISA/MOU requirements"
         )
 
     # Check for security without specifics
@@ -1584,8 +1737,7 @@ def _detect_gap_signals(text, session_id, conn):
         t in lower for t in ["fips", "stig", "nist", "cac", "piv", "encrypt", "mfa"]
     ):
         signals.append(
-            "Security mentioned without specifics — "
-            "ask about FIPS encryption, CAC/PIV auth, STIG compliance"
+            "Security mentioned without specifics — ask about FIPS encryption, CAC/PIV auth, STIG compliance"
         )
 
     # Check for data mentions without classification
@@ -1593,8 +1745,7 @@ def _detect_gap_signals(text, session_id, conn):
         t in lower for t in ["cui", "classified", "unclassified", "fouo", "secret"]
     ):
         signals.append(
-            "Data mentioned without classification — "
-            "ask about CUI categories and data handling requirements"
+            "Data mentioned without classification — ask about CUI categories and data handling requirements"
         )
 
     return signals
@@ -1607,35 +1758,41 @@ def _detect_boundary_signals(text, session_data):
     impact_level = session_data.get("impact_level", "IL5")
 
     # Classification upgrade signals
-    if impact_level in ("IL4", "IL5") and any(
-        t in lower for t in ["secret", "ts/sci", "top secret", "classified"]
-    ):
-        flags.append({
-            "tier": "RED",
-            "description": f"Classification upgrade detected — current system is {impact_level} "
-                          f"but SECRET/TS data mentioned. This would invalidate the current ATO.",
-        })
+    if impact_level in ("IL4", "IL5") and any(t in lower for t in ["secret", "ts/sci", "top secret", "classified"]):
+        flags.append(
+            {
+                "tier": "RED",
+                "description": f"Classification upgrade detected — current system is {impact_level} "
+                f"but SECRET/TS data mentioned. This would invalidate the current ATO.",
+            }
+        )
 
     # New external interface
     if any(t in lower for t in ["new system", "new interface", "new connection", "new integration"]):
-        flags.append({
-            "tier": "ORANGE",
-            "description": "New external interface — requires ISA/MOU and SSP Section 9 update.",
-        })
+        flags.append(
+            {
+                "tier": "ORANGE",
+                "description": "New external interface — requires ISA/MOU and SSP Section 9 update.",
+            }
+        )
 
     # BYOD/mobile
     if any(t in lower for t in ["mobile", "byod", "personal device", "phone", "tablet"]):
-        flags.append({
-            "tier": "ORANGE",
-            "description": "Mobile/BYOD access — requires AC-19, MDM solution, SSP boundary update.",
-        })
+        flags.append(
+            {
+                "tier": "ORANGE",
+                "description": "Mobile/BYOD access — requires AC-19, MDM solution, SSP boundary update.",
+            }
+        )
 
     # Cloud service change
     if any(t in lower for t in ["aws commercial", "azure", "gcp", "public cloud"]):
-        flags.append({
-            "tier": "ORANGE",
-            "description": "Non-GovCloud service mentioned — current boundary is AWS GovCloud only.",
-        })
+        flags.append(
+            {
+                "tier": "ORANGE",
+                "description": "Non-GovCloud service mentioned — current boundary is AWS GovCloud only.",
+            }
+        )
 
     return flags
 
@@ -1648,6 +1805,7 @@ def _detect_devsecops_signals(text):
     """
     try:
         from tools.devsecops.profile_manager import detect_maturity_from_text
+
         return detect_maturity_from_text(text)
     except (ImportError, Exception):
         # Fallback: inline minimal detection
@@ -1664,15 +1822,24 @@ def _detect_devsecops_signals(text):
         for stage, keywords in keyword_map.items():
             if any(kw in lower for kw in keywords):
                 detected.append(stage)
-        greenfield = any(s in lower for s in [
-            "no security scanning", "greenfield", "starting from scratch",
-        ])
+        greenfield = any(
+            s in lower
+            for s in [
+                "no security scanning",
+                "greenfield",
+                "starting from scratch",
+            ]
+        )
         return {
             "detected_stages": sorted(set(detected)),
-            "maturity_estimate": "level_1_initial" if greenfield else (
-                "level_3_defined" if len(detected) >= 4 else
-                "level_2_managed" if len(detected) >= 2 else
-                "level_1_initial"
+            "maturity_estimate": "level_1_initial"
+            if greenfield
+            else (
+                "level_3_defined"
+                if len(detected) >= 4
+                else "level_2_managed"
+                if len(detected) >= 2
+                else "level_1_initial"
             ),
             "zta_detected": False,
             "greenfield": greenfield,
@@ -1691,7 +1858,9 @@ def _detect_zta_signals(text):
 
     # General ZTA indicators
     general_keywords = [
-        "zero trust", "nist 800-207", "never trust always verify",
+        "zero trust",
+        "nist 800-207",
+        "never trust always verify",
         "zero trust architecture",
     ]
     if any(kw in lower for kw in general_keywords):
@@ -1699,21 +1868,46 @@ def _detect_zta_signals(text):
 
     # Pillar-specific keywords
     pillar_keywords = {
-        "user_identity": ["mfa", "multi-factor", "cac", "piv", "identity provider",
-                          "sso", "single sign-on", "continuous auth", "icam"],
-        "device": ["device posture", "mdm", "endpoint detection", "device trust",
-                   "device compliance", "edr"],
-        "network": ["micro-segmentation", "microsegmentation", "mtls", "mutual tls",
-                    "service mesh", "istio", "linkerd", "network policy",
-                    "software-defined perimeter", "ztna"],
-        "application_workload": ["workload identity", "container hardening",
-                                 "admission control", "signed images"],
-        "data": ["data classification", "encryption at rest", "dlp",
-                 "data loss prevention", "tokenization"],
-        "visibility_analytics": ["siem", "continuous monitoring", "anomaly detection",
-                                 "threat intelligence", "security analytics"],
-        "automation_orchestration": ["soar", "auto-remediation", "security orchestration",
-                                     "automated response", "self-healing"],
+        "user_identity": [
+            "mfa",
+            "multi-factor",
+            "cac",
+            "piv",
+            "identity provider",
+            "sso",
+            "single sign-on",
+            "continuous auth",
+            "icam",
+        ],
+        "device": ["device posture", "mdm", "endpoint detection", "device trust", "device compliance", "edr"],
+        "network": [
+            "micro-segmentation",
+            "microsegmentation",
+            "mtls",
+            "mutual tls",
+            "service mesh",
+            "istio",
+            "linkerd",
+            "network policy",
+            "software-defined perimeter",
+            "ztna",
+        ],
+        "application_workload": ["workload identity", "container hardening", "admission control", "signed images"],
+        "data": ["data classification", "encryption at rest", "dlp", "data loss prevention", "tokenization"],
+        "visibility_analytics": [
+            "siem",
+            "continuous monitoring",
+            "anomaly detection",
+            "threat intelligence",
+            "security analytics",
+        ],
+        "automation_orchestration": [
+            "soar",
+            "auto-remediation",
+            "security orchestration",
+            "automated response",
+            "self-healing",
+        ],
     }
 
     for pillar, keywords in pillar_keywords.items():
@@ -1741,11 +1935,26 @@ def _detect_mosa_signals(text, session_data=None):
 
     # DoD/IC customer keywords — auto-trigger MOSA (D125)
     dod_ic_keywords = [
-        "department of defense", "dod", "air force", "army", "navy",
-        "marine corps", "space force", "intelligence community",
-        "combatant command", "acquisition program", "mdap", "acat",
-        "program of record", "warfighter", "nsa", "dia", "nro", "nga",
-        "military", "defense information systems",
+        "department of defense",
+        "dod",
+        "air force",
+        "army",
+        "navy",
+        "marine corps",
+        "space force",
+        "intelligence community",
+        "combatant command",
+        "acquisition program",
+        "mdap",
+        "acat",
+        "program of record",
+        "warfighter",
+        "nsa",
+        "dia",
+        "nro",
+        "nga",
+        "military",
+        "defense information systems",
     ]
     if any(kw in lower for kw in dod_ic_keywords):
         dod_ic_detected = True
@@ -1763,23 +1972,57 @@ def _detect_mosa_signals(text, session_data=None):
 
     # MOSA pillar keywords (from mosa_config.yaml intake_detection)
     pillar_keywords = {
-        "modular_architecture": ["modular", "loosely coupled", "microservice",
-                                 "component-based", "plugin", "module boundary",
-                                 "encapsulation"],
-        "open_standards": ["openapi", "rest api", "grpc", "protobuf",
-                          "standard protocol", "open standard", "json schema"],
-        "open_interfaces": ["interface control", "icd", "api versioning",
-                           "backward compatible", "interface specification",
-                           "integration spec"],
-        "data_rights": ["data rights", "government purpose", "license tracking",
-                       "source escrow", "intellectual property", "gpr",
-                       "unlimited rights"],
-        "competitive_sourcing": ["vendor lock-in", "vendor neutral", "competitive",
-                                "replaceability", "build vs buy", "multi-vendor",
-                                "plug-and-play"],
-        "continuous_assessment": ["architecture review", "modularity metrics",
-                                 "design review", "architecture evolution",
-                                 "technology refresh"],
+        "modular_architecture": [
+            "modular",
+            "loosely coupled",
+            "microservice",
+            "component-based",
+            "plugin",
+            "module boundary",
+            "encapsulation",
+        ],
+        "open_standards": [
+            "openapi",
+            "rest api",
+            "grpc",
+            "protobuf",
+            "standard protocol",
+            "open standard",
+            "json schema",
+        ],
+        "open_interfaces": [
+            "interface control",
+            "icd",
+            "api versioning",
+            "backward compatible",
+            "interface specification",
+            "integration spec",
+        ],
+        "data_rights": [
+            "data rights",
+            "government purpose",
+            "license tracking",
+            "source escrow",
+            "intellectual property",
+            "gpr",
+            "unlimited rights",
+        ],
+        "competitive_sourcing": [
+            "vendor lock-in",
+            "vendor neutral",
+            "competitive",
+            "replaceability",
+            "build vs buy",
+            "multi-vendor",
+            "plug-and-play",
+        ],
+        "continuous_assessment": [
+            "architecture review",
+            "modularity metrics",
+            "design review",
+            "architecture evolution",
+            "technology refresh",
+        ],
     }
 
     for pillar, keywords in pillar_keywords.items():
@@ -1803,6 +2046,7 @@ def _detect_dev_profile_signals(text, session_data=None):
     """
     try:
         from tools.builder.profile_detector import detect_from_text
+
         raw = detect_from_text(text)
         # Normalize to expected shape
         signals = raw.get("detected_signals", {})
@@ -1821,23 +2065,72 @@ def _detect_dev_profile_signals(text, session_data=None):
     detected_dimensions = []
 
     dimension_keywords = {
-        "language": ["python", "java", "go", "golang", "rust", "typescript", "c#",
-                     "csharp", ".net", "flask", "fastapi", "spring boot", "express"],
-        "style": ["snake_case", "camelcase", "camel case", "naming convention",
-                  "code style", "indent", "line length", "prettier", "black",
-                  "eslint", "ruff", "gofmt", "formatting", "linter"],
-        "testing": ["tdd", "bdd", "test driven", "test coverage", "unit test",
-                    "e2e test", "cucumber", "behave", "jest", "pytest"],
-        "architecture": ["microservice", "monolith", "api gateway", "rest",
-                         "graphql", "event driven", "hexagonal", "layered"],
-        "security": ["fips", "encryption", "secret management", "sast",
-                     "container hardening", "stig", "vulnerability"],
-        "operations": ["kubernetes", "k8s", "docker", "docker compose",
-                       "gitlab ci", "github actions", "jenkins", "air-gapped"],
-        "git": ["trunk-based", "gitflow", "github flow", "squash merge",
-                "conventional commits", "branch naming"],
-        "ai": ["bedrock", "openai", "ollama", "byok", "token budget",
-               "llm", "ai model", "code generation model"],
+        "language": [
+            "python",
+            "java",
+            "go",
+            "golang",
+            "rust",
+            "typescript",
+            "c#",
+            "csharp",
+            ".net",
+            "flask",
+            "fastapi",
+            "spring boot",
+            "express",
+        ],
+        "style": [
+            "snake_case",
+            "camelcase",
+            "camel case",
+            "naming convention",
+            "code style",
+            "indent",
+            "line length",
+            "prettier",
+            "black",
+            "eslint",
+            "ruff",
+            "gofmt",
+            "formatting",
+            "linter",
+        ],
+        "testing": [
+            "tdd",
+            "bdd",
+            "test driven",
+            "test coverage",
+            "unit test",
+            "e2e test",
+            "cucumber",
+            "behave",
+            "jest",
+            "pytest",
+        ],
+        "architecture": [
+            "microservice",
+            "monolith",
+            "api gateway",
+            "rest",
+            "graphql",
+            "event driven",
+            "hexagonal",
+            "layered",
+        ],
+        "security": ["fips", "encryption", "secret management", "sast", "container hardening", "stig", "vulnerability"],
+        "operations": [
+            "kubernetes",
+            "k8s",
+            "docker",
+            "docker compose",
+            "gitlab ci",
+            "github actions",
+            "jenkins",
+            "air-gapped",
+        ],
+        "git": ["trunk-based", "gitflow", "github flow", "squash merge", "conventional commits", "branch naming"],
+        "ai": ["bedrock", "openai", "ollama", "byok", "token budget", "llm", "ai model", "code generation model"],
     }
 
     for dim, keywords in dimension_keywords.items():
@@ -1846,8 +2139,7 @@ def _detect_dev_profile_signals(text, session_data=None):
 
     # Check for template-matching signals
     template_signals = {
-        "dod_baseline": ["dod", "department of defense", "il4", "il5", "il6",
-                         "cmmc", "stig"],
+        "dod_baseline": ["dod", "department of defense", "il4", "il5", "il6", "cmmc", "stig"],
         "fedramp_baseline": ["fedramp", "fed ramp", "jab", "3pao"],
         "healthcare_baseline": ["hipaa", "hitrust", "phi", "health"],
         "financial_baseline": ["pci dss", "pci", "sox", "financial"],
@@ -1881,20 +2173,47 @@ def _detect_ai_governance_signals(text, session_data=None):
 
     # AI/ML mention keywords — auto-trigger governance (D322)
     ai_ml_keywords = [
-        "ai system", "machine learning", "ml model", "deep learning",
-        "neural network", "natural language processing", "nlp",
-        "computer vision", "recommendation engine", "predictive model",
-        "automated decision", "algorithmic", "chatbot", "virtual assistant",
-        "generative ai", "large language model", "llm", "foundation model",
+        "ai system",
+        "machine learning",
+        "ml model",
+        "deep learning",
+        "neural network",
+        "natural language processing",
+        "nlp",
+        "computer vision",
+        "recommendation engine",
+        "predictive model",
+        "automated decision",
+        "algorithmic",
+        "chatbot",
+        "virtual assistant",
+        "generative ai",
+        "large language model",
+        "llm",
+        "foundation model",
     ]
     if any(kw in lower for kw in ai_ml_keywords):
         ai_governance_detected = True
 
     # Federal agency keywords — auto-trigger per OMB M-25-21
     federal_keywords = [
-        "federal agency", "omb", "executive order", "federal government",
-        "government agency", "gsa", "irs", "fda", "epa", "usda",
-        "hhs", "dhs", "dot", "hud", "ed.gov", "va ", "opm",
+        "federal agency",
+        "omb",
+        "executive order",
+        "federal government",
+        "government agency",
+        "gsa",
+        "irs",
+        "fda",
+        "epa",
+        "usda",
+        "hhs",
+        "dhs",
+        "dot",
+        "hud",
+        "ed.gov",
+        "va ",
+        "opm",
     ]
     if any(kw in lower for kw in federal_keywords):
         federal_agency_detected = True
@@ -1903,41 +2222,74 @@ def _detect_ai_governance_signals(text, session_data=None):
     # Also check session customer_org for federal indicators
     if session_data:
         org = (session_data.get("customer_org") or "").lower()
-        if any(kw in org for kw in ["federal", "agency", "government", "gsa",
-                                      "omb", "dod", "defense", "military"]):
+        if any(kw in org for kw in ["federal", "agency", "government", "gsa", "omb", "dod", "defense", "military"]):
             federal_agency_detected = True
             ai_governance_detected = True
 
     # Governance pillar keywords (from ai_governance_config.yaml)
     pillar_keywords = {
         "ai_inventory": [
-            "ai system", "machine learning", "ml model", "deep learning",
-            "neural network", "nlp", "computer vision", "recommendation engine",
-            "predictive model", "automated decision", "algorithmic", "chatbot",
-            "generative ai", "llm", "foundation model",
+            "ai system",
+            "machine learning",
+            "ml model",
+            "deep learning",
+            "neural network",
+            "nlp",
+            "computer vision",
+            "recommendation engine",
+            "predictive model",
+            "automated decision",
+            "algorithmic",
+            "chatbot",
+            "generative ai",
+            "llm",
+            "foundation model",
         ],
         "model_documentation": [
-            "model card", "model documentation", "training data",
-            "model performance", "model accuracy", "model bias",
-            "model validation", "model versioning",
+            "model card",
+            "model documentation",
+            "training data",
+            "model performance",
+            "model accuracy",
+            "model bias",
+            "model validation",
+            "model versioning",
         ],
         "human_oversight": [
-            "human oversight", "human in the loop", "human on the loop",
-            "manual review", "human approval", "override capability",
-            "escalation", "appeal process",
+            "human oversight",
+            "human in the loop",
+            "human on the loop",
+            "manual review",
+            "human approval",
+            "override capability",
+            "escalation",
+            "appeal process",
         ],
         "impact_assessment": [
-            "impact assessment", "rights impacting", "safety critical",
-            "high risk ai", "algorithmic impact", "disparate impact",
-            "bias assessment", "fairness",
+            "impact assessment",
+            "rights impacting",
+            "safety critical",
+            "high risk ai",
+            "algorithmic impact",
+            "disparate impact",
+            "bias assessment",
+            "fairness",
         ],
         "transparency": [
-            "transparency", "explainability", "interpretability",
-            "notice", "disclosure", "ai disclosure",
+            "transparency",
+            "explainability",
+            "interpretability",
+            "notice",
+            "disclosure",
+            "ai disclosure",
         ],
         "accountability": [
-            "accountability", "responsible ai", "caio",
-            "chief ai officer", "ai governance", "ethics review",
+            "accountability",
+            "responsible ai",
+            "caio",
+            "chief ai officer",
+            "ai governance",
+            "ethics review",
             "incident response",
         ],
     }
@@ -1964,8 +2316,14 @@ def _quick_readiness_estimate(session_id, conn):
 
     total = len(reqs)
     if total == 0:
-        return {"overall": 0.0, "completeness": 0.0, "clarity": 1.0,
-                "feasibility": 0.5, "compliance": 0.0, "testability": 0.0}
+        return {
+            "overall": 0.0,
+            "completeness": 0.0,
+            "clarity": 1.0,
+            "feasibility": 0.5,
+            "compliance": 0.0,
+            "testability": 0.0,
+        }
 
     # Completeness: check if we have multiple types
     types = set(dict(r)["requirement_type"] for r in reqs)
@@ -1979,7 +2337,7 @@ def _quick_readiness_estimate(session_id, conn):
         (session_id,),
     ).fetchone()
     sess_dict = dict(sess_row) if sess_row else {}
-    amb_count = sess_dict.get("ambiguity_count", 0)
+    sess_dict.get("ambiguity_count", 0)
     ctx = {}
     try:
         ctx = json.loads(sess_dict.get("context_summary") or "{}")
@@ -1988,8 +2346,7 @@ def _quick_readiness_estimate(session_id, conn):
     flagged = ctx.get("flagged_ambiguities", [])
     # Count user turns after ambiguities were first flagged as clarification
     turn_count = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_conversation "
-        "WHERE session_id = ? AND role = 'customer'",
+        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = ? AND role = 'customer'",
         (session_id,),
     ).fetchone()["cnt"]
     # Each user turn after the first resolves ambiguity somewhat
@@ -2035,17 +2392,23 @@ def _quick_readiness_estimate(session_id, conn):
     testability = with_criteria / max(total, 1)
 
     config = _load_config()
-    weights = config.get("ricoas", {}).get("readiness_weights", {
-        "completeness": 0.25, "clarity": 0.25, "feasibility": 0.20,
-        "compliance": 0.15, "testability": 0.15,
-    })
+    weights = config.get("ricoas", {}).get(
+        "readiness_weights",
+        {
+            "completeness": 0.25,
+            "clarity": 0.25,
+            "feasibility": 0.20,
+            "compliance": 0.15,
+            "testability": 0.15,
+        },
+    )
 
     overall = (
-        completeness * weights.get("completeness", 0.25) +
-        clarity * weights.get("clarity", 0.25) +
-        feasibility * weights.get("feasibility", 0.20) +
-        compliance * weights.get("compliance", 0.15) +
-        testability * weights.get("testability", 0.15)
+        completeness * weights.get("completeness", 0.25)
+        + clarity * weights.get("clarity", 0.25)
+        + feasibility * weights.get("feasibility", 0.20)
+        + compliance * weights.get("compliance", 0.15)
+        + testability * weights.get("testability", 0.15)
     )
 
     return {
@@ -2062,6 +2425,7 @@ def _quick_readiness_estimate(session_id, conn):
 # Export
 # ---------------------------------------------------------------------------
 
+
 def export_requirements(session_id: str, db_path=None) -> dict:
     """Export all requirements from a session as structured JSON."""
     conn = _get_connection(db_path)
@@ -2070,9 +2434,7 @@ def export_requirements(session_id: str, db_path=None) -> dict:
         (session_id,),
     ).fetchall()
 
-    session = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     conn.close()
 
     if not session:
@@ -2095,10 +2457,9 @@ def export_requirements(session_id: str, db_path=None) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Requirements Intake Engine"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Requirements Intake Engine")
     parser.add_argument("--project-id", help="ICDEV project ID")
     parser.add_argument("--session-id", help="Existing session ID")
     parser.add_argument("--customer-name", help="Customer name (for new session)")

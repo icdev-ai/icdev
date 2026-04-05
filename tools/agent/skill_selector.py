@@ -30,45 +30,115 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "build": {
             "description": "Code generation, scaffolding, TDD",
             "keywords": [
-                "build", "code", "implement", "scaffold", "generate", "tdd",
-                "test", "lint", "format", "refactor", "python", "java",
-                "javascript", "typescript", "go", "rust", "csharp", "flask",
+                "build",
+                "code",
+                "implement",
+                "scaffold",
+                "generate",
+                "tdd",
+                "test",
+                "lint",
+                "format",
+                "refactor",
+                "python",
+                "java",
+                "javascript",
+                "typescript",
+                "go",
+                "rust",
+                "csharp",
+                "flask",
             ],
-            "commands": ["feature", "bug", "chore", "patch", "test",
-                         "resolve_failed_test", "commit", "pull_request", "review"],
+            "commands": [
+                "feature",
+                "bug",
+                "chore",
+                "patch",
+                "test",
+                "resolve_failed_test",
+                "commit",
+                "pull_request",
+                "review",
+            ],
             "goals": ["build_app.md", "tdd_workflow.md", "integration_testing.md"],
             "context_dirs": ["languages", "templates"],
         },
         "compliance": {
             "description": "ATO artifacts, compliance frameworks",
             "keywords": [
-                "compliance", "ato", "nist", "stig", "sbom", "fedramp", "cmmc",
-                "oscal", "emass", "cato", "ssp", "poam", "cui", "fips", "hipaa",
-                "pci", "cjis", "soc2", "iso27001", "crosswalk", "control",
+                "compliance",
+                "ato",
+                "nist",
+                "stig",
+                "sbom",
+                "fedramp",
+                "cmmc",
+                "oscal",
+                "emass",
+                "cato",
+                "ssp",
+                "poam",
+                "cui",
+                "fips",
+                "hipaa",
+                "pci",
+                "cjis",
+                "soc2",
+                "iso27001",
+                "crosswalk",
+                "control",
             ],
             "commands": [],
-            "goals": ["compliance_workflow.md", "ato_acceleration.md",
-                       "universal_compliance.md"],
+            "goals": ["compliance_workflow.md", "ato_acceleration.md", "universal_compliance.md"],
             "context_dirs": ["compliance"],
         },
         "infrastructure": {
             "description": "Deployment, IaC, pipelines, DevSecOps",
             "keywords": [
-                "deploy", "terraform", "ansible", "k8s", "kubernetes", "pipeline",
-                "infrastructure", "iac", "cicd", "docker", "container", "helm",
-                "devsecops", "zero trust", "zta", "service mesh",
+                "deploy",
+                "terraform",
+                "ansible",
+                "k8s",
+                "kubernetes",
+                "pipeline",
+                "infrastructure",
+                "iac",
+                "cicd",
+                "docker",
+                "container",
+                "helm",
+                "devsecops",
+                "zero trust",
+                "zta",
+                "service mesh",
             ],
             "commands": [],
-            "goals": ["deploy_workflow.md", "cicd_integration.md",
-                       "devsecops_workflow.md", "zero_trust_architecture.md"],
+            "goals": [
+                "deploy_workflow.md",
+                "cicd_integration.md",
+                "devsecops_workflow.md",
+                "zero_trust_architecture.md",
+            ],
             "context_dirs": ["ci"],
         },
         "requirements": {
             "description": "Requirements intake, simulation, COA",
             "keywords": [
-                "requirements", "intake", "spec", "coa", "simulation",
-                "monte carlo", "readiness", "decomposition", "safe", "epic",
-                "story", "bdd", "gherkin", "stakeholder", "elicitation",
+                "requirements",
+                "intake",
+                "spec",
+                "coa",
+                "simulation",
+                "monte carlo",
+                "readiness",
+                "decomposition",
+                "safe",
+                "epic",
+                "story",
+                "bdd",
+                "gherkin",
+                "stakeholder",
+                "elicitation",
             ],
             "commands": [],
             "goals": ["requirements_intake.md", "simulation_engine.md"],
@@ -77,9 +147,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "maintenance": {
             "description": "Dependency management, modernization",
             "keywords": [
-                "maintenance", "dependency", "vulnerability", "cve", "modernize",
-                "migrate", "legacy", "remediate", "upgrade", "supply chain",
-                "scrm", "isa", "vendor",
+                "maintenance",
+                "dependency",
+                "vulnerability",
+                "cve",
+                "modernize",
+                "migrate",
+                "legacy",
+                "remediate",
+                "upgrade",
+                "supply chain",
+                "scrm",
+                "isa",
+                "vendor",
             ],
             "commands": [],
             "goals": ["maintenance_audit.md", "modernization_workflow.md"],
@@ -88,9 +168,21 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "dashboard": {
             "description": "Web dashboard, UX, monitoring",
             "keywords": [
-                "dashboard", "web", "ui", "ux", "flask", "template", "jinja",
-                "monitoring", "agent", "health", "heartbeat", "self-healing",
-                "chat", "gateway", "kanban",
+                "dashboard",
+                "web",
+                "ui",
+                "ux",
+                "flask",
+                "template",
+                "jinja",
+                "monitoring",
+                "agent",
+                "health",
+                "heartbeat",
+                "self-healing",
+                "chat",
+                "gateway",
+                "kanban",
             ],
             "commands": [],
             "goals": ["dashboard.md", "monitoring.md", "agent_management.md"],
@@ -98,9 +190,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
     },
     "file_extension_map": {
-        ".py": ["build"], ".java": ["build"], ".js": ["build"],
-        ".ts": ["build"], ".go": ["build"], ".rs": ["build"],
-        ".tf": ["infrastructure"], ".html": ["dashboard"],
+        ".py": ["build"],
+        ".java": ["build"],
+        ".js": ["build"],
+        ".ts": ["build"],
+        ".go": ["build"],
+        ".rs": ["build"],
+        ".tf": ["infrastructure"],
+        ".html": ["dashboard"],
         ".feature": ["build", "requirements"],
     },
     "path_pattern_map": {
@@ -112,8 +209,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "tools/monitor/": ["dashboard"],
     },
     "always_include": {
-        "commands": ["commit", "pull_request", "classify_issue",
-                     "classify_workflow", "generate_branch_name"],
+        "commands": ["commit", "pull_request", "classify_issue", "classify_workflow", "generate_branch_name"],
         "goals": [],
         "context_dirs": [],
     },
@@ -126,6 +222,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 # Config loading
 # ---------------------------------------------------------------------------
 
+
 def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """Load skill injection config from YAML.
 
@@ -134,6 +231,7 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     path = config_path or (BASE_DIR / "args" / "skill_injection_config.yaml")
     try:
         import yaml  # type: ignore
+
         if path.exists():
             with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
@@ -141,9 +239,13 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
             config = dict(DEFAULT_CONFIG)
             if "categories" in data:
                 config["categories"] = data["categories"]
-            for key in ("file_extension_map", "path_pattern_map",
-                        "always_include", "confidence_threshold",
-                        "min_keyword_matches"):
+            for key in (
+                "file_extension_map",
+                "path_pattern_map",
+                "always_include",
+                "confidence_threshold",
+                "min_keyword_matches",
+            ):
                 if key in data:
                     config[key] = data[key]
             return config
@@ -156,6 +258,7 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
 # Keyword matching
 # ---------------------------------------------------------------------------
 
+
 def match_keywords(query: str, categories: Dict[str, Any]) -> Dict[str, float]:
     """Score each category based on keyword matches in the query.
 
@@ -163,7 +266,7 @@ def match_keywords(query: str, categories: Dict[str, Any]) -> Dict[str, float]:
     Returns dict mapping category_name -> match_score (0.0-1.0).
     """
     query_lower = query.lower()
-    query_tokens = set(re.findall(r'\w+', query_lower))
+    query_tokens = set(re.findall(r"\w+", query_lower))
     scores: Dict[str, float] = {}
 
     for cat_name, cat_data in categories.items():
@@ -197,6 +300,7 @@ def match_keywords(query: str, categories: Dict[str, Any]) -> Dict[str, float]:
 # File-based detection
 # ---------------------------------------------------------------------------
 
+
 def detect_from_files(
     project_dir: str,
     config: Dict[str, Any],
@@ -220,8 +324,7 @@ def detect_from_files(
                 continue
             # Skip hidden dirs, node_modules, __pycache__, .git
             parts_str = str(f.relative_to(project_path))
-            if any(skip in parts_str for skip in
-                   ["node_modules", "__pycache__", ".git", ".tmp"]):
+            if any(skip in parts_str for skip in ["node_modules", "__pycache__", ".git", ".tmp"]):
                 continue
 
             total_files += 1
@@ -244,13 +347,13 @@ def detect_from_files(
 
     # Normalize scores
     max_hits = max(category_hits.values()) if category_hits else 1
-    return {cat: min(1.0, hits / max(max_hits, 1))
-            for cat, hits in category_hits.items()}
+    return {cat: min(1.0, hits / max(max_hits, 1)) for cat, hits in category_hits.items()}
 
 
 # ---------------------------------------------------------------------------
 # Main selection
 # ---------------------------------------------------------------------------
+
 
 def select_skills(
     query: Optional[str] = None,
@@ -265,7 +368,7 @@ def select_skills(
     config = load_config(config_path)
     categories = config.get("categories", {})
     threshold = config.get("confidence_threshold", 0.3)
-    min_matches = config.get("min_keyword_matches", 1)
+    config.get("min_keyword_matches", 1)
 
     # Score categories
     keyword_scores: Dict[str, float] = {}
@@ -333,6 +436,7 @@ def select_skills(
 # Path resolution
 # ---------------------------------------------------------------------------
 
+
 def _resolve_paths(selection: Dict[str, Any]) -> Dict[str, Any]:
     """Resolve selections to absolute file paths, validating existence."""
     cmd_dir = BASE_DIR / ".claude" / "commands"
@@ -376,6 +480,7 @@ def _resolve_paths(selection: Dict[str, Any]) -> Dict[str, Any]:
 # Context formatting
 # ---------------------------------------------------------------------------
 
+
 def format_injection_context(selection: Dict[str, Any]) -> str:
     """Format selected items into compact markdown for context injection."""
     lines = [
@@ -388,8 +493,7 @@ def format_injection_context(selection: Dict[str, Any]) -> str:
     if cats:
         lines.append("## Active Categories")
         for cat in cats:
-            lines.append(f"- **{cat['name']}** ({cat['score']:.2f}): "
-                         f"{cat['description']}")
+            lines.append(f"- **{cat['name']}** ({cat['score']:.2f}): {cat['description']}")
         lines.append("")
 
     cmds = selection.get("commands", [])
@@ -423,25 +527,17 @@ def format_injection_context(selection: Dict[str, Any]) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Selective Skill Injection (D146)"
-    )
-    parser.add_argument("--query", type=str,
-                        help="Task description to analyze")
-    parser.add_argument("--detect", action="store_true",
-                        help="Detect from project files")
-    parser.add_argument("--project-dir", type=str,
-                        help="Project directory to scan (for --detect)")
-    parser.add_argument("--resolve", action="store_true",
-                        help="Resolve to absolute file paths")
-    parser.add_argument("--format-context", action="store_true",
-                        help="Output as injection-ready markdown")
-    parser.add_argument("--json", action="store_true",
-                        help="JSON output")
-    parser.add_argument("--config", type=Path,
-                        help="Override config path")
+    parser = argparse.ArgumentParser(description="Selective Skill Injection (D146)")
+    parser.add_argument("--query", type=str, help="Task description to analyze")
+    parser.add_argument("--detect", action="store_true", help="Detect from project files")
+    parser.add_argument("--project-dir", type=str, help="Project directory to scan (for --detect)")
+    parser.add_argument("--resolve", action="store_true", help="Resolve to absolute file paths")
+    parser.add_argument("--format-context", action="store_true", help="Output as injection-ready markdown")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument("--config", type=Path, help="Override config path")
     args = parser.parse_args()
 
     if not args.query and not args.detect:
@@ -467,13 +563,11 @@ def main() -> None:
         print(json.dumps(selection, indent=2))
     else:
         # Human-readable output
-        print(f"Status: {selection['status']} "
-              f"(confidence: {selection['confidence']:.2f})")
+        print(f"Status: {selection['status']} (confidence: {selection['confidence']:.2f})")
         print()
         for cat in selection.get("matched_categories", []):
             if cat["score"] > 0:
-                print(f"  [{cat['score']:.2f}] {cat['name']}: "
-                      f"{cat['description']}")
+                print(f"  [{cat['score']:.2f}] {cat['name']}: {cat['description']}")
         print()
         if selection["commands"]:
             print(f"Commands: {', '.join(selection['commands'])}")

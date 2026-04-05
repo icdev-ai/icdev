@@ -26,6 +26,7 @@ try:
         generate_model_card,
         list_model_cards,
     )
+
     _HAS_MODULE = True
 except ImportError:
     _HAS_MODULE = False
@@ -150,35 +151,30 @@ def populated_db(card_db):
         "INSERT INTO ai_bom (id, project_id, component_type, component_name, "
         "version, provider, license, risk_level, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("bom-1", "proj-test", "model", "claude-sonnet", "4.0",
-         "bedrock", "proprietary", "medium", now, now),
+        ("bom-1", "proj-test", "model", "claude-sonnet", "4.0", "bedrock", "proprietary", "medium", now, now),
     )
     conn.execute(
         "INSERT INTO ai_bom (id, project_id, component_type, component_name, "
         "version, provider, license, risk_level, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("bom-2", "proj-test", "library", "openai", "1.40",
-         "pypi", "MIT", "low", now, now),
+        ("bom-2", "proj-test", "library", "openai", "1.40", "pypi", "MIT", "low", now, now),
     )
     # Insert ai_telemetry entries
     conn.execute(
         "INSERT INTO ai_telemetry (project_id, agent_id, event_type, model_id, "
         "prompt_hash, response_hash, input_tokens, output_tokens, logged_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("proj-test", "builder-agent", "llm_call", "claude-sonnet-4",
-         "abc123", "def456", 500, 1200, now),
+        ("proj-test", "builder-agent", "llm_call", "claude-sonnet-4", "abc123", "def456", 500, 1200, now),
     )
     conn.execute(
         "INSERT INTO ai_telemetry (project_id, agent_id, event_type, model_id, "
         "prompt_hash, response_hash, input_tokens, output_tokens, logged_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("proj-test", "compliance-agent", "llm_call", "claude-sonnet-4",
-         "ghi789", "jkl012", 300, 800, now),
+        ("proj-test", "compliance-agent", "llm_call", "claude-sonnet-4", "ghi789", "jkl012", 300, 800, now),
     )
     # Insert xai_assessment entries
     conn.execute(
-        "INSERT INTO xai_assessments (project_id, requirement_id, requirement_title, "
-        "status) VALUES (?, ?, ?, ?)",
+        "INSERT INTO xai_assessments (project_id, requirement_id, requirement_title, status) VALUES (?, ?, ?, ?)",
         ("proj-test", "XAI-001", "Tracing Active", "satisfied"),
     )
     conn.commit()
@@ -189,6 +185,7 @@ def populated_db(card_db):
 # ============================================================
 # Import Tests
 # ============================================================
+
 
 class TestImport:
     def test_import_generate_model_card(self):
@@ -256,6 +253,7 @@ class TestGenerateModelCard:
 # Storage
 # ============================================================
 
+
 class TestStorage:
     def test_card_stored_in_db(self, card_db):
         """Model card is stored in model_cards table after generation."""
@@ -273,8 +271,7 @@ class TestStorage:
         generate_model_card("proj-test", "test-model", db_path=card_db)
         conn = sqlite3.connect(str(card_db))
         row = conn.execute(
-            "SELECT card_data FROM model_cards WHERE project_id = ? "
-            "ORDER BY version DESC LIMIT 1",
+            "SELECT card_data FROM model_cards WHERE project_id = ? ORDER BY version DESC LIMIT 1",
             ("proj-test",),
         ).fetchone()
         conn.close()
@@ -286,6 +283,7 @@ class TestStorage:
 # ============================================================
 # Listing
 # ============================================================
+
 
 class TestListModelCards:
     def test_list_empty(self, card_db):
@@ -316,6 +314,7 @@ class TestListModelCards:
 # Versioning
 # ============================================================
 
+
 class TestVersioning:
     def test_version_increments(self, card_db):
         """Generating the same model card twice increments version."""
@@ -332,6 +331,7 @@ class TestVersioning:
 # ============================================================
 # Card Hash
 # ============================================================
+
 
 class TestCardHash:
     def test_hash_is_populated(self, card_db):
@@ -353,6 +353,7 @@ class TestCardHash:
 # Classification Markings
 # ============================================================
 
+
 class TestClassificationMarkings:
     def test_card_data_has_classification(self, card_db):
         """Card data JSON includes classification markings."""
@@ -367,6 +368,7 @@ class TestClassificationMarkings:
 # ============================================================
 # Data Integration (ai_bom, ai_telemetry)
 # ============================================================
+
 
 class TestDataIntegration:
     def test_with_bom_data(self, populated_db):
@@ -390,6 +392,7 @@ class TestDataIntegration:
 # CLI Entry Point
 # ============================================================
 
+
 class TestCLI:
     def test_main_callable(self, card_db):
         """Module main() can be called without crashing."""
@@ -400,9 +403,16 @@ class TestCLI:
 
         with patch(
             "sys.argv",
-            ["model_card_generator.py", "--project-id", "proj-test",
-             "--model-name", "test-model",
-             "--db-path", str(card_db), "--json"],
+            [
+                "model_card_generator.py",
+                "--project-id",
+                "proj-test",
+                "--model-name",
+                "test-model",
+                "--db-path",
+                str(card_db),
+                "--json",
+            ],
         ):
             try:
                 main()

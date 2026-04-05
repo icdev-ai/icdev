@@ -56,6 +56,7 @@ def _extract_pdf(file_path: str) -> Dict[str, Any]:
     """Extract text from PDF via RAG pdf_provider chain."""
     try:
         from tools.rag.pdf_provider import extract_pdf
+
         result = extract_pdf(Path(file_path))
         if result.status == "success":
             pages_text = [p.text for p in result.pages if p.text.strip()]
@@ -77,6 +78,7 @@ def _extract_pdf_basic(file_path: str) -> Dict[str, Any]:
     """Basic PDF extraction via pypdf (air-gap fallback)."""
     try:
         from pypdf import PdfReader
+
         reader = PdfReader(file_path)
         pages = []
         for page in reader.pages:
@@ -102,6 +104,7 @@ def _extract_docx(file_path: str) -> Dict[str, Any]:
     """Extract text from Word document via python-docx."""
     try:
         from docx import Document
+
         doc = Document(file_path)
         paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         return {
@@ -128,6 +131,7 @@ def _chunk_text(
     """Chunk extracted text using RAG adaptive chunker."""
     try:
         from tools.rag.chunker import chunk_content
+
         chunks = chunk_content(
             content=text,
             source_type=source_type,
@@ -165,13 +169,15 @@ def _chunk_text_simple(
     for sentence in sentences:
         if len(current_chunk) + len(sentence) > max_chunk_size and current_chunk:
             content_hash = hashlib.sha256(current_chunk.encode()).hexdigest()[:16]
-            chunks.append({
-                "chunk_id": f"ftchunk-{source_id}-{chunk_idx}",
-                "content": current_chunk.strip(),
-                "content_hash": content_hash,
-                "chunk_index": chunk_idx,
-                "total_chunks": 0,  # Updated after loop
-            })
+            chunks.append(
+                {
+                    "chunk_id": f"ftchunk-{source_id}-{chunk_idx}",
+                    "content": current_chunk.strip(),
+                    "content_hash": content_hash,
+                    "chunk_index": chunk_idx,
+                    "total_chunks": 0,  # Updated after loop
+                }
+            )
             # Keep overlap
             overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else ""
             current_chunk = overlap_text + sentence + "\n"
@@ -182,13 +188,15 @@ def _chunk_text_simple(
     # Final chunk
     if current_chunk.strip():
         content_hash = hashlib.sha256(current_chunk.encode()).hexdigest()[:16]
-        chunks.append({
-            "chunk_id": f"ftchunk-{source_id}-{chunk_idx}",
-            "content": current_chunk.strip(),
-            "content_hash": content_hash,
-            "chunk_index": chunk_idx,
-            "total_chunks": 0,
-        })
+        chunks.append(
+            {
+                "chunk_id": f"ftchunk-{source_id}-{chunk_idx}",
+                "content": current_chunk.strip(),
+                "content_hash": content_hash,
+                "chunk_index": chunk_idx,
+                "total_chunks": 0,
+            }
+        )
 
     # Update total_chunks
     for c in chunks:
@@ -258,7 +266,7 @@ def extract_document(
         conn = _get_db(db_path)
         try:
             # Record in a lightweight way (reuse ingestion_log pattern)
-            file_hash = _file_hash(file_path)
+            _file_hash(file_path)
             conn.execute(
                 """INSERT OR IGNORE INTO rag_ingestion_log
                    (source_table, source_id, chunk_count, status, started_at, completed_at)
@@ -316,11 +324,13 @@ def extract_directory(
             )
             if result.get("success"):
                 total_chunks += result["chunk_count"]
-                results.append({
-                    "file": f.name,
-                    "document_id": result["document_id"],
-                    "chunks": result["chunk_count"],
-                })
+                results.append(
+                    {
+                        "file": f.name,
+                        "document_id": result["document_id"],
+                        "chunks": result["chunk_count"],
+                    }
+                )
             else:
                 errors.append({"file": f.name, "error": result.get("error", "")})
 

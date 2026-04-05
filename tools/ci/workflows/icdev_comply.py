@@ -37,9 +37,7 @@ from tools.testing.utils import setup_logger
 AGENT_COMPLIANCE = "icdev_compliance"
 
 
-def run_compliance_artifacts(
-    run_id: str, issue_number: str, logger: logging.Logger
-) -> dict:
+def run_compliance_artifacts(run_id: str, issue_number: str, logger: logging.Logger) -> dict:
     """Generate all compliance artifacts."""
     results = {
         "ssp": {"status": "skipped", "path": ""},
@@ -57,6 +55,7 @@ def run_compliance_artifacts(
     logger.info("Generating SSP...")
     try:
         from tools.compliance.ssp_generator import generate_ssp
+
         ssp_result = generate_ssp(project_id)
         results["ssp"] = {
             "status": "generated",
@@ -75,6 +74,7 @@ def run_compliance_artifacts(
     logger.info("Generating POAM...")
     try:
         from tools.compliance.poam_generator import generate_poam
+
         poam_result = generate_poam(project_id)
         results["poam"] = {
             "status": "generated",
@@ -93,6 +93,7 @@ def run_compliance_artifacts(
     logger.info("Running STIG checklist...")
     try:
         from tools.compliance.stig_checker import check_stig
+
         stig_result = check_stig(project_id)
         findings = stig_result.get("findings", {})
         cat1_count = findings.get("cat1", 0)
@@ -117,6 +118,7 @@ def run_compliance_artifacts(
     logger.info("Generating SBOM...")
     try:
         from tools.compliance.sbom_generator import generate_sbom
+
         sbom_result = generate_sbom(project_dir=str(PROJECT_ROOT))
         results["sbom"] = {
             "status": "generated",
@@ -135,6 +137,7 @@ def run_compliance_artifacts(
     logger.info("Verifying CUI markings...")
     try:
         from tools.compliance.cui_marker import verify_cui_markings
+
         cui_result = verify_cui_markings(project_dir=str(PROJECT_ROOT))
         results["cui_markings"] = {
             "status": "verified",
@@ -264,9 +267,7 @@ def main():
         )
 
         if results.get("errors"):
-            summary += "\n\nErrors:\n" + "\n".join(
-                f"- {e}" for e in results["errors"]
-            )
+            summary += "\n\nErrors:\n" + "\n".join(f"- {e}" for e in results["errors"])
 
         vcs.comment_on_issue(int(issue_number), summary)
     except Exception as e:

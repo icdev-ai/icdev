@@ -46,20 +46,15 @@ def up(conn):
         ]:
             if not _column_exists(conn, "memory_entries", col):
                 try:
-                    conn.execute(
-                        f"ALTER TABLE memory_entries ADD COLUMN {col} {col_def}"
-                    )
+                    conn.execute(f"ALTER TABLE memory_entries ADD COLUMN {col} {col_def}")
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
         # 2. Create indexes
         for idx_sql in [
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user "
-            "ON memory_entries(content_hash, user_id)",
-            "CREATE INDEX IF NOT EXISTS idx_memory_user_id "
-            "ON memory_entries(user_id)",
-            "CREATE INDEX IF NOT EXISTS idx_memory_tenant_id "
-            "ON memory_entries(tenant_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user ON memory_entries(content_hash, user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_memory_user_id ON memory_entries(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_memory_tenant_id ON memory_entries(tenant_id)",
         ]:
             try:
                 conn.execute(idx_sql)
@@ -67,9 +62,7 @@ def up(conn):
                 pass
 
         # 3. Backfill content_hash for existing entries
-        cursor = conn.execute(
-            "SELECT id, content FROM memory_entries WHERE content_hash IS NULL"
-        )
+        cursor = conn.execute("SELECT id, content FROM memory_entries WHERE content_hash IS NULL")
         rows = cursor.fetchall()
         for row_id, content in rows:
             h = _compute_content_hash(content or "")

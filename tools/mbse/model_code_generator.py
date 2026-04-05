@@ -35,6 +35,7 @@ except ImportError:
 # Language registry loader
 # ---------------------------------------------------------------------------
 
+
 def _load_language_registry() -> dict:
     """Load the language registry from context/languages/language_registry.json."""
     if LANG_REGISTRY_PATH.exists():
@@ -57,14 +58,15 @@ _LANGUAGE_EXTENSIONS: Dict[str, str] = {
 
 # Comment style per language (for CUI headers/footers)
 _COMMENT_STYLES: Dict[str, str] = {
-    "hash": "#",       # python
-    "c-style": "//",   # java, go, rust, csharp, typescript
+    "hash": "#",  # python
+    "c-style": "//",  # java, go, rust, csharp, typescript
 }
 
 
 # ---------------------------------------------------------------------------
 # CUI header / footer helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_cui_header(language: str) -> str:
     """Return CUI // SP-CTI header in correct comment style for language."""
@@ -82,6 +84,7 @@ def _get_cui_footer(language: str) -> str:
 # ---------------------------------------------------------------------------
 # Name conversion helpers
 # ---------------------------------------------------------------------------
+
 
 def _to_class_name(name: str) -> str:
     """Convert any name to PascalCase class name.
@@ -127,6 +130,7 @@ def _to_file_name(name: str, language: str) -> str:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None) -> sqlite3.Connection:
     """Open a SQLite connection with row_factory."""
     path = db_path or DB_PATH
@@ -144,8 +148,7 @@ def _fetch_elements(project_id: str, element_type: str, conn: sqlite3.Connection
     return [dict(row) for row in cur.fetchall()]
 
 
-def _fetch_elements_multi(project_id: str, element_types: List[str],
-                          conn: sqlite3.Connection) -> List[dict]:
+def _fetch_elements_multi(project_id: str, element_types: List[str], conn: sqlite3.Connection) -> List[dict]:
     """Fetch sysml_elements matching any of the given types."""
     placeholders = ",".join("?" for _ in element_types)
     cur = conn.execute(
@@ -164,9 +167,9 @@ def _fetch_children(parent_id: str, conn: sqlite3.Connection) -> List[dict]:
     return [dict(row) for row in cur.fetchall()]
 
 
-def _fetch_relationships(project_id: str, conn: sqlite3.Connection,
-                         source_id: str = None,
-                         rel_types: List[str] = None) -> List[dict]:
+def _fetch_relationships(
+    project_id: str, conn: sqlite3.Connection, source_id: str = None, rel_types: List[str] = None
+) -> List[dict]:
     """Fetch sysml_relationships with optional filters."""
     query = "SELECT * FROM sysml_relationships WHERE project_id = ?"
     params: list = [project_id]
@@ -203,8 +206,10 @@ def _parse_properties(element: dict) -> dict:
 # Recording helpers (model_code_mappings + digital_thread_links)
 # ---------------------------------------------------------------------------
 
-def _record_mapping(project_id: str, sysml_element_id: str, code_path: str,
-                    code_type: str, code_hash: str, conn: sqlite3.Connection) -> None:
+
+def _record_mapping(
+    project_id: str, sysml_element_id: str, code_path: str, code_type: str, code_hash: str, conn: sqlite3.Connection
+) -> None:
     """Record a model_code_mappings entry."""
     try:
         conn.execute(
@@ -212,15 +217,13 @@ def _record_mapping(project_id: str, sysml_element_id: str, code_path: str,
                (project_id, sysml_element_id, code_path, code_type,
                 mapping_direction, sync_status, model_hash, code_hash)
                VALUES (?, ?, ?, ?, 'model_to_code', 'synced', ?, ?)""",
-            (project_id, sysml_element_id, code_path, code_type,
-             None, code_hash),
+            (project_id, sysml_element_id, code_path, code_type, None, code_hash),
         )
     except sqlite3.Error:
         pass  # Table may not exist in a test harness
 
 
-def _record_thread_link(project_id: str, sysml_element_id: str,
-                        code_path: str, conn: sqlite3.Connection) -> None:
+def _record_thread_link(project_id: str, sysml_element_id: str, code_path: str, conn: sqlite3.Connection) -> None:
     """Record a digital_thread_links entry (sysml_element -> code_module, implements)."""
     try:
         conn.execute(
@@ -250,6 +253,7 @@ def _write_file(path: Path, content: str) -> str:
 # ---------------------------------------------------------------------------
 # Python code generators
 # ---------------------------------------------------------------------------
+
 
 def _generate_python_class(block: dict, relationships: list, all_blocks: dict) -> str:
     """Generate a Python class from a SysML block with properties, operations, inheritance."""
@@ -319,10 +323,14 @@ def _generate_python_class(block: dict, relationships: list, all_blocks: dict) -
             vp_type = vp.get("type", "str")
             vp_default = vp.get("default")
             type_map = {
-                "Integer": "int", "int": "int",
-                "Real": "float", "float": "float",
-                "Boolean": "bool", "bool": "bool",
-                "String": "str", "str": "str",
+                "Integer": "int",
+                "int": "int",
+                "Real": "float",
+                "float": "float",
+                "Boolean": "bool",
+                "bool": "bool",
+                "String": "str",
+                "str": "str",
             }
             py_type = type_map.get(vp_type, "str")
             if vp_default is not None:
@@ -360,8 +368,12 @@ def _generate_python_class(block: dict, relationships: list, all_blocks: dict) -
             op_return = op.get("return_type", "None")
             op_params = op.get("parameters", [])
             type_map = {
-                "Integer": "int", "Real": "float", "Boolean": "bool",
-                "String": "str", "void": "None", "": "None",
+                "Integer": "int",
+                "Real": "float",
+                "Boolean": "bool",
+                "String": "str",
+                "void": "None",
+                "": "None",
             }
             py_return = type_map.get(op_return, op_return)
 
@@ -429,7 +441,7 @@ def _generate_python_module(activity: dict, actions: list) -> str:
     lines.append("import logging")
     lines.append("from typing import Any, Dict, Optional")
     lines.append("")
-    lines.append('logger = logging.getLogger(__name__)')
+    lines.append("logger = logging.getLogger(__name__)")
     lines.append("")
 
     # Generate a function stub for each action
@@ -565,7 +577,9 @@ def _generate_python_state_machine(sm: dict, states: list, transitions: list) ->
     lines.append('    """')
     lines.append("")
     initial_state = _to_snake_case(states[0]["name"]).upper() if states else "INITIAL"
-    lines.append(f"    def __init__(self, initial_state: {class_name}State = {class_name}State.{initial_state}) -> None:")
+    lines.append(
+        f"    def __init__(self, initial_state: {class_name}State = {class_name}State.{initial_state}) -> None:"
+    )
     lines.append('        """Initialize the state machine."""')
     lines.append("        self.state = initial_state")
     lines.append("        self.history: list = [initial_state]")
@@ -585,7 +599,7 @@ def _generate_python_state_machine(sm: dict, states: list, transitions: list) ->
     lines.append('        """')
     lines.append("        key = (self.state, event)")
     lines.append("        if key not in TRANSITIONS:")
-    lines.append('            raise ValueError(')
+    lines.append("            raise ValueError(")
     lines.append('                f"No transition for state={self.state.name}, event={event}"')
     lines.append("            )")
     lines.append("        old_state = self.state")
@@ -638,8 +652,8 @@ def _generate_python_test(requirement: dict) -> str:
 # Main generation functions
 # ---------------------------------------------------------------------------
 
-def generate_from_blocks(project_id: str, language: str = "python",
-                         output_dir: str = None, db_path=None) -> dict:
+
+def generate_from_blocks(project_id: str, language: str = "python", output_dir: str = None, db_path=None) -> dict:
     """Generate classes from SysML blocks.
 
     Returns:
@@ -684,13 +698,15 @@ def generate_from_blocks(project_id: str, language: str = "python",
             _record_mapping(project_id, block["id"], str(filepath), code_type, code_hash, conn)
             _record_thread_link(project_id, block["id"], str(filepath), conn)
 
-            files_generated.append({
-                "path": str(filepath),
-                "element_id": block["id"],
-                "element_name": block["name"],
-                "code_type": code_type,
-                "hash": code_hash,
-            })
+            files_generated.append(
+                {
+                    "path": str(filepath),
+                    "element_id": block["id"],
+                    "element_name": block["name"],
+                    "code_type": code_type,
+                    "hash": code_hash,
+                }
+            )
 
         conn.commit()
         return {"files_generated": len(files_generated), "files": files_generated}
@@ -698,8 +714,7 @@ def generate_from_blocks(project_id: str, language: str = "python",
         conn.close()
 
 
-def generate_from_activities(project_id: str, language: str = "python",
-                             output_dir: str = None, db_path=None) -> dict:
+def generate_from_activities(project_id: str, language: str = "python", output_dir: str = None, db_path=None) -> dict:
     """Generate modules from SysML activities.
 
     Returns:
@@ -716,10 +731,7 @@ def generate_from_activities(project_id: str, language: str = "python",
         for activity in activities:
             # Fetch child actions, object_nodes, control_flows under this activity
             children = _fetch_children(activity["id"], conn)
-            actions = [
-                c for c in children
-                if c["element_type"] in ("action", "object_node", "control_flow")
-            ]
+            actions = [c for c in children if c["element_type"] in ("action", "object_node", "control_flow")]
 
             if language == "python":
                 content = _generate_python_module(activity, actions)
@@ -733,13 +745,15 @@ def generate_from_activities(project_id: str, language: str = "python",
             _record_mapping(project_id, activity["id"], str(filepath), "module", code_hash, conn)
             _record_thread_link(project_id, activity["id"], str(filepath), conn)
 
-            files_generated.append({
-                "path": str(filepath),
-                "element_id": activity["id"],
-                "element_name": activity["name"],
-                "code_type": "module",
-                "hash": code_hash,
-            })
+            files_generated.append(
+                {
+                    "path": str(filepath),
+                    "element_id": activity["id"],
+                    "element_name": activity["name"],
+                    "code_type": "module",
+                    "hash": code_hash,
+                }
+            )
 
         conn.commit()
         return {"files_generated": len(files_generated), "files": files_generated}
@@ -747,8 +761,9 @@ def generate_from_activities(project_id: str, language: str = "python",
         conn.close()
 
 
-def generate_from_state_machines(project_id: str, language: str = "python",
-                                 output_dir: str = None, db_path=None) -> dict:
+def generate_from_state_machines(
+    project_id: str, language: str = "python", output_dir: str = None, db_path=None
+) -> dict:
     """Generate state machine code from SysML state machines.
 
     Returns:
@@ -784,12 +799,15 @@ def generate_from_state_machines(project_id: str, language: str = "python",
                                     rel_props = json.loads(rel["properties"])
                                 except (json.JSONDecodeError, TypeError):
                                     pass
-                            transitions_data.append({
-                                "source_state": state["name"],
-                                "target_state": target["name"],
-                                "event": rel.get("name") or rel_props.get("trigger", f"to_{_to_snake_case(target['name'])}"),
-                                "name": rel.get("name", ""),
-                            })
+                            transitions_data.append(
+                                {
+                                    "source_state": state["name"],
+                                    "target_state": target["name"],
+                                    "event": rel.get("name")
+                                    or rel_props.get("trigger", f"to_{_to_snake_case(target['name'])}"),
+                                    "name": rel.get("name", ""),
+                                }
+                            )
 
             if language == "python":
                 content = _generate_python_state_machine(sm, states, transitions_data)
@@ -803,13 +821,15 @@ def generate_from_state_machines(project_id: str, language: str = "python",
             _record_mapping(project_id, sm["id"], str(filepath), "module", code_hash, conn)
             _record_thread_link(project_id, sm["id"], str(filepath), conn)
 
-            files_generated.append({
-                "path": str(filepath),
-                "element_id": sm["id"],
-                "element_name": sm["name"],
-                "code_type": "module",
-                "hash": code_hash,
-            })
+            files_generated.append(
+                {
+                    "path": str(filepath),
+                    "element_id": sm["id"],
+                    "element_name": sm["name"],
+                    "code_type": "module",
+                    "hash": code_hash,
+                }
+            )
 
         conn.commit()
         return {"files_generated": len(files_generated), "files": files_generated}
@@ -817,8 +837,7 @@ def generate_from_state_machines(project_id: str, language: str = "python",
         conn.close()
 
 
-def generate_tests_from_requirements(project_id: str, output_dir: str = None,
-                                     db_path=None) -> dict:
+def generate_tests_from_requirements(project_id: str, output_dir: str = None, db_path=None) -> dict:
     """Generate test stubs from DOORS requirements and SysML requirements.
 
     Returns:
@@ -879,11 +898,13 @@ def generate_tests_from_requirements(project_id: str, output_dir: str = None,
         filepath = out / f"test_requirements_{_to_snake_case(project_id)}.py"
         code_hash = _write_file(filepath, content)
 
-        files_generated: List[dict] = [{
-            "path": str(filepath),
-            "test_count": test_count,
-            "hash": code_hash,
-        }]
+        files_generated: List[dict] = [
+            {
+                "path": str(filepath),
+                "test_count": test_count,
+                "hash": code_hash,
+            }
+        ]
 
         # Record thread links for each requirement -> test file
         for req in all_reqs:
@@ -916,8 +937,7 @@ def generate_tests_from_requirements(project_id: str, output_dir: str = None,
         conn.close()
 
 
-def generate_all(project_id: str, language: str = "python",
-                 output_dir: str = None, db_path=None) -> dict:
+def generate_all(project_id: str, language: str = "python", output_dir: str = None, db_path=None) -> dict:
     """Full generation: blocks + activities + state machines + tests.
 
     Creates model_code_mappings and digital_thread_links entries.
@@ -943,30 +963,22 @@ def generate_all(project_id: str, language: str = "python",
     }
 
     # Generate blocks -> classes
-    blocks_result = generate_from_blocks(
-        project_id, language=language, output_dir=src_dir, db_path=db_path
-    )
+    blocks_result = generate_from_blocks(project_id, language=language, output_dir=src_dir, db_path=db_path)
     results["blocks"] = blocks_result
     results["totals"]["files_generated"] += blocks_result["files_generated"]
 
     # Generate activities -> modules
-    activities_result = generate_from_activities(
-        project_id, language=language, output_dir=src_dir, db_path=db_path
-    )
+    activities_result = generate_from_activities(project_id, language=language, output_dir=src_dir, db_path=db_path)
     results["activities"] = activities_result
     results["totals"]["files_generated"] += activities_result["files_generated"]
 
     # Generate state machines
-    sm_result = generate_from_state_machines(
-        project_id, language=language, output_dir=src_dir, db_path=db_path
-    )
+    sm_result = generate_from_state_machines(project_id, language=language, output_dir=src_dir, db_path=db_path)
     results["state_machines"] = sm_result
     results["totals"]["files_generated"] += sm_result["files_generated"]
 
     # Generate test stubs from requirements
-    tests_result = generate_tests_from_requirements(
-        project_id, output_dir=test_dir, db_path=db_path
-    )
+    tests_result = generate_tests_from_requirements(project_id, output_dir=test_dir, db_path=db_path)
     results["tests"] = tests_result
     results["totals"]["files_generated"] += tests_result["files_generated"]
     results["totals"]["test_count"] = tests_result.get("test_count", 0)
@@ -980,6 +992,7 @@ def generate_all(project_id: str, language: str = "python",
 # ---------------------------------------------------------------------------
 # Audit logging
 # ---------------------------------------------------------------------------
+
 
 def _log_audit_event(project_id: str, results: dict, db_path=None) -> None:
     """Log code-from-model generation to the audit trail."""
@@ -1022,10 +1035,12 @@ def _log_audit_event(project_id: str, results: dict, db_path=None) -> None:
                 (
                     project_id,
                     f"Generated {total} file(s) from SysML model",
-                    json.dumps({
-                        "language": results.get("language", "python"),
-                        "files_generated": total,
-                    }),
+                    json.dumps(
+                        {
+                            "language": results.get("language", "python"),
+                            "files_generated": total,
+                        }
+                    ),
                     json.dumps(all_files),
                 ),
             )
@@ -1039,28 +1054,23 @@ def _log_audit_event(project_id: str, results: dict, db_path=None) -> None:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point for model code generation."""
-    parser = argparse.ArgumentParser(
-        description="Generate code from SysML model elements"
-    )
+    parser = argparse.ArgumentParser(description="Generate code from SysML model elements")
     parser.add_argument("--project-id", required=True, help="ICDEV project ID")
     parser.add_argument(
-        "--language", default="python",
+        "--language",
+        default="python",
         choices=["python", "java", "go", "rust", "csharp", "typescript"],
         help="Target language for generated code (default: python)",
     )
     parser.add_argument("--output", required=True, help="Output directory for generated files")
-    parser.add_argument("--blocks-only", action="store_true",
-                        help="Only generate classes from SysML blocks")
-    parser.add_argument("--activities-only", action="store_true",
-                        help="Only generate modules from SysML activities")
-    parser.add_argument("--tests-only", action="store_true",
-                        help="Only generate test stubs from requirements")
-    parser.add_argument("--json", action="store_true",
-                        help="Output results as JSON")
-    parser.add_argument("--db-path", type=Path, default=None,
-                        help="Override database path (default: data/icdev.db)")
+    parser.add_argument("--blocks-only", action="store_true", help="Only generate classes from SysML blocks")
+    parser.add_argument("--activities-only", action="store_true", help="Only generate modules from SysML activities")
+    parser.add_argument("--tests-only", action="store_true", help="Only generate test stubs from requirements")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    parser.add_argument("--db-path", type=Path, default=None, help="Override database path (default: data/icdev.db)")
 
     args = parser.parse_args()
 

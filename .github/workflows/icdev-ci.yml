@@ -12,7 +12,7 @@ env:
   ICDEV_CUI_BANNER_ENABLED: "true"
 
 jobs:
-  # ── Tier 0: Lint (full codebase — ruff.toml handles suppressions) ────────
+  # ── Tier 0: Lint (full codebase — ruff.toml enforces line-length=120) ────
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -22,8 +22,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install ruff
-      - name: Ruff lint (uses ruff.toml config)
-        run: ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E731,E741,F401,F541,F821,F841
+      - name: Ruff lint
+        run: ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E731,E741
 
   # ── Tier 1: Unit Tests (pure Python — no LLM) ───────────────────────────
   test:
@@ -39,7 +39,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
-      - name: Run core unit tests (293 tests)
+      - name: Run core unit tests
         run: |
           pytest tests/test_circuit_breaker.py \
             tests/test_retry.py \
@@ -48,6 +48,7 @@ jobs:
             tests/test_init_icdev_db.py \
             tests/test_schemas.py \
             tests/test_prompt_injection_detector.py \
+            tests/test_readiness_scorer.py \
             tests/test_dev_profile_manager.py \
             tests/test_manifest_loader.py \
             tests/test_session_context_builder.py \
@@ -65,9 +66,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install bandit pip-audit
-      - name: SAST (bandit) — 0 critical required
+      - name: SAST (bandit) — 0 high+high findings
         run: bandit -r tools/ -q --severity-level high --confidence-level high
-        continue-on-error: true
       - name: Dependency audit
         run: pip install -r requirements.txt && pip-audit --skip-editable -q
         continue-on-error: true

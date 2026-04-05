@@ -69,7 +69,7 @@ class ClaudeMdIndexer:
 
         for i, line in enumerate(lines):
             # Match ## or ### headers
-            match = re.match(r'^(#{2,3})\s+(.+)$', line)
+            match = re.match(r"^(#{2,3})\s+(.+)$", line)
             if match:
                 # Save previous section
                 if current_name:
@@ -128,8 +128,7 @@ class ClaudeMdIndexer:
         matches = []
 
         for name, data in self._sections.items():
-            if (keyword_lower in name.lower() or
-                    keyword_lower in data["content"].lower()):
+            if keyword_lower in name.lower() or keyword_lower in data["content"].lower():
                 matches.append(name)
 
         return matches
@@ -142,11 +141,13 @@ class ClaudeMdIndexer:
         self._refresh()
         toc = []
         for name, data in self._sections.items():
-            toc.append({
-                "name": name,
-                "level": data["level"],
-                "line_number": data["line_number"],
-            })
+            toc.append(
+                {
+                    "name": name,
+                    "level": data["level"],
+                    "line_number": data["line_number"],
+                }
+            )
         return toc
 
     def get_sections_for_role(self, role: str) -> str:

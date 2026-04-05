@@ -129,8 +129,7 @@ class ConversationManager:
                 "(id, session_key, run_id, platform, issue_number, "
                 "channel_id, thread_ts, status) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'active')",
-                (session_id, session_key, run_id, platform,
-                 issue_number, channel_id, thread_ts),
+                (session_id, session_key, run_id, platform, issue_number, channel_id, thread_ts),
             )
             conn.commit()
             conn.close()
@@ -202,8 +201,12 @@ class ConversationManager:
         content_type = "command" if signal else "text"
 
         self._log_turn(
-            session_id, turn_number, "developer", comment_body,
-            content_type, comment_id=comment_id,
+            session_id,
+            turn_number,
+            "developer",
+            comment_body,
+            content_type,
+            comment_id=comment_id,
         )
 
         # 3. Route to handler based on signal
@@ -234,8 +237,12 @@ class ConversationManager:
         # 4. Log agent response turn
         if result.get("response"):
             self._log_turn(
-                session_id, turn_number + 1, "agent", result["response"],
-                "text", action_taken=result.get("action"),
+                session_id,
+                turn_number + 1,
+                "agent",
+                result["response"],
+                "text",
+                action_taken=result.get("action"),
                 metadata=json.dumps({"files_changed": result.get("files_changed", [])}),
             )
 
@@ -283,8 +290,7 @@ class ConversationManager:
             conn = sqlite3.connect(self.db_path)
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "UPDATE ci_conversations SET status = ?, updated_at = ? "
-                "WHERE id = ?",
+                "UPDATE ci_conversations SET status = ?, updated_at = ? WHERE id = ?",
                 (reason, now, session_id),
             )
             conn.commit()
@@ -397,8 +403,7 @@ class ConversationManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute(
-                "SELECT id FROM ci_conversation_turns "
-                "WHERE session_id = ? AND comment_id = ?",
+                "SELECT id FROM ci_conversation_turns WHERE session_id = ? AND comment_id = ?",
                 (session_id, comment_id),
             )
             row = cursor.fetchone()
@@ -412,8 +417,7 @@ class ConversationManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute(
-                "SELECT MAX(turn_number) FROM ci_conversation_turns "
-                "WHERE session_id = ?",
+                "SELECT MAX(turn_number) FROM ci_conversation_turns WHERE session_id = ?",
                 (session_id,),
             )
             row = cursor.fetchone()
@@ -423,9 +427,15 @@ class ConversationManager:
             return 1
 
     def _log_turn(
-        self, session_id: str, turn_number: int, role: str,
-        content: str, content_type: str, action_taken: str = None,
-        comment_id: str = None, metadata: str = None,
+        self,
+        session_id: str,
+        turn_number: int,
+        role: str,
+        content: str,
+        content_type: str,
+        action_taken: str = None,
+        comment_id: str = None,
+        metadata: str = None,
     ):
         """Log a conversation turn (append-only)."""
         try:
@@ -435,8 +445,7 @@ class ConversationManager:
                 "(session_id, turn_number, role, content, content_type, "
                 "action_taken, comment_id, metadata) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (session_id, turn_number, role, content, content_type,
-                 action_taken, comment_id, metadata),
+                (session_id, turn_number, role, content, content_type, action_taken, comment_id, metadata),
             )
             conn.commit()
             conn.close()
@@ -449,8 +458,7 @@ class ConversationManager:
             now = datetime.now(timezone.utc).isoformat()
             conn = sqlite3.connect(self.db_path)
             conn.execute(
-                "UPDATE ci_conversations SET total_turns = ?, "
-                "last_agent_action = ?, updated_at = ? WHERE id = ?",
+                "UPDATE ci_conversations SET total_turns = ?, last_agent_action = ?, updated_at = ? WHERE id = ?",
                 (turn_count, last_action, now, session_id),
             )
             conn.commit()
@@ -463,16 +471,19 @@ class ConversationManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.execute(
-                "SELECT id, session_key, run_id, platform, issue_number, status "
-                "FROM ci_conversations WHERE id = ?",
+                "SELECT id, session_key, run_id, platform, issue_number, status FROM ci_conversations WHERE id = ?",
                 (session_id,),
             )
             row = cursor.fetchone()
             conn.close()
             if row:
                 return {
-                    "id": row[0], "session_key": row[1], "run_id": row[2],
-                    "platform": row[3], "issue_number": row[4], "status": row[5],
+                    "id": row[0],
+                    "session_key": row[1],
+                    "run_id": row[2],
+                    "platform": row[3],
+                    "issue_number": row[4],
+                    "status": row[5],
                 }
         except Exception:
             pass

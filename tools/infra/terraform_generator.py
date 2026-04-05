@@ -479,7 +479,7 @@ resource "aws_subnet" "private" {
 
   vpc_id            = aws_vpc.this.id
   cidr_block        = var.private_subnet_cidrs[count.index]
-  availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]
+  availability_zone = data.aws_availability_zones.available.names[count.index % length(data.aws_availability_zones.available.names)]  # noqa: E501
 
   map_public_ip_on_launch = false
 
@@ -688,7 +688,7 @@ resource "aws_iam_policy" "bedrock_invoke" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "arn:aws-us-gov:logs:${{data.aws_region.current.name}}:${{data.aws_caller_identity.current.account_id}}:log-group:/icdev/*"
+        Resource = "arn:aws-us-gov:logs:${{data.aws_region.current.name}}:${{data.aws_caller_identity.current.account_id}}:log-group:/icdev/*"  # noqa: E501
       }
     ]
   })
@@ -956,6 +956,7 @@ def generate_agent_networking(project_path: str, config: dict = None) -> list:
 # ZTA Security Modules (Phase 25b)
 # ---------------------------------------------------------------------------
 
+
 def generate_zta_security(project_path: str, project_config: dict = None) -> list:
     """Generate ZTA-specific Terraform security modules.
 
@@ -971,12 +972,13 @@ def generate_zta_security(project_path: str, project_config: dict = None) -> lis
         List of generated file paths.
     """
     config = project_config or {}
-    modules = config.get("zta_modules", ["guardduty", "security_hub", "waf",
-                                          "config_rules", "vpc_flow_logs",
-                                          "secrets_rotation"])
+    modules = config.get(
+        "zta_modules", ["guardduty", "security_hub", "waf", "config_rules", "vpc_flow_logs", "secrets_rotation"]
+    )
 
     try:
         import importlib
+
         zta_gen = importlib.import_module("tools.devsecops.zta_terraform_generator")
     except (ImportError, ModuleNotFoundError):
         print("[terraform] zta_terraform_generator not available; skipping")
@@ -1013,14 +1015,17 @@ def generate_zta_security(project_path: str, project_config: dict = None) -> lis
 # CSP Dispatcher (Phase 38 — D225)
 # ---------------------------------------------------------------------------
 
+
 def _detect_csp() -> str:
     """Detect cloud service provider from cloud_config.yaml or env var."""
     import os
+
     csp = os.environ.get("ICDEV_CLOUD_PROVIDER", "").lower()
     if csp:
         return csp
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "cloud_config.yaml"
         if config_path.exists():
             with open(config_path, encoding="utf-8") as f:
@@ -1031,8 +1036,7 @@ def _detect_csp() -> str:
     return "aws"
 
 
-def generate_for_csp(project_path: str, project_config: dict = None,
-                     csp: str = None) -> list:
+def generate_for_csp(project_path: str, project_config: dict = None, csp: str = None) -> list:
     """CSP dispatcher — delegates to CSP-specific generator.
 
     Detects CSP from cloud_config.yaml or ICDEV_CLOUD_PROVIDER env var,
@@ -1071,6 +1075,7 @@ def generate_for_csp(project_path: str, project_config: dict = None,
 
     try:
         import importlib
+
         mod = importlib.import_module(module_name)
         return mod.generate(project_path, project_config)
     except (ImportError, ModuleNotFoundError) as e:
@@ -1092,8 +1097,12 @@ def main():
     parser.add_argument("--project-name", default="icdev-project", help="Project name for resource naming")
     parser.add_argument("--environment", default="dev", choices=["dev", "staging", "prod"], help="Target environment")
     parser.add_argument("--db-name", default="appdb", help="Database name for RDS module")
-    parser.add_argument("--csp", default=None, choices=["aws", "azure", "gcp", "oci"],
-                        help="Cloud service provider (auto-detected from cloud_config.yaml if omitted)")
+    parser.add_argument(
+        "--csp",
+        default=None,
+        choices=["aws", "azure", "gcp", "oci"],
+        help="Cloud service provider (auto-detected from cloud_config.yaml if omitted)",
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 

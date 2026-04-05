@@ -41,6 +41,7 @@ def _msg(turn, content, role="user", minutes_offset=0):
 # Token estimation
 # ---------------------------------------------------------------------------
 
+
 class TestTokenEstimation:
     def test_estimate_tokens(self):
         assert HistoryCompressor._estimate_tokens("") == 1  # min 1
@@ -54,6 +55,7 @@ class TestTokenEstimation:
 # ---------------------------------------------------------------------------
 # Keyword extraction
 # ---------------------------------------------------------------------------
+
 
 class TestKeywordExtraction:
     def test_basic_extraction(self):
@@ -84,6 +86,7 @@ class TestKeywordExtraction:
 # Time gap calculation
 # ---------------------------------------------------------------------------
 
+
 class TestTimeGap:
     def test_gap_calculation(self):
         m1 = _msg(1, "hello", minutes_offset=0)
@@ -107,6 +110,7 @@ class TestTimeGap:
 # ---------------------------------------------------------------------------
 # Topic boundary detection
 # ---------------------------------------------------------------------------
+
 
 class TestTopicBoundaryDetection:
     def test_no_messages(self, compressor):
@@ -141,6 +145,7 @@ class TestTopicBoundaryDetection:
 # Compression
 # ---------------------------------------------------------------------------
 
+
 class TestCompression:
     def test_empty_messages(self, compressor):
         result = compressor.compress([], budget_tokens=4000)
@@ -154,8 +159,9 @@ class TestCompression:
     def test_compress_reduces_messages(self, compressor):
         # Create many long messages that exceed budget
         messages = [
-            _msg(i, f"Long content about topic {'A' if i < 10 else 'B'} " * 50,
-                 minutes_offset=i * (35 if i == 10 else 2))
+            _msg(
+                i, f"Long content about topic {'A' if i < 10 else 'B'} " * 50, minutes_offset=i * (35 if i == 10 else 2)
+            )
             for i in range(1, 21)
         ]
         result = compressor.compress(messages, budget_tokens=200)
@@ -175,6 +181,7 @@ class TestCompression:
 # TopicBoundary dataclass
 # ---------------------------------------------------------------------------
 
+
 class TestTopicBoundaryDataclass:
     def test_create(self):
         tb = TopicBoundary(start_turn=1, end_turn=5, keywords=["deploy", "test"], message_count=5)
@@ -192,6 +199,7 @@ class TestTopicBoundaryDataclass:
 # ---------------------------------------------------------------------------
 # Summarization fallback
 # ---------------------------------------------------------------------------
+
 
 class TestSummarization:
     def test_summarize_empty(self, compressor):
@@ -218,6 +226,7 @@ class TestSummarization:
 # ---------------------------------------------------------------------------
 # Budget allocation
 # ---------------------------------------------------------------------------
+
 
 class TestBudgetAllocation:
     def test_default_budget_sums_to_one(self):

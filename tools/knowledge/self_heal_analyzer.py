@@ -16,9 +16,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Thresholds
-CONFIDENCE_THRESHOLD = 0.7   # Auto-heal above this
-ESCALATION_THRESHOLD = 0.3   # Always escalate below this
-MAX_HEAL_ATTEMPTS = 3        # Max auto-heal attempts per hour per pattern
+CONFIDENCE_THRESHOLD = 0.7  # Auto-heal above this
+ESCALATION_THRESHOLD = 0.3  # Always escalate below this
+MAX_HEAL_ATTEMPTS = 3  # Max auto-heal attempts per hour per pattern
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
@@ -39,9 +39,12 @@ def _restart_service(context: dict) -> dict:
 
     if method == "kubectl":
         cmd = [
-            "kubectl", "rollout", "restart",
+            "kubectl",
+            "rollout",
+            "restart",
             f"deployment/{service}",
-            "-n", namespace,
+            "-n",
+            namespace,
         ]
     else:
         cmd = ["systemctl", "restart", service]
@@ -82,9 +85,12 @@ def _rollback(context: dict) -> dict:
     deployment = context.get("deployment_name", project_id)
 
     cmd = [
-        "kubectl", "rollout", "undo",
+        "kubectl",
+        "rollout",
+        "undo",
         f"deployment/{deployment}",
-        "-n", namespace,
+        "-n",
+        namespace,
     ]
 
     try:
@@ -121,10 +127,12 @@ def _scale_up(context: dict) -> dict:
     replicas = context.get("target_replicas", 5)
 
     cmd = [
-        "kubectl", "scale",
+        "kubectl",
+        "scale",
         f"deployment/{service}",
         f"--replicas={replicas}",
-        "-n", namespace,
+        "-n",
+        namespace,
     ]
 
     try:
@@ -176,6 +184,7 @@ def _clear_cache(context: dict) -> dict:
         # HTTP cache clear
         try:
             import urllib.request
+
             req = urllib.request.Request(cache_endpoint, method="POST")
             req.add_header("Content-Type", "application/json")
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -271,7 +280,8 @@ def analyze_and_heal(failure_data: dict, dry_run: bool = False, db_path: Path = 
 
         # 5. Record outcome
         event_id = _record_healing_event(
-            failure_data, top_match,
+            failure_data,
+            top_match,
             "succeeded" if healing_result.get("success") else "failed",
             json.dumps(healing_result),
             db_path,
@@ -329,8 +339,7 @@ def execute_remediation(pattern: dict, context: dict) -> dict:
         return {
             "action": action_name,
             "success": False,
-            "error": f"Unknown remediation action: {action_name}. "
-                     f"Available: {list(REMEDIATION_ACTIONS.keys())}",
+            "error": f"Unknown remediation action: {action_name}. Available: {list(REMEDIATION_ACTIONS.keys())}",
         }
 
 
@@ -428,6 +437,7 @@ def record_outcome(
 
         if event["pattern_id"]:
             from tools.knowledge.pattern_detector import update_pattern_confidence
+
             conf_result = update_pattern_confidence(event["pattern_id"], outcome, db_path)
             result["confidence_update"] = conf_result
 

@@ -159,9 +159,7 @@ def main():
         sys.exit(1)
 
     # Commit
-    commit_msg, error = create_commit(
-        AGENT_PATCH_IMPLEMENTOR, issue_json, "/patch", run_id, logger
-    )
+    commit_msg, error = create_commit(AGENT_PATCH_IMPLEMENTOR, issue_json, "/patch", run_id, logger)
     if error:
         commit_msg = f"{AGENT_PATCH_IMPLEMENTOR}: patch for issue #{issue_number}"
 

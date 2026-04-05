@@ -41,23 +41,25 @@ def _check_frequent_failures(conn, project_id: str) -> list:
 
     for row in rows:
         severity = "high" if row["count"] > 10 else "medium" if row["count"] > 5 else "low"
-        recs.append({
-            "type": "recurring_failure",
-            "severity": severity,
-            "confidence": min(0.5 + (row["count"] / 20.0), 0.95),
-            "title": f"Recurring failure: {row['error_type']}",
-            "description": (
-                f"The error '{row['error_type']}' has occurred {row['count']} times "
-                f"in the last 7 days. Last seen: {row['last_seen']}. "
-                f"Consider investigating root cause and adding a known pattern."
-            ),
-            "action": "investigate_root_cause",
-            "details": {
-                "error_type": row["error_type"],
-                "occurrences": row["count"],
-                "last_seen": row["last_seen"],
-            },
-        })
+        recs.append(
+            {
+                "type": "recurring_failure",
+                "severity": severity,
+                "confidence": min(0.5 + (row["count"] / 20.0), 0.95),
+                "title": f"Recurring failure: {row['error_type']}",
+                "description": (
+                    f"The error '{row['error_type']}' has occurred {row['count']} times "
+                    f"in the last 7 days. Last seen: {row['last_seen']}. "
+                    f"Consider investigating root cause and adding a known pattern."
+                ),
+                "action": "investigate_root_cause",
+                "details": {
+                    "error_type": row["error_type"],
+                    "occurrences": row["count"],
+                    "last_seen": row["last_seen"],
+                },
+            }
+        )
 
     return recs
 
@@ -84,44 +86,48 @@ def _check_deployment_health(conn, project_id: str) -> list:
         success_rate = ((stats["succeeded"] or 0) / total) * 100
 
         if success_rate < 50:
-            recs.append({
-                "type": "deployment_health",
-                "severity": "critical",
-                "confidence": 0.9,
-                "title": f"Critical: Deployment success rate is {success_rate:.0f}%",
-                "description": (
-                    f"Only {success_rate:.0f}% of deployments succeeded in the last 30 days "
-                    f"({stats['succeeded']}/{total}). This indicates systemic issues in the "
-                    f"deployment pipeline. Review CI/CD configuration, test coverage, and "
-                    f"pre-deployment checks."
-                ),
-                "action": "review_pipeline",
-                "details": {
-                    "total": total,
-                    "succeeded": stats["succeeded"] or 0,
-                    "failed": failed,
-                    "success_rate": round(success_rate, 1),
-                },
-            })
+            recs.append(
+                {
+                    "type": "deployment_health",
+                    "severity": "critical",
+                    "confidence": 0.9,
+                    "title": f"Critical: Deployment success rate is {success_rate:.0f}%",
+                    "description": (
+                        f"Only {success_rate:.0f}% of deployments succeeded in the last 30 days "
+                        f"({stats['succeeded']}/{total}). This indicates systemic issues in the "
+                        f"deployment pipeline. Review CI/CD configuration, test coverage, and "
+                        f"pre-deployment checks."
+                    ),
+                    "action": "review_pipeline",
+                    "details": {
+                        "total": total,
+                        "succeeded": stats["succeeded"] or 0,
+                        "failed": failed,
+                        "success_rate": round(success_rate, 1),
+                    },
+                }
+            )
         elif success_rate < 80:
-            recs.append({
-                "type": "deployment_health",
-                "severity": "medium",
-                "confidence": 0.75,
-                "title": f"Deployment success rate below target: {success_rate:.0f}%",
-                "description": (
-                    f"Deployment success rate is {success_rate:.0f}% (target: 95%+). "
-                    f"Review failed deployments for common patterns and strengthen "
-                    f"pre-deployment validation."
-                ),
-                "action": "improve_deployment_validation",
-                "details": {
-                    "total": total,
-                    "succeeded": stats["succeeded"] or 0,
-                    "failed": failed,
-                    "success_rate": round(success_rate, 1),
-                },
-            })
+            recs.append(
+                {
+                    "type": "deployment_health",
+                    "severity": "medium",
+                    "confidence": 0.75,
+                    "title": f"Deployment success rate below target: {success_rate:.0f}%",
+                    "description": (
+                        f"Deployment success rate is {success_rate:.0f}% (target: 95%+). "
+                        f"Review failed deployments for common patterns and strengthen "
+                        f"pre-deployment validation."
+                    ),
+                    "action": "improve_deployment_validation",
+                    "details": {
+                        "total": total,
+                        "succeeded": stats["succeeded"] or 0,
+                        "failed": failed,
+                        "success_rate": round(success_rate, 1),
+                    },
+                }
+            )
 
     # Check for deployments without health checks
     no_healthcheck = conn.execute(
@@ -135,18 +141,20 @@ def _check_deployment_health(conn, project_id: str) -> list:
     if no_healthcheck > 0 and total > 0:
         ratio = no_healthcheck / total
         if ratio > 0.5:
-            recs.append({
-                "type": "missing_health_checks",
-                "severity": "medium",
-                "confidence": 0.8,
-                "title": f"{no_healthcheck}/{total} deployments lack health checks",
-                "description": (
-                    "Most deployments are missing health check validation. "
-                    "Add health check endpoints and configure post-deployment verification "
-                    "to catch issues before they reach users."
-                ),
-                "action": "add_health_checks",
-            })
+            recs.append(
+                {
+                    "type": "missing_health_checks",
+                    "severity": "medium",
+                    "confidence": 0.8,
+                    "title": f"{no_healthcheck}/{total} deployments lack health checks",
+                    "description": (
+                        "Most deployments are missing health check validation. "
+                        "Add health check endpoints and configure post-deployment verification "
+                        "to catch issues before they reach users."
+                    ),
+                    "action": "add_health_checks",
+                }
+            )
 
     return recs
 
@@ -170,31 +178,35 @@ def _check_unresolved_failures(conn, project_id: str) -> list:
     ).fetchone()[0]
 
     if unresolved > 10:
-        recs.append({
-            "type": "unresolved_failures",
-            "severity": "high",
-            "confidence": 0.85,
-            "title": f"{unresolved} unresolved failures in the last 7 days",
-            "description": (
-                f"There are {unresolved} unresolved failures from the past week. "
-                f"Prioritize triage and resolution to prevent cascading issues."
-            ),
-            "action": "triage_failures",
-            "details": {"unresolved_recent": unresolved, "unresolved_old": old_unresolved},
-        })
+        recs.append(
+            {
+                "type": "unresolved_failures",
+                "severity": "high",
+                "confidence": 0.85,
+                "title": f"{unresolved} unresolved failures in the last 7 days",
+                "description": (
+                    f"There are {unresolved} unresolved failures from the past week. "
+                    f"Prioritize triage and resolution to prevent cascading issues."
+                ),
+                "action": "triage_failures",
+                "details": {"unresolved_recent": unresolved, "unresolved_old": old_unresolved},
+            }
+        )
 
     if old_unresolved > 5:
-        recs.append({
-            "type": "stale_failures",
-            "severity": "medium",
-            "confidence": 0.7,
-            "title": f"{old_unresolved} stale unresolved failures (older than 7 days)",
-            "description": (
-                f"There are {old_unresolved} unresolved failures older than 7 days. "
-                f"Review and close resolved ones, or escalate persistent issues."
-            ),
-            "action": "cleanup_failures",
-        })
+        recs.append(
+            {
+                "type": "stale_failures",
+                "severity": "medium",
+                "confidence": 0.7,
+                "title": f"{old_unresolved} stale unresolved failures (older than 7 days)",
+                "description": (
+                    f"There are {old_unresolved} unresolved failures older than 7 days. "
+                    f"Review and close resolved ones, or escalate persistent issues."
+                ),
+                "action": "cleanup_failures",
+            }
+        )
 
     return recs
 
@@ -218,32 +230,32 @@ def _check_pattern_coverage(conn, project_id: str) -> list:
         (project_id,),
     ).fetchone()[0]
 
-    total_patterns = conn.execute(
-        "SELECT COUNT(*) FROM knowledge_patterns"
-    ).fetchone()[0]
+    total_patterns = conn.execute("SELECT COUNT(*) FROM knowledge_patterns").fetchone()[0]
 
     if total_failures > 0 and unmatched > 0:
         match_rate = ((total_failures - unmatched) / total_failures) * 100
         if match_rate < 50:
-            recs.append({
-                "type": "low_pattern_coverage",
-                "severity": "medium",
-                "confidence": 0.7,
-                "title": f"Low pattern coverage: {match_rate:.0f}% of failures have patterns",
-                "description": (
-                    f"Only {match_rate:.0f}% of recent failures match known patterns. "
-                    f"There are {unmatched} unmatched failures. "
-                    f"Ingest common failure patterns to improve self-healing coverage."
-                ),
-                "action": "ingest_patterns",
-                "details": {
-                    "total_failures": total_failures,
-                    "matched": total_failures - unmatched,
-                    "unmatched": unmatched,
-                    "total_patterns": total_patterns,
-                    "match_rate": round(match_rate, 1),
-                },
-            })
+            recs.append(
+                {
+                    "type": "low_pattern_coverage",
+                    "severity": "medium",
+                    "confidence": 0.7,
+                    "title": f"Low pattern coverage: {match_rate:.0f}% of failures have patterns",
+                    "description": (
+                        f"Only {match_rate:.0f}% of recent failures match known patterns. "
+                        f"There are {unmatched} unmatched failures. "
+                        f"Ingest common failure patterns to improve self-healing coverage."
+                    ),
+                    "action": "ingest_patterns",
+                    "details": {
+                        "total_failures": total_failures,
+                        "matched": total_failures - unmatched,
+                        "unmatched": unmatched,
+                        "total_patterns": total_patterns,
+                        "match_rate": round(match_rate, 1),
+                    },
+                }
+            )
 
     # Check patterns with low confidence
     low_conf_patterns = conn.execute(
@@ -252,18 +264,20 @@ def _check_pattern_coverage(conn, project_id: str) -> list:
     ).fetchone()[0]
 
     if low_conf_patterns > 0:
-        recs.append({
-            "type": "low_confidence_patterns",
-            "severity": "low",
-            "confidence": 0.6,
-            "title": f"{low_conf_patterns} auto-healable patterns have low confidence",
-            "description": (
-                f"There are {low_conf_patterns} patterns marked as auto-healable but with "
-                f"confidence below 0.3. Review these patterns — they may be producing "
-                f"incorrect remediations. Consider disabling auto-heal or improving accuracy."
-            ),
-            "action": "review_patterns",
-        })
+        recs.append(
+            {
+                "type": "low_confidence_patterns",
+                "severity": "low",
+                "confidence": 0.6,
+                "title": f"{low_conf_patterns} auto-healable patterns have low confidence",
+                "description": (
+                    f"There are {low_conf_patterns} patterns marked as auto-healable but with "
+                    f"confidence below 0.3. Review these patterns — they may be producing "
+                    f"incorrect remediations. Consider disabling auto-heal or improving accuracy."
+                ),
+                "action": "review_patterns",
+            }
+        )
 
     return recs
 
@@ -288,22 +302,24 @@ def _check_alert_fatigue(conn, project_id: str) -> list:
     ).fetchone()[0]
 
     if total_alerts > 50 and unacked_alerts > total_alerts * 0.5:
-        recs.append({
-            "type": "alert_fatigue",
-            "severity": "medium",
-            "confidence": 0.75,
-            "title": f"Potential alert fatigue: {unacked_alerts}/{total_alerts} alerts unacknowledged",
-            "description": (
-                f"Over {unacked_alerts} alerts are unacknowledged out of {total_alerts} total "
-                f"in the last 7 days. This suggests alert fatigue. Review alert thresholds, "
-                f"consolidate noisy alerts, and ensure critical alerts are prioritized."
-            ),
-            "action": "tune_alerts",
-            "details": {
-                "total_alerts": total_alerts,
-                "unacknowledged": unacked_alerts,
-            },
-        })
+        recs.append(
+            {
+                "type": "alert_fatigue",
+                "severity": "medium",
+                "confidence": 0.75,
+                "title": f"Potential alert fatigue: {unacked_alerts}/{total_alerts} alerts unacknowledged",
+                "description": (
+                    f"Over {unacked_alerts} alerts are unacknowledged out of {total_alerts} total "
+                    f"in the last 7 days. This suggests alert fatigue. Review alert thresholds, "
+                    f"consolidate noisy alerts, and ensure critical alerts are prioritized."
+                ),
+                "action": "tune_alerts",
+                "details": {
+                    "total_alerts": total_alerts,
+                    "unacknowledged": unacked_alerts,
+                },
+            }
+        )
 
     return recs
 
@@ -329,24 +345,26 @@ def _check_self_healing_effectiveness(conn, project_id: str) -> list:
     if total > 5:
         success_rate = (succeeded / total) * 100
         if success_rate < 50:
-            recs.append({
-                "type": "self_healing_ineffective",
-                "severity": "high",
-                "confidence": 0.8,
-                "title": f"Self-healing success rate is low: {success_rate:.0f}%",
-                "description": (
-                    f"Only {success_rate:.0f}% of self-healing attempts succeeded "
-                    f"({succeeded}/{total}). Review remediation actions and pattern accuracy."
-                ),
-                "action": "improve_self_healing",
-                "details": {
-                    "total": total,
-                    "succeeded": succeeded,
-                    "failed": failed,
-                    "escalated": outcome_map.get("escalated", 0),
-                    "success_rate": round(success_rate, 1),
-                },
-            })
+            recs.append(
+                {
+                    "type": "self_healing_ineffective",
+                    "severity": "high",
+                    "confidence": 0.8,
+                    "title": f"Self-healing success rate is low: {success_rate:.0f}%",
+                    "description": (
+                        f"Only {success_rate:.0f}% of self-healing attempts succeeded "
+                        f"({succeeded}/{total}). Review remediation actions and pattern accuracy."
+                    ),
+                    "action": "improve_self_healing",
+                    "details": {
+                        "total": total,
+                        "succeeded": succeeded,
+                        "failed": failed,
+                        "escalated": outcome_map.get("escalated", 0),
+                        "success_rate": round(success_rate, 1),
+                    },
+                }
+            )
 
     return recs
 
@@ -424,21 +442,23 @@ def main():
     recs = result["recommendations"]
     if args.severity:
         recs = [r for r in recs if r["severity"] == args.severity]
-    recs = recs[:args.limit]
+    recs = recs[: args.limit]
 
     if args.format == "json":
         result["recommendations"] = recs
         print(json.dumps(result, indent=2))
     else:
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
         print(f"  RECOMMENDATIONS — {result['project_id']}")
         print(f"  Generated: {result['generated_at']}")
-        print(f"{'='*70}")
+        print(f"{'=' * 70}")
 
         s = result["summary"]
-        print(f"\n  Summary: {result['total_recommendations']} total — "
-              f"Critical: {s['critical']}, High: {s['high']}, "
-              f"Medium: {s['medium']}, Low: {s['low']}")
+        print(
+            f"\n  Summary: {result['total_recommendations']} total — "
+            f"Critical: {s['critical']}, High: {s['high']}, "
+            f"Medium: {s['medium']}, Low: {s['low']}"
+        )
 
         if not recs:
             print("\n  No recommendations at this time. System looks healthy.")
@@ -453,7 +473,7 @@ def main():
                     desc = desc[70:]
                 print(f"     Action: {rec.get('action', 'N/A')}")
 
-        print(f"\n{'='*70}")
+        print(f"\n{'=' * 70}")
 
 
 if __name__ == "__main__":

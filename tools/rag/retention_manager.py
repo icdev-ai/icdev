@@ -33,6 +33,7 @@ def _load_retention_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, "r") as f:
             cfg = yaml.safe_load(f) or {}
         return cfg.get("rag", {}).get("retention", {})
@@ -77,7 +78,8 @@ def get_migration_candidates(
 
     # Find hot chunks older than hot_days
     hot_to_warm = [
-        row[0] for row in conn.execute(
+        row[0]
+        for row in conn.execute(
             "SELECT id FROM rag_chunks WHERE tier = 'hot' AND created_at < ?",
             (hot_cutoff,),
         ).fetchall()
@@ -85,7 +87,8 @@ def get_migration_candidates(
 
     # Find warm chunks older than warm_days
     warm_to_cold = [
-        row[0] for row in conn.execute(
+        row[0]
+        for row in conn.execute(
             "SELECT id FROM rag_chunks WHERE tier = 'warm' AND created_at < ?",
             (warm_cutoff,),
         ).fetchall()
@@ -209,6 +212,7 @@ def rehydrate_chunks(
     # Get embedding provider
     try:
         from tools.llm import get_embedding_provider
+
         provider = get_embedding_provider()
     except Exception:
         return {"error": "No embedding provider available", "rehydrated": 0}
@@ -220,9 +224,7 @@ def rehydrate_chunks(
     import struct
 
     for cid in chunk_ids:
-        row = conn.execute(
-            "SELECT content, tier FROM rag_chunks WHERE id = ?", (cid,)
-        ).fetchone()
+        row = conn.execute("SELECT content, tier FROM rag_chunks WHERE id = ?", (cid,)).fetchone()
         if not row:
             continue
         content, tier = row
@@ -233,9 +235,7 @@ def rehydrate_chunks(
             if hasattr(provider, "embed"):
                 embedding = provider.embed(content)
             else:
-                resp = provider.embeddings.create(
-                    input=content, model="nomic-embed-text"
-                )
+                resp = provider.embeddings.create(input=content, model="nomic-embed-text")
                 embedding = resp.data[0].embedding
 
             blob = struct.pack(f"{len(embedding)}f", *embedding)

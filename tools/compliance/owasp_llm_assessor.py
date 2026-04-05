@@ -36,7 +36,9 @@ class OWASPLLMAssessor(BaseAssessor):
     CATALOG_FILENAME = "owasp_llm_top10.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OWASP LLM-specific automated checks.
 

@@ -72,23 +72,27 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
         governance_items = []
 
         audit_count = _count_table(conn, "audit_trail", project_id)
-        governance_items.append({
-            "requirement": "GAO-GOV-1",
-            "evidence_type": "Audit Trail",
-            "source_table": "audit_trail",
-            "record_count": audit_count,
-            "status": "available" if audit_count > 0 else "missing",
-        })
+        governance_items.append(
+            {
+                "requirement": "GAO-GOV-1",
+                "evidence_type": "Audit Trail",
+                "source_table": "audit_trail",
+                "record_count": audit_count,
+                "status": "available" if audit_count > 0 else "missing",
+            }
+        )
 
         # Agent authority
         agents = _count_table_global(conn, "agents")
-        governance_items.append({
-            "requirement": "GAO-GOV-1",
-            "evidence_type": "Agent Registry & Authority Matrix",
-            "source_table": "agents",
-            "record_count": agents,
-            "status": "available" if agents > 0 else "missing",
-        })
+        governance_items.append(
+            {
+                "requirement": "GAO-GOV-1",
+                "evidence_type": "Agent Registry & Authority Matrix",
+                "source_table": "agents",
+                "record_count": agents,
+                "status": "available" if agents > 0 else "missing",
+            }
+        )
 
         # Risk assessments
         for table, name in [
@@ -97,59 +101,71 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
             ("xai_assessments", "XAI Assessment"),
         ]:
             count = _count_table(conn, table, project_id)
-            governance_items.append({
-                "requirement": "GAO-GOV-4",
-                "evidence_type": name,
-                "source_table": table,
-                "record_count": count,
-                "status": "available" if count > 0 else "missing",
-            })
+            governance_items.append(
+                {
+                    "requirement": "GAO-GOV-4",
+                    "evidence_type": name,
+                    "source_table": table,
+                    "record_count": count,
+                    "status": "available" if count > 0 else "missing",
+                }
+            )
 
         evidence["principles"]["governance"] = {
             "title": "Governance",
             "items": governance_items,
-            "coverage": sum(1 for i in governance_items if i["status"] == "available") / max(len(governance_items), 1) * 100,
+            "coverage": sum(1 for i in governance_items if i["status"] == "available")
+            / max(len(governance_items), 1)
+            * 100,
         }
 
         # ── Data Evidence ──
         data_items = []
 
         ai_bom = _count_table(conn, "ai_bom", project_id)
-        data_items.append({
-            "requirement": "GAO-DATA-2",
-            "evidence_type": "AI Bill of Materials",
-            "source_table": "ai_bom",
-            "record_count": ai_bom,
-            "status": "available" if ai_bom > 0 else "missing",
-        })
+        data_items.append(
+            {
+                "requirement": "GAO-DATA-2",
+                "evidence_type": "AI Bill of Materials",
+                "source_table": "ai_bom",
+                "record_count": ai_bom,
+                "status": "available" if ai_bom > 0 else "missing",
+            }
+        )
 
         prov_entities = _count_table(conn, "prov_entities", project_id)
-        data_items.append({
-            "requirement": "GAO-DATA-2",
-            "evidence_type": "Provenance Records",
-            "source_table": "prov_entities",
-            "record_count": prov_entities,
-            "status": "available" if prov_entities > 0 else "missing",
-        })
+        data_items.append(
+            {
+                "requirement": "GAO-DATA-2",
+                "evidence_type": "Provenance Records",
+                "source_table": "prov_entities",
+                "record_count": prov_entities,
+                "status": "available" if prov_entities > 0 else "missing",
+            }
+        )
 
         # Data classification
         try:
             dc_count = _count_table(conn, "data_classifications", project_id)
-            data_items.append({
-                "requirement": "GAO-DATA-3",
-                "evidence_type": "Data Classifications",
-                "source_table": "data_classifications",
-                "record_count": dc_count,
-                "status": "available" if dc_count > 0 else "missing",
-            })
+            data_items.append(
+                {
+                    "requirement": "GAO-DATA-3",
+                    "evidence_type": "Data Classifications",
+                    "source_table": "data_classifications",
+                    "record_count": dc_count,
+                    "status": "available" if dc_count > 0 else "missing",
+                }
+            )
         except Exception:
-            data_items.append({
-                "requirement": "GAO-DATA-3",
-                "evidence_type": "Data Classifications",
-                "source_table": "data_classifications",
-                "record_count": 0,
-                "status": "missing",
-            })
+            data_items.append(
+                {
+                    "requirement": "GAO-DATA-3",
+                    "evidence_type": "Data Classifications",
+                    "source_table": "data_classifications",
+                    "record_count": 0,
+                    "status": "missing",
+                }
+            )
 
         evidence["principles"]["data"] = {
             "title": "Data",
@@ -161,39 +177,47 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
         perf_items = []
 
         telemetry = _count_table(conn, "ai_telemetry", project_id)
-        perf_items.append({
-            "requirement": "GAO-PERF-1",
-            "evidence_type": "AI Telemetry",
-            "source_table": "ai_telemetry",
-            "record_count": telemetry,
-            "status": "available" if telemetry > 0 else "missing",
-        })
+        perf_items.append(
+            {
+                "requirement": "GAO-PERF-1",
+                "evidence_type": "AI Telemetry",
+                "source_table": "ai_telemetry",
+                "record_count": telemetry,
+                "status": "available" if telemetry > 0 else "missing",
+            }
+        )
 
         xai = _count_table(conn, "xai_assessments", project_id)
-        perf_items.append({
-            "requirement": "GAO-PERF-3",
-            "evidence_type": "XAI Assessment",
-            "source_table": "xai_assessments",
-            "record_count": xai,
-            "status": "available" if xai > 0 else "missing",
-        })
+        perf_items.append(
+            {
+                "requirement": "GAO-PERF-3",
+                "evidence_type": "XAI Assessment",
+                "source_table": "xai_assessments",
+                "record_count": xai,
+                "status": "available" if xai > 0 else "missing",
+            }
+        )
 
         shap = _count_table(conn, "shap_attributions", project_id)
-        perf_items.append({
-            "requirement": "GAO-PERF-3",
-            "evidence_type": "SHAP Attributions",
-            "source_table": "shap_attributions",
-            "record_count": shap,
-            "status": "available" if shap > 0 else "missing",
-        })
+        perf_items.append(
+            {
+                "requirement": "GAO-PERF-3",
+                "evidence_type": "SHAP Attributions",
+                "source_table": "shap_attributions",
+                "record_count": shap,
+                "status": "available" if shap > 0 else "missing",
+            }
+        )
 
-        perf_items.append({
-            "requirement": "GAO-PERF-4",
-            "evidence_type": "Audit Trail",
-            "source_table": "audit_trail",
-            "record_count": audit_count,
-            "status": "available" if audit_count > 0 else "missing",
-        })
+        perf_items.append(
+            {
+                "requirement": "GAO-PERF-4",
+                "evidence_type": "Audit Trail",
+                "source_table": "audit_trail",
+                "record_count": audit_count,
+                "status": "available" if audit_count > 0 else "missing",
+            }
+        )
 
         evidence["principles"]["performance"] = {
             "title": "Performance",
@@ -204,13 +228,15 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
         # ── Monitoring Evidence ──
         mon_items = []
 
-        mon_items.append({
-            "requirement": "GAO-MON-1",
-            "evidence_type": "AI Telemetry (Continuous Monitoring)",
-            "source_table": "ai_telemetry",
-            "record_count": telemetry,
-            "status": "available" if telemetry > 0 else "missing",
-        })
+        mon_items.append(
+            {
+                "requirement": "GAO-MON-1",
+                "evidence_type": "AI Telemetry (Continuous Monitoring)",
+                "source_table": "ai_telemetry",
+                "record_count": telemetry,
+                "status": "available" if telemetry > 0 else "missing",
+            }
+        )
 
         # Behavioral drift
         try:
@@ -223,33 +249,39 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
         except Exception:
             drift_count = 0
 
-        mon_items.append({
-            "requirement": "GAO-MON-1",
-            "evidence_type": "Behavioral Drift Detection",
-            "source_table": "ai_telemetry",
-            "record_count": drift_count,
-            "status": "available",
-        })
+        mon_items.append(
+            {
+                "requirement": "GAO-MON-1",
+                "evidence_type": "Behavioral Drift Detection",
+                "source_table": "ai_telemetry",
+                "record_count": drift_count,
+                "status": "available",
+            }
+        )
 
         # Trust scores
         trust = _count_table_global(conn, "agent_trust_scores")
-        mon_items.append({
-            "requirement": "GAO-MON-1",
-            "evidence_type": "Agent Trust Scores",
-            "source_table": "agent_trust_scores",
-            "record_count": trust,
-            "status": "available" if trust > 0 else "missing",
-        })
+        mon_items.append(
+            {
+                "requirement": "GAO-MON-1",
+                "evidence_type": "Agent Trust Scores",
+                "source_table": "agent_trust_scores",
+                "record_count": trust,
+                "status": "available" if trust > 0 else "missing",
+            }
+        )
 
         # Prompt injection detection
         pi_count = _count_table(conn, "prompt_injection_log", project_id)
-        mon_items.append({
-            "requirement": "GAO-MON-3",
-            "evidence_type": "Prompt Injection Detection",
-            "source_table": "prompt_injection_log",
-            "record_count": pi_count,
-            "status": "available" if pi_count >= 0 else "missing",
-        })
+        mon_items.append(
+            {
+                "requirement": "GAO-MON-3",
+                "evidence_type": "Prompt Injection Detection",
+                "source_table": "prompt_injection_log",
+                "record_count": pi_count,
+                "status": "available" if pi_count >= 0 else "missing",
+            }
+        )
 
         evidence["principles"]["monitoring"] = {
             "title": "Monitoring",
@@ -258,9 +290,7 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
         }
 
         # Overall summary
-        all_items = (
-            governance_items + data_items + perf_items + mon_items
-        )
+        all_items = governance_items + data_items + perf_items + mon_items
         available = sum(1 for i in all_items if i["status"] == "available")
         total = len(all_items)
         overall_coverage = round(available / total * 100, 1) if total > 0 else 0
@@ -270,10 +300,7 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
             "available": available,
             "missing": total - available,
             "overall_coverage_pct": overall_coverage,
-            "principle_coverage": {
-                k: round(v["coverage"], 1)
-                for k, v in evidence["principles"].items()
-            },
+            "principle_coverage": {k: round(v["coverage"], 1) for k, v in evidence["principles"].items()},
         }
 
         return evidence

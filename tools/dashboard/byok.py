@@ -201,9 +201,7 @@ PROVIDER_ENV_MAP = {
 }
 
 
-def resolve_api_key(
-    user_id: str, provider: str, department: str = ""
-) -> tuple:
+def resolve_api_key(user_id: str, provider: str, department: str = "") -> tuple:
     """Resolve the API key for a provider using the BYOK priority chain.
 
     Returns (api_key: str, source: str).

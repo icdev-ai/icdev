@@ -280,10 +280,7 @@ def validate_acceptance(
         blocking.append(f"acceptance_criteria_failed: {report.criteria_failed} failed")
 
     if report.pages_with_errors > 0:
-        blocking.append(
-            f"ui_page_renders_with_error: {report.pages_with_errors} page(s) "
-            f"with errors"
-        )
+        blocking.append(f"ui_page_renders_with_error: {report.pages_with_errors} page(s) with errors")
 
     if report.criteria_unverified > 0:
         warnings.append(
@@ -301,9 +298,7 @@ def validate_acceptance(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Acceptance Criteria Validator (V&V)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Acceptance Criteria Validator (V&V)")
     parser.add_argument(
         "--plan",
         help="Path to plan file with ## Acceptance Criteria section",
@@ -400,7 +395,9 @@ def main():
             print()
 
         print("Summary:")
-        print(f"  Criteria: {report.criteria_verified} verified, {report.criteria_failed} failed, {report.criteria_unverified} unverified")
+        print(
+            f"  Criteria: {report.criteria_verified} verified, {report.criteria_failed} failed, {report.criteria_unverified} unverified"  # noqa: E501
+        )
         print(f"  Pages: {report.pages_checked} checked, {report.pages_with_errors} with errors")
         print(f"  Gate: {'PASS' if report.overall_pass else 'FAIL'}")
 

@@ -136,7 +136,7 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "priority": 3,
         "mode": "realtime",
         "description": "Compliance-related audit trail entries",
-        "filter": "event_type LIKE 'ssp_%' OR event_type LIKE 'poam_%' OR event_type LIKE 'stig_%' OR event_type LIKE 'sbom_%' OR event_type LIKE 'compliance_%'",
+        "filter": "event_type LIKE 'ssp_%' OR event_type LIKE 'poam_%' OR event_type LIKE 'stig_%' OR event_type LIKE 'sbom_%' OR event_type LIKE 'compliance_%'",  # noqa: E501
     },
     "atlas_critique_findings": {
         "table": "atlas_critique_findings",
@@ -246,13 +246,15 @@ def list_sources_summary() -> List[Dict[str, Any]]:
     """List all sources with summary info."""
     result = []
     for key, cfg in SOURCE_REGISTRY.items():
-        result.append({
-            "source_type": key,
-            "table": cfg["table"],
-            "db": cfg["db"],
-            "mode": cfg["mode"],
-            "priority": cfg["priority"],
-            "content_cols": cfg["content_cols"],
-            "description": cfg["description"],
-        })
+        result.append(
+            {
+                "source_type": key,
+                "table": cfg["table"],
+                "db": cfg["db"],
+                "mode": cfg["mode"],
+                "priority": cfg["priority"],
+                "content_cols": cfg["content_cols"],
+                "description": cfg["description"],
+            }
+        )
     return sorted(result, key=lambda x: (x["mode"], x["priority"]))

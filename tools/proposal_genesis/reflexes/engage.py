@@ -34,6 +34,7 @@ def _generate_id(prefix: str = "pg") -> str:
 # Account discovery from opportunities
 # ---------------------------------------------------------------------------
 
+
 def _get_opportunities_without_accounts() -> List[Dict]:
     """Find tracked opportunities that don't yet have a CRM account."""
     conn = get_connection()
@@ -78,15 +79,24 @@ def _create_account_from_opportunity(opp: Dict) -> Optional[str]:
         naics = opp.get("naics_code", "") or ""
         account_type = _classify_account_type(agency)
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pg_crm_accounts
                 (id, name, agency, account_type, naics_codes, status,
                  created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            account_id, agency, agency, account_type, naics,
-            "active", now, now,
-        ))
+        """,
+            (
+                account_id,
+                agency,
+                agency,
+                account_type,
+                naics,
+                "active",
+                now,
+                now,
+            ),
+        )
 
         # Audit
         conn.execute(
@@ -117,11 +127,34 @@ def _classify_account_type(agency: str) -> str:
     """Classify account type from agency name."""
     agency_lower = (agency or "").lower()
     gov_keywords = [
-        "department", "agency", "bureau", "office", "administration",
-        "command", "corps", "center", "institute", "commission",
-        "dod", "army", "navy", "air force", "space force",
-        "dhs", "fbi", "cia", "nsa", "disa", "dla", "gsa",
-        "va ", "hhs", "cms", "faa", "fema", "usda",
+        "department",
+        "agency",
+        "bureau",
+        "office",
+        "administration",
+        "command",
+        "corps",
+        "center",
+        "institute",
+        "commission",
+        "dod",
+        "army",
+        "navy",
+        "air force",
+        "space force",
+        "dhs",
+        "fbi",
+        "cia",
+        "nsa",
+        "disa",
+        "dla",
+        "gsa",
+        "va ",
+        "hhs",
+        "cms",
+        "faa",
+        "fema",
+        "usda",
     ]
     if any(kw in agency_lower for kw in gov_keywords):
         return "government"
@@ -131,6 +164,7 @@ def _classify_account_type(agency: str) -> str:
 # ---------------------------------------------------------------------------
 # Interaction logging from opportunity activity
 # ---------------------------------------------------------------------------
+
 
 def _get_recent_audit_interactions() -> List[Dict]:
     """Pull recent audit events that represent interactions.
@@ -173,22 +207,25 @@ def _log_interaction(
     interaction_id = _generate_id("pgint")
     now = _utcnow_iso()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pg_crm_interactions
                 (id, contact_id, account_id, interaction_type, subject,
                  notes, opportunity_id, interaction_date, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            interaction_id,
-            "",  # No specific contact for system-generated interactions
-            account_id,
-            interaction_type,
-            subject,
-            notes,
-            opportunity_id,
-            now,
-            now,
-        ))
+        """,
+            (
+                interaction_id,
+                "",  # No specific contact for system-generated interactions
+                account_id,
+                interaction_type,
+                subject,
+                notes,
+                opportunity_id,
+                now,
+                now,
+            ),
+        )
         conn.commit()
         return interaction_id
     except Exception:
@@ -230,6 +267,7 @@ def _get_account_for_agency(agency: str) -> Optional[str]:
 # Engagement scoring
 # ---------------------------------------------------------------------------
 
+
 def _compute_win_rate(conn, agency_name: str) -> float:
     """Compute historical win rate for an agency from pg_win_loss_records.
 
@@ -237,7 +275,8 @@ def _compute_win_rate(conn, agency_name: str) -> float:
     win/loss data exists yet.
     """
     try:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN wl.outcome = 'won' THEN 1 ELSE 0 END) as wins
@@ -245,7 +284,9 @@ def _compute_win_rate(conn, agency_name: str) -> float:
             JOIN sam_gov_opportunities o ON o.id = wl.opportunity_id
             WHERE LOWER(o.agency) = LOWER(?)
             AND wl.outcome IN ('won', 'lost')
-        """, (agency_name,)).fetchone()
+        """,
+            (agency_name,),
+        ).fetchone()
         if not row or row["total"] == 0:
             return 0.0
         return round(row["wins"] / row["total"], 3)
@@ -265,32 +306,36 @@ def _compute_engagement_scores() -> List[Dict]:
     conn = get_connection()
     scores = []
     try:
-        accounts = conn.execute(
-            "SELECT id, name FROM pg_crm_accounts WHERE status = 'active'"
-        ).fetchall()
+        accounts = conn.execute("SELECT id, name FROM pg_crm_accounts WHERE status = 'active'").fetchall()
 
         for acct in accounts:
             acct_id = acct["id"]
             acct_name = acct["name"]
 
             # Interaction count and recency
-            interaction_stats = conn.execute("""
+            interaction_stats = conn.execute(
+                """
                 SELECT COUNT(*) as cnt,
                        MAX(interaction_date) as last_date
                 FROM pg_crm_interactions
                 WHERE account_id = ?
-            """, (acct_id,)).fetchone()
+            """,
+                (acct_id,),
+            ).fetchone()
 
             interaction_count = interaction_stats["cnt"] if interaction_stats else 0
             last_interaction = interaction_stats["last_date"] if interaction_stats else None
 
             # Opportunity count
-            opp_stats = conn.execute("""
+            opp_stats = conn.execute(
+                """
                 SELECT COUNT(*) as cnt
                 FROM proposal_opportunities
                 WHERE agency = ?
                 AND status IN ('tracking', 'drafting', 'reviewing')
-            """, (acct_name,)).fetchone()
+            """,
+                (acct_name,),
+            ).fetchone()
 
             opportunity_count = opp_stats["cnt"] if opp_stats else 0
 
@@ -301,12 +346,7 @@ def _compute_engagement_scores() -> List[Dict]:
             win_rate = _compute_win_rate(conn, acct_name)
 
             # Weighted composite
-            score = (
-                recency_score * 0.30
-                + frequency_score * 0.25
-                + pipeline_score * 0.25
-                + win_rate * 0.20
-            )
+            score = recency_score * 0.30 + frequency_score * 0.25 + pipeline_score * 0.25 + win_rate * 0.20
 
             breakdown = {
                 "recency": round(recency_score, 3),
@@ -318,25 +358,35 @@ def _compute_engagement_scores() -> List[Dict]:
             score_id = _generate_id("pgeng")
             now = _utcnow_iso()
 
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO pg_crm_engagement_scores
                     (id, account_id, score, score_breakdown,
                      interaction_count, last_interaction_at,
                      opportunity_count, win_rate, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                score_id, acct_id, round(score, 3),
-                json.dumps(breakdown),
-                interaction_count, last_interaction,
-                opportunity_count, win_rate, now,
-            ))
+            """,
+                (
+                    score_id,
+                    acct_id,
+                    round(score, 3),
+                    json.dumps(breakdown),
+                    interaction_count,
+                    last_interaction,
+                    opportunity_count,
+                    win_rate,
+                    now,
+                ),
+            )
 
-            scores.append({
-                "account_id": acct_id,
-                "account_name": acct_name,
-                "score": round(score, 3),
-                "breakdown": breakdown,
-            })
+            scores.append(
+                {
+                    "account_id": acct_id,
+                    "account_name": acct_name,
+                    "score": round(score, 3),
+                    "breakdown": breakdown,
+                }
+            )
 
         conn.commit()
         return scores
@@ -366,6 +416,7 @@ def _score_recency(last_interaction_at: Optional[str]) -> float:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Engage Reflex (R4).
@@ -418,7 +469,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     scores = _compute_engagement_scores()
     accounts_scored = len(scores)
 
-    total = accounts_created + interactions_logged + accounts_scored
+    accounts_created + interactions_logged + accounts_scored
 
     return {
         "success": True,

@@ -120,11 +120,13 @@ class SQLiteSpan(Span):
 
     def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> None:
         if not self._ended:
-            self._events.append({
-                "name": name,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "attributes": attributes or {},
-            })
+            self._events.append(
+                {
+                    "name": name,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "attributes": attributes or {},
+                }
+            )
 
     def set_status(self, code: str, message: str = "") -> None:
         if not self._ended:

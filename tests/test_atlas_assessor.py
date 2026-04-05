@@ -59,6 +59,7 @@ def mock_db_path(tmp_path):
 # Import & Metadata
 # ============================================================
 
+
 class TestImportAndMetadata:
     def test_import(self):
         """ATLASAssessor can be imported."""
@@ -85,6 +86,7 @@ class TestImportAndMetadata:
 # ============================================================
 # M0015 -- Prompt Injection Detection
 # ============================================================
+
 
 class TestM0015PromptInjection:
     def test_m0015_prompt_injection_satisfied(self, tmp_path, mock_db_path):
@@ -114,13 +116,13 @@ class TestM0015PromptInjection:
 # M0024 -- AI Telemetry / Model Monitoring
 # ============================================================
 
+
 class TestM0024AITelemetry:
     def test_m0024_ai_telemetry_satisfied(self, mock_db_path):
         """DB with agent_token_usage rows -> M0024 satisfied."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO agent_token_usage (project_id, timestamp, tokens) "
-            "VALUES (?, datetime('now'), ?)",
+            "INSERT INTO agent_token_usage (project_id, timestamp, tokens) VALUES (?, datetime('now'), ?)",
             ("proj-test", 1500),
         )
         conn.commit()
@@ -145,13 +147,13 @@ class TestM0024AITelemetry:
 # M0012 -- BYOK Encryption
 # ============================================================
 
+
 class TestM0012BYOKEncryption:
     def test_m0012_byok_encryption(self, mock_db_path):
         """DB with dashboard_user_llm_keys entries -> M0012 satisfied."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO dashboard_user_llm_keys (user_id, provider, encrypted_key) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO dashboard_user_llm_keys (user_id, provider, encrypted_key) VALUES (?, ?, ?)",
             ("user-1", "openai", "encrypted_abc"),
         )
         conn.commit()
@@ -167,6 +169,7 @@ class TestM0012BYOKEncryption:
 # ============================================================
 # M0019 -- API Gateway Auth
 # ============================================================
+
 
 class TestM0019APIGatewayAuth:
     def test_m0019_api_gateway_auth(self, mock_db_path, tmp_path):
@@ -198,6 +201,7 @@ class TestM0019APIGatewayAuth:
 # M0026 -- Command Allowlist
 # ============================================================
 
+
 class TestM0026CommandAllowlist:
     def test_m0026_command_allowlist(self, tmp_path, mock_db_path):
         """Config with allowlist content -> M0026 satisfied."""
@@ -218,6 +222,7 @@ class TestM0026CommandAllowlist:
 # ============================================================
 # Return Structure
 # ============================================================
+
 
 class TestReturnStructure:
     def test_automated_checks_returns_dict(self, mock_db_path, tmp_path):

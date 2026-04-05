@@ -222,11 +222,13 @@ def detect_frameworks(
                 matched = sub_matched
 
             if matched:
-                rules_matched.append({
-                    "rule_id": rule_id,
-                    "condition": condition,
-                    "description": rule.get("description", ""),
-                })
+                rules_matched.append(
+                    {
+                        "rule_id": rule_id,
+                        "condition": condition,
+                        "description": rule.get("description", ""),
+                    }
+                )
 
                 for fw in rule.get("required_frameworks", []):
                     if fw not in required:
@@ -256,9 +258,7 @@ def detect_frameworks(
             for fw_id, fw_data in fw_dict.items():
                 n_rules = len(fw_data["matched_rules"])
                 if n_rules > 1:
-                    fw_data["confidence"] = min(
-                        fw_data["confidence"] + (n_rules - 1) * 0.05, 0.99
-                    )
+                    fw_data["confidence"] = min(fw_data["confidence"] + (n_rules - 1) * 0.05, 0.99)
 
         # Compute minimal control set
         total_required = list(required.values())
@@ -289,9 +289,7 @@ def detect_frameworks(
             (
                 project_id,
                 json.dumps(sorted(data_categories)),
-                json.dumps(sorted(set(
-                    list(required.keys()) + list(recommended.keys())
-                ))),
+                json.dumps(sorted(set(list(required.keys()) + list(recommended.keys())))),
                 json.dumps(sorted(required.keys())),
                 json.dumps(sorted(recommended.keys())),
                 json.dumps([r["rule_id"] for r in rules_matched]),
@@ -326,7 +324,8 @@ def apply_detection(
                     detection_confidence, detection_reason, created_at)
                    VALUES (?, ?, 'auto_detected', 0, ?, ?, ?)""",
                 (
-                    project_id, fw["framework_id"],
+                    project_id,
+                    fw["framework_id"],
                     fw["confidence"],
                     f"Required: rules {', '.join(fw['matched_rules'])}",
                     now,
@@ -341,7 +340,8 @@ def apply_detection(
                     detection_confidence, detection_reason, created_at)
                    VALUES (?, ?, 'auto_detected', 0, ?, ?, ?)""",
                 (
-                    project_id, fw["framework_id"],
+                    project_id,
+                    fw["framework_id"],
                     fw["confidence"],
                     f"Recommended: rules {', '.join(fw['matched_rules'])}",
                     now,
@@ -396,16 +396,16 @@ def confirm_frameworks(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Compliance Framework Auto-Detection Engine"
-    )
+    parser = argparse.ArgumentParser(description="Compliance Framework Auto-Detection Engine")
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument(
-        "--apply", action="store_true",
+        "--apply",
+        action="store_true",
         help="Store detection results in DB (unconfirmed)",
     )
     parser.add_argument(
-        "--confirm", action="store_true",
+        "--confirm",
+        action="store_true",
         help="Confirm all detected frameworks",
     )
     parser.add_argument("--confirmed-by", default="ISSO", help="Confirmer name")
@@ -416,7 +416,9 @@ def main():
     try:
         if args.confirm:
             result = confirm_frameworks(
-                args.project_id, args.confirmed_by, args.db_path,
+                args.project_id,
+                args.confirmed_by,
+                args.db_path,
             )
         elif args.apply:
             result = apply_detection(args.project_id, args.db_path)

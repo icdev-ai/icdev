@@ -83,9 +83,7 @@ def _log(msg: str, level: str = "INFO") -> None:
 def _check_key_rotation() -> dict:
     """Check if API key needs rotation."""
     try:
-        issued = datetime.strptime(KEY_ISSUED_DATE, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        )
+        issued = datetime.strptime(KEY_ISSUED_DATE, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
         return {
             "status": "unknown",
@@ -152,9 +150,7 @@ def _launch_browser(headless: bool = False):
 
     # Try system Chrome first (avoids Cloudflare bot detection)
     try:
-        context = pw.chromium.launch_persistent_context(
-            channel="chrome", **common_opts
-        )
+        context = pw.chromium.launch_persistent_context(channel="chrome", **common_opts)
         _log("Using system Chrome")
         return pw, context
     except Exception as e:
@@ -359,7 +355,7 @@ def setup_session() -> dict:
         return {
             "status": "partial",
             "message": "Login saved but Playwright re-verification hit Cloudflare. "
-                       "Cookies are stored — publish may work if Cloudflare passes on retry.",
+            "Cookies are stored — publish may work if Cloudflare passes on retry.",
             **marker,
         }
 
@@ -436,9 +432,7 @@ def check_session() -> dict:
 
             if age_hours > 24 * 7:
                 marker["status"] = "stale"
-                marker[
-                    "message"
-                ] = "Session is >7 days old. May need re-login (--setup)."
+                marker["message"] = "Session is >7 days old. May need re-login (--setup)."
             else:
                 marker["status"] = "ok"
                 marker["message"] = f"Session is {round(age_hours, 1)}h old."
@@ -593,7 +587,7 @@ def _load_selectors() -> dict:
         "content_area": [
             '[data-qa="post-content"]',
             '[contenteditable="true"]',
-            '.ql-editor',
+            ".ql-editor",
             '[class*="editor"]',
             'div[role="textbox"]',
         ],
@@ -714,16 +708,12 @@ def _create_blog_post(page, post: dict, selectors: dict) -> dict:
         _log("WARNING: Content area not found", level="WARN")
 
     # Fill SEO fields (if visible)
-    seo_title_el = _find_element(
-        page, selectors.get("seo_title", []), timeout=2000
-    )
+    seo_title_el = _find_element(page, selectors.get("seo_title", []), timeout=2000)
     if seo_title_el:
         seo_title_el.fill(post.get("seo_title") or post.get("title", ""))
         _log("Set SEO title")
 
-    seo_desc_el = _find_element(
-        page, selectors.get("seo_description", []), timeout=2000
-    )
+    seo_desc_el = _find_element(page, selectors.get("seo_description", []), timeout=2000)
     if seo_desc_el:
         seo_desc_el.fill(post.get("seo_description", ""))
         _log("Set SEO description")
@@ -819,23 +809,13 @@ def _print_result(args, result: dict) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Hostinger Website Builder blog publisher"
-    )
-    parser.add_argument(
-        "--setup", action="store_true", help="Open browser for manual login"
-    )
+    parser = argparse.ArgumentParser(description="Hostinger Website Builder blog publisher")
+    parser.add_argument("--setup", action="store_true", help="Open browser for manual login")
     parser.add_argument("--publish", action="store_true", help="Publish post(s)")
     parser.add_argument("--post-id", help="Specific post ID to publish")
-    parser.add_argument(
-        "--all-approved", action="store_true", help="Publish all approved posts"
-    )
-    parser.add_argument(
-        "--check-session", action="store_true", help="Check session status"
-    )
-    parser.add_argument(
-        "--check-key-rotation", action="store_true", help="Check API key rotation"
-    )
+    parser.add_argument("--all-approved", action="store_true", help="Publish all approved posts")
+    parser.add_argument("--check-session", action="store_true", help="Check session status")
+    parser.add_argument("--check-key-rotation", action="store_true", help="Check API key rotation")
     parser.add_argument(
         "--discover-blog",
         action="store_true",

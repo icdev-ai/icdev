@@ -27,6 +27,7 @@ def _load_yaml(filepath: Path) -> dict:
         return {}
     try:
         import yaml
+
         with open(filepath, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -100,8 +101,9 @@ def get_phase_summary(phases: list) -> dict:
     }
 
 
-def filter_phases(phases: list, category: str = None, status: str = None,
-                  impact_level: str = None, tier: str = None) -> list:
+def filter_phases(
+    phases: list, category: str = None, status: str = None, impact_level: str = None, tier: str = None
+) -> list:
     """Filter phases by criteria.
 
     Args:
@@ -124,12 +126,10 @@ def filter_phases(phases: list, category: str = None, status: str = None,
         result = [p for p in result if p.get("status") == status]
 
     if impact_level:
-        result = [p for p in result
-                  if impact_level in p.get("impact_levels", [])]
+        result = [p for p in result if impact_level in p.get("impact_levels", [])]
 
     if tier:
         tier_rank = TIER_ORDER.get(tier, 0)
-        result = [p for p in result
-                  if TIER_ORDER.get(p.get("tier_minimum", "starter"), 0) <= tier_rank]
+        result = [p for p in result if TIER_ORDER.get(p.get("tier_minimum", "starter"), 0) <= tier_rank]
 
     return result

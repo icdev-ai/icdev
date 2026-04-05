@@ -296,6 +296,7 @@ TECHNIQUES = {
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def list_techniques(category=None):
     """List all available elicitation techniques.
 
@@ -310,14 +311,16 @@ def list_techniques(category=None):
     for tech_id, tech in TECHNIQUES.items():
         if category and tech.get("category") != category:
             continue
-        result.append({
-            "id": tech_id,
-            "name": tech["name"],
-            "icon": tech["icon"],
-            "short": tech["short"],
-            "category": tech.get("category", "general"),
-            "targets": tech.get("targets", []),
-        })
+        result.append(
+            {
+                "id": tech_id,
+                "name": tech["name"],
+                "icon": tech["icon"],
+                "short": tech["short"],
+                "category": tech.get("category", "general"),
+                "targets": tech.get("targets", []),
+            }
+        )
     return result
 
 
@@ -369,9 +372,7 @@ def activate_technique(session_id, technique_id, db_path=None):
 
     conn = _get_connection(db_path)
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session not found: {session_id}"}
 
@@ -405,10 +406,7 @@ def activate_technique(session_id, technique_id, db_path=None):
                 "targets": tech.get("targets", []),
             },
             "suggested_questions": tech.get("suggested_questions", []),
-            "message": (
-                f"Technique activated: {tech['name']}. "
-                f"{tech['short']} Try one of the suggested questions."
-            ),
+            "message": (f"Technique activated: {tech['name']}. {tech['short']} Try one of the suggested questions."),
         }
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
@@ -428,9 +426,7 @@ def deactivate_technique(session_id, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session not found: {session_id}"}
 
@@ -459,6 +455,7 @@ def deactivate_technique(session_id, db_path=None):
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     """CLI entry point."""

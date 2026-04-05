@@ -26,6 +26,7 @@ def scanner():
 # Universal patterns
 # ---------------------------------------------------------------------------
 
+
 class TestUniversalPatterns:
     def test_eval_detected(self, scanner):
         result = scanner.scan_content("result = eval(user_input)", "python")
@@ -44,6 +45,7 @@ class TestUniversalPatterns:
 # ---------------------------------------------------------------------------
 # Python patterns
 # ---------------------------------------------------------------------------
+
 
 class TestPythonPatterns:
     def test_os_system(self, scanner):
@@ -73,6 +75,7 @@ class TestPythonPatterns:
 # Java patterns
 # ---------------------------------------------------------------------------
 
+
 class TestJavaPatterns:
     def test_runtime_exec(self, scanner):
         result = scanner.scan_content("Runtime.getRuntime().exec(cmd)", "java")
@@ -95,6 +98,7 @@ class TestJavaPatterns:
 # Go patterns
 # ---------------------------------------------------------------------------
 
+
 class TestGoPatterns:
     def test_exec_command(self, scanner):
         result = scanner.scan_content('exec.Command("ls", "-la")', "go")
@@ -109,19 +113,21 @@ class TestGoPatterns:
 # Rust patterns
 # ---------------------------------------------------------------------------
 
+
 class TestRustPatterns:
     def test_unsafe_block(self, scanner):
         result = scanner.scan_content("unsafe { ptr::read(addr) }", "rust")
         assert any(f["name"] == "unsafe_block" for f in result["findings"])
 
     def test_process_command(self, scanner):
-        result = scanner.scan_content('use std::process::Command;', "rust")
+        result = scanner.scan_content("use std::process::Command;", "rust")
         assert any(f["name"] == "process_command" for f in result["findings"])
 
 
 # ---------------------------------------------------------------------------
 # C# patterns
 # ---------------------------------------------------------------------------
+
 
 class TestCSharpPatterns:
     def test_process_start(self, scanner):
@@ -136,6 +142,7 @@ class TestCSharpPatterns:
 # ---------------------------------------------------------------------------
 # TypeScript / JavaScript patterns
 # ---------------------------------------------------------------------------
+
 
 class TestTypeScriptPatterns:
     def test_child_process(self, scanner):
@@ -154,6 +161,7 @@ class TestTypeScriptPatterns:
 # ---------------------------------------------------------------------------
 # Language auto-detection
 # ---------------------------------------------------------------------------
+
 
 class TestLanguageDetection:
     def test_python_extension(self):
@@ -188,6 +196,7 @@ class TestLanguageDetection:
 # File scanning
 # ---------------------------------------------------------------------------
 
+
 class TestFileScan:
     def test_scan_file(self, scanner):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -212,6 +221,7 @@ class TestFileScan:
 # ---------------------------------------------------------------------------
 # Directory scanning
 # ---------------------------------------------------------------------------
+
 
 class TestDirectoryScan:
     def test_scan_directory(self, scanner):
@@ -242,6 +252,7 @@ class TestDirectoryScan:
 # Gate evaluation
 # ---------------------------------------------------------------------------
 
+
 class TestGateEvaluation:
     def test_gate_passed_clean(self, scanner):
         result = scanner.scan_content("def safe(): return 1", "python")
@@ -261,6 +272,7 @@ class TestGateEvaluation:
 # Severity classification
 # ---------------------------------------------------------------------------
 
+
 class TestSeverityClassification:
     def test_severity_counts(self, scanner):
         code = "os.system('cmd')\npickle.loads(data)\nimportlib.import_module('x')\n"
@@ -273,6 +285,7 @@ class TestSeverityClassification:
 # ---------------------------------------------------------------------------
 # Supported languages
 # ---------------------------------------------------------------------------
+
 
 class TestSupportedLanguages:
     def test_supported_languages(self, scanner):

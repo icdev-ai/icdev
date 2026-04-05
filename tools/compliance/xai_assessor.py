@@ -184,6 +184,7 @@ class XAIAssessor(BaseAssessor):
         """XAI-008: Check retention config exists in YAML."""
         try:
             import yaml
+
             config_path = Path(__file__).resolve().parent.parent.parent / "args" / "observability_tracing_config.yaml"
             if not config_path.exists():
                 return "not_satisfied"

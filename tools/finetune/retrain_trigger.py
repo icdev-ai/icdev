@@ -44,6 +44,7 @@ def _load_retrain_config() -> Dict[str, Any]:
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             retrain = cfg.get("retrain", {})
@@ -98,9 +99,7 @@ def check_retrain_needed(
 
         needing_retrain: List[Dict[str, Any]] = []
         now = datetime.now(timezone.utc)
-        cooldown_cutoff = (now - timedelta(hours=cooldown_hours)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        cooldown_cutoff = (now - timedelta(hours=cooldown_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         for ds in datasets:
             ds_id = ds["id"]
@@ -147,15 +146,17 @@ def check_retrain_needed(
                 continue  # Training already in progress
 
             if new_count >= threshold:
-                needing_retrain.append({
-                    "dataset_id": ds_id,
-                    "dataset_name": ds["name"],
-                    "new_examples": new_count,
-                    "threshold": threshold,
-                    "last_trained_at": last_trained_at,
-                    "purpose": ds["purpose"],
-                    "base_model": ds["base_model"],
-                })
+                needing_retrain.append(
+                    {
+                        "dataset_id": ds_id,
+                        "dataset_name": ds["name"],
+                        "new_examples": new_count,
+                        "threshold": threshold,
+                        "last_trained_at": last_trained_at,
+                        "purpose": ds["purpose"],
+                        "base_model": ds["base_model"],
+                    }
+                )
 
         return {
             "success": True,
@@ -186,10 +187,7 @@ def trigger_retrain(
     if not check.get("success"):
         return check
 
-    matching = [
-        d for d in check.get("datasets_needing_retrain", [])
-        if d["dataset_id"] == dataset_id
-    ]
+    matching = [d for d in check.get("datasets_needing_retrain", []) if d["dataset_id"] == dataset_id]
     if not matching:
         return {
             "success": False,
@@ -202,6 +200,7 @@ def trigger_retrain(
     # Start training job via training_engine
     try:
         from tools.finetune.training_engine import create_training_job
+
         result = create_training_job(
             dataset_id=dataset_id,
             provider="unsloth_local",
@@ -213,8 +212,7 @@ def trigger_retrain(
         )
         if result.get("success"):
             result["trigger_reason"] = (
-                f"Auto-retrain: {ds_info['new_examples']} new examples "
-                f"(threshold: {ds_info['threshold']})"
+                f"Auto-retrain: {ds_info['new_examples']} new examples (threshold: {ds_info['threshold']})"
             )
         return result
     except (ImportError, Exception) as e:
@@ -255,10 +253,7 @@ def heartbeat_check_retrain(
             "details": f"Checked {result['datasets_checked']} datasets, none need retrain",
         }
 
-    details = [
-        f"{d['dataset_name']}: {d['new_examples']} new examples"
-        for d in needing
-    ]
+    details = [f"{d['dataset_name']}: {d['new_examples']} new examples" for d in needing]
     return {
         "check_type": "retrain_trigger",
         "status": "warning",

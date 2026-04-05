@@ -40,9 +40,11 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
@@ -51,13 +53,12 @@ except ImportError:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -76,6 +77,7 @@ def _now():
 # ---------------------------------------------------------------------------
 # Trace link resolution helpers
 # ---------------------------------------------------------------------------
+
 
 def _find_linked_ids(conn, project_id, source_type, source_id, target_type):
     """Find all IDs linked via digital_thread_links.
@@ -124,7 +126,11 @@ def _find_safe_items_for_requirement(conn, project_id, req_id):
     """
     # Via digital thread
     thread_ids = _find_linked_ids(
-        conn, project_id, "intake_requirement", req_id, "safe_item",
+        conn,
+        project_id,
+        "intake_requirement",
+        req_id,
+        "safe_item",
     )
 
     # Via source_requirement_ids in safe_decomposition
@@ -158,7 +164,11 @@ def _find_nist_controls_for_requirement(conn, project_id, req_id):
     """
     # Via digital thread
     thread_ids = _find_linked_ids(
-        conn, project_id, "intake_requirement", req_id, "nist_control",
+        conn,
+        project_id,
+        "intake_requirement",
+        req_id,
+        "nist_control",
     )
 
     return list(set(thread_ids))
@@ -167,6 +177,7 @@ def _find_nist_controls_for_requirement(conn, project_id, req_id):
 # ---------------------------------------------------------------------------
 # build_rtm
 # ---------------------------------------------------------------------------
+
 
 def build_rtm(project_id, session_id=None, db_path=None):
     """Build a full Requirements Traceability Matrix.
@@ -236,24 +247,38 @@ def build_rtm(project_id, session_id=None, db_path=None):
 
             # 1. SAFe items
             safe_item_ids = _find_safe_items_for_requirement(
-                conn, project_id, req_id,
+                conn,
+                project_id,
+                req_id,
             )
 
             # 2. SysML elements
             sysml_ids = _find_linked_ids(
-                conn, project_id, "intake_requirement", req_id, "sysml_element",
+                conn,
+                project_id,
+                "intake_requirement",
+                req_id,
+                "sysml_element",
             )
             # Also check via SAFe items
             for safe_id in safe_item_ids:
                 sysml_via_safe = _find_linked_ids(
-                    conn, project_id, "safe_item", safe_id, "sysml_element",
+                    conn,
+                    project_id,
+                    "safe_item",
+                    safe_id,
+                    "sysml_element",
                 )
                 sysml_ids.extend(sysml_via_safe)
             sysml_ids = list(set(sysml_ids))
 
             # 3. Code modules
             code_ids = _find_linked_ids(
-                conn, project_id, "intake_requirement", req_id, "code_module",
+                conn,
+                project_id,
+                "intake_requirement",
+                req_id,
+                "code_module",
             )
             # Also via SysML elements -> model_code_mappings
             for sysml_id in sysml_ids:
@@ -267,41 +292,67 @@ def build_rtm(project_id, session_id=None, db_path=None):
             # Also via SAFe items
             for safe_id in safe_item_ids:
                 code_via_safe = _find_linked_ids(
-                    conn, project_id, "safe_item", safe_id, "code_module",
+                    conn,
+                    project_id,
+                    "safe_item",
+                    safe_id,
+                    "code_module",
                 )
                 code_ids.extend(code_via_safe)
             code_ids = list(set(code_ids))
 
             # 4. Test files
             test_ids = _find_linked_ids(
-                conn, project_id, "intake_requirement", req_id, "test_file",
+                conn,
+                project_id,
+                "intake_requirement",
+                req_id,
+                "test_file",
             )
             for safe_id in safe_item_ids:
                 test_via_safe = _find_linked_ids(
-                    conn, project_id, "safe_item", safe_id, "test_file",
+                    conn,
+                    project_id,
+                    "safe_item",
+                    safe_id,
+                    "test_file",
                 )
                 test_ids.extend(test_via_safe)
             for code_id in code_ids:
                 test_via_code = _find_linked_ids(
-                    conn, project_id, "code_module", code_id, "test_file",
+                    conn,
+                    project_id,
+                    "code_module",
+                    code_id,
+                    "test_file",
                 )
                 test_ids.extend(test_via_code)
             test_ids = list(set(test_ids))
 
             # 5. NIST controls
             control_ids = _find_nist_controls_for_requirement(
-                conn, project_id, req_id,
+                conn,
+                project_id,
+                req_id,
             )
             for safe_id in safe_item_ids:
                 ctrl_via_safe = _find_linked_ids(
-                    conn, project_id, "safe_item", safe_id, "nist_control",
+                    conn,
+                    project_id,
+                    "safe_item",
+                    safe_id,
+                    "nist_control",
                 )
                 control_ids.extend(ctrl_via_safe)
             control_ids = list(set(control_ids))
 
             # 6. UAT tests (via digital thread)
             uat_ids = _find_linked_ids(
-                conn, project_id, "intake_requirement", req_id, "uat_test",
+                conn,
+                project_id,
+                "intake_requirement",
+                req_id,
+                "uat_test",
             )
             uat_ids = list(set(uat_ids))
 
@@ -330,13 +381,15 @@ def build_rtm(project_id, session_id=None, db_path=None):
                 fully_traced += 1
 
             if missing:
-                all_gaps.append({
-                    "requirement_id": req_id,
-                    "requirement_text": (req_dict.get("raw_text") or "")[:100],
-                    "missing_links": missing,
-                    "severity": gap_severity,
-                    "coverage_pct": round(coverage, 1),
-                })
+                all_gaps.append(
+                    {
+                        "requirement_id": req_id,
+                        "requirement_text": (req_dict.get("raw_text") or "")[:100],
+                        "missing_links": missing,
+                        "severity": gap_severity,
+                        "coverage_pct": round(coverage, 1),
+                    }
+                )
 
             # Upsert into review_traceability
             existing = conn.execute(
@@ -360,16 +413,19 @@ def build_rtm(project_id, session_id=None, db_path=None):
                            last_verified = ?,
                            updated_at = ?
                        WHERE id = ?""",
-                    (req_session_id,
-                     json.dumps(sysml_ids) if sysml_ids else None,
-                     json.dumps(code_ids) if code_ids else None,
-                     json.dumps(test_ids) if test_ids else None,
-                     json.dumps(control_ids) if control_ids else None,
-                     json.dumps(uat_ids) if uat_ids else None,
-                     coverage,
-                     json.dumps(missing) if missing else None,
-                     now, now,
-                     existing["id"]),
+                    (
+                        req_session_id,
+                        json.dumps(sysml_ids) if sysml_ids else None,
+                        json.dumps(code_ids) if code_ids else None,
+                        json.dumps(test_ids) if test_ids else None,
+                        json.dumps(control_ids) if control_ids else None,
+                        json.dumps(uat_ids) if uat_ids else None,
+                        coverage,
+                        json.dumps(missing) if missing else None,
+                        now,
+                        now,
+                        existing["id"],
+                    ),
                 )
             else:
                 conn.execute(
@@ -380,16 +436,23 @@ def build_rtm(project_id, session_id=None, db_path=None):
                         coverage_pct, gaps, last_verified, verified_by,
                         created_at, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (project_id, req_session_id, req_id, "intake",
-                     json.dumps(sysml_ids) if sysml_ids else None,
-                     json.dumps(code_ids) if code_ids else None,
-                     json.dumps(test_ids) if test_ids else None,
-                     json.dumps(control_ids) if control_ids else None,
-                     json.dumps(uat_ids) if uat_ids else None,
-                     coverage,
-                     json.dumps(missing) if missing else None,
-                     now, "icdev-traceability-builder",
-                     now, now),
+                    (
+                        project_id,
+                        req_session_id,
+                        req_id,
+                        "intake",
+                        json.dumps(sysml_ids) if sysml_ids else None,
+                        json.dumps(code_ids) if code_ids else None,
+                        json.dumps(test_ids) if test_ids else None,
+                        json.dumps(control_ids) if control_ids else None,
+                        json.dumps(uat_ids) if uat_ids else None,
+                        coverage,
+                        json.dumps(missing) if missing else None,
+                        now,
+                        "icdev-traceability-builder",
+                        now,
+                        now,
+                    ),
                 )
 
         conn.commit()
@@ -429,6 +492,7 @@ def build_rtm(project_id, session_id=None, db_path=None):
 # ---------------------------------------------------------------------------
 # gap_analysis
 # ---------------------------------------------------------------------------
+
 
 def gap_analysis(project_id, db_path=None):
     """Find requirements with missing trace links at any level.
@@ -502,15 +566,17 @@ def gap_analysis(project_id, db_path=None):
                 if dim in dimension_counts:
                     dimension_counts[dim] += 1
 
-            gaps.append({
-                "requirement_id": r_dict["requirement_id"],
-                "requirement_text": (r_dict.get("raw_text") or "")[:100],
-                "priority": r_dict.get("priority"),
-                "status": r_dict.get("status"),
-                "missing_links": stored_gaps,
-                "severity": severity,
-                "coverage_pct": round(r_dict["coverage_pct"] or 0.0, 1),
-            })
+            gaps.append(
+                {
+                    "requirement_id": r_dict["requirement_id"],
+                    "requirement_text": (r_dict.get("raw_text") or "")[:100],
+                    "priority": r_dict.get("priority"),
+                    "status": r_dict.get("status"),
+                    "missing_links": stored_gaps,
+                    "severity": severity,
+                    "coverage_pct": round(r_dict["coverage_pct"] or 0.0, 1),
+                }
+            )
 
         return {
             "project_id": project_id,
@@ -528,18 +594,15 @@ def gap_analysis(project_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Requirements Traceability Matrix builder for ICDEV RICOAS"
-    )
+    parser = argparse.ArgumentParser(description="Requirements Traceability Matrix builder for ICDEV RICOAS")
     parser.add_argument("--project-id", required=True, help="ICDEV project ID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Actions
-    parser.add_argument("--build-rtm", action="store_true",
-                        help="Build full RTM")
-    parser.add_argument("--gap-analysis", action="store_true",
-                        help="Run gap analysis on existing RTM")
+    parser.add_argument("--build-rtm", action="store_true", help="Build full RTM")
+    parser.add_argument("--gap-analysis", action="store_true", help="Run gap analysis on existing RTM")
 
     # Build args
     parser.add_argument("--session-id", help="Intake session ID (optional)")
@@ -566,9 +629,11 @@ def main():
             if key == "gaps" and isinstance(value, list):
                 print(f"\n{key} ({len(value)} items):")
                 for gap in value:
-                    print(f"  - {gap['requirement_id']}: "
-                          f"missing={gap.get('missing_links', [])}, "
-                          f"severity={gap.get('severity', 'unknown')}")
+                    print(
+                        f"  - {gap['requirement_id']}: "
+                        f"missing={gap.get('missing_links', [])}, "
+                        f"severity={gap.get('severity', 'unknown')}"
+                    )
             else:
                 print(f"{key}: {value}")
 

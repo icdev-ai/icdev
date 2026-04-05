@@ -95,10 +95,17 @@ class TestOpenAIStartTraining(unittest.TestCase):
         self.dataset_path = os.path.join(self.tmpdir, "train.jsonl")
         with open(self.dataset_path, "w") as f:
             for i in range(15):
-                f.write(json.dumps({"messages": [
-                    {"role": "user", "content": f"q{i}"},
-                    {"role": "assistant", "content": f"a{i}"},
-                ]}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "messages": [
+                                {"role": "user", "content": f"q{i}"},
+                                {"role": "assistant", "content": f"a{i}"},
+                            ]
+                        }
+                    )
+                    + "\n"
+                )
 
     def test_dataset_not_found(self):
         req = FineTuneRequest(
@@ -193,9 +200,7 @@ class TestOpenAIGetStatus(unittest.TestCase):
 
         event = MagicMock()
         event.data = {"step": 50, "total_steps": 100, "train_loss": 0.45}
-        self.mock_client.fine_tuning.jobs.list_events.return_value = MagicMock(
-            data=[event]
-        )
+        self.mock_client.fine_tuning.jobs.list_events.return_value = MagicMock(data=[event])
 
         status = self.provider.get_status("ftjob-123")
         self.assertEqual(status.status, "training")
@@ -282,10 +287,17 @@ class TestOpenAIValidateDataset(unittest.TestCase):
     def test_valid_dataset(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             for i in range(15):
-                f.write(json.dumps({"messages": [
-                    {"role": "user", "content": f"q{i}"},
-                    {"role": "assistant", "content": f"a{i}"},
-                ]}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "messages": [
+                                {"role": "user", "content": f"q{i}"},
+                                {"role": "assistant", "content": f"a{i}"},
+                            ]
+                        }
+                    )
+                    + "\n"
+                )
             path = f.name
         try:
             result = self.provider.validate_dataset(path)
@@ -296,10 +308,17 @@ class TestOpenAIValidateDataset(unittest.TestCase):
 
     def test_too_few_examples(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-            f.write(json.dumps({"messages": [
-                {"role": "user", "content": "q"},
-                {"role": "assistant", "content": "a"},
-            ]}) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "messages": [
+                            {"role": "user", "content": "q"},
+                            {"role": "assistant", "content": "a"},
+                        ]
+                    }
+                )
+                + "\n"
+            )
             path = f.name
         try:
             result = self.provider.validate_dataset(path)
@@ -333,7 +352,6 @@ class TestBedrockProviderName(unittest.TestCase):
 
 
 class TestBedrockCheckAvailability(unittest.TestCase):
-
     def test_no_role_arn(self):
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
 
@@ -353,9 +371,7 @@ class TestBedrockCheckAvailability(unittest.TestCase):
     def test_successful_availability(self):
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
 
-        p = BedrockFineTuneProvider(
-            role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket"
-        )
+        p = BedrockFineTuneProvider(role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket")
         mock_client = MagicMock()
         mock_client.list_foundation_models.return_value = {
             "modelSummaries": [
@@ -370,9 +386,7 @@ class TestBedrockCheckAvailability(unittest.TestCase):
     def test_api_error(self):
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
 
-        p = BedrockFineTuneProvider(
-            role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket"
-        )
+        p = BedrockFineTuneProvider(role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket")
         mock_client = MagicMock()
         mock_client.list_foundation_models.side_effect = Exception("access denied")
         p._client = mock_client
@@ -381,7 +395,6 @@ class TestBedrockCheckAvailability(unittest.TestCase):
 
 
 class TestBedrockStartTraining(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
 
@@ -397,10 +410,15 @@ class TestBedrockStartTraining(unittest.TestCase):
         self.dataset_path = os.path.join(self.tmpdir, "train.jsonl")
         with open(self.dataset_path, "w") as f:
             for i in range(15):
-                f.write(json.dumps({
-                    "prompt": f"Question {i}",
-                    "completion": f"Answer {i}",
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "prompt": f"Question {i}",
+                            "completion": f"Answer {i}",
+                        }
+                    )
+                    + "\n"
+                )
 
     def test_cui_boundary_secret(self):
         """D-FT-4: SECRET classification blocked from cloud fine-tuning."""
@@ -448,9 +466,7 @@ class TestBedrockStartTraining(unittest.TestCase):
     def test_job_creation_failure(self):
         mock_s3 = MagicMock()
         with patch.object(self.provider, "_get_s3_client", return_value=mock_s3):
-            self.mock_client.create_model_customization_job.side_effect = Exception(
-                "quota exceeded"
-            )
+            self.mock_client.create_model_customization_job.side_effect = Exception("quota exceeded")
             req = FineTuneRequest(
                 job_id="job-1",
                 dataset_path=self.dataset_path,
@@ -480,9 +496,7 @@ class TestBedrockStartTraining(unittest.TestCase):
     def test_unsupported_model_defaults_to_titan(self):
         mock_s3 = MagicMock()
         with patch.object(self.provider, "_get_s3_client", return_value=mock_s3):
-            self.mock_client.create_model_customization_job.return_value = {
-                "jobArn": "arn:aws:bedrock:job/1"
-            }
+            self.mock_client.create_model_customization_job.return_value = {"jobArn": "arn:aws:bedrock:job/1"}
             req = FineTuneRequest(
                 job_id="job-1",
                 dataset_path=self.dataset_path,
@@ -497,13 +511,10 @@ class TestBedrockStartTraining(unittest.TestCase):
 
 
 class TestBedrockGetStatus(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
 
-        self.provider = BedrockFineTuneProvider(
-            role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket"
-        )
+        self.provider = BedrockFineTuneProvider(role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket")
         self.mock_client = MagicMock()
         self.provider._client = self.mock_client
 
@@ -549,13 +560,10 @@ class TestBedrockGetStatus(unittest.TestCase):
 
 
 class TestBedrockCancelAndList(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
 
-        self.provider = BedrockFineTuneProvider(
-            role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket"
-        )
+        self.provider = BedrockFineTuneProvider(role_arn="arn:aws:iam::role/ft", s3_bucket="my-bucket")
         self.mock_client = MagicMock()
         self.provider._client = self.mock_client
 
@@ -583,7 +591,6 @@ class TestBedrockCancelAndList(unittest.TestCase):
 
 
 class TestBedrockValidateDataset(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
 
@@ -596,10 +603,15 @@ class TestBedrockValidateDataset(unittest.TestCase):
     def test_valid_prompt_completion(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             for i in range(15):
-                f.write(json.dumps({
-                    "prompt": f"Question {i}",
-                    "completion": f"Answer {i}",
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "prompt": f"Question {i}",
+                            "completion": f"Answer {i}",
+                        }
+                    )
+                    + "\n"
+                )
             path = f.name
         try:
             result = self.provider.validate_dataset(path)
@@ -610,10 +622,17 @@ class TestBedrockValidateDataset(unittest.TestCase):
     def test_valid_messages_format(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             for i in range(15):
-                f.write(json.dumps({"messages": [
-                    {"role": "user", "content": f"q{i}"},
-                    {"role": "assistant", "content": f"a{i}"},
-                ]}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "messages": [
+                                {"role": "user", "content": f"q{i}"},
+                                {"role": "assistant", "content": f"a{i}"},
+                            ]
+                        }
+                    )
+                    + "\n"
+                )
             path = f.name
         try:
             result = self.provider.validate_dataset(path)
@@ -645,7 +664,6 @@ class TestAzureProviderName(unittest.TestCase):
 
 
 class TestAzureCheckAvailability(unittest.TestCase):
-
     def test_no_api_key(self):
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
 
@@ -665,9 +683,7 @@ class TestAzureCheckAvailability(unittest.TestCase):
     def test_successful_availability(self):
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
 
-        p = AzureOpenAIFineTuneProvider(
-            api_key="test-key", endpoint="https://test.openai.azure.com"
-        )
+        p = AzureOpenAIFineTuneProvider(api_key="test-key", endpoint="https://test.openai.azure.com")
         mock_client = MagicMock()
         mock_model = MagicMock()
         mock_model.id = "gpt-4o-mini-2024-07-18"
@@ -680,9 +696,7 @@ class TestAzureCheckAvailability(unittest.TestCase):
     def test_api_error(self):
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
 
-        p = AzureOpenAIFineTuneProvider(
-            api_key="test-key", endpoint="https://test.openai.azure.com"
-        )
+        p = AzureOpenAIFineTuneProvider(api_key="test-key", endpoint="https://test.openai.azure.com")
         mock_client = MagicMock()
         mock_client.models.list.side_effect = Exception("unauthorized")
         p._client = mock_client
@@ -691,13 +705,10 @@ class TestAzureCheckAvailability(unittest.TestCase):
 
 
 class TestAzureStartTraining(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
 
-        self.provider = AzureOpenAIFineTuneProvider(
-            api_key="test-key", endpoint="https://test.openai.azure.com"
-        )
+        self.provider = AzureOpenAIFineTuneProvider(api_key="test-key", endpoint="https://test.openai.azure.com")
         self.mock_client = MagicMock()
         self.provider._client = self.mock_client
 
@@ -705,10 +716,17 @@ class TestAzureStartTraining(unittest.TestCase):
         self.dataset_path = os.path.join(self.tmpdir, "train.jsonl")
         with open(self.dataset_path, "w") as f:
             for i in range(15):
-                f.write(json.dumps({"messages": [
-                    {"role": "user", "content": f"q{i}"},
-                    {"role": "assistant", "content": f"a{i}"},
-                ]}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "messages": [
+                                {"role": "user", "content": f"q{i}"},
+                                {"role": "assistant", "content": f"a{i}"},
+                            ]
+                        }
+                    )
+                    + "\n"
+                )
 
     def test_cui_boundary_secret(self):
         """D-FT-4: SECRET classification blocked from cloud."""
@@ -808,13 +826,10 @@ class TestAzureStartTraining(unittest.TestCase):
 
 
 class TestAzureGetStatus(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
 
-        self.provider = AzureOpenAIFineTuneProvider(
-            api_key="test-key", endpoint="https://test.openai.azure.com"
-        )
+        self.provider = AzureOpenAIFineTuneProvider(api_key="test-key", endpoint="https://test.openai.azure.com")
         self.mock_client = MagicMock()
         self.provider._client = self.mock_client
 
@@ -827,9 +842,7 @@ class TestAzureGetStatus(unittest.TestCase):
 
         event = MagicMock()
         event.data = {"step": 25, "total_steps": 50, "train_loss": 0.55}
-        self.mock_client.fine_tuning.jobs.list_events.return_value = MagicMock(
-            data=[event]
-        )
+        self.mock_client.fine_tuning.jobs.list_events.return_value = MagicMock(data=[event])
 
         status = self.provider.get_status("ftjob-azure-123")
         self.assertEqual(status.status, "training")
@@ -865,13 +878,10 @@ class TestAzureGetStatus(unittest.TestCase):
 
 
 class TestAzureCancelAndList(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
 
-        self.provider = AzureOpenAIFineTuneProvider(
-            api_key="test-key", endpoint="https://test.openai.azure.com"
-        )
+        self.provider = AzureOpenAIFineTuneProvider(api_key="test-key", endpoint="https://test.openai.azure.com")
         self.mock_client = MagicMock()
         self.provider._client = self.mock_client
 
@@ -898,13 +908,10 @@ class TestAzureCancelAndList(unittest.TestCase):
 
 
 class TestAzureValidateDataset(unittest.TestCase):
-
     def setUp(self):
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
 
-        self.provider = AzureOpenAIFineTuneProvider(
-            api_key="test-key", endpoint="https://test.openai.azure.com"
-        )
+        self.provider = AzureOpenAIFineTuneProvider(api_key="test-key", endpoint="https://test.openai.azure.com")
 
     def test_file_not_found(self):
         result = self.provider.validate_dataset("/nonexistent/file.jsonl")
@@ -913,10 +920,17 @@ class TestAzureValidateDataset(unittest.TestCase):
     def test_valid_dataset(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             for i in range(15):
-                f.write(json.dumps({"messages": [
-                    {"role": "user", "content": f"q{i}"},
-                    {"role": "assistant", "content": f"a{i}"},
-                ]}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "messages": [
+                                {"role": "user", "content": f"q{i}"},
+                                {"role": "assistant", "content": f"a{i}"},
+                            ]
+                        }
+                    )
+                    + "\n"
+                )
             path = f.name
         try:
             result = self.provider.validate_dataset(path)

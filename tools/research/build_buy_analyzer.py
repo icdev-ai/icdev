@@ -63,18 +63,21 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
     def audit_log_event(**kwargs):
         return -1
+
 
 # =========================================================================
 # DEFAULT CONFIGURATION
@@ -101,18 +104,51 @@ DEFAULT_PARTNER_FACTORS = {
 }
 
 # Keywords that indicate compliance/regulatory category relevance
-COMPLIANCE_KEYWORDS = frozenset({
-    "compliance", "regulatory", "regulation", "audit", "nist", "fedramp",
-    "cmmc", "hipaa", "cjis", "pci", "soc2", "iso27001", "ato", "stig",
-    "fips", "cui", "classified", "authorization", "accreditation",
-    "governance", "policy", "framework", "mandate",
-})
+COMPLIANCE_KEYWORDS = frozenset(
+    {
+        "compliance",
+        "regulatory",
+        "regulation",
+        "audit",
+        "nist",
+        "fedramp",
+        "cmmc",
+        "hipaa",
+        "cjis",
+        "pci",
+        "soc2",
+        "iso27001",
+        "ato",
+        "stig",
+        "fips",
+        "cui",
+        "classified",
+        "authorization",
+        "accreditation",
+        "governance",
+        "policy",
+        "framework",
+        "mandate",
+    }
+)
 
 # Keywords that indicate integration ease in commercial signals
-INTEGRATION_KEYWORDS = frozenset({
-    "api", "sdk", "plugin", "integration", "connector", "webhook",
-    "rest", "graphql", "openapi", "swagger", "grpc", "library",
-})
+INTEGRATION_KEYWORDS = frozenset(
+    {
+        "api",
+        "sdk",
+        "plugin",
+        "integration",
+        "connector",
+        "webhook",
+        "rest",
+        "graphql",
+        "openapi",
+        "swagger",
+        "grpc",
+        "library",
+    }
+)
 
 
 # =========================================================================
@@ -122,9 +158,7 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -222,9 +256,7 @@ def _compute_build_score(challenge, cap_coverage, signals, config):
 
     # 2. customization_need: fewer existing solutions = more need to build
     total_signals = max(len(signals), 1)
-    existing_solution_count = sum(
-        1 for s in signals if s.get("source") == "saas_commercial"
-    )
+    existing_solution_count = sum(1 for s in signals if s.get("source") == "saas_commercial")
     customization_need = _clamp(1.0 - (existing_solution_count / total_signals))
 
     # 3. compliance_control: compliance categories get high scores
@@ -274,12 +306,8 @@ def _compute_buy_score(challenge, signals, config):
     weights = _get_weights(config, "buy_factors", DEFAULT_BUY_FACTORS)
 
     # 1. time_to_market: based on commercial solution availability
-    max_expected = max(
-        config.get("build_buy", {}).get("max_expected_commercial", 10), 1
-    )
-    commercial_count = sum(
-        1 for s in signals if s.get("source") == "saas_commercial"
-    )
+    max_expected = max(config.get("build_buy", {}).get("max_expected_commercial", 10), 1)
+    commercial_count = sum(1 for s in signals if s.get("source") == "saas_commercial")
     time_to_market = _clamp(commercial_count / max_expected)
 
     # 2. maturity: based on review ratings, stars, citations
@@ -303,14 +331,8 @@ def _compute_buy_score(challenge, signals, config):
         maturity = 0.4
 
     # 3. support_ecosystem: documentation signals, community size
-    doc_count = sum(
-        1 for s in signals
-        if s.get("source_type") in ("blog", "news_article", "analyst_report")
-    )
-    community_count = sum(
-        1 for s in signals
-        if s.get("source") in ("community_forum", "open_source")
-    )
+    doc_count = sum(1 for s in signals if s.get("source_type") in ("blog", "news_article", "analyst_report"))
+    community_count = sum(1 for s in signals if s.get("source") in ("community_forum", "open_source"))
     ecosystem_raw = (doc_count + community_count) / max(len(signals), 1)
     support_ecosystem = _clamp(min(ecosystem_raw * 5.0, 1.0))
 
@@ -318,9 +340,7 @@ def _compute_buy_score(challenge, signals, config):
     keywords = _parse_json_field(challenge.get("keywords"), [])
     title = (challenge.get("title") or "").lower()
     desc = (challenge.get("description") or "").lower()
-    all_text = " ".join(
-        [title, desc] + [k.lower() for k in keywords if isinstance(k, str)]
-    )
+    all_text = " ".join([title, desc] + [k.lower() for k in keywords if isinstance(k, str)])
     integration_hits = sum(1 for kw in INTEGRATION_KEYWORDS if kw in all_text)
     integration_ease = _clamp(min(integration_hits / 3.0, 1.0))
 
@@ -352,12 +372,8 @@ def _compute_partner_score(challenge, signals, config):
     weights = _get_weights(config, "partner_factors", DEFAULT_PARTNER_FACTORS)
 
     # 1. domain_expertise: based on academic papers and patents
-    academic_count = sum(
-        1 for s in signals if s.get("source") == "academic_paper"
-    )
-    patent_count = sum(
-        1 for s in signals if s.get("source") == "patent"
-    )
+    academic_count = sum(1 for s in signals if s.get("source") == "academic_paper")
+    patent_count = sum(1 for s in signals if s.get("source") == "patent")
     expertise_raw = (academic_count + patent_count) / max(len(signals), 1)
     domain_expertise = _clamp(min(expertise_raw * 5.0, 1.0))
 
@@ -365,12 +381,8 @@ def _compute_partner_score(challenge, signals, config):
     shared_risk = 0.6
 
     # 3. market_access: open source community signals indicate market reach
-    oss_count = sum(
-        1 for s in signals if s.get("source") == "open_source"
-    )
-    community_count = sum(
-        1 for s in signals if s.get("source") == "community_forum"
-    )
+    oss_count = sum(1 for s in signals if s.get("source") == "open_source")
+    community_count = sum(1 for s in signals if s.get("source") == "community_forum")
     market_raw = (oss_count + community_count) / max(len(signals), 1)
     market_access = _clamp(min(market_raw * 5.0, 1.0))
 
@@ -547,9 +559,7 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
 
         # Average coverage score from capability map
         if cap_mappings:
-            cap_coverage = sum(
-                float(c.get("coverage_score") or 0.0) for c in cap_mappings
-            ) / len(cap_mappings)
+            cap_coverage = sum(float(c.get("coverage_score") or 0.0) for c in cap_mappings) / len(cap_mappings)
         else:
             cap_coverage = 0.0
         cap_coverage = _clamp(cap_coverage)
@@ -562,20 +572,12 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
         signals = [dict(r) for r in sig_rows]
 
         # Compute scores
-        build_score, build_breakdown = _compute_build_score(
-            challenge, cap_coverage, signals, config
-        )
-        buy_score, buy_breakdown = _compute_buy_score(
-            challenge, signals, config
-        )
-        partner_score, partner_breakdown = _compute_partner_score(
-            challenge, signals, config
-        )
+        build_score, build_breakdown = _compute_build_score(challenge, cap_coverage, signals, config)
+        buy_score, buy_breakdown = _compute_buy_score(challenge, signals, config)
+        partner_score, partner_breakdown = _compute_partner_score(challenge, signals, config)
 
         # Determine recommendation
-        recommendation = _determine_recommendation(
-            build_score, buy_score, partner_score, config
-        )
+        recommendation = _determine_recommendation(build_score, buy_score, partner_score, config)
 
         # Effort, cost, risk
         effort = _estimate_effort(challenge, cap_coverage)
@@ -586,11 +588,13 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
         existing_solutions = []
         for s in signals:
             if s.get("source") == "saas_commercial":
-                existing_solutions.append({
-                    "title": s.get("title", ""),
-                    "url": s.get("url", ""),
-                    "source_type": s.get("source_type", ""),
-                })
+                existing_solutions.append(
+                    {
+                        "title": s.get("title", ""),
+                        "url": s.get("url", ""),
+                        "source_type": s.get("source_type", ""),
+                    }
+                )
 
         # Build rationale strings
         build_rationale = (
@@ -749,25 +753,26 @@ def analyze_all(session_id, db_path=None):
             analyzed_count += 1
             rec = result.get("recommendation", "hybrid")
             summary[rec] = summary.get(rec, 0) + 1
-            results.append({
-                "bb_id": result["bb_id"],
-                "challenge_id": result["challenge_id"],
-                "challenge_title": result["challenge_title"],
-                "category": result["category"],
-                "recommendation": rec,
-                "build_score": result["build_score"],
-                "buy_score": result["buy_score"],
-                "partner_score": result["partner_score"],
-                "effort": result["estimated_effort"],
-                "risk_level": result["risk_level"],
-            })
+            results.append(
+                {
+                    "bb_id": result["bb_id"],
+                    "challenge_id": result["challenge_id"],
+                    "challenge_title": result["challenge_title"],
+                    "category": result["category"],
+                    "recommendation": rec,
+                    "build_score": result["build_score"],
+                    "buy_score": result["buy_score"],
+                    "partner_score": result["partner_score"],
+                    "effort": result["estimated_effort"],
+                    "risk_level": result["risk_level"],
+                }
+            )
         except Exception:
             skipped_count += 1
 
     _audit(
         "research.build_buy.batch",
-        f"Batch analyzed {analyzed_count} challenges in session {session_id} "
-        f"({skipped_count} skipped)",
+        f"Batch analyzed {analyzed_count} challenges in session {session_id} ({skipped_count} skipped)",
         {
             "session_id": session_id,
             "analyzed": analyzed_count,
@@ -837,30 +842,28 @@ def get_decision_matrix(session_id, db_path=None):
             buy_scores.append(float(r.get("buy_score") or 0.0))
             partner_scores.append(float(r.get("partner_score") or 0.0))
 
-            entries.append({
-                "bb_id": r["id"],
-                "challenge_id": r["challenge_id"],
-                "challenge_title": r.get("challenge_title", ""),
-                "challenge_category": r.get("challenge_category", ""),
-                "challenge_severity": r.get("challenge_severity", ""),
-                "recommendation": rec,
-                "build_score": round(float(r.get("build_score") or 0.0), 4),
-                "buy_score": round(float(r.get("buy_score") or 0.0), 4),
-                "partner_score": round(float(r.get("partner_score") or 0.0), 4),
-                "icdev_capability_coverage": round(
-                    float(r.get("icdev_capability_coverage") or 0.0), 4
-                ),
-                "estimated_effort": r.get("estimated_effort", ""),
-                "estimated_cost_tier": r.get("estimated_cost_tier", ""),
-                "risk_level": r.get("risk_level", "medium"),
-                "existing_solutions": _parse_json_field(
-                    r.get("existing_solutions"), []
-                ),
-                "build_rationale": r.get("build_rationale", ""),
-                "buy_rationale": r.get("buy_rationale", ""),
-                "partner_rationale": r.get("partner_rationale", ""),
-                "analyzed_at": r.get("analyzed_at", ""),
-            })
+            entries.append(
+                {
+                    "bb_id": r["id"],
+                    "challenge_id": r["challenge_id"],
+                    "challenge_title": r.get("challenge_title", ""),
+                    "challenge_category": r.get("challenge_category", ""),
+                    "challenge_severity": r.get("challenge_severity", ""),
+                    "recommendation": rec,
+                    "build_score": round(float(r.get("build_score") or 0.0), 4),
+                    "buy_score": round(float(r.get("buy_score") or 0.0), 4),
+                    "partner_score": round(float(r.get("partner_score") or 0.0), 4),
+                    "icdev_capability_coverage": round(float(r.get("icdev_capability_coverage") or 0.0), 4),
+                    "estimated_effort": r.get("estimated_effort", ""),
+                    "estimated_cost_tier": r.get("estimated_cost_tier", ""),
+                    "risk_level": r.get("risk_level", "medium"),
+                    "existing_solutions": _parse_json_field(r.get("existing_solutions"), []),
+                    "build_rationale": r.get("build_rationale", ""),
+                    "buy_rationale": r.get("buy_rationale", ""),
+                    "partner_rationale": r.get("partner_rationale", ""),
+                    "analyzed_at": r.get("analyzed_at", ""),
+                }
+            )
 
         n = max(len(rows), 1)
         return {
@@ -924,19 +927,25 @@ def _print_human(args, result):
         print(f"  Analyzed:  {result.get('analyzed', 0)}")
         print(f"  Skipped:   {result.get('skipped', 0)}")
         summary = result.get("summary", {})
-        print(f"  Summary:   Build={summary.get('build', 0)}  "
-              f"Buy={summary.get('buy', 0)}  "
-              f"Partner={summary.get('partner', 0)}  "
-              f"Hybrid={summary.get('hybrid', 0)}")
+        print(
+            f"  Summary:   Build={summary.get('build', 0)}  "
+            f"Buy={summary.get('buy', 0)}  "
+            f"Partner={summary.get('partner', 0)}  "
+            f"Hybrid={summary.get('hybrid', 0)}"
+        )
         print()
         entries = result.get("results", [])
         if entries:
-            print(f"    {'#':>3s}  {'Recommendation':>14s}  {'Build':>6s}  "
-                  f"{'Buy':>6s}  {'Partner':>7s}  {'Effort':>6s}  "
-                  f"{'Risk':>8s}  Title")
-            print(f"    {'---':>3s}  {'-'*14:>14s}  {'-'*6:>6s}  "
-                  f"{'-'*6:>6s}  {'-'*7:>7s}  {'-'*6:>6s}  "
-                  f"{'-'*8:>8s}  -----")
+            print(
+                f"    {'#':>3s}  {'Recommendation':>14s}  {'Build':>6s}  "
+                f"{'Buy':>6s}  {'Partner':>7s}  {'Effort':>6s}  "
+                f"{'Risk':>8s}  Title"
+            )
+            print(
+                f"    {'---':>3s}  {'-' * 14:>14s}  {'-' * 6:>6s}  "
+                f"{'-' * 6:>6s}  {'-' * 7:>7s}  {'-' * 6:>6s}  "
+                f"{'-' * 8:>8s}  -----"
+            )
             for i, e in enumerate(entries, 1):
                 print(
                     f"    {i:3d}  {e['recommendation']:>14s}  "
@@ -950,23 +959,27 @@ def _print_human(args, result):
         print(f"\n  Session: {result.get('session_id', '')}")
         print(f"  Total Analyses: {result.get('total', 0)}")
         summary = result.get("summary", {})
-        print(f"  Summary:  Build={summary.get('build', 0)}  "
-              f"Buy={summary.get('buy', 0)}  "
-              f"Partner={summary.get('partner', 0)}  "
-              f"Hybrid={summary.get('hybrid', 0)}")
+        print(
+            f"  Summary:  Build={summary.get('build', 0)}  "
+            f"Buy={summary.get('buy', 0)}  "
+            f"Partner={summary.get('partner', 0)}  "
+            f"Hybrid={summary.get('hybrid', 0)}"
+        )
         print(f"  Avg Build:   {result.get('avg_build_score', 0):.4f}")
         print(f"  Avg Buy:     {result.get('avg_buy_score', 0):.4f}")
         print(f"  Avg Partner: {result.get('avg_partner_score', 0):.4f}")
         print()
         entries = result.get("entries", [])
         if entries:
-            print(f"    {'#':>3s}  {'Rec':>7s}  {'Build':>6s}  "
-                  f"{'Buy':>6s}  {'Partn':>6s}  {'Covg':>5s}  "
-                  f"{'Eff':>3s}  {'Cost':>9s}  {'Risk':>8s}  Title")
+            print(
+                f"    {'#':>3s}  {'Rec':>7s}  {'Build':>6s}  "
+                f"{'Buy':>6s}  {'Partn':>6s}  {'Covg':>5s}  "
+                f"{'Eff':>3s}  {'Cost':>9s}  {'Risk':>8s}  Title"
+            )
             sep_line = (
-                f"    {'---':>3s}  {'-'*7:>7s}  {'-'*6:>6s}  "
-                f"{'-'*6:>6s}  {'-'*6:>6s}  {'-'*5:>5s}  "
-                f"{'-'*3:>3s}  {'-'*9:>9s}  {'-'*8:>8s}  -----"
+                f"    {'---':>3s}  {'-' * 7:>7s}  {'-' * 6:>6s}  "
+                f"{'-' * 6:>6s}  {'-' * 6:>6s}  {'-' * 5:>5s}  "
+                f"{'-' * 3:>3s}  {'-' * 9:>9s}  {'-' * 8:>8s}  -----"
             )
             print(sep_line)
             for i, e in enumerate(entries, 1):
@@ -1003,30 +1016,35 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--analyze", action="store_true",
+        "--analyze",
+        action="store_true",
         help="Analyze all scored challenges in a session",
     )
     group.add_argument(
-        "--analyze-one", action="store_true",
+        "--analyze-one",
+        action="store_true",
         help="Analyze a single challenge",
     )
     group.add_argument(
-        "--matrix", action="store_true",
+        "--matrix",
+        action="store_true",
         help="Show the full decision matrix for a session",
     )
 
     parser.add_argument(
-        "--session-id", type=str, default=None,
+        "--session-id",
+        type=str,
+        default=None,
         help="Session ID (required for all actions)",
     )
     parser.add_argument(
-        "--challenge-id", type=str, default=None,
+        "--challenge-id",
+        type=str,
+        default=None,
         help="Challenge ID (required for --analyze-one)",
     )
 
@@ -1043,9 +1061,7 @@ def main():
                 parser.error("--analyze-one requires --challenge-id")
             if not args.session_id:
                 parser.error("--analyze-one requires --session-id")
-            result = analyze_challenge(
-                args.challenge_id, args.session_id, db_path=args.db_path
-            )
+            result = analyze_challenge(args.challenge_id, args.session_id, db_path=args.db_path)
 
         elif args.matrix:
             if not args.session_id:

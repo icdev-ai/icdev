@@ -31,7 +31,9 @@ class SOC2Assessor(BaseAssessor):
     CATALOG_FILENAME = "soc2_trust_criteria.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """SOC 2-specific automated checks.
 

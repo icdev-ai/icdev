@@ -11,6 +11,7 @@ Architecture:
   D-RES-2:  Declarative JSON configs in context/research/verticals/*.json
   D26:      Add new verticals without code changes
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,23 +34,32 @@ DEFAULT_VERTICALS_DIR = BASE_DIR / "context" / "research" / "verticals"
 # --- Graceful imports ---
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # --- Required fields for validation ---
 REQUIRED_FIELDS = ["id", "name", "slug", "description", "keywords"]
 OPTIONAL_FIELDS = [
-    "regulatory_bodies", "academic_categories", "community_sources",
-    "review_sites", "open_source", "news_sources", "patent_categories",
+    "regulatory_bodies",
+    "academic_categories",
+    "community_sources",
+    "review_sites",
+    "open_source",
+    "news_sources",
+    "patent_categories",
     "compliance_frameworks",
 ]
 
@@ -62,9 +72,7 @@ def _now():
 def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -158,14 +166,11 @@ def load_verticals_to_db(verticals_dir=None, db_path=None):
     conn = _get_db(db_path)
     loaded = 0
     skipped = 0
-    errors = []
 
     try:
         for vert in verticals:
             slug = vert["slug"]
-            existing = conn.execute(
-                "SELECT id FROM research_verticals WHERE slug = ?", (slug,)
-            ).fetchone()
+            existing = conn.execute("SELECT id FROM research_verticals WHERE slug = ?", (slug,)).fetchone()
 
             if existing:
                 # Update existing vertical
@@ -232,9 +237,7 @@ def list_verticals(db_path=None):
     """List all verticals from the database."""
     conn = _get_db(db_path)
     try:
-        rows = conn.execute(
-            "SELECT * FROM research_verticals ORDER BY name"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM research_verticals ORDER BY name").fetchall()
         return {
             "verticals": [dict(r) for r in rows],
             "total": len(rows),
@@ -248,13 +251,9 @@ def get_vertical(slug=None, vertical_id=None, db_path=None):
     conn = _get_db(db_path)
     try:
         if slug:
-            row = conn.execute(
-                "SELECT * FROM research_verticals WHERE slug = ?", (slug,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM research_verticals WHERE slug = ?", (slug,)).fetchone()
         elif vertical_id:
-            row = conn.execute(
-                "SELECT * FROM research_verticals WHERE id = ?", (vertical_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM research_verticals WHERE id = ?", (vertical_id,)).fetchone()
         else:
             return {"error": "Provide --slug or --vertical-id"}
 
@@ -305,7 +304,7 @@ def _print_human(args, result):
         verts = result.get("verticals", [])
         print(f"\n  Total Verticals: {result.get('total', 0)}\n")
         print(f"    {'Slug':20s} {'Name':35s} {'Active':8s}")
-        print(f"    {'-'*20} {'-'*35} {'-'*8}")
+        print(f"    {'-' * 20} {'-' * 35} {'-' * 8}")
         for v in verts:
             active = "Yes" if v.get("active") else "No"
             print(f"    {v['slug']:20s} {v['name'][:35]:35s} {active:8s}")
@@ -315,7 +314,11 @@ def _print_human(args, result):
         print(f"  Name: {result.get('name', '')}")
         print(f"  Slug: {result.get('slug', '')}")
         print(f"  Active: {result.get('active', '')}")
-        kw = json.loads(result.get("keywords", "[]")) if isinstance(result.get("keywords"), str) else result.get("keywords", [])
+        kw = (
+            json.loads(result.get("keywords", "[]"))
+            if isinstance(result.get("keywords"), str)
+            else result.get("keywords", [])
+        )
         print(f"  Keywords: {', '.join(kw[:10])}")
 
     print()

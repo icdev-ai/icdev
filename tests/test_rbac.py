@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for ICDEV SaaS RBAC (tools/saas/auth/rbac.py).
@@ -19,6 +20,7 @@ try:
         get_endpoint_category,
         require_permission,
     )
+
     _IMPORT_OK = True
 except ImportError:
     _IMPORT_OK = False
@@ -37,6 +39,7 @@ WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # ---------------------------------------------------------------------------
 # Role x Category permission matrix tests
 # ---------------------------------------------------------------------------
+
 
 class TestPermissionMatrix:
     """Verify the PERMISSIONS matrix for each role and category."""
@@ -115,6 +118,7 @@ class TestPermissionMatrix:
 # llm_keys category (Phase 31)
 # ---------------------------------------------------------------------------
 
+
 class TestLLMKeysCategory:
     """Verify the llm_keys permission category."""
 
@@ -143,19 +147,26 @@ class TestLLMKeysCategory:
 # OWN permission logic
 # ---------------------------------------------------------------------------
 
+
 class TestOWNPermission:
     """Verify OWN-scoped access for api_keys category."""
 
     def test_own_allows_matching_user(self):
         assert check_permission(
-            "developer", "api_keys", "DELETE",
-            user_id="user-1", resource_owner_id="user-1",
+            "developer",
+            "api_keys",
+            "DELETE",
+            user_id="user-1",
+            resource_owner_id="user-1",
         )
 
     def test_own_denies_mismatched_user(self):
         assert not check_permission(
-            "developer", "api_keys", "DELETE",
-            user_id="user-1", resource_owner_id="user-2",
+            "developer",
+            "api_keys",
+            "DELETE",
+            user_id="user-1",
+            resource_owner_id="user-2",
         )
 
     def test_own_allows_get_without_resource_owner(self):
@@ -174,6 +185,7 @@ class TestOWNPermission:
 # ---------------------------------------------------------------------------
 # Endpoint-to-category mapping
 # ---------------------------------------------------------------------------
+
 
 class TestEndpointCategoryMap:
     """Verify REST endpoints resolve to the correct permission category."""
@@ -225,6 +237,7 @@ class TestEndpointCategoryMap:
 # Unknown category denial
 # ---------------------------------------------------------------------------
 
+
 class TestUnknownCategory:
     """Verify unknown categories are denied."""
 
@@ -239,6 +252,7 @@ class TestUnknownCategory:
 # require_permission convenience function
 # ---------------------------------------------------------------------------
 
+
 class TestRequirePermission:
     """Verify the require_permission helper resolves path and checks access."""
 
@@ -249,14 +263,10 @@ class TestRequirePermission:
         assert not require_permission("viewer", "/api/v1/projects", "POST")
 
     def test_developer_can_get_compliance(self):
-        assert require_permission(
-            "developer", "/api/v1/projects/proj-1/ssp", "GET"
-        )
+        assert require_permission("developer", "/api/v1/projects/proj-1/ssp", "GET")
 
     def test_auditor_cannot_post_scan(self):
-        assert not require_permission(
-            "auditor", "/api/v1/projects/proj-1/scan", "POST"
-        )
+        assert not require_permission("auditor", "/api/v1/projects/proj-1/scan", "POST")
 
 
 # [TEMPLATE: CUI // SP-CTI]

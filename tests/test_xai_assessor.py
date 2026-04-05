@@ -244,7 +244,7 @@ class TestXAIChecks(unittest.TestCase):
     def test_xai005_no_config_file(self):
         """XAI-005: Config file missing → not_satisfied."""
         # Patch the config path to a nonexistent location
-        with patch.object(Path, 'exists', return_value=False):
+        with patch.object(Path, "exists", return_value=False):
             result = self.assessor._check_content_policy()
         self.assertEqual(result, "not_satisfied")
 
@@ -333,8 +333,7 @@ class TestXAIChecks(unittest.TestCase):
         """XAI-010: Trust scores exist → satisfied."""
         conn = sqlite3.connect(str(self.db_path))
         conn.execute(
-            "INSERT INTO agent_trust_scores (agent_id, project_id, trust_score) "
-            "VALUES ('builder', 'proj-test', 0.85)"
+            "INSERT INTO agent_trust_scores (agent_id, project_id, trust_score) VALUES ('builder', 'proj-test', 0.85)"
         )
         conn.commit()
         conn.close()
@@ -363,12 +362,17 @@ class TestGetAutomatedChecks(unittest.TestCase):
         project = {"id": "proj-test"}
         results = self.assessor.get_automated_checks(project)
         valid_statuses = {
-            "satisfied", "not_satisfied", "partially_satisfied",
-            "not_assessed", "not_applicable", "risk_accepted",
+            "satisfied",
+            "not_satisfied",
+            "partially_satisfied",
+            "not_assessed",
+            "not_applicable",
+            "risk_accepted",
         }
         for check_id, status in results.items():
             self.assertIn(
-                status, valid_statuses,
+                status,
+                valid_statuses,
                 f"{check_id} returned invalid status: {status}",
             )
 
@@ -376,9 +380,7 @@ class TestGetAutomatedChecks(unittest.TestCase):
         """Empty project should have mostly not_satisfied checks."""
         project = {"id": "proj-test"}
         results = self.assessor.get_automated_checks(project)
-        not_satisfied_count = sum(
-            1 for s in results.values() if s in ("not_satisfied", "not_assessed")
-        )
+        not_satisfied_count = sum(1 for s in results.values() if s in ("not_satisfied", "not_assessed"))
         # At minimum, most checks should be not_satisfied on empty project
         self.assertGreater(not_satisfied_count, 5)
 

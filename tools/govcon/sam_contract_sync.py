@@ -86,6 +86,7 @@ def _safe_get(url, params=None, headers=None, timeout=30):
     """HTTP GET with error handling. Returns (data, error)."""
     try:
         import requests
+
         resp = requests.get(url, params=params, headers=headers, timeout=timeout)
         resp.raise_for_status()
         return resp.json(), None
@@ -106,8 +107,6 @@ def sync_awards(lookback_days=None):
             "status": "error",
             "message": f"SAM.gov API key not found. Set {API_KEY_ENV} environment variable.",
         }
-
-    days = lookback_days or LOOKBACK_DAYS
 
     params = {
         "api_key": api_key,
@@ -134,9 +133,7 @@ def sync_awards(lookback_days=None):
     for award in awards:
         content = _content_hash(award)
 
-        existing = conn.execute(
-            "SELECT id FROM cpmp_sam_contract_awards WHERE content_hash = ?", (content,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE content_hash = ?", (content,)).fetchone()
         if existing:
             dup_count += 1
             continue
@@ -150,9 +147,12 @@ def sync_awards(lookback_days=None):
             "awarding_agency, naics_code, psc_code, content_hash, linked_contract_id, discovered_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                _uuid(), sam_award_id,
+                _uuid(),
+                sam_award_id,
                 award.get("solicitationNumber"),
-                award.get("awardee", {}).get("name") if isinstance(award.get("awardee"), dict) else award.get("awardee"),
+                award.get("awardee", {}).get("name")
+                if isinstance(award.get("awardee"), dict)
+                else award.get("awardee"),
                 award.get("awardee", {}).get("ueiSAM") if isinstance(award.get("awardee"), dict) else None,
                 award.get("awardee", {}).get("cageCode") if isinstance(award.get("awardee"), dict) else None,
                 award.get("award", {}).get("amount") if isinstance(award.get("award"), dict) else None,
@@ -216,16 +216,12 @@ def link_award_to_contract(sam_award_id, contract_id):
     """Link a SAM.gov award record to a CPMP contract."""
     conn = _get_db()
 
-    award = conn.execute(
-        "SELECT id FROM cpmp_sam_contract_awards WHERE sam_award_id = ?", (sam_award_id,)
-    ).fetchone()
+    award = conn.execute("SELECT id FROM cpmp_sam_contract_awards WHERE sam_award_id = ?", (sam_award_id,)).fetchone()
     if not award:
         conn.close()
         return {"status": "error", "message": f"SAM award {sam_award_id} not found"}
 
-    contract = conn.execute(
-        "SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)
-    ).fetchone()
+    contract = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
     if not contract:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -242,6 +238,7 @@ def link_award_to_contract(sam_award_id, contract_id):
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV GovProposal SAM.gov Contract Awards Sync (Phase 60)")

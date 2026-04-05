@@ -43,14 +43,18 @@ logger = logging.getLogger("icdev.gateway.security_chain")
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping: %s", kwargs.get("action", ""))
+
 
 try:
     from tools.gateway.user_binder import resolve_binding
 except ImportError:
+
     def resolve_binding(channel, channel_user_id, db_path=None):
         return None
+
 
 # HMAC secret from env
 GATEWAY_HMAC_SECRET = os.environ.get("ICDEV_GATEWAY_HMAC_SECRET", "icdev-gateway-default-key")
@@ -62,6 +66,7 @@ _RATE_COUNTERS: Dict[str, List[float]] = defaultdict(list)
 # ---------------------------------------------------------------------------
 # Gate Results
 # ---------------------------------------------------------------------------
+
 
 class GateResult:
     """Result of a single gate check."""
@@ -82,6 +87,7 @@ class GateResult:
 # ---------------------------------------------------------------------------
 # Individual Gates
 # ---------------------------------------------------------------------------
+
 
 def gate_1_signature(envelope: CommandEnvelope, adapter, config: Dict) -> GateResult:
     """Gate 1: Verify webhook signature from the channel platform.
@@ -121,19 +127,15 @@ def gate_2_bot_replay(envelope: CommandEnvelope, config: Dict) -> GateResult:
         return GateResult("bot_replay", False, "bot-originated message rejected")
 
     # Replay check
-    replay_window = config.get("security", {}).get("signature", {}).get(
-        "replay_window_seconds", 300
-    )
+    replay_window = config.get("security", {}).get("signature", {}).get("replay_window_seconds", 300)
     try:
         msg_time = datetime.fromisoformat(envelope.timestamp)
         now = datetime.now(timezone.utc)
         age_seconds = (now - msg_time).total_seconds()
         if age_seconds > replay_window:
-            return GateResult("bot_replay", False,
-                              f"message too old ({age_seconds:.0f}s > {replay_window}s)")
+            return GateResult("bot_replay", False, f"message too old ({age_seconds:.0f}s > {replay_window}s)")
         if age_seconds < -60:  # clock skew tolerance
-            return GateResult("bot_replay", False,
-                              "message timestamp is in the future")
+            return GateResult("bot_replay", False, "message timestamp is in the future")
     except (ValueError, TypeError):
         pass  # If timestamp can't be parsed, skip replay check
 
@@ -148,8 +150,7 @@ def gate_3_identity(envelope: CommandEnvelope, config: Dict) -> GateResult:
     binding = resolve_binding(envelope.channel, envelope.channel_user_id)
 
     if not binding:
-        return GateResult("identity", False,
-                          f"no active binding for {envelope.channel}:{envelope.channel_user_id}")
+        return GateResult("identity", False, f"no active binding for {envelope.channel}:{envelope.channel_user_id}")
 
     # Populate envelope with resolved identity
     envelope.binding_id = binding["id"]
@@ -159,8 +160,7 @@ def gate_3_identity(envelope: CommandEnvelope, config: Dict) -> GateResult:
     if not envelope.icdev_user_id:
         return GateResult("identity", False, "binding exists but no ICDEV user linked")
 
-    return GateResult("identity", True,
-                      f"resolved to {envelope.icdev_user_id}")
+    return GateResult("identity", True, f"resolved to {envelope.icdev_user_id}")
 
 
 def gate_4_authentication(envelope: CommandEnvelope, config: Dict) -> GateResult:
@@ -174,17 +174,14 @@ def gate_4_authentication(envelope: CommandEnvelope, config: Dict) -> GateResult
 
     # For non-SaaS (standalone) deployments, binding existence is sufficient
     if not envelope.tenant_id:
-        return GateResult("authentication", True,
-                          f"standalone mode — user {envelope.icdev_user_id} accepted")
+        return GateResult("authentication", True, f"standalone mode — user {envelope.icdev_user_id} accepted")
 
     # SaaS mode — could check user status in platform DB
     # For now, binding existence + active status is sufficient
-    return GateResult("authentication", True,
-                      f"user {envelope.icdev_user_id} authenticated")
+    return GateResult("authentication", True, f"user {envelope.icdev_user_id} authenticated")
 
 
-def gate_5_classification(envelope: CommandEnvelope, channel_config: Dict,
-                          command_allowlist: List[Dict]) -> GateResult:
+def gate_5_classification(envelope: CommandEnvelope, channel_config: Dict, command_allowlist: List[Dict]) -> GateResult:
     """Gate 5: Reject commands that would produce output above channel's max_il.
 
     Compares the command's max_il (from allowlist) against the channel's max_il.
@@ -200,20 +197,18 @@ def gate_5_classification(envelope: CommandEnvelope, channel_config: Dict,
             break
 
     if not cmd_entry:
-        return GateResult("classification", False,
-                          f"command '{cmd}' not in allowlist")
+        return GateResult("classification", False, f"command '{cmd}' not in allowlist")
 
     cmd_max_il = cmd_entry.get("max_il", "IL5")
 
     # IL ordering: IL2 < IL4 < IL5 < IL6
     il_order = {"IL2": 0, "IL4": 1, "IL5": 2, "IL6": 3}
     if il_order.get(cmd_max_il, 0) > il_order.get(channel_max_il, 0):
-        return GateResult("classification", False,
-                          f"command may produce {cmd_max_il} content, "
-                          f"channel max is {channel_max_il}")
+        return GateResult(
+            "classification", False, f"command may produce {cmd_max_il} content, channel max is {channel_max_il}"
+        )
 
-    return GateResult("classification", True,
-                      f"command IL {cmd_max_il} <= channel IL {channel_max_il}")
+    return GateResult("classification", True, f"command IL {cmd_max_il} <= channel IL {channel_max_il}")
 
 
 def gate_6_rbac(envelope: CommandEnvelope, command_allowlist: List[Dict]) -> GateResult:
@@ -244,8 +239,7 @@ def gate_6_rbac(envelope: CommandEnvelope, command_allowlist: List[Dict]) -> Gat
     if allowed_channels != "*":
         allowed_list = [c.strip() for c in allowed_channels.split(",")]
         if not allowed_list or envelope.channel not in allowed_list:
-            return GateResult("rbac", False,
-                              f"command '{cmd}' not allowed on channel '{envelope.channel}'")
+            return GateResult("rbac", False, f"command '{cmd}' not allowed on channel '{envelope.channel}'")
 
     # Role-based check (simplified — full check would query RBAC DB)
     role = envelope.user_role or "viewer"
@@ -258,8 +252,7 @@ def gate_6_rbac(envelope: CommandEnvelope, command_allowlist: List[Dict]) -> Gat
     }
     allowed_categories = role_permissions.get(role, {"read"})
     if category not in allowed_categories:
-        return GateResult("rbac", False,
-                          f"role '{role}' cannot perform '{category}' commands")
+        return GateResult("rbac", False, f"role '{role}' cannot perform '{category}' commands")
 
     return GateResult("rbac", True, f"role '{role}' authorized for '{category}'")
 
@@ -278,22 +271,16 @@ def gate_7_rate_limit(envelope: CommandEnvelope, config: Dict) -> GateResult:
 
     # Per-user rate check
     user_key = f"user:{envelope.icdev_user_id or envelope.channel_user_id}"
-    _RATE_COUNTERS[user_key] = [
-        t for t in _RATE_COUNTERS[user_key] if now - t < window
-    ]
+    _RATE_COUNTERS[user_key] = [t for t in _RATE_COUNTERS[user_key] if now - t < window]
     if len(_RATE_COUNTERS[user_key]) >= per_user_limit:
-        return GateResult("rate_limit", False,
-                          f"user rate limit exceeded ({per_user_limit}/min)")
+        return GateResult("rate_limit", False, f"user rate limit exceeded ({per_user_limit}/min)")
     _RATE_COUNTERS[user_key].append(now)
 
     # Per-channel rate check
     channel_key = f"channel:{envelope.channel}"
-    _RATE_COUNTERS[channel_key] = [
-        t for t in _RATE_COUNTERS[channel_key] if now - t < window
-    ]
+    _RATE_COUNTERS[channel_key] = [t for t in _RATE_COUNTERS[channel_key] if now - t < window]
     if len(_RATE_COUNTERS[channel_key]) >= per_channel_limit:
-        return GateResult("rate_limit", False,
-                          f"channel rate limit exceeded ({per_channel_limit}/min)")
+        return GateResult("rate_limit", False, f"channel rate limit exceeded ({per_channel_limit}/min)")
     _RATE_COUNTERS[channel_key].append(now)
 
     return GateResult("rate_limit", True, "within rate limits")
@@ -316,12 +303,10 @@ def gate_8_domain_authority(envelope: CommandEnvelope) -> GateResult:
     if cmd in security_commands:
         # Log that this command is in security domain — but don't block
         # (Security Agent veto is for agent-to-agent, not user-to-agent)
-        return GateResult("domain_authority", True,
-                          f"command '{cmd}' in security domain — noted")
+        return GateResult("domain_authority", True, f"command '{cmd}' in security domain — noted")
 
     if cmd in compliance_commands:
-        return GateResult("domain_authority", True,
-                          f"command '{cmd}' in compliance domain — noted")
+        return GateResult("domain_authority", True, f"command '{cmd}' in compliance domain — noted")
 
     return GateResult("domain_authority", True, "no domain authority concerns")
 
@@ -330,11 +315,10 @@ def gate_8_domain_authority(envelope: CommandEnvelope) -> GateResult:
 # Chain Execution
 # ---------------------------------------------------------------------------
 
-def run_security_chain(envelope: CommandEnvelope,
-                       adapter,
-                       gateway_config: Dict,
-                       channel_config: Dict,
-                       command_allowlist: List[Dict]) -> Tuple[bool, List[GateResult]]:
+
+def run_security_chain(
+    envelope: CommandEnvelope, adapter, gateway_config: Dict, channel_config: Dict, command_allowlist: List[Dict]
+) -> Tuple[bool, List[GateResult]]:
     """Run all 8 security gates on a CommandEnvelope.
 
     Args:
@@ -413,8 +397,7 @@ def run_security_chain(envelope: CommandEnvelope,
         _log_rejection(envelope, results)
         return (False, results)
 
-    logger.info("All 8 gates passed for %s from %s:%s",
-                envelope.command, envelope.channel, envelope.channel_user_id)
+    logger.info("All 8 gates passed for %s from %s:%s", envelope.command, envelope.channel, envelope.channel_user_id)
     return (True, results)
 
 
@@ -424,20 +407,26 @@ def _log_rejection(envelope: CommandEnvelope, results: List[GateResult]):
     gate_name = failed_gate.gate_name if failed_gate else "unknown"
     reason = failed_gate.reason if failed_gate else "unknown"
 
-    logger.warning("Security chain REJECTED at gate '%s': %s [%s:%s cmd=%s]",
-                   gate_name, reason,
-                   envelope.channel, envelope.channel_user_id,
-                   envelope.command)
+    logger.warning(
+        "Security chain REJECTED at gate '%s': %s [%s:%s cmd=%s]",
+        gate_name,
+        reason,
+        envelope.channel,
+        envelope.channel_user_id,
+        envelope.command,
+    )
 
     audit_log_event(
         event_type="remote_command_rejected",
         actor=envelope.icdev_user_id or envelope.channel_user_id,
         action=f"Command '{envelope.command}' rejected at gate '{gate_name}': {reason}",
-        details=str({
-            "envelope_id": envelope.id,
-            "channel": envelope.channel,
-            "gate": gate_name,
-            "reason": reason,
-            "gate_results": {r.gate_name: r.passed for r in results},
-        }),
+        details=str(
+            {
+                "envelope_id": envelope.id,
+                "channel": envelope.channel,
+                "gate": gate_name,
+                "reason": reason,
+                "gate_results": {r.gate_name: r.passed for r in results},
+            }
+        ),
     )

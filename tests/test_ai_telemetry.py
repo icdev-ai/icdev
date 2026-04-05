@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.security.ai_telemetry_logger import AITelemetryLogger
@@ -36,22 +37,34 @@ def logger(tmp_path):
 class TestLogging:
     def test_log_interaction(self, logger):
         entry_id = logger.log_ai_interaction(
-            model_id="claude-opus-4-6", provider="bedrock",
-            prompt_hash="abc123", response_hash="def456",
-            input_tokens=100, output_tokens=50,
-            project_id="proj-1", function="code_generation",
+            model_id="claude-opus-4-6",
+            provider="bedrock",
+            prompt_hash="abc123",
+            response_hash="def456",
+            input_tokens=100,
+            output_tokens=50,
+            project_id="proj-1",
+            function="code_generation",
         )
         assert entry_id is not None
 
     def test_log_with_all_fields(self, logger):
         entry_id = logger.log_ai_interaction(
-            model_id="gpt-4o", provider="azure_openai",
-            prompt_hash="hash1", response_hash="hash2",
-            input_tokens=200, output_tokens=100, thinking_tokens=50,
-            latency_ms=1500.0, cost_usd=0.05,
-            agent_id="builder-agent", user_id="user-1",
-            project_id="proj-1", function="nlq_sql",
-            classification="CUI", api_key_source="byok",
+            model_id="gpt-4o",
+            provider="azure_openai",
+            prompt_hash="hash1",
+            response_hash="hash2",
+            input_tokens=200,
+            output_tokens=100,
+            thinking_tokens=50,
+            latency_ms=1500.0,
+            cost_usd=0.05,
+            agent_id="builder-agent",
+            user_id="user-1",
+            project_id="proj-1",
+            function="nlq_sql",
+            classification="CUI",
+            api_key_source="byok",
             injection_scan_result="clean",
         )
         assert entry_id is not None
@@ -59,7 +72,9 @@ class TestLogging:
     def test_log_without_db(self):
         lg = AITelemetryLogger(db_path=Path("/nonexistent/db"))
         entry_id = lg.log_ai_interaction(
-            model_id="test", provider="test", prompt_hash="h",
+            model_id="test",
+            provider="test",
+            prompt_hash="h",
         )
         assert entry_id is None
 
@@ -97,14 +112,22 @@ class TestUsageSummary:
 
     def test_summary_with_data(self, logger):
         logger.log_ai_interaction(
-            model_id="claude-opus-4-6", provider="bedrock",
-            prompt_hash="h1", input_tokens=100, output_tokens=50,
-            cost_usd=0.01, project_id="proj-1",
+            model_id="claude-opus-4-6",
+            provider="bedrock",
+            prompt_hash="h1",
+            input_tokens=100,
+            output_tokens=50,
+            cost_usd=0.01,
+            project_id="proj-1",
         )
         logger.log_ai_interaction(
-            model_id="gpt-4o", provider="azure_openai",
-            prompt_hash="h2", input_tokens=200, output_tokens=100,
-            cost_usd=0.02, project_id="proj-1",
+            model_id="gpt-4o",
+            provider="azure_openai",
+            prompt_hash="h2",
+            input_tokens=200,
+            output_tokens=100,
+            cost_usd=0.02,
+            project_id="proj-1",
         )
         result = logger.get_usage_summary(project_id="proj-1", hours=1)
         assert result["total_requests"] == 2
@@ -127,6 +150,7 @@ class TestAnomalyDetection:
     def test_injection_anomaly(self, logger):
         conn = sqlite3.connect(str(logger._db_path))
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "INSERT INTO ai_telemetry (id, model_id, provider, prompt_hash, injection_scan_result, logged_at) "

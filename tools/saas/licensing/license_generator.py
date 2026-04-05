@@ -5,6 +5,7 @@ CUI // SP-CTI
 Admin tool for generating RSA-SHA256 signed license keys.
 Generates offline-verifiable license JSON for on-premises deployments.
 """
+
 import argparse
 import base64
 import json
@@ -24,8 +25,17 @@ logger = logging.getLogger("saas.licensing.generator")
 # Valid tiers and features
 VALID_TIERS = ["starter", "pro", "enterprise", "unlimited"]
 VALID_FEATURES = [
-    "cnssi_1253", "cato", "fedramp", "cmmc", "oscal", "emass",
-    "mbse", "modernization", "self_healing", "sbd", "ivv",
+    "cnssi_1253",
+    "cato",
+    "fedramp",
+    "cmmc",
+    "oscal",
+    "emass",
+    "mbse",
+    "modernization",
+    "self_healing",
+    "sbd",
+    "ivv",
 ]
 VALID_IL_LEVELS = ["IL2", "IL4", "IL5", "IL6"]
 
@@ -33,18 +43,19 @@ VALID_IL_LEVELS = ["IL2", "IL4", "IL5", "IL6"]
 try:
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding, rsa
+
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False
     logger.warning(
-        "cryptography library not installed — license signing unavailable. "
-        "Install with: pip install cryptography"
+        "cryptography library not installed — license signing unavailable. Install with: pip install cryptography"
     )
 
 
 # ---------------------------------------------------------------------------
 # Key pair generation
 # ---------------------------------------------------------------------------
+
 
 def generate_keypair(output_dir: str) -> Dict[str, str]:
     """Generate an RSA 4096-bit key pair for license signing.
@@ -57,10 +68,7 @@ def generate_keypair(output_dir: str) -> Dict[str, str]:
         dict with ``private_key_path`` and ``public_key_path``.
     """
     if not HAS_CRYPTO:
-        raise RuntimeError(
-            "cryptography library required for key generation. "
-            "Install with: pip install cryptography"
-        )
+        raise RuntimeError("cryptography library required for key generation. Install with: pip install cryptography")
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -72,18 +80,22 @@ def generate_keypair(output_dir: str) -> Dict[str, str]:
 
     priv_path = out / "license_private_key.pem"
     with open(priv_path, "wb") as fh:
-        fh.write(private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        ))
+        fh.write(
+            private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
 
     pub_path = out / "license_public_key.pem"
     with open(pub_path, "wb") as fh:
-        fh.write(private_key.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo,
-        ))
+        fh.write(
+            private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        )
 
     logger.info("Key pair generated: %s, %s", priv_path, pub_path)
     return {
@@ -96,8 +108,8 @@ def generate_keypair(output_dir: str) -> Dict[str, str]:
 # Signing
 # ---------------------------------------------------------------------------
 
-def _sign_license(license_data: Dict[str, Any],
-                  private_key_path: str) -> str:
+
+def _sign_license(license_data: Dict[str, Any], private_key_path: str) -> str:
     """Sign the canonical license payload with RSA-SHA256.
 
     Args:
@@ -108,10 +120,7 @@ def _sign_license(license_data: Dict[str, Any],
         Base64-encoded RSA-SHA256 signature string.
     """
     if not HAS_CRYPTO:
-        raise RuntimeError(
-            "cryptography library required for signing. "
-            "Install with: pip install cryptography"
-        )
+        raise RuntimeError("cryptography library required for signing. Install with: pip install cryptography")
 
     pk_path = Path(private_key_path)
     if not pk_path.exists():
@@ -135,6 +144,7 @@ def _sign_license(license_data: Dict[str, Any],
 # ---------------------------------------------------------------------------
 # License generation
 # ---------------------------------------------------------------------------
+
 
 def generate_license(
     customer: str,
@@ -202,10 +212,9 @@ def generate_license(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="ICDEV License Generator — CUI // SP-CTI"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV License Generator — CUI // SP-CTI")
     sub = parser.add_subparsers(dest="command")
 
     # --- generate ---
@@ -214,10 +223,8 @@ def _build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--tier", required=True, choices=VALID_TIERS, help="License tier")
     gen.add_argument("--max-projects", type=int, default=-1, help="Max projects (-1=unlimited)")
     gen.add_argument("--max-users", type=int, default=-1, help="Max users (-1=unlimited)")
-    gen.add_argument("--il-levels", nargs="+", default=["IL2", "IL4"],
-                     help="Allowed IL levels (e.g. IL4 IL5)")
-    gen.add_argument("--features", nargs="+", default=[],
-                     help=f"Enabled features: {VALID_FEATURES}")
+    gen.add_argument("--il-levels", nargs="+", default=["IL2", "IL4"], help="Allowed IL levels (e.g. IL4 IL5)")
+    gen.add_argument("--features", nargs="+", default=[], help=f"Enabled features: {VALID_FEATURES}")
     gen.add_argument("--expires-days", type=int, default=365, help="Days until expiry")
     gen.add_argument("--private-key", metavar="PATH", help="RSA private key PEM")
     gen.add_argument("--output", metavar="PATH", help="Write license JSON to file")

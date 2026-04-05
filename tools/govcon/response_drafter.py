@@ -40,6 +40,7 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
     conn = sqlite3.connect(str(_DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -65,6 +66,7 @@ def _audit(conn, action, details="", actor="response_drafter"):
 def _load_config():
     try:
         import yaml
+
         with open(_CONFIG_PATH) as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -73,6 +75,7 @@ def _load_config():
 
 # ── LLM drafting ──────────────────────────────────────────────────────
 
+
 def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
     """Attempt two-tier LLM draft via tools.llm.router.
 
@@ -80,16 +83,13 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
     """
     try:
         from tools.llm.router import LLMRouter
+
         router = LLMRouter()
 
         # Build prompt for qwen3 worker
-        cap_descriptions = "\n".join(
-            f"- {c['capability_name']}: {c.get('evidence', '')}"
-            for c in capabilities[:3]
-        )
+        cap_descriptions = "\n".join(f"- {c['capability_name']}: {c.get('evidence', '')}" for c in capabilities[:3])
         kb_content = "\n".join(
-            f"- {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}"
-            for kb in knowledge_blocks[:3]
+            f"- {kb.get('title', '')}: {(kb.get('content', '') or '')[:200]}" for kb in knowledge_blocks[:3]
         )
 
         # Check for product-level context
@@ -304,16 +304,37 @@ _PRODUCT_TEMPLATES = {
 # Keywords that trigger product-level responses instead of component-level
 _PRODUCT_TRIGGER_KEYWORDS = {
     "icdev_platform": [
-        "integrated platform", "complete solution", "end-to-end", "full lifecycle",
-        "software factory", "autonomous development", "unified platform", "meta-builder",
-        "system that builds", "development platform", "coding platform", "SDLC platform",
-        "all-in-one", "comprehensive platform", "integrated development",
+        "integrated platform",
+        "complete solution",
+        "end-to-end",
+        "full lifecycle",
+        "software factory",
+        "autonomous development",
+        "unified platform",
+        "meta-builder",
+        "system that builds",
+        "development platform",
+        "coding platform",
+        "SDLC platform",
+        "all-in-one",
+        "comprehensive platform",
+        "integrated development",
     ],
     "contract_management_portal": [
-        "contract management", "CDRL", "contract data requirements", "CPARS",
-        "post-award", "deliverable tracking", "contract performance", "obligation tracking",
-        "contract administration", "delivery management", "DD Form 1423",
-        "contract monitoring", "performance monitoring", "COR visibility",
+        "contract management",
+        "CDRL",
+        "contract data requirements",
+        "CPARS",
+        "post-award",
+        "deliverable tracking",
+        "contract performance",
+        "obligation tracking",
+        "contract administration",
+        "delivery management",
+        "DD Form 1423",
+        "contract monitoring",
+        "performance monitoring",
+        "COR visibility",
     ],
 }
 
@@ -367,6 +388,7 @@ def _template_draft(shall_text, capabilities, knowledge_blocks, domain):
     # Extract controls from capability catalog
     try:
         from tools.govcon.capability_mapper import load_capability_catalog
+
         catalog = load_capability_catalog()
         for cap in capabilities[:3]:
             cap_id = cap.get("capability_id", "")
@@ -393,6 +415,7 @@ def _template_draft(shall_text, capabilities, knowledge_blocks, domain):
 
 # ── draft pipeline ────────────────────────────────────────────────────
 
+
 def draft_response(shall_id):
     """Draft a response for a single shall statement.
 
@@ -405,9 +428,7 @@ def draft_response(shall_id):
     conn = _get_db()
 
     # Load shall statement
-    stmt = conn.execute(
-        "SELECT * FROM rfp_shall_statements WHERE id = ?", (shall_id,)
-    ).fetchone()
+    stmt = conn.execute("SELECT * FROM rfp_shall_statements WHERE id = ?", (shall_id,)).fetchone()
 
     if not stmt:
         conn.close()
@@ -432,27 +453,32 @@ def draft_response(shall_id):
     for cap in catalog:
         score = compute_coverage_score(keywords, cap)
         if score > 0.2:
-            capabilities.append({
-                "capability_id": cap["id"],
-                "capability_name": cap["name"],
-                "score": score,
-                "grade": coverage_to_grade(score),
-                "evidence": cap.get("evidence", ""),
-                "matched_keywords": sorted(
-                    set(k.lower() for k in keywords) & set(k.lower() for k in cap.get("keywords", []))
-                ),
-            })
+            capabilities.append(
+                {
+                    "capability_id": cap["id"],
+                    "capability_name": cap["name"],
+                    "score": score,
+                    "grade": coverage_to_grade(score),
+                    "evidence": cap.get("evidence", ""),
+                    "matched_keywords": sorted(
+                        set(k.lower() for k in keywords) & set(k.lower() for k in cap.get("keywords", []))
+                    ),
+                }
+            )
     capabilities.sort(key=lambda x: x["score"], reverse=True)
 
     # Find knowledge blocks — include product-level blocks when applicable
     from tools.govcon.knowledge_base import search_blocks
+
     kb_result = search_blocks(f"{domain} {shall_text[:100]}", domain=domain, top_k=3)
     knowledge_blocks = kb_result.get("results", [])
 
     # Also search for product-level blocks if requirement is cross-domain
     product_key = _detect_product_template(shall_text, domain)
     if product_key:
-        product_search = "ICDEV platform" if product_key == "icdev_platform" else "contract management portal CDRL CPARS"
+        product_search = (
+            "ICDEV platform" if product_key == "icdev_platform" else "contract management portal CDRL CPARS"
+        )
         product_kb = search_blocks(product_search, top_k=2)
         # Prepend product blocks (higher priority)
         product_results = product_kb.get("results", [])
@@ -463,7 +489,7 @@ def draft_response(shall_id):
 
     # Try LLM draft, fall back to template
     cfg = _load_config().get("response_drafting", {})
-    confidence_threshold = cfg.get("confidence_threshold", 0.70)
+    cfg.get("confidence_threshold", 0.70)
 
     draft_text, method = _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain)
     if not draft_text:
@@ -482,17 +508,26 @@ def draft_response(shall_id):
         "status, reviewer_notes, created_at, updated_at, metadata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            draft_id, opp_id, shall_id,
+            draft_id,
+            opp_id,
+            shall_id,
             json.dumps([c["capability_id"] for c in capabilities[:3]]),
             json.dumps([kb.get("id", "") for kb in knowledge_blocks[:3]]),
-            draft_text, method, confidence, domain,
-            "draft", "",
-            _now(), _now(),
-            json.dumps({
-                "capability_count": len(capabilities),
-                "kb_count": len(knowledge_blocks),
-                "best_coverage": best_coverage,
-            }),
+            draft_text,
+            method,
+            confidence,
+            domain,
+            "draft",
+            "",
+            _now(),
+            _now(),
+            json.dumps(
+                {
+                    "capability_count": len(capabilities),
+                    "kb_count": len(knowledge_blocks),
+                    "best_coverage": best_coverage,
+                }
+            ),
         ),
     )
     _audit(conn, "draft_response", f"Drafted {shall_id} via {method}, confidence={confidence}")
@@ -530,9 +565,7 @@ def draft_all_for_opportunity(opportunity_id, method="auto"):
         results.append(result)
 
     drafted = sum(1 for r in results if r.get("status") == "ok")
-    avg_confidence = (
-        sum(r.get("confidence", 0) for r in results if r.get("status") == "ok") / max(drafted, 1)
-    )
+    avg_confidence = sum(r.get("confidence", 0) for r in results if r.get("status") == "ok") / max(drafted, 1)
 
     return {
         "status": "ok",
@@ -577,9 +610,7 @@ def approve_draft(draft_id, reviewer="human", notes=""):
     conn = _get_db()
 
     # Verify draft exists and is in draft status
-    draft = conn.execute(
-        "SELECT * FROM proposal_section_drafts WHERE id = ?", (draft_id,)
-    ).fetchone()
+    draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = ?", (draft_id,)).fetchone()
 
     if not draft:
         conn.close()
@@ -599,18 +630,26 @@ def approve_draft(draft_id, reviewer="human", notes=""):
         "status, reviewer_notes, created_at, updated_at, metadata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            approved_id, d["opportunity_id"], d["shall_statement_id"],
-            d["capability_ids"], d["knowledge_block_ids"],
-            d["draft_content"], d["draft_method"], d["confidence_score"],
+            approved_id,
+            d["opportunity_id"],
+            d["shall_statement_id"],
+            d["capability_ids"],
+            d["knowledge_block_ids"],
+            d["draft_content"],
+            d["draft_method"],
+            d["confidence_score"],
             d["domain_category"],
             "approved",
             notes or f"Approved by {reviewer}",
-            d["created_at"], _now(),
-            json.dumps({
-                "original_draft_id": draft_id,
-                "reviewer": reviewer,
-                "approved_at": _now(),
-            }),
+            d["created_at"],
+            _now(),
+            json.dumps(
+                {
+                    "original_draft_id": draft_id,
+                    "reviewer": reviewer,
+                    "approved_at": _now(),
+                }
+            ),
         ),
     )
     _audit(conn, "approve_draft", f"Draft {draft_id} approved by {reviewer}")
@@ -626,6 +665,7 @@ def approve_draft(draft_id, reviewer="human", notes=""):
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV GovCon Response Drafter (D365)")

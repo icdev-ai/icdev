@@ -1,15 +1,13 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.marketplace.publish_pipeline — marketplace asset publishing."""
 
-import json
-import os
 import sqlite3
-import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -17,8 +15,6 @@ from icdev.tools.marketplace.publish_pipeline import (
     parse_skill_md,
     validate_asset_structure,
     publish_asset,
-    ASSET_TYPE_FILES,
-    ASSET_TYPE_ALTERNATIVES,
 )
 
 
@@ -148,11 +144,7 @@ def goal_asset_dir(tmp_path):
     asset_dir.mkdir()
     goal_md = asset_dir / "goal.md"
     goal_md.write_text(
-        "---\n"
-        "name: my-goal\n"
-        "description: A test goal\n"
-        "---\n"
-        "# Goal\n\nSteps here.\n",
+        "---\nname: my-goal\ndescription: A test goal\n---\n# Goal\n\nSteps here.\n",
         encoding="utf-8",
     )
     return asset_dir
@@ -399,8 +391,11 @@ class TestILValidation:
             encoding="utf-8",
         )
         scan_result = {
-            "passed": True, "overall_status": "pass",
-            "blocking_gates_pass": True, "gates_scanned": 7, "gate_results": [],
+            "passed": True,
+            "overall_status": "pass",
+            "blocking_gates_pass": True,
+            "gates_scanned": 7,
+            "gate_results": [],
         }
         with patch("icdev.tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
             result = publish_asset(

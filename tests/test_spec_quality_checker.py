@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
@@ -176,6 +177,7 @@ adequate error handling throughout the implementation layers and service tiers.
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_spec(tmp_path: Path, content: str, filename: str = "spec.md") -> Path:
     """Write spec content to a .md file and return the Path."""
     spec_path = tmp_path / filename
@@ -187,6 +189,7 @@ def _write_spec(tmp_path: Path, content: str, filename: str = "spec.md") -> Path
 # Tests: parse_spec_sections
 # ---------------------------------------------------------------------------
 
+
 class TestParseSpecSections:
     """Verify markdown parsing splits by ## headers."""
 
@@ -194,11 +197,17 @@ class TestParseSpecSections:
         spec_path = _write_spec(tmp_path, SAMPLE_SPEC)
         sections = parse_spec_sections(spec_path)
         expected_keys = {
-            "metadata", "feature description", "user story",
-            "solution statement", "ato impact assessment",
-            "relevant files", "implementation plan",
-            "step by step tasks", "testing strategy",
-            "acceptance criteria", "validation commands",
+            "metadata",
+            "feature description",
+            "user story",
+            "solution statement",
+            "ato impact assessment",
+            "relevant files",
+            "implementation plan",
+            "step by step tasks",
+            "testing strategy",
+            "acceptance criteria",
+            "validation commands",
             "nist 800-53 controls",
         }
         assert expected_keys.issubset(set(sections.keys()))
@@ -216,6 +225,7 @@ class TestParseSpecSections:
 # ---------------------------------------------------------------------------
 # Tests: check_required_sections
 # ---------------------------------------------------------------------------
+
 
 class TestCheckRequiredSections:
     """Verify required section validation."""
@@ -261,6 +271,7 @@ class TestCheckRequiredSections:
 # Tests: check_ambiguity
 # ---------------------------------------------------------------------------
 
+
 class TestCheckAmbiguity:
     """Verify ambiguity detection."""
 
@@ -291,6 +302,7 @@ class TestCheckAmbiguity:
 # ---------------------------------------------------------------------------
 # Tests: check_acceptance_criteria
 # ---------------------------------------------------------------------------
+
 
 class TestCheckAcceptanceCriteria:
     """Verify acceptance criteria validation."""
@@ -340,6 +352,7 @@ class TestCheckAcceptanceCriteria:
 # Tests: check_ato_coverage
 # ---------------------------------------------------------------------------
 
+
 class TestCheckAtoCoverage:
     """Verify ATO impact assessment validation."""
 
@@ -368,6 +381,7 @@ class TestCheckAtoCoverage:
 # Tests: check_testability
 # ---------------------------------------------------------------------------
 
+
 class TestCheckTestability:
     """Verify testing strategy presence checks."""
 
@@ -382,6 +396,7 @@ class TestCheckTestability:
 # ---------------------------------------------------------------------------
 # Tests: check_task_completeness
 # ---------------------------------------------------------------------------
+
 
 class TestCheckTaskCompleteness:
     """Verify implementation phases match tasks."""
@@ -422,6 +437,7 @@ class TestCheckTaskCompleteness:
 # Tests: run_all_checks
 # ---------------------------------------------------------------------------
 
+
 class TestRunAllChecks:
     """Verify the full orchestrator."""
 
@@ -447,6 +463,7 @@ class TestRunAllChecks:
 # ---------------------------------------------------------------------------
 # Tests: annotate_spec / strip_markers / count_markers
 # ---------------------------------------------------------------------------
+
 
 class TestAnnotationHelpers:
     """Verify inline annotation markers."""

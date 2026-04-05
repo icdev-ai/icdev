@@ -32,8 +32,10 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 try:
     from tools.audit.audit_logger import log_event
 except ImportError:
+
     def log_event(**kwargs):  # noqa: D103 — stub
         pass
+
 
 # ---------------------------------------------------------------------------
 # ReqIF XML namespaces
@@ -86,6 +88,7 @@ REQ_TYPE_MAP = {
 # Helpers
 # ===================================================================
 
+
 def _tag(ns_prefix: str, local: str) -> str:
     """Build a Clark-notation tag string for ElementTree lookups."""
     return f"{{{NS[ns_prefix]}}}{local}"
@@ -123,10 +126,7 @@ def _get_connection(db_path=None):
     """Return a sqlite3 connection with Row factory."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -145,6 +145,7 @@ def _now() -> str:
 # ===================================================================
 # Validation
 # ===================================================================
+
 
 def validate_reqif(file_path: str) -> dict:
     """Validate that *file_path* is a structurally sound ReqIF 1.2 document.
@@ -166,33 +167,27 @@ def validate_reqif(file_path: str) -> dict:
     try:
         tree = ET.parse(file_path)
     except ET.ParseError as exc:
-        return {"valid": False, "errors": [f"XML parse error: {exc}"],
-                "spec_count": 0, "object_count": 0}
+        return {"valid": False, "errors": [f"XML parse error: {exc}"], "spec_count": 0, "object_count": 0}
     except FileNotFoundError:
-        return {"valid": False, "errors": [f"File not found: {file_path}"],
-                "spec_count": 0, "object_count": 0}
+        return {"valid": False, "errors": [f"File not found: {file_path}"], "spec_count": 0, "object_count": 0}
 
     root = tree.getroot()
 
     # --- Root element must be REQ-IF ---
     expected_root = _tag("reqif", "REQ-IF")
     if root.tag != expected_root:
-        errors.append(
-            f"Root element is '{root.tag}', expected '{expected_root}'"
-        )
+        errors.append(f"Root element is '{root.tag}', expected '{expected_root}'")
 
     # --- CORE-CONTENT must exist ---
     core = root.find(_tag("reqif", "CORE-CONTENT"))
     if core is None:
         errors.append("Missing CORE-CONTENT element")
-        return {"valid": False, "errors": errors,
-                "spec_count": 0, "object_count": 0}
+        return {"valid": False, "errors": errors, "spec_count": 0, "object_count": 0}
 
     content = core.find(_tag("reqif", "REQ-IF-CONTENT"))
     if content is None:
         errors.append("Missing REQ-IF-CONTENT element")
-        return {"valid": False, "errors": errors,
-                "spec_count": 0, "object_count": 0}
+        return {"valid": False, "errors": errors, "spec_count": 0, "object_count": 0}
 
     # --- DATATYPES ---
     datatypes_el = content.find(_tag("reqif", "DATATYPES"))
@@ -237,6 +232,7 @@ def validate_reqif(file_path: str) -> dict:
 # Extraction helpers
 # ===================================================================
 
+
 def _extract_datatypes(root, ns: dict) -> dict:
     """Extract ``DATATYPE-DEFINITION-*`` elements from *DATATYPES*.
 
@@ -244,9 +240,7 @@ def _extract_datatypes(root, ns: dict) -> dict:
     INTEGER, DATE, BOOLEAN, and XHTML datatype definitions.
     """
     datatypes: dict = {}
-    content = root.find(_tag("reqif", "CORE-CONTENT")).find(
-        _tag("reqif", "REQ-IF-CONTENT")
-    )
+    content = root.find(_tag("reqif", "CORE-CONTENT")).find(_tag("reqif", "REQ-IF-CONTENT"))
     datatypes_el = content.find(_tag("reqif", "DATATYPES"))
     if datatypes_el is None:
         return datatypes
@@ -276,13 +270,13 @@ def _extract_datatypes(root, ns: dict) -> dict:
                 values = []
                 specified_vals = elem.find(_tag("reqif", "SPECIFIED-VALUES"))
                 if specified_vals is not None:
-                    for ev in specified_vals.findall(
-                        _tag("reqif", "ENUM-VALUE")
-                    ):
-                        values.append({
-                            "id": ev.get("IDENTIFIER", ""),
-                            "long_name": ev.get("LONG-NAME", ""),
-                        })
+                    for ev in specified_vals.findall(_tag("reqif", "ENUM-VALUE")):
+                        values.append(
+                            {
+                                "id": ev.get("IDENTIFIER", ""),
+                                "long_name": ev.get("LONG-NAME", ""),
+                            }
+                        )
                 entry["values"] = values
 
             # Capture min/max for integers
@@ -301,9 +295,7 @@ def _extract_spec_types(root, ns: dict) -> dict:
     Returns ``{type_identifier: {name, attributes: {attr_id: attr_def}}}``
     """
     spec_types: dict = {}
-    content = root.find(_tag("reqif", "CORE-CONTENT")).find(
-        _tag("reqif", "REQ-IF-CONTENT")
-    )
+    content = root.find(_tag("reqif", "CORE-CONTENT")).find(_tag("reqif", "REQ-IF-CONTENT"))
     spec_types_el = content.find(_tag("reqif", "SPEC-TYPES"))
     if spec_types_el is None:
         return spec_types
@@ -365,8 +357,7 @@ def _extract_spec_types(root, ns: dict) -> dict:
     return spec_types
 
 
-def _extract_spec_objects(root, ns: dict, datatypes: dict,
-                          spec_types: dict) -> list:
+def _extract_spec_objects(root, ns: dict, datatypes: dict, spec_types: dict) -> list:
     """Extract all ``SPEC-OBJECT`` elements (individual requirements).
 
     Each requirement's raw attributes are resolved via *datatypes* and
@@ -374,9 +365,7 @@ def _extract_spec_objects(root, ns: dict, datatypes: dict,
     normalised field names.
     """
     objects: list[dict] = []
-    content = root.find(_tag("reqif", "CORE-CONTENT")).find(
-        _tag("reqif", "REQ-IF-CONTENT")
-    )
+    content = root.find(_tag("reqif", "CORE-CONTENT")).find(_tag("reqif", "REQ-IF-CONTENT"))
     spec_objects_el = content.find(_tag("reqif", "SPEC-OBJECTS"))
     if spec_objects_el is None:
         return objects
@@ -398,8 +387,7 @@ def _extract_spec_objects(root, ns: dict, datatypes: dict,
         raw_attrs: dict = {}
         values_el = so.find(_tag("reqif", "VALUES"))
         if values_el is not None:
-            raw_attrs = _parse_attribute_values(values_el, ns, datatypes,
-                                                spec_types, type_ref)
+            raw_attrs = _parse_attribute_values(values_el, ns, datatypes, spec_types, type_ref)
 
         obj = {
             "reqif_identifier": obj_id,
@@ -416,9 +404,7 @@ def _extract_spec_objects(root, ns: dict, datatypes: dict,
     return objects
 
 
-def _parse_attribute_values(values_el, ns: dict, datatypes: dict,
-                            spec_types: dict,
-                            type_ref: str | None) -> dict:
+def _parse_attribute_values(values_el, ns: dict, datatypes: dict, spec_types: dict, type_ref: str | None) -> dict:
     """Parse ``VALUES`` children into ``{long_name: value}``."""
     result: dict = {}
 
@@ -434,7 +420,6 @@ def _parse_attribute_values(values_el, ns: dict, datatypes: dict,
 
     for tag_suffix, kind in attr_value_tags.items():
         for av in values_el.findall(_tag("reqif", tag_suffix)):
-
             # Resolve the attribute definition to get its LONG-NAME
             attr_long_name = ""
             def_el = av.find(_tag("reqif", "DEFINITION"))
@@ -443,9 +428,7 @@ def _parse_attribute_values(values_el, ns: dict, datatypes: dict,
                     def_ref = (child.text or "").strip()
                     # Look up in the spec_type's attributes
                     if type_ref and type_ref in spec_types:
-                        attr_def = spec_types[type_ref]["attributes"].get(
-                            def_ref, {}
-                        )
+                        attr_def = spec_types[type_ref]["attributes"].get(def_ref, {})
                         attr_long_name = attr_def.get("long_name", def_ref)
                     else:
                         attr_long_name = def_ref
@@ -464,9 +447,7 @@ def _parse_attribute_values(values_el, ns: dict, datatypes: dict,
                 vals_ref_el = av.find(_tag("reqif", "VALUES"))
                 if vals_ref_el is not None:
                     enum_refs = []
-                    for eref in vals_ref_el.findall(
-                        _tag("reqif", "ENUM-VALUE-REF")
-                    ):
+                    for eref in vals_ref_el.findall(_tag("reqif", "ENUM-VALUE-REF")):
                         ref_id = (eref.text or "").strip()
                         # Resolve enum value long name from datatypes
                         resolved = ref_id
@@ -496,9 +477,7 @@ def _parse_attribute_values(values_el, ns: dict, datatypes: dict,
 def _extract_spec_relations(root, ns: dict) -> list:
     """Extract ``SPEC-RELATION`` elements (parent-child, derives, etc.)."""
     relations: list[dict] = []
-    content = root.find(_tag("reqif", "CORE-CONTENT")).find(
-        _tag("reqif", "REQ-IF-CONTENT")
-    )
+    content = root.find(_tag("reqif", "CORE-CONTENT")).find(_tag("reqif", "REQ-IF-CONTENT"))
     relations_el = content.find(_tag("reqif", "SPEC-RELATIONS"))
     if relations_el is None:
         return relations
@@ -512,9 +491,7 @@ def _extract_spec_relations(root, ns: dict) -> list:
         type_ref = None
         type_el = sr.find(_tag("reqif", "TYPE"))
         if type_el is not None:
-            ref_child = type_el.find(
-                _tag("reqif", "SPEC-RELATION-TYPE-REF")
-            )
+            ref_child = type_el.find(_tag("reqif", "SPEC-RELATION-TYPE-REF"))
             if ref_child is not None:
                 type_ref = (ref_child.text or "").strip()
 
@@ -534,14 +511,16 @@ def _extract_spec_relations(root, ns: dict) -> list:
             if ref_child is not None:
                 target_ref = (ref_child.text or "").strip()
 
-        relations.append({
-            "reqif_identifier": rel_id,
-            "long_name": long_name,
-            "last_change": last_change,
-            "type_ref": type_ref,
-            "source_ref": source_ref,
-            "target_ref": target_ref,
-        })
+        relations.append(
+            {
+                "reqif_identifier": rel_id,
+                "long_name": long_name,
+                "last_change": last_change,
+                "type_ref": type_ref,
+                "source_ref": source_ref,
+                "target_ref": target_ref,
+            }
+        )
 
     return relations
 
@@ -553,9 +532,7 @@ def _extract_specifications(root, ns: dict) -> list:
     that order the SPEC-OBJECTS into a tree.
     """
     specifications: list[dict] = []
-    content = root.find(_tag("reqif", "CORE-CONTENT")).find(
-        _tag("reqif", "REQ-IF-CONTENT")
-    )
+    content = root.find(_tag("reqif", "CORE-CONTENT")).find(_tag("reqif", "REQ-IF-CONTENT"))
     specs_el = content.find(_tag("reqif", "SPECIFICATIONS"))
     if specs_el is None:
         return specifications
@@ -569,9 +546,7 @@ def _extract_specifications(root, ns: dict) -> list:
         type_ref = None
         type_el = spec.find(_tag("reqif", "TYPE"))
         if type_el is not None:
-            ref_child = type_el.find(
-                _tag("reqif", "SPECIFICATION-TYPE-REF")
-            )
+            ref_child = type_el.find(_tag("reqif", "SPECIFICATION-TYPE-REF"))
             if ref_child is not None:
                 type_ref = (ref_child.text or "").strip()
 
@@ -581,13 +556,15 @@ def _extract_specifications(root, ns: dict) -> list:
         if children_el is not None:
             hierarchy_refs = _walk_hierarchy(children_el, ns)
 
-        specifications.append({
-            "reqif_identifier": spec_id,
-            "long_name": long_name,
-            "last_change": last_change,
-            "type_ref": type_ref,
-            "hierarchy": hierarchy_refs,
-        })
+        specifications.append(
+            {
+                "reqif_identifier": spec_id,
+                "long_name": long_name,
+                "last_change": last_change,
+                "type_ref": type_ref,
+                "hierarchy": hierarchy_refs,
+            }
+        )
 
     return specifications
 
@@ -605,11 +582,13 @@ def _walk_hierarchy(parent_el, ns: dict, depth: int = 0) -> list:
             if ref_child is not None:
                 obj_ref = (ref_child.text or "").strip()
 
-        items.append({
-            "hierarchy_id": sh_id,
-            "object_ref": obj_ref,
-            "depth": depth,
-        })
+        items.append(
+            {
+                "hierarchy_id": sh_id,
+                "object_ref": obj_ref,
+                "depth": depth,
+            }
+        )
 
         # Recurse into nested CHILDREN
         children_el = sh.find(_tag("reqif", "CHILDREN"))
@@ -623,8 +602,8 @@ def _walk_hierarchy(parent_el, ns: dict, depth: int = 0) -> list:
 # Attribute mapping
 # ===================================================================
 
-def _map_doors_attributes(spec_object: dict, datatypes: dict,
-                          spec_types: dict) -> dict:
+
+def _map_doors_attributes(spec_object: dict, datatypes: dict, spec_types: dict) -> dict:
     """Map DOORS-specific ReqIF attributes to standard ICDEV fields.
 
     Mapping rules::
@@ -678,6 +657,7 @@ def _map_doors_attributes(spec_object: dict, datatypes: dict,
 # ===================================================================
 # Full parse
 # ===================================================================
+
 
 def parse_reqif(file_path: str) -> dict:
     """Parse a ReqIF 1.2 XML file.
@@ -737,8 +717,8 @@ def parse_reqif(file_path: str) -> dict:
 # Import
 # ===================================================================
 
-def import_reqif(project_id: str, file_path: str,
-                 db_path: str = None) -> dict:
+
+def import_reqif(project_id: str, file_path: str, db_path: str = None) -> dict:
     """Full import pipeline: parse -> validate -> store -> audit.
 
     Steps:
@@ -834,25 +814,17 @@ def import_reqif(project_id: str, file_path: str,
                 req_id = _new_id()
                 doors_id = req.get("doors_id", "")
                 if not doors_id:
-                    error_details.append(
-                        f"Skipped object '{req.get('reqif_identifier')}': "
-                        f"no DOORS ID"
-                    )
+                    error_details.append(f"Skipped object '{req.get('reqif_identifier')}': no DOORS ID")
                     continue
 
-                module_name = obj_to_module.get(
-                    req.get("reqif_identifier", ""), ""
-                )
-                parent_reqif_id = obj_to_parent.get(
-                    req.get("reqif_identifier"), None
-                )
+                module_name = obj_to_module.get(req.get("reqif_identifier", ""), "")
+                parent_reqif_id = obj_to_parent.get(req.get("reqif_identifier"), None)
                 # Resolve parent's doors_id
                 parent_req_db_id = None
                 if parent_reqif_id:
                     # Lookup from already-stored rows
                     cursor.execute(
-                        "SELECT id FROM doors_requirements "
-                        "WHERE project_id = ? AND doors_id = ?",
+                        "SELECT id FROM doors_requirements WHERE project_id = ? AND doors_id = ?",
                         (project_id, parent_reqif_id),
                     )
                     prow = cursor.fetchone()
@@ -896,9 +868,7 @@ def import_reqif(project_id: str, file_path: str,
                 )
                 imported_count += 1
             except Exception as exc:
-                error_details.append(
-                    f"Error importing '{req.get('doors_id', '?')}': {exc}"
-                )
+                error_details.append(f"Error importing '{req.get('doors_id', '?')}': {exc}")
 
         # Store relations (informational — linked via reqif identifiers)
         for rel in relations:
@@ -973,10 +943,7 @@ def import_reqif(project_id: str, file_path: str,
             log_event(
                 event_type="reqif_imported",
                 actor="reqif-parser",
-                action=(
-                    f"Imported {imported_count} requirements, "
-                    f"{relation_count} relations from ReqIF"
-                ),
+                action=(f"Imported {imported_count} requirements, {relation_count} relations from ReqIF"),
                 project_id=project_id,
                 details={
                     "import_id": import_id,
@@ -1019,8 +986,8 @@ def import_reqif(project_id: str, file_path: str,
 # Export
 # ===================================================================
 
-def export_reqif(project_id: str, output_path: str,
-                 db_path: str = None) -> dict:
+
+def export_reqif(project_id: str, output_path: str, db_path: str = None) -> dict:
     """Generate a ReqIF 1.2 XML file from the current ``doors_requirements``
     DB state for *project_id*.
 
@@ -1034,15 +1001,13 @@ def export_reqif(project_id: str, output_path: str,
 
         # Fetch requirements
         cursor.execute(
-            "SELECT * FROM doors_requirements WHERE project_id = ? "
-            "ORDER BY module_name, doors_id",
+            "SELECT * FROM doors_requirements WHERE project_id = ? ORDER BY module_name, doors_id",
             (project_id,),
         )
         rows = [dict(r) for r in cursor.fetchall()]
 
         if not rows:
-            return {"file_path": None, "requirement_count": 0,
-                    "error": "No requirements found for project"}
+            return {"file_path": None, "requirement_count": 0, "error": "No requirements found for project"}
 
         # Build XML
         root = ET.Element(
@@ -1053,7 +1018,8 @@ def export_reqif(project_id: str, output_path: str,
         # THE-HEADER
         header_wrap = ET.SubElement(root, f"{{{REQIF_NS}}}THE-HEADER")
         ET.SubElement(
-            header_wrap, f"{{{REQIF_NS}}}REQ-IF-HEADER",
+            header_wrap,
+            f"{{{REQIF_NS}}}REQ-IF-HEADER",
             attrib={
                 "IDENTIFIER": f"header-{uuid.uuid4()}",
                 "CREATION-TIME": _now(),
@@ -1072,7 +1038,8 @@ def export_reqif(project_id: str, output_path: str,
         datatypes_el = ET.SubElement(content, f"{{{REQIF_NS}}}DATATYPES")
         string_dt_id = f"dt-string-{uuid.uuid4()}"
         ET.SubElement(
-            datatypes_el, f"{{{REQIF_NS}}}DATATYPE-DEFINITION-STRING",
+            datatypes_el,
+            f"{{{REQIF_NS}}}DATATYPE-DEFINITION-STRING",
             attrib={
                 "IDENTIFIER": string_dt_id,
                 "LONG-NAME": "String",
@@ -1084,7 +1051,8 @@ def export_reqif(project_id: str, output_path: str,
         spec_types_el = ET.SubElement(content, f"{{{REQIF_NS}}}SPEC-TYPES")
         sot_id = f"sot-doors-req-{uuid.uuid4()}"
         sot = ET.SubElement(
-            spec_types_el, f"{{{REQIF_NS}}}SPEC-OBJECT-TYPE",
+            spec_types_el,
+            f"{{{REQIF_NS}}}SPEC-OBJECT-TYPE",
             attrib={
                 "IDENTIFIER": sot_id,
                 "LONG-NAME": "DOORS Requirement",
@@ -1094,8 +1062,7 @@ def export_reqif(project_id: str, output_path: str,
         # Attribute definitions
         spec_attrs = ET.SubElement(sot, f"{{{REQIF_NS}}}SPEC-ATTRIBUTES")
         attr_defs = {}
-        for field_name in ("ReqIF.ForeignID", "ReqIF.Name", "ReqIF.Text",
-                           "DOORS_Priority", "DOORS_ObjectType"):
+        for field_name in ("ReqIF.ForeignID", "ReqIF.Name", "ReqIF.Text", "DOORS_Priority", "DOORS_ObjectType"):
             ad_id = f"ad-{field_name}-{uuid.uuid4()}"
             attr_defs[field_name] = ad_id
             ad = ET.SubElement(
@@ -1114,9 +1081,7 @@ def export_reqif(project_id: str, output_path: str,
             ref.text = string_dt_id
 
         # SPEC-OBJECTS
-        spec_objects_el = ET.SubElement(
-            content, f"{{{REQIF_NS}}}SPEC-OBJECTS"
-        )
+        spec_objects_el = ET.SubElement(content, f"{{{REQIF_NS}}}SPEC-OBJECTS")
         obj_ids: dict[str, str] = {}  # doors_id -> reqif object identifier
 
         for row in rows:
@@ -1124,7 +1089,8 @@ def export_reqif(project_id: str, output_path: str,
             obj_ids[row["doors_id"]] = obj_id
 
             so = ET.SubElement(
-                spec_objects_el, f"{{{REQIF_NS}}}SPEC-OBJECT",
+                spec_objects_el,
+                f"{{{REQIF_NS}}}SPEC-OBJECT",
                 attrib={
                     "IDENTIFIER": obj_id,
                     "LONG-NAME": row.get("title") or "",
@@ -1134,9 +1100,7 @@ def export_reqif(project_id: str, output_path: str,
 
             # TYPE ref
             type_el = ET.SubElement(so, f"{{{REQIF_NS}}}TYPE")
-            tref = ET.SubElement(
-                type_el, f"{{{REQIF_NS}}}SPEC-OBJECT-TYPE-REF"
-            )
+            tref = ET.SubElement(type_el, f"{{{REQIF_NS}}}SPEC-OBJECT-TYPE-REF")
             tref.text = sot_id
 
             # VALUES
@@ -1175,7 +1139,8 @@ def export_reqif(project_id: str, output_path: str,
 
         for module_name, mod_rows in modules.items():
             spec = ET.SubElement(
-                specs_el, f"{{{REQIF_NS}}}SPECIFICATION",
+                specs_el,
+                f"{{{REQIF_NS}}}SPECIFICATION",
                 attrib={
                     "IDENTIFIER": f"spec-{uuid.uuid4()}",
                     "LONG-NAME": module_name,
@@ -1185,15 +1150,14 @@ def export_reqif(project_id: str, output_path: str,
             children_el = ET.SubElement(spec, f"{{{REQIF_NS}}}CHILDREN")
             for mod_row in mod_rows:
                 sh = ET.SubElement(
-                    children_el, f"{{{REQIF_NS}}}SPEC-HIERARCHY",
+                    children_el,
+                    f"{{{REQIF_NS}}}SPEC-HIERARCHY",
                     attrib={
                         "IDENTIFIER": f"sh-{uuid.uuid4()}",
                     },
                 )
                 obj_el = ET.SubElement(sh, f"{{{REQIF_NS}}}OBJECT")
-                oref = ET.SubElement(
-                    obj_el, f"{{{REQIF_NS}}}SPEC-OBJECT-REF"
-                )
+                oref = ET.SubElement(obj_el, f"{{{REQIF_NS}}}SPEC-OBJECT-REF")
                 oref.text = obj_ids.get(mod_row["doors_id"], "")
 
         # Write XML
@@ -1221,8 +1185,8 @@ def export_reqif(project_id: str, output_path: str,
 # Diff
 # ===================================================================
 
-def diff_reqif(project_id: str, new_file: str,
-               db_path: str = None) -> dict:
+
+def diff_reqif(project_id: str, new_file: str, db_path: str = None) -> dict:
     """Compare current DB state with a new ReqIF file.
 
     Compares by ``doors_id``:
@@ -1250,7 +1214,7 @@ def diff_reqif(project_id: str, new_file: str,
         did = req.get("doors_id", "")
         if not did:
             continue
-        content = f"{req.get('title', '')}|{req.get('description', '')}|{req.get('priority', '')}|{req.get('requirement_type', '')}"
+        content = f"{req.get('title', '')}|{req.get('description', '')}|{req.get('priority', '')}|{req.get('requirement_type', '')}"  # noqa: E501
         new_lookup[did] = {
             "doors_id": did,
             "title": req.get("title", ""),
@@ -1275,7 +1239,7 @@ def diff_reqif(project_id: str, new_file: str,
     db_lookup: dict[str, dict] = {}
     for row in db_rows:
         did = row.get("doors_id", "")
-        content = f"{row.get('title', '')}|{row.get('description', '')}|{row.get('priority', '')}|{row.get('requirement_type', '')}"
+        content = f"{row.get('title', '')}|{row.get('description', '')}|{row.get('priority', '')}|{row.get('requirement_type', '')}"  # noqa: E501
         db_lookup[did] = {
             "doors_id": did,
             "title": row.get("title", ""),
@@ -1295,35 +1259,42 @@ def diff_reqif(project_id: str, new_file: str,
     db_ids = set(db_lookup.keys())
 
     for did in new_ids - db_ids:
-        added.append({
-            "doors_id": did,
-            "title": new_lookup[did]["title"],
-        })
+        added.append(
+            {
+                "doors_id": did,
+                "title": new_lookup[did]["title"],
+            }
+        )
 
     for did in db_ids - new_ids:
-        deleted.append({
-            "doors_id": did,
-            "title": db_lookup[did]["title"],
-        })
+        deleted.append(
+            {
+                "doors_id": did,
+                "title": db_lookup[did]["title"],
+            }
+        )
 
     for did in new_ids & db_ids:
         if new_lookup[did]["content_hash"] != db_lookup[did]["content_hash"]:
             changes = []
-            for field in ("title", "description", "priority",
-                          "requirement_type"):
+            for field in ("title", "description", "priority", "requirement_type"):
                 old_val = db_lookup[did].get(field, "")
                 new_val = new_lookup[did].get(field, "")
                 if old_val != new_val:
-                    changes.append({
-                        "field": field,
-                        "old": old_val,
-                        "new": new_val,
-                    })
-            modified.append({
-                "doors_id": did,
-                "title": new_lookup[did]["title"],
-                "changes": changes,
-            })
+                    changes.append(
+                        {
+                            "field": field,
+                            "old": old_val,
+                            "new": new_val,
+                        }
+                    )
+            modified.append(
+                {
+                    "doors_id": did,
+                    "title": new_lookup[did]["title"],
+                    "changes": changes,
+                }
+            )
         else:
             unchanged += 1
 
@@ -1339,14 +1310,13 @@ def diff_reqif(project_id: str, new_file: str,
 # Import summary
 # ===================================================================
 
+
 def get_import_summary(import_id: int, db_path: str = None) -> dict:
     """Return import details from the ``model_imports`` table."""
     conn = _get_connection(db_path)
     try:
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM model_imports WHERE id = ?", (import_id,)
-        )
+        cursor.execute("SELECT * FROM model_imports WHERE id = ?", (import_id,))
         row = cursor.fetchone()
         if not row:
             return {"error": f"Import ID {import_id} not found"}
@@ -1359,27 +1329,18 @@ def get_import_summary(import_id: int, db_path: str = None) -> dict:
 # CLI
 # ===================================================================
 
+
 def main():
     """Command-line interface for ReqIF import / export / diff / validate."""
-    parser = argparse.ArgumentParser(
-        description="Import/export DOORS NG requirements via ReqIF 1.2"
-    )
-    parser.add_argument("--project-id", required=True,
-                        help="ICDEV project identifier")
-    parser.add_argument("--file",
-                        help="ReqIF file to import or diff against")
-    parser.add_argument("--validate-only", action="store_true",
-                        help="Only validate the ReqIF file structure")
-    parser.add_argument("--export",
-                        help="Output path for ReqIF export")
-    parser.add_argument("--diff", action="store_true",
-                        help="Diff file against DB state")
-    parser.add_argument("--json", action="store_true",
-                        help="Output results as JSON")
-    parser.add_argument("--db-path", type=Path,
-                        help="Override database path")
-    parser.add_argument("--import-id", type=int,
-                        help="Retrieve summary for a previous import")
+    parser = argparse.ArgumentParser(description="Import/export DOORS NG requirements via ReqIF 1.2")
+    parser.add_argument("--project-id", required=True, help="ICDEV project identifier")
+    parser.add_argument("--file", help="ReqIF file to import or diff against")
+    parser.add_argument("--validate-only", action="store_true", help="Only validate the ReqIF file structure")
+    parser.add_argument("--export", help="Output path for ReqIF export")
+    parser.add_argument("--diff", action="store_true", help="Diff file against DB state")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    parser.add_argument("--db-path", type=Path, help="Override database path")
+    parser.add_argument("--import-id", type=int, help="Retrieve summary for a previous import")
 
     args = parser.parse_args()
     db = str(args.db_path) if args.db_path else None
@@ -1445,13 +1406,8 @@ def main():
             if result["modified"]:
                 print("\n  Modified requirements:")
                 for item in result["modified"]:
-                    fields = ", ".join(
-                        c["field"] for c in item.get("changes", [])
-                    )
-                    print(
-                        f"    ~ [{item['doors_id']}] {item['title']} "
-                        f"({fields})"
-                    )
+                    fields = ", ".join(c["field"] for c in item.get("changes", []))
+                    print(f"    ~ [{item['doors_id']}] {item['title']} ({fields})")
             if result["deleted"]:
                 print("\n  Deleted requirements:")
                 for item in result["deleted"]:

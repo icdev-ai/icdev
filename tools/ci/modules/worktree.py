@@ -29,6 +29,7 @@ TREES_DIR = BASE_DIR / "trees"
 @dataclass
 class WorktreeInfo:
     """Information about a git worktree."""
+
     worktree_name: str
     task_id: str
     branch_name: str
@@ -83,8 +84,9 @@ def _log_to_db(worktree: WorktreeInfo, status: str):
         print(f"Warning: DB log failed: {e}", file=sys.stderr)
 
 
-def create_worktree(task_id: str, target_dir: str, classification: str = "CUI",
-                    issue_number: int = None, agent_id: str = None) -> WorktreeInfo:
+def create_worktree(
+    task_id: str, target_dir: str, classification: str = "CUI", issue_number: int = None, agent_id: str = None
+) -> WorktreeInfo:
     """Create an isolated git worktree with sparse checkout.
 
     Pattern (Phase 41 — Parallel CI/CD):
@@ -129,13 +131,18 @@ def create_worktree(task_id: str, target_dir: str, classification: str = "CUI",
 
     # Write agent identity file
     agent_file = worktree_path / ".icdev-agent"
-    agent_file.write_text(json.dumps({
-        "task_id": task_id,
-        "worktree_name": worktree_name,
-        "agent_id": agent_id,
-        "classification": classification,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }, indent=2))
+    agent_file.write_text(
+        json.dumps(
+            {
+                "task_id": task_id,
+                "worktree_name": worktree_name,
+                "agent_id": agent_id,
+                "classification": classification,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+            indent=2,
+        )
+    )
 
     info = WorktreeInfo(
         worktree_name=worktree_name,
@@ -169,14 +176,16 @@ def list_worktrees() -> List[WorktreeInfo]:
                 # Parse task_id from path
                 path = Path(current["path"])
                 task_id = path.name
-                worktrees.append(WorktreeInfo(
-                    worktree_name=f"icdev-{task_id}",
-                    task_id=task_id,
-                    branch_name=current.get("branch", "").replace("refs/heads/", ""),
-                    target_directory="",
-                    path=current["path"],
-                    status="active",
-                ))
+                worktrees.append(
+                    WorktreeInfo(
+                        worktree_name=f"icdev-{task_id}",
+                        task_id=task_id,
+                        branch_name=current.get("branch", "").replace("refs/heads/", ""),
+                        target_directory="",
+                        path=current["path"],
+                        status="active",
+                    )
+                )
             current = {"path": line[9:]}
         elif line.startswith("branch "):
             current["branch"] = line[7:]
@@ -187,14 +196,16 @@ def list_worktrees() -> List[WorktreeInfo]:
     if current and "trees" in current.get("path", ""):
         path = Path(current["path"])
         task_id = path.name
-        worktrees.append(WorktreeInfo(
-            worktree_name=f"icdev-{task_id}",
-            task_id=task_id,
-            branch_name=current.get("branch", "").replace("refs/heads/", ""),
-            target_directory="",
-            path=current["path"],
-            status="active",
-        ))
+        worktrees.append(
+            WorktreeInfo(
+                worktree_name=f"icdev-{task_id}",
+                task_id=task_id,
+                branch_name=current.get("branch", "").replace("refs/heads/", ""),
+                target_directory="",
+                path=current["path"],
+                status="active",
+            )
+        )
 
     return worktrees
 
@@ -297,8 +308,11 @@ def main():
         if not args.task_id or not args.target_dir:
             parser.error("--create requires --task-id and --target-dir")
         info = create_worktree(
-            args.task_id, args.target_dir, args.classification,
-            args.issue_number, args.agent_id,
+            args.task_id,
+            args.target_dir,
+            args.classification,
+            args.issue_number,
+            args.agent_id,
         )
         if args.json:
             print(json.dumps(asdict(info), indent=2))

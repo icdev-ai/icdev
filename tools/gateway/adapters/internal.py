@@ -39,8 +39,7 @@ class InternalChatAdapter(BaseChannelAdapter):
         """Internal chat — no external signature needed (same-process trust)."""
         return True
 
-    def parse_webhook(self, request_data: Dict[str, Any],
-                      headers: Dict[str, str]) -> Optional[CommandEnvelope]:
+    def parse_webhook(self, request_data: Dict[str, Any], headers: Dict[str, str]) -> Optional[CommandEnvelope]:
         """Parse an internal chat message into a CommandEnvelope.
 
         Expected request_data format:
@@ -80,8 +79,7 @@ class InternalChatAdapter(BaseChannelAdapter):
 
         return envelope
 
-    def send_message(self, channel_user_id: str, text: str,
-                     thread_id: str = "") -> bool:
+    def send_message(self, channel_user_id: str, text: str, thread_id: str = "") -> bool:
         """Send a response back to the internal chat.
 
         For internal chat, responses are stored in the chat session's
@@ -98,7 +96,7 @@ class InternalChatAdapter(BaseChannelAdapter):
                 "INSERT OR IGNORE INTO agent_chat_turns "
                 "(session_id, role, content, created_at) "
                 "VALUES (?, 'agent', ?, datetime('now'))",
-                (thread_id, text)
+                (thread_id, text),
             )
             conn.commit()
             conn.close()

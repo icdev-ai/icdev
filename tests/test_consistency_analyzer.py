@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
@@ -139,6 +140,7 @@ So that the dashboard updates
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_spec(tmp_path: Path, content: str, filename: str = "spec.md") -> Path:
     """Write spec content to a .md file and return the Path."""
     spec_path = tmp_path / filename
@@ -149,6 +151,7 @@ def _write_spec(tmp_path: Path, content: str, filename: str = "spec.md") -> Path
 # ---------------------------------------------------------------------------
 # Tests: _check_acceptance_vs_testing
 # ---------------------------------------------------------------------------
+
 
 class TestAcceptanceVsTesting:
     """Verify acceptance criteria cross-checks with testing strategy."""
@@ -173,6 +176,7 @@ class TestAcceptanceVsTesting:
 # Tests: _check_phases_vs_tasks
 # ---------------------------------------------------------------------------
 
+
 class TestPhasesVsTasks:
     """Verify implementation phases match step-by-step tasks."""
 
@@ -194,15 +198,12 @@ class TestPhasesVsTasks:
 # Tests: _check_files_exist
 # ---------------------------------------------------------------------------
 
+
 class TestCheckFilesExist:
     """Verify referenced files are checked for existence."""
 
     def test_existing_file_consistent(self, tmp_path):
         # Create a spec that references a file, then create that file
-        content = """\
-## Relevant Files
-- `existing_file.py` -- Important module
-"""
         # The check resolves against BASE_DIR, so we test the behavior
         # by checking that a real file in the repo is found
         spec_path = _write_spec(tmp_path, CONSISTENT_SPEC)
@@ -226,6 +227,7 @@ class TestCheckFilesExist:
 # ---------------------------------------------------------------------------
 # Tests: _check_nist_vs_ato
 # ---------------------------------------------------------------------------
+
 
 class TestNistVsAto:
     """Verify NIST controls are consistent with ATO assessment."""
@@ -267,6 +269,7 @@ class TestNistVsAto:
 # Tests: _check_user_story_vs_acceptance
 # ---------------------------------------------------------------------------
 
+
 class TestUserStoryVsAcceptance:
     """Verify user story keywords appear in acceptance criteria."""
 
@@ -297,6 +300,7 @@ So that I can discover new compounds
 # ---------------------------------------------------------------------------
 # Tests: analyze_spec_consistency (full orchestrator)
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeSpecConsistency:
     """Verify the main orchestrator returns structured results."""

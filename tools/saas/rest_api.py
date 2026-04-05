@@ -66,9 +66,7 @@ api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 # ---------------------------------------------------------------------------
 # Platform DB helper
 # ---------------------------------------------------------------------------
-PLATFORM_DB_PATH = Path(
-    os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db"))
-)
+PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
 
 
 def _platform_conn():
@@ -92,6 +90,7 @@ def _import_tenant_db():
         get_tenant_db_path,
         verify_project_belongs_to_tenant,
     )
+
     return call_tool_with_tenant_db, get_tenant_db_path, verify_project_belongs_to_tenant
 
 
@@ -103,6 +102,7 @@ def _import_tenant_manager():
         remove_user,
         update_tenant,
     )
+
     return get_tenant, update_tenant, list_users, add_user, remove_user
 
 
@@ -116,9 +116,9 @@ def _require_role(*allowed_roles):
     role = getattr(g, "user_role", None)
     if role not in allowed_roles:
         return _error(
-            "Insufficient permissions. Required role: {}".format(
-                " or ".join(allowed_roles)),
-            code="FORBIDDEN", status=403,
+            "Insufficient permissions. Required role: {}".format(" or ".join(allowed_roles)),
+            code="FORBIDDEN",
+            status=403,
         )
     return None
 
@@ -126,6 +126,7 @@ def _require_role(*allowed_roles):
 # ============================================================================
 # TENANT MANAGEMENT
 # ============================================================================
+
 
 @api_bp.route("/tenants/me", methods=["GET"])
 def get_current_tenant():
@@ -154,12 +155,10 @@ def update_current_tenant():
         if not data:
             return _error("Request body required")
 
-        allowed_keys = {"settings", "artifact_config", "bedrock_config",
-                        "idp_config", "name"}
+        allowed_keys = {"settings", "artifact_config", "bedrock_config", "idp_config", "name"}
         filtered = {k: v for k, v in data.items() if k in allowed_keys}
         if not filtered:
-            return _error("No valid fields to update. Allowed: {}".format(
-                ", ".join(sorted(allowed_keys))))
+            return _error("No valid fields to update. Allowed: {}".format(", ".join(sorted(allowed_keys))))
 
         result = update_tenant(g.tenant_id, **filtered)
         return jsonify({"tenant": result})
@@ -173,6 +172,7 @@ def update_current_tenant():
 # ============================================================================
 # USER & TEAM MANAGEMENT
 # ============================================================================
+
 
 @api_bp.route("/users", methods=["GET"])
 def list_tenant_users():
@@ -243,8 +243,7 @@ def update_user(user_id):
         values = list(updates.values()) + [now, user_id, g.tenant_id]
 
         conn.execute(
-            "UPDATE users SET {} WHERE id = ? AND tenant_id = ?".format(
-                ", ".join(set_parts)),
+            "UPDATE users SET {} WHERE id = ? AND tenant_id = ?".format(", ".join(set_parts)),
             values,
         )
         conn.commit()
@@ -288,6 +287,7 @@ def delete_user(user_id):
 # LLM PROVIDER KEY MANAGEMENT (Phase 32 — D141)
 # ============================================================================
 
+
 @api_bp.route("/llm-keys", methods=["POST"])
 def create_llm_key():
     """POST /api/v1/llm-keys -- Store a new LLM provider key."""
@@ -307,6 +307,7 @@ def create_llm_key():
 
     try:
         from tools.saas.tenant_llm_keys import store_tenant_llm_key
+
         result = store_tenant_llm_key(
             tenant_id=g.tenant_id,
             provider=provider,
@@ -319,7 +320,8 @@ def create_llm_key():
         logger.error("create_llm_key import error: %s", exc)
         return _error(
             "LLM key management is not available. Missing dependency: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except RuntimeError as exc:
         logger.error("create_llm_key runtime error: %s", exc)
@@ -336,13 +338,15 @@ def list_llm_keys_route():
     """GET /api/v1/llm-keys -- List LLM provider keys (redacted)."""
     try:
         from tools.saas.tenant_llm_keys import list_tenant_llm_keys
+
         keys = list_tenant_llm_keys(g.tenant_id)
         return jsonify({"llm_keys": keys, "total": len(keys)})
     except ImportError as exc:
         logger.error("list_llm_keys import error: %s", exc)
         return _error(
             "LLM key management is not available. Missing dependency: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except Exception as exc:
         logger.error("list_llm_keys error: %s", exc)
@@ -358,6 +362,7 @@ def revoke_llm_key_route(key_id):
 
     try:
         from tools.saas.tenant_llm_keys import revoke_tenant_llm_key
+
         success = revoke_tenant_llm_key(g.tenant_id, key_id)
         if not success:
             return _error("LLM key not found", code="NOT_FOUND", status=404)
@@ -366,7 +371,8 @@ def revoke_llm_key_route(key_id):
         logger.error("revoke_llm_key import error: %s", exc)
         return _error(
             "LLM key management is not available. Missing dependency: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except Exception as exc:
         logger.error("revoke_llm_key error: %s", exc)
@@ -376,6 +382,7 @@ def revoke_llm_key_route(key_id):
 # ============================================================================
 # API KEY MANAGEMENT
 # ============================================================================
+
 
 @api_bp.route("/keys", methods=["GET"])
 def list_api_keys():
@@ -428,22 +435,23 @@ def create_api_key():
                (id, tenant_id, user_id, key_hash, key_prefix, name,
                 status, created_at, expires_at)
                VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
-            (key_id, g.tenant_id, g.user_id, key_hash, prefix, name,
-             now, None),
+            (key_id, g.tenant_id, g.user_id, key_hash, prefix, name, now, None),
         )
         conn.commit()
         conn.close()
 
-        return jsonify({
-            "key": {
-                "id": key_id,
-                "key": full_key,
-                "prefix": prefix,
-                "name": name,
-                "created_at": now,
-                "note": "Save this key now. It cannot be retrieved later.",
+        return jsonify(
+            {
+                "key": {
+                    "id": key_id,
+                    "key": full_key,
+                    "prefix": prefix,
+                    "name": name,
+                    "created_at": now,
+                    "note": "Save this key now. It cannot be retrieved later.",
+                }
             }
-        }), 201
+        ), 201
     except Exception as exc:
         logger.error("create_api_key error: %s", exc)
         return _error(str(exc), code="INTERNAL_ERROR", status=500)
@@ -468,8 +476,7 @@ def revoke_api_key(key_id):
 
         if g.user_role != "tenant_admin" and row["user_id"] != g.user_id:
             conn.close()
-            return _error("Cannot revoke another user's key",
-                          code="FORBIDDEN", status=403)
+            return _error("Cannot revoke another user's key", code="FORBIDDEN", status=403)
 
         conn.execute(
             "UPDATE api_keys SET status = 'revoked' WHERE id = ?",
@@ -487,6 +494,7 @@ def revoke_api_key(key_id):
 # ============================================================================
 # PROJECTS (delegates to existing tools)
 # ============================================================================
+
 
 @api_bp.route("/projects", methods=["POST"])
 def create_project():
@@ -549,6 +557,7 @@ def get_project_status(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.project.project_status import get_project_status as tool_status
+
         result = call_tool(tool_status, g.tenant_id, project_id=project_id)
         return jsonify({"project": result})
     except ValueError as exc:
@@ -562,6 +571,7 @@ def get_project_status(project_id):
 # COMPLIANCE (delegates to existing tools)
 # ============================================================================
 
+
 @api_bp.route("/projects/<project_id>/ssp", methods=["POST"])
 def generate_ssp(project_id):
     """POST /api/v1/projects/<id>/ssp -- Generate System Security Plan."""
@@ -571,6 +581,7 @@ def generate_ssp(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.compliance.ssp_generator import generate_ssp as tool_ssp
+
         result = call_tool(tool_ssp, g.tenant_id, project_id=project_id)
         return jsonify({"ssp": result}), 201
     except ValueError as exc:
@@ -589,6 +600,7 @@ def generate_poam(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.compliance.poam_generator import generate_poam as tool_poam
+
         result = call_tool(tool_poam, g.tenant_id, project_id=project_id)
         return jsonify({"poam": result}), 201
     except ValueError as exc:
@@ -607,11 +619,13 @@ def run_stig_check(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.compliance.stig_checker import run_stig_check as tool_stig
+
         data = request.get_json(force=True, silent=True) or {}
         project_dir = data.get("project_dir", "")
 
         result = call_tool(
-            tool_stig, g.tenant_id,
+            tool_stig,
+            g.tenant_id,
             project_id=project_id,
             project_dir=project_dir if project_dir else None,
         )
@@ -632,11 +646,13 @@ def generate_sbom(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.compliance.sbom_generator import generate_sbom as tool_sbom
+
         data = request.get_json(force=True, silent=True) or {}
         project_dir = data.get("project_dir", "")
 
         result = call_tool(
-            tool_sbom, g.tenant_id,
+            tool_sbom,
+            g.tenant_id,
             project_id=project_id,
             project_dir=project_dir if project_dir else None,
         )
@@ -657,8 +673,10 @@ def run_fips199(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.compliance.fips199_categorizer import categorize_project
+
         result = call_tool(
-            categorize_project, g.tenant_id,
+            categorize_project,
+            g.tenant_id,
             project_id=project_id,
         )
         return jsonify({"fips199": result}), 201
@@ -678,11 +696,13 @@ def run_fips200(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.compliance.fips200_validator import validate_fips200
+
         data = request.get_json(force=True, silent=True) or {}
         project_dir = data.get("project_dir")
 
         result = call_tool(
-            validate_fips200, g.tenant_id,
+            validate_fips200,
+            g.tenant_id,
             project_id=project_id,
             project_dir=project_dir,
         )
@@ -698,6 +718,7 @@ def run_fips200(project_id):
 # CMMC ASSESSMENT (Phase 4 — Enhancement #8)
 # ============================================================================
 
+
 @api_bp.route("/projects/<project_id>/cmmc", methods=["POST"])
 def run_cmmc_assessment(project_id):
     """POST /api/v1/projects/<id>/cmmc -- Run CMMC assessment."""
@@ -710,8 +731,10 @@ def run_cmmc_assessment(project_id):
         level = data.get("level", 2)
 
         from tools.compliance.cmmc_assessor import assess_cmmc
+
         result = call_tool(
-            assess_cmmc, g.tenant_id,
+            assess_cmmc,
+            g.tenant_id,
             project_id=project_id,
             level=level,
         )
@@ -720,7 +743,8 @@ def run_cmmc_assessment(project_id):
         logger.error("run_cmmc_assessment import error: %s", exc)
         return _error(
             "CMMC assessor not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), status=400)
@@ -733,17 +757,20 @@ def run_cmmc_assessment(project_id):
 # OSCAL ECOSYSTEM (D302-D306)
 # ============================================================================
 
+
 @api_bp.route("/oscal/detect", methods=["GET"])
 def oscal_detect_tools():
     """GET /api/v1/oscal/detect -- Detect available OSCAL ecosystem tools."""
     try:
         from tools.compliance.oscal_tools import detect_oscal_tools
+
         result = detect_oscal_tools()
         return jsonify(result)
     except ImportError as exc:
         return _error(
             "OSCAL tools not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except Exception as exc:
         logger.error("oscal_detect error: %s", exc)
@@ -755,13 +782,15 @@ def oscal_catalog_stats():
     """GET /api/v1/oscal/catalog/stats -- Get OSCAL catalog statistics."""
     try:
         from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+
         adapter = OscalCatalogAdapter()
         stats = adapter.get_catalog_stats()
         return jsonify(stats)
     except ImportError as exc:
         return _error(
             "OSCAL catalog adapter not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except Exception as exc:
         logger.error("oscal_catalog_stats error: %s", exc)
@@ -773,6 +802,7 @@ def oscal_catalog_lookup(control_id):
     """GET /api/v1/oscal/catalog/<id> -- Look up a control from OSCAL catalog."""
     try:
         from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+
         adapter = OscalCatalogAdapter()
         control = adapter.get_control(control_id)
         if not control:
@@ -781,7 +811,8 @@ def oscal_catalog_lookup(control_id):
     except ImportError as exc:
         return _error(
             "OSCAL catalog adapter not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except Exception as exc:
         logger.error("oscal_catalog_lookup error: %s", exc)
@@ -802,15 +833,18 @@ def oscal_validate(project_id):
             return _error("file_path required", status=400)
 
         from tools.compliance.oscal_tools import validate_oscal_deep
+
         result = call_tool(
-            validate_oscal_deep, g.tenant_id,
+            validate_oscal_deep,
+            g.tenant_id,
             file_path=file_path,
         )
         return jsonify({"oscal_validation": result}), 200
     except ImportError as exc:
         return _error(
             "OSCAL tools not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), status=400)
@@ -834,8 +868,10 @@ def oscal_convert(project_id):
             return _error("input_path required", status=400)
 
         from tools.compliance.oscal_tools import convert_oscal_format
+
         result = call_tool(
-            convert_oscal_format, g.tenant_id,
+            convert_oscal_format,
+            g.tenant_id,
             input_path=input_path,
             output_format=output_format,
         )
@@ -843,7 +879,8 @@ def oscal_convert(project_id):
     except ImportError as exc:
         return _error(
             "OSCAL tools not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), status=400)
@@ -856,16 +893,16 @@ def oscal_convert(project_id):
 # PRODUCTION AUDIT & REMEDIATION (D291-D300)
 # ============================================================================
 
+
 @api_bp.route("/audit/latest", methods=["GET"])
 def audit_latest():
     """GET /api/v1/audit/latest -- Get most recent production audit."""
     try:
         import json as _json
+
         call_tool, get_conn, _ = _import_tenant_db()
         conn = get_conn(g.tenant_id)
-        row = conn.execute(
-            "SELECT * FROM production_audits ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT * FROM production_audits ORDER BY created_at DESC LIMIT 1").fetchone()
         conn.close()
         if not row:
             return _error("No audits found", code="NOT_FOUND", status=404)
@@ -909,6 +946,7 @@ def audit_run():
     """POST /api/v1/audit/run -- Trigger production audit."""
     import subprocess as _sp
     import sys as _sys
+
     data = request.get_json(force=True, silent=True) or {}
     categories = data.get("categories")
 
@@ -919,6 +957,7 @@ def audit_run():
     try:
         proc = _sp.run(cmd, capture_output=True, text=True, timeout=300, stdin=_sp.DEVNULL, cwd=str(_base))
         import json as _json
+
         try:
             result = _json.loads(proc.stdout)
         except (_json.JSONDecodeError, TypeError):
@@ -936,6 +975,7 @@ def audit_remediate():
     """POST /api/v1/audit/remediate -- Trigger production remediation."""
     import subprocess as _sp
     import sys as _sys
+
     data = request.get_json(force=True, silent=True) or {}
     dry_run = data.get("dry_run", False)
 
@@ -948,6 +988,7 @@ def audit_remediate():
     try:
         proc = _sp.run(cmd, capture_output=True, text=True, timeout=300, stdin=_sp.DEVNULL, cwd=str(_base))
         import json as _json
+
         try:
             result = _json.loads(proc.stdout)
         except (_json.JSONDecodeError, TypeError):
@@ -964,6 +1005,7 @@ def audit_remediate():
 # SECURITY SCANNING
 # ============================================================================
 
+
 @api_bp.route("/projects/<project_id>/scan/sast", methods=["POST"])
 def run_sast_scan(project_id):
     """POST /api/v1/projects/<id>/scan/sast -- Run SAST security scan."""
@@ -973,6 +1015,7 @@ def run_sast_scan(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.security.sast_runner import run_sast
+
         data = request.get_json(force=True, silent=True) or {}
         project_dir = data.get("project_dir", "")
         if not project_dir:
@@ -996,6 +1039,7 @@ def run_dep_scan(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.security.dependency_auditor import audit_python
+
         data = request.get_json(force=True, silent=True) or {}
         project_dir = data.get("project_dir", "")
         if not project_dir:
@@ -1014,6 +1058,7 @@ def run_dep_scan(project_id):
 # AUDIT TRAIL
 # ============================================================================
 
+
 @api_bp.route("/projects/<project_id>/audit", methods=["GET"])
 def get_project_audit(project_id):
     """GET /api/v1/projects/<id>/audit -- Get audit trail for a project."""
@@ -1023,6 +1068,7 @@ def get_project_audit(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.saas.tenant_db_adapter import get_tenant_db_connection
+
         conn = get_tenant_db_connection(g.tenant_id)
 
         limit = request.args.get("limit", 100, type=int)
@@ -1047,12 +1093,14 @@ def get_project_audit(project_id):
         events = [dict(r) for r in rows]
         total = total_row["cnt"] if total_row else 0
 
-        return jsonify({
-            "audit": events,
-            "total": total,
-            "limit": min(limit, 500),
-            "offset": offset,
-        })
+        return jsonify(
+            {
+                "audit": events,
+                "total": total,
+                "limit": min(limit, 500),
+                "offset": offset,
+            }
+        )
     except Exception as exc:
         logger.error("get_project_audit error: %s", exc)
         return _error(str(exc), code="INTERNAL_ERROR", status=500)
@@ -1061,6 +1109,7 @@ def get_project_audit(project_id):
 # ============================================================================
 # USAGE & BILLING
 # ============================================================================
+
 
 @api_bp.route("/usage", methods=["GET"])
 def get_usage():
@@ -1089,9 +1138,7 @@ def get_usage():
                     code="BAD_REQUEST",
                     status=400,
                 )
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(days=days)
-            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Build WHERE clause parts
         where_parts = ["tenant_id = ?"]
@@ -1136,20 +1183,21 @@ def get_usage():
 
         conn.close()
 
-        return jsonify({
-            "usage": {
-                "tenant_id": g.tenant_id,
-                "period": period or "all",
-                "summary": {
-                    "total_api_calls": summary_row["total_calls"] if summary_row else 0,
-                    "total_tokens": summary_row["total_tokens"] if summary_row else 0,
-                    "avg_duration_ms": round(
-                        summary_row["avg_duration_ms"], 1) if summary_row else 0,
-                },
-                "top_endpoints": [dict(r) for r in top_endpoints],
-                "recent": [dict(r) for r in recent],
+        return jsonify(
+            {
+                "usage": {
+                    "tenant_id": g.tenant_id,
+                    "period": period or "all",
+                    "summary": {
+                        "total_api_calls": summary_row["total_calls"] if summary_row else 0,
+                        "total_tokens": summary_row["total_tokens"] if summary_row else 0,
+                        "avg_duration_ms": round(summary_row["avg_duration_ms"], 1) if summary_row else 0,
+                    },
+                    "top_endpoints": [dict(r) for r in top_endpoints],
+                    "recent": [dict(r) for r in recent],
+                }
             }
-        })
+        )
     except Exception as exc:
         logger.error("get_usage error: %s", exc)
         return _error(str(exc), code="INTERNAL_ERROR", status=500)
@@ -1158,6 +1206,7 @@ def get_usage():
 # ============================================================================
 # DEVSECOPS PROFILE (Phase 24)
 # ============================================================================
+
 
 @api_bp.route("/projects/<project_id>/devsecops", methods=["GET"])
 def get_devsecops_profile(project_id):
@@ -1169,13 +1218,15 @@ def get_devsecops_profile(project_id):
 
         call_tool, _, _ = _import_tenant_db()
         from tools.devsecops.profile_manager import get_profile
+
         result = call_tool(get_profile, g.tenant_id, project_id=project_id)
         return jsonify({"devsecops": result})
     except ImportError as exc:
         logger.error("get_devsecops_profile import error: %s", exc)
         return _error(
             "DevSecOps profile manager not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), code="NOT_FOUND", status=404)
@@ -1205,7 +1256,8 @@ def create_devsecops_profile(project_id):
         stage_configs = data.get("stage_configs")
 
         result = call_tool(
-            create_profile, g.tenant_id,
+            create_profile,
+            g.tenant_id,
             project_id=project_id,
             maturity_level=maturity_level,
             stages=stages,
@@ -1216,7 +1268,8 @@ def create_devsecops_profile(project_id):
         logger.error("create_devsecops_profile import error: %s", exc)
         return _error(
             "DevSecOps profile manager not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), status=400)
@@ -1229,6 +1282,7 @@ def create_devsecops_profile(project_id):
 # ZERO TRUST ARCHITECTURE (Phase 25)
 # ============================================================================
 
+
 @api_bp.route("/projects/<project_id>/zta", methods=["GET"])
 def get_zta_maturity(project_id):
     """GET /api/v1/projects/<id>/zta -- Score all ZTA pillars."""
@@ -1239,8 +1293,10 @@ def get_zta_maturity(project_id):
 
         call_tool, _, _ = _import_tenant_db()
         from tools.devsecops.zta_maturity_scorer import score_all_pillars
+
         result = call_tool(
-            score_all_pillars, g.tenant_id,
+            score_all_pillars,
+            g.tenant_id,
             project_id=project_id,
         )
         return jsonify({"zta": result})
@@ -1248,7 +1304,8 @@ def get_zta_maturity(project_id):
         logger.error("get_zta_maturity import error: %s", exc)
         return _error(
             "ZTA maturity scorer not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), code="NOT_FOUND", status=404)
@@ -1260,6 +1317,7 @@ def get_zta_maturity(project_id):
 # ============================================================================
 # MARKETPLACE SEARCH (Phase 22)
 # ============================================================================
+
 
 @api_bp.route("/marketplace/search", methods=["GET"])
 def search_marketplace():
@@ -1282,6 +1340,7 @@ def search_marketplace():
 
     try:
         from tools.marketplace.search_engine import search_assets
+
         result = search_assets(
             query=q,
             asset_type=asset_type,
@@ -1294,7 +1353,8 @@ def search_marketplace():
         logger.error("search_marketplace import error: %s", exc)
         return _error(
             "Marketplace search not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except Exception as exc:
         logger.error("search_marketplace error: %s", exc)
@@ -1304,6 +1364,7 @@ def search_marketplace():
 # ============================================================================
 # SIMULATION SCENARIOS (RICOAS Phase 3)
 # ============================================================================
+
 
 @api_bp.route("/projects/<project_id>/simulations", methods=["GET"])
 def list_simulations(project_id):
@@ -1315,8 +1376,10 @@ def list_simulations(project_id):
 
         call_tool, _, _ = _import_tenant_db()
         from tools.simulation.simulation_engine import list_scenarios
+
         result = call_tool(
-            list_scenarios, g.tenant_id,
+            list_scenarios,
+            g.tenant_id,
             project_id=project_id,
         )
         return jsonify({"simulations": result})
@@ -1324,7 +1387,8 @@ def list_simulations(project_id):
         logger.error("list_simulations import error: %s", exc)
         return _error(
             "Simulation engine not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), code="NOT_FOUND", status=404)
@@ -1354,9 +1418,9 @@ def create_simulation(project_id):
         valid_types = ("what_if", "coa_comparison", "risk_analysis")
         if scenario_type not in valid_types:
             return _error(
-                "Invalid scenario_type '{}'. Valid: {}".format(
-                    scenario_type, ", ".join(valid_types)),
-                code="BAD_REQUEST", status=400,
+                "Invalid scenario_type '{}'. Valid: {}".format(scenario_type, ", ".join(valid_types)),
+                code="BAD_REQUEST",
+                status=400,
             )
 
         modifications = data.get("modifications", {})
@@ -1364,8 +1428,10 @@ def create_simulation(project_id):
 
         call_tool, _, _ = _import_tenant_db()
         from tools.simulation.simulation_engine import create_scenario
+
         result = call_tool(
-            create_scenario, g.tenant_id,
+            create_scenario,
+            g.tenant_id,
             project_id=project_id,
             scenario_name=scenario_name,
             scenario_type=scenario_type,
@@ -1377,7 +1443,8 @@ def create_simulation(project_id):
         logger.error("create_simulation import error: %s", exc)
         return _error(
             "Simulation engine not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), status=400)
@@ -1390,6 +1457,7 @@ def create_simulation(project_id):
 # MOSA ASSESSMENT (Phase 26)
 # ============================================================================
 
+
 @api_bp.route("/projects/<project_id>/mosa", methods=["GET"])
 def get_mosa_assessment(project_id):
     """GET /api/v1/projects/<id>/mosa -- Run MOSA assessment."""
@@ -1399,11 +1467,13 @@ def get_mosa_assessment(project_id):
             return _error("Project not found", code="NOT_FOUND", status=404)
 
         from tools.compliance.mosa_assessor import MOSAAssessor
+
         assessor = MOSAAssessor()
         # Inject tenant DB path for isolation
         call_tool, _, _ = _import_tenant_db()
         result = call_tool(
-            assessor.assess, g.tenant_id,
+            assessor.assess,
+            g.tenant_id,
             project_id=project_id,
         )
         return jsonify({"mosa": result})
@@ -1411,7 +1481,8 @@ def get_mosa_assessment(project_id):
         logger.error("get_mosa_assessment import error: %s", exc)
         return _error(
             "MOSA assessor not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), code="NOT_FOUND", status=404)
@@ -1424,6 +1495,7 @@ def get_mosa_assessment(project_id):
 # SUPPLY CHAIN DEPENDENCY GRAPH (RICOAS Phase 2)
 # ============================================================================
 
+
 @api_bp.route("/projects/<project_id>/supply-chain/graph", methods=["GET"])
 def get_supply_chain_graph(project_id):
     """GET /api/v1/projects/<id>/supply-chain/graph -- Build dependency graph."""
@@ -1434,8 +1506,10 @@ def get_supply_chain_graph(project_id):
 
         call_tool, _, _ = _import_tenant_db()
         from tools.supply_chain.dependency_graph import build_graph
+
         result = call_tool(
-            build_graph, g.tenant_id,
+            build_graph,
+            g.tenant_id,
             project_id=project_id,
         )
         return jsonify({"supply_chain": result})
@@ -1443,7 +1517,8 @@ def get_supply_chain_graph(project_id):
         logger.error("get_supply_chain_graph import error: %s", exc)
         return _error(
             "Supply chain dependency graph not available: {}".format(exc),
-            code="SERVICE_UNAVAILABLE", status=503,
+            code="SERVICE_UNAVAILABLE",
+            status=503,
         )
     except ValueError as exc:
         return _error(str(exc), code="NOT_FOUND", status=404)
@@ -1455,6 +1530,7 @@ def get_supply_chain_graph(project_id):
 # ============================================================================
 # PLATFORM EVENTS (SSE)
 # ============================================================================
+
 
 @api_bp.route("/events", methods=["GET"])
 def stream_platform_events():
@@ -1496,8 +1572,7 @@ def stream_platform_events():
                 for row in rows:
                     event_data = dict(row)
                     last_id = event_data["id"]
-                    yield "data: {}\n\n".format(
-                        json_mod.dumps(event_data, default=str))
+                    yield "data: {}\n\n".format(json_mod.dumps(event_data, default=str))
 
                 if not rows:
                     # Heartbeat comment to keep connection alive
@@ -1505,8 +1580,7 @@ def stream_platform_events():
 
             except Exception as exc:
                 logger.error("stream_platform_events error: %s", exc)
-                yield "event: error\ndata: {}\n\n".format(
-                    json_mod.dumps({"error": str(exc)}))
+                yield "event: error\ndata: {}\n\n".format(json_mod.dumps({"error": str(exc)}))
 
             time.sleep(0.5)
 
@@ -1621,9 +1695,7 @@ def ai_transparency_inventory():
         conn.row_factory = sqlite3.Row
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
-        rows = conn.execute(
-            "SELECT * FROM ai_use_case_inventory {} ORDER BY name".format(where), params
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM ai_use_case_inventory {} ORDER BY name".format(where), params).fetchall()
         conn.close()
         return jsonify({"items": [dict(r) for r in rows], "total": len(rows)})
     except Exception as exc:
@@ -1643,7 +1715,9 @@ def ai_transparency_model_cards():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
-            "SELECT id, project_id, model_name, version, created_at FROM model_cards {} ORDER BY created_at DESC".format(where),
+            "SELECT id, project_id, model_name, version, created_at FROM model_cards {} ORDER BY created_at DESC".format(  # noqa: E501
+                where
+            ),
             params,
         ).fetchall()
         conn.close()
@@ -1661,6 +1735,7 @@ def ai_transparency_gaps():
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
         from tools.compliance.ai_transparency_audit import run_transparency_audit
+
         result = run_transparency_audit(project_id, db_path=db_path)
         return jsonify({"gaps": result.get("gaps", []), "gap_count": result.get("gap_count", 0)})
     except Exception as exc:
@@ -1678,6 +1753,7 @@ def ai_transparency_audit():
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
         from tools.compliance.ai_transparency_audit import run_transparency_audit
+
         result = run_transparency_audit(project_id, project_dir, db_path=db_path)
         return jsonify(result)
     except Exception as exc:
@@ -1697,6 +1773,7 @@ def ai_transparency_gen_model_card():
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
         from tools.compliance.model_card_generator import generate_model_card
+
         result = generate_model_card(project_id, model_name, db_path=db_path)
         return jsonify(result)
     except Exception as exc:
@@ -1713,6 +1790,7 @@ def ai_transparency_gen_system_card():
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
         from tools.compliance.system_card_generator import generate_system_card
+
         result = generate_system_card(project_id, db_path=db_path)
         return jsonify(result)
     except Exception as exc:
@@ -1770,9 +1848,7 @@ def ai_accountability_appeals():
         db_path = get_db_path(g.tenant_id)
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM ai_accountability_appeals ORDER BY created_at DESC LIMIT 100"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM ai_accountability_appeals ORDER BY created_at DESC LIMIT 100").fetchall()
         conn.close()
         return jsonify({"appeals": [dict(r) for r in rows], "total": len(rows)})
     except Exception as exc:
@@ -1809,8 +1885,7 @@ def ai_accountability_overdue():
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT * FROM ai_reassessment_schedule "
-            "WHERE next_due < date('now') ORDER BY next_due ASC"
+            "SELECT * FROM ai_reassessment_schedule WHERE next_due < date('now') ORDER BY next_due ASC"
         ).fetchall()
         conn.close()
         return jsonify({"overdue": [dict(r) for r in rows], "total": len(rows)})
@@ -1828,6 +1903,7 @@ def ai_accountability_audit():
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
         from tools.compliance.ai_accountability_audit import run_accountability_audit
+
         result = run_accountability_audit(project_id, db_path=db_path)
         return jsonify(result)
     except Exception as exc:
@@ -1843,6 +1919,7 @@ def ai_accountability_file_appeal():
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
         from tools.compliance.accountability_manager import file_appeal
+
         result = file_appeal(
             project_id=data.get("project_id", "default"),
             appellant=data.get("appellant", ""),
@@ -1864,6 +1941,7 @@ def ai_accountability_log_incident():
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
         from tools.compliance.ai_incident_response import log_incident
+
         result = log_incident(
             project_id=data.get("project_id", "default"),
             incident_type=data.get("incident_type", "other"),
@@ -1883,12 +1961,15 @@ def ai_accountability_log_incident():
 # HEALTH (sub-path, in addition to gateway-level /health)
 # ============================================================================
 
+
 @api_bp.route("/health", methods=["GET"])
 def api_health():
     """GET /api/v1/health -- API-level health check."""
-    return jsonify({
-        "status": "ok",
-        "service": "icdev-saas-api",
-        "version": "1.0.0",
-        "classification": "CUI // SP-CTI",
-    })
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "icdev-saas-api",
+            "version": "1.0.0",
+            "classification": "CUI // SP-CTI",
+        }
+    )

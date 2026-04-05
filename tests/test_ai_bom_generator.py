@@ -22,6 +22,7 @@ if str(BASE_DIR) not in sys.path:
 
 try:
     from icdev.tools.security.ai_bom_generator import AIBOMGenerator, AI_FRAMEWORK_PACKAGES
+
     _HAS_AI_BOM = True
 except ImportError:
     _HAS_AI_BOM = False
@@ -36,6 +37,7 @@ pytestmark = pytest.mark.skipif(
 # ============================================================
 # Fixtures
 # ============================================================
+
 
 @pytest.fixture
 def bom_db(tmp_path):
@@ -71,6 +73,7 @@ def generator(bom_db):
 # Import
 # ============================================================
 
+
 class TestImport:
     def test_import(self):
         """AIBOMGenerator can be imported."""
@@ -87,6 +90,7 @@ class TestImport:
 # Scanning
 # ============================================================
 
+
 class TestScanLLMConfig:
     def test_scan_llm_config(self, tmp_path):
         """Scan a mock llm_config.yaml for model components."""
@@ -94,10 +98,7 @@ class TestScanLLMConfig:
         args_dir.mkdir()
         config_file = args_dir / "llm_config.yaml"
         config_file.write_text(
-            "models:\n"
-            "  claude-sonnet:\n"
-            "    model_id: claude-sonnet-4-20250514\n"
-            "    provider: bedrock\n"
+            "models:\n  claude-sonnet:\n    model_id: claude-sonnet-4-20250514\n    provider: bedrock\n"
         )
 
         gen = AIBOMGenerator()
@@ -110,12 +111,7 @@ class TestScanRequirements:
     def test_scan_requirements(self, tmp_path):
         """Scan requirements.txt containing AI framework deps."""
         req_file = tmp_path / "requirements.txt"
-        req_file.write_text(
-            "flask==3.0\n"
-            "openai==1.0\n"
-            "anthropic==0.20\n"
-            "requests==2.31\n"
-        )
+        req_file.write_text("flask==3.0\nopenai==1.0\nanthropic==0.20\nrequests==2.31\n")
 
         gen = AIBOMGenerator()
         components = gen._scan_requirements(tmp_path)
@@ -131,18 +127,22 @@ class TestScanMCPConfig:
     def test_scan_mcp_config(self, tmp_path):
         """Scan .mcp.json for MCP server entries."""
         mcp_file = tmp_path / ".mcp.json"
-        mcp_file.write_text(json.dumps({
-            "mcpServers": {
-                "icdev-core": {
-                    "command": "python",
-                    "args": ["tools/mcp/core_server.py"],
-                },
-                "icdev-builder": {
-                    "command": "python",
-                    "args": ["tools/mcp/builder_server.py"],
-                },
-            }
-        }))
+        mcp_file.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "icdev-core": {
+                            "command": "python",
+                            "args": ["tools/mcp/core_server.py"],
+                        },
+                        "icdev-builder": {
+                            "command": "python",
+                            "args": ["tools/mcp/builder_server.py"],
+                        },
+                    }
+                }
+            )
+        )
 
         gen = AIBOMGenerator()
         components = gen._scan_mcp_config(tmp_path)
@@ -156,16 +156,19 @@ class TestScanMCPConfig:
 # Utility Methods
 # ============================================================
 
+
 class TestComputeHash:
     def test_compute_hash(self):
         """Hash is a hex string of length 64 (SHA-256)."""
         gen = AIBOMGenerator()
-        h = gen._compute_hash({
-            "component_type": "model",
-            "component_name": "claude-sonnet",
-            "version": "4.0",
-            "provider": "bedrock",
-        })
+        h = gen._compute_hash(
+            {
+                "component_type": "model",
+                "component_name": "claude-sonnet",
+                "version": "4.0",
+                "provider": "bedrock",
+            }
+        )
         assert isinstance(h, str)
         assert len(h) == 64
         assert all(c in "0123456789abcdef" for c in h)
@@ -175,36 +178,43 @@ class TestAssessRisk:
     def test_assess_risk_cloud_model(self):
         """Cloud-hosted LLM model gets medium risk."""
         gen = AIBOMGenerator()
-        risk = gen._assess_risk({
-            "component_type": "model",
-            "provider": "bedrock",
-        })
+        risk = gen._assess_risk(
+            {
+                "component_type": "model",
+                "provider": "bedrock",
+            }
+        )
         assert risk == "medium"
 
     def test_assess_risk_local_model(self):
         """Ollama local model gets low risk."""
         gen = AIBOMGenerator()
-        risk = gen._assess_risk({
-            "component_type": "model",
-            "provider": "ollama",
-        })
+        risk = gen._assess_risk(
+            {
+                "component_type": "model",
+                "provider": "ollama",
+            }
+        )
         assert risk == "low"
 
     def test_assess_risk_unversioned_library(self):
         """Unversioned library gets high risk."""
         gen = AIBOMGenerator()
-        risk = gen._assess_risk({
-            "component_type": "library",
-            "component_name": "some-lib",
-            "version": "unspecified",
-            "provider": "pypi",
-        })
+        risk = gen._assess_risk(
+            {
+                "component_type": "library",
+                "component_name": "some-lib",
+                "version": "unspecified",
+                "provider": "pypi",
+            }
+        )
         assert risk == "high"
 
 
 # ============================================================
 # Database Storage
 # ============================================================
+
 
 class TestStoreBOM:
     def test_store_bom(self, generator, bom_db):
@@ -244,6 +254,7 @@ class TestStoreBOM:
 # Gate Evaluation
 # ============================================================
 
+
 class TestGateEvaluation:
     def test_evaluate_gate_no_bom(self, generator):
         """Gate should fail when no BOM exists."""
@@ -259,8 +270,7 @@ class TestGateEvaluation:
             "INSERT INTO ai_bom (id, project_id, component_type, component_name, "
             "version, provider, risk_level, created_at, updated_at, classification) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("comp-1", "proj-stale", "model", "old-model", "1.0",
-             "bedrock", "medium", old_date, old_date, "CUI"),
+            ("comp-1", "proj-stale", "model", "old-model", "1.0", "bedrock", "medium", old_date, old_date, "CUI"),
         )
         conn.commit()
         conn.close()
@@ -277,8 +287,7 @@ class TestGateEvaluation:
             "INSERT INTO ai_bom (id, project_id, component_type, component_name, "
             "version, provider, risk_level, created_at, updated_at, classification) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("comp-1", "proj-ok", "model", "claude", "4.0",
-             "bedrock", "low", now, now, "CUI"),
+            ("comp-1", "proj-ok", "model", "claude", "4.0", "bedrock", "low", now, now, "CUI"),
         )
         conn.commit()
         conn.close()
@@ -292,6 +301,7 @@ class TestGateEvaluation:
 # Full Scan Integration
 # ============================================================
 
+
 class TestScanProjectIntegration:
     def test_scan_project_integration(self, tmp_path):
         """Full scan with llm_config.yaml + requirements.txt."""
@@ -299,18 +309,11 @@ class TestScanProjectIntegration:
         args_dir = tmp_path / "args"
         args_dir.mkdir()
         (args_dir / "llm_config.yaml").write_text(
-            "models:\n"
-            "  test-model:\n"
-            "    model_id: test-v1\n"
-            "    provider: ollama\n"
+            "models:\n  test-model:\n    model_id: test-v1\n    provider: ollama\n"
         )
 
         # Create requirements.txt
-        (tmp_path / "requirements.txt").write_text(
-            "openai==1.40\n"
-            "numpy==1.26\n"
-            "flask==3.0\n"
-        )
+        (tmp_path / "requirements.txt").write_text("openai==1.40\nnumpy==1.26\nflask==3.0\n")
 
         gen = AIBOMGenerator()
         result = gen.scan_project("proj-int", str(tmp_path))

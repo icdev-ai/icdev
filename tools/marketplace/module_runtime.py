@@ -19,6 +19,7 @@ Usage:
         # module features available
         pass
 """
+
 from __future__ import annotations
 
 import logging
@@ -89,6 +90,7 @@ def _get_active_slugs_cached() -> Set[str]:
         return _cache
     try:
         from tools.marketplace.token_store import get_active_slugs
+
         _cache = set(get_active_slugs())
     except Exception:
         _cache = set()

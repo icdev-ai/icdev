@@ -43,6 +43,7 @@ try:
         process_turn,
         export_requirements,
     )
+
     _HAS_INTAKE = True
 except ImportError:
     _HAS_INTAKE = False
@@ -52,12 +53,14 @@ try:
         upload_document,
         extract_requirements as extract_doc_requirements,
     )
+
     _HAS_EXTRACTOR = True
 except ImportError:
     _HAS_EXTRACTOR = False
 
 try:
     from tools.requirements.readiness_scorer import score_readiness
+
     _HAS_SCORER = True
 except ImportError:
     _HAS_SCORER = False
@@ -68,24 +71,28 @@ try:
         list_coas as _list_coas,
         select_coa as _select_coa,
     )
+
     _HAS_COA = True
 except ImportError:
     _HAS_COA = False
 
 try:
     from tools.requirements.prd_generator import generate_prd as _generate_prd
+
     _HAS_PRD = True
 except ImportError:
     _HAS_PRD = False
 
 try:
     from tools.requirements.prd_validator import validate_prd as _validate_prd
+
     _HAS_PRD_VALIDATOR = True
 except ImportError:
     _HAS_PRD_VALIDATOR = False
 
 try:
     from tools.requirements.complexity_scorer import score_complexity as _score_complexity
+
     _HAS_COMPLEXITY = True
 except ImportError:
     _HAS_COMPLEXITY = False
@@ -93,10 +100,11 @@ except ImportError:
 try:
     from tools.requirements.elicitation_techniques import (
         list_techniques as _list_techniques,
-        get_technique as _get_technique,
+        get_technique as _get_technique,  # noqa: F401
         activate_technique as _activate_technique,
         deactivate_technique as _deactivate_technique,
     )
+
     _HAS_ELICITATION = True
 except ImportError:
     _HAS_ELICITATION = False
@@ -108,8 +116,17 @@ except ImportError:
 intake_api = Blueprint("intake_api", __name__)
 
 ALLOWED_EXTENSIONS = {
-    ".txt", ".md", ".pdf", ".docx",
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".bmp",
+    ".txt",
+    ".md",
+    ".pdf",
+    ".docx",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".tiff",
+    ".bmp",
 }
 
 
@@ -122,6 +139,7 @@ def _get_db():
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @intake_api.route("/api/intake/session", methods=["POST"])
 def create_intake_session():
@@ -164,8 +182,11 @@ def create_intake_session():
             custom_role_description=custom_role_description,
         )
         result["wizard_context"] = {
-            "goal": goal, "role": role, "classification": classification,
-            "frameworks": frameworks, "custom_role_name": custom_role_name,
+            "goal": goal,
+            "role": role,
+            "classification": classification,
+            "frameworks": frameworks,
+            "custom_role_name": custom_role_name,
         }
         return jsonify(result)
     except Exception as exc:
@@ -249,9 +270,7 @@ def get_intake_session(session_id):
     """Get session info and conversation history."""
     conn = _get_db()
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
 
@@ -271,12 +290,14 @@ def get_intake_session(session_id):
             (session_id,),
         ).fetchone()["cnt"]
 
-        return jsonify({
-            "session": dict(session),
-            "messages": [dict(m) for m in messages],
-            "requirements_count": req_count,
-            "documents_count": doc_count,
-        })
+        return jsonify(
+            {
+                "session": dict(session),
+                "messages": [dict(m) for m in messages],
+                "requirements_count": req_count,
+                "documents_count": doc_count,
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -396,9 +417,7 @@ def trigger_build(session_id):
 
     conn = _get_db()
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
 
@@ -425,8 +444,14 @@ def trigger_build(session_id):
             ).fetchone()
             if coa_row:
                 selected_coa = dict(coa_row)
-                for field in ("architecture_summary", "cost_estimate", "risk_profile",
-                              "timeline", "compliance_impact", "supply_chain_impact"):
+                for field in (
+                    "architecture_summary",
+                    "cost_estimate",
+                    "risk_profile",
+                    "timeline",
+                    "compliance_impact",
+                    "supply_chain_impact",
+                ):
                     val = selected_coa.get(field)
                     if val and isinstance(val, str):
                         try:
@@ -440,27 +465,29 @@ def trigger_build(session_id):
         if selected_coa:
             coa_label = f", COA: {selected_coa.get('coa_name', selected_coa.get('coa_type', ''))}"
 
-        return jsonify({
-            "status": "ok",
-            "session_id": session_id,
-            "goal": context.get("goal", "build"),
-            "role": context.get("role", "developer"),
-            "frameworks": context.get("selected_frameworks", []),
-            "classification": session_data.get("classification", DEFAULT_CLASSIFICATION),
-            "impact_level": session_data.get("impact_level", "IL4"),
-            "requirements_count": len(requirements),
-            "requirements": requirements,
-            "readiness_score": session_data.get("readiness_score", 0),
-            "selected_coa": selected_coa,
-            "next_steps": [
-                "Run /feature or /icdev-build to generate the application",
-            ],
-            "message": (
-                f"Build context ready: {len(requirements)} requirements{coa_label}, "
-                f"classification {session_data.get('classification', DEFAULT_CLASSIFICATION or 'unclassified')}, "
-                f"impact level {session_data.get('impact_level', 'IL4')}."
-            ),
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "session_id": session_id,
+                "goal": context.get("goal", "build"),
+                "role": context.get("role", "developer"),
+                "frameworks": context.get("selected_frameworks", []),
+                "classification": session_data.get("classification", DEFAULT_CLASSIFICATION),
+                "impact_level": session_data.get("impact_level", "IL4"),
+                "requirements_count": len(requirements),
+                "requirements": requirements,
+                "readiness_score": session_data.get("readiness_score", 0),
+                "selected_coa": selected_coa,
+                "next_steps": [
+                    "Run /feature or /icdev-build to generate the application",
+                ],
+                "message": (
+                    f"Build context ready: {len(requirements)} requirements{coa_label}, "
+                    f"classification {session_data.get('classification', DEFAULT_CLASSIFICATION or 'unclassified')}, "
+                    f"impact level {session_data.get('impact_level', 'IL4')}."
+                ),
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -471,11 +498,19 @@ def trigger_build(session_id):
 # COA Endpoints
 # ---------------------------------------------------------------------------
 
+
 def _parse_coa_json_fields(coa):
     """Parse JSON string columns in a COA dict for JS consumption."""
     import json as _j
-    for field in ("architecture_summary", "cost_estimate", "risk_profile",
-                  "timeline", "compliance_impact", "supply_chain_impact"):
+
+    for field in (
+        "architecture_summary",
+        "cost_estimate",
+        "risk_profile",
+        "timeline",
+        "compliance_impact",
+        "supply_chain_impact",
+    ):
         val = coa.get(field)
         if val and isinstance(val, str):
             try:
@@ -529,9 +564,7 @@ def generate_session_coas(session_id):
 
     conn = _get_db()
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
 
@@ -541,6 +574,7 @@ def generate_session_coas(session_id):
         # Create temp project if none exists (same pattern as /icdev-simulate)
         if not project_id:
             import uuid
+
             project_id = f"proj-sim-{uuid.uuid4().hex[:8]}"
             conn.execute(
                 """INSERT OR IGNORE INTO projects
@@ -559,8 +593,7 @@ def generate_session_coas(session_id):
         conn.close()
 
     try:
-        result = _generate_3_coas(session_id, project_id=project_id,
-                                  simulate=True, db_path=DB_PATH)
+        result = _generate_3_coas(session_id, project_id=project_id, simulate=True, db_path=DB_PATH)
         # Parse JSON fields for JS
         for coa in result.get("coas", []):
             _parse_coa_json_fields(coa)
@@ -596,6 +629,7 @@ def select_session_coa(session_id):
 
     # Fallback: direct DB update
     from datetime import datetime
+
     conn = _get_db()
     try:
         now = datetime.now(timezone.utc).isoformat()
@@ -620,13 +654,15 @@ def select_session_coa(session_id):
             (selected_by, now, rationale, now, coa_id),
         )
         conn.commit()
-        return jsonify({
-            "status": "ok",
-            "coa_id": coa_id,
-            "coa_type": coa["coa_type"],
-            "coa_name": coa["coa_name"],
-            "selection_status": "selected",
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "coa_id": coa_id,
+                "coa_type": coa["coa_type"],
+                "coa_name": coa["coa_name"],
+                "selection_status": "selected",
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -639,14 +675,14 @@ def unselect_session_coa(session_id):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT id, coa_name, coa_type FROM coa_definitions "
-            "WHERE session_id = ? AND status = 'selected'",
+            "SELECT id, coa_name, coa_type FROM coa_definitions WHERE session_id = ? AND status = 'selected'",
             (session_id,),
         ).fetchone()
         if not row:
             return jsonify({"error": "No selected COA found for this session"}), 404
 
         from datetime import datetime
+
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "UPDATE coa_definitions SET status='presented', selected_by=NULL, "
@@ -656,12 +692,14 @@ def unselect_session_coa(session_id):
         )
         conn.commit()
         coa = dict(row)
-        return jsonify({
-            "status": "ok",
-            "unselected_coa_id": coa["id"],
-            "coa_name": coa["coa_name"] or coa["coa_type"],
-            "message": "COA unselected. All COAs reset to presented.",
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "unselected_coa_id": coa["id"],
+                "coa_name": coa["coa_name"] or coa["coa_type"],
+                "message": "COA unselected. All COAs reset to presented.",
+            }
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -675,7 +713,8 @@ def unselect_session_coa(session_id):
 # Shared state uses builtins to guarantee a single dict instance even if this
 # module is imported under two different sys.path entries by Flask/werkzeug.
 import builtins as _builtins
-if not hasattr(_builtins, '_ICDEV_BUILD_JOBS'):
+
+if not hasattr(_builtins, "_ICDEV_BUILD_JOBS"):
     _builtins._ICDEV_BUILD_JOBS = {}
     _builtins._ICDEV_BUILD_LOCK = threading.Lock()
 _BUILD_JOBS = _builtins._ICDEV_BUILD_JOBS
@@ -777,7 +816,7 @@ def _run_build_pipeline(session_id):
                 except (ValueError, TypeError):
                     arch = {}
             pattern = arch.get("pattern", "") if isinstance(arch, dict) else ""
-            detail = (coa_data.get("coa_name") or coa_data.get("coa_type", ""))
+            detail = coa_data.get("coa_name") or coa_data.get("coa_type", "")
             if pattern:
                 detail += f" ({pattern})"
             if coa_data.get("boundary_tier"):
@@ -790,11 +829,13 @@ def _run_build_pipeline(session_id):
         _update_phase("scaffold", "running", "Creating project structure...")
         try:
             session_row = conn.execute(
-                "SELECT * FROM intake_sessions WHERE id = ?", (session_id,),
+                "SELECT * FROM intake_sessions WHERE id = ?",
+                (session_id,),
             ).fetchone()
             project_id = dict(session_row).get("project_id", "") if session_row else ""
             if not project_id:
                 import uuid
+
                 project_id = f"proj-{uuid.uuid4().hex[:8]}"
                 conn.execute(
                     """INSERT OR IGNORE INTO projects
@@ -820,9 +861,16 @@ def _run_build_pipeline(session_id):
         sast_detail = ""
         try:
             result = subprocess.run(
-                [sys.executable, str(BASE_DIR / "tools" / "security" / "sast_runner.py"),
-                 "--project-dir", str(BASE_DIR), "--json"],
-                capture_output=True, text=True, timeout=60,
+                [
+                    sys.executable,
+                    str(BASE_DIR / "tools" / "security" / "sast_runner.py"),
+                    "--project-dir",
+                    str(BASE_DIR),
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if result.returncode == 0:
                 try:
@@ -843,9 +891,16 @@ def _run_build_pipeline(session_id):
         secret_detail = ""
         try:
             result = subprocess.run(
-                [sys.executable, str(BASE_DIR / "tools" / "security" / "secret_detector.py"),
-                 "--project-dir", str(BASE_DIR), "--json"],
-                capture_output=True, text=True, timeout=60,
+                [
+                    sys.executable,
+                    str(BASE_DIR / "tools" / "security" / "secret_detector.py"),
+                    "--project-dir",
+                    str(BASE_DIR),
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if result.returncode == 0:
                 try:
@@ -865,8 +920,7 @@ def _run_build_pipeline(session_id):
         # Phase 5: Complete
         _update_phase("complete", "running", "Finalizing...")
         time.sleep(0.2)
-        _update_phase("complete", "done",
-                       f"{req_count} reqs | Project {project_id}")
+        _update_phase("complete", "done", f"{req_count} reqs | Project {project_id}")
         _set_overall("done")
 
     except Exception as exc:
@@ -891,9 +945,7 @@ def start_build_pipeline(session_id):
 
     conn = _get_db()
     try:
-        session = conn.execute(
-            "SELECT id FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT id FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return jsonify({"error": "Session not found"}), 404
     finally:
@@ -908,8 +960,14 @@ def start_build_pipeline(session_id):
         "started_at": now,
         "error": None,
         "phases": [
-            {"id": p["id"], "name": p["name"], "status": "pending",
-             "detail": "", "started_at": None, "completed_at": None}
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "status": "pending",
+                "detail": "",
+                "started_at": None,
+                "completed_at": None,
+            }
             for p in PIPELINE_PHASES
         ],
     }
@@ -938,9 +996,7 @@ def get_build_project(session_id):
     """Get the project ID associated with a build session."""
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT project_id FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = conn.execute("SELECT project_id FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not row:
             return jsonify({"error": "Session not found"}), 404
         project_id = row["project_id"] or ""
@@ -955,7 +1011,7 @@ def get_build_project(session_id):
 # Test Runner — background test execution
 # ---------------------------------------------------------------------------
 
-if not hasattr(_builtins, '_ICDEV_TEST_JOBS'):
+if not hasattr(_builtins, "_ICDEV_TEST_JOBS"):
     _builtins._ICDEV_TEST_JOBS = {}
     _builtins._ICDEV_TEST_LOCK = threading.Lock()
 _TEST_JOBS = _builtins._ICDEV_TEST_JOBS
@@ -1011,6 +1067,7 @@ def _run_test_pipeline(session_id):
         # Phase 1: Syntax Check — py_compile on all tools/**/*.py
         # Uses py_compile directly (no subprocess per file) for speed.
         import py_compile as _py_compile
+
         _update("syntax", "running", "Checking Python syntax...")
         syntax_errors = 0
         files_checked = 0
@@ -1033,9 +1090,10 @@ def _run_test_pipeline(session_id):
         _update("lint", "running", "Running ruff linter...")
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "ruff", "check", str(BASE_DIR),
-                 "--select", "E,W,F", "--statistics"],
-                capture_output=True, text=True, timeout=60,
+                [sys.executable, "-m", "ruff", "check", str(BASE_DIR), "--select", "E,W,F", "--statistics"],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if result.returncode == 0:
                 _update("lint", "done", "0 violations")
@@ -1050,9 +1108,10 @@ def _run_test_pipeline(session_id):
         _update("unit", "running", "Running pytest...")
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "pytest", str(BASE_DIR / "tests"),
-                 "-v", "--tb=short", "-q"],
-                capture_output=True, text=True, timeout=120,
+                [sys.executable, "-m", "pytest", str(BASE_DIR / "tests"), "-v", "--tb=short", "-q"],
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             output = result.stdout or ""
             # Parse last line for summary: "N passed, M failed"
@@ -1074,9 +1133,16 @@ def _run_test_pipeline(session_id):
         _update("sast", "running", "Running SAST scanner...")
         try:
             result = subprocess.run(
-                [sys.executable, str(BASE_DIR / "tools" / "security" / "sast_runner.py"),
-                 "--project-dir", str(BASE_DIR), "--json"],
-                capture_output=True, text=True, timeout=60,
+                [
+                    sys.executable,
+                    str(BASE_DIR / "tools" / "security" / "sast_runner.py"),
+                    "--project-dir",
+                    str(BASE_DIR),
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if result.returncode == 0:
                 try:
@@ -1103,9 +1169,16 @@ def _run_test_pipeline(session_id):
         _update("secrets", "running", "Scanning for secrets...")
         try:
             result = subprocess.run(
-                [sys.executable, str(BASE_DIR / "tools" / "security" / "secret_detector.py"),
-                 "--project-dir", str(BASE_DIR), "--json"],
-                capture_output=True, text=True, timeout=60,
+                [
+                    sys.executable,
+                    str(BASE_DIR / "tools" / "security" / "secret_detector.py"),
+                    "--project-dir",
+                    str(BASE_DIR),
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if result.returncode == 0:
                 try:
@@ -1147,8 +1220,14 @@ def start_test_pipeline(session_id):
         "started_at": now,
         "error": None,
         "phases": [
-            {"id": p["id"], "name": p["name"], "status": "pending",
-             "detail": "", "started_at": None, "completed_at": None}
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "status": "pending",
+                "detail": "",
+                "started_at": None,
+                "completed_at": None,
+            }
             for p in TEST_PHASES
         ],
     }

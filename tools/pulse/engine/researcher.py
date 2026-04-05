@@ -23,6 +23,7 @@ from tools.pulse.db import insert_row, query_rows
 def _is_air_gapped() -> bool:
     return os.environ.get("ICDEV_ENVIRONMENT", "").lower() == "air-gapped"
 
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -30,9 +31,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
 DDG_URL = "https://html.duckduckgo.com/html/"
@@ -180,9 +179,7 @@ def _score_relevance(title: str, snippet: str) -> float:
     combined = f"{title} {snippet}".lower()
 
     # Keyword density component (0-0.7)
-    keyword_hits = sum(
-        1 for kw in RELEVANCE_KEYWORDS if kw.lower() in combined
-    )
+    keyword_hits = sum(1 for kw in RELEVANCE_KEYWORDS if kw.lower() in combined)
     keyword_score = min(keyword_hits / max(len(RELEVANCE_KEYWORDS) * 0.15, 1), 1.0)
 
     # Recency component (0-0.3)
@@ -408,9 +405,7 @@ def research_all_topics() -> list[dict]:
     Iterates through each topic, collects results, and returns
     the combined list sorted by relevance score descending.
     """
-    logger.info(
-        "Starting research across %d topics", len(config.RESEARCH_TOPICS)
-    )
+    logger.info("Starting research across %d topics", len(config.RESEARCH_TOPICS))
     combined: list[dict] = []
 
     # Shuffle topics for variety; deprioritize recently-used topics
@@ -418,6 +413,7 @@ def research_all_topics() -> list[dict]:
     random.shuffle(topics)
     try:
         from tools.pulse.db import get_used_topics
+
         used = {t.lower() for t in get_used_topics()}
         if used:
             # Move recently-used topics to the end so fresh topics get priority
@@ -426,7 +422,8 @@ def research_all_topics() -> list[dict]:
             topics = fresh + stale
             logger.info(
                 "Topic rotation: %d fresh, %d recently-used (deprioritized)",
-                len(fresh), len(stale),
+                len(fresh),
+                len(stale),
             )
     except Exception:
         pass  # Graceful fallback if DB unavailable
@@ -489,6 +486,7 @@ def _enrich_from_local_rag(topics: list[str]) -> list[dict]:
 
     # Fire all topic queries in parallel (instead of sequential loop)
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     capped_topics = topics[:5]  # Cap at 5 topics for speed
     rag_results_map: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=5) as pool:
@@ -525,18 +523,20 @@ def _enrich_from_local_rag(topics: list[str]) -> list[dict]:
                     title = doc.get("title", "") or text[:80].strip()
                     relevance = _score_relevance(title, snippet)
 
-                    results.append({
-                        "id": str(uuid4()),
-                        "query": topic,
-                        "source": f"local_rag:{strategy_name}",
-                        "url": doc.get("url", f"rag://{strategy_name}/{doc.get('id', 'unknown')}"),
-                        "title": title,
-                        "snippet": snippet,
-                        "full_text": text,
-                        "relevance_score": max(relevance, 0.5),  # Boost local results
-                        "pain_point_category": _classify_pain_point(text),
-                        "fetched_at": now,
-                    })
+                    results.append(
+                        {
+                            "id": str(uuid4()),
+                            "query": topic,
+                            "source": f"local_rag:{strategy_name}",
+                            "url": doc.get("url", f"rag://{strategy_name}/{doc.get('id', 'unknown')}"),
+                            "title": title,
+                            "snippet": snippet,
+                            "full_text": text,
+                            "relevance_score": max(relevance, 0.5),  # Boost local results
+                            "pain_point_category": _classify_pain_point(text),
+                            "fetched_at": now,
+                        }
+                    )
 
         except Exception as exc:
             logger.debug("RAG extraction failed for topic %r: %s", topic, exc)
@@ -616,19 +616,21 @@ def research_with_local_first(
     if len(local_results) < 5:
         # Shuffle and pick 3 topics for fast web research
         import random as _rnd
+
         web_topics = list(topics)
         _rnd.shuffle(web_topics)
         web_topics = web_topics[:3]  # Only research 3 topics, not all 15
 
         logger.info(
             "Local results insufficient (%d < 5) — fast web research on %d topics: %s",
-            len(local_results), len(web_topics), web_topics,
+            len(local_results),
+            len(web_topics),
+            web_topics,
         )
         web_results = _research_topics_fast(web_topics, max_sources=3)
     else:
         logger.info(
-            "Local RAG provided %d results — skipping web scraping entirely "
-            "(saved network requests + latency)",
+            "Local RAG provided %d results — skipping web scraping entirely (saved network requests + latency)",
             len(local_results),
         )
 
@@ -656,17 +658,19 @@ def research_with_local_first(
         now = datetime.now(timezone.utc).isoformat()
         pick = topics[:3] if len(topics) >= 3 else topics
         for topic in pick:
-            combined.append({
-                "id": str(uuid4()),
-                "query": topic,
-                "source": "topic_seed",
-                "url": f"topic://{topic.replace(' ', '-')}",
-                "title": topic,
-                "snippet": f"Research topic: {topic}. Write an authoritative article about current challenges and solutions.",
-                "relevance_score": 0.6,
-                "pain_point_category": _classify_pain_point(topic),
-                "fetched_at": now,
-            })
+            combined.append(
+                {
+                    "id": str(uuid4()),
+                    "query": topic,
+                    "source": "topic_seed",
+                    "url": f"topic://{topic.replace(' ', '-')}",
+                    "title": topic,
+                    "snippet": f"Research topic: {topic}. Write an authoritative article about current challenges and solutions.",  # noqa: E501
+                    "relevance_score": 0.6,
+                    "pain_point_category": _classify_pain_point(topic),
+                    "fetched_at": now,
+                }
+            )
         logger.info(
             "No external results available — seeded %d topic-based entries for drafting",
             len(combined),
@@ -674,7 +678,9 @@ def research_with_local_first(
 
     logger.info(
         "Research complete: %d total (%d local, %d web)",
-        len(combined), len(local_results), len(web_results),
+        len(combined),
+        len(local_results),
+        len(web_results),
     )
     return combined
 
@@ -724,9 +730,7 @@ def synthesize_research(results: list[dict]) -> dict:
         snippet = r.get("snippet", "")[:200]
         score = r.get("relevance_score", 0)
         category = r.get("pain_point_category", "general")
-        digest_lines.append(
-            f"{i}. [{category}] (score: {score:.2f}) {title}\n   {snippet}"
-        )
+        digest_lines.append(f"{i}. [{category}] (score: {score:.2f}) {title}\n   {snippet}")
 
     digest = "\n".join(digest_lines)
 
@@ -833,10 +837,7 @@ def synthesize_research(results: list[dict]) -> dict:
             f"Top category: {top_categories[0][0] if top_categories else 'general'} "
             f"({top_categories[0][1] if top_categories else 0} signals)."
         ),
-        "top_themes": [
-            {"theme": cat, "signal_count": count}
-            for cat, count in top_categories[:5]
-        ],
+        "top_themes": [{"theme": cat, "signal_count": count} for cat, count in top_categories[:5]],
         "recommended_angles": top_titles[:3],
         "pain_point_summary": categories,
         "model_used": "deterministic",

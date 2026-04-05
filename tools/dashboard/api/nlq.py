@@ -65,9 +65,11 @@ def get_history():
             "SELECT * FROM nlq_queries ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return jsonify({
-            "queries": [dict(r) for r in rows],
-            "classification": DEFAULT_CLASSIFICATION,
-        })
+        return jsonify(
+            {
+                "queries": [dict(r) for r in rows],
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()

@@ -37,10 +37,21 @@ class TestDetectTools:
         """No tools detected in empty directory."""
         # Clear env vars that could trigger false detection
         for key in list(os.environ):
-            if any(tok in key.upper() for tok in (
-                "ANTHROPIC", "OPENAI", "CLAUDE", "CURSOR", "CODEX",
-                "COPILOT", "WINDSURF", "AIDER", "AMAZON_Q", "GEMINI",
-            )):
+            if any(
+                tok in key.upper()
+                for tok in (
+                    "ANTHROPIC",
+                    "OPENAI",
+                    "CLAUDE",
+                    "CURSOR",
+                    "CODEX",
+                    "COPILOT",
+                    "WINDSURF",
+                    "AIDER",
+                    "AMAZON_Q",
+                    "GEMINI",
+                )
+            ):
                 monkeypatch.delenv(key, raising=False)
         result = detect_tools(directory=str(tmp_path))
         assert result["detected"] == []

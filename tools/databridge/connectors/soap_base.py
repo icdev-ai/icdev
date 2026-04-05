@@ -101,13 +101,9 @@ class SoapBaseConnector(DataConnector):
     def _parse_response(self, raw: Any) -> List[Dict[str, Any]]:
         """Convert SOAP response to list of dicts."""
         if isinstance(raw, list):
-            return [
-                dict(r) if hasattr(r, "__dict__") else {"value": r} for r in raw
-            ]
+            return [dict(r) if hasattr(r, "__dict__") else {"value": r} for r in raw]
         if hasattr(raw, "__dict__"):
-            return [
-                {k: v for k, v in raw.__dict__.items() if not k.startswith("_")}
-            ]
+            return [{k: v for k, v in raw.__dict__.items() if not k.startswith("_")}]
         if isinstance(raw, dict):
             return [raw]
         return [{"value": str(raw)}] if raw is not None else []
@@ -170,9 +166,7 @@ class SoapBaseConnector(DataConnector):
                 op = getattr(self._client.service, op_name)
                 raw = op(**params)
             else:
-                raise NotImplementedError(
-                    "zeep required for SOAP calls — install with: pip install zeep"
-                )
+                raise NotImplementedError("zeep required for SOAP calls — install with: pip install zeep")
 
             rows = self._parse_response(raw)
             if request.limit:
@@ -201,9 +195,7 @@ class SoapBaseConnector(DataConnector):
         """SOAP write = call an operation with data as params."""
         start = time.time()
         if not self._client:
-            return ConnectorResponse(
-                status="error", errors=["Not connected or zeep unavailable"]
-            )
+            return ConnectorResponse(status="error", errors=["Not connected or zeep unavailable"])
         try:
             op_name = self._operation_name(request.table_name)
             op = getattr(self._client.service, op_name)
@@ -235,23 +227,15 @@ class SoapBaseConnector(DataConnector):
                 rows = rows.to_pylist()
             if isinstance(rows, list) and rows:
                 sample = rows[0]
-                fields = [
-                    SchemaField(name=k, data_type="utf8") for k in sample.keys()
-                ]
+                fields = [SchemaField(name=k, data_type="utf8") for k in sample.keys()]
                 return SchemaDefinition(fields=fields)
-        return SchemaDefinition(
-            metadata={"source": self.connector_name, "protocol": "soap"}
-        )
+        return SchemaDefinition(metadata={"source": self.connector_name, "protocol": "soap"})
 
     def list_tables(self) -> List[str]:
         """List available SOAP operations."""
         if self._client:
             try:
-                return [
-                    op
-                    for op in dir(self._client.service)
-                    if not op.startswith("_")
-                ]
+                return [op for op in dir(self._client.service) if not op.startswith("_")]
             except Exception:
                 return []
         return []

@@ -40,6 +40,7 @@ logger = logging.getLogger("icdev.team_orchestrator")
 @dataclass
 class Subtask:
     """A single unit of work assigned to one agent skill."""
+
     id: str
     agent_id: str
     skill_id: str
@@ -56,6 +57,7 @@ class Subtask:
 @dataclass
 class Workflow:
     """A collection of subtasks forming a directed acyclic graph."""
+
     id: str
     name: str
     project_id: str = ""
@@ -115,12 +117,13 @@ def _ensure_tables(db_path: Path = None):
         conn.close()
 
 
-def _audit_log(event_type: str, actor: str, action: str,
-               project_id: str = None, details: dict = None,
-               db_path: Path = None):
+def _audit_log(
+    event_type: str, actor: str, action: str, project_id: str = None, details: dict = None, db_path: Path = None
+):
     """Best-effort audit trail logging."""
     try:
         from tools.audit.audit_logger import log_event
+
         log_event(
             event_type=event_type,
             actor=actor,
@@ -171,6 +174,7 @@ class TeamOrchestrator:
         """Return cached LLMRouter, creating if needed."""
         if self._llm_router is None:
             from tools.llm.router import LLMRouter
+
             self._llm_router = LLMRouter()
         return self._llm_router
 
@@ -181,6 +185,7 @@ class TeamOrchestrator:
         """Return cached A2AAgentClient, creating if needed."""
         if self._agent_client is None:
             from tools.a2a.agent_client import A2AAgentClient
+
             self._agent_client = A2AAgentClient(verify_ssl=False)
         return self._agent_client
 
@@ -218,14 +223,20 @@ class TeamOrchestrator:
         # Attempt LLM-based decomposition
         try:
             workflow = self._decompose_via_bedrock(
-                workflow, task_description, project_id, agent_config,
+                workflow,
+                task_description,
+                project_id,
+                agent_config,
             )
         except Exception as exc:
             logger.warning(
-                "Bedrock decomposition failed (%s) -- using fallback", exc,
+                "Bedrock decomposition failed (%s) -- using fallback",
+                exc,
             )
             workflow = self._decompose_fallback(
-                workflow, task_description, project_id,
+                workflow,
+                task_description,
+                project_id,
             )
 
         # Persist and audit
@@ -314,25 +325,22 @@ class TeamOrchestrator:
         else:
             try:
                 from tools.a2a.agent_registry import discover_agents
+
                 agents = discover_agents(db_path=self._db_path)
                 if agents:
                     summary = []
                     for a in agents:
                         caps = a.get("capabilities", {})
                         skills = caps.get("skills", []) if isinstance(caps, dict) else []
-                        skill_ids = [
-                            s.get("id", s) if isinstance(s, dict) else s
-                            for s in skills
-                        ]
-                        summary.append({
-                            "agent_id": a["id"],
-                            "name": a.get("name", ""),
-                            "skills": skill_ids,
-                        })
-                    agent_context = (
-                        f"\n\nAvailable agents and skills:\n"
-                        f"{json.dumps(summary, indent=2)}"
-                    )
+                        skill_ids = [s.get("id", s) if isinstance(s, dict) else s for s in skills]
+                        summary.append(
+                            {
+                                "agent_id": a["id"],
+                                "name": a.get("name", ""),
+                                "skills": skill_ids,
+                            }
+                        )
+                    agent_context = f"\n\nAvailable agents and skills:\n{json.dumps(summary, indent=2)}"
             except Exception:
                 pass
 
@@ -364,9 +372,7 @@ class TeamOrchestrator:
             try:
                 decomposition = json.loads(response.content)
             except json.JSONDecodeError:
-                raise ValueError(
-                    f"Bedrock returned non-JSON content: {response.content[:200]}"
-                )
+                raise ValueError(f"Bedrock returned non-JSON content: {response.content[:200]}")
 
         if not decomposition or "subtasks" not in decomposition:
             raise ValueError("Bedrock decomposition missing 'subtasks' key")
@@ -409,7 +415,8 @@ class TeamOrchestrator:
         workflow.subtasks[st.id] = st
         logger.info(
             "Fallback decomposition: single subtask '%s' for workflow '%s'",
-            st.id, workflow.id,
+            st.id,
+            workflow.id,
         )
         return workflow
 
@@ -443,7 +450,8 @@ class TeamOrchestrator:
                 else:
                     logger.warning(
                         "Subtask '%s' depends on unknown '%s' -- ignoring dependency",
-                        st_id, dep_id,
+                        st_id,
+                        dep_id,
                     )
             graph[st_id] = deps
 
@@ -473,7 +481,9 @@ class TeamOrchestrator:
                 elapsed = time.time() - start_time
                 if elapsed > timeout:
                     logger.error(
-                        "Workflow '%s' timed out after %.0fs", workflow.id, elapsed,
+                        "Workflow '%s' timed out after %.0fs",
+                        workflow.id,
+                        elapsed,
                     )
                     # Cancel remaining subtasks
                     for st_id, st in workflow.subtasks.items():
@@ -657,18 +667,21 @@ class TeamOrchestrator:
         # check whether the skill is blocked for direct execution.
         try:
             from tools.agent.dispatcher_mode import (
-                is_dispatcher_mode, is_tool_allowed, get_redirect_agent,
+                is_dispatcher_mode,
+                is_tool_allowed,
+                get_redirect_agent,
             )
+
             project_id = context.get("project_id", "")
             if is_dispatcher_mode(project_id=project_id, db_path=self._db_path):
-                if not is_tool_allowed(subtask.skill_id, project_id=project_id,
-                                       db_path=self._db_path):
+                if not is_tool_allowed(subtask.skill_id, project_id=project_id, db_path=self._db_path):
                     # Redirect to appropriate domain agent
                     redirect = get_redirect_agent(subtask.skill_id)
                     if redirect:
                         logger.info(
                             "Dispatcher mode: redirecting skill '%s' from orchestrator to '%s'",
-                            subtask.skill_id, redirect,
+                            subtask.skill_id,
+                            redirect,
                         )
                         subtask.agent_id = redirect
                     _audit_log(
@@ -692,6 +705,7 @@ class TeamOrchestrator:
         try:
             # Look up agent
             from tools.a2a.agent_registry import get_agent
+
             agent = get_agent(subtask.agent_id, db_path=self._db_path)
 
             if not agent:
@@ -757,7 +771,10 @@ class TeamOrchestrator:
             subtask.status = "failed"
             subtask.error_message = f"Subtask execution error: {exc}"
             logger.error(
-                "Subtask '%s' failed with exception: %s", subtask.id, exc, exc_info=True,
+                "Subtask '%s' failed with exception: %s",
+                subtask.id,
+                exc,
+                exc_info=True,
             )
 
         subtask.duration_ms = int((time.time() - start_time) * 1000)
@@ -772,7 +789,8 @@ class TeamOrchestrator:
                 self._update_subtask_status(st, workflow.id)
                 logger.info(
                     "Subtask '%s' blocked due to failed dependency '%s'",
-                    st_id, failed_id,
+                    st_id,
+                    failed_id,
                 )
 
     # -------------------------------------------------------------------
@@ -963,9 +981,7 @@ class TeamOrchestrator:
 # ---------------------------------------------------------------------------
 def main():
     """CLI for workflow decomposition and execution."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV Team Orchestrator -- DAG-based multi-agent workflow engine"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Team Orchestrator -- DAG-based multi-agent workflow engine")
     parser.add_argument(
         "--decompose",
         help="Task description to decompose into subtasks",
@@ -980,11 +996,15 @@ def main():
     )
     parser.add_argument("--project-id", default="", help="Project ID for tracking")
     parser.add_argument(
-        "--max-workers", type=int, default=5,
+        "--max-workers",
+        type=int,
+        default=5,
         help="Max parallel subtask threads (default: 5)",
     )
     parser.add_argument(
-        "--timeout", type=int, default=600,
+        "--timeout",
+        type=int,
+        default=600,
         help="Workflow execution timeout in seconds (default: 600)",
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
@@ -1015,10 +1035,7 @@ def main():
                 "project_id": workflow.project_id,
                 "status": workflow.status,
                 "subtask_count": len(workflow.subtasks),
-                "subtasks": {
-                    st_id: asdict(st)
-                    for st_id, st in workflow.subtasks.items()
-                },
+                "subtasks": {st_id: asdict(st) for st_id, st in workflow.subtasks.items()},
                 "classification": "CUI",
             }
             print(json.dumps(output, indent=2, default=str))

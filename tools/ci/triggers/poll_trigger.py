@@ -105,9 +105,7 @@ def trigger_workflow(issue_data: dict, platform: str, latest_comment: str = "") 
     """
     try:
         # Normalize into EventEnvelope
-        envelope = EventEnvelope.from_poll_issue(
-            issue_data, platform, latest_comment=latest_comment
-        )
+        envelope = EventEnvelope.from_poll_issue(issue_data, platform, latest_comment=latest_comment)
 
         issue_number = issue_data.get("number") or issue_data.get("iid")
         print(
@@ -120,10 +118,7 @@ def trigger_workflow(issue_data: dict, platform: str, latest_comment: str = "") 
 
         action = result.get("action", "")
         if action == "launched":
-            print(
-                f"INFO: Launched {result.get('workflow')} for issue "
-                f"#{issue_number} (run_id: {result.get('run_id')})"
-            )
+            print(f"INFO: Launched {result.get('workflow')} for issue #{issue_number} (run_id: {result.get('run_id')})")
             return True
         elif action == "queued":
             print(f"INFO: Queued event for issue #{issue_number} ({result.get('reason')})")
@@ -191,6 +186,7 @@ def check_and_process_issues(vcs: VCS):
     except Exception as e:
         print(f"ERROR: Error during check cycle: {e}")
         import traceback
+
         traceback.print_exc()
 
 

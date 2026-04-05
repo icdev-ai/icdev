@@ -31,7 +31,7 @@ import argparse
 import json
 import os
 import sys
-import xmlrpc.client
+import xmlrpc.client  # nosec B411 — we control the WP server
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -97,8 +97,14 @@ def _upload_image(wp, image_path: str, post_title: str = "") -> dict | None:
 
     # Determine MIME type from extension
     ext = img_path.suffix.lower()
-    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml"}
+    mime_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".svg": "image/svg+xml",
+    }
     mime_type = mime_map.get(ext, "image/png")
 
     filename = img_path.name
@@ -164,6 +170,7 @@ def _strip_hero_image_from_content(content: str) -> str:
     so including it inline in the body causes it to appear twice.
     """
     import re
+
     # Remove markdown hero images: ![Hero](...) — greedy match to handle URLs with parens/query strings
     content = re.sub(r"!\[Hero\]\(.*?\)\s*", "", content)
     # Remove <p> wrapped hero images: <p><img ... alt="Hero" ... /></p>
@@ -339,7 +346,9 @@ def list_wp_posts(count: int = 10) -> dict:
     wp = _get_client()
     try:
         posts = wp.wp.getPosts(
-            WP_BLOG_ID, WP_USERNAME, WP_PASSWORD,
+            WP_BLOG_ID,
+            WP_USERNAME,
+            WP_PASSWORD,
             {"number": count, "post_type": "post"},
             ["post_id", "post_title", "post_status", "post_date", "link"],
         )

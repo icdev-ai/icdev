@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS projects (
     impact_level TEXT DEFAULT 'IL5' CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
     cloud_environment TEXT DEFAULT 'aws-govcloud',
     target_frameworks TEXT,
-    ato_status TEXT DEFAULT 'none' CHECK(ato_status IN ('none', 'in_progress', 'iato', 'ato', 'cato', 'dato', 'denied')),
+    ato_status TEXT DEFAULT 'none' CHECK(ato_status IN ('none', 'in_progress', 'iato', 'ato', 'cato', 'dato', 'denied')),  # noqa: E501
     accrediting_authority TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS a2a_tasks (
     source_agent_id TEXT REFERENCES agents(id),
     target_agent_id TEXT REFERENCES agents(id),
     skill_id TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'working', 'input-required', 'completed', 'failed', 'canceled')),
+    status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'working', 'input-required', 'completed', 'failed', 'canceled')),  # noqa: E501
     input_data TEXT,
     output_data TEXT,
     error_message TEXT,
@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS project_controls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),
     control_id TEXT NOT NULL REFERENCES compliance_controls(id),
-    implementation_status TEXT NOT NULL DEFAULT 'planned' CHECK(implementation_status IN ('planned', 'implemented', 'partially_implemented', 'not_applicable', 'compensating')),
+    implementation_status TEXT NOT NULL DEFAULT 'planned' CHECK(implementation_status IN ('planned', 'implemented', 'partially_implemented', 'not_applicable', 'compensating')),  # noqa: E501
     implementation_description TEXT,
     responsible_role TEXT,
     evidence_path TEXT,
@@ -314,7 +314,7 @@ CREATE TABLE IF NOT EXISTS code_reviews (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS knowledge_patterns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    pattern_type TEXT NOT NULL CHECK(pattern_type IN ('failure', 'success', 'optimization', 'security', 'compliance', 'performance')),
+    pattern_type TEXT NOT NULL CHECK(pattern_type IN ('failure', 'success', 'optimization', 'security', 'compliance', 'performance')),  # noqa: E501
     pattern_signature TEXT NOT NULL,
     description TEXT NOT NULL,
     root_cause TEXT,
@@ -397,7 +397,7 @@ CREATE TABLE IF NOT EXISTS cssp_assessments (
     functional_area TEXT NOT NULL CHECK(functional_area IN ('Identify', 'Protect', 'Detect', 'Respond', 'Sustain')),
     requirement_id TEXT NOT NULL,
     status TEXT DEFAULT 'not_assessed'
-        CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable', 'risk_accepted')),
+        CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable', 'risk_accepted')),  # noqa: E501
     evidence_description TEXT,
     evidence_path TEXT,
     automation_result TEXT,
@@ -488,7 +488,7 @@ CREATE TABLE IF NOT EXISTS sbd_assessments (
     domain TEXT NOT NULL,
     requirement_id TEXT NOT NULL,
     status TEXT DEFAULT 'not_assessed'
-        CHECK(status IN ('not_assessed','satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted')),
+        CHECK(status IN ('not_assessed','satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted')),  # noqa: E501
     evidence_description TEXT,
     evidence_path TEXT,
     automation_result TEXT,
@@ -663,7 +663,7 @@ CREATE TABLE IF NOT EXISTS remediation_actions (
     project_id TEXT NOT NULL,
     vulnerability_id INTEGER REFERENCES dependency_vulnerabilities(id),
     dependency_id INTEGER REFERENCES dependency_inventory(id),
-    action_type TEXT NOT NULL CHECK(action_type IN ('version_bump','patch_apply','replacement','risk_accept','manual_fix')),
+    action_type TEXT NOT NULL CHECK(action_type IN ('version_bump','patch_apply','replacement','risk_accept','manual_fix')),  # noqa: E501
     from_version TEXT,
     to_version TEXT,
     dependency_file TEXT,
@@ -743,7 +743,7 @@ CREATE TABLE IF NOT EXISTS fedramp_assessments (
     assessor TEXT DEFAULT 'icdev-compliance-engine',
     baseline TEXT NOT NULL CHECK(baseline IN ('moderate', 'high')),
     control_id TEXT NOT NULL,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'other_than_satisfied', 'not_applicable', 'risk_accepted')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'other_than_satisfied', 'not_applicable', 'risk_accepted')),  # noqa: E501
     implementation_status TEXT,
     customer_responsible TEXT,
     evidence_description TEXT,
@@ -767,7 +767,7 @@ CREATE TABLE IF NOT EXISTS cmmc_assessments (
     level INTEGER NOT NULL CHECK(level IN (2, 3)),
     practice_id TEXT NOT NULL,
     domain TEXT NOT NULL,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'met', 'not_met', 'partially_met', 'not_applicable')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'met', 'not_met', 'partially_met', 'not_applicable')),  # noqa: E501
     evidence_description TEXT,
     evidence_path TEXT,
     automation_result TEXT,
@@ -785,7 +785,7 @@ CREATE INDEX IF NOT EXISTS idx_cmmc_level ON cmmc_assessments(level);
 CREATE TABLE IF NOT EXISTS oscal_artifacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),
-    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('ssp', 'poam', 'assessment_results', 'component_definition', 'catalog', 'profile')),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('ssp', 'poam', 'assessment_results', 'component_definition', 'catalog', 'profile')),  # noqa: E501
     oscal_version TEXT DEFAULT '1.1.2',
     format TEXT DEFAULT 'json' CHECK(format IN ('json', 'xml', 'yaml')),
     file_path TEXT NOT NULL,
@@ -809,7 +809,7 @@ CREATE TABLE IF NOT EXISTS emass_systems (
     ditpr_id TEXT,
     registration_type TEXT,
     impact_level TEXT CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
-    authorization_status TEXT CHECK(authorization_status IN ('not_yet_authorized', 'ato', 'iato', 'dato', 'cato', 'denied', 'decommissioned')),
+    authorization_status TEXT CHECK(authorization_status IN ('not_yet_authorized', 'ato', 'iato', 'dato', 'cato', 'denied', 'decommissioned')),  # noqa: E501
     authorization_date TEXT,
     authorization_expiry TEXT,
     authorizing_official TEXT,
@@ -840,7 +840,7 @@ CREATE TABLE IF NOT EXISTS cato_evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),
     control_id TEXT NOT NULL,
-    evidence_type TEXT NOT NULL CHECK(evidence_type IN ('scan_result', 'test_result', 'config_check', 'manual_review', 'attestation', 'artifact')),
+    evidence_type TEXT NOT NULL CHECK(evidence_type IN ('scan_result', 'test_result', 'config_check', 'manual_review', 'attestation', 'artifact')),  # noqa: E501
     evidence_source TEXT NOT NULL,
     evidence_path TEXT,
     evidence_hash TEXT,
@@ -849,7 +849,7 @@ CREATE TABLE IF NOT EXISTS cato_evidence (
     is_fresh INTEGER DEFAULT 1,
     freshness_check_at TEXT,
     status TEXT DEFAULT 'current' CHECK(status IN ('current', 'stale', 'expired', 'superseded')),
-    automation_frequency TEXT CHECK(automation_frequency IN ('continuous', 'daily', 'weekly', 'monthly', 'per_change', 'manual')),
+    automation_frequency TEXT CHECK(automation_frequency IN ('continuous', 'daily', 'weekly', 'monthly', 'per_change', 'manual')),  # noqa: E501
     UNIQUE(project_id, control_id, evidence_type, evidence_source)
 );
 
@@ -937,11 +937,11 @@ CREATE TABLE IF NOT EXISTS doors_requirements (
     project_id TEXT NOT NULL REFERENCES projects(id),
     doors_id TEXT NOT NULL,
     module_name TEXT,
-    requirement_type TEXT CHECK(requirement_type IN ('functional', 'non_functional', 'interface', 'design', 'security', 'performance', 'constraint')),
+    requirement_type TEXT CHECK(requirement_type IN ('functional', 'non_functional', 'interface', 'design', 'security', 'performance', 'constraint')),  # noqa: E501
     title TEXT NOT NULL,
     description TEXT,
     priority TEXT CHECK(priority IN ('critical', 'high', 'medium', 'low')),
-    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'approved', 'implemented', 'verified', 'deleted', 'deferred')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'approved', 'implemented', 'verified', 'deleted', 'deferred')),  # noqa: E501
     parent_req_id TEXT,
     source_file TEXT NOT NULL,
     source_hash TEXT NOT NULL,
@@ -958,11 +958,11 @@ CREATE INDEX IF NOT EXISTS idx_doors_status ON doors_requirements(status);
 CREATE TABLE IF NOT EXISTS digital_thread_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),
-    source_type TEXT NOT NULL CHECK(source_type IN ('doors_requirement', 'sysml_element', 'code_module', 'test_file', 'nist_control', 'stig_rule', 'compliance_artifact', 'legacy_component', 'migration_task', 'intake_requirement', 'safe_item', 'coa_definition', 'uat_test')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('doors_requirement', 'sysml_element', 'code_module', 'test_file', 'nist_control', 'stig_rule', 'compliance_artifact', 'legacy_component', 'migration_task', 'intake_requirement', 'safe_item', 'coa_definition', 'uat_test')),  # noqa: E501
     source_id TEXT NOT NULL,
-    target_type TEXT NOT NULL CHECK(target_type IN ('doors_requirement', 'sysml_element', 'code_module', 'test_file', 'nist_control', 'stig_rule', 'compliance_artifact', 'legacy_component', 'migration_task', 'intake_requirement', 'safe_item', 'coa_definition', 'uat_test')),
+    target_type TEXT NOT NULL CHECK(target_type IN ('doors_requirement', 'sysml_element', 'code_module', 'test_file', 'nist_control', 'stig_rule', 'compliance_artifact', 'legacy_component', 'migration_task', 'intake_requirement', 'safe_item', 'coa_definition', 'uat_test')),  # noqa: E501
     target_id TEXT NOT NULL,
-    link_type TEXT NOT NULL CHECK(link_type IN ('satisfies', 'derives_from', 'implements', 'verifies', 'traces_to', 'allocates', 'refines', 'maps_to', 'replaces', 'migrates_to', 'decomposes_into', 'assessed_against', 'approved_for')),
+    link_type TEXT NOT NULL CHECK(link_type IN ('satisfies', 'derives_from', 'implements', 'verifies', 'traces_to', 'allocates', 'refines', 'maps_to', 'replaces', 'migrates_to', 'decomposes_into', 'assessed_against', 'approved_for')),  # noqa: E501
     confidence REAL DEFAULT 1.0 CHECK(confidence >= 0.0 AND confidence <= 1.0),
     evidence TEXT,
     created_by TEXT DEFAULT 'icdev-mbse-engine',
@@ -1019,9 +1019,9 @@ CREATE TABLE IF NOT EXISTS model_code_mappings (
     project_id TEXT NOT NULL REFERENCES projects(id),
     sysml_element_id TEXT NOT NULL REFERENCES sysml_elements(id),
     code_path TEXT NOT NULL,
-    code_type TEXT NOT NULL CHECK(code_type IN ('class', 'module', 'function', 'interface', 'api_endpoint', 'config', 'test', 'migration')),
-    mapping_direction TEXT DEFAULT 'model_to_code' CHECK(mapping_direction IN ('model_to_code', 'code_to_model', 'bidirectional')),
-    sync_status TEXT DEFAULT 'synced' CHECK(sync_status IN ('synced', 'model_ahead', 'code_ahead', 'conflict', 'unknown')),
+    code_type TEXT NOT NULL CHECK(code_type IN ('class', 'module', 'function', 'interface', 'api_endpoint', 'config', 'test', 'migration')),  # noqa: E501
+    mapping_direction TEXT DEFAULT 'model_to_code' CHECK(mapping_direction IN ('model_to_code', 'code_to_model', 'bidirectional')),  # noqa: E501
+    sync_status TEXT DEFAULT 'synced' CHECK(sync_status IN ('synced', 'model_ahead', 'code_ahead', 'conflict', 'unknown')),  # noqa: E501
     last_synced TEXT DEFAULT (datetime('now')),
     model_hash TEXT,
     code_hash TEXT,
@@ -1037,8 +1037,8 @@ CREATE TABLE IF NOT EXISTS des_compliance (
     project_id TEXT NOT NULL REFERENCES projects(id),
     requirement_id TEXT NOT NULL,
     requirement_title TEXT NOT NULL,
-    category TEXT NOT NULL CHECK(category IN ('model_authority', 'data_management', 'infrastructure', 'workforce', 'policy', 'lifecycle')),
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'compliant', 'partially_compliant', 'non_compliant', 'not_applicable')),
+    category TEXT NOT NULL CHECK(category IN ('model_authority', 'data_management', 'infrastructure', 'workforce', 'policy', 'lifecycle')),  # noqa: E501
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'compliant', 'partially_compliant', 'non_compliant', 'not_applicable')),  # noqa: E501
     evidence TEXT,
     automation_result TEXT,
     assessed_at TEXT DEFAULT (datetime('now')),
@@ -1063,8 +1063,8 @@ CREATE TABLE IF NOT EXISTS legacy_applications (
     language_version TEXT,
     framework TEXT,
     framework_version TEXT,
-    app_type TEXT DEFAULT 'monolith' CHECK(app_type IN ('monolith','distributed','client_server','mainframe','embedded')),
-    analysis_status TEXT DEFAULT 'registered' CHECK(analysis_status IN ('registered','analyzing','analyzed','planning','migrating','completed','failed')),
+    app_type TEXT DEFAULT 'monolith' CHECK(app_type IN ('monolith','distributed','client_server','mainframe','embedded')),  # noqa: E501
+    analysis_status TEXT DEFAULT 'registered' CHECK(analysis_status IN ('registered','analyzing','analyzed','planning','migrating','completed','failed')),  # noqa: E501
     loc_total INTEGER DEFAULT 0,
     loc_code INTEGER DEFAULT 0,
     loc_comment INTEGER DEFAULT 0,
@@ -1150,7 +1150,7 @@ CREATE INDEX IF NOT EXISTS idx_legacy_api_app ON legacy_apis(legacy_app_id);
 CREATE TABLE IF NOT EXISTS legacy_db_schemas (
     id TEXT PRIMARY KEY,
     legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
-    db_type TEXT NOT NULL CHECK(db_type IN ('postgresql','mysql','oracle','mssql','db2','sybase','sqlite','h2','derby')),
+    db_type TEXT NOT NULL CHECK(db_type IN ('postgresql','mysql','oracle','mssql','db2','sybase','sqlite','h2','derby')),  # noqa: E501
     schema_name TEXT DEFAULT 'public',
     table_name TEXT NOT NULL,
     column_name TEXT NOT NULL,
@@ -1181,7 +1181,7 @@ CREATE TABLE IF NOT EXISTS migration_assessments (
     repurchase_score REAL DEFAULT 0.0,
     retire_score REAL DEFAULT 0.0,
     retain_score REAL DEFAULT 0.0,
-    recommended_strategy TEXT CHECK(recommended_strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain')),
+    recommended_strategy TEXT CHECK(recommended_strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain')),  # noqa: E501
     cost_estimate_hours REAL,
     risk_score REAL DEFAULT 0.0,
     timeline_weeks INTEGER,
@@ -1200,12 +1200,12 @@ CREATE TABLE IF NOT EXISTS migration_plans (
     id TEXT PRIMARY KEY,
     legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
     plan_name TEXT NOT NULL,
-    strategy TEXT NOT NULL CHECK(strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain','hybrid')),
+    strategy TEXT NOT NULL CHECK(strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain','hybrid')),  # noqa: E501
     target_language TEXT,
     target_framework TEXT,
     target_database TEXT,
-    target_architecture TEXT CHECK(target_architecture IN ('microservices','modular_monolith','serverless','event_driven','layered','hexagonal')),
-    migration_approach TEXT DEFAULT 'strangler_fig' CHECK(migration_approach IN ('big_bang','strangler_fig','parallel_run','blue_green','canary','phased')),
+    target_architecture TEXT CHECK(target_architecture IN ('microservices','modular_monolith','serverless','event_driven','layered','hexagonal')),  # noqa: E501
+    migration_approach TEXT DEFAULT 'strangler_fig' CHECK(migration_approach IN ('big_bang','strangler_fig','parallel_run','blue_green','canary','phased')),  # noqa: E501
     total_tasks INTEGER DEFAULT 0,
     completed_tasks INTEGER DEFAULT 0,
     status TEXT DEFAULT 'draft' CHECK(status IN ('draft','approved','in_progress','paused','completed','cancelled')),
@@ -1519,7 +1519,7 @@ CREATE TABLE IF NOT EXISTS supply_chain_vendors (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id),
     vendor_name TEXT NOT NULL,
-    vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),
+    vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),  # noqa: E501
     country_of_origin TEXT,
     scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')),
     section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')),
@@ -1616,7 +1616,7 @@ CREATE TABLE IF NOT EXISTS cve_triage (
     severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low')),
     cvss_score REAL,
     exploitability TEXT CHECK(exploitability IN ('active', 'poc', 'theoretical', 'none_known')),
-    triage_decision TEXT CHECK(triage_decision IN ('remediate', 'mitigate', 'accept_risk', 'defer', 'false_positive', 'not_applicable')),
+    triage_decision TEXT CHECK(triage_decision IN ('remediate', 'mitigate', 'accept_risk', 'defer', 'false_positive', 'not_applicable')),  # noqa: E501
     triage_rationale TEXT,
     upstream_impact TEXT,
     downstream_impact TEXT,
@@ -2267,7 +2267,7 @@ CREATE TABLE IF NOT EXISTS marketplace_assets (
     publisher_org TEXT,
     publisher_user TEXT,
     catalog_tier TEXT NOT NULL DEFAULT 'tenant_local' CHECK(catalog_tier IN ('tenant_local', 'central_vetted')),
-    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'scanning', 'review', 'published', 'deprecated', 'revoked')),
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'scanning', 'review', 'published', 'deprecated', 'revoked')),  # noqa: E501
     license TEXT DEFAULT 'USG-INTERNAL',
     tags TEXT,
     compliance_controls TEXT,
@@ -2501,7 +2501,7 @@ CREATE TABLE IF NOT EXISTS cjis_assessments (
     project_id TEXT NOT NULL REFERENCES projects(id),
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),  # noqa: E501
     evidence TEXT,
     automation_result TEXT,
     nist_crosswalk TEXT,
@@ -2516,7 +2516,7 @@ CREATE TABLE IF NOT EXISTS hipaa_assessments (
     project_id TEXT NOT NULL REFERENCES projects(id),
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),  # noqa: E501
     evidence TEXT,
     automation_result TEXT,
     nist_crosswalk TEXT,
@@ -2531,7 +2531,7 @@ CREATE TABLE IF NOT EXISTS hitrust_assessments (
     project_id TEXT NOT NULL REFERENCES projects(id),
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),  # noqa: E501
     evidence TEXT,
     automation_result TEXT,
     nist_crosswalk TEXT,
@@ -2546,7 +2546,7 @@ CREATE TABLE IF NOT EXISTS soc2_assessments (
     project_id TEXT NOT NULL REFERENCES projects(id),
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),  # noqa: E501
     evidence TEXT,
     automation_result TEXT,
     nist_crosswalk TEXT,
@@ -2561,7 +2561,7 @@ CREATE TABLE IF NOT EXISTS pci_dss_assessments (
     project_id TEXT NOT NULL REFERENCES projects(id),
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),  # noqa: E501
     evidence TEXT,
     automation_result TEXT,
     nist_crosswalk TEXT,
@@ -2576,7 +2576,7 @@ CREATE TABLE IF NOT EXISTS iso27001_assessments (
     project_id TEXT NOT NULL REFERENCES projects(id),
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),  # noqa: E501
     evidence TEXT,
     automation_result TEXT,
     nist_crosswalk TEXT,
@@ -2690,7 +2690,7 @@ CREATE TABLE IF NOT EXISTS mosa_assessments (
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
     family TEXT,
-    status TEXT CHECK(status IN ('not_assessed','satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted')),
+    status TEXT CHECK(status IN ('not_assessed','satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted')),  # noqa: E501
     evidence_description TEXT,
     nist_800_53_crosswalk TEXT,
     automation_result TEXT,
@@ -3475,7 +3475,7 @@ CREATE TABLE IF NOT EXISTS propagation_log (
     capability_name TEXT,
     source_type TEXT,
     target_children_json TEXT,
-    status TEXT CHECK(status IN ('prepared', 'approved', 'executing', 'completed', 'failed', 'rolled_back')) DEFAULT 'prepared',
+    status TEXT CHECK(status IN ('prepared', 'approved', 'executing', 'completed', 'failed', 'rolled_back')) DEFAULT 'prepared',  # noqa: E501
     genome_version_before TEXT,
     genome_version_after TEXT,
     rollback_plan TEXT,
@@ -4344,7 +4344,7 @@ CREATE TABLE IF NOT EXISTS owasp_asi_assessments (
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
     family TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted','not_assessed')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted','not_assessed')),  # noqa: E501
     evidence_description TEXT,
     evidence_path TEXT,
     automation_result TEXT,
@@ -4365,7 +4365,7 @@ CREATE TABLE IF NOT EXISTS eu_ai_act_assessments (
     requirement_id TEXT NOT NULL,
     requirement_title TEXT,
     family TEXT,
-    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted','not_assessed')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted','not_assessed')),  # noqa: E501
     evidence_description TEXT,
     evidence_path TEXT,
     automation_result TEXT,
@@ -4680,7 +4680,7 @@ CREATE TABLE IF NOT EXISTS research_build_buy (
     existing_solutions TEXT DEFAULT '[]',
     icdev_capability_coverage REAL DEFAULT 0.0,
     estimated_effort TEXT CHECK(estimated_effort IS NULL OR estimated_effort IN ('S','M','L','XL')),
-    estimated_cost_tier TEXT CHECK(estimated_cost_tier IS NULL OR estimated_cost_tier IN ('low','medium','high','very_high')),
+    estimated_cost_tier TEXT CHECK(estimated_cost_tier IS NULL OR estimated_cost_tier IN ('low','medium','high','very_high')),  # noqa: E501
     risk_level TEXT DEFAULT 'medium' CHECK(risk_level IN ('low','medium','high','critical')),
     score_breakdown TEXT DEFAULT '{}',
     metadata TEXT DEFAULT '{}',
@@ -5220,7 +5220,7 @@ CREATE TABLE IF NOT EXISTS customer_deliveries (
     license_key_hash TEXT,
     effective_date TEXT NOT NULL,
     expires_at TEXT,
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'provisioning', 'delivered', 'active', 'expired', 'revoked')),
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'provisioning', 'delivered', 'active', 'expired', 'revoked')),  # noqa: E501
     delivered_by TEXT,
     notes TEXT,
     metadata TEXT DEFAULT '{}',
@@ -5352,7 +5352,7 @@ CREATE TABLE IF NOT EXISTS cpmp_deliverables (
     deliverable_type TEXT NOT NULL CHECK(deliverable_type IN (
         'cdrl', 'report', 'software', 'documentation', 'test_result', 'plan', 'data', 'other')),
     frequency TEXT CHECK(frequency IN (
-        'one_time', 'weekly', 'biweekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'as_needed', 'event_driven')),
+        'one_time', 'weekly', 'biweekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'as_needed', 'event_driven')),  # noqa: E501
     due_date TEXT,
     submitted_date TEXT,
     accepted_date TEXT,
@@ -7299,7 +7299,7 @@ CREATE TABLE IF NOT EXISTS threat_findings (
     id TEXT PRIMARY KEY,
     model_id TEXT NOT NULL REFERENCES threat_models(id),
     component_id TEXT NOT NULL,
-    stride_category TEXT NOT NULL CHECK(stride_category IN ('spoofing','tampering','repudiation','information_disclosure','denial_of_service','elevation_of_privilege')),
+    stride_category TEXT NOT NULL CHECK(stride_category IN ('spoofing','tampering','repudiation','information_disclosure','denial_of_service','elevation_of_privilege')),  # noqa: E501
     threat_description TEXT NOT NULL,
     risk_level TEXT NOT NULL CHECK(risk_level IN ('critical','high','moderate','low')),
     attack_technique TEXT,
@@ -7555,7 +7555,7 @@ CREATE TABLE IF NOT EXISTS pg_pulse_proposal_links (
     pulse_post_id   TEXT,
     opportunity_id  TEXT,
     section_id      TEXT,
-    link_type       TEXT NOT NULL CHECK(link_type IN ('article_to_proposal', 'capability_to_article', 'cdrl_to_case_study')),
+    link_type       TEXT NOT NULL CHECK(link_type IN ('article_to_proposal', 'capability_to_article', 'cdrl_to_case_study')),  # noqa: E501
     relevance_score REAL DEFAULT 0.0,
     created_at      TEXT NOT NULL
 );
@@ -7623,7 +7623,7 @@ CREATE INDEX IF NOT EXISTS idx_pg_winloss_opp ON pg_win_loss_records(opportunity
 CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
     id              TEXT PRIMARY KEY,
     win_loss_id     TEXT NOT NULL,
-    category        TEXT NOT NULL CHECK(category IN ('technical', 'management', 'pricing', 'past_performance', 'compliance', 'staffing', 'other')),
+    category        TEXT NOT NULL CHECK(category IN ('technical', 'management', 'pricing', 'past_performance', 'compliance', 'staffing', 'other')),  # noqa: E501
     lesson          TEXT NOT NULL,
     actionable      INTEGER NOT NULL DEFAULT 1,
     applied         INTEGER NOT NULL DEFAULT 0,
@@ -7636,7 +7636,7 @@ CREATE TABLE IF NOT EXISTS pg_crm_accounts (
     name            TEXT NOT NULL,
     agency          TEXT,
     sub_agency      TEXT,
-    account_type    TEXT DEFAULT 'government' CHECK(account_type IN ('government', 'prime', 'subcontractor', 'partner', 'other')),
+    account_type    TEXT DEFAULT 'government' CHECK(account_type IN ('government', 'prime', 'subcontractor', 'partner', 'other')),  # noqa: E501
     website         TEXT,
     naics_codes     TEXT,
     set_asides      TEXT,
@@ -7669,7 +7669,7 @@ CREATE TABLE IF NOT EXISTS pg_crm_interactions (
     id              TEXT PRIMARY KEY,
     contact_id      TEXT NOT NULL,
     account_id      TEXT NOT NULL,
-    interaction_type TEXT NOT NULL CHECK(interaction_type IN ('meeting', 'call', 'email', 'conference', 'site_visit', 'rfi_response', 'industry_day', 'other')),
+    interaction_type TEXT NOT NULL CHECK(interaction_type IN ('meeting', 'call', 'email', 'conference', 'site_visit', 'rfi_response', 'industry_day', 'other')),  # noqa: E501
     subject         TEXT,
     notes           TEXT,
     opportunity_id  TEXT,
@@ -7725,7 +7725,7 @@ CREATE INDEX IF NOT EXISTS idx_pg_capture_act_plan ON pg_capture_activities(capt
 CREATE TABLE IF NOT EXISTS pg_teaming_partners (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
-    partner_type    TEXT NOT NULL CHECK(partner_type IN ('prime', 'subcontractor', 'consultant', 'technology_partner', 'mentor_protege')),
+    partner_type    TEXT NOT NULL CHECK(partner_type IN ('prime', 'subcontractor', 'consultant', 'technology_partner', 'mentor_protege')),  # noqa: E501
     capabilities    TEXT,
     past_performance TEXT,
     contract_vehicles TEXT,
@@ -8133,9 +8133,7 @@ def _has_migration_system(path):
         return False
     try:
         conn = sqlite3.connect(str(path))
-        c = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
-        )
+        c = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
         has_table = c.fetchone() is not None
         conn.close()
         return has_table

@@ -85,6 +85,7 @@ def empty_indexer():
 # Section parsing
 # ---------------------------------------------------------------------------
 
+
 class TestSectionParsing:
     def test_sections_found(self, indexer):
         assert indexer.section_count > 0
@@ -104,6 +105,7 @@ class TestSectionParsing:
 # ---------------------------------------------------------------------------
 # get_section
 # ---------------------------------------------------------------------------
+
 
 class TestGetSection:
     def test_exact_match(self, indexer):
@@ -129,6 +131,7 @@ class TestGetSection:
 # search_sections
 # ---------------------------------------------------------------------------
 
+
 class TestSearchSections:
     def test_keyword_in_header(self, indexer):
         results = indexer.search_sections("Testing")
@@ -152,6 +155,7 @@ class TestSearchSections:
 # get_toc
 # ---------------------------------------------------------------------------
 
+
 class TestTableOfContents:
     def test_toc_structure(self, indexer):
         toc = indexer.get_toc()
@@ -171,6 +175,7 @@ class TestTableOfContents:
 # ---------------------------------------------------------------------------
 # get_sections_for_role
 # ---------------------------------------------------------------------------
+
 
 class TestRoleSections:
     def test_builder_role(self, indexer):
@@ -196,6 +201,7 @@ class TestRoleSections:
 # Empty / missing CLAUDE.md
 # ---------------------------------------------------------------------------
 
+
 class TestEmptyClaude:
     def test_missing_file(self, empty_indexer):
         assert empty_indexer.section_count == 0
@@ -215,9 +221,11 @@ class TestEmptyClaude:
 # Cache refresh
 # ---------------------------------------------------------------------------
 
+
 class TestCacheRefresh:
     def test_refresh_on_mtime_change(self):
         import time
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write("## Section A\nContent A\n")
             f.flush()

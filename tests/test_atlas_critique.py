@@ -38,6 +38,7 @@ from icdev.tools.agent.atlas_critique import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def tmp_db(tmp_path):
     """Create a temporary database with critique tables."""
@@ -76,21 +77,24 @@ def _mock_findings(agent, types, severities):
     """Generate mock findings for a given agent."""
     findings = []
     for ft, sev in zip(types, severities):
-        findings.append({
-            "finding_type": ft,
-            "severity": sev,
-            "title": f"Mock {sev} {ft}",
-            "description": f"Description for {ft} from {agent}",
-            "evidence": "mock evidence",
-            "suggested_fix": "fix suggestion",
-            "nist_controls": ["AC-2", "AU-6"],
-        })
+        findings.append(
+            {
+                "finding_type": ft,
+                "severity": sev,
+                "title": f"Mock {sev} {ft}",
+                "description": f"Description for {ft} from {agent}",
+                "evidence": "mock evidence",
+                "suggested_fix": "fix suggestion",
+                "nist_controls": ["AC-2", "AU-6"],
+            }
+        )
     return findings
 
 
 # ============================================================
 # Test: Import & Constants
 # ============================================================
+
 
 class TestImportAndConstants:
     def test_import(self):
@@ -130,6 +134,7 @@ class TestImportAndConstants:
 # ============================================================
 # Test: Configuration
 # ============================================================
+
 
 class TestConfiguration:
     def test_default_config_structure(self):
@@ -176,15 +181,12 @@ class TestConfiguration:
 # Test: Database Tables
 # ============================================================
 
+
 class TestDatabase:
     def test_tables_created(self, tmp_db):
         """Ensure critique tables exist after ensure_tables."""
         conn = sqlite3.connect(str(tmp_db))
-        tables = [
-            r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        ]
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         conn.close()
         assert "atlas_critique_sessions" in tables
         assert "atlas_critique_findings" in tables
@@ -225,10 +227,17 @@ class TestDatabase:
                (id, session_id, critic_agent, round_number,
                 finding_type, severity, title, description, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("find-001", "sess-002", "security-agent", 1,
-             "security_vulnerability", "critical",
-             "SQL Injection", "Unsanitized input",
-             "2026-01-01T00:00:00"),
+            (
+                "find-001",
+                "sess-002",
+                "security-agent",
+                1,
+                "security_vulnerability",
+                "critical",
+                "SQL Injection",
+                "Unsanitized input",
+                "2026-01-01T00:00:00",
+            ),
         )
         conn.commit()
         row = conn.execute(
@@ -254,10 +263,7 @@ class TestDatabase:
                    (id, session_id, critic_agent, round_number,
                     finding_type, severity, title, description, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                ("find-bad", "sess-003", "agent", 1,
-                 "invalid_type", "critical",
-                 "Bad", "Bad",
-                 "2026-01-01T00:00:00"),
+                ("find-bad", "sess-003", "agent", 1, "invalid_type", "critical", "Bad", "Bad", "2026-01-01T00:00:00"),
             )
         conn.close()
 
@@ -277,10 +283,17 @@ class TestDatabase:
                    (id, session_id, critic_agent, round_number,
                     finding_type, severity, title, description, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                ("find-bad2", "sess-004", "agent", 1,
-                 "security_vulnerability", "urgent",
-                 "Bad", "Bad",
-                 "2026-01-01T00:00:00"),
+                (
+                    "find-bad2",
+                    "sess-004",
+                    "agent",
+                    1,
+                    "security_vulnerability",
+                    "urgent",
+                    "Bad",
+                    "Bad",
+                    "2026-01-01T00:00:00",
+                ),
             )
         conn.close()
 
@@ -288,6 +301,7 @@ class TestDatabase:
 # ============================================================
 # Test: Consensus Computation
 # ============================================================
+
 
 class TestConsensus:
     def test_go_no_findings(self, critique):
@@ -320,6 +334,7 @@ class TestConsensus:
 # Test: Severity Counting
 # ============================================================
 
+
 class TestSeverityCounting:
     def test_count_empty(self):
         """Empty findings list returns all zeros."""
@@ -344,6 +359,7 @@ class TestSeverityCounting:
 # Test: Run Critique (mocked agents)
 # ============================================================
 
+
 class TestRunCritique:
     @patch.object(AtlasCritique, "_dispatch_critics")
     @patch.object(AtlasCritique, "_get_llm_router", return_value=None)
@@ -365,12 +381,15 @@ class TestRunCritique:
     def test_nogo_with_critical_finding(self, mock_router, mock_dispatch, critique):
         """Critical finding triggers NOGO."""
         mock_dispatch.return_value = [
-            {"agent": "security-agent", "role": "security_reviewer",
-             "findings": _mock_findings(
-                 "security-agent",
-                 ["security_vulnerability"],
-                 ["critical"],
-             )},
+            {
+                "agent": "security-agent",
+                "role": "security_reviewer",
+                "findings": _mock_findings(
+                    "security-agent",
+                    ["security_vulnerability"],
+                    ["critical"],
+                ),
+            },
             {"agent": "compliance-agent", "role": "compliance_reviewer", "findings": []},
             {"agent": "knowledge-agent", "role": "patterns_reviewer", "findings": []},
         ]
@@ -392,12 +411,15 @@ class TestRunCritique:
             call_count[0] += 1
             if call_count[0] == 1:
                 return [
-                    {"agent": "security-agent", "role": "security_reviewer",
-                     "findings": _mock_findings(
-                         "security-agent",
-                         ["security_vulnerability"],
-                         ["high"],
-                     )},
+                    {
+                        "agent": "security-agent",
+                        "role": "security_reviewer",
+                        "findings": _mock_findings(
+                            "security-agent",
+                            ["security_vulnerability"],
+                            ["high"],
+                        ),
+                    },
                     {"agent": "compliance-agent", "role": "compliance_reviewer", "findings": []},
                     {"agent": "knowledge-agent", "role": "patterns_reviewer", "findings": []},
                 ]
@@ -428,12 +450,15 @@ class TestRunCritique:
         """Max rounds exhaustion results in CONDITIONAL status."""
         # Every round has high findings
         mock_dispatch.return_value = [
-            {"agent": "security-agent", "role": "security_reviewer",
-             "findings": _mock_findings(
-                 "security-agent",
-                 ["security_vulnerability"],
-                 ["high"],
-             )},
+            {
+                "agent": "security-agent",
+                "role": "security_reviewer",
+                "findings": _mock_findings(
+                    "security-agent",
+                    ["security_vulnerability"],
+                    ["high"],
+                ),
+            },
             {"agent": "compliance-agent", "role": "compliance_reviewer", "findings": []},
             {"agent": "knowledge-agent", "role": "patterns_reviewer", "findings": []},
         ]
@@ -457,6 +482,7 @@ class TestRunCritique:
 # ============================================================
 # Test: Session Status & History
 # ============================================================
+
 
 class TestSessionStatusAndHistory:
     @patch.object(AtlasCritique, "_dispatch_critics")
@@ -510,6 +536,7 @@ class TestSessionStatusAndHistory:
 # Test: JSON Parsing
 # ============================================================
 
+
 class TestJsonParsing:
     def test_parse_direct_json(self):
         """Parse direct JSON array."""
@@ -540,24 +567,31 @@ class TestJsonParsing:
 # Test: Findings Storage (DB persistence)
 # ============================================================
 
+
 class TestFindingsStorage:
     @patch.object(AtlasCritique, "_dispatch_critics")
     @patch.object(AtlasCritique, "_get_llm_router", return_value=None)
     def test_findings_persisted_in_db(self, mock_router, mock_dispatch, critique, tmp_db):
         """Findings are stored in the database (GO case, no revision loop)."""
         mock_dispatch.return_value = [
-            {"agent": "security-agent", "role": "security_reviewer",
-             "findings": _mock_findings(
-                 "security-agent",
-                 ["security_vulnerability", "deployment_risk"],
-                 ["medium", "medium"],
-             )},
-            {"agent": "compliance-agent", "role": "compliance_reviewer",
-             "findings": _mock_findings(
-                 "compliance-agent",
-                 ["compliance_gap"],
-                 ["low"],
-             )},
+            {
+                "agent": "security-agent",
+                "role": "security_reviewer",
+                "findings": _mock_findings(
+                    "security-agent",
+                    ["security_vulnerability", "deployment_risk"],
+                    ["medium", "medium"],
+                ),
+            },
+            {
+                "agent": "compliance-agent",
+                "role": "compliance_reviewer",
+                "findings": _mock_findings(
+                    "compliance-agent",
+                    ["compliance_gap"],
+                    ["low"],
+                ),
+            },
             {"agent": "knowledge-agent", "role": "patterns_reviewer", "findings": []},
         ]
 

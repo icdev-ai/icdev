@@ -28,6 +28,7 @@ def _utcnow_iso() -> str:
 # Deterministic quality checks (scanner-tier, zero LLM tokens)
 # ---------------------------------------------------------------------------
 
+
 def _check_grammar(text: str) -> Dict[str, Any]:
     """Basic grammar checks (deterministic regex)."""
     issues = []
@@ -113,9 +114,21 @@ def _check_tone(text: str) -> Dict[str, Any]:
 
     # Informal language
     informal = [
-        "gonna", "wanna", "gotta", "kinda", "sorta", "ain't",
-        "stuff", "things", "basically", "actually", "obviously",
-        "pretty much", "a lot of", "tons of", "super",
+        "gonna",
+        "wanna",
+        "gotta",
+        "kinda",
+        "sorta",
+        "ain't",
+        "stuff",
+        "things",
+        "basically",
+        "actually",
+        "obviously",
+        "pretty much",
+        "a lot of",
+        "tons of",
+        "super",
     ]
     found_informal = [w for w in informal if w in text_lower]
     if found_informal:
@@ -123,9 +136,16 @@ def _check_tone(text: str) -> Dict[str, Any]:
 
     # Weak/vague language
     weak = [
-        "we think", "we believe", "we hope", "we feel",
-        "maybe", "perhaps", "possibly", "might be able to",
-        "try to", "attempt to",
+        "we think",
+        "we believe",
+        "we hope",
+        "we feel",
+        "maybe",
+        "perhaps",
+        "possibly",
+        "might be able to",
+        "try to",
+        "attempt to",
     ]
     found_weak = [w for w in weak if w in text_lower]
     if found_weak:
@@ -133,9 +153,18 @@ def _check_tone(text: str) -> Dict[str, Any]:
 
     # Positive proposal indicators
     strong = [
-        "we will", "we shall", "our approach", "our team",
-        "demonstrated", "proven", "experience", "expertise",
-        "compliant", "certified", "delivered", "implemented",
+        "we will",
+        "we shall",
+        "our approach",
+        "our team",
+        "demonstrated",
+        "proven",
+        "experience",
+        "expertise",
+        "compliant",
+        "certified",
+        "delivered",
+        "implemented",
     ]
     found_strong = sum(1 for w in strong if w in text_lower)
 
@@ -157,7 +186,7 @@ def _check_plagiarism(text: str, opp_id: str) -> Dict[str, Any]:
             "SELECT section_text FROM proposal_section_drafts "
             "WHERE opportunity_id != ? AND status IN ('draft', 'approved') "
             "ORDER BY created_at DESC LIMIT 20",
-            (opp_id,)
+            (opp_id,),
         ).fetchall()
     except Exception:
         return {"score": 1.0, "max_similarity": 0.0}
@@ -188,7 +217,7 @@ def _get_ngrams(text: str, n: int) -> set:
     text = re.sub(r"\s+", " ", text.lower().strip())
     if len(text) < n:
         return set()
-    return {text[i:i + n] for i in range(len(text) - n + 1)}
+    return {text[i : i + n] for i in range(len(text) - n + 1)}
 
 
 def _check_ai_detection(text: str) -> Dict[str, Any]:
@@ -209,7 +238,7 @@ def _check_ai_detection(text: str) -> Dict[str, Any]:
     lengths = [len(s.split()) for s in sentences]
     mean_len = sum(lengths) / len(lengths)
     variance = sum((sl - mean_len) ** 2 for sl in lengths) / len(lengths)
-    burstiness = (variance ** 0.5) / mean_len if mean_len > 0 else 0
+    burstiness = (variance**0.5) / mean_len if mean_len > 0 else 0
 
     # Low burstiness suggests AI generation
     if burstiness < 0.3:
@@ -234,6 +263,7 @@ def _run_writeguard(text: str, opportunity_id: str = "") -> Dict[str, Any]:
     """
     try:
         from tools.writing.analysis_engine import analyze
+
         result = analyze(
             text,
             mode="inline",
@@ -268,30 +298,36 @@ def _compute_composite_score(checks: Dict[str, Dict]) -> float:
     return round(total, 3)
 
 
-def _store_quality_score(opp_id: str, draft_id: str,
-                         composite: float, checks: Dict) -> str:
+def _store_quality_score(opp_id: str, draft_id: str, composite: float, checks: Dict) -> str:
     """Store quality score in pg_proposal_quality_scores (append-only)."""
     score_id = f"pgqs-{uuid.uuid4().hex[:10]}"
     conn = get_connection()
     try:
         import json
-        conn.execute("""
+
+        conn.execute(
+            """
             INSERT INTO pg_proposal_quality_scores
                 (id, opportunity_id, draft_id, composite_score,
                  grammar_score, readability_score, tone_score,
                  plagiarism_score, ai_detection_score,
                  check_details, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            score_id, opp_id, draft_id, composite,
-            checks.get("grammar", {}).get("score", 0),
-            checks.get("readability", {}).get("score", 0),
-            checks.get("tone", {}).get("score", 0),
-            checks.get("plagiarism", {}).get("score", 0),
-            checks.get("ai_detection", {}).get("score", 0),
-            json.dumps(checks),
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                score_id,
+                opp_id,
+                draft_id,
+                composite,
+                checks.get("grammar", {}).get("score", 0),
+                checks.get("readability", {}).get("score", 0),
+                checks.get("tone", {}).get("score", 0),
+                checks.get("plagiarism", {}).get("score", 0),
+                checks.get("ai_detection", {}).get("score", 0),
+                json.dumps(checks),
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
     except Exception:
         pass
@@ -358,15 +394,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             passing += 1
 
         # Store quality score
-        score_id = _store_quality_score(
-            row["opportunity_id"], row["draft_id"], composite, checks
-        )
+        score_id = _store_quality_score(row["opportunity_id"], row["draft_id"], composite, checks)
 
         # LLM Judge (Prometheus-2) — semantic evaluation
         judge_color = ""
         judge_composite = 0.0
         try:
             from tools.writing.llm_judge import evaluate_and_store, init_judge_db
+
             min_wg = config.get("judge_min_writeguard", 0.50)
             if composite >= min_wg:
                 init_judge_db()
@@ -398,15 +433,17 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         except Exception:
             pass  # Judge is non-fatal
 
-        polish_results.append({
-            "draft_id": row["draft_id"],
-            "opportunity_id": row["opportunity_id"],
-            "composite_score": composite,
-            "passed": passed,
-            "score_id": score_id,
-            "judge_color": judge_color,
-            "judge_composite": judge_composite,
-        })
+        polish_results.append(
+            {
+                "draft_id": row["draft_id"],
+                "opportunity_id": row["opportunity_id"],
+                "composite_score": composite,
+                "passed": passed,
+                "score_id": score_id,
+                "judge_color": judge_color,
+                "judge_composite": judge_composite,
+            }
+        )
 
     avg_score = total_score / len(polish_results) if polish_results else 0
     pass_rate = passing / len(polish_results) if polish_results else 0

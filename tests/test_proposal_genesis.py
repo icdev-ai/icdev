@@ -22,6 +22,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def pg_db(tmp_path):
     """Create a minimal in-memory DB with Proposal Genesis tables."""
@@ -229,11 +230,13 @@ def pg_config():
 
 # ── Daemon Tests ──────────────────────────────────────────────────────────────
 
+
 class TestDaemonModule:
     """Tests for proposal_genesis/daemon.py."""
 
     def test_reflex_names_constant(self):
         from tools.proposal_genesis.daemon import REFLEX_NAMES
+
         assert len(REFLEX_NAMES) == 14
         assert "discover" in REFLEX_NAMES
         assert "polish" in REFLEX_NAMES
@@ -241,14 +244,17 @@ class TestDaemonModule:
 
     def test_phase_a_reflexes_constant(self):
         from tools.proposal_genesis.daemon import PHASE_A_REFLEXES
+
         assert PHASE_A_REFLEXES == ["discover", "extract", "map", "draft", "polish"]
 
     def test_phase_b_reflexes_constant(self):
         from tools.proposal_genesis.daemon import PHASE_B_REFLEXES
+
         assert PHASE_B_REFLEXES == ["scout", "shape"]
 
     def test_pipeline_chain_constant(self):
         from tools.proposal_genesis.daemon import PIPELINE_CHAIN
+
         assert PIPELINE_CHAIN["discover"] == "extract"
         assert PIPELINE_CHAIN["extract"] == "map"
         assert PIPELINE_CHAIN["map"] == "draft"
@@ -258,18 +264,21 @@ class TestDaemonModule:
 
     def test_reflex_state_init(self):
         from tools.proposal_genesis.daemon import ReflexState
+
         state = ReflexState(name="test", config={"enabled": True})
         assert state.name == "test"
         assert state.config["enabled"] is True
 
     def test_trust_kernel_can_execute_green(self, pg_config):
         from tools.proposal_genesis.daemon import TrustKernel
+
         tk = TrustKernel(pg_config)
         allowed, reason = tk.can_execute("green")
         assert allowed is True
 
     def test_trust_kernel_can_execute_yellow(self, pg_config):
         from tools.proposal_genesis.daemon import TrustKernel
+
         tk = TrustKernel(pg_config)
         allowed, reason = tk.can_execute("yellow")
         assert allowed is True
@@ -277,6 +286,7 @@ class TestDaemonModule:
     @patch("tools.proposal_genesis.daemon.get_connection")
     def test_daemon_get_status(self, mock_conn, pg_config):
         from tools.proposal_genesis.daemon import ProposalGenesisDaemon
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_db.execute.return_value.fetchone.return_value = {"cnt": 0}
@@ -290,23 +300,27 @@ class TestDaemonModule:
 
 # ── Polish Reflex Tests ───────────────────────────────────────────────────────
 
+
 class TestPolishReflex:
     """Tests for reflexes/polish.py quality checks."""
 
     def test_check_grammar_clean(self):
         from tools.proposal_genesis.reflexes.polish import _check_grammar
+
         result = _check_grammar("This is a clean sentence. Another one here.")
         assert result["score"] >= 0.7
         assert isinstance(result["issues"], list)
 
     def test_check_grammar_issues(self):
         from tools.proposal_genesis.reflexes.polish import _check_grammar
+
         result = _check_grammar("this  is  bad.  not capitalized. the the repeated")
         assert result["score"] < 1.0
         assert len(result["issues"]) > 0
 
     def test_check_readability(self):
         from tools.proposal_genesis.reflexes.polish import _check_readability
+
         text = (
             "Our team will deliver a comprehensive solution for the government's needs. "
             "We have extensive experience in cybersecurity and compliance frameworks. "
@@ -319,6 +333,7 @@ class TestPolishReflex:
 
     def test_check_tone_professional(self):
         from tools.proposal_genesis.reflexes.polish import _check_tone
+
         text = (
             "We will implement a proven DevSecOps pipeline that demonstrates "
             "our expertise in secure software delivery. Our team has delivered "
@@ -329,6 +344,7 @@ class TestPolishReflex:
 
     def test_check_tone_informal(self):
         from tools.proposal_genesis.reflexes.polish import _check_tone
+
         text = "We're gonna try to basically do stuff and things that are pretty much ok."
         result = _check_tone(text)
         assert result["score"] < 0.8
@@ -336,6 +352,7 @@ class TestPolishReflex:
 
     def test_check_ai_detection(self):
         from tools.proposal_genesis.reflexes.polish import _check_ai_detection
+
         text = " ".join(["This is sentence number {}.".format(i) for i in range(20)])
         result = _check_ai_detection(text)
         assert "score" in result
@@ -343,6 +360,7 @@ class TestPolishReflex:
 
     def test_compute_composite_score(self):
         from tools.proposal_genesis.reflexes.polish import _compute_composite_score
+
         checks = {
             "grammar": {"score": 0.9},
             "readability": {"score": 0.8},
@@ -358,12 +376,14 @@ class TestPolishReflex:
 
     def test_count_syllables(self):
         from tools.proposal_genesis.reflexes.polish import _count_syllables
+
         assert _count_syllables("cat") == 1
         assert _count_syllables("hello") == 2
         assert _count_syllables("computer") >= 2
 
     def test_get_ngrams(self):
         from tools.proposal_genesis.reflexes.polish import _get_ngrams
+
         ngrams = _get_ngrams("hello world", 4)
         assert isinstance(ngrams, set)
         assert len(ngrams) > 0
@@ -372,11 +392,13 @@ class TestPolishReflex:
 
 # ── Draft Reflex Tests ────────────────────────────────────────────────────────
 
+
 class TestDraftReflex:
     """Tests for reflexes/draft.py."""
 
     def test_extract_keywords(self):
         from tools.proposal_genesis.reflexes.draft import _extract_keywords
+
         kws = _extract_keywords("Cybersecurity Assessment", "Provide comprehensive security testing for DoD systems")
         assert isinstance(kws, list)
         assert len(kws) > 0
@@ -384,32 +406,33 @@ class TestDraftReflex:
 
     def test_keyword_overlap_score(self):
         from tools.proposal_genesis.reflexes.draft import _keyword_overlap_score
+
         score = _keyword_overlap_score(
-            ["security", "compliance", "testing"],
-            "Our security and compliance testing approach is comprehensive."
+            ["security", "compliance", "testing"], "Our security and compliance testing approach is comprehensive."
         )
         assert score > 0
 
     def test_keyword_overlap_zero(self):
         from tools.proposal_genesis.reflexes.draft import _keyword_overlap_score
-        score = _keyword_overlap_score(
-            ["security", "compliance"],
-            "Completely unrelated text about cooking recipes."
-        )
+
+        score = _keyword_overlap_score(["security", "compliance"], "Completely unrelated text about cooking recipes.")
         assert score < 0.5
 
     def test_keyword_overlap_empty(self):
         from tools.proposal_genesis.reflexes.draft import _keyword_overlap_score
+
         assert _keyword_overlap_score([], "Some text") == 0.0
 
 
 # ── Discover Reflex Tests ─────────────────────────────────────────────────────
+
 
 class TestDiscoverReflex:
     """Tests for reflexes/discover.py."""
 
     def test_is_air_gapped_default(self):
         from tools.proposal_genesis.reflexes.discover import _is_air_gapped
+
         with patch.dict(os.environ, {}, clear=False):
             if "ICDEV_ENVIRONMENT" in os.environ:
                 del os.environ["ICDEV_ENVIRONMENT"]
@@ -417,12 +440,14 @@ class TestDiscoverReflex:
 
     def test_is_air_gapped_true(self):
         from tools.proposal_genesis.reflexes.discover import _is_air_gapped
+
         with patch.dict(os.environ, {"ICDEV_ENVIRONMENT": "air-gapped"}):
             assert _is_air_gapped() is True
 
     @patch("tools.proposal_genesis.reflexes.discover.get_connection")
     def test_run_air_gapped(self, mock_conn):
         from tools.proposal_genesis.reflexes.discover import run
+
         with patch.dict(os.environ, {"ICDEV_ENVIRONMENT": "air-gapped"}):
             result = run({}, None)
             assert result["success"] is True
@@ -432,11 +457,14 @@ class TestDiscoverReflex:
     @patch("tools.proposal_genesis.reflexes.discover.get_connection")
     def test_run_normal(self, mock_conn):
         from tools.proposal_genesis.reflexes.discover import run
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_conn.return_value = mock_db
         with patch("tools.proposal_genesis.reflexes.discover._scan_sam_gov", return_value={"new_count": 3}):
-            with patch("tools.proposal_genesis.reflexes.discover._check_amendments", return_value={"amendments_found": 1}):
+            with patch(
+                "tools.proposal_genesis.reflexes.discover._check_amendments", return_value={"amendments_found": 1}
+            ):
                 result = run({}, None)
                 assert result["success"] is True
                 assert result["metric_value"] == 4.0
@@ -444,12 +472,14 @@ class TestDiscoverReflex:
 
 # ── Extract Reflex Tests ──────────────────────────────────────────────────────
 
+
 class TestExtractReflex:
     """Tests for reflexes/extract.py."""
 
     @patch("tools.proposal_genesis.reflexes.extract.get_connection")
     def test_run_no_opportunities(self, mock_conn):
         from tools.proposal_genesis.reflexes.extract import run
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_conn.return_value = mock_db
@@ -461,12 +491,14 @@ class TestExtractReflex:
 
 # ── Map Reflex Tests ──────────────────────────────────────────────────────────
 
+
 class TestMapReflex:
     """Tests for reflexes/map.py."""
 
     @patch("tools.proposal_genesis.reflexes.map.get_connection")
     def test_run_no_opportunities(self, mock_conn):
         from tools.proposal_genesis.reflexes.map import run
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_conn.return_value = mock_db
@@ -477,6 +509,7 @@ class TestMapReflex:
 
 
 # ── Dashboard API Tests ───────────────────────────────────────────────────────
+
 
 class TestProposalGenesisAPI:
     """Tests for dashboard API blueprint."""
@@ -519,8 +552,7 @@ class TestProposalGenesisAPI:
             "(id, opportunity_id, draft_id, composite_score, grammar_score, "
             "readability_score, tone_score, plagiarism_score, ai_detection_score, "
             "check_details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("qs-1", "opp-1", "draft-1", 0.82, 0.9, 0.8, 0.85, 1.0, 0.7,
-             "{}", "2026-03-14T00:00:00Z"),
+            ("qs-1", "opp-1", "draft-1", 0.82, 0.9, 0.8, 0.85, 1.0, 0.7, "{}", "2026-03-14T00:00:00Z"),
         )
         conn.commit()
 
@@ -538,8 +570,7 @@ class TestProposalGenesisAPI:
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("aud-1", "pg.reflex.completed", "discover", "green",
-             "Found 3 opps", 1, "2026-03-14T12:00:00Z"),
+            ("aud-1", "pg.reflex.completed", "discover", "green", "Found 3 opps", 1, "2026-03-14T12:00:00Z"),
         )
         conn.commit()
 
@@ -580,9 +611,18 @@ class TestProposalGenesisAPI:
             "(id, opportunity_id, status, win_strategy, discriminators, "
             "teaming_strategy, price_strategy, gate_reviews, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("cp-1", "opp-cp1", "draft", "Technical differentiation",
-             '["FedRAMP cloud"]', "", "", '{}',
-             "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            (
+                "cp-1",
+                "opp-cp1",
+                "draft",
+                "Technical differentiation",
+                '["FedRAMP cloud"]',
+                "",
+                "",
+                "{}",
+                "2026-03-14T00:00:00Z",
+                "2026-03-14T00:00:00Z",
+            ),
         )
         conn.commit()
 
@@ -604,16 +644,22 @@ class TestProposalGenesisAPI:
             "INSERT INTO pg_teaming_partners "
             "(id, name, partner_type, capabilities, status, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("tp-1", "SecureTech Inc", "subcontractor", "cybersecurity devsecops",
-             "active", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            (
+                "tp-1",
+                "SecureTech Inc",
+                "subcontractor",
+                "cybersecurity devsecops",
+                "active",
+                "2026-03-14T00:00:00Z",
+                "2026-03-14T00:00:00Z",
+            ),
         )
         conn.execute(
             "INSERT INTO pg_teaming_assessments "
             "(id, opportunity_id, partner_id, fit_score, capability_gaps_filled, "
             "risk_assessment, recommendation, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("ta-1", "opp-ta1", "tp-1", 0.72, '["keyword overlap"]',
-             '[]', "strong_fit", "2026-03-14T00:00:00Z"),
+            ("ta-1", "opp-ta1", "tp-1", 0.72, '["keyword overlap"]', "[]", "strong_fit", "2026-03-14T00:00:00Z"),
         )
         conn.commit()
 
@@ -629,9 +675,7 @@ class TestProposalGenesisAPI:
     def test_summary_includes_phase_b_stats(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO pg_capture_plans "
-            "(id, opportunity_id, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO pg_capture_plans (id, opportunity_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
             ("cp-s1", "opp-1", "draft", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
         )
         conn.execute(
@@ -653,22 +697,26 @@ class TestProposalGenesisAPI:
 
 # ── Scout Reflex Tests (Phase B) ────────────────────────────────────────────
 
+
 class TestScoutReflex:
     """Tests for reflexes/scout.py (R2)."""
 
     def test_is_air_gapped_default(self):
         from tools.proposal_genesis.reflexes.scout import _is_air_gapped
+
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ICDEV_AIR_GAPPED", None)
             assert _is_air_gapped() is False
 
     def test_is_air_gapped_true(self):
         from tools.proposal_genesis.reflexes.scout import _is_air_gapped
+
         with patch.dict(os.environ, {"ICDEV_AIR_GAPPED": "true"}):
             assert _is_air_gapped() is True
 
     def test_generate_brief_with_data(self):
         from tools.proposal_genesis.reflexes.scout import _generate_brief
+
         award_scan = {"status": "ok", "new_awards": 5, "total_fetched": 20, "lookback_days": 90}
         leaderboard = [
             {"rank": 1, "vendor": "Acme Corp", "awards": 15, "total_value": 5000000, "naics_diversity": 3},
@@ -692,18 +740,21 @@ class TestScoutReflex:
 
     def test_generate_brief_air_gapped(self):
         from tools.proposal_genesis.reflexes.scout import _generate_brief
+
         brief = _generate_brief({"status": "air_gapped"}, [], [])
         assert "Air-gapped mode" in brief
         assert "No award data available" in brief
 
     def test_generate_brief_error(self):
         from tools.proposal_genesis.reflexes.scout import _generate_brief
+
         brief = _generate_brief({"status": "error", "message": "timeout"}, [], [])
         assert "timeout" in brief
 
     @patch("tools.proposal_genesis.reflexes.scout.get_connection")
     def test_find_competitor_overlaps_no_opps(self, mock_conn):
         from tools.proposal_genesis.reflexes.scout import _find_competitor_overlaps
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_conn.return_value = mock_db
@@ -717,6 +768,7 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
     def test_run_air_gapped(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
         from tools.proposal_genesis.reflexes.scout import run
+
         mock_leaders.return_value = []
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 0, "win_loss_created": 0}
@@ -736,6 +788,7 @@ class TestScoutReflex:
     @patch("tools.proposal_genesis.reflexes.scout._scan_awards")
     def test_run_connected(self, mock_scan, mock_leaders, mock_overlaps, mock_match, mock_store):
         from tools.proposal_genesis.reflexes.scout import run
+
         mock_scan.return_value = {"status": "ok", "new_awards": 3}
         mock_leaders.return_value = [{"rank": 1, "vendor": "X", "awards": 5}]
         mock_overlaps.return_value = []
@@ -755,6 +808,7 @@ class TestScoutReflex:
     def test_match_awards_to_decisions_no_pending(self, mock_conn):
         """No pending bid decisions → zero outcomes."""
         from tools.proposal_genesis.reflexes.scout import _match_awards_to_decisions
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_conn.return_value = mock_db
@@ -766,19 +820,24 @@ class TestScoutReflex:
     def test_match_awards_to_decisions_with_match(self, mock_conn):
         """Pending bid decision + matching award → outcome + win/loss record."""
         from tools.proposal_genesis.reflexes.scout import _match_awards_to_decisions
+
         mock_db = MagicMock()
 
         pending_row = {
-            "decision_id": "bd-1", "opportunity_id": "opp-1",
-            "decision": "bid", "title": "Cloud Svc",
-            "agency": "DoD", "naics_code": "541512", "sol_number": "SOL-001",
+            "decision_id": "bd-1",
+            "opportunity_id": "opp-1",
+            "decision": "bid",
+            "title": "Cloud Svc",
+            "agency": "DoD",
+            "naics_code": "541512",
+            "sol_number": "SOL-001",
         }
         award_row = {
             "awardee_name": "Some Other Corp",
-            "award_amount": 500000, "award_date": "2026-03-10",
+            "award_amount": 500000,
+            "award_date": "2026-03-10",
         }
 
-        call_count = [0]
         def execute_side_effect(sql, params=None):
             result = MagicMock()
             sql_lower = sql.strip().lower()
@@ -805,12 +864,17 @@ class TestScoutReflex:
     def test_match_awards_no_award_found(self, mock_conn):
         """Pending bid decision but no matching award → skip."""
         from tools.proposal_genesis.reflexes.scout import _match_awards_to_decisions
+
         mock_db = MagicMock()
 
         pending_row = {
-            "decision_id": "bd-2", "opportunity_id": "opp-2",
-            "decision": "bid", "title": "Network Ops",
-            "agency": "DHS", "naics_code": "541519", "sol_number": "",
+            "decision_id": "bd-2",
+            "opportunity_id": "opp-2",
+            "decision": "bid",
+            "title": "Network Ops",
+            "agency": "DHS",
+            "naics_code": "541519",
+            "sol_number": "",
         }
 
         def execute_side_effect(sql, params=None):
@@ -833,46 +897,55 @@ class TestScoutReflex:
 
 # ── Shape Reflex Tests (Phase B) ────────────────────────────────────────────
 
+
 class TestShapeReflex:
     """Tests for reflexes/shape.py (R3)."""
 
     def test_derive_win_strategy_tech(self):
         from tools.proposal_genesis.reflexes.shape import _derive_win_strategy
+
         strategy = _derive_win_strategy({"title": "Cloud Modernization Platform", "agency": "DoD"})
         assert "Technical differentiation" in strategy or "automation" in strategy
 
     def test_derive_win_strategy_compliance(self):
         from tools.proposal_genesis.reflexes.shape import _derive_win_strategy
+
         strategy = _derive_win_strategy({"title": "FedRAMP ATO Support", "agency": "DHS"})
         assert "Compliance" in strategy or "ATO" in strategy
 
     def test_derive_win_strategy_dod(self):
         from tools.proposal_genesis.reflexes.shape import _derive_win_strategy
+
         strategy = _derive_win_strategy({"title": "Network Security", "agency": "DoD"})
         assert "Mission understanding" in strategy or "DoD" in strategy
 
     def test_derive_win_strategy_default(self):
         from tools.proposal_genesis.reflexes.shape import _derive_win_strategy
+
         strategy = _derive_win_strategy({"title": "General Services", "agency": "GSA"})
         assert "Best-value" in strategy
 
     def test_derive_discriminators_cloud(self):
         from tools.proposal_genesis.reflexes.shape import _derive_discriminators
+
         discs = _derive_discriminators({"title": "Cloud Infrastructure Migration"})
         assert any("FedRAMP" in d for d in discs)
 
     def test_derive_discriminators_ai(self):
         from tools.proposal_genesis.reflexes.shape import _derive_discriminators
+
         discs = _derive_discriminators({"title": "AI-driven Analytics Platform"})
         assert any("AI" in d or "NIST" in d for d in discs)
 
     def test_derive_discriminators_default(self):
         from tools.proposal_genesis.reflexes.shape import _derive_discriminators
+
         discs = _derive_discriminators({"title": "General Consulting"})
         assert any("SDLC" in d or "deployment" in d.lower() for d in discs)
 
     def test_assess_partner_fit_strong(self):
         from tools.proposal_genesis.reflexes.shape import _assess_partner_fit
+
         opp = {"title": "Cloud Cybersecurity DevSecOps Modernization", "naics_code": "541512"}
         partner = {
             "capabilities": "cloud cybersecurity devsecops automation modernization",
@@ -888,6 +961,7 @@ class TestShapeReflex:
 
     def test_assess_partner_fit_no_capabilities(self):
         from tools.proposal_genesis.reflexes.shape import _assess_partner_fit
+
         opp = {"title": "Test Opportunity", "naics_code": "541512"}
         partner = {
             "capabilities": "",
@@ -903,6 +977,7 @@ class TestShapeReflex:
 
     def test_assess_partner_fit_marginal(self):
         from tools.proposal_genesis.reflexes.shape import _assess_partner_fit
+
         opp = {"title": "Advanced Quantum Computing Research", "naics_code": "541715"}
         partner = {
             "capabilities": "data entry word processing scanning",
@@ -919,9 +994,9 @@ class TestShapeReflex:
     @patch("tools.proposal_genesis.reflexes.shape._get_partners")
     @patch("tools.proposal_genesis.reflexes.shape._create_capture_plan")
     @patch("tools.proposal_genesis.reflexes.shape._get_opportunities_needing_plans")
-    def test_run_creates_plans(self, mock_needs, mock_create, mock_partners,
-                               mock_unassessed, mock_update):
+    def test_run_creates_plans(self, mock_needs, mock_create, mock_partners, mock_unassessed, mock_update):
         from tools.proposal_genesis.reflexes.shape import run
+
         mock_needs.return_value = [
             {"id": "opp-1", "title": "Test", "agency": "DoD", "naics_code": "541512"},
         ]
@@ -940,19 +1015,25 @@ class TestShapeReflex:
     @patch("tools.proposal_genesis.reflexes.shape._get_partners")
     @patch("tools.proposal_genesis.reflexes.shape._create_capture_plan")
     @patch("tools.proposal_genesis.reflexes.shape._get_opportunities_needing_plans")
-    def test_run_assesses_partners(self, mock_needs, mock_create, mock_partners,
-                                   mock_unassessed, mock_store, mock_update):
+    def test_run_assesses_partners(
+        self, mock_needs, mock_create, mock_partners, mock_unassessed, mock_store, mock_update
+    ):
         from tools.proposal_genesis.reflexes.shape import run
+
         mock_needs.return_value = []
         mock_partners.return_value = [
-            {"id": "tp-1", "name": "Partner A",
-             "capabilities": "cloud devsecops", "certifications": "fedramp",
-             "contract_vehicles": "gwac", "set_asides": "8a",
-             "status": "active"},
+            {
+                "id": "tp-1",
+                "name": "Partner A",
+                "capabilities": "cloud devsecops",
+                "certifications": "fedramp",
+                "contract_vehicles": "gwac",
+                "set_asides": "8a",
+                "status": "active",
+            },
         ]
         mock_unassessed.return_value = [
-            {"opportunity_id": "opp-1", "title": "Cloud DevSecOps",
-             "naics_code": "541512", "agency": "DoD"},
+            {"opportunity_id": "opp-1", "title": "Cloud DevSecOps", "naics_code": "541512", "agency": "DoD"},
         ]
         mock_store.return_value = "pgta-xyz789"
 
@@ -967,6 +1048,7 @@ class TestShapeReflex:
     @patch("tools.proposal_genesis.reflexes.shape._get_opportunities_needing_plans")
     def test_run_no_work(self, mock_needs, mock_partners, mock_unassessed, mock_update):
         from tools.proposal_genesis.reflexes.shape import run
+
         mock_needs.return_value = []
         mock_partners.return_value = []
         mock_unassessed.return_value = []
@@ -980,11 +1062,13 @@ class TestShapeReflex:
 
 # ── Engage Reflex Tests (Phase C) ──────────────────────────────────────────
 
+
 class TestEngageReflex:
     """Tests for reflexes/engage.py (R4)."""
 
     def test_classify_account_type_government(self):
         from tools.proposal_genesis.reflexes.engage import _classify_account_type
+
         assert _classify_account_type("Department of Defense") == "government"
         assert _classify_account_type("DHS") == "government"
         assert _classify_account_type("Army Futures Command") == "government"
@@ -993,12 +1077,14 @@ class TestEngageReflex:
 
     def test_classify_account_type_other(self):
         from tools.proposal_genesis.reflexes.engage import _classify_account_type
+
         assert _classify_account_type("Acme Corp") == "other"
         assert _classify_account_type("") == "other"
         assert _classify_account_type(None) == "other"
 
     def test_map_event_to_interaction(self):
         from tools.proposal_genesis.reflexes.engage import _map_event_to_interaction
+
         assert _map_event_to_interaction("capture_plan_created") == "rfi_response"
         assert _map_event_to_interaction("draft_completed") == "rfi_response"
         assert _map_event_to_interaction("pg.reflex.completed") == "other"
@@ -1008,23 +1094,27 @@ class TestEngageReflex:
 
     def test_score_recency_today(self):
         from tools.proposal_genesis.reflexes.engage import _score_recency
+
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         score = _score_recency(now_iso)
         assert score >= 0.99
 
     def test_score_recency_old(self):
         from tools.proposal_genesis.reflexes.engage import _score_recency
+
         score = _score_recency("2020-01-01T00:00:00Z")
         assert score == 0.0
 
     def test_score_recency_none(self):
         from tools.proposal_genesis.reflexes.engage import _score_recency
+
         assert _score_recency(None) == 0.0
         assert _score_recency("") == 0.0
 
     def test_score_recency_30_days_ago(self):
         from tools.proposal_genesis.reflexes.engage import _score_recency
         from datetime import timedelta
+
         thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         score = _score_recency(thirty_days_ago)
         assert 0.6 < score < 0.7  # ~0.667
@@ -1032,6 +1122,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_create_account_from_opportunity(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _create_account_from_opportunity
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = None  # no existing
         mock_conn.return_value = mock_db
@@ -1045,6 +1136,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_create_account_existing(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _create_account_from_opportunity
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = {"id": "existing-id"}
         mock_conn.return_value = mock_db
@@ -1056,6 +1148,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_create_account_no_agency(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _create_account_from_opportunity
+
         opp = {"id": "opp-1", "agency": "", "naics_code": ""}
         result = _create_account_from_opportunity(opp)
         assert result is None
@@ -1063,6 +1156,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_log_interaction(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _log_interaction
+
         mock_db = MagicMock()
         mock_conn.return_value = mock_db
 
@@ -1080,6 +1174,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_get_account_for_agency(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _get_account_for_agency
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = {"id": "acct-1"}
         mock_conn.return_value = mock_db
@@ -1090,6 +1185,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_get_account_for_agency_not_found(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _get_account_for_agency
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = None
         mock_conn.return_value = mock_db
@@ -1099,12 +1195,14 @@ class TestEngageReflex:
 
     def test_get_account_for_agency_empty(self):
         from tools.proposal_genesis.reflexes.engage import _get_account_for_agency
+
         assert _get_account_for_agency("") is None
         assert _get_account_for_agency(None) is None
 
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_compute_win_rate_with_data(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _compute_win_rate
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = {"total": 10, "wins": 7}
         result = _compute_win_rate(mock_db, "DoD")
@@ -1113,6 +1211,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_compute_win_rate_no_data(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _compute_win_rate
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = {"total": 0, "wins": 0}
         result = _compute_win_rate(mock_db, "Unknown Agency")
@@ -1121,6 +1220,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_compute_win_rate_none_row(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _compute_win_rate
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = None
         result = _compute_win_rate(mock_db, "DoD")
@@ -1129,6 +1229,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_compute_win_rate_exception(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _compute_win_rate
+
         mock_db = MagicMock()
         mock_db.execute.side_effect = Exception("DB error")
         result = _compute_win_rate(mock_db, "DoD")
@@ -1137,6 +1238,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage.get_connection")
     def test_compute_win_rate_all_wins(self, mock_conn):
         from tools.proposal_genesis.reflexes.engage import _compute_win_rate
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = {"total": 5, "wins": 5}
         result = _compute_win_rate(mock_db, "Navy")
@@ -1150,6 +1252,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage._get_opportunities_without_accounts")
     def test_run_full(self, mock_opps, mock_create, mock_audits, mock_agency, mock_log, mock_scores):
         from tools.proposal_genesis.reflexes.engage import run
+
         mock_opps.return_value = [
             {"id": "opp-1", "agency": "DoD", "naics_code": "541512"},
         ]
@@ -1175,6 +1278,7 @@ class TestEngageReflex:
     @patch("tools.proposal_genesis.reflexes.engage._get_opportunities_without_accounts")
     def test_run_no_work(self, mock_opps, mock_audits, mock_scores):
         from tools.proposal_genesis.reflexes.engage import run
+
         mock_opps.return_value = []
         mock_audits.return_value = []
         mock_scores.return_value = []
@@ -1187,6 +1291,7 @@ class TestEngageReflex:
 
 # ── Phase C Dashboard API Tests ─────────────────────────────────────────────
 
+
 class TestProposalGenesisPhaseCAPI:
     """Tests for Phase C dashboard API endpoints."""
 
@@ -1194,6 +1299,7 @@ class TestProposalGenesisPhaseCAPI:
     def app(self, pg_db):
         from flask import Flask
         from tools.dashboard.api.proposal_genesis import proposal_genesis_api
+
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
@@ -1207,8 +1313,7 @@ class TestProposalGenesisPhaseCAPI:
             "INSERT INTO pg_crm_accounts "
             "(id, name, agency, account_type, status, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("acct-1", "DoD", "DoD", "government", "active",
-             "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            ("acct-1", "DoD", "DoD", "government", "active", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
         )
         conn.commit()
 
@@ -1227,16 +1332,14 @@ class TestProposalGenesisPhaseCAPI:
             "INSERT INTO pg_crm_accounts "
             "(id, name, agency, account_type, status, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("acct-2", "DHS", "DHS", "government", "active",
-             "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            ("acct-2", "DHS", "DHS", "government", "active", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO pg_crm_engagement_scores "
             "(id, account_id, score, score_breakdown, interaction_count, "
             "opportunity_count, win_rate, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("eng-1", "acct-2", 0.65, '{"recency":0.8,"frequency":0.5}',
-             5, 2, 0.0, "2026-03-14T00:00:00Z"),
+            ("eng-1", "acct-2", 0.65, '{"recency":0.8,"frequency":0.5}', 5, 2, 0.0, "2026-03-14T00:00:00Z"),
         )
         conn.commit()
 
@@ -1252,19 +1355,25 @@ class TestProposalGenesisPhaseCAPI:
     def test_crm_interactions_endpoint(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO pg_crm_accounts "
-            "(id, name, agency, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            ("acct-3", "Army", "Army", "active",
-             "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            "INSERT INTO pg_crm_accounts (id, name, agency, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("acct-3", "Army", "Army", "active", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO pg_crm_interactions "
             "(id, contact_id, account_id, interaction_type, subject, "
             "notes, opportunity_id, interaction_date, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("int-1", "", "acct-3", "rfi_response", "RFI for cloud",
-             "Notes here", "opp-1", "2026-03-14T12:00:00Z", "2026-03-14T12:00:00Z"),
+            (
+                "int-1",
+                "",
+                "acct-3",
+                "rfi_response",
+                "RFI for cloud",
+                "Notes here",
+                "opp-1",
+                "2026-03-14T12:00:00Z",
+                "2026-03-14T12:00:00Z",
+            ),
         )
         conn.commit()
 
@@ -1280,20 +1389,24 @@ class TestProposalGenesisPhaseCAPI:
     def test_engagement_scores_endpoint(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO pg_crm_accounts "
-            "(id, name, agency, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            ("acct-4", "Navy", "Navy", "active",
-             "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            "INSERT INTO pg_crm_accounts (id, name, agency, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("acct-4", "Navy", "Navy", "active", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO pg_crm_engagement_scores "
             "(id, account_id, score, score_breakdown, interaction_count, "
             "opportunity_count, win_rate, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("eng-2", "acct-4", 0.72,
-             '{"recency":0.9,"frequency":0.6,"pipeline":0.4,"win_rate":0.0}',
-             8, 3, 0.0, "2026-03-14T00:00:00Z"),
+            (
+                "eng-2",
+                "acct-4",
+                0.72,
+                '{"recency":0.9,"frequency":0.6,"pipeline":0.4,"win_rate":0.0}',
+                8,
+                3,
+                0.0,
+                "2026-03-14T00:00:00Z",
+            ),
         )
         conn.commit()
 
@@ -1309,25 +1422,21 @@ class TestProposalGenesisPhaseCAPI:
     def test_summary_includes_phase_c_stats(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO pg_crm_accounts "
-            "(id, name, agency, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            ("acct-5", "DISA", "DISA", "active",
-             "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            "INSERT INTO pg_crm_accounts (id, name, agency, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("acct-5", "DISA", "DISA", "active", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO pg_crm_interactions "
             "(id, contact_id, account_id, interaction_type, subject, "
             "interaction_date, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("int-s1", "", "acct-5", "other", "test",
-             "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
+            ("int-s1", "", "acct-5", "other", "test", "2026-03-14T00:00:00Z", "2026-03-14T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO pg_crm_engagement_scores "
             "(id, account_id, score, score_breakdown, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("eng-s1", "acct-5", 0.55, '{}', "2026-03-14T00:00:00Z"),
+            ("eng-s1", "acct-5", 0.55, "{}", "2026-03-14T00:00:00Z"),
         )
         conn.commit()
 
@@ -1371,20 +1480,24 @@ class TestProposalGenesisPhaseCAPI:
 
 # ── Phase C Daemon Integration Tests ────────────────────────────────────────
 
+
 class TestDaemonPhaseC:
     """Tests for Phase C daemon integration."""
 
     def test_phase_c_reflexes_constant(self):
         from tools.proposal_genesis.daemon import PHASE_C_REFLEXES
+
         assert PHASE_C_REFLEXES == ["engage"]
 
     def test_engage_in_default_config(self):
         """Engage should be enabled by default in the config loading path."""
         from tools.proposal_genesis.daemon import REFLEX_NAMES
+
         assert "engage" in REFLEX_NAMES
 
 
 # ── Phase D: R12 Publish Reflex Tests ────────────────────────────────────────
+
 
 class TestPublishReflex:
     """Tests for tools/proposal_genesis/reflexes/publish.py."""
@@ -1394,6 +1507,7 @@ class TestPublishReflex:
         conn, db_path = pg_db
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", return_value=conn):
             from tools.proposal_genesis.reflexes.publish import run
+
             result = run({"max_articles_per_run": 5}, MagicMock())
             assert result["success"] is True
             assert result["metric_value"] == 0.0
@@ -1402,6 +1516,7 @@ class TestPublishReflex:
     def test_generate_case_study_basic(self):
         """Case study generation produces title, slug, body, tags."""
         from tools.proposal_genesis.reflexes.publish import _generate_case_study
+
         draft = {
             "opportunity_title": "Cybersecurity Assessment Platform",
             "agency": "Department of Defense",
@@ -1419,6 +1534,7 @@ class TestPublishReflex:
     def test_generate_case_study_with_kb_blocks(self):
         """KB blocks inject Technical Depth section."""
         from tools.proposal_genesis.reflexes.publish import _generate_case_study
+
         draft = {
             "opportunity_title": "Cloud Migration",
             "agency": "DHS",
@@ -1426,7 +1542,12 @@ class TestPublishReflex:
             "draft_content": "Migrate legacy systems to cloud.",
             "naics_code": "541519",
         }
-        kb = [{"title": "Cloud Best Practices", "content": "Use containerization with Kubernetes for scalability and resilience."}]
+        kb = [
+            {
+                "title": "Cloud Best Practices",
+                "content": "Use containerization with Kubernetes for scalability and resilience.",
+            }
+        ]
         article = _generate_case_study(draft, kb)
         assert "## Technical Depth" in article["body"]
         assert "Cloud Best Practices" in article["body"]
@@ -1434,6 +1555,7 @@ class TestPublishReflex:
     def test_extract_capabilities(self):
         """Capability extraction finds keywords from proposal text."""
         from tools.proposal_genesis.reflexes.publish import _extract_capabilities
+
         text = "We implement zero trust architecture with FedRAMP compliance and CI/CD pipelines."
         caps = _extract_capabilities(text)
         assert "zero trust" in caps
@@ -1442,11 +1564,13 @@ class TestPublishReflex:
 
     def test_extract_capabilities_empty(self):
         from tools.proposal_genesis.reflexes.publish import _extract_capabilities
+
         assert _extract_capabilities("") == []
         assert _extract_capabilities(None) == []
 
     def test_sanitize_title(self):
         from tools.proposal_genesis.reflexes.publish import _sanitize_title
+
         # Removes solicitation numbers
         assert "FA-22-R-" not in _sanitize_title("FA8773-22-R-0001 Cloud Services")
         # Truncates long titles
@@ -1455,18 +1579,22 @@ class TestPublishReflex:
 
     def test_slugify(self):
         from tools.proposal_genesis.reflexes.publish import _slugify
+
         assert _slugify("Hello World! Test") == "hello-world-test"
         assert len(_slugify("A" * 200)) <= 80
 
     def test_stage_article(self, pg_db):
         """Stage article creates a pulse_posts entry with status draft."""
         conn, db_path = pg_db
+
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             return c
+
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _stage_article
+
             article = {
                 "title": "Case Study: Test",
                 "slug": "case-study-test",
@@ -1485,12 +1613,15 @@ class TestPublishReflex:
     def test_create_pulse_link(self, pg_db):
         """Create pulse link stores traceability entry."""
         conn, db_path = pg_db
+
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             return c
+
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _create_pulse_link
+
             link_id = _create_pulse_link("post-1", "opp-1", "sec-1", "cdrl_to_case_study", 0.85)
             assert link_id is not None
             assert link_id.startswith("pglink-")
@@ -1505,18 +1636,19 @@ class TestPublishReflex:
     def test_audit_publish(self, pg_db):
         """Audit publish logs event to audit trail."""
         conn, db_path = pg_db
+
         def mock_conn():
             c = sqlite3.connect(str(db_path))
             c.row_factory = sqlite3.Row
             return c
+
         with patch("tools.proposal_genesis.reflexes.publish.get_connection", side_effect=mock_conn):
             from tools.proposal_genesis.reflexes.publish import _audit_publish
+
             _audit_publish("article_staged", "opp-1", {"post_id": "p-1"}, success=True)
             c2 = sqlite3.connect(str(db_path))
             c2.row_factory = sqlite3.Row
-            row = c2.execute(
-                "SELECT * FROM pg_proposal_genesis_audit WHERE event_type = 'article_staged'"
-            ).fetchone()
+            row = c2.execute("SELECT * FROM pg_proposal_genesis_audit WHERE event_type = 'article_staged'").fetchone()
             c2.close()
             assert row is not None
             assert dict(row)["reflex_name"] == "publish"
@@ -1524,17 +1656,20 @@ class TestPublishReflex:
 
     def test_extract_challenge_with_content(self):
         from tools.proposal_genesis.reflexes.publish import _extract_challenge
+
         text = "First sentence. Second sentence. Third sentence. Fourth sentence."
         result = _extract_challenge(text, "DoD")
         assert "First sentence" in result
 
     def test_extract_challenge_empty(self):
         from tools.proposal_genesis.reflexes.publish import _extract_challenge
+
         result = _extract_challenge("", "DoD")
         assert "DoD" in result
 
     def test_extract_approach_with_capabilities(self):
         from tools.proposal_genesis.reflexes.publish import _extract_approach
+
         text = "A. B. C. D. E. F. G. H. I."
         caps = ["zero trust", "FedRAMP"]
         result = _extract_approach(text, caps)
@@ -1543,6 +1678,7 @@ class TestPublishReflex:
 
 # ── Phase D: Dashboard API Tests ─────────────────────────────────────────────
 
+
 class TestProposalGenesisPhaseD:
     """Tests for Phase D dashboard API endpoints."""
 
@@ -1550,6 +1686,7 @@ class TestProposalGenesisPhaseD:
     def app(self, pg_db):
         from flask import Flask
         from tools.dashboard.api.proposal_genesis import proposal_genesis_api
+
         conn, db_path = pg_db
         app = Flask(__name__)
         app.config["TESTING"] = True
@@ -1571,8 +1708,18 @@ class TestProposalGenesisPhaseD:
         conn.execute(
             "INSERT INTO pulse_posts (id, title, slug, status, topic, body_markdown, "
             "readability_score, author_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("pgpub-test1", "Case Study: Test", "case-study-test", "draft",
-             "cybersecurity", "# Test", 82.5, "pg_publish", now, now),
+            (
+                "pgpub-test1",
+                "Case Study: Test",
+                "case-study-test",
+                "draft",
+                "cybersecurity",
+                "# Test",
+                82.5,
+                "pg_publish",
+                now,
+                now,
+            ),
         )
         conn.commit()
         with app.test_client() as client:
@@ -1634,20 +1781,24 @@ class TestProposalGenesisPhaseD:
 
 # ── Phase D Daemon Integration Tests ────────────────────────────────────────
 
+
 class TestDaemonPhaseD:
     """Tests for Phase D daemon integration."""
 
     def test_phase_d_reflexes_constant(self):
         from tools.proposal_genesis.daemon import PHASE_D_REFLEXES
+
         assert PHASE_D_REFLEXES == ["publish"]
 
     def test_publish_in_reflex_names(self):
         from tools.proposal_genesis.daemon import REFLEX_NAMES
+
         assert "publish" in REFLEX_NAMES
 
     def test_publish_in_config(self):
         """Publish should be enabled in proposal_genesis_config.yaml."""
         import yaml
+
         config_path = BASE_DIR / "args" / "proposal_genesis_config.yaml"
         if config_path.exists():
             with open(config_path) as f:
@@ -1659,11 +1810,13 @@ class TestDaemonPhaseD:
 
 # ── Phase E: Monitor Reflex Tests ──────────────────────────────────────────
 
+
 class TestMonitorReflex:
     """Tests for reflexes/monitor.py — CPARS prediction + EVM early warnings."""
 
     def test_assess_evm_health_no_data(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_evm_health
+
         result = _assess_evm_health(None)
         assert result["score"] == 1.0
         assert result["alerts"] == []
@@ -1671,6 +1824,7 @@ class TestMonitorReflex:
 
     def test_assess_evm_health_healthy(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_evm_health
+
         evm = {"cpi": 1.02, "spi": 0.98, "tcpi": 1.05}
         result = _assess_evm_health(evm)
         assert result["score"] == 1.0
@@ -1678,6 +1832,7 @@ class TestMonitorReflex:
 
     def test_assess_evm_health_cpi_warning(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_evm_health
+
         evm = {"cpi": 0.87, "spi": 1.0, "tcpi": 1.0}
         result = _assess_evm_health(evm)
         assert result["score"] < 1.0
@@ -1685,6 +1840,7 @@ class TestMonitorReflex:
 
     def test_assess_evm_health_critical(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_evm_health
+
         evm = {"cpi": 0.75, "spi": 0.70, "tcpi": 1.30}
         result = _assess_evm_health(evm)
         assert result["score"] < 0.20  # heavy penalties from CPI + SPI + TCPI
@@ -1692,6 +1848,7 @@ class TestMonitorReflex:
 
     def test_assess_evm_health_info_level(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_evm_health
+
         evm = {"cpi": 0.93, "spi": 0.94, "tcpi": 1.0}
         result = _assess_evm_health(evm)
         assert result["score"] == pytest.approx(0.90)  # -0.05 each for CPI and SPI info
@@ -1699,12 +1856,14 @@ class TestMonitorReflex:
 
     def test_assess_schedule_health_no_overdue(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_schedule_health
+
         result = _assess_schedule_health([], [])
         assert result["score"] == 1.0
         assert result["overdue_count"] == 0
 
     def test_assess_schedule_health_overdue(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_schedule_health
+
         overdue = [
             {"id": "d1", "title": "SSP", "days_overdue": 15},
             {"id": "d2", "title": "SBOM", "days_overdue": 45},
@@ -1716,6 +1875,7 @@ class TestMonitorReflex:
 
     def test_assess_schedule_health_surge(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_schedule_health
+
         upcoming = [{"id": f"d{i}", "title": f"D{i}"} for i in range(5)]
         result = _assess_schedule_health([], upcoming)
         assert result["upcoming_count"] == 5
@@ -1723,12 +1883,14 @@ class TestMonitorReflex:
 
     def test_assess_risk_health_no_events(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_risk_health
+
         result = _assess_risk_health([])
         assert result["score"] == 1.0
         assert result["open_events"] == 0
 
     def test_assess_risk_health_critical_event(self):
         from tools.proposal_genesis.reflexes.monitor import _assess_risk_health
+
         events = [{"event_type": "data_breach", "severity": "critical", "description": "PII exposed"}]
         result = _assess_risk_health(events)
         assert result["score"] == 0.70
@@ -1736,6 +1898,7 @@ class TestMonitorReflex:
 
     def test_predict_cpars_all_healthy(self):
         from tools.proposal_genesis.reflexes.monitor import _predict_cpars
+
         evm_h = {"score": 1.0, "alerts": [], "cpi": 1.0, "spi": 1.0}
         sched_h = {"score": 1.0, "alerts": [], "overdue_count": 0}
         risk_h = {"score": 1.0, "alerts": [], "open_events": 0}
@@ -1746,6 +1909,7 @@ class TestMonitorReflex:
 
     def test_predict_cpars_degraded(self):
         from tools.proposal_genesis.reflexes.monitor import _predict_cpars
+
         evm_h = {"score": 0.5, "alerts": [], "cpi": 0.85, "spi": 0.85}
         sched_h = {"score": 0.6, "alerts": [], "overdue_count": 2}
         risk_h = {"score": 0.7, "alerts": [], "open_events": 1}
@@ -1755,6 +1919,7 @@ class TestMonitorReflex:
 
     def test_compute_contract_health_green(self):
         from tools.proposal_genesis.reflexes.monitor import _compute_contract_health
+
         evm = {"score": 1.0}
         sched = {"score": 1.0}
         risk = {"score": 1.0}
@@ -1764,6 +1929,7 @@ class TestMonitorReflex:
 
     def test_compute_contract_health_yellow(self):
         from tools.proposal_genesis.reflexes.monitor import _compute_contract_health
+
         evm = {"score": 0.6}
         sched = {"score": 0.7}
         risk = {"score": 0.8}
@@ -1773,6 +1939,7 @@ class TestMonitorReflex:
 
     def test_compute_contract_health_red(self):
         from tools.proposal_genesis.reflexes.monitor import _compute_contract_health
+
         evm = {"score": 0.2}
         sched = {"score": 0.3}
         risk = {"score": 0.1}
@@ -1783,6 +1950,7 @@ class TestMonitorReflex:
     @patch("tools.proposal_genesis.reflexes.monitor.get_connection")
     def test_monitor_run_no_contracts(self, mock_conn):
         from tools.proposal_genesis.reflexes.monitor import run
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_conn.return_value = mock_db
@@ -1802,12 +1970,22 @@ class TestMonitorReflex:
             # First call: _get_active_contracts
             if call_count[0] == 1:
                 db.execute.return_value.fetchall.return_value = [
-                    {"id": "c1", "contract_number": "FA8750-25-C-0001",
-                     "title": "Test", "agency": "USAF", "total_value": 1000000,
-                     "funded_value": 500000, "billed_value": 200000,
-                     "pop_start": "2025-01-01", "pop_end": "2026-12-31",
-                     "status": "active", "health": "green", "health_score": 1.0,
-                     "cpars_rating_current": None, "opportunity_id": "opp1"}
+                    {
+                        "id": "c1",
+                        "contract_number": "FA8750-25-C-0001",
+                        "title": "Test",
+                        "agency": "USAF",
+                        "total_value": 1000000,
+                        "funded_value": 500000,
+                        "billed_value": 200000,
+                        "pop_start": "2025-01-01",
+                        "pop_end": "2026-12-31",
+                        "status": "active",
+                        "health": "green",
+                        "health_score": 1.0,
+                        "cpars_rating_current": None,
+                        "opportunity_id": "opp1",
+                    }
                 ]
             # Subsequent calls: EVM/deliverables/events queries + audit writes
             else:
@@ -1823,51 +2001,61 @@ class TestMonitorReflex:
 
 # ── Phase E: Fulfill Reflex Tests ──────────────────────────────────────────
 
+
 class TestFulfillReflex:
     """Tests for reflexes/fulfill.py — CDRL auto-generation + compliance refresh."""
 
     def test_resolve_cdrl_type_ssp(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "A001-SSP", "title": "System Security Plan", "deliverable_type": "documentation"}
         assert _resolve_cdrl_type(d) == "ssp"
 
     def test_resolve_cdrl_type_sbom(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "B002", "title": "Software Bill of Materials", "deliverable_type": "software"}
         assert _resolve_cdrl_type(d) == "sbom"
 
     def test_resolve_cdrl_type_poam(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "", "title": "Plan of Action and Milestones", "deliverable_type": "documentation"}
         assert _resolve_cdrl_type(d) == "poam"
 
     def test_resolve_cdrl_type_stig(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "STIG-001", "title": "STIG Checklist", "deliverable_type": "documentation"}
         assert _resolve_cdrl_type(d) == "stig_checklist"
 
     def test_resolve_cdrl_type_evm(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "EVM-RPT", "title": "Earned Value Report", "deliverable_type": "data"}
         assert _resolve_cdrl_type(d) == "evm_report"
 
     def test_resolve_cdrl_type_test(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "", "title": "Test Report Deliverable", "deliverable_type": "test_result"}
         assert _resolve_cdrl_type(d) == "test_report"
 
     def test_resolve_cdrl_type_fallback(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "", "title": "Custom Report", "deliverable_type": "documentation"}
         assert _resolve_cdrl_type(d) == "ssp"  # fallback from DELIVERABLE_TYPE_TO_CDRL
 
     def test_resolve_cdrl_type_unknown(self):
         from tools.proposal_genesis.reflexes.fulfill import _resolve_cdrl_type
+
         d = {"cdrl_number": "", "title": "Random Item", "deliverable_type": "other"}
         assert _resolve_cdrl_type(d) is None
 
     def test_tool_mapping_completeness(self):
         from tools.proposal_genesis.reflexes.fulfill import TOOL_MAPPING
+
         assert len(TOOL_MAPPING) >= 9
         assert "ssp" in TOOL_MAPPING
         assert "sbom" in TOOL_MAPPING
@@ -1876,6 +2064,7 @@ class TestFulfillReflex:
     @patch("tools.proposal_genesis.reflexes.fulfill.get_connection")
     def test_fulfill_run_no_deliverables(self, mock_conn):
         from tools.proposal_genesis.reflexes.fulfill import run
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_conn.return_value = mock_db
@@ -1887,6 +2076,7 @@ class TestFulfillReflex:
     @patch("tools.proposal_genesis.reflexes.fulfill.get_connection")
     def test_fulfill_generate_cdrl_tool_not_found(self, mock_conn, mock_subprocess):
         from tools.proposal_genesis.reflexes.fulfill import _generate_cdrl
+
         deliv = {"contract_id": "c1", "opportunity_id": "opp1"}
         success, result = _generate_cdrl(deliv, "nonexistent_type")
         assert success is False
@@ -1895,21 +2085,25 @@ class TestFulfillReflex:
 
 # ── Phase E: Daemon Integration Tests ──────────────────────────────────────
 
+
 class TestDaemonPhaseE:
     """Tests for Phase E daemon integration."""
 
     def test_phase_e_reflexes_constant(self):
         from tools.proposal_genesis.daemon import PHASE_E_REFLEXES
+
         assert PHASE_E_REFLEXES == ["monitor", "fulfill"]
 
     def test_monitor_in_reflex_names(self):
         from tools.proposal_genesis.daemon import REFLEX_NAMES
+
         assert "monitor" in REFLEX_NAMES
         assert "fulfill" in REFLEX_NAMES
 
     def test_monitor_config_enabled(self):
         """Monitor and fulfill should be enabled in proposal_genesis_config.yaml."""
         import yaml
+
         config_path = BASE_DIR / "args" / "proposal_genesis_config.yaml"
         if config_path.exists():
             with open(config_path) as f:
@@ -1924,6 +2118,7 @@ class TestDaemonPhaseE:
 
 
 # ── Phase E: API Tests ─────────────────────────────────────────────────────
+
 
 class TestProposalGenesisPhaseEAPI:
     """Tests for Phase E dashboard API endpoints."""
@@ -1982,8 +2177,18 @@ class TestProposalGenesisPhaseEAPI:
             "INSERT INTO cpmp_contracts (id, contract_number, title, agency, status, "
             "health, health_score, total_value, pop_start, pop_end) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("c1", "FA8750-25-C-0001", "Cyber Defense", "USAF", "active",
-             "yellow", 0.72, 2500000, "2025-01-01", "2026-12-31"),
+            (
+                "c1",
+                "FA8750-25-C-0001",
+                "Cyber Defense",
+                "USAF",
+                "active",
+                "yellow",
+                0.72,
+                2500000,
+                "2025-01-01",
+                "2026-12-31",
+            ),
         )
         conn.commit()
 
@@ -1999,15 +2204,13 @@ class TestProposalGenesisPhaseEAPI:
     def test_overdue_deliverables_endpoint(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO cpmp_contracts (id, contract_number, title, status) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO cpmp_contracts (id, contract_number, title, status) VALUES (?, ?, ?, ?)",
             ("c1", "FA8750-25-C-0001", "Test", "active"),
         )
         conn.execute(
             "INSERT INTO cpmp_deliverables (id, contract_id, cdrl_number, title, "
             "deliverable_type, due_date, status, days_overdue) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("d1", "c1", "A001", "System Security Plan", "documentation",
-             "2026-02-01", "overdue", 41),
+            ("d1", "c1", "A001", "System Security Plan", "documentation", "2026-02-01", "overdue", 41),
         )
         conn.commit()
 
@@ -2022,8 +2225,7 @@ class TestProposalGenesisPhaseEAPI:
     def test_cdrl_generations_endpoint(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO cpmp_contracts (id, contract_number, title, status) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO cpmp_contracts (id, contract_number, title, status) VALUES (?, ?, ?, ?)",
             ("c1", "W912DY-25-C-0002", "Test", "active"),
         )
         conn.execute(
@@ -2035,8 +2237,16 @@ class TestProposalGenesisPhaseEAPI:
             "INSERT INTO cpmp_cdrl_generations (id, deliverable_id, contract_id, "
             "cdrl_type, generation_tool, status, generated_by, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("cg1", "d1", "c1", "sbom", "tools/compliance/sbom_generator.py",
-             "generated", "pg_fulfill", "2026-03-14T09:00:00Z"),
+            (
+                "cg1",
+                "d1",
+                "c1",
+                "sbom",
+                "tools/compliance/sbom_generator.py",
+                "generated",
+                "pg_fulfill",
+                "2026-03-14T09:00:00Z",
+            ),
         )
         conn.commit()
 
@@ -2055,9 +2265,16 @@ class TestProposalGenesisPhaseEAPI:
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, details, success, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("pa1", "contract_monitored", "monitor", "green", "c1",
-             json.dumps({"health": {"health": "green", "health_score": 0.95}}),
-             1, "2026-03-14T08:00:00Z"),
+            (
+                "pa1",
+                "contract_monitored",
+                "monitor",
+                "green",
+                "c1",
+                json.dumps({"health": {"health": "green", "health_score": 0.95}}),
+                1,
+                "2026-03-14T08:00:00Z",
+            ),
         )
         conn.commit()
 
@@ -2077,8 +2294,7 @@ class TestProposalGenesisPhaseEAPI:
             ("c1", "FA8750", "Test", "active", "red", 0.45),
         )
         conn.execute(
-            "INSERT INTO cpmp_deliverables (id, contract_id, title, status, days_overdue) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO cpmp_deliverables (id, contract_id, title, status, days_overdue) VALUES (?, ?, ?, ?, ?)",
             ("d1", "c1", "SSP", "overdue", 10),
         )
         conn.execute(
@@ -2102,15 +2318,18 @@ class TestProposalGenesisPhaseEAPI:
 
 # ── Phase F: Daemon Tests ─────────────────────────────────────────────────
 
+
 class TestDaemonPhaseF:
     """Tests for Phase F daemon integration."""
 
     def test_phase_f_reflexes_constant(self):
         from tools.proposal_genesis.daemon import PHASE_F_REFLEXES
+
         assert PHASE_F_REFLEXES == ["decide", "analyze", "train"]
 
     def test_decide_in_reflex_names(self):
         from tools.proposal_genesis.daemon import REFLEX_NAMES
+
         assert "decide" in REFLEX_NAMES
         assert "analyze" in REFLEX_NAMES
         assert "train" in REFLEX_NAMES
@@ -2118,6 +2337,7 @@ class TestDaemonPhaseF:
     def test_phase_f_config_enabled(self):
         """Decide, analyze, and train should be enabled in config."""
         import yaml
+
         config_path = BASE_DIR / "args" / "proposal_genesis_config.yaml"
         if config_path.exists():
             with open(config_path) as f:
@@ -2135,16 +2355,19 @@ class TestDaemonPhaseF:
 
 # ── Phase F: Decide Reflex Tests ──────────────────────────────────────────
 
+
 class TestDecideReflex:
     """Tests for reflexes/decide.py bid/no-bid scoring."""
 
     def test_score_weights_sum_to_one(self):
         from tools.proposal_genesis.reflexes.decide import SCORE_WEIGHTS
+
         total = sum(SCORE_WEIGHTS.values())
         assert abs(total - 1.0) < 0.001
 
     def test_score_weights_has_six_dimensions(self):
         from tools.proposal_genesis.reflexes.decide import SCORE_WEIGHTS
+
         assert len(SCORE_WEIGHTS) == 6
         assert "capability_fit" in SCORE_WEIGHTS
         assert "past_performance" in SCORE_WEIGHTS
@@ -2155,6 +2378,7 @@ class TestDecideReflex:
 
     def test_thresholds(self):
         from tools.proposal_genesis.reflexes.decide import BID_THRESHOLD, NO_BID_THRESHOLD
+
         assert BID_THRESHOLD == 0.60
         assert NO_BID_THRESHOLD == 0.35
         assert BID_THRESHOLD > NO_BID_THRESHOLD
@@ -2171,8 +2395,14 @@ class TestDecideReflex:
         mock_db.execute.return_value.fetchone.return_value = mock_row
         mock_conn.return_value = mock_db
 
-        opp = {"id": "opp-1", "title": "Test", "agency": "DoD", "naics_code": "541512",
-               "set_aside": "", "estimated_value": 100000}
+        opp = {
+            "id": "opp-1",
+            "title": "Test",
+            "agency": "DoD",
+            "naics_code": "541512",
+            "set_aside": "",
+            "estimated_value": 100000,
+        }
         result = score_opportunity(opp)
 
         assert "dimensions" in result
@@ -2198,34 +2428,40 @@ class TestDecideReflex:
 
 # ── Phase F: Analyze Reflex Tests ─────────────────────────────────────────
 
+
 class TestAnalyzeReflex:
     """Tests for reflexes/analyze.py win/loss analysis."""
 
     def test_category_keywords_covers_seven(self):
         from tools.proposal_genesis.reflexes.analyze import CATEGORY_KEYWORDS
+
         assert len(CATEGORY_KEYWORDS) >= 6
-        for cat in ["technical", "management", "pricing", "past_performance",
-                     "compliance", "staffing"]:
+        for cat in ["technical", "management", "pricing", "past_performance", "compliance", "staffing"]:
             assert cat in CATEGORY_KEYWORDS
 
     def test_classify_category_technical(self):
         from tools.proposal_genesis.reflexes.analyze import _classify_category
+
         assert _classify_category("cloud infrastructure migration") == "technical"
 
     def test_classify_category_pricing(self):
         from tools.proposal_genesis.reflexes.analyze import _classify_category
+
         assert _classify_category("budget cost overrun on LPTA bid") == "pricing"
 
     def test_classify_category_management(self):
         from tools.proposal_genesis.reflexes.analyze import _classify_category
+
         assert _classify_category("schedule timeline slippage") == "management"
 
     def test_classify_category_compliance(self):
         from tools.proposal_genesis.reflexes.analyze import _classify_category
+
         assert _classify_category("fedramp cmmc nist compliance") == "compliance"
 
     def test_classify_category_fallback(self):
         from tools.proposal_genesis.reflexes.analyze import _classify_category
+
         assert _classify_category("xyzzy foobar") == "other"
 
     @patch("tools.proposal_genesis.reflexes.analyze.get_connection")
@@ -2247,13 +2483,17 @@ class TestAnalyzeReflex:
         import json
 
         opp = {
-            "id": "opp-1", "outcome": "lost", "decision": "bid",
+            "id": "opp-1",
+            "outcome": "lost",
+            "decision": "bid",
             "win_probability": 0.75,
-            "score_breakdown": json.dumps({
-                "capability_fit": 0.3,
-                "compliance_readiness": 0.4,
-                "resource_availability": 0.35,
-            }),
+            "score_breakdown": json.dumps(
+                {
+                    "capability_fit": 0.3,
+                    "compliance_readiness": 0.4,
+                    "resource_availability": 0.35,
+                }
+            ),
             "agency": "Army",
         }
         analysis = _analyze_opportunity(opp)
@@ -2266,11 +2506,13 @@ class TestAnalyzeReflex:
 
 # ── Phase F: Train Reflex Tests ───────────────────────────────────────────
 
+
 class TestTrainReflex:
     """Tests for reflexes/train.py fine-tuning pair generation."""
 
     def test_content_hash_deterministic(self):
         from tools.proposal_genesis.reflexes.train import _content_hash
+
         h1 = _content_hash("sys", "user", "expected")
         h2 = _content_hash("sys", "user", "expected")
         assert h1 == h2
@@ -2278,12 +2520,14 @@ class TestTrainReflex:
 
     def test_content_hash_different_input(self):
         from tools.proposal_genesis.reflexes.train import _content_hash
+
         h1 = _content_hash("sys1", "user1", "expected1")
         h2 = _content_hash("sys2", "user2", "expected2")
         assert h1 != h2
 
     def test_generate_draft_pairs_short_content(self):
         from tools.proposal_genesis.reflexes.train import _generate_draft_pairs
+
         # Too-short content should yield no pairs
         draft = {"final_content": "Short", "section_type": "technical"}
         pairs = _generate_draft_pairs(draft)
@@ -2291,6 +2535,7 @@ class TestTrainReflex:
 
     def test_generate_draft_pairs_with_content(self):
         from tools.proposal_genesis.reflexes.train import _generate_draft_pairs
+
         content = "x" * 500  # Long enough
         draft = {
             "final_content": content,
@@ -2308,10 +2553,14 @@ class TestTrainReflex:
 
     def test_generate_lesson_pairs(self):
         from tools.proposal_genesis.reflexes.train import _generate_lesson_pairs
+
         lesson = {
-            "id": "l-001", "lesson": "Budget estimation was 30% below actual cost",
-            "category": "pricing", "outcome": "lost",
-            "agency": "Navy", "our_strengths": "Technical depth",
+            "id": "l-001",
+            "lesson": "Budget estimation was 30% below actual cost",
+            "category": "pricing",
+            "outcome": "lost",
+            "agency": "Navy",
+            "our_strengths": "Technical depth",
             "our_weaknesses": "Pricing accuracy",
         }
         pairs = _generate_lesson_pairs(lesson)
@@ -2320,15 +2569,19 @@ class TestTrainReflex:
 
     def test_generate_lesson_pairs_short_text(self):
         from tools.proposal_genesis.reflexes.train import _generate_lesson_pairs
+
         lesson = {"lesson": "ok", "id": "l-002"}
         pairs = _generate_lesson_pairs(lesson)
         assert pairs == []
 
     def test_generate_kb_pairs(self):
         from tools.proposal_genesis.reflexes.train import _generate_kb_pairs
+
         entry = {
-            "id": "kb-001", "title": "Zero Trust Architecture",
-            "content": "x" * 200, "domain": "cybersecurity",
+            "id": "kb-001",
+            "title": "Zero Trust Architecture",
+            "content": "x" * 200,
+            "domain": "cybersecurity",
         }
         pairs = _generate_kb_pairs(entry)
         assert len(pairs) == 1
@@ -2353,6 +2606,7 @@ class TestTrainReflex:
     def test_get_or_create_dataset_existing(self, mock_conn):
         """Finds existing proposal_drafting dataset."""
         from tools.proposal_genesis.reflexes.train import _get_or_create_dataset
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = {"id": "ds-existing123"}
         mock_conn.return_value = mock_db
@@ -2363,6 +2617,7 @@ class TestTrainReflex:
     def test_get_or_create_dataset_creates_new(self, mock_conn):
         """Creates new dataset when none found."""
         from tools.proposal_genesis.reflexes.train import _get_or_create_dataset
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchone.return_value = None
         mock_conn.return_value = mock_db
@@ -2376,6 +2631,7 @@ class TestTrainReflex:
     def test_get_or_create_dataset_exception(self, mock_conn):
         """Returns None on exception."""
         from tools.proposal_genesis.reflexes.train import _get_or_create_dataset
+
         mock_db = MagicMock()
         mock_db.execute.side_effect = Exception("DB error")
         mock_conn.return_value = mock_db
@@ -2386,6 +2642,7 @@ class TestTrainReflex:
     def test_update_dataset_count(self, mock_conn):
         """Increments example_count on dataset."""
         from tools.proposal_genesis.reflexes.train import _update_dataset_count
+
         mock_db = MagicMock()
         mock_conn.return_value = mock_db
         _update_dataset_count("ds-abc", 5)
@@ -2396,6 +2653,7 @@ class TestTrainReflex:
     def test_update_dataset_count_zero_skips(self, mock_conn):
         """Zero or negative count does nothing."""
         from tools.proposal_genesis.reflexes.train import _update_dataset_count
+
         mock_db = MagicMock()
         mock_conn.return_value = mock_db
         _update_dataset_count("ds-abc", 0)
@@ -2405,6 +2663,7 @@ class TestTrainReflex:
     def test_update_dataset_count_no_id_skips(self, mock_conn):
         """No dataset_id does nothing."""
         from tools.proposal_genesis.reflexes.train import _update_dataset_count
+
         mock_db = MagicMock()
         mock_conn.return_value = mock_db
         _update_dataset_count(None, 5)
@@ -2414,6 +2673,7 @@ class TestTrainReflex:
     def test_run_includes_dataset_id(self, mock_conn):
         """Run result includes dataset_id in details."""
         from tools.proposal_genesis.reflexes.train import run
+
         mock_db = MagicMock()
         mock_db.execute.return_value.fetchall.return_value = []
         mock_db.execute.return_value.fetchone.return_value = {"id": "ds-test456"}
@@ -2425,6 +2685,7 @@ class TestTrainReflex:
 
 
 # ── Phase F: API Tests ────────────────────────────────────────────────────
+
 
 class TestProposalGenesisPhaseF_API:
     """Tests for Phase F dashboard API endpoints."""
@@ -2498,15 +2759,22 @@ class TestProposalGenesisPhaseF_API:
     def test_bid_decisions_with_data(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO sam_gov_opportunities (id, title, agency, naics_code, status) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO sam_gov_opportunities (id, title, agency, naics_code, status) VALUES (?, ?, ?, ?, ?)",
             ("opp-1", "Cyber Defense", "USAF", "541512", "tracked"),
         )
         conn.execute(
             "INSERT INTO pg_bid_decisions (id, opportunity_id, decision, win_probability, "
             "score_breakdown, rationale, decided_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("dec-1", "opp-1", "bid", 0.72, '{"capability_fit":0.8,"past_performance":0.6}',
-             "Composite score: 72%. Recommend: BID.", "pg_decide", "2026-03-14T10:00:00Z"),
+            (
+                "dec-1",
+                "opp-1",
+                "bid",
+                0.72,
+                '{"capability_fit":0.8,"past_performance":0.6}',
+                "Composite score: 72%. Recommend: BID.",
+                "pg_decide",
+                "2026-03-14T10:00:00Z",
+            ),
         )
         conn.commit()
 
@@ -2539,9 +2807,16 @@ class TestProposalGenesisPhaseF_API:
             "INSERT INTO pg_win_loss_records (id, opportunity_id, outcome, competitor_name, "
             "our_strengths, our_weaknesses, lessons_learned, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("wl-1", "opp-1", "lost", "Competitor X",
-             "Technical depth (80%)", "Pricing (35%)",
-             '["Improve pricing strategy"]', "2026-03-14T10:00:00Z"),
+            (
+                "wl-1",
+                "opp-1",
+                "lost",
+                "Competitor X",
+                "Technical depth (80%)",
+                "Pricing (35%)",
+                '["Improve pricing strategy"]',
+                "2026-03-14T10:00:00Z",
+            ),
         )
         conn.commit()
 
@@ -2566,21 +2841,18 @@ class TestProposalGenesisPhaseF_API:
     def test_win_loss_lessons_with_filter(self, app, pg_db):
         conn, db_path = pg_db
         conn.execute(
-            "INSERT INTO pg_win_loss_records (id, opportunity_id, outcome, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO pg_win_loss_records (id, opportunity_id, outcome, created_at) VALUES (?, ?, ?, ?)",
             ("wl-1", "opp-1", "lost", "2026-03-14T00:00:00Z"),
         )
         conn.execute(
             "INSERT INTO pg_win_loss_lessons (id, win_loss_id, category, lesson, "
             "actionable, applied, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("les-1", "wl-1", "technical", "Improve cloud architecture coverage",
-             1, 0, "2026-03-14T10:00:00Z"),
+            ("les-1", "wl-1", "technical", "Improve cloud architecture coverage", 1, 0, "2026-03-14T10:00:00Z"),
         )
         conn.execute(
             "INSERT INTO pg_win_loss_lessons (id, win_loss_id, category, lesson, "
             "actionable, applied, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("les-2", "wl-1", "pricing", "LPTA strategy needs rework",
-             1, 0, "2026-03-14T10:01:00Z"),
+            ("les-2", "wl-1", "pricing", "LPTA strategy needs rework", 1, 0, "2026-03-14T10:01:00Z"),
         )
         conn.commit()
 
@@ -2643,8 +2915,7 @@ class TestProposalGenesisPhaseF_API:
             ("dec-2", "opp-2", "no_bid", 0.25, "pg_decide", "2026-03-14T00:01:00Z"),
         )
         conn.execute(
-            "INSERT INTO pg_win_loss_records (id, opportunity_id, outcome, created_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO pg_win_loss_records (id, opportunity_id, outcome, created_at) VALUES (?, ?, ?, ?)",
             ("wl-1", "opp-1", "won", "2026-03-14T00:00:00Z"),
         )
         conn.execute(

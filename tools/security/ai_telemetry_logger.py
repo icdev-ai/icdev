@@ -82,12 +82,24 @@ class AITelemetryLogger:
                     injection_scan_result, logged_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    entry_id, project_id, user_id, agent_id,
-                    model_id, provider, function,
-                    prompt_hash, response_hash,
-                    input_tokens, output_tokens, thinking_tokens,
-                    latency_ms, cost_usd, classification, api_key_source,
-                    injection_scan_result, logged_at,
+                    entry_id,
+                    project_id,
+                    user_id,
+                    agent_id,
+                    model_id,
+                    provider,
+                    function,
+                    prompt_hash,
+                    response_hash,
+                    input_tokens,
+                    output_tokens,
+                    thinking_tokens,
+                    latency_ms,
+                    cost_usd,
+                    classification,
+                    api_key_source,
+                    injection_scan_result,
+                    logged_at,
                 ),
             )
             conn.commit()
@@ -124,7 +136,7 @@ class AITelemetryLogger:
             ).fetchone()
             volume = row[0] if row else 0
             total_cost = row[1] if row else 0.0
-            total_tokens = row[2] if row else 0
+            row[2] if row else 0
 
             # Hourly average (from all-time data, excluding current window)
             row_all = conn.execute(
@@ -150,22 +162,26 @@ class AITelemetryLogger:
                         current_hourly_cost = total_cost / max(1, window_hours)
 
                         if avg_hourly_vol > 0 and current_hourly_vol > 2 * avg_hourly_vol:
-                            anomalies.append({
-                                "type": "volume_spike",
-                                "severity": "high",
-                                "message": f"Current hourly volume ({current_hourly_vol:.1f}) > 2x average ({avg_hourly_vol:.1f})",
-                                "current_value": current_hourly_vol,
-                                "threshold": avg_hourly_vol * 2,
-                            })
+                            anomalies.append(
+                                {
+                                    "type": "volume_spike",
+                                    "severity": "high",
+                                    "message": f"Current hourly volume ({current_hourly_vol:.1f}) > 2x average ({avg_hourly_vol:.1f})",  # noqa: E501
+                                    "current_value": current_hourly_vol,
+                                    "threshold": avg_hourly_vol * 2,
+                                }
+                            )
 
                         if avg_hourly_cost > 0 and current_hourly_cost > 3 * avg_hourly_cost:
-                            anomalies.append({
-                                "type": "cost_spike",
-                                "severity": "critical",
-                                "message": f"Current hourly cost (${current_hourly_cost:.4f}) > 3x average (${avg_hourly_cost:.4f})",
-                                "current_value": current_hourly_cost,
-                                "threshold": avg_hourly_cost * 3,
-                            })
+                            anomalies.append(
+                                {
+                                    "type": "cost_spike",
+                                    "severity": "critical",
+                                    "message": f"Current hourly cost (${current_hourly_cost:.4f}) > 3x average (${avg_hourly_cost:.4f})",  # noqa: E501
+                                    "current_value": current_hourly_cost,
+                                    "threshold": avg_hourly_cost * 3,
+                                }
+                            )
                     except (ValueError, TypeError):
                         pass
 
@@ -175,13 +191,15 @@ class AITelemetryLogger:
                 (cutoff,),
             ).fetchone()
             if blocked and blocked[0] > 0:
-                anomalies.append({
-                    "type": "injection_attempts",
-                    "severity": "critical",
-                    "message": f"{blocked[0]} blocked injection attempt(s) in last {window_hours}h",
-                    "current_value": blocked[0],
-                    "threshold": 0,
-                })
+                anomalies.append(
+                    {
+                        "type": "injection_attempts",
+                        "severity": "critical",
+                        "message": f"{blocked[0]} blocked injection attempt(s) in last {window_hours}h",
+                        "current_value": blocked[0],
+                        "threshold": 0,
+                    }
+                )
 
             conn.close()
         except Exception:
@@ -254,10 +272,17 @@ class AITelemetryLogger:
                     "COALESCE(AVG((output_tokens - ?) * (output_tokens - ?)), 1), "
                     "COALESCE(AVG((cost_usd - ?) * (cost_usd - ?)), 0.0001) "
                     "FROM ai_telemetry WHERE agent_id = ? AND logged_at >= ? AND logged_at < ?",
-                    (baseline_latency, baseline_latency,
-                     baseline_tokens, baseline_tokens,
-                     baseline_cost, baseline_cost,
-                     aid, baseline_start, baseline_end),
+                    (
+                        baseline_latency,
+                        baseline_latency,
+                        baseline_tokens,
+                        baseline_tokens,
+                        baseline_cost,
+                        baseline_cost,
+                        aid,
+                        baseline_start,
+                        baseline_end,
+                    ),
                 ).fetchone()
 
                 std_latency = math.sqrt(max(stddev_row[0], 1e-6))
@@ -294,28 +319,38 @@ class AITelemetryLogger:
 
                 for dim, z in dimensions.items():
                     if abs(z) > threshold_sigma:
-                        severity = "critical" if abs(z) > 3 * threshold_sigma else (
-                            "high" if abs(z) > 2 * threshold_sigma else "medium"
+                        severity = (
+                            "critical"
+                            if abs(z) > 3 * threshold_sigma
+                            else ("high" if abs(z) > 2 * threshold_sigma else "medium")
                         )
-                        alerts.append({
-                            "agent_id": aid,
-                            "dimension": dim,
-                            "z_score": round(z, 3),
-                            "baseline_mean": round({
-                                "tool_call_frequency": baseline_freq,
-                                "avg_latency_ms": baseline_latency,
-                                "avg_output_tokens": baseline_tokens,
-                                "cost_rate": baseline_cost,
-                            }[dim], 4),
-                            "current_value": round({
-                                "tool_call_frequency": current_freq,
-                                "avg_latency_ms": current_latency,
-                                "avg_output_tokens": current_tokens,
-                                "cost_rate": current_cost,
-                            }[dim], 4),
-                            "severity": severity,
-                            "threshold_sigma": threshold_sigma,
-                        })
+                        alerts.append(
+                            {
+                                "agent_id": aid,
+                                "dimension": dim,
+                                "z_score": round(z, 3),
+                                "baseline_mean": round(
+                                    {
+                                        "tool_call_frequency": baseline_freq,
+                                        "avg_latency_ms": baseline_latency,
+                                        "avg_output_tokens": baseline_tokens,
+                                        "cost_rate": baseline_cost,
+                                    }[dim],
+                                    4,
+                                ),
+                                "current_value": round(
+                                    {
+                                        "tool_call_frequency": current_freq,
+                                        "avg_latency_ms": current_latency,
+                                        "avg_output_tokens": current_tokens,
+                                        "cost_rate": current_cost,
+                                    }[dim],
+                                    4,
+                                ),
+                                "severity": severity,
+                                "threshold_sigma": threshold_sigma,
+                            }
+                        )
 
             conn.close()
         except Exception:
@@ -428,10 +463,12 @@ def main():
     elif args.anomalies:
         result = {"anomalies": logger.detect_anomalies(window_hours=args.window)}
     elif args.drift:
-        result = {"drift_alerts": logger.detect_behavioral_drift(
-            agent_id=args.agent_id,
-            window_hours=args.window,
-        )}
+        result = {
+            "drift_alerts": logger.detect_behavioral_drift(
+                agent_id=args.agent_id,
+                window_hours=args.window,
+            )
+        }
     else:
         parser.print_help()
         return

@@ -40,7 +40,9 @@ class OMBM2521Assessor(BaseAssessor):
     CATALOG_FILENAME = "omb_m25_21_high_impact_ai.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OMB M-25-21 automated checks.
 

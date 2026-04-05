@@ -60,17 +60,21 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # =========================================================================
 # DEFAULT CONFIGURATION
@@ -91,13 +95,19 @@ DEFAULT_THRESHOLDS = {
 
 # Categories that strengthen compliance posture (positive boost)
 COMPLIANCE_POSITIVE_CATEGORIES = {
-    "security_vulnerability", "compliance_gap", "supply_chain",
+    "security_vulnerability",
+    "compliance_gap",
+    "supply_chain",
 }
 
 # Categories neutral to compliance
 COMPLIANCE_NEUTRAL_CATEGORIES = {
-    "developer_experience", "performance", "infrastructure",
-    "testing", "ai_tooling", "modernization",
+    "developer_experience",
+    "performance",
+    "infrastructure",
+    "testing",
+    "ai_tooling",
+    "modernization",
 }
 
 # GOTCHA layer keyword mapping — used for feasibility scoring
@@ -118,9 +128,7 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -249,9 +257,7 @@ def _score_impact_breadth(signal, conn):
 
     # Count total active projects
     try:
-        total_projects = conn.execute(
-            "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"
-        ).fetchone()["cnt"]
+        total_projects = conn.execute("SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'").fetchone()["cnt"]
     except Exception:
         total_projects = 0
 
@@ -259,11 +265,22 @@ def _score_impact_breadth(signal, conn):
         # No projects in DB — use heuristic based on category breadth
         # Security and compliance affect everyone; niche categories affect fewer
         broad_keywords = [
-            "security", "compliance", "testing", "ci/cd", "pipeline",
-            "deployment", "monitoring", "authentication", "authorization",
+            "security",
+            "compliance",
+            "testing",
+            "ci/cd",
+            "pipeline",
+            "deployment",
+            "monitoring",
+            "authentication",
+            "authorization",
         ]
         narrow_keywords = [
-            "specific", "niche", "legacy", "deprecated", "single",
+            "specific",
+            "niche",
+            "legacy",
+            "deprecated",
+            "single",
         ]
         broad_matches = sum(1 for kw in broad_keywords if kw in text_corpus)
         narrow_matches = sum(1 for kw in narrow_keywords if kw in text_corpus)
@@ -275,15 +292,15 @@ def _score_impact_breadth(signal, conn):
 
     # Category-to-project-type relevance mapping
     category_project_map = {
-        "security_vulnerability": None,       # Affects all projects
-        "compliance_gap": None,               # Affects all projects
-        "supply_chain": None,                 # Affects all projects
-        "developer_experience": None,         # Affects all projects
+        "security_vulnerability": None,  # Affects all projects
+        "compliance_gap": None,  # Affects all projects
+        "supply_chain": None,  # Affects all projects
+        "developer_experience": None,  # Affects all projects
         "infrastructure": ["microservice", "api", "webapp"],
-        "testing": None,                      # Affects all projects
+        "testing": None,  # Affects all projects
         "performance": ["webapp", "api", "microservice", "data_pipeline"],
         "modernization": ["webapp", "api", "microservice"],
-        "ai_tooling": None,                   # Affects all projects
+        "ai_tooling": None,  # Affects all projects
     }
 
     relevant_types = category_project_map.get(category)
@@ -397,17 +414,36 @@ def _score_compliance_alignment(signal, config=None):
 
     # Boost for compliance-related keywords in text
     compliance_keywords = [
-        "nist", "fedramp", "cmmc", "stig", "ato", "fips", "compliance",
-        "audit", "authorization", "security control", "cui", "classified",
-        "hipaa", "pci", "cjis", "soc 2", "iso 27001", "zero trust",
+        "nist",
+        "fedramp",
+        "cmmc",
+        "stig",
+        "ato",
+        "fips",
+        "compliance",
+        "audit",
+        "authorization",
+        "security control",
+        "cui",
+        "classified",
+        "hipaa",
+        "pci",
+        "cjis",
+        "soc 2",
+        "iso 27001",
+        "zero trust",
     ]
     keyword_hits = sum(1 for kw in compliance_keywords if kw in text_corpus)
     keyword_boost = min(0.15, keyword_hits * 0.03)
 
     # Penalty for potentially weakening compliance
     weakening_keywords = [
-        "bypass", "disable security", "skip auth", "remove check",
-        "ignore compliance", "workaround security",
+        "bypass",
+        "disable security",
+        "skip auth",
+        "remove check",
+        "ignore compliance",
+        "workaround security",
     ]
     weakening_hits = sum(1 for kw in weakening_keywords if kw in text_corpus)
     weakening_penalty = min(0.4, weakening_hits * 0.2)
@@ -435,9 +471,33 @@ def _score_novelty(signal, conn):
 
     # Extract significant words (simple tokenization, skip short words)
     stop_words = {
-        "the", "and", "for", "that", "this", "with", "from", "are", "was",
-        "have", "has", "not", "but", "can", "will", "all", "been", "they",
-        "how", "use", "new", "when", "what", "who", "why", "does", "into",
+        "the",
+        "and",
+        "for",
+        "that",
+        "this",
+        "with",
+        "from",
+        "are",
+        "was",
+        "have",
+        "has",
+        "not",
+        "but",
+        "can",
+        "will",
+        "all",
+        "been",
+        "they",
+        "how",
+        "use",
+        "new",
+        "when",
+        "what",
+        "who",
+        "why",
+        "does",
+        "into",
     }
     words = set()
     for token in f"{title} {description}".split():
@@ -453,13 +513,9 @@ def _score_novelty(signal, conn):
     total_checks = 0
 
     try:
-        patterns = conn.execute(
-            "SELECT pattern_signature, description FROM knowledge_patterns"
-        ).fetchall()
+        patterns = conn.execute("SELECT pattern_signature, description FROM knowledge_patterns").fetchall()
         for pattern in patterns:
-            sig_text = (
-                (pattern["pattern_signature"] or "") + " " + (pattern["description"] or "")
-            ).lower()
+            sig_text = ((pattern["pattern_signature"] or "") + " " + (pattern["description"] or "")).lower()
             matches = sum(1 for w in words if w in sig_text)
             if matches >= 3:  # At least 3 keyword overlaps = significant similarity
                 overlap_count += 1
@@ -477,9 +533,7 @@ def _score_novelty(signal, conn):
             (signal.get("id", ""),),
         ).fetchall()
         for recent in recent_signals:
-            recent_text = (
-                (recent["title"] or "") + " " + (recent["description"] or "")
-            ).lower()
+            recent_text = ((recent["title"] or "") + " " + (recent["description"] or "")).lower()
             matches = sum(1 for w in words if w in recent_text)
             if matches >= 3:
                 overlap_count += 1
@@ -519,9 +573,7 @@ def score_signal(signal_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM innovation_signals WHERE id = ?", (signal_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM innovation_signals WHERE id = ?", (signal_id,)).fetchone()
         if not row:
             raise ValueError(f"Signal not found: {signal_id}")
 
@@ -537,9 +589,7 @@ def score_signal(signal_id, db_path=None):
         }
 
         # Weighted average (D21 deterministic pattern)
-        overall_score = sum(
-            dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions
-        )
+        overall_score = sum(dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions)
         overall_score = round(max(0.0, min(1.0, overall_score)), 4)
 
         # Determine threshold band
@@ -707,9 +757,12 @@ def get_top_signals(limit=20, min_score=0.5, db_path=None):
             "SELECT COUNT(*) as cnt FROM innovation_signals WHERE innovation_score IS NOT NULL"
         ).fetchone()["cnt"]
 
-        avg_score = conn.execute(
-            "SELECT AVG(innovation_score) as avg_score FROM innovation_signals WHERE innovation_score IS NOT NULL"
-        ).fetchone()["avg_score"] or 0.0
+        avg_score = (
+            conn.execute(
+                "SELECT AVG(innovation_score) as avg_score FROM innovation_signals WHERE innovation_score IS NOT NULL"
+            ).fetchone()["avg_score"]
+            or 0.0
+        )
 
         distribution = {}
         thresholds = _get_thresholds()
@@ -727,13 +780,9 @@ def get_top_signals(limit=20, min_score=0.5, db_path=None):
 
         # Correct distribution to be non-overlapping
         distribution["auto_queue"] = distribution.get("auto_queue", 0)
-        distribution["suggest"] = (
-            distribution.get("suggest", 0) - distribution.get("auto_queue", 0)
-        )
+        distribution["suggest"] = distribution.get("suggest", 0) - distribution.get("auto_queue", 0)
         distribution["log_only"] = (
-            distribution.get("log_only", 0)
-            - distribution.get("suggest", 0)
-            - distribution.get("auto_queue", 0)
+            distribution.get("log_only", 0) - distribution.get("suggest", 0) - distribution.get("auto_queue", 0)
         )
 
         return {
@@ -878,7 +927,7 @@ def calibrate_weights(db_path=None):
             "data_points": len(completed_signals),
             "calibrated_at": _now(),
             "note": "Weights computed but NOT persisted to YAML. "
-                    "Review adjustments and update args/innovation_config.yaml manually.",
+            "Review adjustments and update args/innovation_config.yaml manually.",
         }
 
     finally:
@@ -889,28 +938,18 @@ def calibrate_weights(db_path=None):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Innovation Scoring Engine — score and rank innovation signals"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Innovation Scoring Engine — score and rank innovation signals")
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--score", action="store_true", help="Score a single signal")
     group.add_argument("--score-all", action="store_true", help="Score all new signals")
     group.add_argument("--top", action="store_true", help="Get top-scored signals")
-    group.add_argument(
-        "--calibrate", action="store_true", help="Recalibrate weights from feedback"
-    )
+    group.add_argument("--calibrate", action="store_true", help="Recalibrate weights from feedback")
 
-    parser.add_argument(
-        "--signal-id", type=str, help="Signal ID to score (with --score)"
-    )
-    parser.add_argument(
-        "--limit", type=int, default=20, help="Max signals to return (with --top)"
-    )
+    parser.add_argument("--signal-id", type=str, help="Signal ID to score (with --score)")
+    parser.add_argument("--limit", type=int, default=20, help="Max signals to return (with --top)")
     parser.add_argument(
         "--min-score",
         type=float,
@@ -928,9 +967,7 @@ def main():
         elif args.score_all:
             result = score_all_new(db_path=args.db_path)
         elif args.top:
-            result = get_top_signals(
-                limit=args.limit, min_score=args.min_score, db_path=args.db_path
-            )
+            result = get_top_signals(limit=args.limit, min_score=args.min_score, db_path=args.db_path)
         elif args.calibrate:
             result = calibrate_weights(db_path=args.db_path)
         else:
@@ -1023,9 +1060,7 @@ def _print_human(args, result):
             for dim in DEFAULT_WEIGHTS:
                 adj = result.get("adjustments", {}).get(dim, {})
                 direction = adj.get("direction", "unchanged")
-                print(
-                    f"  {dim:<25s} {old_w.get(dim, 0):>8.4f} {new_w.get(dim, 0):>8.4f} {direction:>12s}"
-                )
+                print(f"  {dim:<25s} {old_w.get(dim, 0):>8.4f} {new_w.get(dim, 0):>8.4f} {direction:>12s}")
             print()
             print(f"NOTE: {result.get('note', '')}")
         else:

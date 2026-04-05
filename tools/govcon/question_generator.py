@@ -56,12 +56,14 @@ CONFIG_PATH = BASE_DIR / "args" / "govcon_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
-    from tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event  # noqa: F401
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -86,84 +88,178 @@ PRIORITY_MEDIUM = 4.0
 
 # Vague phrase patterns → (regex, category, ambiguity_level, question_template)
 VAGUE_PATTERNS = [
-    (r"\bas\s+needed\b", "scope", 3,
-     "Please clarify the frequency and scope of \"{context}\". What defines 'as needed' and how will this be measured?"),
-    (r"\bto\s+be\s+determined\b", "scope", 3,
-     "Section {ref} states \"{context}\" is to be determined. When will this be finalized, and what assumptions should offerors use?"),
-    (r"\bTBD\b", "scope", 3,
-     "Section {ref} references TBD for \"{context}\". When will this be finalized, and what assumptions should offerors use in proposals?"),
-    (r"\bappropriate\b", "scope", 2,
-     "What criteria define 'appropriate' in the context of \"{context}\" (Section {ref})?"),
-    (r"\badequate\b", "scope", 2,
-     "What quantitative measures define 'adequate' for \"{context}\" (Section {ref})?"),
-    (r"\bsufficient\b", "scope", 2,
-     "What thresholds constitute 'sufficient' for \"{context}\" (Section {ref})?"),
-    (r"\breasonable\b", "contract_terms", 2,
-     "How will 'reasonable' be measured or adjudicated in the context of \"{context}\" (Section {ref})?"),
-    (r"\bmay\s+require\b", "scope", 2,
-     "Under what conditions will the requirement for \"{context}\" be triggered (Section {ref})?"),
-    (r"\bperiodically\b", "scope", 2,
-     "What frequency constitutes 'periodically' for \"{context}\" (Section {ref})?"),
-    (r"\bminimal\b", "scope", 2,
-     "What threshold defines 'minimal' for \"{context}\" (Section {ref})?"),
-    (r"\bapplicable\s+(standards?|regulations?|requirements?)\b", "compliance_security", 2,
-     "Which specific standards or regulations are 'applicable' to \"{context}\" (Section {ref})?"),
-    (r"\bin\s+accordance\s+with\s+(?:all\s+)?applicable\b", "compliance_security", 2,
-     "Please enumerate the specific standards, regulations, or directives that are 'applicable' for \"{context}\" (Section {ref})."),
-    (r"\bor\s+equivalent\b", "technical_requirements", 2,
-     "What criteria determine an 'equivalent' alternative for \"{context}\" (Section {ref})? Who adjudicates equivalence?"),
-    (r"\bat\s+(?:the\s+)?(?:government|government's)\s+discretion\b", "contract_terms", 2,
-     "What factors will guide the Government's discretion regarding \"{context}\" (Section {ref})?"),
-    (r"\bsignificant\b", "scope", 2,
-     "What constitutes 'significant' in the context of \"{context}\" (Section {ref})?"),
-    (r"\btimely\b", "scope", 2,
-     "What timeframe constitutes 'timely' for \"{context}\" (Section {ref})?"),
-    (r"\bsubstantial\b", "scope", 2,
-     "What quantitative or qualitative measure defines 'substantial' for \"{context}\" (Section {ref})?"),
+    (
+        r"\bas\s+needed\b",
+        "scope",
+        3,
+        "Please clarify the frequency and scope of \"{context}\". What defines 'as needed' and how will this be measured?",  # noqa: E501
+    ),
+    (
+        r"\bto\s+be\s+determined\b",
+        "scope",
+        3,
+        'Section {ref} states "{context}" is to be determined. When will this be finalized, and what assumptions should offerors use?',  # noqa: E501
+    ),
+    (
+        r"\bTBD\b",
+        "scope",
+        3,
+        'Section {ref} references TBD for "{context}". When will this be finalized, and what assumptions should offerors use in proposals?',  # noqa: E501
+    ),
+    (
+        r"\bappropriate\b",
+        "scope",
+        2,
+        "What criteria define 'appropriate' in the context of \"{context}\" (Section {ref})?",
+    ),
+    (r"\badequate\b", "scope", 2, "What quantitative measures define 'adequate' for \"{context}\" (Section {ref})?"),
+    (r"\bsufficient\b", "scope", 2, "What thresholds constitute 'sufficient' for \"{context}\" (Section {ref})?"),
+    (
+        r"\breasonable\b",
+        "contract_terms",
+        2,
+        "How will 'reasonable' be measured or adjudicated in the context of \"{context}\" (Section {ref})?",
+    ),
+    (
+        r"\bmay\s+require\b",
+        "scope",
+        2,
+        'Under what conditions will the requirement for "{context}" be triggered (Section {ref})?',
+    ),
+    (r"\bperiodically\b", "scope", 2, "What frequency constitutes 'periodically' for \"{context}\" (Section {ref})?"),
+    (r"\bminimal\b", "scope", 2, "What threshold defines 'minimal' for \"{context}\" (Section {ref})?"),
+    (
+        r"\bapplicable\s+(standards?|regulations?|requirements?)\b",
+        "compliance_security",
+        2,
+        "Which specific standards or regulations are 'applicable' to \"{context}\" (Section {ref})?",
+    ),
+    (
+        r"\bin\s+accordance\s+with\s+(?:all\s+)?applicable\b",
+        "compliance_security",
+        2,
+        "Please enumerate the specific standards, regulations, or directives that are 'applicable' for \"{context}\" (Section {ref}).",  # noqa: E501
+    ),
+    (
+        r"\bor\s+equivalent\b",
+        "technical_requirements",
+        2,
+        "What criteria determine an 'equivalent' alternative for \"{context}\" (Section {ref})? Who adjudicates equivalence?",  # noqa: E501
+    ),
+    (
+        r"\bat\s+(?:the\s+)?(?:government|government's)\s+discretion\b",
+        "contract_terms",
+        2,
+        'What factors will guide the Government\'s discretion regarding "{context}" (Section {ref})?',
+    ),
+    (r"\bsignificant\b", "scope", 2, "What constitutes 'significant' in the context of \"{context}\" (Section {ref})?"),
+    (r"\btimely\b", "scope", 2, "What timeframe constitutes 'timely' for \"{context}\" (Section {ref})?"),
+    (
+        r"\bsubstantial\b",
+        "scope",
+        2,
+        "What quantitative or qualitative measure defines 'substantial' for \"{context}\" (Section {ref})?",
+    ),
 ]
 
 # Missing section detectors: (category, must_have_regex, details_regex_or_none, question)
 MISSING_SECTION_CHECKS = [
-    ("evaluation_criteria", r"\bevaluation\s+(criteria|factor)", r"\bweight|percent|point",
-     "The solicitation does not appear to specify evaluation criteria weights or relative importance. Will point values or adjectival ratings be provided?"),
-    ("contract_terms", r"\bCDRL|contract\s+data\s+requirements?\s+list|deliverable\s+list", None,
-     "No CDRL list or deliverable schedule was identified in the solicitation. Will a Contract Data Requirements List (DD Form 1423) be provided?"),
-    ("contract_terms", r"\bperiod\s+of\s+performance|POP\b", r"\b\d+\s*(month|year|day)",
-     "The period of performance details appear incomplete. Please confirm the base period duration, option periods, and any ordering period limitations."),
-    ("technical_requirements", r"\bdata\s+rights|intellectual\s+property\b", None,
-     "No data rights or intellectual property provisions were identified. Will DFARS 252.227-7013/7014 or FAR 52.227-14 apply? Should offerors submit a data rights assertion list?"),
-    ("small_business", r"\bsubcontracting\s+plan\b", r"\bgoal|percent",
-     "Is an individual subcontracting plan required per FAR 52.219-9? What are the small business subcontracting goals by category?"),
-    ("compliance_security", r"\bclearance|security\s+clearance|TS/SCI|SECRET|Top\s+Secret\b", r"\blevel|type",
-     "The solicitation references security clearance requirements but does not specify the clearance level. What level of personnel security clearance is required?"),
-    ("compliance_security", r"\bFedRAMP|ATO|authority\s+to\s+operate\b", r"\bbaseline|level|impact",
-     "The solicitation references FedRAMP or ATO requirements. What FedRAMP baseline (Low/Moderate/High) or Impact Level (IL2-IL6) applies?"),
-    ("contract_terms", r"\btransition\s*(plan|period|in|out)\b", r"\bday|month|week",
-     "The solicitation references a transition period but does not specify its duration. What is the expected transition-in/transition-out period?"),
-    ("evaluation_criteria", r"\bbest\s+value|lowest\s+price\s+technically\s+acceptable|LPTA|tradeoff\b", None,
-     "The solicitation does not clearly state the source selection methodology. Is this a best-value tradeoff or LPTA procurement?"),
-    ("contract_terms", r"\bplace\s+of\s+performance|work\s+location\b", r"\bremote|on-?site|hybrid",
-     "The place of performance is not clearly specified. Is on-site presence required? What percentage of work can be performed remotely?"),
+    (
+        "evaluation_criteria",
+        r"\bevaluation\s+(criteria|factor)",
+        r"\bweight|percent|point",
+        "The solicitation does not appear to specify evaluation criteria weights or relative importance. Will point values or adjectival ratings be provided?",  # noqa: E501
+    ),
+    (
+        "contract_terms",
+        r"\bCDRL|contract\s+data\s+requirements?\s+list|deliverable\s+list",
+        None,
+        "No CDRL list or deliverable schedule was identified in the solicitation. Will a Contract Data Requirements List (DD Form 1423) be provided?",  # noqa: E501
+    ),
+    (
+        "contract_terms",
+        r"\bperiod\s+of\s+performance|POP\b",
+        r"\b\d+\s*(month|year|day)",
+        "The period of performance details appear incomplete. Please confirm the base period duration, option periods, and any ordering period limitations.",  # noqa: E501
+    ),
+    (
+        "technical_requirements",
+        r"\bdata\s+rights|intellectual\s+property\b",
+        None,
+        "No data rights or intellectual property provisions were identified. Will DFARS 252.227-7013/7014 or FAR 52.227-14 apply? Should offerors submit a data rights assertion list?",  # noqa: E501
+    ),
+    (
+        "small_business",
+        r"\bsubcontracting\s+plan\b",
+        r"\bgoal|percent",
+        "Is an individual subcontracting plan required per FAR 52.219-9? What are the small business subcontracting goals by category?",  # noqa: E501
+    ),
+    (
+        "compliance_security",
+        r"\bclearance|security\s+clearance|TS/SCI|SECRET|Top\s+Secret\b",
+        r"\blevel|type",
+        "The solicitation references security clearance requirements but does not specify the clearance level. What level of personnel security clearance is required?",  # noqa: E501
+    ),
+    (
+        "compliance_security",
+        r"\bFedRAMP|ATO|authority\s+to\s+operate\b",
+        r"\bbaseline|level|impact",
+        "The solicitation references FedRAMP or ATO requirements. What FedRAMP baseline (Low/Moderate/High) or Impact Level (IL2-IL6) applies?",  # noqa: E501
+    ),
+    (
+        "contract_terms",
+        r"\btransition\s*(plan|period|in|out)\b",
+        r"\bday|month|week",
+        "The solicitation references a transition period but does not specify its duration. What is the expected transition-in/transition-out period?",  # noqa: E501
+    ),
+    (
+        "evaluation_criteria",
+        r"\bbest\s+value|lowest\s+price\s+technically\s+acceptable|LPTA|tradeoff\b",
+        None,
+        "The solicitation does not clearly state the source selection methodology. Is this a best-value tradeoff or LPTA procurement?",  # noqa: E501
+    ),
+    (
+        "contract_terms",
+        r"\bplace\s+of\s+performance|work\s+location\b",
+        r"\bremote|on-?site|hybrid",
+        "The place of performance is not clearly specified. Is on-site presence required? What percentage of work can be performed remotely?",  # noqa: E501
+    ),
 ]
 
 # L vs M misalignment patterns: (l_keyword, m_missing_keyword, question)
 LM_MISALIGNMENT_PATTERNS = [
-    (r"\bpast\s+performance\b", r"\brelevancy|recency\b",
-     "Section L requests past performance information, but Section M does not specify relevancy or recency criteria. What past performance timeframe and contract value thresholds apply?"),
-    (r"\bstaffing|personnel|key\s+personnel\b", r"\bresume|qualification|experience\b",
-     "Section L requires key personnel but Section M does not specify qualification evaluation criteria. How will proposed key personnel be evaluated?"),
-    (r"\btechnical\s+approach\b", r"\binnovation|methodology\b",
-     "Section L requests a technical approach but Section M does not specify how innovation or methodology will be evaluated. What technical approach factors will be scored?"),
-    (r"\bcost\s+(?:proposal|volume)\b", r"\brealism|reasonableness\b",
-     "Section L requests a cost proposal but Section M does not specify whether cost realism or cost reasonableness analysis will be performed. Which analysis applies?"),
-    (r"\bmanagement\s+(?:approach|plan|volume)\b", r"\borganization|staffing\s+plan|quality\b",
-     "Section L requests a management approach but Section M does not specify management evaluation subfactors. What management elements will be evaluated?"),
+    (
+        r"\bpast\s+performance\b",
+        r"\brelevancy|recency\b",
+        "Section L requests past performance information, but Section M does not specify relevancy or recency criteria. What past performance timeframe and contract value thresholds apply?",  # noqa: E501
+    ),
+    (
+        r"\bstaffing|personnel|key\s+personnel\b",
+        r"\bresume|qualification|experience\b",
+        "Section L requires key personnel but Section M does not specify qualification evaluation criteria. How will proposed key personnel be evaluated?",  # noqa: E501
+    ),
+    (
+        r"\btechnical\s+approach\b",
+        r"\binnovation|methodology\b",
+        "Section L requests a technical approach but Section M does not specify how innovation or methodology will be evaluated. What technical approach factors will be scored?",  # noqa: E501
+    ),
+    (
+        r"\bcost\s+(?:proposal|volume)\b",
+        r"\brealism|reasonableness\b",
+        "Section L requests a cost proposal but Section M does not specify whether cost realism or cost reasonableness analysis will be performed. Which analysis applies?",  # noqa: E501
+    ),
+    (
+        r"\bmanagement\s+(?:approach|plan|volume)\b",
+        r"\borganization|staffing\s+plan|quality\b",
+        "Section L requests a management approach but Section M does not specify management evaluation subfactors. What management elements will be evaluated?",  # noqa: E501
+    ),
 ]
 
 
 # =========================================================================
 # HELPERS
 # =========================================================================
+
 
 def _get_db(db_path=None):
     path = db_path or DB_PATH
@@ -233,10 +329,8 @@ def _extract_context(text, match, max_chars=120):
 
 def _guess_section_ref(text, match_pos):
     """Try to find a section reference (e.g. L.3.2.1) near the match position."""
-    search_window = text[max(0, match_pos - 200):match_pos + 50]
-    ref_match = re.search(
-        r"(?:Section|SECTION|section)\s+([A-Z]\.\d[\d.]*)", search_window
-    )
+    search_window = text[max(0, match_pos - 200) : match_pos + 50]
+    ref_match = re.search(r"(?:Section|SECTION|section)\s+([A-Z]\.\d[\d.]*)", search_window)
     if ref_match:
         return ref_match.group(1)
     ref_match = re.search(r"\b([LMNCJHKB]\.\d[\d.]*)\b", search_window)
@@ -249,6 +343,7 @@ def _guess_section_ref(text, match_pos):
 # CORE ANALYSIS FUNCTIONS
 # =========================================================================
 
+
 def _detect_vague_language(text, section_ref=""):
     """Scan text for vague phrases and return question candidates."""
     candidates = []
@@ -258,14 +353,16 @@ def _detect_vague_language(text, section_ref=""):
             ref = section_ref or _guess_section_ref(text, match.start())
             question_text = template.format(context=context, ref=ref or "N/A")
             priority, score = _score_priority(category, ambiguity)
-            candidates.append({
-                "question_text": question_text,
-                "category": category,
-                "priority": priority,
-                "priority_score": round(score, 2),
-                "ambiguity_trigger": match.group(0),
-                "rfp_section_ref": ref,
-            })
+            candidates.append(
+                {
+                    "question_text": question_text,
+                    "category": category,
+                    "priority": priority,
+                    "priority_score": round(score, 2),
+                    "ambiguity_trigger": match.group(0),
+                    "rfp_section_ref": ref,
+                }
+            )
     return candidates
 
 
@@ -284,14 +381,16 @@ def _detect_missing_sections(text):
             continue  # Topic mentioned, no detail check needed
         # Generate question
         priority, score = _score_priority(category, 2.5, strategic_value=1.2)
-        candidates.append({
-            "question_text": question_text,
-            "category": category,
-            "priority": priority,
-            "priority_score": round(score, 2),
-            "ambiguity_trigger": "missing_section",
-            "rfp_section_ref": "",
-        })
+        candidates.append(
+            {
+                "question_text": question_text,
+                "category": category,
+                "priority": priority,
+                "priority_score": round(score, 2),
+                "ambiguity_trigger": "missing_section",
+                "rfp_section_ref": "",
+            }
+        )
     return candidates
 
 
@@ -322,20 +421,23 @@ def _detect_lm_misalignment(text):
         missing_in_m = not bool(re.search(m_missing_kw, m_text, re.IGNORECASE))
         if has_in_l and missing_in_m:
             priority, score = _score_priority("evaluation_criteria", 2.5, strategic_value=1.3)
-            candidates.append({
-                "question_text": question_text,
-                "category": "evaluation_criteria",
-                "priority": priority,
-                "priority_score": round(score, 2),
-                "ambiguity_trigger": "lm_misalignment",
-                "rfp_section_ref": "",
-            })
+            candidates.append(
+                {
+                    "question_text": question_text,
+                    "category": "evaluation_criteria",
+                    "priority": priority,
+                    "priority_score": round(score, 2),
+                    "ambiguity_trigger": "lm_misalignment",
+                    "rfp_section_ref": "",
+                }
+            )
     return candidates
 
 
 # =========================================================================
 # PUBLIC API
 # =========================================================================
+
 
 def generate_questions(opp_id, rfp_text=None, db_path=None):
     """Generate questions from RFP analysis.
@@ -353,9 +455,7 @@ def generate_questions(opp_id, rfp_text=None, db_path=None):
         # Get RFP text — try opportunity description first, then assemble from shall statements
         if not rfp_text:
             # Check sam_gov_opportunities for description
-            opp = conn.execute(
-                "SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)
-            ).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
             if not opp:
                 return {"status": "error", "error": f"Opportunity {opp_id} not found"}
 
@@ -363,16 +463,14 @@ def generate_questions(opp_id, rfp_text=None, db_path=None):
             # Get SAM.gov description if linked
             if opp["sam_gov_opportunity_id"]:
                 sam = conn.execute(
-                    "SELECT description FROM sam_gov_opportunities WHERE id = ?",
-                    (opp["sam_gov_opportunity_id"],)
+                    "SELECT description FROM sam_gov_opportunities WHERE id = ?", (opp["sam_gov_opportunity_id"],)
                 ).fetchone()
                 if sam and sam["description"]:
                     parts.append(sam["description"])
 
             # Get shall statements
             stmts = conn.execute(
-                "SELECT statement_text FROM rfp_shall_statements WHERE proposal_opportunity_id = ?",
-                (opp_id,)
+                "SELECT statement_text FROM rfp_shall_statements WHERE proposal_opportunity_id = ?", (opp_id,)
             ).fetchall()
             for s in stmts:
                 parts.append(s["statement_text"])
@@ -380,7 +478,10 @@ def generate_questions(opp_id, rfp_text=None, db_path=None):
             rfp_text = "\n".join(parts) if parts else ""
 
         if not rfp_text.strip():
-            return {"status": "error", "error": "No RFP text available. Extract requirements first or provide RFP text."}
+            return {
+                "status": "error",
+                "error": "No RFP text available. Extract requirements first or provide RFP text.",
+            }
 
         # Run all detectors
         candidates = []
@@ -437,15 +538,13 @@ def generate_and_store(opp_id, rfp_text=None, db_path=None, created_by="question
     try:
         # Get existing hashes for dedup against already-stored questions
         existing = conn.execute(
-            "SELECT content_hash FROM proposal_questions WHERE opportunity_id = ?",
-            (opp_id,)
+            "SELECT content_hash FROM proposal_questions WHERE opportunity_id = ?", (opp_id,)
         ).fetchall()
         existing_hashes = {r["content_hash"] for r in existing if r["content_hash"]}
 
         # Get current max question number
         max_num_row = conn.execute(
-            "SELECT MAX(question_number) as m FROM proposal_questions WHERE opportunity_id = ?",
-            (opp_id,)
+            "SELECT MAX(question_number) as m FROM proposal_questions WHERE opportunity_id = ?", (opp_id,)
         ).fetchone()
         next_num = (max_num_row["m"] or 0) + 1
 
@@ -463,21 +562,35 @@ def generate_and_store(opp_id, rfp_text=None, db_path=None, created_by="question
                     source, rfp_section_ref, status, ambiguity_trigger, content_hash,
                     created_by, classification, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, 'auto', ?, 'draft', ?, ?, ?, 'CUI', ?, ?)""",
-                (q_id, opp_id, next_num, q["question_text"], q["category"], q["priority"],
-                 q.get("rfp_section_ref"), q.get("ambiguity_trigger"), q.get("content_hash"),
-                 created_by, _now(), _now()),
+                (
+                    q_id,
+                    opp_id,
+                    next_num,
+                    q["question_text"],
+                    q["category"],
+                    q["priority"],
+                    q.get("rfp_section_ref"),
+                    q.get("ambiguity_trigger"),
+                    q.get("content_hash"),
+                    created_by,
+                    _now(),
+                    _now(),
+                ),
             )
             next_num += 1
             generated += 1
 
         # Update question count on opportunity
         conn.execute(
-            "UPDATE proposal_opportunities SET question_count = (SELECT COUNT(*) FROM proposal_questions WHERE opportunity_id = ?), updated_at = ? WHERE id = ?",
+            "UPDATE proposal_opportunities SET question_count = (SELECT COUNT(*) FROM proposal_questions WHERE opportunity_id = ?), updated_at = ? WHERE id = ?",  # noqa: E501
             (opp_id, _now(), opp_id),
         )
 
-        _audit(conn, "generate_questions",
-               f"Generated {generated} questions for opp {opp_id} (skipped {skipped} duplicates)")
+        _audit(
+            conn,
+            "generate_questions",
+            f"Generated {generated} questions for opp {opp_id} (skipped {skipped} duplicates)",
+        )
         conn.commit()
 
         return {
@@ -496,8 +609,7 @@ def list_questions(opp_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number",
-            (opp_id,)
+            "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number", (opp_id,)
         ).fetchall()
         questions = [dict(r) for r in rows]
 
@@ -515,6 +627,7 @@ def list_questions(opp_id, db_path=None):
 # =========================================================================
 # CLI
 # =========================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(description="RFP Question Generator (D-QTG-1)")

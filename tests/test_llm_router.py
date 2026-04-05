@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for the ICDEV LLM Router (tools/llm/router.py).
@@ -17,6 +18,7 @@ import pytest
 try:
     from icdev.tools.llm.router import LLMRouter, _expand_env
     from icdev.tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
+
     _IMPORT_OK = True
 except ImportError:
     _IMPORT_OK = False
@@ -28,8 +30,13 @@ pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tools.llm.router not ava
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_config(
-    providers=None, models=None, routing=None, settings=None, embeddings=None,
+    providers=None,
+    models=None,
+    routing=None,
+    settings=None,
+    embeddings=None,
 ):
     """Build a minimal llm_config dict for testing."""
     return {
@@ -72,6 +79,7 @@ class MockProvider(LLMProvider):
 # Config Loading Tests
 # ---------------------------------------------------------------------------
 
+
 class TestConfigLoading:
     """Verify the router loads YAML configuration correctly."""
 
@@ -111,6 +119,7 @@ class TestConfigLoading:
 # Environment Variable Expansion
 # ---------------------------------------------------------------------------
 
+
 class TestEnvExpansion:
     """Verify ${VAR:-default} expansion in config values."""
 
@@ -135,6 +144,7 @@ class TestEnvExpansion:
 # ---------------------------------------------------------------------------
 # Provider Resolution Tests
 # ---------------------------------------------------------------------------
+
 
 class TestProviderResolution:
     """Verify get_provider_for_function resolves the correct provider."""
@@ -170,6 +180,7 @@ class TestProviderResolution:
 # ---------------------------------------------------------------------------
 # Availability Cache Tests
 # ---------------------------------------------------------------------------
+
 
 class TestAvailabilityCache:
     """Verify the availability cache with TTL."""
@@ -219,6 +230,7 @@ class TestAvailabilityCache:
 # ---------------------------------------------------------------------------
 # Invoke with Mock Provider
 # ---------------------------------------------------------------------------
+
 
 class TestInvoke:
     """Verify invoke walks the fallback chain and returns responses."""
@@ -310,6 +322,7 @@ class TestInvoke:
 # Effort Level Configuration
 # ---------------------------------------------------------------------------
 
+
 class TestEffortLevel:
     """Verify get_effort returns the configured effort for a function."""
 
@@ -348,6 +361,7 @@ class TestEffortLevel:
 # ---------------------------------------------------------------------------
 # Model Pricing Lookup
 # ---------------------------------------------------------------------------
+
 
 class TestModelPricing:
     """Verify pricing lookup for models."""

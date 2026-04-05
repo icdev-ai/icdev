@@ -44,8 +44,8 @@ RECOMMENDATIONS = {
     "new_service": {
         "action": "Evaluate for ICDEV provider integration",
         "details": "Check if the new service maps to an existing ICDEV provider ABC "
-                   "(secrets, storage, kms, monitoring, iam, registry, ai_ml). "
-                   "If so, add implementation. Update csp_service_registry.json.",
+        "(secrets, storage, kms, monitoring, iam, registry, ai_ml). "
+        "If so, add implementation. Update csp_service_registry.json.",
         "urgency": "low",
         "affected_files": [
             "context/cloud/csp_service_registry.json",
@@ -55,8 +55,8 @@ RECOMMENDATIONS = {
     "service_deprecation": {
         "action": "Plan migration away from deprecated service",
         "details": "Identify ICDEV components using this service. Update Terraform "
-                   "modules, provider implementations, and deployment profiles. "
-                   "Generate migration signal for affected tenants.",
+        "modules, provider implementations, and deployment profiles. "
+        "Generate migration signal for affected tenants.",
         "urgency": "high",
         "affected_files": [
             "tools/cloud/*_provider.py",
@@ -68,8 +68,8 @@ RECOMMENDATIONS = {
     "compliance_scope_change": {
         "action": "Review compliance certification registry",
         "details": "A CSP service was added to or removed from a compliance program. "
-                   "Update context/compliance/csp_certifications.json and "
-                   "csp_service_registry.json. May affect tenant deployment eligibility.",
+        "Update context/compliance/csp_certifications.json and "
+        "csp_service_registry.json. May affect tenant deployment eligibility.",
         "urgency": "critical",
         "affected_files": [
             "context/compliance/csp_certifications.json",
@@ -81,8 +81,8 @@ RECOMMENDATIONS = {
     "region_expansion": {
         "action": "Update region lists in registry and config",
         "details": "New region available. Update csp_service_registry.json regions "
-                   "and args/cloud_config.yaml region options. Check if new region "
-                   "holds required compliance certifications.",
+        "and args/cloud_config.yaml region options. Check if new region "
+        "holds required compliance certifications.",
         "urgency": "low",
         "affected_files": [
             "context/cloud/csp_service_registry.json",
@@ -93,8 +93,8 @@ RECOMMENDATIONS = {
     "api_breaking_change": {
         "action": "Update provider implementation for API compatibility",
         "details": "A CSP API has a breaking change. Update the affected provider "
-                   "implementation, run integration tests, and verify backward "
-                   "compatibility. Check SDK version requirements.",
+        "implementation, run integration tests, and verify backward "
+        "compatibility. Check SDK version requirements.",
         "urgency": "critical",
         "affected_files": [
             "tools/cloud/*_provider.py",
@@ -105,7 +105,7 @@ RECOMMENDATIONS = {
     "security_update": {
         "action": "Review security advisory and apply patches",
         "details": "CSP security update. Check if ICDEV components are affected. "
-                   "Update security gates if new vulnerability class detected.",
+        "Update security gates if new vulnerability class detected.",
         "urgency": "high",
         "affected_files": [
             "args/security_gates.yaml",
@@ -115,7 +115,7 @@ RECOMMENDATIONS = {
     "pricing_change": {
         "action": "Update cost models and usage tracking",
         "details": "CSP pricing changed. Update cost estimation in usage tracking "
-                   "dashboard and deployment profile cost recommendations.",
+        "dashboard and deployment profile cost recommendations.",
         "urgency": "low",
         "affected_files": [
             "tools/dashboard/templates/usage.html",
@@ -124,8 +124,8 @@ RECOMMENDATIONS = {
     "certification_change": {
         "action": "Review deployment eligibility for affected tenants",
         "details": "CSP gained or lost a compliance certification. Update "
-                   "csp_certifications.json and region_validator. May require "
-                   "tenant migration if certification was lost.",
+        "csp_certifications.json and region_validator. May require "
+        "tenant migration if certification was lost.",
         "urgency": "critical",
         "affected_files": [
             "context/compliance/csp_certifications.json",
@@ -153,18 +153,13 @@ def _now() -> str:
 def fetch_signals(db_path: Path, days: int = 30, csp: Optional[str] = None) -> List[Dict]:
     """Fetch CSP monitor signals from database."""
     conn = _get_db(db_path)
-    cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='innovation_signals'"
-    )
+    cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='innovation_signals'")
     if not cursor.fetchone():
         conn.close()
         return []
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    query = (
-        "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' "
-        "AND discovered_at >= ? "
-    )
+    query = "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' AND discovered_at >= ? "
     params = [cutoff]
 
     if csp:
@@ -178,24 +173,25 @@ def fetch_signals(db_path: Path, days: int = 30, csp: Optional[str] = None) -> L
     entries = []
     for row in rows:
         metadata = json.loads(row["metadata"] or "{}")
-        entries.append({
-            "id": row["id"],
-            "date": row["discovered_at"],
-            "csp": metadata.get("csp", "unknown"),
-            "change_type": row["source_type"],
-            "title": row["title"],
-            "description": row["description"],
-            "url": row["url"],
-            "score": row["community_score"],
-            "status": row["status"],
-            "category": row["category"],
-            "is_government": metadata.get("is_government", False),
-        })
+        entries.append(
+            {
+                "id": row["id"],
+                "date": row["discovered_at"],
+                "csp": metadata.get("csp", "unknown"),
+                "change_type": row["source_type"],
+                "title": row["title"],
+                "description": row["description"],
+                "url": row["url"],
+                "score": row["community_score"],
+                "status": row["status"],
+                "category": row["category"],
+                "is_government": metadata.get("is_government", False),
+            }
+        )
     return entries
 
 
-def generate_markdown_changelog(entries: List[Dict], days: int,
-                                 include_recommendations: bool = True) -> str:
+def generate_markdown_changelog(entries: List[Dict], days: int, include_recommendations: bool = True) -> str:
     """Generate Markdown changelog."""
     lines = [
         "# CUI // SP-CTI",
@@ -223,10 +219,8 @@ def generate_markdown_changelog(entries: List[Dict], days: int,
     lines.append("| CSP | Changes | Critical | High | Low |")
     lines.append("|-----|---------|----------|------|-----|")
     for csp, csp_entries in sorted(by_csp.items()):
-        critical = sum(1 for e in csp_entries
-                       if RECOMMENDATIONS.get(e["change_type"], {}).get("urgency") == "critical")
-        high = sum(1 for e in csp_entries
-                   if RECOMMENDATIONS.get(e["change_type"], {}).get("urgency") == "high")
+        critical = sum(1 for e in csp_entries if RECOMMENDATIONS.get(e["change_type"], {}).get("urgency") == "critical")
+        high = sum(1 for e in csp_entries if RECOMMENDATIONS.get(e["change_type"], {}).get("urgency") == "high")
         low = len(csp_entries) - critical - high
         lines.append(f"| {csp} | {len(csp_entries)} | {critical} | {high} | {low} |")
     lines.append("")
@@ -290,29 +284,20 @@ def generate_summary(entries: List[Dict]) -> Dict:
 
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="CSP Changelog Generator — produce change reports"
+    parser = argparse.ArgumentParser(description="CSP Changelog Generator — produce change reports")
+    parser.add_argument("--generate", action="store_true", help="Generate changelog")
+    parser.add_argument("--summary", action="store_true", help="Generate summary statistics only")
+    parser.add_argument("--days", type=int, default=30, help="Days of history (default: 30)")
+    parser.add_argument(
+        "--csp", type=str, default=None, choices=["aws", "azure", "gcp", "oci", "ibm"], help="Filter by CSP"
     )
-    parser.add_argument("--generate", action="store_true",
-                        help="Generate changelog")
-    parser.add_argument("--summary", action="store_true",
-                        help="Generate summary statistics only")
-    parser.add_argument("--days", type=int, default=30,
-                        help="Days of history (default: 30)")
-    parser.add_argument("--csp", type=str, default=None,
-                        choices=["aws", "azure", "gcp", "oci", "ibm"],
-                        help="Filter by CSP")
-    parser.add_argument("--format", type=str, default="json",
-                        choices=["json", "markdown"],
-                        help="Output format (default: json)")
-    parser.add_argument("--output", type=str, default=None,
-                        help="Output directory for markdown files")
-    parser.add_argument("--no-recommendations", action="store_true",
-                        help="Omit recommendations from changelog")
-    parser.add_argument("--db", type=str, default=None,
-                        help="Path to icdev.db")
-    parser.add_argument("--json", action="store_true",
-                        help="Force JSON output")
+    parser.add_argument(
+        "--format", type=str, default="json", choices=["json", "markdown"], help="Output format (default: json)"
+    )
+    parser.add_argument("--output", type=str, default=None, help="Output directory for markdown files")
+    parser.add_argument("--no-recommendations", action="store_true", help="Omit recommendations from changelog")
+    parser.add_argument("--db", type=str, default=None, help="Path to icdev.db")
+    parser.add_argument("--json", action="store_true", help="Force JSON output")
 
     args = parser.parse_args()
     db_path = Path(args.db) if args.db else DB_PATH
@@ -350,15 +335,15 @@ def main():
                 "summary": generate_summary(entries),
                 "entries": entries,
                 "recommendations": {
-                    ct: rec for ct, rec in RECOMMENDATIONS.items()
-                    if any(e["change_type"] == ct for e in entries)
+                    ct: rec for ct, rec in RECOMMENDATIONS.items() if any(e["change_type"] == ct for e in entries)
                 },
                 "generated_at": _now(),
             }
             print(json.dumps(result, indent=2))
         else:
             md = generate_markdown_changelog(
-                entries, args.days,
+                entries,
+                args.days,
                 include_recommendations=not args.no_recommendations,
             )
             if args.output:

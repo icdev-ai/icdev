@@ -26,6 +26,7 @@ def _write_manifest(tmp_dir, content=None):
     path = Path(tmp_dir) / "icdev.yaml"
     try:
         import yaml
+
         path.write_text(yaml.dump(content), encoding="utf-8")
     except ImportError:
         path.write_text(json.dumps(content), encoding="utf-8")
@@ -90,25 +91,23 @@ class TestGenerateInstructions:
 
     def test_write_flag_creates_files(self, tmp_path):
         _write_manifest(tmp_path)
-        results = generate_instructions(
-            directory=str(tmp_path), platforms=["codex"], write=True
-        )
+        results = generate_instructions(directory=str(tmp_path), platforms=["codex"], write=True)
         assert results["codex"]["written"] is True
         assert (tmp_path / "AGENTS.md").exists()
 
     def test_dry_run_no_write(self, tmp_path):
         _write_manifest(tmp_path)
         results = generate_instructions(
-            directory=str(tmp_path), platforms=["codex"],
-            write=True, dry_run=True,
+            directory=str(tmp_path),
+            platforms=["codex"],
+            write=True,
+            dry_run=True,
         )
         assert results["codex"]["written"] is False
         assert not (tmp_path / "AGENTS.md").exists()
 
     def test_unknown_platform_returns_error(self, tmp_path):
-        results = generate_instructions(
-            directory=str(tmp_path), platforms=["nonexistent"]
-        )
+        results = generate_instructions(directory=str(tmp_path), platforms=["nonexistent"])
         assert "error" in results["nonexistent"]
 
     def test_cui_marking_in_output(self, tmp_path):
@@ -140,8 +139,7 @@ class TestGenerateInstructions:
 
 class TestTemplateRegistry:
     def test_all_expected_platforms_have_templates(self):
-        expected = ["codex", "gemini", "copilot", "cursor", "windsurf",
-                     "amazon_q", "junie", "cline", "aider"]
+        expected = ["codex", "gemini", "copilot", "cursor", "windsurf", "amazon_q", "junie", "cline", "aider"]
         for platform in expected:
             assert platform in TEMPLATES, f"Missing template for {platform}"
 

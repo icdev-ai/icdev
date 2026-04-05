@@ -44,14 +44,12 @@ SPRINTS_PER_PI = 5
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -81,6 +79,7 @@ def _log_audit(conn, project_id, event_type, action, details):
 # ---------------------------------------------------------------------------
 # State snapshot helpers
 # ---------------------------------------------------------------------------
+
 
 def _snapshot_project_state(conn, project_id):
     """Capture a lightweight JSON summary of current project state."""
@@ -133,6 +132,7 @@ def _safe_query_val(conn, sql, params=()):
 # Dimension simulators
 # ---------------------------------------------------------------------------
 
+
 def _simulate_architecture(conn, project_id, modifications):
     """Architecture dimension: components, API surface, complexity, coupling."""
     baseline_components = _safe_count(conn, "sysml_elements", project_id)
@@ -142,9 +142,7 @@ def _simulate_architecture(conn, project_id, modifications):
         (project_id,),
     )
     baseline_relationships = _safe_count(conn, "sysml_relationships", project_id)
-    baseline_coupling = (
-        baseline_relationships / baseline_components if baseline_components > 0 else 0.0
-    )
+    baseline_coupling = baseline_relationships / baseline_components if baseline_components > 0 else 0.0
 
     # Apply modifications
     added_req = modifications.get("add_requirements", 0)
@@ -185,7 +183,9 @@ def _simulate_architecture(conn, project_id, modifications):
 def _simulate_compliance(conn, project_id, modifications):
     """Compliance dimension: coverage, POAMs, boundary tier, frameworks."""
     total_controls = _safe_query_val(
-        conn, "SELECT COUNT(*) FROM project_controls WHERE project_id = ?", (project_id,),
+        conn,
+        "SELECT COUNT(*) FROM project_controls WHERE project_id = ?",
+        (project_id,),
     )
     implemented = _safe_query_val(
         conn,
@@ -447,7 +447,7 @@ def _simulate_risk(conn, project_id, modifications):
     # Critical CVEs
     crit_cve = _safe_query_val(
         conn,
-        "SELECT COUNT(*) FROM cve_triage WHERE project_id = ? AND severity = 'critical' AND triage_decision NOT IN ('false_positive', 'not_applicable')",
+        "SELECT COUNT(*) FROM cve_triage WHERE project_id = ? AND severity = 'critical' AND triage_decision NOT IN ('false_positive', 'not_applicable')",  # noqa: E501
         (project_id,),
     )
     if crit_cve > 0:
@@ -478,13 +478,13 @@ def _simulate_risk(conn, project_id, modifications):
 
     compound = 1.0
     for p in risk_items:
-        compound *= (1.0 - p)
+        compound *= 1.0 - p
     compound_risk = round(1.0 - compound, 4)
 
     # Count mitigated (we consider non-open as mitigated)
     mitigated = _safe_query_val(
         conn,
-        "SELECT COUNT(*) FROM cve_triage WHERE project_id = ? AND triage_decision IN ('remediate', 'mitigate', 'false_positive', 'not_applicable')",
+        "SELECT COUNT(*) FROM cve_triage WHERE project_id = ? AND triage_decision IN ('remediate', 'mitigate', 'false_positive', 'not_applicable')",  # noqa: E501
         (project_id,),
     )
     mitigation_eff = mitigated / total_risks if total_risks > 0 else 1.0
@@ -503,7 +503,7 @@ def _simulate_risk(conn, project_id, modifications):
     sim_total_risks = len(new_risk_items)
     sim_compound = 1.0
     for p in new_risk_items:
-        sim_compound *= (1.0 - p)
+        sim_compound *= 1.0 - p
     sim_compound_risk = round(1.0 - sim_compound, 4)
 
     sim_total_risks - mitigated
@@ -540,6 +540,7 @@ def _simulate_risk(conn, project_id, modifications):
 # Utility
 # ---------------------------------------------------------------------------
 
+
 def _pct(baseline_val, simulated_val):
     """Compute percentage change, safe for zero baseline."""
     if isinstance(baseline_val, str) or isinstance(simulated_val, str):
@@ -575,7 +576,9 @@ def _generate_recommendations(dimension_results):
     for dim, data in dimension_results.items():
         pct = data.get("delta_pct", 0.0)
         if dim == "compliance" and pct < -5:
-            recs.append("Compliance coverage decreased significantly. Plan additional control implementations before proceeding.")
+            recs.append(
+                "Compliance coverage decreased significantly. Plan additional control implementations before proceeding."  # noqa: E501
+            )
         if dim == "cost" and pct > 20:
             recs.append(f"Cost increased by {pct:.1f}%. Consider phased delivery to spread budget impact across PIs.")
         if dim == "schedule" and pct > 15:
@@ -609,8 +612,7 @@ DIMENSION_SIMULATORS = {
 }
 
 
-def create_scenario(project_id, scenario_name, scenario_type, modifications,
-                    base_session_id=None, db_path=None):
+def create_scenario(project_id, scenario_name, scenario_type, modifications, base_session_id=None, db_path=None):
     """Create a new simulation scenario.
 
     Args:
@@ -660,9 +662,13 @@ def create_scenario(project_id, scenario_name, scenario_type, modifications,
         )
         conn.commit()
 
-        _log_audit(conn, project_id, "simulation_created",
-                   f"Scenario '{scenario_name}' created",
-                   {"scenario_id": scenario_id, "scenario_type": scenario_type})
+        _log_audit(
+            conn,
+            project_id,
+            "simulation_created",
+            f"Scenario '{scenario_name}' created",
+            {"scenario_id": scenario_id, "scenario_type": scenario_type},
+        )
 
         return {
             "scenario_id": scenario_id,
@@ -693,7 +699,8 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
     try:
         # Load scenario
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Scenario not found: {scenario_id}")
@@ -716,9 +723,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
                 continue
 
             simulator = DIMENSION_SIMULATORS[dim]
-            baseline, simulated, delta, delta_pct, chart_data = simulator(
-                conn, project_id, modifications
-            )
+            baseline, simulated, delta, delta_pct, chart_data = simulator(conn, project_id, modifications)
 
             # Persist each dimension result
             str(uuid4())
@@ -761,10 +766,13 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
         )
         conn.commit()
 
-        _log_audit(conn, project_id, "simulation_completed",
-                   f"Simulation completed for scenario {scenario_id}",
-                   {"scenario_id": scenario_id, "dimensions": dimensions,
-                    "overall_impact": overall_impact})
+        _log_audit(
+            conn,
+            project_id,
+            "simulation_completed",
+            f"Simulation completed for scenario {scenario_id}",
+            {"scenario_id": scenario_id, "dimensions": dimensions, "overall_impact": overall_impact},
+        )
 
         return {
             "scenario_id": scenario_id,
@@ -800,7 +808,8 @@ def get_scenario(scenario_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Scenario not found: {scenario_id}")
@@ -875,10 +884,12 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
     conn = _get_connection(db_path)
     try:
         s1 = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id_1,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id_1,),
         ).fetchone()
         s2 = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id_2,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id_2,),
         ).fetchone()
         if not s1:
             raise ValueError(f"Scenario not found: {scenario_id_1}")
@@ -888,7 +899,8 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
         # Fetch results for both
         def _get_results(sid):
             rows = conn.execute(
-                "SELECT * FROM simulation_results WHERE scenario_id = ?", (sid,),
+                "SELECT * FROM simulation_results WHERE scenario_id = ?",
+                (sid,),
             ).fetchall()
             by_dim = {}
             for r in rows:
@@ -927,9 +939,13 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
 
         # Log audit
         project_id = dict(s1).get("project_id", "unknown")
-        _log_audit(conn, project_id, "coa_compared",
-                   f"Compared scenarios {scenario_id_1} vs {scenario_id_2}",
-                   {"scenario_1": scenario_id_1, "scenario_2": scenario_id_2})
+        _log_audit(
+            conn,
+            project_id,
+            "coa_compared",
+            f"Compared scenarios {scenario_id_1} vs {scenario_id_2}",
+            {"scenario_1": scenario_id_1, "scenario_2": scenario_id_2},
+        )
 
         return {
             "scenario_1": {"id": scenario_id_1, "name": dict(s1).get("scenario_name")},
@@ -944,10 +960,9 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="RICOAS Digital Program Twin — 6-dimension simulation engine"
-    )
+    parser = argparse.ArgumentParser(description="RICOAS Digital Program Twin — 6-dimension simulation engine")
     parser.add_argument("--project-id", help="Project ID")
     parser.add_argument("--scenario-id", help="Scenario UUID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
@@ -961,15 +976,17 @@ def main():
 
     # Create args
     parser.add_argument("--scenario-name", help="Scenario name (for --create-scenario)")
-    parser.add_argument("--scenario-type", default="what_if",
-                        choices=["what_if", "coa_comparison", "risk_analysis"],
-                        help="Scenario type")
+    parser.add_argument(
+        "--scenario-type",
+        default="what_if",
+        choices=["what_if", "coa_comparison", "risk_analysis"],
+        help="Scenario type",
+    )
     parser.add_argument("--modifications", help="JSON string of modifications")
     parser.add_argument("--base-session-id", help="Base intake session ID")
 
     # Run args
-    parser.add_argument("--dimensions", default="all",
-                        help="Comma-separated dimensions or 'all'")
+    parser.add_argument("--dimensions", default="all", help="Comma-separated dimensions or 'all'")
 
     # Compare args
     parser.add_argument("--scenario-1", help="First scenario ID for comparison")
@@ -1083,7 +1100,9 @@ def _print_human(result):
         print(f"Scenario 2: {s2['name']} ({s2['id'][:8]}...)")
         print()
         for dim, comp in result["comparison"].items():
-            print(f"  {dim}: S1={comp['scenario_1_value']:.2f}%  S2={comp['scenario_2_value']:.2f}%  Winner={comp['winner']}")
+            print(
+                f"  {dim}: S1={comp['scenario_1_value']:.2f}%  S2={comp['scenario_2_value']:.2f}%  Winner={comp['winner']}"  # noqa: E501
+            )
 
     elif "scenario_id" in result and "status" in result:
         # create_scenario or get_scenario result

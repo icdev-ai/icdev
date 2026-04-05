@@ -28,18 +28,23 @@ def _get_pending_topics(limit: int = 2) -> List[Dict[str, Any]]:
     """Get demand topics that haven't been drafted yet."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, pain_point_text, domain_category, keywords, created_at
             FROM pulse_demand_signals
             WHERE is_high_demand = 1
             AND article_generated = 0
             ORDER BY frequency DESC, created_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
-        return [dict(r) if hasattr(r, "keys") else {
-            "id": r[0], "topic": r[1], "pain_point": r[1],
-            "category": r[2], "keywords": r[3], "created_at": r[4]
-        } for r in rows]
+        """,
+            (limit,),
+        ).fetchall()
+        return [
+            dict(r)
+            if hasattr(r, "keys")
+            else {"id": r[0], "topic": r[1], "pain_point": r[1], "category": r[2], "keywords": r[3], "created_at": r[4]}
+            for r in rows
+        ]
     except Exception as e:
         print(f"  WARN: Could not fetch demand topics: {e}")
         return []
@@ -51,6 +56,7 @@ def _draft_article(topic: str, pain_point: str) -> Optional[Dict[str, str]]:
     """Draft article using Pulse drafter (scanner-tier LLM)."""
     try:
         from tools.pulse.engine.drafter import draft_post
+
         result = draft_post(topic=topic, pain_point=pain_point, mode="genesis")
         if result and result.get("body"):
             return result
@@ -63,6 +69,7 @@ def _run_writeguard(body: str) -> Dict[str, Any]:
     """Run WriteGuard quality check (deterministic, no LLM)."""
     try:
         from tools.pulse.writeguard import check_quality
+
         result = check_quality(body)
         return result if isinstance(result, dict) else {"score": 0, "findings": []}
     except Exception as e:
@@ -74,21 +81,26 @@ def _generate_hero_image(topic: str, category: str = "") -> Optional[Dict[str, A
     """Generate a hero image for the article (GPU → SVG fallback)."""
     try:
         from tools.pulse.engine.image_generator import generate_hero_image
+
         result = generate_hero_image(title=topic, category=category)
         if result and result.get("success"):
-            print(f"  Publish: hero image generated via {result['method']} "
-                  f"({result.get('elapsed_ms', 0)}ms)")
+            print(f"  Publish: hero image generated via {result['method']} ({result.get('elapsed_ms', 0)}ms)")
             return result
     except Exception as e:
         print(f"  WARN: Hero image generation failed: {e}")
     return None
 
 
-def _stage_draft(topic: str, body: str, quality_score: float,
-                 demand_signal_id: Optional[int] = None,
-                 hero_image: Optional[Dict[str, Any]] = None) -> Optional[int]:
+def _stage_draft(
+    topic: str,
+    body: str,
+    quality_score: float,
+    demand_signal_id: Optional[int] = None,
+    hero_image: Optional[Dict[str, Any]] = None,
+) -> Optional[int]:
     """Insert article as staging draft in pulse_posts."""
     import uuid
+
     now = _utcnow_iso()
     slug = topic[:80].lower().replace(" ", "-").replace("/", "-")
     post_id = f"pulse-genesis-{uuid.uuid4().hex[:8]}"
@@ -114,7 +126,7 @@ def _stage_draft(topic: str, body: str, quality_score: float,
                 "genesis_publish",
                 now,
                 now,
-            )
+            ),
         )
         conn.commit()
         return post_id
@@ -160,10 +172,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         best_score = max(best_score, score)
 
         if score < min_score:
-            results.append({
-                "topic": topic[:60], "status": "quality_below_threshold",
-                "score": score, "threshold": min_score,
-            })
+            results.append(
+                {
+                    "topic": topic[:60],
+                    "status": "quality_below_threshold",
+                    "score": score,
+                    "threshold": min_score,
+                }
+            )
             continue
 
         # Generate hero image
@@ -171,17 +187,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         # Stage as draft
         post_id = _stage_draft(
-            topic, body, score,
+            topic,
+            body,
+            score,
             demand_signal_id=topic_data.get("id"),
             hero_image=hero,
         )
 
-        results.append({
-            "topic": topic[:60],
-            "status": "staged" if post_id else "stage_failed",
-            "post_id": post_id,
-            "quality_score": score,
-        })
+        results.append(
+            {
+                "topic": topic[:60],
+                "status": "staged" if post_id else "stage_failed",
+                "post_id": post_id,
+                "quality_score": score,
+            }
+        )
 
     staged = [r for r in results if r.get("status") == "staged"]
 

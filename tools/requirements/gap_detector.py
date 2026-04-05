@@ -25,10 +25,13 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
-    def log_event(**kwargs): return -1
+
+    def log_event(**kwargs):
+        return -1
 
 
 def _get_connection(db_path=None):
@@ -58,13 +61,10 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
         db_path: Optional DB path override
     """
     if checks is None:
-        checks = {"security": True, "compliance": True, "testability": True,
-                   "interfaces": True, "data": True}
+        checks = {"security": True, "compliance": True, "testability": True, "interfaces": True, "data": True}
 
     conn = _get_connection(db_path)
-    session = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -87,15 +87,17 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
                 continue
             absent_kws = pattern.get("detection_keywords_absent", [])
             if absent_kws and not any(kw.lower() in all_text for kw in absent_kws):
-                gaps.append({
-                    "gap_id": pattern["id"],
-                    "category": "security",
-                    "severity": pattern.get("severity", "high"),
-                    "name": pattern["name"],
-                    "description": pattern["description"],
-                    "affected_controls": pattern.get("nist_controls", []),
-                    "recommendation": pattern.get("recommendation", ""),
-                })
+                gaps.append(
+                    {
+                        "gap_id": pattern["id"],
+                        "category": "security",
+                        "severity": pattern.get("severity", "high"),
+                        "name": pattern["name"],
+                        "description": pattern["description"],
+                        "affected_controls": pattern.get("nist_controls", []),
+                        "recommendation": pattern.get("recommendation", ""),
+                    }
+                )
 
     # --- Data gap check ---
     if checks.get("data"):
@@ -105,15 +107,17 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
                 continue
             absent_kws = pattern.get("detection_keywords_absent", [])
             if absent_kws and not any(kw.lower() in all_text for kw in absent_kws):
-                gaps.append({
-                    "gap_id": pattern["id"],
-                    "category": "data",
-                    "severity": pattern.get("severity", "high"),
-                    "name": pattern["name"],
-                    "description": pattern["description"],
-                    "affected_controls": pattern.get("nist_controls", []),
-                    "recommendation": pattern.get("recommendation", ""),
-                })
+                gaps.append(
+                    {
+                        "gap_id": pattern["id"],
+                        "category": "data",
+                        "severity": pattern.get("severity", "high"),
+                        "name": pattern["name"],
+                        "description": pattern["description"],
+                        "affected_controls": pattern.get("nist_controls", []),
+                        "recommendation": pattern.get("recommendation", ""),
+                    }
+                )
 
     # --- Interface gap check ---
     if checks.get("interfaces"):
@@ -126,15 +130,17 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
             has_present = not present_kws or any(kw.lower() in all_text for kw in present_kws)
             has_absent = absent_kws and not any(kw.lower() in all_text for kw in absent_kws)
             if has_present and has_absent:
-                gaps.append({
-                    "gap_id": pattern["id"],
-                    "category": "interface",
-                    "severity": pattern.get("severity", "high"),
-                    "name": pattern["name"],
-                    "description": pattern["description"],
-                    "affected_controls": pattern.get("nist_controls", []),
-                    "recommendation": pattern.get("recommendation", ""),
-                })
+                gaps.append(
+                    {
+                        "gap_id": pattern["id"],
+                        "category": "interface",
+                        "severity": pattern.get("severity", "high"),
+                        "name": pattern["name"],
+                        "description": pattern["description"],
+                        "affected_controls": pattern.get("nist_controls", []),
+                        "recommendation": pattern.get("recommendation", ""),
+                    }
+                )
 
     # --- Operational gap check ---
     all_text = " ".join(r.get("raw_text", "") for r in reqs).lower()
@@ -143,46 +149,52 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
             continue
         absent_kws = pattern.get("detection_keywords_absent", [])
         if absent_kws and not any(kw.lower() in all_text for kw in absent_kws):
-            gaps.append({
-                "gap_id": pattern["id"],
-                "category": "operational",
-                "severity": pattern.get("severity", "high"),
-                "name": pattern["name"],
-                "description": pattern["description"],
-                "affected_controls": pattern.get("nist_controls", []),
-                "recommendation": pattern.get("recommendation", ""),
-            })
+            gaps.append(
+                {
+                    "gap_id": pattern["id"],
+                    "category": "operational",
+                    "severity": pattern.get("severity", "high"),
+                    "name": pattern["name"],
+                    "description": pattern["description"],
+                    "affected_controls": pattern.get("nist_controls", []),
+                    "recommendation": pattern.get("recommendation", ""),
+                }
+            )
 
     # --- Testability gap check ---
     if checks.get("testability"):
         untestable = [r for r in reqs if not r.get("acceptance_criteria")]
         if untestable:
-            gaps.append({
-                "gap_id": "GAP-TEST-001",
-                "category": "testability",
-                "severity": "medium",
-                "name": "Requirements without acceptance criteria",
-                "description": f"{len(untestable)} of {len(reqs)} requirements lack BDD acceptance criteria",
-                "affected_controls": [],
-                "recommendation": "Generate Given/When/Then criteria for each requirement",
-                "affected_requirements": [r["id"] for r in untestable[:10]],
-            })
+            gaps.append(
+                {
+                    "gap_id": "GAP-TEST-001",
+                    "category": "testability",
+                    "severity": "medium",
+                    "name": "Requirements without acceptance criteria",
+                    "description": f"{len(untestable)} of {len(reqs)} requirements lack BDD acceptance criteria",
+                    "affected_controls": [],
+                    "recommendation": "Generate Given/When/Then criteria for each requirement",
+                    "affected_requirements": [r["id"] for r in untestable[:10]],
+                }
+            )
 
     # --- Compliance coverage check ---
     if checks.get("compliance"):
         impact_level = session_data.get("impact_level", "IL5")
         sec_reqs = sum(1 for r in reqs if r["requirement_type"] in ("security", "compliance"))
         if sec_reqs < 3 and impact_level in ("IL4", "IL5", "IL6"):
-            gaps.append({
-                "gap_id": "GAP-COMP-001",
-                "category": "compliance",
-                "severity": "critical",
-                "name": "Insufficient security/compliance requirements",
-                "description": f"Only {sec_reqs} security/compliance requirements for {impact_level} system. "
-                               f"Minimum 5 expected covering authentication, encryption, audit, access control, and incident response.",
-                "affected_controls": ["AC-2", "AU-2", "IA-2", "SC-8", "IR-4"],
-                "recommendation": "Add requirements for CAC auth, FIPS encryption, audit logging, RBAC, and incident response",
-            })
+            gaps.append(
+                {
+                    "gap_id": "GAP-COMP-001",
+                    "category": "compliance",
+                    "severity": "critical",
+                    "name": "Insufficient security/compliance requirements",
+                    "description": f"Only {sec_reqs} security/compliance requirements for {impact_level} system. "
+                    f"Minimum 5 expected covering authentication, encryption, audit, access control, and incident response.",  # noqa: E501
+                    "affected_controls": ["AC-2", "AU-2", "IA-2", "SC-8", "IR-4"],
+                    "recommendation": "Add requirements for CAC auth, FIPS encryption, audit logging, RBAC, and incident response",  # noqa: E501
+                }
+            )
 
     # Update session
     conn.execute(
@@ -232,8 +244,7 @@ def main():
 
     checks = {}
     if args.report:
-        checks = {"security": True, "compliance": True, "testability": True,
-                   "interfaces": True, "data": True}
+        checks = {"security": True, "compliance": True, "testability": True, "interfaces": True, "data": True}
     else:
         if args.check_security:
             checks["security"] = True
@@ -246,8 +257,7 @@ def main():
         if args.check_data:
             checks["data"] = True
         if not checks:
-            checks = {"security": True, "compliance": True, "testability": True,
-                       "interfaces": True, "data": True}
+            checks = {"security": True, "compliance": True, "testability": True, "interfaces": True, "data": True}
 
     try:
         result = detect_gaps(args.session_id, checks)

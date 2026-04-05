@@ -12,6 +12,7 @@ Architecture decision: deterministic scanning + template-based generation
 from __future__ import annotations
 
 import json
+import sys
 import pathlib
 import re
 from datetime import datetime, timezone
@@ -42,7 +43,7 @@ def _is_cli_tool(path: pathlib.Path) -> bool:
     """Heuristic: file has an ``if __name__`` guard."""
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
-        return '__name__' in text and '__main__' in text
+        return "__name__" in text and "__main__" in text
     except OSError:
         return False
 
@@ -50,6 +51,7 @@ def _is_cli_tool(path: pathlib.Path) -> bool:
 # ---------------------------------------------------------------------------
 # Public API — consumed by tools/dashboard/app.py
 # ---------------------------------------------------------------------------
+
 
 def scan_tools(tools_dir: str | None = None) -> dict:
     """Discover ICDEV CLI tools eligible for MCP wrapping.
@@ -73,21 +75,19 @@ def scan_tools(tools_dir: str | None = None) -> dict:
 
     for py_file in sorted(root.rglob("*.py")):
         # Skip tests, __pycache__, __init__, etc.
-        if (
-            "__pycache__" in str(py_file)
-            or py_file.name.startswith("__")
-            or "test" in py_file.name.lower()
-        ):
+        if "__pycache__" in str(py_file) or py_file.name.startswith("__") or "test" in py_file.name.lower():
             continue
         if not _is_cli_tool(py_file):
             continue
 
         has_json = _has_json_flag(py_file)
-        discovered.append({
-            "path": str(py_file),
-            "name": py_file.stem,
-            "has_json": has_json,
-        })
+        discovered.append(
+            {
+                "path": str(py_file),
+                "name": py_file.stem,
+                "has_json": has_json,
+            }
+        )
 
     return {
         "status": "ok",
@@ -112,13 +112,15 @@ def list_wrapped(wrappers_dir: str | None = None) -> dict:
         for f in sorted(root.glob("*.py")):
             if f.name.startswith("__"):
                 continue
-            wrappers.append({
-                "path": str(f),
-                "name": f.stem,
-                "generated_at": datetime.fromtimestamp(
-                    f.stat().st_mtime, tz=timezone.utc
-                ).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            })
+            wrappers.append(
+                {
+                    "path": str(f),
+                    "name": f.stem,
+                    "generated_at": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).strftime(
+                        "%Y-%m-%dT%H:%M:%SZ"
+                    ),
+                }
+            )
 
     return {
         "wrappers": wrappers,
@@ -212,6 +214,7 @@ def wrap_all(dry_run: bool = False, limit: int = 20) -> dict:
 # ---------------------------------------------------------------------------
 # Template
 # ---------------------------------------------------------------------------
+
 
 def _render_wrapper(name: str, tool_path: str) -> str:
     """Render a minimal MCP tool handler that shells out to the CLI tool."""

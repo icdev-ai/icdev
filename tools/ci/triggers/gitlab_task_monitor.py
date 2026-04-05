@@ -109,7 +109,7 @@ def update_claim(issue_iid: int, status: str, run_id: str = None):
         conn = sqlite3.connect(str(DB_PATH))
         if run_id:
             conn.execute(
-                "UPDATE gitlab_task_claims SET status = ?, run_id = ?, completed_at = datetime('now') WHERE issue_iid = ? AND status = 'claimed'",
+                "UPDATE gitlab_task_claims SET status = ?, run_id = ?, completed_at = datetime('now') WHERE issue_iid = ? AND status = 'claimed'",  # noqa: E501
                 (status, run_id, issue_iid),
             )
         else:
@@ -129,7 +129,10 @@ def add_comment(issue_iid: int, message: str):
     try:
         subprocess.run(
             ["glab", "issue", "note", str(issue_iid), "-m", full_message],
-            capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(BASE_DIR),
         )
     except Exception as e:
         print(f"Warning: Failed to comment on issue {issue_iid}: {e}", file=sys.stderr)
@@ -140,14 +143,18 @@ def add_label(issue_iid: int, label: str):
     try:
         subprocess.run(
             ["glab", "issue", "update", str(issue_iid), "--label", label],
-            capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(BASE_DIR),
         )
     except Exception as e:
         print(f"Warning: Failed to add label to issue {issue_iid}: {e}", file=sys.stderr)
 
 
-def spawn_workflow(tag: str, issue_iid: int, issue_data: dict,
-                   worktree_path: str = None, dry_run: bool = False) -> Optional[str]:
+def spawn_workflow(
+    tag: str, issue_iid: int, issue_data: dict, worktree_path: str = None, dry_run: bool = False
+) -> Optional[str]:
     """Route issue through EventEnvelope + EventRouter (D132).
 
     Replaces the old hardcoded workflow_map routing. EventRouter determines
@@ -194,7 +201,9 @@ def spawn_workflow(tag: str, issue_iid: int, issue_data: dict,
             return None
         cwd = worktree_path or str(BASE_DIR)
         popen_kwargs = dict(
-            cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         if os.name == "nt":
@@ -213,7 +222,10 @@ def list_open_issues(label: str = "icdev") -> list:
     try:
         result = subprocess.run(
             ["glab", "issue", "list", "--label", label, "--state", "opened", "--output", "json"],
-            capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(BASE_DIR),
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)
@@ -274,6 +286,7 @@ def poll_gitlab_tasks(interval: int = 20, dry_run: bool = False):
                 worktree_path = None
                 try:
                     from tools.ci.modules.worktree import create_worktree
+
                     worktree_info = create_worktree(
                         task_id=str(iid),
                         target_dir=".",

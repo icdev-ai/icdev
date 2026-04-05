@@ -33,6 +33,7 @@ except ImportError:
 # Sample assessment data
 # ---------------------------------------------------------------------------
 
+
 def _sample_assessment(
     project_id="proj-test-001",
     include_not_satisfied=True,
@@ -59,24 +60,28 @@ def _sample_assessment(
     ]
 
     if include_not_satisfied:
-        results.append({
-            "requirement_id": "SC-7",
-            "title": "Boundary Protection",
-            "status": "not_satisfied",
-            "implementation_detail": "",
-            "evidence": "",
-            "last_assessed": "2026-01-15T10:00:00",
-        })
+        results.append(
+            {
+                "requirement_id": "SC-7",
+                "title": "Boundary Protection",
+                "status": "not_satisfied",
+                "implementation_detail": "",
+                "evidence": "",
+                "last_assessed": "2026-01-15T10:00:00",
+            }
+        )
 
     if include_partial:
-        results.append({
-            "requirement_id": "AU-3",
-            "title": "Content of Audit Records",
-            "status": "partially_satisfied",
-            "implementation_detail": "Basic logging enabled",
-            "evidence": "CloudWatch logs",
-            "last_assessed": "2026-01-15T10:00:00",
-        })
+        results.append(
+            {
+                "requirement_id": "AU-3",
+                "title": "Content of Audit Records",
+                "status": "partially_satisfied",
+                "implementation_detail": "Basic logging enabled",
+                "evidence": "CloudWatch logs",
+                "last_assessed": "2026-01-15T10:00:00",
+            }
+        )
 
     status_counts = {}
     for r in results:
@@ -104,6 +109,7 @@ def _sample_assessment(
 # ---------------------------------------------------------------------------
 # CSV Control Matrix Export
 # ---------------------------------------------------------------------------
+
 
 class TestControlMatrixExport:
     """Verify export_control_matrix generates valid CSV."""
@@ -148,6 +154,7 @@ class TestControlMatrixExport:
 # Executive Summary Export
 # ---------------------------------------------------------------------------
 
+
 class TestExecutiveSummaryExport:
     """Verify export_executive_summary generates Markdown."""
 
@@ -183,6 +190,7 @@ class TestExecutiveSummaryExport:
 # Evidence Package Export
 # ---------------------------------------------------------------------------
 
+
 class TestEvidencePackageExport:
     """Verify export_evidence_package groups findings by status."""
 
@@ -211,6 +219,7 @@ class TestEvidencePackageExport:
 # ---------------------------------------------------------------------------
 # POAM CSV Export
 # ---------------------------------------------------------------------------
+
 
 class TestPOAMExport:
     """Verify export_poam_csv filters to actionable items."""
@@ -264,6 +273,7 @@ class TestPOAMExport:
 # export_all orchestration
 # ---------------------------------------------------------------------------
 
+
 class TestExportAll:
     """Verify export_all creates all four output files."""
 
@@ -285,6 +295,7 @@ class TestExportAll:
 # ---------------------------------------------------------------------------
 # Recommendations Builder
 # ---------------------------------------------------------------------------
+
 
 class TestBuildRecommendations:
     """Verify _build_recommendations generates appropriate suggestions."""
@@ -311,6 +322,7 @@ class TestBuildRecommendations:
 # ---------------------------------------------------------------------------
 # Status Normalization
 # ---------------------------------------------------------------------------
+
 
 class TestStatusNormMapping:
     """Verify _STATUS_NORM maps implementation statuses correctly."""

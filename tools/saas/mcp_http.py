@@ -147,10 +147,7 @@ def _reap_expired_sessions() -> int:
     now = time.time()
     reaped = 0
     with _sessions_lock:
-        expired = [
-            sid for sid, s in _sessions.items()
-            if now - s["last_active"] > SESSION_TTL_SECONDS
-        ]
+        expired = [sid for sid, s in _sessions.items() if now - s["last_active"] > SESSION_TTL_SECONDS]
         for sid in expired:
             _destroy_session_locked(sid)
             reaped += 1
@@ -186,11 +183,13 @@ def _unregister_notification_stream(session_id: str, q: queue.Queue) -> None:
 
 def broadcast_event(session_id: str, event_type: str, data: dict) -> None:
     """Broadcast an SSE event to all notification streams for a session."""
-    payload = json.dumps({
-        "type": event_type,
-        "data": data,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    payload = json.dumps(
+        {
+            "type": event_type,
+            "data": data,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
     with _sessions_lock:
         session = _sessions.get(session_id)
         if session is None:
@@ -211,11 +210,13 @@ def _broadcast_to_tenant(tenant_id: str, event_type: str, data: dict) -> None:
     with _sessions_lock:
         for sid, session in _sessions.items():
             if session["tenant_id"] == tenant_id:
-                payload = json.dumps({
-                    "type": event_type,
-                    "data": data,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
+                payload = json.dumps(
+                    {
+                        "type": event_type,
+                        "data": data,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 for q in session.get("notification_queues", []):
                     try:
                         q.put_nowait(("event", event_type, payload))
@@ -498,6 +499,7 @@ _TOOL_MAP: Dict[str, dict] = {t["name"]: t for t in TOOL_REGISTRY}
 def _load_tool_func(tool_entry: dict) -> Callable:
     """Dynamically import and return the tool function."""
     import importlib
+
     mod = importlib.import_module(tool_entry["module"])
     return getattr(mod, tool_entry["function"])
 
@@ -526,6 +528,7 @@ def _dispatch_tool(name: str, arguments: dict, tenant_id: str) -> Any:
 
     # Use tenant_db_adapter for tools that need DB isolation
     from tools.saas.tenant_db_adapter import call_tool_with_tenant_db
+
     try:
         result = call_tool_with_tenant_db(tool_func, tenant_id, **arguments)
     except TypeError:
@@ -592,16 +595,19 @@ def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
 
     # ----- initialize -----
     if method == "initialize":
-        return _jsonrpc_success(rpc_id, {
-            "protocolVersion": MCP_VERSION,
-            "capabilities": {
-                "tools": {"listChanged": False},
+        return _jsonrpc_success(
+            rpc_id,
+            {
+                "protocolVersion": MCP_VERSION,
+                "capabilities": {
+                    "tools": {"listChanged": False},
+                },
+                "serverInfo": {
+                    "name": SERVER_NAME,
+                    "version": SERVER_VERSION,
+                },
             },
-            "serverInfo": {
-                "name": SERVER_NAME,
-                "version": SERVER_VERSION,
-            },
-        })
+        )
 
     # ----- ping -----
     if method == "ping":
@@ -611,11 +617,13 @@ def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
     if method == "tools/list":
         tools = []
         for t in TOOL_REGISTRY:
-            tools.append({
-                "name": t["name"],
-                "description": t["description"],
-                "inputSchema": t["inputSchema"],
-            })
+            tools.append(
+                {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "inputSchema": t["inputSchema"],
+                }
+            )
         return _jsonrpc_success(rpc_id, {"tools": tools})
 
     # ----- tools/call -----
@@ -629,36 +637,51 @@ def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
             result = _dispatch_tool(tool_name, arguments, tenant_id)
             # Broadcast completion event to notification streams
             if session_id:
-                broadcast_event(session_id, "tool.completed", {
-                    "tool": tool_name,
-                    "status": "success",
-                })
+                broadcast_event(
+                    session_id,
+                    "tool.completed",
+                    {
+                        "tool": tool_name,
+                        "status": "success",
+                    },
+                )
             # MCP tools/call returns content array
             content = []
             if isinstance(result, dict):
-                content.append({
-                    "type": "text",
-                    "text": json.dumps(result, indent=2, default=str),
-                })
+                content.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(result, indent=2, default=str),
+                    }
+                )
             elif isinstance(result, str):
                 content.append({"type": "text", "text": result})
             else:
-                content.append({
-                    "type": "text",
-                    "text": json.dumps(result, default=str),
-                })
+                content.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(result, default=str),
+                    }
+                )
             return _jsonrpc_success(rpc_id, {"content": content, "isError": False})
         except Exception as exc:
             logger.error("Tool %s failed: %s", tool_name, exc)
             if session_id:
-                broadcast_event(session_id, "tool.failed", {
-                    "tool": tool_name,
-                    "error": str(exc),
-                })
-            return _jsonrpc_success(rpc_id, {
-                "content": [{"type": "text", "text": str(exc)}],
-                "isError": True,
-            })
+                broadcast_event(
+                    session_id,
+                    "tool.failed",
+                    {
+                        "tool": tool_name,
+                        "error": str(exc),
+                    },
+                )
+            return _jsonrpc_success(
+                rpc_id,
+                {
+                    "content": [{"type": "text", "text": str(exc)}],
+                    "isError": True,
+                },
+            )
 
     # ----- elicitation/create (D346) -----
     if method == "elicitation/create":
@@ -742,17 +765,18 @@ def _validate_accept_header() -> Optional[Response]:
         return None
     # Return 406 Not Acceptable
     return Response(
-        json.dumps({
-            "jsonrpc": "2.0",
-            "id": None,
-            "error": {
-                "code": -32600,
-                "message": (
-                    "Not Acceptable: Accept header must include both "
-                    "application/json and text/event-stream"
-                ),
-            },
-        }),
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32600,
+                    "message": (
+                        "Not Acceptable: Accept header must include both application/json and text/event-stream"
+                    ),
+                },
+            }
+        ),
         status=406,
         content_type="application/json",
         headers={"X-Classification": "CUI // SP-CTI"},
@@ -762,6 +786,7 @@ def _validate_accept_header() -> Optional[Response]:
 # ---------------------------------------------------------------------------
 # Flask routes -- single MCP endpoint
 # ---------------------------------------------------------------------------
+
 
 @mcp_bp.route("/", methods=["POST"])
 def mcp_post():
@@ -813,11 +838,13 @@ def mcp_post():
     for msg in messages:
         if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0":
             return Response(
-                json.dumps(_jsonrpc_error(
-                    msg.get("id") if isinstance(msg, dict) else None,
-                    -32600,
-                    "Invalid Request: jsonrpc must be '2.0'",
-                )),
+                json.dumps(
+                    _jsonrpc_error(
+                        msg.get("id") if isinstance(msg, dict) else None,
+                        -32600,
+                        "Invalid Request: jsonrpc must be '2.0'",
+                    )
+                ),
                 status=400,
                 content_type="application/json",
                 headers={"X-Classification": "CUI // SP-CTI"},
@@ -837,10 +864,13 @@ def mcp_post():
         session = _get_session(session_id)
         if session is None:
             return Response(
-                json.dumps(_jsonrpc_error(
-                    None, -32600,
-                    "Invalid or expired session. Send initialize to start a new session.",
-                )),
+                json.dumps(
+                    _jsonrpc_error(
+                        None,
+                        -32600,
+                        "Invalid or expired session. Send initialize to start a new session.",
+                    )
+                ),
                 status=400,
                 content_type="application/json",
                 headers={"X-Classification": "CUI // SP-CTI"},
@@ -875,10 +905,13 @@ def mcp_post():
         # For non-initialize, require session (unless it's being created in this batch)
         effective_session = new_session_id or session_id
         if not effective_session and not has_initialize:
-            responses.append(_jsonrpc_error(
-                rpc_msg.get("id"), -32600,
-                "No session. Send initialize first.",
-            ))
+            responses.append(
+                _jsonrpc_error(
+                    rpc_msg.get("id"),
+                    -32600,
+                    "No session. Send initialize first.",
+                )
+            )
             continue
 
         result = _handle_request(rpc_msg, tenant_id, effective_session)
@@ -949,12 +982,16 @@ def mcp_get():
     def generate():
         try:
             # Initial connection event
-            yield "event: connected\ndata: {}\n\n".format(json.dumps({
-                "server": SERVER_NAME,
-                "version": SERVER_VERSION,
-                "session_id": session_id[:12] + "...",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }))
+            yield "event: connected\ndata: {}\n\n".format(
+                json.dumps(
+                    {
+                        "server": SERVER_NAME,
+                        "version": SERVER_VERSION,
+                        "session_id": session_id[:12] + "...",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+            )
 
             while True:
                 try:
@@ -966,8 +1003,7 @@ def mcp_get():
                     yield "event: {}\ndata: {}\n\n".format(event_type, payload)
                 except queue.Empty:
                     # Heartbeat comment to keep connection alive
-                    yield ": heartbeat {}\n\n".format(
-                        datetime.now(timezone.utc).isoformat())
+                    yield ": heartbeat {}\n\n".format(datetime.now(timezone.utc).isoformat())
         except GeneratorExit:
             pass
         finally:
@@ -1076,23 +1112,27 @@ def mcp_oauth_generate():
         tenant_id=getattr(g, "tenant_id", data.get("tenant_id")),
         ttl_seconds=int(data.get("ttl_seconds", 3600)),
     )
-    return jsonify({
-        "token": token,
-        "token_type": "hmac",
-        "expires_in": int(data.get("ttl_seconds", 3600)),
-        "classification": "CUI // SP-CTI",
-    })
+    return jsonify(
+        {
+            "token": token,
+            "token_type": "hmac",
+            "expires_in": int(data.get("ttl_seconds", 3600)),
+            "classification": "CUI // SP-CTI",
+        }
+    )
 
 
 @mcp_bp.route("/elicitations", methods=["GET"])
 def mcp_list_elicitations():
     """GET /mcp/v1/elicitations -- List pending elicitations (D346)."""
     pending = _elicitation_handler.get_pending()
-    return jsonify({
-        "elicitations": pending,
-        "total": len(pending),
-        "classification": "CUI // SP-CTI",
-    })
+    return jsonify(
+        {
+            "elicitations": pending,
+            "total": len(pending),
+            "classification": "CUI // SP-CTI",
+        }
+    )
 
 
 @mcp_bp.route("/tasks", methods=["GET"])
@@ -1100,11 +1140,13 @@ def mcp_list_tasks_endpoint():
     """GET /mcp/v1/tasks -- List MCP tasks (D346)."""
     status_filter = request.args.get("status")
     tasks = _task_manager.list_tasks(status=status_filter)
-    return jsonify({
-        "tasks": tasks,
-        "total": len(tasks),
-        "classification": "CUI // SP-CTI",
-    })
+    return jsonify(
+        {
+            "tasks": tasks,
+            "total": len(tasks),
+            "classification": "CUI // SP-CTI",
+        }
+    )
 
 
 @mcp_bp.route("/tools", methods=["GET"])
@@ -1116,13 +1158,17 @@ def mcp_list_tools():
     """
     tools = []
     for t in TOOL_REGISTRY:
-        tools.append({
-            "name": t["name"],
-            "description": t["description"],
-            "inputSchema": t["inputSchema"],
-        })
-    return jsonify({
-        "tools": tools,
-        "total": len(tools),
-        "classification": "CUI // SP-CTI",
-    })
+        tools.append(
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "inputSchema": t["inputSchema"],
+            }
+        )
+    return jsonify(
+        {
+            "tools": tools,
+            "total": len(tools),
+            "classification": "CUI // SP-CTI",
+        }
+    )

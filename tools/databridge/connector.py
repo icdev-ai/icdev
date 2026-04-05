@@ -5,6 +5,7 @@ Defines the base connector interface (DataConnector), request/response
 data classes, connector capabilities, and schema definitions used by all
 DataBridge connector implementations.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -131,15 +132,11 @@ class DataConnector(ABC):
 
     def write(self, request: ConnectorRequest, data: Any) -> ConnectorResponse:
         """Write data to the destination. Optional — raise if unsupported."""
-        raise NotImplementedError(
-            f"{self.connector_name} does not support write"
-        )
+        raise NotImplementedError(f"{self.connector_name} does not support write")
 
     def infer_schema(self, table_name: str) -> SchemaDefinition:
         """Infer schema for the given table/resource. Optional."""
-        return SchemaDefinition(
-            metadata={"source": self.connector_name, "table": table_name}
-        )
+        return SchemaDefinition(metadata={"source": self.connector_name, "table": table_name})
 
     def list_tables(self) -> List[str]:
         """List available tables/resources. Optional."""

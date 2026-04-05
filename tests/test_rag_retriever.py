@@ -20,6 +20,7 @@ from tools.rag.vector_store_provider import SearchResult
 
 # ---- RRF fusion tests (D-RAG-19) ----
 
+
 class TestRRFFusion:
     def test_empty_results(self):
         assert _rrf_fusion("query", []) == []
@@ -33,7 +34,9 @@ class TestRRFFusion:
     def test_rrf_score_is_rank_based(self):
         """RRF scores should be based on ranks, not raw scores."""
         results = [
-            SearchResult(chunk_id="c1", content="FedRAMP AC-2 access control FedRAMP compliance", score=0.9, final_score=0.9),
+            SearchResult(
+                chunk_id="c1", content="FedRAMP AC-2 access control FedRAMP compliance", score=0.9, final_score=0.9
+            ),
             SearchResult(chunk_id="c2", content="totally unrelated content here", score=0.8, final_score=0.8),
             SearchResult(chunk_id="c3", content="another unrelated document text", score=0.7, final_score=0.7),
         ]
@@ -114,6 +117,7 @@ class TestComputeBM25Scores:
 
 # ---- Citation validation tests (D-RAG-21) ----
 
+
 class TestValidateCitations:
     def test_no_citations(self):
         result = validate_citations("No citations here.", 3)
@@ -143,6 +147,7 @@ class TestValidateCitations:
 
 # ---- Time decay tests ----
 
+
 class TestTimeDecayAdjust:
     def test_empty_results(self):
         assert _time_decay_adjust([]) == []
@@ -154,10 +159,13 @@ class TestTimeDecayAdjust:
 
     def test_with_created_at(self):
         """When time_decay module is available and created_at exists."""
-        results = [SearchResult(
-            content="test", final_score=0.8,
-            metadata={"created_at": "2025-01-01T00:00:00"},
-        )]
+        results = [
+            SearchResult(
+                content="test",
+                final_score=0.8,
+                metadata={"created_at": "2025-01-01T00:00:00"},
+            )
+        ]
         # compute_time_aware_score is imported inside _time_decay_adjust
         with patch("tools.memory.time_decay.compute_time_aware_score", return_value=0.42):
             adjusted = _time_decay_adjust(results)
@@ -166,6 +174,7 @@ class TestTimeDecayAdjust:
 
 
 # ---- RAGRetriever tests ----
+
 
 class TestRAGRetriever:
     def test_init_default(self):
@@ -200,21 +209,28 @@ class TestRAGRetriever:
         mock_store = MagicMock()
         mock_store.search.return_value = [
             SearchResult(
-                chunk_id="c1", content="FedRAMP AC-2", source_type="compliance",
-                score=0.9, final_score=0.9,
+                chunk_id="c1",
+                content="FedRAMP AC-2",
+                source_type="compliance",
+                score=0.9,
+                final_score=0.9,
             ),
         ]
 
-        with patch("tools.rag.retriever._get_embedding_provider", return_value=mock_provider), \
-             patch("tools.rag.retriever.VectorStoreFactory") as MockFactory:
+        with (
+            patch("tools.rag.retriever._get_embedding_provider", return_value=mock_provider),
+            patch("tools.rag.retriever.VectorStoreFactory") as MockFactory,
+        ):
             MockFactory.create.return_value = mock_store
-            retriever = RAGRetriever(config={
-                "rag": {
-                    "retrieval": {"min_score_threshold": 0.0},
-                    "rerank": {"enabled": False},
-                    "provenance": {"enabled": False},
+            retriever = RAGRetriever(
+                config={
+                    "rag": {
+                        "retrieval": {"min_score_threshold": 0.0},
+                        "rerank": {"enabled": False},
+                        "provenance": {"enabled": False},
+                    }
                 }
-            })
+            )
             results = retriever.search("FedRAMP AC-2", top_k=5, rerank=False)
             assert len(results) >= 0  # May be filtered by score
 
@@ -226,18 +242,23 @@ class TestRAGRetriever:
         mock_store = MagicMock()
         mock_store.search.return_value = []
 
-        with patch("tools.rag.retriever._get_embedding_provider", return_value=mock_provider), \
-             patch("tools.rag.retriever.VectorStoreFactory") as MockFactory:
+        with (
+            patch("tools.rag.retriever._get_embedding_provider", return_value=mock_provider),
+            patch("tools.rag.retriever.VectorStoreFactory") as MockFactory,
+        ):
             MockFactory.create.return_value = mock_store
-            retriever = RAGRetriever(config={
-                "rag": {
-                    "retrieval": {},
-                    "rerank": {"enabled": False},
-                    "provenance": {"enabled": False},
+            retriever = RAGRetriever(
+                config={
+                    "rag": {
+                        "retrieval": {},
+                        "rerank": {"enabled": False},
+                        "provenance": {"enabled": False},
+                    }
                 }
-            })
+            )
             retriever.search(
-                "test", source_types=["innovation_signals", "compliance_artifacts"],
+                "test",
+                source_types=["innovation_signals", "compliance_artifacts"],
                 rerank=False,
             )
             # Should call search once per source type
@@ -248,8 +269,12 @@ class TestRAGRetriever:
         retriever = RAGRetriever(config={"rag": {"retrieval": {}, "rerank": {}}})
         # Should not raise even if DB doesn't exist
         retriever._log_retrieval(
-            query="test", results_count=0, top_score=0.0,
-            duration_ms=100, mode="vector", project_id="",
+            query="test",
+            results_count=0,
+            top_score=0.0,
+            duration_ms=100,
+            mode="vector",
+            project_id="",
         )
 
     def test_min_score_threshold_weighted_sum(self):
@@ -263,21 +288,25 @@ class TestRAGRetriever:
             SearchResult(chunk_id="c2", content="high score", score=0.8, final_score=0.8),
         ]
 
-        with patch("tools.rag.retriever._get_embedding_provider", return_value=mock_provider), \
-             patch("tools.rag.retriever.VectorStoreFactory") as MockFactory:
+        with (
+            patch("tools.rag.retriever._get_embedding_provider", return_value=mock_provider),
+            patch("tools.rag.retriever.VectorStoreFactory") as MockFactory,
+        ):
             MockFactory.create.return_value = mock_store
-            retriever = RAGRetriever(config={
-                "rag": {
-                    "retrieval": {
-                        "min_score_threshold": 0.1,
-                        "bm25_boost_weight": 0.0,
-                        "time_decay_enabled": False,
-                        "fusion_method": "weighted_sum",
-                    },
-                    "rerank": {"enabled": False},
-                    "provenance": {"enabled": False},
+            retriever = RAGRetriever(
+                config={
+                    "rag": {
+                        "retrieval": {
+                            "min_score_threshold": 0.1,
+                            "bm25_boost_weight": 0.0,
+                            "time_decay_enabled": False,
+                            "fusion_method": "weighted_sum",
+                        },
+                        "rerank": {"enabled": False},
+                        "provenance": {"enabled": False},
+                    }
                 }
-            })
+            )
             results = retriever.search("test", rerank=False)
             # Low-score result should be filtered
             for r in results:
@@ -293,13 +322,16 @@ class TestRAGRetriever:
 
 # ---- Reranker tests ----
 
+
 class TestReranker:
     def test_empty_results(self):
         from tools.rag.reranker import rerank_results
+
         assert rerank_results("query", []) == []
 
     def test_fewer_results_than_top_k(self):
         from tools.rag.reranker import rerank_results
+
         results = [SearchResult(content="only one", score=0.5)]
         reranked = rerank_results("test", results, top_k=5)
         assert len(reranked) == 1
@@ -307,9 +339,9 @@ class TestReranker:
     def test_rerank_fallback_on_error(self):
         """When LLM is unavailable, reranker should fallback to truncation."""
         from tools.rag.reranker import rerank_results
+
         results = [
-            SearchResult(content=f"result {i}", score=0.5 - i * 0.1, final_score=0.5 - i * 0.1)
-            for i in range(10)
+            SearchResult(content=f"result {i}", score=0.5 - i * 0.1, final_score=0.5 - i * 0.1) for i in range(10)
         ]
         # LLM router will fail in test env — should fallback gracefully
         reranked = rerank_results("test query", results, top_k=3)
@@ -318,10 +350,8 @@ class TestReranker:
     def test_rerank_weight_config(self):
         """Verify rerank_weight is read from config."""
         from tools.rag.reranker import rerank_results
-        results = [
-            SearchResult(content=f"result {i}", score=0.5, final_score=0.5)
-            for i in range(10)
-        ]
+
+        results = [SearchResult(content=f"result {i}", score=0.5, final_score=0.5) for i in range(10)]
         config = {"rerank_weight": 0.7}
         reranked = rerank_results("test query", results, top_k=3, config=config)
         assert len(reranked) <= 3

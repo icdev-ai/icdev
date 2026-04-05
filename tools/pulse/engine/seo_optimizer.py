@@ -34,19 +34,124 @@ IDEAL_KEYWORD_DENSITY = (0.01, 0.025)  # 1%–2.5%
 
 # Stop words excluded from keyword extraction
 _STOP_WORDS: set[str] = {
-    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "by", "from", "is", "it", "as", "was", "are", "be",
-    "been", "being", "have", "has", "had", "do", "does", "did", "will",
-    "would", "could", "should", "may", "might", "shall", "can", "this",
-    "that", "these", "those", "not", "no", "nor", "so", "if", "then",
-    "than", "too", "very", "just", "about", "above", "after", "again",
-    "all", "also", "any", "because", "before", "between", "both", "each",
-    "few", "how", "into", "its", "more", "most", "new", "now", "only",
-    "other", "our", "out", "over", "own", "same", "she", "he", "they",
-    "we", "you", "what", "when", "where", "which", "who", "why", "your",
-    "up", "us", "use", "used", "using", "here", "there", "their", "them",
-    "his", "her", "him", "my", "me", "i", "we", "such", "some", "one",
-    "two", "many", "much", "well", "get", "got", "make", "made", "like",
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "is",
+    "it",
+    "as",
+    "was",
+    "are",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "shall",
+    "can",
+    "this",
+    "that",
+    "these",
+    "those",
+    "not",
+    "no",
+    "nor",
+    "so",
+    "if",
+    "then",
+    "than",
+    "too",
+    "very",
+    "just",
+    "about",
+    "above",
+    "after",
+    "again",
+    "all",
+    "also",
+    "any",
+    "because",
+    "before",
+    "between",
+    "both",
+    "each",
+    "few",
+    "how",
+    "into",
+    "its",
+    "more",
+    "most",
+    "new",
+    "now",
+    "only",
+    "other",
+    "our",
+    "out",
+    "over",
+    "own",
+    "same",
+    "she",
+    "he",
+    "they",
+    "we",
+    "you",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "why",
+    "your",
+    "up",
+    "us",
+    "use",
+    "used",
+    "using",
+    "here",
+    "there",
+    "their",
+    "them",
+    "his",
+    "her",
+    "him",
+    "my",
+    "me",
+    "i",
+    "we",
+    "such",
+    "some",
+    "one",
+    "two",
+    "many",
+    "much",
+    "well",
+    "get",
+    "got",
+    "make",
+    "made",
+    "like",
 }
 
 # Score weights (must sum to 100)
@@ -117,10 +222,7 @@ def _check_heading_hierarchy(headings: list[tuple[int, str]]) -> list[str]:
     prev_level = 0
     for lvl, text in headings:
         if prev_level > 0 and lvl > prev_level + 1:
-            issues.append(
-                f"Heading level jumps from H{prev_level} to H{lvl} "
-                f'at "{text[:40]}". Do not skip levels.'
-            )
+            issues.append(f'Heading level jumps from H{prev_level} to H{lvl} at "{text[:40]}". Do not skip levels.')
         prev_level = lvl
 
     return issues
@@ -266,7 +368,7 @@ def optimize_post(post: dict[str, Any]) -> dict[str, Any]:
     slug = _slugify(slug) if slug else _slugify(title)
 
     if not tags:
-        tags = keywords[:TARGET_KEYWORD_COUNT[1]]
+        tags = keywords[: TARGET_KEYWORD_COUNT[1]]
 
     headings = _extract_headings(content)
     heading_issues = _check_heading_hierarchy(headings)
@@ -420,21 +522,15 @@ def _score_title(title: str, primary_keyword: str, recommendations: list[str]) -
         score = 1.0
     elif title_len < TITLE_MIN_LEN:
         score = title_len / TITLE_MIN_LEN
-        recommendations.append(
-            f"Title is {title_len} chars — aim for {TITLE_MIN_LEN}-{TITLE_MAX_LEN} chars."
-        )
+        recommendations.append(f"Title is {title_len} chars — aim for {TITLE_MIN_LEN}-{TITLE_MAX_LEN} chars.")
     else:
         overshoot = title_len - TITLE_MAX_LEN
         score = max(0.0, 1.0 - overshoot / 20)
-        recommendations.append(
-            f"Title is {title_len} chars — trim to under {TITLE_MAX_LEN} chars."
-        )
+        recommendations.append(f"Title is {title_len} chars — trim to under {TITLE_MAX_LEN} chars.")
 
     if primary_keyword and primary_keyword.lower() not in title.lower():
         score *= 0.7
-        recommendations.append(
-            f'Include primary keyword "{primary_keyword}" in the title.'
-        )
+        recommendations.append(f'Include primary keyword "{primary_keyword}" in the title.')
     return score
 
 
@@ -453,9 +549,7 @@ def _score_meta_description(meta_desc: str, primary_keyword: str, recommendation
         )
     else:
         score = max(0.0, 1.0 - (desc_len - META_DESC_MAX_LEN) / 50)
-        recommendations.append(
-            f"Meta description is {desc_len} chars — trim to {META_DESC_MAX_LEN}."
-        )
+        recommendations.append(f"Meta description is {desc_len} chars — trim to {META_DESC_MAX_LEN}.")
 
     if primary_keyword and primary_keyword.lower() not in meta_desc.lower():
         score *= 0.8
@@ -475,8 +569,7 @@ def _score_keyword_density(content: str, primary_keyword: str, recommendations: 
         return 1.0
     elif density < min_d:
         recommendations.append(
-            f'Keyword "{primary_keyword}" density is {density:.1%} — '
-            f"aim for {min_d:.0%}-{max_d:.0%}."
+            f'Keyword "{primary_keyword}" density is {density:.1%} — aim for {min_d:.0%}-{max_d:.0%}.'
         )
         return density / min_d if min_d > 0 else 0.0
     else:
@@ -511,9 +604,7 @@ def _score_internal_links(internal_link_count: int, recommendations: list[str]) 
             f"{GITHUB_REPO_URL} or {SITE_URL} (aim for 3+)."
         )
         return internal_link_count / 3
-    recommendations.append(
-        f"No internal links found. Add links to {GITHUB_REPO_URL} or {SITE_URL}."
-    )
+    recommendations.append(f"No internal links found. Add links to {GITHUB_REPO_URL} or {SITE_URL}.")
     return 0.0
 
 
@@ -537,14 +628,10 @@ def _score_word_count(word_count: int, recommendations: list[str]) -> float:
     if word_count >= IDEAL_WORD_COUNT:
         return 1.0
     elif word_count >= MIN_WORD_COUNT:
-        recommendations.append(
-            f"Word count is {word_count} — aim for {IDEAL_WORD_COUNT}+ "
-            "for better search ranking."
-        )
+        recommendations.append(f"Word count is {word_count} — aim for {IDEAL_WORD_COUNT}+ for better search ranking.")
         return word_count / IDEAL_WORD_COUNT
     recommendations.append(
-        f"Content is too short ({word_count} words). "
-        f"Minimum {MIN_WORD_COUNT}, ideal {IDEAL_WORD_COUNT}+."
+        f"Content is too short ({word_count} words). Minimum {MIN_WORD_COUNT}, ideal {IDEAL_WORD_COUNT}+."
     )
     return max(0.0, word_count / MIN_WORD_COUNT * 0.5)
 
@@ -559,8 +646,7 @@ def _score_readability(content: str, recommendations: list[str]) -> float:
     elif fre > 80:
         return 0.85
     recommendations.append(
-        f"Readability score is {fre:.0f} (Flesch) — simplify sentences "
-        "for a general audience (aim for 50-70)."
+        f"Readability score is {fre:.0f} (Flesch) — simplify sentences for a general audience (aim for 50-70)."
     )
     return max(0.0, fre / 50)
 
@@ -590,10 +676,22 @@ def analyze_seo_score(post: dict[str, Any]) -> dict[str, Any]:
 
     factors: dict[str, dict[str, Any]] = {
         "title_length": {"score": round(_score_title(title, primary_keyword, recommendations), 2), "weight": 15},
-        "meta_description": {"score": round(_score_meta_description(meta_desc, primary_keyword, recommendations), 2), "weight": 15},
-        "keyword_density": {"score": round(_score_keyword_density(content, primary_keyword, recommendations), 2), "weight": 15},
-        "heading_structure": {"score": round(_score_headings(content, heading_issues, recommendations), 2), "weight": 15},
-        "internal_links": {"score": round(_score_internal_links(internal_link_count, recommendations), 2), "weight": 10},
+        "meta_description": {
+            "score": round(_score_meta_description(meta_desc, primary_keyword, recommendations), 2),
+            "weight": 15,
+        },
+        "keyword_density": {
+            "score": round(_score_keyword_density(content, primary_keyword, recommendations), 2),
+            "weight": 15,
+        },
+        "heading_structure": {
+            "score": round(_score_headings(content, heading_issues, recommendations), 2),
+            "weight": 15,
+        },
+        "internal_links": {
+            "score": round(_score_internal_links(internal_link_count, recommendations), 2),
+            "weight": 10,
+        },
         "image_alt": {"score": round(_score_image_alt(content, images_missing_alt, recommendations), 2), "weight": 10},
         "word_count": {"score": round(_score_word_count(word_count, recommendations), 2), "weight": 10},
         "readability": {"score": round(_score_readability(content, recommendations), 2), "weight": 10},
@@ -653,9 +751,7 @@ def generate_sitemap_entry(post: dict[str, Any]) -> str:
         lines.append("    <image:image>")
         lines.append(f"      <image:loc>{_xml_escape(src)}</image:loc>")
         if img["alt"]:
-            lines.append(
-                f"      <image:caption>{_xml_escape(img['alt'])}</image:caption>"
-            )
+            lines.append(f"      <image:caption>{_xml_escape(img['alt'])}</image:caption>")
         lines.append("    </image:image>")
 
     lines.append("  </url>")

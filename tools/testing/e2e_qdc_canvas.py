@@ -82,6 +82,7 @@ def api_delete(path, base=None):
 try:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
+
     HAS_SELENIUM = True
 except ImportError:
     HAS_SELENIUM = False
@@ -152,15 +153,21 @@ if design_id:
     check("GET design", status == 200, f"status={status}")
 
     # Save design
-    resp, status = api_put(f"/quality/api/designs/{design_id}", {
-        "name": "E2E Test Design",
-        "graph_json": json.dumps({"nodes": [
-            {"id": "n-test1", "type": "gate-sast", "label": "SAST", "x": 100, "y": 100},
-            {"id": "n-test2", "type": "gate-unit", "label": "Unit", "x": 300, "y": 100},
-        ], "edges": [
-            {"id": "e-test1", "source": "n-test1", "target": "n-test2"}
-        ]})
-    })
+    resp, status = api_put(
+        f"/quality/api/designs/{design_id}",
+        {
+            "name": "E2E Test Design",
+            "graph_json": json.dumps(
+                {
+                    "nodes": [
+                        {"id": "n-test1", "type": "gate-sast", "label": "SAST", "x": 100, "y": 100},
+                        {"id": "n-test2", "type": "gate-unit", "label": "Unit", "x": 300, "y": 100},
+                    ],
+                    "edges": [{"id": "e-test1", "source": "n-test1", "target": "n-test2"}],
+                }
+            ),
+        },
+    )
     check("PUT save design", status == 200, f"status={status}")
 
     # ── [7] Assessment ─────────────────────────────────────────────────────
@@ -222,8 +229,7 @@ if HAS_SELENIUM:
         # Index page
         driver.get(f"{BASE}/quality/")
         time.sleep(1)
-        check("Index page loads", "Quality" in driver.title or "ICDEV" in driver.title,
-              f"title={driver.title}")
+        check("Index page loads", "Quality" in driver.title or "ICDEV" in driver.title, f"title={driver.title}")
         driver.save_screenshot(str(SCREENSHOT_DIR / "qdc-index-desktop.png"))
 
         # Check for CUI banner
@@ -233,30 +239,29 @@ if HAS_SELENIUM:
         # Templates page
         driver.get(f"{BASE}/quality/templates")
         time.sleep(1)
-        check("Templates page loads", "Template" in driver.page_source,
-              "No template content")
+        check("Templates page loads", "Template" in driver.page_source, "No template content")
         driver.save_screenshot(str(SCREENSHOT_DIR / "qdc-templates-desktop.png"))
 
         # Runbooks page
         driver.get(f"{BASE}/quality/runbooks")
         time.sleep(1)
-        check("Runbooks page loads", "Runbook" in driver.page_source,
-              "No runbook content")
+        check("Runbooks page loads", "Runbook" in driver.page_source, "No runbook content")
         driver.save_screenshot(str(SCREENSHOT_DIR / "qdc-runbooks-desktop.png"))
 
         # SOPs page
         driver.get(f"{BASE}/quality/sops")
         time.sleep(1)
-        check("SOPs page loads", "SOP" in driver.page_source,
-              "No SOP content")
+        check("SOPs page loads", "SOP" in driver.page_source, "No SOP content")
         driver.save_screenshot(str(SCREENSHOT_DIR / "qdc-sops-desktop.png"))
 
         # Check console errors (exclude favicon 404)
         logs = driver.get_log("browser")
-        severe = [entry for entry in logs if entry.get("level") == "SEVERE"
-                  and "favicon" not in entry.get("message", "").lower()]
-        check("No SEVERE console errors", len(severe) == 0,
-              f"{len(severe)} errors: {severe[:3]}")
+        severe = [
+            entry
+            for entry in logs
+            if entry.get("level") == "SEVERE" and "favicon" not in entry.get("message", "").lower()
+        ]
+        check("No SEVERE console errors", len(severe) == 0, f"{len(severe)} errors: {severe[:3]}")
 
     except Exception as e:
         check("Selenium available", False, str(e))

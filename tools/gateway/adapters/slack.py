@@ -61,8 +61,7 @@ class SlackAdapter(BaseChannelAdapter):
         # handled in the gateway_agent.py before calling this method.
         return True  # Signature pre-verified by gateway
 
-    def parse_webhook(self, request_data: Dict[str, Any],
-                      headers: Dict[str, str]) -> Optional[CommandEnvelope]:
+    def parse_webhook(self, request_data: Dict[str, Any], headers: Dict[str, str]) -> Optional[CommandEnvelope]:
         """Parse a Slack Events API payload into a CommandEnvelope.
 
         Handles:
@@ -96,8 +95,7 @@ class SlackAdapter(BaseChannelAdapter):
             return None
 
         # Only process ICDEV commands
-        if not (text.startswith("/icdev") or text.startswith("/bind")
-                or text.startswith("icdev-")):
+        if not (text.startswith("/icdev") or text.startswith("/bind") or text.startswith("icdev-")):
             return None
 
         command, args = parse_command_text(text)
@@ -142,8 +140,7 @@ class SlackAdapter(BaseChannelAdapter):
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
-    def send_message(self, channel_user_id: str, text: str,
-                     thread_id: str = "") -> bool:
+    def send_message(self, channel_user_id: str, text: str, thread_id: str = "") -> bool:
         """Send a message via Slack Web API (chat.postMessage).
 
         Args:
@@ -158,17 +155,23 @@ class SlackAdapter(BaseChannelAdapter):
         channel = thread_id or channel_user_id
         url = f"{SLACK_API_BASE}/chat.postMessage"
 
-        payload = json.dumps({
-            "channel": channel,
-            "text": text,
-            "mrkdwn": True,
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "channel": channel,
+                "text": text,
+                "mrkdwn": True,
+            }
+        ).encode("utf-8")
 
         try:
-            req = Request(url, data=payload, headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": f"Bearer {self.bot_token}",
-            })
+            req = Request(
+                url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Authorization": f"Bearer {self.bot_token}",
+                },
+            )
             with urlopen(req, timeout=10) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 return result.get("ok", False)

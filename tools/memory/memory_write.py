@@ -186,30 +186,46 @@ def main():
             return
         update_memory_md(args.content, args.section)
         entry_id, is_dup = write_to_db(
-            args.content, args.type, args.importance,
-            user_id=args.user_id, tenant_id=args.tenant_id, source=args.source,
+            args.content,
+            args.type,
+            args.importance,
+            user_id=args.user_id,
+            tenant_id=args.tenant_id,
+            source=args.source,
         )
         if args.json:
-            print(json.dumps({
-                "classification": "CUI // SP-CTI",
-                "entry_id": entry_id,
-                "duplicate": is_dup,
-                "target": "memory_md",
-                "section": args.section,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "classification": "CUI // SP-CTI",
+                        "entry_id": entry_id,
+                        "duplicate": is_dup,
+                        "target": "memory_md",
+                        "section": args.section,
+                    }
+                )
+            )
     else:
         write_to_daily_log(args.content)
         entry_id, is_dup = write_to_db(
-            args.content, args.type, args.importance,
-            user_id=args.user_id, tenant_id=args.tenant_id, source=args.source,
+            args.content,
+            args.type,
+            args.importance,
+            user_id=args.user_id,
+            tenant_id=args.tenant_id,
+            source=args.source,
         )
         if args.json:
-            print(json.dumps({
-                "classification": "CUI // SP-CTI",
-                "entry_id": entry_id,
-                "duplicate": is_dup,
-                "target": "daily_log",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "classification": "CUI // SP-CTI",
+                        "entry_id": entry_id,
+                        "duplicate": is_dup,
+                        "target": "daily_log",
+                    }
+                )
+            )
         else:
             if is_dup:
                 print(f"Duplicate detected (existing entry #{entry_id})")

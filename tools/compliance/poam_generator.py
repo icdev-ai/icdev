@@ -39,10 +39,7 @@ def _get_connection(db_path=None):
         return get_db_connection(db_path or DB_PATH, validate=True)
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -50,9 +47,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project data."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -101,6 +96,7 @@ def _load_cui_config():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -224,22 +220,24 @@ def generate_poam(project_id, output_path=None, db_path=None):
             weakness_id = f"STIG-{finding['finding_id']}"
             poam_severity = _stig_severity_to_poam(finding["severity"])
 
-            poam_items.append({
-                "weakness_id": weakness_id,
-                "weakness": finding["title"],
-                "severity": poam_severity,
-                "control_id": "",  # Will be populated if control mapping exists
-                "description": finding.get("description", finding["title"]),
-                "corrective_action": finding.get("fix_text", "Apply remediation per STIG guidance."),
-                "resources": "Staff time, testing environment",
-                "milestone_date": _get_milestone_date(poam_severity),
-                "status": "open",
-                "completion_date": "",
-                "responsible": "Security Engineering Team",
-                "source": f"STIG Assessment ({finding['stig_id']})",
-                "date_identified": finding.get("created_at", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-                "stig_severity": finding["severity"],
-            })
+            poam_items.append(
+                {
+                    "weakness_id": weakness_id,
+                    "weakness": finding["title"],
+                    "severity": poam_severity,
+                    "control_id": "",  # Will be populated if control mapping exists
+                    "description": finding.get("description", finding["title"]),
+                    "corrective_action": finding.get("fix_text", "Apply remediation per STIG guidance."),
+                    "resources": "Staff time, testing environment",
+                    "milestone_date": _get_milestone_date(poam_severity),
+                    "status": "open",
+                    "completion_date": "",
+                    "responsible": "Security Engineering Team",
+                    "source": f"STIG Assessment ({finding['stig_id']})",
+                    "date_identified": finding.get("created_at", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                    "stig_severity": finding["severity"],
+                }
+            )
 
         # Build severity summary
         severity_counts = {"critical": 0, "high": 0, "moderate": 0, "low": 0}
@@ -291,8 +289,12 @@ def generate_poam(project_id, output_path=None, db_path=None):
         # POAM table
         lines.append("## POA&M Items")
         lines.append("")
-        lines.append("| ID | Weakness | Severity | Related Control | Deficiency Description | Corrective Action | Resources Required | Milestone Date | Status | Completion Date | Responsible Party |")
-        lines.append("|----|----------|----------|-----------------|----------------------|-------------------|--------------------|----------------|--------|-----------------|-------------------|")
+        lines.append(
+            "| ID | Weakness | Severity | Related Control | Deficiency Description | Corrective Action | Resources Required | Milestone Date | Status | Completion Date | Responsible Party |"  # noqa: E501
+        )
+        lines.append(
+            "|----|----------|----------|-----------------|----------------------|-------------------|--------------------|----------------|--------|-----------------|-------------------|"
+        )
 
         for i, item in enumerate(poam_items, 1):
             lines.append(_build_poam_table_row(i, item))
@@ -356,12 +358,18 @@ def generate_poam(project_id, output_path=None, db_path=None):
         conn.commit()
 
         # Log audit event
-        _log_audit_event(conn, project_id, "POA&M generated", {
-            "total_items": len(poam_items),
-            "new_items": new_count,
-            "severity_counts": severity_counts,
-            "output_file": str(out_file),
-        }, out_file)
+        _log_audit_event(
+            conn,
+            project_id,
+            "POA&M generated",
+            {
+                "total_items": len(poam_items),
+                "new_items": new_count,
+                "severity_counts": severity_counts,
+                "output_file": str(out_file),
+            },
+            out_file,
+        )
 
         print("POA&M generated successfully:")
         print(f"  File: {out_file}")
@@ -379,9 +387,7 @@ def generate_poam(project_id, output_path=None, db_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate Plan of Action & Milestones (POA&M)"
-    )
+    parser = argparse.ArgumentParser(description="Generate Plan of Action & Milestones (POA&M)")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")

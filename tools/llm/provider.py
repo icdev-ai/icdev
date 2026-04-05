@@ -17,15 +17,16 @@ from typing import Any, Dict, Iterator, List, Optional
 @dataclass
 class LLMRequest:
     """Vendor-agnostic LLM invocation request."""
+
     messages: List[Dict[str, Any]] = field(default_factory=list)
     system_prompt: str = ""
-    model: str = ""                          # logical name from config
+    model: str = ""  # logical name from config
     max_tokens: int = 4096
     temperature: float = 1.0
-    tools: Optional[List[Dict]] = None       # OpenAI function-calling format
+    tools: Optional[List[Dict]] = None  # OpenAI function-calling format
     output_schema: Optional[Dict] = None
     stop_sequences: Optional[List[str]] = None
-    effort: str = "medium"                   # low, medium, high, max
+    effort: str = "medium"  # low, medium, high, max
     # Tracking metadata
     agent_id: str = ""
     project_id: str = ""
@@ -35,14 +36,15 @@ class LLMRequest:
 @dataclass
 class LLMResponse:
     """Vendor-agnostic LLM invocation response."""
+
     content: str = ""
     tool_calls: List[Dict] = field(default_factory=list)
     structured_output: Optional[Dict] = None
-    model_id: str = ""                       # actual provider model ID used
-    provider: str = ""                       # "bedrock", "anthropic", "openai", "ollama"
+    model_id: str = ""  # actual provider model ID used
+    provider: str = ""  # "bedrock", "anthropic", "openai", "ollama"
     input_tokens: int = 0
     output_tokens: int = 0
-    thinking_tokens: int = 0                 # 0 for non-Anthropic
+    thinking_tokens: int = 0  # 0 for non-Anthropic
     duration_ms: int = 0
     stop_reason: str = ""
     classification: str = "CUI"
@@ -79,8 +81,7 @@ class LLMProvider(ABC):
             Vendor-agnostic response.
         """
 
-    def invoke_streaming(self, request: LLMRequest, model_id: str,
-                         model_config: dict) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke the LLM with streaming response.
 
         Default implementation falls back to non-streaming invoke.
@@ -216,10 +217,12 @@ def messages_to_anthropic(messages: List[Dict]) -> List[Dict]:
         content = msg.get("content", "")
         role = msg.get("role", "user")
         if isinstance(content, str):
-            result.append({
-                "role": role,
-                "content": [{"type": "text", "text": content}],
-            })
+            result.append(
+                {
+                    "role": role,
+                    "content": [{"type": "text", "text": content}],
+                }
+            )
         elif isinstance(content, list):
             # Convert any OpenAI image_url blocks to Anthropic format
             converted_blocks = []
@@ -296,11 +299,13 @@ def tools_to_anthropic(tools: List[Dict]) -> List[Dict]:
     for tool in tools:
         if "function" in tool:
             func = tool["function"]
-            result.append({
-                "name": func.get("name", ""),
-                "description": func.get("description", ""),
-                "input_schema": func.get("parameters", {}),
-            })
+            result.append(
+                {
+                    "name": func.get("name", ""),
+                    "description": func.get("description", ""),
+                    "input_schema": func.get("parameters", {}),
+                }
+            )
         elif "name" in tool and "input_schema" in tool:
             # Already in Anthropic format
             result.append(tool)
@@ -321,14 +326,16 @@ def tools_to_openai(tools: List[Dict]) -> List[Dict]:
             # Already in OpenAI format
             result.append(tool)
         elif "name" in tool:
-            result.append({
-                "type": "function",
-                "function": {
-                    "name": tool.get("name", ""),
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("input_schema", tool.get("inputSchema", {})),
-                },
-            })
+            result.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name", ""),
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("input_schema", tool.get("inputSchema", {})),
+                    },
+                }
+            )
         else:
             result.append(tool)
     return result
@@ -347,9 +354,11 @@ def tool_calls_from_openai(choices_message: dict) -> List[Dict]:
             args = json.loads(args_str)
         except (json.JSONDecodeError, ValueError):
             args = {"raw": args_str}
-        result.append({
-            "id": tc.get("id", ""),
-            "name": func.get("name", ""),
-            "input": args,
-        })
+        result.append(
+            {
+                "id": tc.get("id", ""),
+                "name": func.get("name", ""),
+                "input": args,
+            }
+        )
     return result

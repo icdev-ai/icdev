@@ -69,10 +69,9 @@ class SSEManager:
                     yield data
                 except queue.Empty:
                     # Send heartbeat on timeout
-                    yield f"event: heartbeat\ndata: {json.dumps({'type': 'heartbeat', 'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
+                    yield f"event: heartbeat\ndata: {json.dumps({'type': 'heartbeat', 'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"  # noqa: E501
         except GeneratorExit:
             self.remove_client(client_queue)
-
 
     def broadcast_to_context(self, context_id: str, event_data: dict, event_type: str = "chat_update"):
         """Broadcast an event only to clients subscribed to a specific context.

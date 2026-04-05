@@ -52,6 +52,7 @@ def traced(
     Returns:
         Decorated function.
     """
+
     def decorator(func: Callable) -> Callable:
         span_name = name or f"{func.__module__}.{func.__qualname__}"
 
@@ -68,9 +69,7 @@ def traced(
             if record_args:
                 try:
                     args_str = json.dumps({"args": str(args), "kwargs": str(kwargs)}, default=str)
-                    span_attrs["code.args_hash"] = hashlib.sha256(
-                        args_str.encode("utf-8")
-                    ).hexdigest()[:16]
+                    span_attrs["code.args_hash"] = hashlib.sha256(args_str.encode("utf-8")).hexdigest()[:16]
                 except Exception:
                     pass
 
@@ -89,13 +88,17 @@ def traced(
                     return result
                 except Exception as e:
                     span.set_status("ERROR", str(e))
-                    span.add_event("exception", {
-                        "exception.type": type(e).__name__,
-                        "exception.message": str(e),
-                    })
+                    span.add_event(
+                        "exception",
+                        {
+                            "exception.type": type(e).__name__,
+                            "exception.message": str(e),
+                        },
+                    )
                     raise
 
         return wrapper
+
     return decorator
 
 
@@ -109,6 +112,7 @@ def traced_generator(
     Creates a span that covers the entire generator lifecycle,
     from first next() to StopIteration.
     """
+
     def decorator(func: Callable) -> Callable:
         span_name = name or f"{func.__module__}.{func.__qualname__}"
 
@@ -136,4 +140,5 @@ def traced_generator(
                 span.end()
 
         return wrapper
+
     return decorator

@@ -23,11 +23,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 try:
     import yaml as _yaml
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return _yaml.safe_load(f)
 except ImportError:
     _yaml = None  # type: ignore[assignment]
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return json.loads(f.read())
@@ -162,8 +164,7 @@ FORMAT_GENERATORS = {
 IDE_PLATFORMS = {"cursor", "windsurf", "junie"}
 
 
-def generate_mcp_config(directory=None, platforms=None,
-                        write=False, dry_run=False):
+def generate_mcp_config(directory=None, platforms=None, write=False, dry_run=False):
     """Generate MCP configs for each platform from .mcp.json.
 
     Returns:
@@ -179,8 +180,7 @@ def generate_mcp_config(directory=None, platforms=None,
     companions = registry.get("companions", {})
 
     # Resolve platforms
-    all_mcp_platforms = ["codex", "amazon_q", "gemini", "cline",
-                         "cursor", "windsurf", "junie"]
+    all_mcp_platforms = ["codex", "amazon_q", "gemini", "cline", "cursor", "windsurf", "junie"]
     if platforms is None or platforms == ["all"]:
         platforms = all_mcp_platforms
     elif isinstance(platforms, str):
@@ -237,9 +237,7 @@ def generate_mcp_config(directory=None, platforms=None,
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate MCP configuration for AI coding tools"
-    )
+    parser = argparse.ArgumentParser(description="Generate MCP configuration for AI coding tools")
     parser.add_argument("--dir", help="Project directory")
     parser.add_argument("--platform", help="Comma-separated platform IDs")
     parser.add_argument("--all", action="store_true", help="All MCP-capable platforms")
@@ -248,13 +246,13 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
 
-    platforms = ["all"] if args.all else (
-        [p.strip() for p in args.platform.split(",")] if args.platform else None
-    )
+    platforms = ["all"] if args.all else ([p.strip() for p in args.platform.split(",")] if args.platform else None)
 
     results = generate_mcp_config(
-        directory=args.dir, platforms=platforms,
-        write=args.write, dry_run=args.dry_run,
+        directory=args.dir,
+        platforms=platforms,
+        write=args.write,
+        dry_run=args.dry_run,
     )
 
     if args.json:

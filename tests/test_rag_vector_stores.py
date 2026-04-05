@@ -19,6 +19,7 @@ from tools.rag.vector_store_factory import VectorStoreFactory
 
 # ---- Fixtures ----
 
+
 @pytest.fixture
 def tmp_db(tmp_path):
     """Create a temp SQLite vector store DB."""
@@ -32,8 +33,7 @@ def store(tmp_db):
     return SQLiteVectorStore(db_path=tmp_db)
 
 
-def _make_chunk(content="test content", source_type="test", source_id="1",
-                embedding=None, chunk_id=None, tier="hot"):
+def _make_chunk(content="test content", source_type="test", source_id="1", embedding=None, chunk_id=None, tier="hot"):
     """Helper to create a VectorChunk."""
     if embedding is None:
         embedding = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
@@ -52,6 +52,7 @@ def _make_chunk(content="test content", source_type="test", source_id="1",
 
 
 # ---- VectorChunk tests ----
+
 
 class TestVectorChunk:
     def test_default_values(self):
@@ -81,6 +82,7 @@ class TestVectorChunk:
 
 # ---- SearchResult tests ----
 
+
 class TestSearchResult:
     def test_default_values(self):
         r = SearchResult()
@@ -90,8 +92,12 @@ class TestSearchResult:
 
     def test_to_dict(self):
         r = SearchResult(
-            chunk_id="c1", content="test", source_type="signals",
-            score=0.95, final_score=0.88, tier="hot",
+            chunk_id="c1",
+            content="test",
+            source_type="signals",
+            score=0.95,
+            final_score=0.88,
+            tier="hot",
         )
         d = r.to_dict()
         assert d["chunk_id"] == "c1"
@@ -108,6 +114,7 @@ class TestSearchResult:
 
 
 # ---- Embedding helpers ----
+
 
 class TestEmbeddingHelpers:
     def test_roundtrip_embedding(self):
@@ -138,6 +145,7 @@ class TestEmbeddingHelpers:
 
 
 # ---- SQLiteVectorStore tests ----
+
 
 class TestSQLiteVectorStore:
     def test_provider_name(self, store):
@@ -170,10 +178,7 @@ class TestSQLiteVectorStore:
         assert count == 0
 
     def test_upsert_multiple(self, store):
-        chunks = [
-            _make_chunk(f"content {i}", chunk_id=f"c{i}")
-            for i in range(5)
-        ]
+        chunks = [_make_chunk(f"content {i}", chunk_id=f"c{i}") for i in range(5)]
         count = store.upsert(chunks)
         assert count == 5
         assert store.count() == 5
@@ -198,19 +203,23 @@ class TestSQLiteVectorStore:
         assert len(results) <= 3
 
     def test_search_with_source_type_filter(self, store):
-        store.upsert([
-            _make_chunk("signal 1", source_type="innovation_signals", embedding=[1.0, 0.0], chunk_id="c1"),
-            _make_chunk("pain 1", source_type="creative_pain_points", embedding=[0.9, 0.1], chunk_id="c2"),
-        ])
+        store.upsert(
+            [
+                _make_chunk("signal 1", source_type="innovation_signals", embedding=[1.0, 0.0], chunk_id="c1"),
+                _make_chunk("pain 1", source_type="creative_pain_points", embedding=[0.9, 0.1], chunk_id="c2"),
+            ]
+        )
         results = store.search([1.0, 0.0], filters={"source_type": "innovation_signals"})
         assert len(results) == 1
         assert results[0].source_type == "innovation_signals"
 
     def test_search_with_tier_filter(self, store):
-        store.upsert([
-            _make_chunk("hot chunk", tier="hot", embedding=[1.0, 0.0], chunk_id="c1"),
-            _make_chunk("cold chunk", tier="cold", embedding=[0.9, 0.1], chunk_id="c2"),
-        ])
+        store.upsert(
+            [
+                _make_chunk("hot chunk", tier="hot", embedding=[1.0, 0.0], chunk_id="c1"),
+                _make_chunk("cold chunk", tier="cold", embedding=[0.9, 0.1], chunk_id="c2"),
+            ]
+        )
         results = store.search([1.0, 0.0], filters={"tier": "hot"})
         assert len(results) == 1
         assert results[0].tier == "hot"
@@ -230,11 +239,13 @@ class TestSQLiteVectorStore:
         assert deleted == 0
 
     def test_count_with_filters(self, store):
-        store.upsert([
-            _make_chunk("a", source_type="type_a", embedding=[1.0], chunk_id="c1"),
-            _make_chunk("b", source_type="type_b", embedding=[1.0], chunk_id="c2"),
-            _make_chunk("c", source_type="type_a", embedding=[1.0], chunk_id="c3"),
-        ])
+        store.upsert(
+            [
+                _make_chunk("a", source_type="type_a", embedding=[1.0], chunk_id="c1"),
+                _make_chunk("b", source_type="type_b", embedding=[1.0], chunk_id="c2"),
+                _make_chunk("c", source_type="type_a", embedding=[1.0], chunk_id="c3"),
+            ]
+        )
         assert store.count() == 3
         assert store.count(filters={"source_type": "type_a"}) == 2
         assert store.count(filters={"source_type": "type_b"}) == 1
@@ -276,15 +287,14 @@ class TestSQLiteVectorStore:
 
     def test_tenant_isolation(self, tmp_path):
         """Verify tenant_id creates separate DB files."""
-        store_a = SQLiteVectorStore(
-            db_path=tmp_path / "rag_a.db", tenant_id=""
-        )
+        store_a = SQLiteVectorStore(db_path=tmp_path / "rag_a.db", tenant_id="")
         # Tenant stores create in data/tenants/ dir — test with explicit paths
         store_a.upsert([_make_chunk("tenant a data", chunk_id="ca", embedding=[1.0])])
         assert store_a.count() == 1
 
 
 # ---- VectorStoreFactory tests ----
+
 
 class TestVectorStoreFactory:
     def test_create_sqlite_explicit(self):
@@ -318,6 +328,7 @@ class TestVectorStoreFactory:
 
 
 # ---- VectorStoreProvider ABC tests ----
+
 
 class TestVectorStoreProviderABC:
     def test_cannot_instantiate_abc(self):

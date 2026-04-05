@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "tools" / "extensions"))
 
 # Import the handler module
 import importlib
+
 _handler_path = ROOT / "tools" / "extensions" / "builtins" / "010_ai_governance_chat.py"
 _spec = importlib.util.spec_from_file_location("ai_governance_chat", str(_handler_path))
 ai_gov_chat = importlib.util.module_from_spec(_spec)
@@ -45,6 +46,7 @@ PRIORITY = ai_gov_chat.PRIORITY
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def gov_conn():
@@ -99,36 +101,61 @@ def reset_config_cache():
 # handle() — Extension handler tests
 # ===========================================================================
 
+
 class TestHandleNonTrigger:
     """Tests where handle() returns context unmodified."""
 
     def test_returns_unmodified_for_user_message(self):
-        ctx = {"role": "user", "content": "tell me about ai systems",
-               "context_id": "c1", "turn_number": 10, "project_id": "p1"}
+        ctx = {
+            "role": "user",
+            "content": "tell me about ai systems",
+            "context_id": "c1",
+            "turn_number": 10,
+            "project_id": "p1",
+        }
         result = handle(ctx)
         assert "governance_advisory" not in result
 
     def test_returns_unmodified_for_system_message(self):
-        ctx = {"role": "system", "content": "ai system initialized",
-               "context_id": "c1", "turn_number": 10, "project_id": "p1"}
+        ctx = {
+            "role": "system",
+            "content": "ai system initialized",
+            "context_id": "c1",
+            "turn_number": 10,
+            "project_id": "p1",
+        }
         result = handle(ctx)
         assert "governance_advisory" not in result
 
     def test_returns_unmodified_when_no_ai_keywords(self):
-        ctx = {"role": "assistant", "content": "Here is your CRUD application plan.",
-               "context_id": "c1", "turn_number": 10, "project_id": "p1"}
+        ctx = {
+            "role": "assistant",
+            "content": "Here is your CRUD application plan.",
+            "context_id": "c1",
+            "turn_number": 10,
+            "project_id": "p1",
+        }
         result = handle(ctx)
         assert "governance_advisory" not in result
 
     def test_returns_unmodified_when_no_project_id(self):
-        ctx = {"role": "assistant", "content": "The ai system is ready.",
-               "context_id": "c1", "turn_number": 10, "project_id": ""}
+        ctx = {
+            "role": "assistant",
+            "content": "The ai system is ready.",
+            "context_id": "c1",
+            "turn_number": 10,
+            "project_id": "",
+        }
         result = handle(ctx)
         assert "governance_advisory" not in result
 
     def test_returns_unmodified_when_project_id_missing(self):
-        ctx = {"role": "assistant", "content": "The machine learning model is deployed.",
-               "context_id": "c1", "turn_number": 10}
+        ctx = {
+            "role": "assistant",
+            "content": "The machine learning model is deployed.",
+            "context_id": "c1",
+            "turn_number": 10,
+        }
         result = handle(ctx)
         assert "governance_advisory" not in result
 
@@ -136,8 +163,7 @@ class TestHandleNonTrigger:
 class TestHandleAdvisory:
     """Tests where handle() should inject governance_advisory."""
 
-    def _make_ctx(self, content="The ai system is deployed.", turn=10, ctx_id="c1",
-                  project_id="proj-1"):
+    def _make_ctx(self, content="The ai system is deployed.", turn=10, ctx_id="c1", project_id="proj-1"):
         return {
             "role": "assistant",
             "content": content,
@@ -150,8 +176,12 @@ class TestHandleAdvisory:
         """When AI keywords present and gaps exist, advisory is added."""
         # Patch _check_governance_gaps to use our in-memory DB with empty tables
         gaps = [
-            {"id": "oversight_plan_missing", "severity": "high",
-             "message": "No oversight plan.", "action": "Register plan."},
+            {
+                "id": "oversight_plan_missing",
+                "severity": "high",
+                "message": "No oversight plan.",
+                "action": "Register plan.",
+            },
         ]
         with patch.object(ai_gov_chat, "_check_governance_gaps", return_value=gaps):
             result = handle(self._make_ctx())
@@ -160,8 +190,7 @@ class TestHandleAdvisory:
 
     def test_advisory_cooldown_blocks_second_call(self):
         gaps = [
-            {"id": "oversight_plan_missing", "severity": "high",
-             "message": "No plan.", "action": "Register."},
+            {"id": "oversight_plan_missing", "severity": "high", "message": "No plan.", "action": "Register."},
         ]
         with patch.object(ai_gov_chat, "_check_governance_gaps", return_value=gaps):
             r1 = handle(self._make_ctx(turn=10))
@@ -173,8 +202,7 @@ class TestHandleAdvisory:
 
     def test_advisory_after_cooldown_expires(self):
         gaps = [
-            {"id": "oversight_plan_missing", "severity": "high",
-             "message": "No plan.", "action": "Register."},
+            {"id": "oversight_plan_missing", "severity": "high", "message": "No plan.", "action": "Register."},
         ]
         with patch.object(ai_gov_chat, "_check_governance_gaps", return_value=gaps):
             r1 = handle(self._make_ctx(turn=10))
@@ -187,12 +215,9 @@ class TestHandleAdvisory:
     def test_advisory_priority_ordering(self):
         """oversight_plan_missing should be selected first per priority order."""
         gaps = [
-            {"id": "caio_not_designated", "severity": "medium",
-             "message": "No CAIO.", "action": "Designate CAIO."},
-            {"id": "oversight_plan_missing", "severity": "high",
-             "message": "No plan.", "action": "Register."},
-            {"id": "model_card_missing", "severity": "medium",
-             "message": "No card.", "action": "Create card."},
+            {"id": "caio_not_designated", "severity": "medium", "message": "No CAIO.", "action": "Designate CAIO."},
+            {"id": "oversight_plan_missing", "severity": "high", "message": "No plan.", "action": "Register."},
+            {"id": "model_card_missing", "severity": "medium", "message": "No card.", "action": "Create card."},
         ]
         with patch.object(ai_gov_chat, "_check_governance_gaps", return_value=gaps):
             result = handle(self._make_ctx())
@@ -200,12 +225,9 @@ class TestHandleAdvisory:
 
     def test_advisory_total_gaps_count(self):
         gaps = [
-            {"id": "oversight_plan_missing", "severity": "high",
-             "message": "M1.", "action": "A1."},
-            {"id": "caio_not_designated", "severity": "medium",
-             "message": "M2.", "action": "A2."},
-            {"id": "model_card_missing", "severity": "medium",
-             "message": "M3.", "action": "A3."},
+            {"id": "oversight_plan_missing", "severity": "high", "message": "M1.", "action": "A1."},
+            {"id": "caio_not_designated", "severity": "medium", "message": "M2.", "action": "A2."},
+            {"id": "model_card_missing", "severity": "medium", "message": "M3.", "action": "A3."},
         ]
         with patch.object(ai_gov_chat, "_check_governance_gaps", return_value=gaps):
             result = handle(self._make_ctx())
@@ -220,6 +242,7 @@ class TestHandleAdvisory:
 # ===========================================================================
 # _load_config — Config loading tests
 # ===========================================================================
+
 
 class TestLoadConfig:
     """Test config loading and defaults."""
@@ -248,6 +271,7 @@ class TestLoadConfig:
 # ===========================================================================
 # _check_governance_gaps — Gap detection
 # ===========================================================================
+
 
 class TestCheckGovernanceGaps:
     """Test governance gap checking against DB."""
@@ -354,12 +378,14 @@ class TestCheckGovernanceGaps:
 # ExtensionManager._auto_load_builtins — Auto-loading tests
 # ===========================================================================
 
+
 class TestExtensionManagerAutoLoad:
     """Test that the extension manager auto-loads builtins correctly."""
 
     def test_auto_load_builtins_loads_from_builtins_dir(self):
         from extension_manager import ExtensionManager
-        mgr = ExtensionManager()
+
+        ExtensionManager()
         # The builtins directory exists and has at least one file
         builtins_dir = ROOT / "tools" / "extensions" / "builtins"
         py_files = list(builtins_dir.glob("*.py"))
@@ -393,6 +419,7 @@ class TestExtensionManagerAutoLoad:
     def test_unknown_hook_points_logged_and_skipped(self):
         """ExtensionManager should log a warning and skip unknown hook points."""
         from extension_manager import ExtensionManager
+
         mgr = ExtensionManager()
 
         # Create a fake module with an unknown hook point
@@ -415,14 +442,17 @@ class TestExtensionManagerAutoLoad:
             assert isinstance(hooks, dict)
             # The unknown hook point should cause a ValueError when creating ExtensionPoint
             from extension_manager import ExtensionPoint
+
             with pytest.raises(ValueError):
                 ExtensionPoint("totally_bogus_hook_point")
 
     def test_extension_manager_registers_ai_governance_handler(self):
         """After auto-loading, the ai_governance_chat handler should be registered."""
         from extension_manager import ExtensionManager, ExtensionPoint
+
         mgr = ExtensionManager()
         handlers = mgr._handlers.get(ExtensionPoint.CHAT_MESSAGE_AFTER, [])
         handler_names = [h.name for h in handlers]
-        assert "ai_governance_chat" in handler_names, \
+        assert "ai_governance_chat" in handler_names, (
             "ai_governance_chat should be registered in CHAT_MESSAGE_AFTER handlers"
+        )

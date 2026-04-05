@@ -40,6 +40,7 @@ logger = logging.getLogger("icdev.llm.azure_openai")
 
 try:
     from openai import AzureOpenAI
+
     HAS_OPENAI = True
 except ImportError:
     AzureOpenAI = None  # type: ignore[assignment, misc]
@@ -47,6 +48,7 @@ except ImportError:
 
 try:
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
     HAS_AZURE_IDENTITY = True
 except ImportError:
     DefaultAzureCredential = None  # type: ignore[assignment, misc]
@@ -84,19 +86,11 @@ class AzureOpenAIProvider(LLMProvider):
         use_ad_token: bool = False,
         ad_token: str = "",
     ):
-        self._endpoint = endpoint or os.environ.get(
-            "AZURE_OPENAI_ENDPOINT", ""
-        )
-        self._api_key = api_key or os.environ.get(
-            "AZURE_OPENAI_API_KEY", ""
-        )
-        self._api_version = api_version or os.environ.get(
-            "AZURE_OPENAI_API_VERSION", DEFAULT_API_VERSION
-        )
+        self._endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        self._api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY", "")
+        self._api_version = api_version or os.environ.get("AZURE_OPENAI_API_VERSION", DEFAULT_API_VERSION)
         self._use_ad_token = use_ad_token
-        self._ad_token = ad_token or os.environ.get(
-            "AZURE_OPENAI_AD_TOKEN", ""
-        )
+        self._ad_token = ad_token or os.environ.get("AZURE_OPENAI_AD_TOKEN", "")
         self._client = None
 
     @property
@@ -114,15 +108,11 @@ class AzureOpenAIProvider(LLMProvider):
             return self._client
 
         if not HAS_OPENAI:
-            raise ImportError(
-                "openai SDK required for Azure OpenAI. "
-                "Install: pip install openai"
-            )
+            raise ImportError("openai SDK required for Azure OpenAI. Install: pip install openai")
 
         if not self._endpoint:
             raise ValueError(
-                "Azure OpenAI endpoint required. Set AZURE_OPENAI_ENDPOINT "
-                "or pass endpoint= to constructor."
+                "Azure OpenAI endpoint required. Set AZURE_OPENAI_ENDPOINT or pass endpoint= to constructor."
             )
 
         kwargs: Dict[str, Any] = {
@@ -137,35 +127,24 @@ class AzureOpenAIProvider(LLMProvider):
                 kwargs["azure_ad_token"] = self._ad_token
             elif HAS_AZURE_IDENTITY:
                 # Use DefaultAzureCredential to get token
-                scope = (
-                    AZURE_GOV_SCOPE if self._is_government
-                    else AZURE_COMMERCIAL_SCOPE
-                )
+                scope = AZURE_GOV_SCOPE if self._is_government else AZURE_COMMERCIAL_SCOPE
                 credential = DefaultAzureCredential()
-                token_provider = get_bearer_token_provider(
-                    credential, scope
-                )
+                token_provider = get_bearer_token_provider(credential, scope)
                 kwargs["azure_ad_token_provider"] = token_provider
             else:
-                raise ImportError(
-                    "azure-identity SDK required for Azure AD auth. "
-                    "Install: pip install azure-identity"
-                )
+                raise ImportError("azure-identity SDK required for Azure AD auth. Install: pip install azure-identity")
         else:
             # API key authentication
             if not self._api_key:
                 raise ValueError(
-                    "Azure OpenAI API key required. Set AZURE_OPENAI_API_KEY "
-                    "or pass api_key= to constructor."
+                    "Azure OpenAI API key required. Set AZURE_OPENAI_API_KEY or pass api_key= to constructor."
                 )
             kwargs["api_key"] = self._api_key
 
         self._client = AzureOpenAI(**kwargs)
         return self._client
 
-    def invoke(
-        self, request: LLMRequest, model_id: str, model_config: dict
-    ) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Azure OpenAI Chat Completions API.
 
         Note: model_id here is the Azure deployment name, not the
@@ -180,10 +159,12 @@ class AzureOpenAIProvider(LLMProvider):
         # Build messages
         oai_messages: List[Dict[str, Any]] = []
         if request.system_prompt:
-            oai_messages.append({
-                "role": "system",
-                "content": request.system_prompt,
-            })
+            oai_messages.append(
+                {
+                    "role": "system",
+                    "content": request.system_prompt,
+                }
+            )
         oai_messages.extend(messages_to_openai(request.messages))
 
         kwargs: Dict[str, Any] = {
@@ -204,10 +185,7 @@ class AzureOpenAIProvider(LLMProvider):
             kwargs["tool_choice"] = "auto"
 
         # Structured output
-        if (
-            request.output_schema
-            and model_config.get("supports_structured_output", False)
-        ):
+        if request.output_schema and model_config.get("supports_structured_output", False):
             kwargs["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
@@ -229,12 +207,8 @@ class AzureOpenAIProvider(LLMProvider):
         resp.classification = request.classification
 
         if hasattr(completion, "usage") and completion.usage:
-            resp.input_tokens = getattr(
-                completion.usage, "prompt_tokens", 0
-            )
-            resp.output_tokens = getattr(
-                completion.usage, "completion_tokens", 0
-            )
+            resp.input_tokens = getattr(completion.usage, "prompt_tokens", 0)
+            resp.output_tokens = getattr(completion.usage, "completion_tokens", 0)
 
         choice = completion.choices[0] if completion.choices else None
         if choice:
@@ -252,11 +226,13 @@ class AzureOpenAIProvider(LLMProvider):
                                 args = json.loads(args_str)
                             except (json.JSONDecodeError, ValueError):
                                 args = {"raw": args_str}
-                            resp.tool_calls.append({
-                                "id": getattr(tc, "id", ""),
-                                "name": getattr(func, "name", ""),
-                                "input": args,
-                            })
+                            resp.tool_calls.append(
+                                {
+                                    "id": getattr(tc, "id", ""),
+                                    "name": getattr(func, "name", ""),
+                                    "input": args,
+                                }
+                            )
 
         # Try parsing structured output
         if resp.content.strip().startswith(("{", "[")):
@@ -267,9 +243,7 @@ class AzureOpenAIProvider(LLMProvider):
 
         return resp
 
-    def invoke_streaming(
-        self, request: LLMRequest, model_id: str, model_config: dict
-    ) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke Azure OpenAI with streaming response."""
         client = self._get_client()
         start_time = time.time()
@@ -279,10 +253,12 @@ class AzureOpenAIProvider(LLMProvider):
 
         oai_messages: List[Dict[str, Any]] = []
         if request.system_prompt:
-            oai_messages.append({
-                "role": "system",
-                "content": request.system_prompt,
-            })
+            oai_messages.append(
+                {
+                    "role": "system",
+                    "content": request.system_prompt,
+                }
+            )
         oai_messages.extend(messages_to_openai(request.messages))
 
         kwargs: Dict[str, Any] = {
@@ -311,9 +287,7 @@ class AzureOpenAIProvider(LLMProvider):
                     yield {
                         "type": "message_stop",
                         "model_id": model_id,
-                        "duration_ms": int(
-                            (time.time() - start_time) * 1000
-                        ),
+                        "duration_ms": int((time.time() - start_time) * 1000),
                     }
         except Exception as exc:
             logger.error("Azure OpenAI streaming error: %s", exc)

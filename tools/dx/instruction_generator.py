@@ -24,17 +24,20 @@ sys.path.insert(0, str(BASE_DIR))
 
 try:
     from jinja2 import Environment, BaseLoader
+
     _HAS_JINJA2 = True
 except ImportError:
     _HAS_JINJA2 = False
 
 try:
     import yaml as _yaml
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return _yaml.safe_load(f)
 except ImportError:
     _yaml = None  # type: ignore[assignment]
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return json.loads(f.read())
@@ -44,6 +47,7 @@ REGISTRY_PATH = BASE_DIR / "args" / "companion_registry.yaml"
 
 
 # ── Template Helpers ────────────────────────────────────────────────────
+
 
 def _render(template_str, data):
     """Render a Jinja2 template string, fallback to str.format for basics."""
@@ -57,6 +61,7 @@ def _render(template_str, data):
 
 
 # ── Project Data Collection ─────────────────────────────────────────────
+
 
 def collect_project_data(directory=None):
     """Collect universal project data for template rendering.
@@ -92,6 +97,7 @@ def collect_project_data(directory=None):
     # Try to load icdev.yaml via manifest_loader
     try:
         from tools.project.manifest_loader import load_manifest
+
         result = load_manifest(directory=str(directory))
         if result["valid"]:
             cfg = result["normalized"]
@@ -174,7 +180,7 @@ This project uses the GOTCHA framework — a 6-layer agentic system where AI orc
 | **Context** | `context/` | Static reference material |
 | **Hard Prompts** | `hardprompts/` | Reusable LLM instruction templates |
 
-**Key principle:** You orchestrate; tools execute deterministically. Never implement business logic inline — delegate to the Python CLI tools.
+**Key principle:** You orchestrate; tools execute deterministically. Never implement business logic inline — delegate to the Python CLI tools.  # noqa: E501
 
 ## Essential Commands
 
@@ -214,10 +220,10 @@ python tools/project/validate_manifest.py --file icdev.yaml --json
 
 This project has {{ mcp_server_count }} MCP servers available. Configure them in your tool to get full ICDEV capability:
 
-{% for name in mcp_server_names %}| `{{ name }}` | `python tools/mcp/{{ name.replace('icdev-', '').replace('-', '_') }}_server.py` |
+{% for name in mcp_server_names %}| `{{ name }}` | `python tools/mcp/{{ name.replace('icdev-', '').replace('-', '_') }}_server.py` |  # noqa: E501
 {% endfor %}
 
-See `.mcp.json` for full server definitions. Use `python tools/dx/mcp_config_generator.py --platform codex --json` to generate Codex-compatible MCP config.
+See `.mcp.json` for full server definitions. Use `python tools/dx/mcp_config_generator.py --platform codex --json` to generate Codex-compatible MCP config.  # noqa: E501
 
 ## Coding Standards
 
@@ -276,7 +282,7 @@ Guidance for Google Gemini when working with this ICDEV project.
 
 ## Architecture
 
-This project uses the GOTCHA framework: Goals define workflows, Tools (Python CLI scripts in `tools/`) execute deterministically, Args/Context/Hard Prompts configure behavior. You orchestrate by reading goals and calling tools.
+This project uses the GOTCHA framework: Goals define workflows, Tools (Python CLI scripts in `tools/`) execute deterministically, Args/Context/Hard Prompts configure behavior. You orchestrate by reading goals and calling tools.  # noqa: E501
 
 All tools support `--json` for machine-readable output.
 
@@ -357,7 +363,7 @@ This is an ICDEV-managed project ({{ impact_level }}, {{ classification_level }}
 
 ## Architecture
 
-GOTCHA framework: deterministic Python tools in `tools/` with `--json` output. Read `goals/manifest.md` for workflows, `tools/manifest.md` for available tools.
+GOTCHA framework: deterministic Python tools in `tools/` with `--json` output. Read `goals/manifest.md` for workflows, `tools/manifest.md` for available tools.  # noqa: E501
 
 ## Key Commands
 
@@ -377,7 +383,7 @@ Security gates block on: CAT1 STIG, critical vulns, failed tests, missing CUI ma
 {% if cui_markings %}
 ## CUI Markings
 
-Every generated file must include classification marking `# CUI // {{ classification_category }}` as the first comment line.
+Every generated file must include classification marking `# CUI // {{ classification_category }}` as the first comment line.  # noqa: E501
 {% endif %}
 
 ## Prompt Files
@@ -411,7 +417,7 @@ alwaysApply: true
 
 ## Architecture
 
-GOTCHA framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
+GOTCHA framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.  # noqa: E501
 
 ## Rules
 
@@ -432,7 +438,7 @@ python tools/project/project_status.py --project-id "{{ project_id }}" --json
 
 ## MCP
 
-{{ mcp_server_count }} servers available. Register in Cursor MCP settings — see `.mcp.json` for definitions or run `python tools/dx/mcp_config_generator.py --platform cursor`.
+{{ mcp_server_count }} servers available. Register in Cursor MCP settings — see `.mcp.json` for definitions or run `python tools/dx/mcp_config_generator.py --platform cursor`.  # noqa: E501
 """
 
 TEMPLATE_WINDSURF_MD = r"""# ICDEV Project Rules — {{ project_name }}
@@ -504,7 +510,7 @@ python tools/compliance/ssp_generator.py --project-id "{{ project_id }}" --json
 
 ## MCP
 
-{{ mcp_server_count }} servers. Config: `.amazonq/mcp.json` — run `python tools/dx/mcp_config_generator.py --platform amazon_q --write`.
+{{ mcp_server_count }} servers. Config: `.amazonq/mcp.json` — run `python tools/dx/mcp_config_generator.py --platform amazon_q --write`.  # noqa: E501
 
 ---
 
@@ -517,7 +523,7 @@ TEMPLATE_JUNIE_MD = r"""# ICDEV Project Guidelines — {{ project_name }}
 
 {{ project_language | capitalize }} {{ project_type }} project at {{ impact_level }} ({{ classification_level }}).
 
-Uses the GOTCHA framework: deterministic Python CLI tools in `tools/` with `--json` output, goal workflows in `goals/`, configuration in `args/`.
+Uses the GOTCHA framework: deterministic Python CLI tools in `tools/` with `--json` output, goal workflows in `goals/`, configuration in `args/`.  # noqa: E501
 
 ## Coding Conventions
 
@@ -538,7 +544,7 @@ python tools/security/sast_runner.py --project-dir . --json
 
 ## MCP Servers
 
-{{ mcp_server_count }} MCP servers available. Configure in JetBrains Settings > AI Assistant > MCP. Server definitions in `.mcp.json`.
+{{ mcp_server_count }} MCP servers available. Configure in JetBrains Settings > AI Assistant > MCP. Server definitions in `.mcp.json`.  # noqa: E501
 
 ---
 
@@ -591,7 +597,7 @@ Coding conventions for this ICDEV-managed project.
 
 {% if cui_markings %}## Classification Markings
 
-Every generated file must include `# CUI // {{ classification_category }}` as the first comment line. This is a compliance requirement for {{ impact_level }} projects.
+Every generated file must include `# CUI // {{ classification_category }}` as the first comment line. This is a compliance requirement for {{ impact_level }} projects.  # noqa: E501
 {% endif %}
 
 ## Testing
@@ -609,7 +615,7 @@ Every generated file must include `# CUI // {{ classification_category }}` as th
 
 ## Architecture
 
-This project uses the GOTCHA framework. Tools are in `tools/` (deterministic Python scripts, all support `--json`). Workflows are in `goals/`. Configuration in `args/`.
+This project uses the GOTCHA framework. Tools are in `tools/` (deterministic Python scripts, all support `--json`). Workflows are in `goals/`. Configuration in `args/`.  # noqa: E501
 
 ## Available CLI Tools
 
@@ -643,8 +649,8 @@ TEMPLATES = {
 
 # ── Generator ───────────────────────────────────────────────────────────
 
-def generate_instructions(directory=None, platforms=None, style="full",
-                          write=False, dry_run=False):
+
+def generate_instructions(directory=None, platforms=None, style="full", write=False, dry_run=False):
     """Generate instruction files for specified platforms.
 
     Args:
@@ -702,9 +708,7 @@ def generate_instructions(directory=None, platforms=None, style="full",
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate AI coding tool instruction files"
-    )
+    parser = argparse.ArgumentParser(description="Generate AI coding tool instruction files")
     parser.add_argument("--dir", help="Project directory")
     parser.add_argument("--platform", help="Comma-separated platform IDs")
     parser.add_argument("--all", action="store_true", help="All platforms")
@@ -714,9 +718,7 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
 
-    platforms = ["all"] if args.all else (
-        [p.strip() for p in args.platform.split(",")] if args.platform else None
-    )
+    platforms = ["all"] if args.all else ([p.strip() for p in args.platform.split(",")] if args.platform else None)
 
     results = generate_instructions(
         directory=args.dir,

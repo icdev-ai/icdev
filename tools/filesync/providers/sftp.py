@@ -17,6 +17,7 @@ from tools.filesync.providers.base import SyncTargetProvider
 # Graceful paramiko import
 try:
     import paramiko
+
     _HAS_PARAMIKO = True
 except ImportError:
     paramiko = None
@@ -31,9 +32,16 @@ class SFTPSyncProvider(SyncTargetProvider):
         ICDEV_SFTP_HOST, ICDEV_SFTP_PORT, ICDEV_SFTP_USER, ICDEV_SFTP_KEY
     """
 
-    def __init__(self, host: str = "", port: int = 22, username: str = "",
-                 key_file: str = "", password: str = "",
-                 known_hosts_check: bool = True, timeout: int = 30):
+    def __init__(
+        self,
+        host: str = "",
+        port: int = 22,
+        username: str = "",
+        key_file: str = "",
+        password: str = "",
+        known_hosts_check: bool = True,
+        timeout: int = 30,
+    ):
         self._host = host or os.environ.get("ICDEV_SFTP_HOST", "")
         self._port = port or int(os.environ.get("ICDEV_SFTP_PORT", "22"))
         self._username = username or os.environ.get("ICDEV_SFTP_USER", "")
@@ -120,8 +128,7 @@ class SFTPSyncProvider(SyncTargetProvider):
         if self._key_file and os.path.exists(self._key_file):
             cmd.extend(["-i", self._key_file])
         if not self._known_hosts_check:
-            cmd.extend(["-o", "StrictHostKeyChecking=no",
-                        "-o", "UserKnownHostsFile=/dev/null"])
+            cmd.extend(["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"])
         cmd.extend(["-o", f"ConnectTimeout={self._timeout}"])
         return cmd
 
@@ -135,8 +142,9 @@ class SFTPSyncProvider(SyncTargetProvider):
         """Run a command on the remote host via subprocess ssh."""
         cmd = self._ssh_cmd_base() + [self._ssh_target(), remote_cmd]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True,
-                                    timeout=self._timeout, stdin=subprocess.DEVNULL)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=self._timeout, stdin=subprocess.DEVNULL
+            )
             if result.returncode == 0:
                 return result.stdout
             return None
@@ -146,6 +154,7 @@ class SFTPSyncProvider(SyncTargetProvider):
     def _scp_download(self, remote_path: str) -> Optional[bytes]:
         """Download a file via scp subprocess."""
         import tempfile
+
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp_path = tmp.name
         try:
@@ -153,12 +162,10 @@ class SFTPSyncProvider(SyncTargetProvider):
             if self._key_file and os.path.exists(self._key_file):
                 cmd.extend(["-i", self._key_file])
             if not self._known_hosts_check:
-                cmd.extend(["-o", "StrictHostKeyChecking=no",
-                            "-o", "UserKnownHostsFile=/dev/null"])
+                cmd.extend(["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"])
             cmd.append(f"{self._ssh_target()}:{remote_path}")
             cmd.append(tmp_path)
-            result = subprocess.run(cmd, capture_output=True, timeout=self._timeout,
-                                    stdin=subprocess.DEVNULL)
+            result = subprocess.run(cmd, capture_output=True, timeout=self._timeout, stdin=subprocess.DEVNULL)
             if result.returncode == 0:
                 with open(tmp_path, "rb") as f:
                     return f.read()
@@ -174,6 +181,7 @@ class SFTPSyncProvider(SyncTargetProvider):
     def _scp_upload(self, remote_path: str, data: bytes) -> bool:
         """Upload a file via scp subprocess."""
         import tempfile
+
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp.write(data)
             tmp_path = tmp.name
@@ -182,12 +190,10 @@ class SFTPSyncProvider(SyncTargetProvider):
             if self._key_file and os.path.exists(self._key_file):
                 cmd.extend(["-i", self._key_file])
             if not self._known_hosts_check:
-                cmd.extend(["-o", "StrictHostKeyChecking=no",
-                            "-o", "UserKnownHostsFile=/dev/null"])
+                cmd.extend(["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"])
             cmd.append(tmp_path)
             cmd.append(f"{self._ssh_target()}:{remote_path}")
-            result = subprocess.run(cmd, capture_output=True, timeout=self._timeout,
-                                    stdin=subprocess.DEVNULL)
+            result = subprocess.run(cmd, capture_output=True, timeout=self._timeout, stdin=subprocess.DEVNULL)
             return result.returncode == 0
         except Exception:
             return False
@@ -208,9 +214,7 @@ class SFTPSyncProvider(SyncTargetProvider):
             return self._list_files_paramiko(base_path)
 
         # Subprocess fallback: ssh find
-        output = self._run_ssh(
-            f'find "{base_path}" -type f -printf "%P\\t%s\\t%T@\\n"'
-        )
+        output = self._run_ssh(f'find "{base_path}" -type f -printf "%P\\t%s\\t%T@\\n"')
         if output is None:
             return []
 
@@ -226,11 +230,13 @@ class SFTPSyncProvider(SyncTargetProvider):
                     mtime = float(parts[2])
                 except (ValueError, IndexError):
                     continue
-                files.append({
-                    "relative_path": rel,
-                    "size": size,
-                    "mtime_epoch": mtime,
-                })
+                files.append(
+                    {
+                        "relative_path": rel,
+                        "size": size,
+                        "mtime_epoch": mtime,
+                    }
+                )
         return files
 
     def _list_files_paramiko(self, base_path: str) -> List[Dict]:
@@ -251,11 +257,13 @@ class SFTPSyncProvider(SyncTargetProvider):
                 if stat.S_ISDIR(entry.st_mode):
                     dirs_to_scan.append(rel)
                 elif stat.S_ISREG(entry.st_mode):
-                    files.append({
-                        "relative_path": rel.replace("\\", "/"),
-                        "size": entry.st_size,
-                        "mtime_epoch": float(entry.st_mtime),
-                    })
+                    files.append(
+                        {
+                            "relative_path": rel.replace("\\", "/"),
+                            "size": entry.st_size,
+                            "mtime_epoch": float(entry.st_mtime),
+                        }
+                    )
         return files
 
     def read_file(self, base_path: str, relative_path: str) -> Optional[bytes]:

@@ -196,9 +196,7 @@ def copy_essential_goals(
 
         source_file = source_dir / filename
         if not source_file.exists():
-            logger.warning(
-                "Goal file not found: %s — skipping", source_file
-            )
+            logger.warning("Goal file not found: %s — skipping", source_file)
             continue
 
         dest_file = dest_dir / filename
@@ -238,7 +236,7 @@ def strip_fitness_step(build_app_content: str) -> str:
     # Using re.DOTALL so . matches newlines within the lazy quantifier.
     pattern = re.compile(
         r"###\s*Step\s*0\s*:\s*Agentic\s+Fitness.*?"  # heading line
-        r"(?=^##[#\s]|\Z)",                            # stop before next ## or ###
+        r"(?=^##[#\s]|\Z)",  # stop before next ## or ###
         re.MULTILINE | re.DOTALL,
     )
     content = pattern.sub("", build_app_content)
@@ -368,8 +366,7 @@ def copy_hardprompts(
             copied.append(rel_path)
             logger.debug("Copied hardprompt: %s", rel_path)
 
-    logger.info("Copied %d hardprompt files across %d directories",
-                len(copied), len(dirs_to_copy))
+    logger.info("Copied %d hardprompt files across %d directories", len(copied), len(dirs_to_copy))
     return copied
 
 
@@ -438,8 +435,7 @@ def adapt_goals(
 
         # Report hardprompts that would be copied
         always_dirs = ["agent", "architect", "builder", "security", "knowledge", "infra"]
-        cond_dirs = [("compliance", "compliance"), ("mbse", "mbse"),
-                     ("maintenance", "compliance")]
+        cond_dirs = [("compliance", "compliance"), ("mbse", "mbse"), ("maintenance", "compliance")]
         dirs_to_check = list(always_dirs)
         for subdir, cap in cond_dirs:
             if capabilities.get(cap, False):
@@ -458,19 +454,15 @@ def adapt_goals(
         # Report manifest
         result["manifest_generated"] = True
         result["manifest_path"] = str(child_goals_dir / "manifest.md")
-        logger.info("[DRY RUN] Would generate manifest at %s",
-                    result["manifest_path"])
+        logger.info("[DRY RUN] Would generate manifest at %s", result["manifest_path"])
 
         return result
 
     # --- Actual execution ---
 
     # Step 1: Copy essential goals
-    logger.info("Adapting goals for '%s' (%d goals, %d capabilities)",
-                app_name, len(goals_config), len(capabilities))
-    copied_goals = copy_essential_goals(
-        icdev_goals_dir, child_goals_dir, goals_config
-    )
+    logger.info("Adapting goals for '%s' (%d goals, %d capabilities)", app_name, len(goals_config), len(capabilities))
+    copied_goals = copy_essential_goals(icdev_goals_dir, child_goals_dir, goals_config)
     result["goals_copied"] = copied_goals
 
     # Step 2: Generate and write manifest
@@ -483,9 +475,7 @@ def adapt_goals(
     logger.info("Generated goals manifest: %s", manifest_path)
 
     # Step 3: Copy hardprompts
-    copied_prompts = copy_hardprompts(
-        icdev_hardprompts_dir, child_hardprompts_dir, capabilities
-    )
+    copied_prompts = copy_hardprompts(icdev_hardprompts_dir, child_hardprompts_dir, capabilities)
     result["hardprompts_copied"] = copied_prompts
 
     logger.info(

@@ -19,7 +19,7 @@ try:
     from icdev.tools.compliance.crosswalk_engine import (
         FRAMEWORK_KEYS,
         IL_KEYS,
-        _ensure_crosswalk_tables,
+        _ensure_crosswalk_tables,  # noqa: F401
         compute_crosswalk_coverage,
         get_controls_for_framework,
         get_controls_for_impact_level,
@@ -28,7 +28,7 @@ try:
         get_gap_analysis,
         get_iso_for_nist_control,
         get_nist_for_iso_control,
-        load_crosswalk,
+        load_crosswalk,  # noqa: F401
         load_iso_bridge,
     )
 except ImportError:
@@ -87,8 +87,7 @@ def crosswalk_db(tmp_path):
 
     # Seed project
     conn.execute(
-        "INSERT INTO projects (id, name, type, status, directory_path, impact_level) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO projects (id, name, type, status, directory_path, impact_level) VALUES (?, ?, ?, ?, ?, ?)",
         ("proj-cw-1", "Crosswalk Test", "webapp", "active", "/tmp/cw", "IL5"),
     )
 
@@ -101,8 +100,7 @@ def crosswalk_db(tmp_path):
         ("CM-1", "implemented"),
     ]:
         conn.execute(
-            "INSERT INTO project_controls (project_id, control_id, implementation_status) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO project_controls (project_id, control_id, implementation_status) VALUES (?, ?, ?)",
             ("proj-cw-1", ctrl_id, status),
         )
 
@@ -115,6 +113,7 @@ def crosswalk_db(tmp_path):
 def _clear_crosswalk_cache():
     """Clear the module-level crosswalk cache before each test."""
     import icdev.tools.compliance.crosswalk_engine as cwe
+
     cwe._CROSSWALK_CACHE = None
     cwe._ISO_BRIDGE_CACHE = None
     yield
@@ -125,6 +124,7 @@ def _clear_crosswalk_cache():
 # ---------------------------------------------------------------------------
 # AC-2 Cascade Tests
 # ---------------------------------------------------------------------------
+
 
 class TestAC2Cascade:
     """Verify AC-2 maps to FedRAMP, CMMC, 800-171, and other frameworks."""
@@ -164,6 +164,7 @@ class TestControlNotFound:
 # Framework Query Tests
 # ---------------------------------------------------------------------------
 
+
 class TestFrameworkQuery:
     """Verify get_controls_for_framework returns correct results."""
 
@@ -187,6 +188,7 @@ class TestFrameworkQuery:
 # ---------------------------------------------------------------------------
 # Impact Level Tests
 # ---------------------------------------------------------------------------
+
 
 class TestImpactLevel:
     """Verify get_controls_for_impact_level behavior."""
@@ -218,6 +220,7 @@ class TestImpactLevel:
 # ---------------------------------------------------------------------------
 # Coverage Computation Tests
 # ---------------------------------------------------------------------------
+
 
 class TestCoverageComputation:
     """Verify compute_crosswalk_coverage calculates per-framework coverage."""
@@ -251,18 +254,25 @@ class TestCoverageComputation:
 # Gap Analysis Tests
 # ---------------------------------------------------------------------------
 
+
 class TestGapAnalysis:
     """Verify get_gap_analysis returns unimplemented controls."""
 
     def test_gap_analysis_returns_list(self, crosswalk_db):
         gaps = get_gap_analysis(
-            "proj-cw-1", "fedramp", baseline="moderate", db_path=crosswalk_db,
+            "proj-cw-1",
+            "fedramp",
+            baseline="moderate",
+            db_path=crosswalk_db,
         )
         assert isinstance(gaps, list)
 
     def test_gap_analysis_excludes_implemented(self, crosswalk_db):
         gaps = get_gap_analysis(
-            "proj-cw-1", "fedramp", baseline="moderate", db_path=crosswalk_db,
+            "proj-cw-1",
+            "fedramp",
+            baseline="moderate",
+            db_path=crosswalk_db,
         )
         implemented_ids = {"AC-1", "AC-2", "CM-1"}
         gap_nist_ids = {g["nist_id"].upper() for g in gaps}
@@ -275,7 +285,10 @@ class TestGapAnalysis:
 
     def test_gap_analysis_sorted_by_priority(self, crosswalk_db):
         gaps = get_gap_analysis(
-            "proj-cw-1", "fedramp", baseline="moderate", db_path=crosswalk_db,
+            "proj-cw-1",
+            "fedramp",
+            baseline="moderate",
+            db_path=crosswalk_db,
         )
         if len(gaps) >= 2:
             priorities = [g["priority"] for g in gaps]
@@ -285,7 +298,10 @@ class TestGapAnalysis:
 
     def test_gap_has_required_fields(self, crosswalk_db):
         gaps = get_gap_analysis(
-            "proj-cw-1", "fedramp", baseline="moderate", db_path=crosswalk_db,
+            "proj-cw-1",
+            "fedramp",
+            baseline="moderate",
+            db_path=crosswalk_db,
         )
         if gaps:
             gap = gaps[0]
@@ -298,6 +314,7 @@ class TestGapAnalysis:
 # ---------------------------------------------------------------------------
 # Crosswalk Summary Tests
 # ---------------------------------------------------------------------------
+
 
 class TestCrosswalkSummary:
     """Verify get_crosswalk_summary returns aggregate statistics."""
@@ -327,6 +344,7 @@ class TestCrosswalkSummary:
 # ---------------------------------------------------------------------------
 # Dual-Hub Bridge Tests (NIST <-> ISO 27001)
 # ---------------------------------------------------------------------------
+
 
 class TestDualHubBridge:
     """Verify the bidirectional NIST <-> ISO 27001 bridge (ADR D111)."""
@@ -372,12 +390,13 @@ class TestDualHubBridge:
 # AC-2 ISO 27001 Bridge (if bridge data present)
 # ---------------------------------------------------------------------------
 
+
 class TestAC2ISOBridge:
     """Verify AC-2 maps through the NIST->ISO bridge."""
 
     def test_ac2_may_have_iso_mapping(self):
         """AC-2 should have ISO 27001 mappings via the bridge if data exists."""
-        frameworks = get_frameworks_for_control("AC-2")
+        get_frameworks_for_control("AC-2")
         # iso_27001 may or may not be present depending on bridge data
         # Just verify the lookup does not crash
         iso_mappings = get_iso_for_nist_control("AC-2")

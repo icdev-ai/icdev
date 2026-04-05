@@ -32,6 +32,7 @@ from tools.finetune.labeler import (
 
 # ---- Fixtures ----
 
+
 @pytest.fixture
 def ft_db(tmp_path):
     """Create a temp DB with fine-tuning tables."""
@@ -102,6 +103,7 @@ def ft_db(tmp_path):
 
 # ---- Dataset CRUD tests ----
 
+
 class TestCreateDataset:
     def test_create_basic(self, ft_db):
         result = create_dataset(name="test-ds", db_path=ft_db)
@@ -121,9 +123,15 @@ class TestCreateDataset:
 
     def test_create_with_all_fields(self, ft_db):
         result = create_dataset(
-            name="full", purpose="code_generation", description="Test dataset",
-            base_model="llama3.1:8b", classification="CUI", tenant_id="t1",
-            project_id="p1", created_by="tester", db_path=ft_db,
+            name="full",
+            purpose="code_generation",
+            description="Test dataset",
+            base_model="llama3.1:8b",
+            classification="CUI",
+            tenant_id="t1",
+            project_id="p1",
+            created_by="tester",
+            db_path=ft_db,
         )
         assert result["success"] is True
 
@@ -174,6 +182,7 @@ class TestUpdateStatus:
 
 # ---- Example Management tests ----
 
+
 class TestAddExample:
     def test_add_basic(self, ft_db):
         ds = create_dataset(name="test", db_path=ft_db)
@@ -201,11 +210,15 @@ class TestAddExample:
         ds = create_dataset(name="test", db_path=ft_db)
         add_example(
             dataset_id=ds["dataset_id"],
-            user_input="Q1", expected_output="A1", db_path=ft_db,
+            user_input="Q1",
+            expected_output="A1",
+            db_path=ft_db,
         )
         result = add_example(
             dataset_id=ds["dataset_id"],
-            user_input="Q1", expected_output="A1", db_path=ft_db,
+            user_input="Q1",
+            expected_output="A1",
+            db_path=ft_db,
         )
         assert result["success"] is False
         assert "Duplicate" in result["error"]
@@ -214,8 +227,10 @@ class TestAddExample:
         ds = create_dataset(name="test", db_path=ft_db)
         result = add_example(
             dataset_id=ds["dataset_id"],
-            user_input="Q", expected_output="A",
-            source="invalid_source", db_path=ft_db,
+            user_input="Q",
+            expected_output="A",
+            source="invalid_source",
+            db_path=ft_db,
         )
         assert result["success"] is False
 
@@ -224,7 +239,9 @@ class TestAddExample:
         for i in range(5):
             add_example(
                 dataset_id=ds["dataset_id"],
-                user_input=f"Q{i}", expected_output=f"A{i}", db_path=ft_db,
+                user_input=f"Q{i}",
+                expected_output=f"A{i}",
+                db_path=ft_db,
             )
         result = get_dataset(ds["dataset_id"], db_path=ft_db)
         assert result["dataset"]["example_count"] == 5
@@ -233,10 +250,7 @@ class TestAddExample:
 class TestAddExamplesBatch:
     def test_batch_add(self, ft_db):
         ds = create_dataset(name="test", db_path=ft_db)
-        examples = [
-            {"user_input": f"Q{i}", "expected_output": f"A{i}"}
-            for i in range(10)
-        ]
+        examples = [{"user_input": f"Q{i}", "expected_output": f"A{i}"} for i in range(10)]
         result = add_examples_batch(ds["dataset_id"], examples, db_path=ft_db)
         assert result["success"] is True
         assert result["added"] == 10
@@ -282,6 +296,7 @@ class TestGetDatasetStats:
 
 # ---- JSONL Export tests ----
 
+
 class TestExportJsonl:
     def test_export_approved(self, ft_db, tmp_path):
         ds = create_dataset(name="test", db_path=ft_db)
@@ -319,8 +334,11 @@ class TestExportJsonl:
     def test_export_with_system_prompt(self, ft_db, tmp_path):
         ds = create_dataset(name="test", db_path=ft_db)
         add_example(
-            ds["dataset_id"], "Q1", "A1",
-            system_prompt="You are an expert.", db_path=ft_db,
+            ds["dataset_id"],
+            "Q1",
+            "A1",
+            system_prompt="You are an expert.",
+            db_path=ft_db,
         )
         conn = sqlite3.connect(str(ft_db))
         conn.execute("UPDATE ft_dataset_examples SET approved = 1")
@@ -338,6 +356,7 @@ class TestExportJsonl:
 
 
 # ---- Labeler tests ----
+
 
 class TestLabelExample:
     def test_label_single(self, ft_db):
@@ -364,7 +383,9 @@ class TestLabelExample:
 
     def test_label_invalid_score(self, ft_db):
         result = label_example(
-            example_id=1, quality_score=6.0, db_path=ft_db,
+            example_id=1,
+            quality_score=6.0,
+            db_path=ft_db,
         )
         assert result["success"] is False
         assert "must be 0-5" in result["error"]
@@ -386,14 +407,17 @@ class TestBatchApprove:
         for i, row in enumerate(rows):
             score = 4.0 if i < 3 else 2.0
             conn.execute(
-                "UPDATE ft_dataset_examples SET quality_score = ?, compliance_score = ?, relevance_score = ? WHERE id = ?",
+                "UPDATE ft_dataset_examples SET quality_score = ?, compliance_score = ?, relevance_score = ? WHERE id = ?",  # noqa: E501
                 (score, score, score, row[0]),
             )
         conn.commit()
         conn.close()
 
         result = batch_approve(
-            ds["dataset_id"], min_quality=3.0, min_compliance=3.0, min_relevance=3.0,
+            ds["dataset_id"],
+            min_quality=3.0,
+            min_compliance=3.0,
+            min_relevance=3.0,
             db_path=ft_db,
         )
         assert result["success"] is True
@@ -443,7 +467,7 @@ class TestLabelingSummary:
         rows = conn.execute("SELECT id FROM ft_dataset_examples ORDER BY id LIMIT 3").fetchall()
         for row in rows:
             conn.execute(
-                "UPDATE ft_dataset_examples SET quality_score = 4, compliance_score = 4, relevance_score = 4, approved = 1 WHERE id = ?",
+                "UPDATE ft_dataset_examples SET quality_score = 4, compliance_score = 4, relevance_score = 4, approved = 1 WHERE id = ?",  # noqa: E501
                 (row[0],),
             )
         conn.commit()

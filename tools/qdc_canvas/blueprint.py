@@ -78,6 +78,7 @@ qdc_bp = Blueprint(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _utcnow() -> str:
     """Return current UTC time as ISO-8601 string."""
     return datetime.now(timezone.utc).isoformat()
@@ -91,6 +92,7 @@ def _gen_id() -> str:
 def _get_conn():
     """Get a QDC database connection."""
     from tools.qdc_canvas.db.init_db import get_connection
+
     return get_connection()
 
 
@@ -108,12 +110,10 @@ def _rows_to_list(rows) -> list[dict]:
     return [_row_to_dict(r) for r in rows]
 
 
-def _audit(conn, design_id: str, action: str, detail: str = "",
-           user: str = "system") -> None:
+def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "system") -> None:
     """Write an append-only audit entry."""
     conn.execute(
-        "INSERT INTO qdc_audit (id, design_id, user, action, detail, created_at) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO qdc_audit (id, design_id, user, action, detail, created_at) VALUES (?,?,?,?,?,?)",
         (_gen_id(), design_id, user, action, detail, _utcnow()),
     )
 
@@ -121,6 +121,7 @@ def _audit(conn, design_id: str, action: str, detail: str = "",
 # ===================================================================
 # Page Routes
 # ===================================================================
+
 
 @qdc_bp.route("/")
 def index():
@@ -135,8 +136,7 @@ def index():
         )
         templates = _rows_to_list(
             conn.execute(
-                "SELECT id, name, category, description, compliance_target, tags "
-                "FROM qdc_templates ORDER BY name"
+                "SELECT id, name, category, description, compliance_target, tags FROM qdc_templates ORDER BY name"
             ).fetchall()
         )
     finally:
@@ -192,18 +192,16 @@ def canvas_editor(design_id: str):
     """Canvas editor page for a specific design."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
-            return render_template("qdc_canvas/index.html", designs=[], templates=[],
-                                   config=_QDC_CONFIG, error="Design not found"), 404
+            return render_template(
+                "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
+            ), 404
         design_dict = _row_to_dict(row)
 
         snippets_list = _rows_to_list(
             conn.execute(
-                "SELECT id, name, category, description, graph_json, node_count, tags "
-                "FROM qdc_snippets ORDER BY name"
+                "SELECT id, name, category, description, graph_json, node_count, tags FROM qdc_snippets ORDER BY name"
             ).fetchall()
         )
         runbooks_list = _rows_to_list(
@@ -235,8 +233,7 @@ def templates_page():
     try:
         templates = _rows_to_list(
             conn.execute(
-                "SELECT id, name, category, description, compliance_target, tags "
-                "FROM qdc_templates ORDER BY name"
+                "SELECT id, name, category, description, compliance_target, tags FROM qdc_templates ORDER BY name"
             ).fetchall()
         )
     finally:
@@ -257,8 +254,7 @@ def snippets_page():
     try:
         snippets = _rows_to_list(
             conn.execute(
-                "SELECT id, name, category, description, graph_json, node_count, tags "
-                "FROM qdc_snippets ORDER BY name"
+                "SELECT id, name, category, description, graph_json, node_count, tags FROM qdc_snippets ORDER BY name"
             ).fetchall()
         )
     finally:
@@ -352,12 +348,11 @@ def remediation_page(design_id: str):
     """Gap analysis / remediation view for a design."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
-            return render_template("qdc_canvas/index.html", designs=[], templates=[],
-                                   config=_QDC_CONFIG, error="Design not found"), 404
+            return render_template(
+                "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
+            ), 404
         design_dict = _row_to_dict(row)
 
         # Get latest assessment
@@ -370,10 +365,7 @@ def remediation_page(design_id: str):
 
         # Get runbooks for remediation suggestions
         runbooks = _rows_to_list(
-            conn.execute(
-                "SELECT id, name, trigger_gate, body_markdown "
-                "FROM qdc_runbooks ORDER BY name"
-            ).fetchall()
+            conn.execute("SELECT id, name, trigger_gate, body_markdown FROM qdc_runbooks ORDER BY name").fetchall()
         )
     finally:
         conn.close()
@@ -406,14 +398,13 @@ def remediation_page(design_id: str):
 # API Endpoints — Designs
 # ===================================================================
 
+
 @qdc_bp.route("/api/designs/<design_id>", methods=["GET"])
 def api_get_design(design_id: str):
     """Get a design as JSON."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
     finally:
         conn.close()
     if not row:
@@ -427,9 +418,7 @@ def api_save_design(design_id: str):
     data = request.get_json(silent=True) or {}
     conn = _get_conn()
     try:
-        existing = conn.execute(
-            "SELECT id FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
         if not existing:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -462,6 +451,7 @@ def api_save_design(design_id: str):
         # Trigger cross-canvas KG rebuild (best-effort)
         try:
             from tools.qdc_canvas.agent import _on_canvas_saved
+
             _on_canvas_saved("qdc", design_id)
         except Exception as exc:
             logger.debug("Cross-canvas KG rebuild skipped: %s", exc)
@@ -476,9 +466,7 @@ def api_delete_design(design_id: str):
     """Delete a design."""
     conn = _get_conn()
     try:
-        existing = conn.execute(
-            "SELECT id FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
         if not existing:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -495,14 +483,13 @@ def api_delete_design(design_id: str):
 # API Endpoints — Assessments
 # ===================================================================
 
+
 @qdc_bp.route("/api/designs/<design_id>/assess", methods=["POST"])
 def api_assess_design(design_id: str):
     """Run quality assessment on a design."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -532,12 +519,14 @@ def api_assess_design(design_id: str):
                     ev = json.loads(gr.get("evidence_json", "{}"))
                 except (json.JSONDecodeError, TypeError):
                     ev = {}
-                gate_inputs.append({
-                    "gate_id": gr.get("gate_id", ""),
-                    "status": gr.get("status", "skip"),
-                    "dimension": ev.get("dimension", "code_quality"),
-                    "score": ev.get("score", 0.0),
-                })
+                gate_inputs.append(
+                    {
+                        "gate_id": gr.get("gate_id", ""),
+                        "status": gr.get("status", "skip"),
+                        "dimension": ev.get("dimension", "code_quality"),
+                        "score": ev.get("score", 0.0),
+                    }
+                )
             uqs_result = compute_uqs(gate_inputs)
 
         # Map gates to SA-11
@@ -556,7 +545,9 @@ def api_assess_design(design_id: str):
             "(id, design_id, assessment_type, findings_json, score, uqs_score, "
             "uqs_breakdown, sa11_mapping, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
             (
-                assess_id, design_id, "quality",
+                assess_id,
+                design_id,
+                "quality",
                 json.dumps(result.get("findings", [])),
                 result.get("score", 0.0),
                 uqs_result.get("uqs_score", 0.0),
@@ -568,11 +559,10 @@ def api_assess_design(design_id: str):
 
         # Store UQS history point
         conn.execute(
-            "INSERT INTO qdc_uqs_history "
-            "(id, design_id, uqs_score, dimension_scores, computed_at) "
-            "VALUES (?,?,?,?,?)",
+            "INSERT INTO qdc_uqs_history (id, design_id, uqs_score, dimension_scores, computed_at) VALUES (?,?,?,?,?)",
             (
-                _gen_id(), design_id,
+                _gen_id(),
+                design_id,
                 uqs_result.get("uqs_score", 0.0),
                 json.dumps(uqs_result.get("dimensions", {})),
                 now,
@@ -581,20 +571,21 @@ def api_assess_design(design_id: str):
         conn.commit()
 
         # Audit
-        _audit(conn, design_id, "assess",
-               f"Score={result.get('score', 0)}, UQS={uqs_result.get('uqs_score', 0)}")
+        _audit(conn, design_id, "assess", f"Score={result.get('score', 0)}, UQS={uqs_result.get('uqs_score', 0)}")
         conn.commit()
 
     finally:
         conn.close()
 
-    return jsonify({
-        "assessment_id": assess_id,
-        "design_id": design_id,
-        "result": result,
-        "uqs": uqs_result,
-        "sa11_mapping": sa11_mapping,
-    })
+    return jsonify(
+        {
+            "assessment_id": assess_id,
+            "design_id": design_id,
+            "result": result,
+            "uqs": uqs_result,
+            "sa11_mapping": sa11_mapping,
+        }
+    )
 
 
 @qdc_bp.route("/api/designs/<design_id>/uqs", methods=["GET"])
@@ -619,8 +610,7 @@ def api_get_uqs(design_id: str):
         dims = {}
     score = d.get("uqs_score", 0.0)
     grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
-    return jsonify({"uqs_score": score, "dimensions": dims, "grade": grade,
-                     "assessed_at": d.get("created_at")})
+    return jsonify({"uqs_score": score, "dimensions": dims, "grade": grade, "assessed_at": d.get("created_at")})
 
 
 @qdc_bp.route("/api/designs/<design_id>/uqs/history", methods=["GET"])
@@ -692,6 +682,7 @@ def api_get_evidence(design_id: str):
 # API Endpoints — Templates, Snippets, Runbooks, SOPs
 # ===================================================================
 
+
 @qdc_bp.route("/api/templates", methods=["GET"])
 def api_list_templates():
     """List all templates as JSON."""
@@ -715,8 +706,7 @@ def api_list_snippets():
     try:
         rows = _rows_to_list(
             conn.execute(
-                "SELECT id, name, category, description, graph_json, "
-                "node_count, tags FROM qdc_snippets ORDER BY name"
+                "SELECT id, name, category, description, graph_json, node_count, tags FROM qdc_snippets ORDER BY name"
             ).fetchall()
         )
     finally:
@@ -747,8 +737,7 @@ def api_execute_runbook(runbook_id: str):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT id, name, steps_json, auto_executable, confidence_threshold "
-            "FROM qdc_runbooks WHERE id = ?",
+            "SELECT id, name, steps_json, auto_executable, confidence_threshold FROM qdc_runbooks WHERE id = ?",
             (runbook_id,),
         ).fetchone()
         if not row:
@@ -758,8 +747,7 @@ def api_execute_runbook(runbook_id: str):
         rb = _row_to_dict(row)
         now = _utcnow()
         conn.execute(
-            "UPDATE qdc_runbooks SET last_run = ?, run_count = run_count + 1, "
-            "updated_at = ? WHERE id = ?",
+            "UPDATE qdc_runbooks SET last_run = ?, run_count = run_count + 1, updated_at = ? WHERE id = ?",
             (now, now, runbook_id),
         )
         conn.commit()
@@ -771,13 +759,15 @@ def api_execute_runbook(runbook_id: str):
     except (json.JSONDecodeError, TypeError):
         steps = []
 
-    return jsonify({
-        "ok": True,
-        "runbook_id": runbook_id,
-        "name": rb.get("name", ""),
-        "steps": steps,
-        "executed_at": now,
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "runbook_id": runbook_id,
+            "name": rb.get("name", ""),
+            "steps": steps,
+            "executed_at": now,
+        }
+    )
 
 
 @qdc_bp.route("/api/sops", methods=["GET"])
@@ -803,9 +793,7 @@ def api_update_sop(sop_id: str):
     data = request.get_json(silent=True) or {}
     conn = _get_conn()
     try:
-        existing = conn.execute(
-            "SELECT id FROM qdc_sops WHERE id = ?", (sop_id,)
-        ).fetchone()
+        existing = conn.execute("SELECT id FROM qdc_sops WHERE id = ?", (sop_id,)).fetchone()
         if not existing:
             conn.close()
             return jsonify({"error": "SOP not found"}), 404
@@ -841,6 +829,7 @@ def api_update_sop(sop_id: str):
 # API Endpoints — Cross-Canvas
 # ===================================================================
 
+
 @qdc_bp.route("/api/cross-canvas", methods=["GET"])
 def api_cross_canvas():
     """Aggregate quality scores from cross-canvas links."""
@@ -848,8 +837,7 @@ def api_cross_canvas():
     try:
         rows = _rows_to_list(
             conn.execute(
-                "SELECT source_canvas, quality_score, last_synced "
-                "FROM qdc_cross_canvas_links ORDER BY last_synced DESC"
+                "SELECT source_canvas, quality_score, last_synced FROM qdc_cross_canvas_links ORDER BY last_synced DESC"
             ).fetchall()
         )
     finally:
@@ -869,14 +857,13 @@ def api_cross_canvas():
 # API Endpoints — Export
 # ===================================================================
 
+
 @qdc_bp.route("/api/export/<design_id>/json", methods=["POST"])
 def api_export_json(design_id: str):
     """Export design as JSON download."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
     finally:
         conn.close()
     if not row:
@@ -884,9 +871,7 @@ def api_export_json(design_id: str):
 
     design = _row_to_dict(row)
     response = jsonify(design)
-    response.headers["Content-Disposition"] = (
-        f'attachment; filename="qdc-{design_id}.json"'
-    )
+    response.headers["Content-Disposition"] = f'attachment; filename="qdc-{design_id}.json"'
     return response
 
 
@@ -895,9 +880,7 @@ def api_export_markdown(design_id: str):
     """Export design as markdown."""
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT * FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -960,23 +943,28 @@ def api_export_oscal(design_id: str):
 
     evidence_pack = []
     for r in rows:
-        evidence = emit_oscal_evidence({
-            "gate_id": r.get("gate_id", "unknown"),
-            "status": r.get("status", "fail"),
-        })
+        evidence = emit_oscal_evidence(
+            {
+                "gate_id": r.get("gate_id", "unknown"),
+                "status": r.get("status", "fail"),
+            }
+        )
         evidence_pack.append(evidence)
 
-    return jsonify({
-        "design_id": design_id,
-        "evidence_count": len(evidence_pack),
-        "findings": evidence_pack,
-        "exported_at": _utcnow(),
-    })
+    return jsonify(
+        {
+            "design_id": design_id,
+            "evidence_count": len(evidence_pack),
+            "findings": evidence_pack,
+            "exported_at": _utcnow(),
+        }
+    )
 
 
 # ===================================================================
 # API Endpoints — Versions
 # ===================================================================
+
 
 @qdc_bp.route("/api/versions/<design_id>", methods=["GET"])
 def api_list_versions(design_id: str):
@@ -1002,9 +990,7 @@ def api_create_version(design_id: str):
     data = request.get_json(silent=True) or {}
     conn = _get_conn()
     try:
-        row = conn.execute(
-            "SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)
-        ).fetchone()
+        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -1013,8 +999,7 @@ def api_create_version(design_id: str):
 
         # Get next version number
         max_row = conn.execute(
-            "SELECT COALESCE(MAX(version_number), 0) FROM qdc_versions "
-            "WHERE design_id = ?",
+            "SELECT COALESCE(MAX(version_number), 0) FROM qdc_versions WHERE design_id = ?",
             (design_id,),
         ).fetchone()
         next_ver = (max_row[0] if max_row else 0) + 1
@@ -1025,7 +1010,10 @@ def api_create_version(design_id: str):
             "(id, design_id, version_number, graph_json, change_summary, "
             "user_id, created_at) VALUES (?,?,?,?,?,?,?)",
             (
-                vid, design_id, next_ver, graph_json,
+                vid,
+                design_id,
+                next_ver,
+                graph_json,
                 data.get("change_summary", ""),
                 data.get("user_id", "system"),
                 _utcnow(),
@@ -1043,8 +1031,7 @@ def api_restore_version(design_id: str, version_id: str):
     conn = _get_conn()
     try:
         ver_row = conn.execute(
-            "SELECT graph_json, version_number FROM qdc_versions WHERE id = ? "
-            "AND design_id = ?",
+            "SELECT graph_json, version_number FROM qdc_versions WHERE id = ? AND design_id = ?",
             (version_id, design_id),
         ).fetchone()
         if not ver_row:
@@ -1061,13 +1048,11 @@ def api_restore_version(design_id: str, version_id: str):
         )
         conn.commit()
 
-        _audit(conn, design_id, "restore",
-               f"Restored from version {ver_num} ({version_id})")
+        _audit(conn, design_id, "restore", f"Restored from version {ver_num} ({version_id})")
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"ok": True, "design_id": design_id,
-                     "restored_version": version_id})
+    return jsonify({"ok": True, "design_id": design_id, "restored_version": version_id})
 
 
 # ===================================================================
@@ -1075,8 +1060,14 @@ def api_restore_version(design_id: str, version_id: str):
 # ===================================================================
 
 _COLLAB_COLORS = [
-    "#2196f3", "#4caf50", "#ff9800", "#e91e63",
-    "#9c27b0", "#00bcd4", "#ff5722", "#607d8b",
+    "#2196f3",
+    "#4caf50",
+    "#ff9800",
+    "#e91e63",
+    "#9c27b0",
+    "#00bcd4",
+    "#ff5722",
+    "#607d8b",
 ]
 
 
@@ -1091,8 +1082,7 @@ def api_collab_join(design_id: str):
     try:
         # Pick a color not yet taken
         taken = conn.execute(
-            "SELECT color FROM qdc_collab_sessions "
-            "WHERE design_id = ? AND is_active = 1",
+            "SELECT color FROM qdc_collab_sessions WHERE design_id = ? AND is_active = 1",
             (design_id,),
         ).fetchall()
         taken_colors = {r[0] for r in taken}
@@ -1113,8 +1103,7 @@ def api_collab_join(design_id: str):
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"ok": True, "session_id": sid, "color": color,
-                     "user_id": user_id})
+    return jsonify({"ok": True, "session_id": sid, "color": color, "user_id": user_id})
 
 
 @qdc_bp.route("/api/collab/<design_id>/leave", methods=["POST"])
@@ -1126,8 +1115,7 @@ def api_collab_leave(design_id: str):
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE qdc_collab_sessions SET is_active = 0 WHERE id = ? "
-            "AND design_id = ?",
+            "UPDATE qdc_collab_sessions SET is_active = 0 WHERE id = ? AND design_id = ?",
             (session_id, design_id),
         )
         conn.commit()
@@ -1179,10 +1167,12 @@ def api_collab_poll(design_id: str):
         design_state = _row_to_dict(row) if row else {}
     finally:
         conn.close()
-    return jsonify({
-        "participants": participants,
-        "design_updated_at": design_state.get("updated_at", ""),
-    })
+    return jsonify(
+        {
+            "participants": participants,
+            "design_updated_at": design_state.get("updated_at", ""),
+        }
+    )
 
 
 @qdc_bp.route("/api/collab/<design_id>/participants", methods=["GET"])

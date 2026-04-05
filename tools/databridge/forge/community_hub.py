@@ -30,16 +30,14 @@ except ImportError:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with row factory."""
     if get_db_connection:
         return get_db_connection(db_path or DB_PATH, validate=True)
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -105,6 +103,7 @@ def _log_audit(conn, event_type, action, details):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def browse_connectors(category=None, search=None, db_path=None):
     """Query db_forge_connectors table with optional filters.
 
@@ -136,15 +135,17 @@ def browse_connectors(category=None, search=None, db_path=None):
         for row in rows:
             cid = row.get("id", row.get("connector_id", ""))
             avg_rating = _compute_avg_rating(conn, cid)
-            enriched.append({
-                "id": cid,
-                "name": row.get("name", ""),
-                "connector_type": row.get("connector_type", ""),
-                "status": row.get("status", ""),
-                "trust_score": _get_latest_trust_score(conn, cid),
-                "avg_rating": avg_rating,
-                "download_count": row.get("download_count", 0),
-            })
+            enriched.append(
+                {
+                    "id": cid,
+                    "name": row.get("name", ""),
+                    "connector_type": row.get("connector_type", ""),
+                    "status": row.get("status", ""),
+                    "trust_score": _get_latest_trust_score(conn, cid),
+                    "avg_rating": avg_rating,
+                    "download_count": row.get("download_count", 0),
+                }
+            )
 
         return {"connectors": enriched, "count": len(enriched)}
     finally:
@@ -186,8 +187,7 @@ def get_connector_detail(connector_id, db_path=None):
         conn.close()
 
 
-def rate_connector(connector_id, user_id, rating, review_text=None,
-                   db_path=None):
+def rate_connector(connector_id, user_id, rating, review_text=None, db_path=None):
     """INSERT OR REPLACE a rating for a connector.
 
     Returns:
@@ -217,12 +217,17 @@ def rate_connector(connector_id, user_id, rating, review_text=None,
 
         new_avg = _compute_avg_rating(conn, connector_id)
 
-        _log_audit(conn, "forge_hub_rated", "rate_connector", {
-            "connector_id": connector_id,
-            "user_id": user_id,
-            "rating": rating,
-            "new_avg": new_avg,
-        })
+        _log_audit(
+            conn,
+            "forge_hub_rated",
+            "rate_connector",
+            {
+                "connector_id": connector_id,
+                "user_id": user_id,
+                "rating": rating,
+                "new_avg": new_avg,
+            },
+        )
 
         return {
             "connector_id": connector_id,
@@ -336,10 +341,15 @@ def compute_trust_score(connector_id, db_path=None):
         )
         conn.commit()
 
-        _log_audit(conn, "forge_hub_trust_computed", "compute_trust_score", {
-            "connector_id": connector_id,
-            "trust_score": trust_score,
-        })
+        _log_audit(
+            conn,
+            "forge_hub_trust_computed",
+            "compute_trust_score",
+            {
+                "connector_id": connector_id,
+                "trust_score": trust_score,
+            },
+        )
 
         return {
             "connector_id": connector_id,
@@ -379,13 +389,15 @@ def get_featured(limit=10, db_path=None):
 
         featured = []
         for row in rows:
-            featured.append({
-                "connector_id": row.get("connector_id", ""),
-                "name": row.get("name", ""),
-                "connector_type": row.get("connector_type", ""),
-                "status": row.get("status", ""),
-                "trust_score": row.get("trust_score", 0.0),
-            })
+            featured.append(
+                {
+                    "connector_id": row.get("connector_id", ""),
+                    "name": row.get("name", ""),
+                    "connector_type": row.get("connector_type", ""),
+                    "status": row.get("status", ""),
+                    "trust_score": row.get("trust_score", 0.0),
+                }
+            )
 
         return {"featured": featured, "count": len(featured)}
     finally:
@@ -413,15 +425,17 @@ def search_connectors(query, db_path=None):
         results = []
         for row in rows:
             cid = row.get("id", row.get("connector_id", ""))
-            results.append({
-                "id": cid,
-                "name": row.get("name", ""),
-                "connector_type": row.get("connector_type", ""),
-                "status": row.get("status", ""),
-                "description": row.get("description", ""),
-                "trust_score": _get_latest_trust_score(conn, cid),
-                "avg_rating": _compute_avg_rating(conn, cid),
-            })
+            results.append(
+                {
+                    "id": cid,
+                    "name": row.get("name", ""),
+                    "connector_type": row.get("connector_type", ""),
+                    "status": row.get("status", ""),
+                    "description": row.get("description", ""),
+                    "trust_score": _get_latest_trust_score(conn, cid),
+                    "avg_rating": _compute_avg_rating(conn, cid),
+                }
+            )
 
         return {"connectors": results, "count": len(results)}
     finally:
@@ -431,6 +445,7 @@ def search_connectors(query, db_path=None):
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _compute_avg_rating(conn, connector_id):
     """Compute average rating for a connector."""
@@ -462,6 +477,7 @@ def _get_latest_trust_score(conn, connector_id):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _cmd_browse(parser, args):
     """Handle --browse subcommand."""
     return browse_connectors(category=args.category, search=args.browse_search)
@@ -479,7 +495,10 @@ def _cmd_rate(parser, args):
     if not args.connector_id or not args.user_id or args.rating is None:
         parser.error("--rate requires --connector-id, --user-id, --rating")
     return rate_connector(
-        args.connector_id, args.user_id, args.rating, review_text=args.review,
+        args.connector_id,
+        args.user_id,
+        args.rating,
+        review_text=args.review,
     )
 
 
@@ -508,40 +527,24 @@ def _resolve_hub_command(parser, args):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Connector Forge Community Hub"
-    )
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
+    parser = argparse.ArgumentParser(description="Connector Forge Community Hub")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--browse", action="store_true",
-                       help="Browse connectors")
-    group.add_argument("--detail", action="store_true",
-                       help="Get connector detail")
-    group.add_argument("--rate", action="store_true",
-                       help="Rate a connector")
-    group.add_argument("--trust", action="store_true",
-                       help="Compute trust score")
-    group.add_argument("--featured", action="store_true",
-                       help="Get featured connectors")
-    group.add_argument("--search", dest="search_query", type=str,
-                       help="Full-text search connectors")
+    group.add_argument("--browse", action="store_true", help="Browse connectors")
+    group.add_argument("--detail", action="store_true", help="Get connector detail")
+    group.add_argument("--rate", action="store_true", help="Rate a connector")
+    group.add_argument("--trust", action="store_true", help="Compute trust score")
+    group.add_argument("--featured", action="store_true", help="Get featured connectors")
+    group.add_argument("--search", dest="search_query", type=str, help="Full-text search connectors")
 
-    parser.add_argument("--category", type=str,
-                        help="Filter by connector type (for --browse)")
-    parser.add_argument("--search-text", type=str, dest="browse_search",
-                        help="Name search (for --browse)")
-    parser.add_argument("--connector-id", type=str,
-                        help="Connector ID (for --detail, --rate, --trust)")
-    parser.add_argument("--user-id", type=str,
-                        help="User ID (for --rate)")
-    parser.add_argument("--rating", type=int,
-                        help="Rating 1-5 (for --rate)")
-    parser.add_argument("--review", type=str, default=None,
-                        help="Review text (for --rate)")
-    parser.add_argument("--limit", type=int, default=10,
-                        help="Limit (for --featured)")
+    parser.add_argument("--category", type=str, help="Filter by connector type (for --browse)")
+    parser.add_argument("--search-text", type=str, dest="browse_search", help="Name search (for --browse)")
+    parser.add_argument("--connector-id", type=str, help="Connector ID (for --detail, --rate, --trust)")
+    parser.add_argument("--user-id", type=str, help="User ID (for --rate)")
+    parser.add_argument("--rating", type=int, help="Rating 1-5 (for --rate)")
+    parser.add_argument("--review", type=str, default=None, help="Review text (for --rate)")
+    parser.add_argument("--limit", type=int, default=10, help="Limit (for --featured)")
 
     args = parser.parse_args()
 

@@ -15,10 +15,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # YAML loading (pure-Python fallback if PyYAML is not installed)
 # ---------------------------------------------------------------------------
 
+
 def _load_yaml(filepath: Path) -> dict:
     """Load a YAML file. Uses PyYAML if available, otherwise a minimal parser."""
     try:
         import yaml
+
         with open(filepath, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -95,9 +97,7 @@ HEALTH_CHECK = MONITORING_CONFIG.get("health_check", {})
 SLA = MONITORING_CONFIG.get("sla", {})
 
 # CUI banner toggle (D173)
-CUI_BANNER_ENABLED = os.environ.get(
-    "ICDEV_CUI_BANNER_ENABLED", "false"
-).lower() in ("1", "true", "yes")
+CUI_BANNER_ENABLED = os.environ.get("ICDEV_CUI_BANNER_ENABLED", "false").lower() in ("1", "true", "yes")
 
 # Dashboard auth (D169-D172)
 DASHBOARD_SECRET = os.environ.get(
@@ -106,9 +106,7 @@ DASHBOARD_SECRET = os.environ.get(
 )
 
 # BYOK — Bring Your Own Key (D175-D178)
-BYOK_ENABLED = os.environ.get(
-    "ICDEV_BYOK_ENABLED", "false"
-).lower() in ("1", "true", "yes")
+BYOK_ENABLED = os.environ.get("ICDEV_BYOK_ENABLED", "false").lower() in ("1", "true", "yes")
 
 BYOK_ENCRYPTION_KEY = os.environ.get("ICDEV_BYOK_ENCRYPTION_KEY", "")
 

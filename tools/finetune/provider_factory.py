@@ -26,6 +26,7 @@ def _load_config() -> Dict[str, Any]:
         return {}
     try:
         import yaml
+
         with open(config_path, "r") as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -57,25 +58,26 @@ def get_provider(
 
     if provider_name == "unsloth_local":
         from tools.finetune.unsloth_provider import UnslothLocalProvider
+
         return UnslothLocalProvider(config=config, gpu_result=gpu_result)
 
     elif provider_name == "openai":
         from tools.finetune.openai_provider import OpenAIFineTuneProvider
+
         return OpenAIFineTuneProvider(config=config)
 
     elif provider_name == "bedrock":
         from tools.finetune.bedrock_provider import BedrockFineTuneProvider
+
         return BedrockFineTuneProvider(config=config)
 
     elif provider_name == "azure_openai":
         from tools.finetune.azure_provider import AzureOpenAIFineTuneProvider
+
         return AzureOpenAIFineTuneProvider(config=config)
 
     else:
-        raise ValueError(
-            f"Unknown provider: {provider_name}. "
-            f"Valid: unsloth_local, openai, bedrock, azure_openai"
-        )
+        raise ValueError(f"Unknown provider: {provider_name}. Valid: unsloth_local, openai, bedrock, azure_openai")
 
 
 def _auto_select_provider(

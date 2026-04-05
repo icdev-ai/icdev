@@ -38,6 +38,7 @@ def _load_feeds() -> List[Dict[str, Any]]:
     """Load feed definitions from context/genesis/feeds.yaml."""
     try:
         import yaml
+
         feeds_path = BASE_DIR / "context" / "genesis" / "feeds.yaml"
         if feeds_path.exists():
             with open(feeds_path, "r", encoding="utf-8") as f:
@@ -97,6 +98,7 @@ def _parse_rss_entries(xml_text: str) -> List[Dict[str, str]]:
 def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: str) -> int:
     """Insert entries into innovation_signals table for knowledge enrichment."""
     import hashlib
+
     conn = get_connection()
     ingested = 0
     try:
@@ -105,14 +107,11 @@ def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: st
             if not title:
                 continue
 
-            content_hash = hashlib.sha256(
-                f"{title}:{entry.get('description', '')}".encode()
-            ).hexdigest()
+            content_hash = hashlib.sha256(f"{title}:{entry.get('description', '')}".encode()).hexdigest()
 
             # Check for duplicates
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?",
-                (content_hash,)
+                "SELECT COUNT(*) as cnt FROM innovation_signals WHERE content_hash = ?", (content_hash,)
             ).fetchone()
             if row and (row["cnt"] if isinstance(row, dict) else row[0]) > 0:
                 continue
@@ -132,7 +131,7 @@ def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: st
                     "new",
                     _utcnow_iso(),
                     _utcnow_iso(),
-                )
+                ),
             )
             ingested += 1
         conn.commit()
@@ -176,10 +175,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         # Skip non-fetchable types
         if feed_type in ("sam_bridge", "html_scrape"):
-            feed_results.append({
-                "feed": feed_name, "status": "skipped",
-                "reason": f"Type '{feed_type}' not implemented",
-            })
+            feed_results.append(
+                {
+                    "feed": feed_name,
+                    "status": "skipped",
+                    "reason": f"Type '{feed_type}' not implemented",
+                }
+            )
             continue
 
         if not url:
@@ -200,12 +202,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         ingested = _ingest_to_knowledge_graph(entries, feed_name, category)
         total_nodes += ingested
 
-        feed_results.append({
-            "feed": feed_name,
-            "status": "ok",
-            "entries_found": len(entries),
-            "nodes_added": ingested,
-        })
+        feed_results.append(
+            {
+                "feed": feed_name,
+                "status": "ok",
+                "entries_found": len(entries),
+                "nodes_added": ingested,
+            }
+        )
 
     return {
         "success": True,  # 0 new nodes = all duplicates = healthy state

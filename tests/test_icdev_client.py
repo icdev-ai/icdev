@@ -15,6 +15,7 @@ from icdev.tools.sdk.icdev_client import ICDEVClient, ICDEVError
 
 # ── Test construction ───────────────────────────────────────────────────
 
+
 class TestClientInit:
     def test_default_init(self):
         client = ICDEVClient(project_id="proj-123")
@@ -35,6 +36,7 @@ class TestClientInit:
 
 
 # ── Test _run ───────────────────────────────────────────────────────────
+
 
 class TestRun:
     def test_successful_json(self):
@@ -81,6 +83,7 @@ class TestRun:
 
 
 # ── Test method args ────────────────────────────────────────────────────
+
 
 class TestMethodArgs:
     def _capture_run(self, client, method_name, *args, **kwargs):
@@ -139,6 +142,7 @@ class TestMethodArgs:
 
 
 # ── Test error class ────────────────────────────────────────────────────
+
 
 class TestICDEVError:
     def test_error_attributes(self):

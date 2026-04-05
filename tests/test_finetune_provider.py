@@ -18,6 +18,7 @@ from tools.finetune.provider import (
 
 # ---- FineTuneRequest tests ----
 
+
 class TestFineTuneRequest:
     def test_default_values(self):
         req = FineTuneRequest()
@@ -79,6 +80,7 @@ class TestFineTuneRequest:
 
 # ---- FineTuneStatus tests ----
 
+
 class TestFineTuneStatus:
     def test_default_status(self):
         status = FineTuneStatus()
@@ -109,6 +111,7 @@ class TestFineTuneStatus:
 
 
 # ---- FineTuneProvider ABC tests ----
+
 
 class ConcreteProvider(FineTuneProvider):
     """Test implementation of FineTuneProvider."""

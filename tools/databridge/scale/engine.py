@@ -12,6 +12,7 @@ Usage:
     result = engine.scaled_sync_read_blocking("conn-123", "users")
     engine.stop()
 """
+
 from __future__ import annotations
 
 import json
@@ -150,9 +151,7 @@ class ScaleEngine:
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Blocking version — same return shape as sync_engine.sync_write."""
-        future = self.scaled_sync_write(
-            connection_id, table_name, data, **kwargs
-        )
+        future = self.scaled_sync_write(connection_id, table_name, data, **kwargs)
         return self._worker_pool.get_result(future)
 
     def status(self) -> Dict[str, Any]:
@@ -215,9 +214,7 @@ class ScaleEngine:
             connector_name = conn_data["connector_name"]
 
             # Acquire from pool instead of creating new
-            connector = self._conn_pool.acquire(
-                connector_name, config, timeout=30.0
-            )
+            connector = self._conn_pool.acquire(connector_name, config, timeout=30.0)
 
             # Schema inference
             try:
@@ -264,14 +261,16 @@ class ScaleEngine:
             )
             self._write_batcher.enqueue_audit(
                 action="databridge_sync_completed",
-                details=json.dumps({
-                    "connection_id": connection_id,
-                    "table": table_name,
-                    "direction": "read",
-                    "rows": response.row_count,
-                    "duration_ms": duration_ms,
-                    "scaled": True,
-                }),
+                details=json.dumps(
+                    {
+                        "connection_id": connection_id,
+                        "table": table_name,
+                        "direction": "read",
+                        "rows": response.row_count,
+                        "duration_ms": duration_ms,
+                        "scaled": True,
+                    }
+                ),
             )
 
             return {
@@ -302,9 +301,7 @@ class ScaleEngine:
                 sync_duration_ms=duration_ms,
                 error_details=str(exc),
             )
-            update_connection(
-                connection_id, {"status": "error"}, db_path=db
-            )
+            update_connection(connection_id, {"status": "error"}, db_path=db)
 
             return {
                 "status": "error",
@@ -344,15 +341,11 @@ class ScaleEngine:
                     config["_resolved_secret"] = secret
 
             connector_name = conn_data["connector_name"]
-            connector = self._conn_pool.acquire(
-                connector_name, config, timeout=30.0
-            )
+            connector = self._conn_pool.acquire(connector_name, config, timeout=30.0)
 
             if not connector.capabilities.supports_write:
                 self._conn_pool.release(connector)
-                raise RuntimeError(
-                    f"Connector '{connector_name}' does not support write"
-                )
+                raise RuntimeError(f"Connector '{connector_name}' does not support write")
 
             request = ConnectorRequest(
                 connection_id=connection_id,

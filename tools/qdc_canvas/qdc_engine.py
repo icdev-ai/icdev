@@ -23,6 +23,7 @@ from tools.qdc_canvas.constants import (
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
+
 def _utcnow_iso() -> str:
     """Return current UTC time as ISO-8601 string."""
     return datetime.now(timezone.utc).isoformat()
@@ -58,6 +59,7 @@ def _targets_of(graph_data: dict, node_id: str) -> set[str]:
 
 
 # ── check functions ────────────────────────────────────────────────────────
+
 
 def _has_sast_gate(graph_data: dict) -> bool:
     return any(t.startswith("gate-sast") for t in _node_types(graph_data))
@@ -136,6 +138,7 @@ _CHECK_REGISTRY: dict[str, Any] = {
 
 # ── public API ─────────────────────────────────────────────────────────────
 
+
 def assess_quality_design(graph_data: dict) -> dict:
     """Assess a QDC graph against all compliance rules.
 
@@ -165,13 +168,15 @@ def assess_quality_design(graph_data: dict) -> dict:
         else:
             by_severity[rule["severity"]] += 1
             by_category[rule["category"]] += 1
-            findings.append({
-                "rule_id": rule["id"],
-                "title": rule["title"],
-                "severity": rule["severity"],
-                "category": rule["category"],
-                "detail": f"Check '{rule['check']}' failed — {rule['title']}.",
-            })
+            findings.append(
+                {
+                    "rule_id": rule["id"],
+                    "title": rule["title"],
+                    "severity": rule["severity"],
+                    "category": rule["category"],
+                    "detail": f"Check '{rule['check']}' failed — {rule['title']}.",
+                }
+            )
 
     # Base score
     score = 100.0 * (passed / rules_checked) if rules_checked else 100.0
@@ -314,12 +319,14 @@ def detect_quality_gaps(assessment: dict) -> list[dict]:
     """
     gaps: list[dict] = []
     for finding in assessment.get("findings", []):
-        gaps.append({
-            "rule_id": finding["rule_id"],
-            "title": finding["title"],
-            "severity": finding["severity"],
-            "recommendation": f"Add or connect the required element to satisfy {finding['title']}.",
-        })
+        gaps.append(
+            {
+                "rule_id": finding["rule_id"],
+                "title": finding["title"],
+                "severity": finding["severity"],
+                "recommendation": f"Add or connect the required element to satisfy {finding['title']}.",
+            }
+        )
     return gaps
 
 
@@ -351,9 +358,7 @@ def aggregate_cross_canvas_quality(canvas_scores: dict[str, float]) -> dict:
     }
 
 
-def evaluate_runbook_applicability(
-    gate_result: dict, runbooks: list[dict]
-) -> list[dict]:
+def evaluate_runbook_applicability(gate_result: dict, runbooks: list[dict]) -> list[dict]:
     """Match a failed gate result to applicable runbooks.
 
     Parameters
@@ -487,12 +492,14 @@ if __name__ == "__main__":
     print(json.dumps(agg, indent=2))
 
     print("\n=== UQS Trend ===")
-    trend = compute_uqs_trend([
-        {"uqs_score": 72.0, "computed_at": "2026-04-01T00:00:00Z"},
-        {"uqs_score": 75.5, "computed_at": "2026-04-02T00:00:00Z"},
-        {"uqs_score": 78.0, "computed_at": "2026-04-03T00:00:00Z"},
-        {"uqs_score": 82.3, "computed_at": "2026-04-04T00:00:00Z"},
-    ])
+    trend = compute_uqs_trend(
+        [
+            {"uqs_score": 72.0, "computed_at": "2026-04-01T00:00:00Z"},
+            {"uqs_score": 75.5, "computed_at": "2026-04-02T00:00:00Z"},
+            {"uqs_score": 78.0, "computed_at": "2026-04-03T00:00:00Z"},
+            {"uqs_score": 82.3, "computed_at": "2026-04-04T00:00:00Z"},
+        ]
+    )
     print(json.dumps(trend, indent=2))
 
     print("\n=== Runbook Match ===")

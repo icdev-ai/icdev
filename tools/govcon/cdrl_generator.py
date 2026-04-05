@@ -54,17 +54,20 @@ _CFG = _load_config()
 OUTPUT_DIR = _ROOT / _CFG.get("output_dir", "data/cdrl_output")
 AUTO_GENERATE_DAYS = _CFG.get("auto_generate_days_before_due", 14)
 
-TOOL_MAPPING = _CFG.get("tool_mapping", {
-    "ssp": "tools/compliance/ssp_generator.py",
-    "sbom": "tools/compliance/sbom_generator.py",
-    "poam": "tools/compliance/poam_generator.py",
-    "stig_checklist": "tools/compliance/stig_checker.py",
-    "evm_report": "tools/govcon/evm_engine.py",
-    "icd": "tools/mosa/icd_generator.py",
-    "tsp": "tools/mosa/tsp_generator.py",
-    "test_report": "tools/testing/test_orchestrator.py",
-    "security_scan": "tools/security/sast_runner.py",
-})
+TOOL_MAPPING = _CFG.get(
+    "tool_mapping",
+    {
+        "ssp": "tools/compliance/ssp_generator.py",
+        "sbom": "tools/compliance/sbom_generator.py",
+        "poam": "tools/compliance/poam_generator.py",
+        "stig_checklist": "tools/compliance/stig_checker.py",
+        "evm_report": "tools/govcon/evm_engine.py",
+        "icd": "tools/mosa/icd_generator.py",
+        "tsp": "tools/mosa/tsp_generator.py",
+        "test_report": "tools/testing/test_orchestrator.py",
+        "security_scan": "tools/security/sast_runner.py",
+    },
+)
 
 
 def _get_db():
@@ -114,9 +117,7 @@ def generate_cdrl(deliverable_id, project_id=None):
     5. Update deliverable with generated_by_tool and output_path
     """
     conn = _get_db()
-    deliv = conn.execute(
-        "SELECT * FROM cpmp_deliverables WHERE id = ?", (deliverable_id,)
-    ).fetchone()
+    deliv = conn.execute("SELECT * FROM cpmp_deliverables WHERE id = ?", (deliverable_id,)).fetchone()
     if not deliv:
         conn.close()
         return {"status": "error", "message": f"Deliverable {deliverable_id} not found"}
@@ -195,9 +196,16 @@ def generate_cdrl(deliverable_id, project_id=None):
         "output_path, output_hash, status, error_message, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            gen_id, deliverable_id, contract_id, cdrl_type, tool_path,
+            gen_id,
+            deliverable_id,
+            contract_id,
+            cdrl_type,
+            tool_path,
             str(output_path) if output_path else None,
-            output_hash, status, error_message, _now(),
+            output_hash,
+            status,
+            error_message,
+            _now(),
         ),
     )
 
@@ -208,8 +216,7 @@ def generate_cdrl(deliverable_id, project_id=None):
             (tool_path, _now(), deliverable_id),
         )
 
-    _audit(conn, "generate_cdrl",
-           f"Generated {cdrl_type} for deliverable {deliverable_id}: {status}")
+    _audit(conn, "generate_cdrl", f"Generated {cdrl_type} for deliverable {deliverable_id}: {status}")
     conn.commit()
     conn.close()
 
@@ -290,6 +297,7 @@ def get_tool_mapping():
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV GovProposal CDRL Generator (Phase 60)")

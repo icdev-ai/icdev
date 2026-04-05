@@ -20,8 +20,21 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 CSSP_REQUIREMENTS_PATH = BASE_DIR / "context" / "compliance" / "dod_cssp_8530.json"
 
 # Directories to skip during recursive scan
-SKIP_DIRS = {".git", "__pycache__", "node_modules", "venv", "env", ".tox", ".tmp",
-             ".mypy_cache", ".pytest_cache", ".eggs", "dist", "build", ".venv"}
+SKIP_DIRS = {
+    ".git",
+    "__pycache__",
+    "node_modules",
+    "venv",
+    "env",
+    ".tox",
+    ".tmp",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".eggs",
+    "dist",
+    "build",
+    ".venv",
+}
 
 # Evidence categories aligned with CSSP functional areas
 EVIDENCE_CATEGORIES = {
@@ -80,10 +93,7 @@ def _get_connection(db_path=None):
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -94,6 +104,7 @@ def _load_cui_config():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from cui_marker import load_cui_config
+
         return load_cui_config()
     except ImportError:
         return {
@@ -207,9 +218,13 @@ def _query_db_evidence(conn, project_id):
         ).fetchall()
         evidence["stig_assessments"]["count"] = len(rows)
         evidence["stig_assessments"]["records"] = [
-            {"finding_id": r["finding_id"], "stig_id": r["stig_id"],
-             "severity": r["severity"], "status": r["status"],
-             "assessed_at": r["assessed_at"]}
+            {
+                "finding_id": r["finding_id"],
+                "stig_id": r["stig_id"],
+                "severity": r["severity"],
+                "status": r["status"],
+                "assessed_at": r["assessed_at"],
+            }
             for r in rows
         ]
     except sqlite3.OperationalError:
@@ -225,9 +240,13 @@ def _query_db_evidence(conn, project_id):
         ).fetchall()
         evidence["ssp_documents"]["count"] = len(rows)
         evidence["ssp_documents"]["records"] = [
-            {"version": r["version"], "system_name": r["system_name"],
-             "status": r["status"], "file_path": r["file_path"],
-             "created_at": r["created_at"]}
+            {
+                "version": r["version"],
+                "system_name": r["system_name"],
+                "status": r["status"],
+                "file_path": r["file_path"],
+                "created_at": r["created_at"],
+            }
             for r in rows
         ]
     except sqlite3.OperationalError:
@@ -243,8 +262,12 @@ def _query_db_evidence(conn, project_id):
         ).fetchall()
         evidence["poam_items"]["count"] = len(rows)
         evidence["poam_items"]["records"] = [
-            {"weakness_id": r["weakness_id"], "severity": r["severity"],
-             "status": r["status"], "created_at": r["created_at"]}
+            {
+                "weakness_id": r["weakness_id"],
+                "severity": r["severity"],
+                "status": r["status"],
+                "created_at": r["created_at"],
+            }
             for r in rows
         ]
     except sqlite3.OperationalError:
@@ -261,10 +284,14 @@ def _query_db_evidence(conn, project_id):
         ).fetchall()
         evidence["sbom_records"]["count"] = len(rows)
         evidence["sbom_records"]["records"] = [
-            {"version": r["version"], "format": r["format"],
-             "file_path": r["file_path"], "component_count": r["component_count"],
-             "vulnerability_count": r["vulnerability_count"],
-             "generated_at": r["generated_at"]}
+            {
+                "version": r["version"],
+                "format": r["format"],
+                "file_path": r["file_path"],
+                "component_count": r["component_count"],
+                "vulnerability_count": r["vulnerability_count"],
+                "generated_at": r["generated_at"],
+            }
             for r in rows
         ]
     except sqlite3.OperationalError:
@@ -281,11 +308,13 @@ def _query_db_evidence(conn, project_id):
         ).fetchall()
         evidence["cssp_assessments"]["count"] = len(rows)
         evidence["cssp_assessments"]["records"] = [
-            {"requirement_id": r["requirement_id"],
-             "functional_area": r["functional_area"],
-             "status": r["status"],
-             "evidence_description": r["evidence_description"],
-             "assessment_date": r["assessment_date"]}
+            {
+                "requirement_id": r["requirement_id"],
+                "functional_area": r["functional_area"],
+                "status": r["status"],
+                "evidence_description": r["evidence_description"],
+                "assessment_date": r["assessment_date"],
+            }
             for r in rows
         ]
     except sqlite3.OperationalError:
@@ -303,10 +332,15 @@ def _query_db_evidence(conn, project_id):
         ).fetchall()
         evidence["vuln_scans"]["count"] = len(rows)
         evidence["vuln_scans"]["records"] = [
-            {"scan_type": r["scan_type"], "scanner": r["scanner"],
-             "scan_date": r["scan_date"], "total_findings": r["total_findings"],
-             "critical_count": r["critical_count"], "high_count": r["high_count"],
-             "report_path": r["report_path"]}
+            {
+                "scan_type": r["scan_type"],
+                "scanner": r["scanner"],
+                "scan_date": r["scan_date"],
+                "total_findings": r["total_findings"],
+                "critical_count": r["critical_count"],
+                "high_count": r["high_count"],
+                "report_path": r["report_path"],
+            }
             for r in rows
         ]
     except sqlite3.OperationalError:
@@ -402,21 +436,23 @@ def _generate_report(manifest, cui_config):
 
     # Database evidence summary
     db_ev = manifest.get("database_evidence", {})
-    lines.extend([
-        "## Database Evidence Summary",
-        "",
-        "| Evidence Source | Record Count |",
-        "|---------------|-------------|",
-        f"| STIG Assessments | {db_ev.get('stig_assessments', 0)} |",
-        f"| SSP Documents | {db_ev.get('ssp_documents', 0)} |",
-        f"| POA&M Items | {db_ev.get('poam_items', 0)} |",
-        f"| SBOM Records | {db_ev.get('sbom_records', 0)} |",
-        f"| CSSP Assessments | {db_ev.get('cssp_assessments', 0)} |",
-        f"| Vulnerability Scans | {db_ev.get('vuln_scans', 0)} |",
-        "",
-        "---",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Database Evidence Summary",
+            "",
+            "| Evidence Source | Record Count |",
+            "|---------------|-------------|",
+            f"| STIG Assessments | {db_ev.get('stig_assessments', 0)} |",
+            f"| SSP Documents | {db_ev.get('ssp_documents', 0)} |",
+            f"| POA&M Items | {db_ev.get('poam_items', 0)} |",
+            f"| SBOM Records | {db_ev.get('sbom_records', 0)} |",
+            f"| CSSP Assessments | {db_ev.get('cssp_assessments', 0)} |",
+            f"| Vulnerability Scans | {db_ev.get('vuln_scans', 0)} |",
+            "",
+            "---",
+            "",
+        ]
+    )
 
     # Detailed listing per category
     lines.append("## Detailed Evidence by Category")
@@ -445,16 +481,18 @@ def _generate_report(manifest, cui_config):
 
     # Coverage analysis
     coverage = manifest.get("coverage", {})
-    lines.extend([
-        "---",
-        "",
-        "## CSSP Requirement Coverage Analysis",
-        "",
-        f"**Requirements with evidence:** {coverage.get('requirements_with_evidence', 0)}",
-        f"**Requirements without evidence:** {coverage.get('requirements_without_evidence', 0)}",
-        f"**Coverage:** {coverage.get('coverage_pct', 0)}%",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## CSSP Requirement Coverage Analysis",
+            "",
+            f"**Requirements with evidence:** {coverage.get('requirements_with_evidence', 0)}",
+            f"**Requirements without evidence:** {coverage.get('requirements_without_evidence', 0)}",
+            f"**Coverage:** {coverage.get('coverage_pct', 0)}%",
+            "",
+        ]
+    )
 
     covered = coverage.get("covered", [])
     if covered:
@@ -472,12 +510,14 @@ def _generate_report(manifest, cui_config):
             lines.append(f"- **{req}** -- evidence needed")
         lines.append("")
 
-    lines.extend([
-        "---",
-        "",
-        doc_footer,
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            doc_footer,
+            "",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -524,9 +564,7 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
     conn = _get_connection(db_path)
     try:
         # Load project data
-        row = conn.execute(
-            "SELECT * FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found in database.")
         project = dict(row)
@@ -581,9 +619,7 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
             db_count = 0
             for db_key in db_category_map.get(cat_name, []):
                 db_count += db_evidence.get(db_key, {}).get("count", 0)
-            cat_data["status"] = _determine_category_status(
-                cat_data["artifacts"], db_count
-            )
+            cat_data["status"] = _determine_category_status(cat_data["artifacts"], db_count)
 
         # Compute coverage
         coverage = _compute_coverage(categories_result)
@@ -662,29 +698,37 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
             f.write(report_content)
 
         # Log audit event
-        _log_audit_event(conn, project_id, "CSSP evidence collected", {
-            "total_artifacts": total_artifacts,
-            "categories_with_evidence": sum(
-                1 for c in categories_result.values() if c["status"] != "no_evidence"
-            ),
-            "coverage_pct": coverage["coverage_pct"],
-            "manifest_path": str(manifest_path),
-            "report_path": str(report_path),
-        }, [str(manifest_path), str(report_path)])
+        _log_audit_event(
+            conn,
+            project_id,
+            "CSSP evidence collected",
+            {
+                "total_artifacts": total_artifacts,
+                "categories_with_evidence": sum(1 for c in categories_result.values() if c["status"] != "no_evidence"),
+                "coverage_pct": coverage["coverage_pct"],
+                "manifest_path": str(manifest_path),
+                "report_path": str(report_path),
+            },
+            [str(manifest_path), str(report_path)],
+        )
 
         # Print summary
         print("CSSP evidence collection completed:")
         print(f"  Project: {project.get('name', project_id)} ({project_id})")
         print(f"  Scanned: {scan_dir if can_scan else 'N/A (no project directory)'}")
         print(f"  Total file artifacts: {total_artifacts}")
-        print(f"  DB records: STIG={db_evidence['stig_assessments']['count']}"
-              f" SSP={db_evidence['ssp_documents']['count']}"
-              f" POAM={db_evidence['poam_items']['count']}"
-              f" SBOM={db_evidence['sbom_records']['count']}"
-              f" CSSP={db_evidence['cssp_assessments']['count']}"
-              f" Vulns={db_evidence['vuln_scans']['count']}")
-        print(f"  Coverage: {coverage['coverage_pct']}%"
-              f" ({coverage['requirements_with_evidence']}/{coverage['requirements_with_evidence'] + coverage['requirements_without_evidence']} requirements)")
+        print(
+            f"  DB records: STIG={db_evidence['stig_assessments']['count']}"
+            f" SSP={db_evidence['ssp_documents']['count']}"
+            f" POAM={db_evidence['poam_items']['count']}"
+            f" SBOM={db_evidence['sbom_records']['count']}"
+            f" CSSP={db_evidence['cssp_assessments']['count']}"
+            f" Vulns={db_evidence['vuln_scans']['count']}"
+        )
+        print(
+            f"  Coverage: {coverage['coverage_pct']}%"
+            f" ({coverage['requirements_with_evidence']}/{coverage['requirements_with_evidence'] + coverage['requirements_without_evidence']} requirements)"  # noqa: E501
+        )
         print(f"  Manifest: {manifest_path}")
         print(f"  Report: {report_path}")
 

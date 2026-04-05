@@ -24,6 +24,7 @@ from icdev.tools.db.init_icdev_db import DASHBOARD_AUTH_ALTER_SQL, SCHEMA_SQL
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def tmp_db(tmp_path, monkeypatch):
     """Create a temporary ICDEV database and monkeypatch DB_PATH."""
@@ -49,6 +50,7 @@ def tmp_db(tmp_path, monkeypatch):
 def auth(tmp_db):
     """Import auth module after DB_PATH is patched."""
     import icdev.tools.dashboard.auth as auth_mod
+
     return auth_mod
 
 
@@ -80,6 +82,7 @@ def flask_app(auth):
 # 1. Key generation format and uniqueness
 # ===================================================================
 
+
 class TestKeyGeneration:
     def test_key_starts_with_prefix(self, auth):
         key = auth.generate_api_key()
@@ -87,12 +90,12 @@ class TestKeyGeneration:
 
     def test_key_hex_portion_length(self, auth):
         key = auth.generate_api_key()
-        hex_part = key[len("icdev_dash_"):]
+        hex_part = key[len("icdev_dash_") :]
         assert len(hex_part) == 64  # 32 bytes = 64 hex chars
 
     def test_key_hex_portion_is_valid_hex(self, auth):
         key = auth.generate_api_key()
-        hex_part = key[len("icdev_dash_"):]
+        hex_part = key[len("icdev_dash_") :]
         int(hex_part, 16)  # Should not raise
 
     def test_keys_are_unique(self, auth):
@@ -103,6 +106,7 @@ class TestKeyGeneration:
 # ===================================================================
 # 2. Key hashing determinism
 # ===================================================================
+
 
 class TestKeyHashing:
     def test_hash_is_deterministic(self, auth):
@@ -124,6 +128,7 @@ class TestKeyHashing:
 # 3. Key prefix extraction
 # ===================================================================
 
+
 class TestKeyPrefix:
     def test_prefix_is_first_8_hex_chars(self, auth):
         key = "icdev_dash_abcdef1234567890"
@@ -136,13 +141,14 @@ class TestKeyPrefix:
     def test_prefix_from_generated_key(self, auth):
         key = auth.generate_api_key()
         prefix = auth.key_prefix(key)
-        hex_part = key[len("icdev_dash_"):]
+        hex_part = key[len("icdev_dash_") :]
         assert prefix == hex_part[:8]
 
 
 # ===================================================================
 # 4. User CRUD (create, list, suspend, reactivate)
 # ===================================================================
+
 
 class TestUserCRUD:
     def test_create_user_returns_dict(self, auth):
@@ -196,6 +202,7 @@ class TestUserCRUD:
 # 5. API key creation and validation
 # ===================================================================
 
+
 class TestAPIKeyCreationValidation:
     def test_create_key_returns_raw_key_and_prefix(self, auth):
         user = auth.create_user("keytest@example.mil", "KeyTest")
@@ -216,6 +223,7 @@ class TestAPIKeyCreationValidation:
 # ===================================================================
 # 6. Key revocation
 # ===================================================================
+
 
 class TestKeyRevocation:
     def test_revoked_key_fails_validation(self, auth):
@@ -240,22 +248,19 @@ class TestKeyRevocation:
 # 7. Expired key rejection
 # ===================================================================
 
+
 class TestExpiredKey:
     def test_expired_key_returns_none(self, auth):
         user = auth.create_user("expired@example.mil", "Expired")
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        key_info = auth.create_api_key_for_user(
-            user["id"], label="expired", expires_at=past
-        )
+        key_info = auth.create_api_key_for_user(user["id"], label="expired", expires_at=past)
         result = auth.validate_api_key(key_info["raw_key"])
         assert result is None
 
     def test_future_expiry_key_succeeds(self, auth):
         user = auth.create_user("future@example.mil", "Future")
         future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
-        key_info = auth.create_api_key_for_user(
-            user["id"], label="future", expires_at=future
-        )
+        key_info = auth.create_api_key_for_user(user["id"], label="future", expires_at=future)
         result = auth.validate_api_key(key_info["raw_key"])
         assert result is not None
         assert result["email"] == "future@example.mil"
@@ -264,6 +269,7 @@ class TestExpiredKey:
 # ===================================================================
 # 8. Suspended user rejection
 # ===================================================================
+
 
 class TestSuspendedUserRejection:
     def test_suspended_user_key_fails_validation(self, auth):
@@ -277,6 +283,7 @@ class TestSuspendedUserRejection:
 # ===================================================================
 # 9. Invalid key rejection
 # ===================================================================
+
 
 class TestInvalidKeyRejection:
     def test_none_key_returns_none(self, auth):
@@ -297,19 +304,19 @@ class TestInvalidKeyRejection:
 # 10. Auth event logging
 # ===================================================================
 
+
 class TestAuthEventLogging:
     def test_log_auth_event_inserts_row(self, auth, tmp_db):
         auth.log_auth_event(
-            "user-123", "login_success",
+            "user-123",
+            "login_success",
             ip_address="10.0.0.1",
             user_agent="TestAgent/1.0",
             details="test detail",
         )
         conn = sqlite3.connect(str(tmp_db))
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM dashboard_auth_log WHERE user_id = 'user-123'"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM dashboard_auth_log WHERE user_id = 'user-123'").fetchall()
         conn.close()
         assert len(rows) >= 1
         row = rows[-1]
@@ -334,6 +341,7 @@ class TestAuthEventLogging:
 # 11. RBAC matrix coverage
 # ===================================================================
 
+
 class TestRBACMatrix:
     def test_all_roles_can_access_home(self, auth):
         expected_roles = {"admin", "pm", "developer", "isso", "co", "cor"}
@@ -354,6 +362,7 @@ class TestRBACMatrix:
 # ===================================================================
 # 12. require_role decorator (allow/deny)
 # ===================================================================
+
 
 class TestRequireRoleDecorator:
     def test_allowed_role_passes(self, auth, flask_app):
@@ -410,6 +419,7 @@ class TestRequireRoleDecorator:
 # 13. bootstrap_admin CLI function
 # ===================================================================
 
+
 class TestBootstrapAdmin:
     def test_bootstrap_creates_admin_user(self, auth):
         user, raw_key = auth.bootstrap_admin("root@example.mil", "Root Admin")
@@ -434,6 +444,7 @@ class TestBootstrapAdmin:
 # ===================================================================
 # 14. register_dashboard_auth sets secret_key
 # ===================================================================
+
 
 class TestRegisterDashboardAuth:
     def test_sets_secret_key_from_config(self, auth, monkeypatch):

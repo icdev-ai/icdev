@@ -30,7 +30,9 @@ class PCIDSSAssessor(BaseAssessor):
     CATALOG_FILENAME = "pci_dss_v4.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """PCI DSS-specific automated checks.
 

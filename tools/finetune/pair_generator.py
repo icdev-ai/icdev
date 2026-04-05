@@ -9,7 +9,7 @@ Pipeline: chunks → qwen3 generates Q&A → store as unapproved examples → hu
 
 Usage:
     python tools/finetune/pair_generator.py --generate --dataset-id "ds-xxx" --document-id "ftdoc-xxx" --json
-    python tools/finetune/pair_generator.py --generate-from-rag --dataset-id "ds-xxx" --source-table "research_signals" --json
+    python tools/finetune/pair_generator.py --generate-from-rag --dataset-id "ds-xxx" --source-table "research_signals" --json  # noqa: E501
     python tools/finetune/pair_generator.py --stats --dataset-id "ds-xxx" --json
 """
 
@@ -51,6 +51,7 @@ def _load_config() -> Dict[str, Any]:
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             return cfg.get("dataset", {})
@@ -127,8 +128,8 @@ def _build_generation_prompt(
     purpose_hints = {
         "general": "Generate diverse questions covering facts, processes, and analysis.",
         "proposal_drafting": "Generate questions about proposal writing, requirements, deliverables, and compliance.",
-        "compliance_export": "Generate questions about compliance controls, security requirements, and assessment procedures.",
-        "code_generation": "Generate questions about code patterns, architecture decisions, and implementation approaches.",
+        "compliance_export": "Generate questions about compliance controls, security requirements, and assessment procedures.",  # noqa: E501
+        "code_generation": "Generate questions about code patterns, architecture decisions, and implementation approaches.",  # noqa: E501
         "custom": "Generate diverse questions covering the main topics in the text.",
     }
     hint = purpose_hints.get(purpose, purpose_hints["general"])
@@ -173,11 +174,13 @@ def _parse_pairs_response(
             q = pair.get("question", "").strip()
             a = pair.get("answer", "").strip()
             if q and a and len(q) > 10 and len(a) > 20:
-                result.append({
-                    "system_prompt": system_prompt,
-                    "user_input": q,
-                    "expected_output": a,
-                })
+                result.append(
+                    {
+                        "system_prompt": system_prompt,
+                        "user_input": q,
+                        "expected_output": a,
+                    }
+                )
         return result
     except (json.JSONDecodeError, ValueError):
         return []
@@ -206,11 +209,13 @@ def _generate_pairs_template(
         if not answer.endswith("."):
             answer += "."
 
-        pairs.append({
-            "system_prompt": "",
-            "user_input": question,
-            "expected_output": answer,
-        })
+        pairs.append(
+            {
+                "system_prompt": "",
+                "user_input": question,
+                "expected_output": answer,
+            }
+        )
 
     return pairs
 
@@ -331,8 +336,10 @@ def generate_from_rag_source(
             return {"success": False, "error": f"No RAG chunks found for source: {source_table}"}
 
         chunks = [
-            {"content": r["content"] if isinstance(r, dict) else r[1],
-             "chunk_id": r["id"] if isinstance(r, dict) else r[0]}
+            {
+                "content": r["content"] if isinstance(r, dict) else r[1],
+                "chunk_id": r["id"] if isinstance(r, dict) else r[0],
+            }
             for r in rows
         ]
     except Exception as e:
@@ -366,7 +373,7 @@ def get_generation_stats(
         ).fetchone()[0]
 
         approved = conn.execute(
-            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND source = 'rag_auto_generated' AND approved = 1",
+            "SELECT COUNT(*) FROM ft_dataset_examples WHERE dataset_id = ? AND source = 'rag_auto_generated' AND approved = 1",  # noqa: E501
             (dataset_id,),
         ).fetchone()[0]
 

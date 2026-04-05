@@ -63,8 +63,8 @@ def resolve_secret(ref: str) -> str:
         env = os.environ.get("ICDEV_ENVIRONMENT", "development")
         if env in ("production", "staging"):
             logger.error(
-                "SecretRef 'plain:' prefix BLOCKED in %s environment. "
-                "Use env: or cloud secret manager instead.", env,
+                "SecretRef 'plain:' prefix BLOCKED in %s environment. Use env: or cloud secret manager instead.",
+                env,
             )
             return ""
         logger.warning(
@@ -113,7 +113,8 @@ def _resolve_file(file_path: str) -> str:
     if not any(_is_subpath(path, allowed) for allowed in allowed_dirs):
         logger.error(
             "SecretRef file:%s rejected — resolved path %s is outside allowed directories",
-            file_path, path,
+            file_path,
+            path,
         )
         return ""
 

@@ -109,7 +109,10 @@ def run_all_scans(
         "scans": {},
         "total_findings": 0,
         "severity_summary": {
-            "critical": 0, "high": 0, "medium": 0, "low": 0,
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
         },
     }
 
@@ -329,10 +332,7 @@ def _store_findings_in_db(aggregated: Dict, project_id: Optional[str]) -> None:
             source = finding.get("source", "security_scan")
             error_type = finding.get("type", sev)
             error_message = finding.get("message", "")[:500]
-            context = json.dumps({
-                k: v for k, v in finding.items()
-                if k not in ("message", "source", "type")
-            })
+            context = json.dumps({k: v for k, v in finding.items() if k not in ("message", "source", "type")})
 
             c.execute(
                 """INSERT INTO failure_log
@@ -353,50 +353,58 @@ def _collect_all_findings(aggregated: Dict) -> List[Dict]:
 
     # SAST
     for f in aggregated.get("scans", {}).get("sast", {}).get("findings", []):
-        findings.append({
-            "source": "sast/bandit",
-            "type": f.get("test_id", "SAST"),
-            "severity": f.get("severity", "LOW"),
-            "message": f.get("issue_text", ""),
-            "file": f.get("file", ""),
-            "line": f.get("line", 0),
-        })
+        findings.append(
+            {
+                "source": "sast/bandit",
+                "type": f.get("test_id", "SAST"),
+                "severity": f.get("severity", "LOW"),
+                "message": f.get("issue_text", ""),
+                "file": f.get("file", ""),
+                "line": f.get("line", 0),
+            }
+        )
 
     # Dependency
     dep_scans = aggregated.get("scans", {}).get("dependency", {})
     for lang_key, lang_result in dep_scans.items():
         if isinstance(lang_result, dict):
             for f in lang_result.get("findings", []):
-                findings.append({
-                    "source": f"dependency/{lang_key}",
-                    "type": f.get("vulnerability_id", "DEP"),
-                    "severity": f.get("severity", "LOW"),
-                    "message": f.get("title", f.get("description", "")),
-                    "package": f.get("package", ""),
-                })
+                findings.append(
+                    {
+                        "source": f"dependency/{lang_key}",
+                        "type": f.get("vulnerability_id", "DEP"),
+                        "severity": f.get("severity", "LOW"),
+                        "message": f.get("title", f.get("description", "")),
+                        "package": f.get("package", ""),
+                    }
+                )
 
     # Secrets
     for f in aggregated.get("scans", {}).get("secrets", {}).get("findings", []):
-        findings.append({
-            "source": "secrets",
-            "type": f.get("type", "SECRET"),
-            "severity": "CRITICAL",
-            "message": f"Secret detected: {f.get('type', 'unknown')} in {f.get('file', '?')}",
-            "file": f.get("file", ""),
-            "line": f.get("line", 0),
-        })
+        findings.append(
+            {
+                "source": "secrets",
+                "type": f.get("type", "SECRET"),
+                "severity": "CRITICAL",
+                "message": f"Secret detected: {f.get('type', 'unknown')} in {f.get('file', '?')}",
+                "file": f.get("file", ""),
+                "line": f.get("line", 0),
+            }
+        )
 
     # Container
     container_scans = aggregated.get("scans", {}).get("container", {})
     for key, scan_result in container_scans.items():
         if isinstance(scan_result, dict):
             for f in scan_result.get("findings", []):
-                findings.append({
-                    "source": f"container/{key}",
-                    "type": f.get("vulnerability_id", f.get("check_id", "CONTAINER")),
-                    "severity": f.get("severity", "LOW"),
-                    "message": f.get("title", f.get("name", f.get("description", ""))),
-                })
+                findings.append(
+                    {
+                        "source": f"container/{key}",
+                        "type": f.get("vulnerability_id", f.get("check_id", "CONTAINER")),
+                        "severity": f.get("severity", "LOW"),
+                        "message": f.get("title", f.get("name", f.get("description", ""))),
+                    }
+                )
 
     return findings
 
@@ -415,11 +423,13 @@ def _log_audit(project_id: Optional[str], aggregated: Dict) -> None:
                 "security_scan",
                 "security/vuln_scanner",
                 f"Security scan completed: {aggregated['total_findings']} findings",
-                json.dumps({
-                    "severity_summary": aggregated["severity_summary"],
-                    "languages": aggregated["languages_detected"],
-                    "scan_timestamp": aggregated["scan_timestamp"],
-                }),
+                json.dumps(
+                    {
+                        "severity_summary": aggregated["severity_summary"],
+                        "languages": aggregated["languages_detected"],
+                        "scan_timestamp": aggregated["scan_timestamp"],
+                    }
+                ),
                 "CUI",
             ),
         )

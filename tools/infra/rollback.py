@@ -137,9 +137,12 @@ def execute_rollback(
         deploy_name = deployment_name or project_id
 
         kubectl_cmd = [
-            "kubectl", "rollout", "undo",
+            "kubectl",
+            "rollout",
+            "undo",
             f"deployment/{deploy_name}",
-            "-n", namespace,
+            "-n",
+            namespace,
         ]
 
         try:
@@ -173,9 +176,12 @@ def execute_rollback(
 
         # 3. Wait for rollout to complete
         wait_cmd = [
-            "kubectl", "rollout", "status",
+            "kubectl",
+            "rollout",
+            "status",
             f"deployment/{deploy_name}",
-            "-n", namespace,
+            "-n",
+            namespace,
             "--timeout=300s",
         ]
 
@@ -201,8 +207,7 @@ def execute_rollback(
         # 4. Record in database
         _record_rollback(conn, project_id, environment, target_info, result["status"], result)
         result["message"] = (
-            f"Rolled back {project_id} in {environment} "
-            f"from {result['current_version']} to {result['target_version']}"
+            f"Rolled back {project_id} in {environment} from {result['current_version']} to {result['target_version']}"
         )
 
         return result
@@ -255,13 +260,15 @@ def _record_rollback(
                 "rollback_executed",
                 "icdev-rollback",
                 f"Rollback in {environment}: {target_info['current']['version']} -> {target_version}",
-                json.dumps({
-                    "environment": environment,
-                    "from_version": target_info["current"]["version"],
-                    "to_version": target_version,
-                    "status": status,
-                    "kubectl_output": result.get("kubectl_stdout", ""),
-                }),
+                json.dumps(
+                    {
+                        "environment": environment,
+                        "from_version": target_info["current"]["version"],
+                        "to_version": target_version,
+                        "status": status,
+                        "kubectl_output": result.get("kubectl_stdout", ""),
+                    }
+                ),
                 "CUI",
             ),
         )

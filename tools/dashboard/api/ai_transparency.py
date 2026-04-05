@@ -89,7 +89,7 @@ def get_frameworks():
                     f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where}", params
                 ).fetchone()["cnt"]
                 satisfied = conn.execute(
-                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where} {'AND' if project_id else 'WHERE'} status IN ('satisfied', 'partially_satisfied')",
+                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where} {'AND' if project_id else 'WHERE'} status IN ('satisfied', 'partially_satisfied')",  # noqa: E501
                     params,
                 ).fetchone()["cnt"]
                 coverage = round(satisfied / total * 100, 1) if total > 0 else 0
@@ -110,9 +110,7 @@ def get_inventory():
         conn = _get_db()
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
-        rows = conn.execute(
-            f"SELECT * FROM ai_use_case_inventory {where} ORDER BY name", params
-        ).fetchall()
+        rows = conn.execute(f"SELECT * FROM ai_use_case_inventory {where} ORDER BY name", params).fetchall()
         conn.close()
         return jsonify({"items": [dict(r) for r in rows], "total": len(rows)})
     except Exception as e:
@@ -144,6 +142,7 @@ def get_gaps():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_transparency_audit import run_transparency_audit
+
         result = run_transparency_audit(project_id or "default", db_path=DB_PATH)
         return jsonify({"gaps": result.get("gaps", []), "gap_count": result.get("gap_count", 0)})
     except Exception as e:
@@ -159,6 +158,7 @@ def run_audit():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_transparency_audit import run_transparency_audit
+
         result = run_transparency_audit(project_id, project_dir, db_path=DB_PATH)
         return jsonify(result)
     except Exception as e:
@@ -176,6 +176,7 @@ def generate_model_card():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from model_card_generator import generate_model_card as gen
+
         result = gen(project_id, model_name, db_path=DB_PATH)
         return jsonify(result)
     except Exception as e:
@@ -190,6 +191,7 @@ def generate_system_card():
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from system_card_generator import generate_system_card as gen
+
         result = gen(project_id, db_path=DB_PATH)
         return jsonify(result)
     except Exception as e:

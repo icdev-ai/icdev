@@ -13,8 +13,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 VALID_PATTERN_TYPES = (
-    "error", "performance", "security", "deployment", "infrastructure",
-    "configuration", "dependency", "resource", "network", "database",
+    "error",
+    "performance",
+    "security",
+    "deployment",
+    "infrastructure",
+    "configuration",
+    "dependency",
+    "resource",
+    "network",
+    "database",
 )
 
 
@@ -80,8 +88,10 @@ def ingest_pattern(
                 (now, now, description, root_cause, remediation, existing["id"]),
             )
             conn.commit()
-            print(f"[knowledge] Updated existing pattern #{existing['id']} "
-                  f"(occurrences: {existing['occurrence_count'] + 1})")
+            print(
+                f"[knowledge] Updated existing pattern #{existing['id']} "
+                f"(occurrences: {existing['occurrence_count'] + 1})"
+            )
             return existing["id"]
 
         # Insert new pattern

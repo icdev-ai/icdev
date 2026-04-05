@@ -42,6 +42,7 @@ from icdev.tools.translation.type_checker import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def python_project(tmp_path):
     """Create a minimal Python project for testing."""
@@ -122,6 +123,7 @@ def sample_ir():
 # Tests: Pipeline validation
 # ---------------------------------------------------------------------------
 
+
 class TestPipelineValidation:
     """Tests for pipeline input validation."""
 
@@ -171,6 +173,7 @@ class TestPipelineValidation:
 # Tests: Dry run (no LLM)
 # ---------------------------------------------------------------------------
 
+
 class TestDryRun:
     """Tests for dry run mode (extract + type-check only)."""
 
@@ -203,7 +206,7 @@ class TestDryRun:
 
     def test_dry_run_creates_ir_file(self, python_project, output_dir):
         """Dry run should save IR file to output directory."""
-        result = run_pipeline(
+        run_pipeline(
             source_path=str(python_project / "src"),
             source_language="python",
             target_language="rust",
@@ -221,6 +224,7 @@ class TestDryRun:
 # ---------------------------------------------------------------------------
 # Tests: Extract only
 # ---------------------------------------------------------------------------
+
 
 class TestExtractOnly:
     """Tests for extract-only mode."""
@@ -242,6 +246,7 @@ class TestExtractOnly:
 # ---------------------------------------------------------------------------
 # Tests: Translation order (D244)
 # ---------------------------------------------------------------------------
+
 
 class TestTranslationOrder:
     """Tests for post-order dependency traversal."""
@@ -274,13 +279,13 @@ class TestTranslationOrder:
 # Tests: Mock generation (D256)
 # ---------------------------------------------------------------------------
 
+
 class TestMockGeneration:
     """Tests for mock-and-continue strategy."""
 
     def test_mock_python(self):
         """Python mock should raise NotImplementedError."""
-        unit = {"name": "broken_func", "kind": "function",
-                "params": [{"name": "x"}], "return_type": "int"}
+        unit = {"name": "broken_func", "kind": "function", "params": [{"name": "x"}], "return_type": "int"}
         mock = _generate_mock(unit, "python")
         assert "NotImplementedError" in mock
         assert "CUI" in mock
@@ -288,8 +293,7 @@ class TestMockGeneration:
 
     def test_mock_java(self):
         """Java mock should throw UnsupportedOperationException."""
-        unit = {"name": "broken", "kind": "function",
-                "params": [{"name": "x"}], "return_type": "int"}
+        unit = {"name": "broken", "kind": "function", "params": [{"name": "x"}], "return_type": "int"}
         mock = _generate_mock(unit, "java")
         assert "UnsupportedOperationException" in mock
         assert "CUI" in mock
@@ -317,15 +321,19 @@ class TestMockGeneration:
 # Tests: Project assembly
 # ---------------------------------------------------------------------------
 
+
 class TestProjectAssembly:
     """Tests for project_assembler.py."""
 
     def test_assemble_python_project(self, output_dir):
         """Should scaffold a Python project."""
         units = [
-            {"name": "hello", "kind": "function",
-             "source_file": "main.py",
-             "translated_code": "# CUI // SP-CTI\ndef hello():\n    pass\n"},
+            {
+                "name": "hello",
+                "kind": "function",
+                "source_file": "main.py",
+                "translated_code": "# CUI // SP-CTI\ndef hello():\n    pass\n",
+            },
         ]
         result = assemble_project(
             output_dir=str(output_dir),
@@ -340,9 +348,12 @@ class TestProjectAssembly:
     def test_assemble_java_project(self, output_dir):
         """Should scaffold a Java project."""
         units = [
-            {"name": "Hello", "kind": "class",
-             "source_file": "Hello.py",
-             "translated_code": "// CUI // SP-CTI\npublic class Hello {}\n"},
+            {
+                "name": "Hello",
+                "kind": "class",
+                "source_file": "Hello.py",
+                "translated_code": "// CUI // SP-CTI\npublic class Hello {}\n",
+            },
         ]
         result = assemble_project(
             output_dir=str(output_dir),
@@ -383,6 +394,7 @@ class TestProjectAssembly:
 # ---------------------------------------------------------------------------
 # Tests: Validation checks
 # ---------------------------------------------------------------------------
+
 
 class TestValidationChecks:
     """Tests for translation_validator.py individual checks."""
@@ -428,7 +440,7 @@ class TestValidationChecks:
         # Translated code line counts must not exceed source line_count by >30%
         # greet has line_count=3, add has line_count=2
         translated = [
-            {"name": "greet", "translated_code": "public String greet() {\n    return \"hello\";\n}"},
+            {"name": "greet", "translated_code": 'public String greet() {\n    return "hello";\n}'},
             {"name": "add", "translated_code": "public int add(int a, int b) {\n    return a + b;\n}"},
         ]
         score, findings = check_complexity(sample_ir, translated)
@@ -440,6 +452,7 @@ class TestValidationChecks:
 # ---------------------------------------------------------------------------
 # Tests: Feature map
 # ---------------------------------------------------------------------------
+
 
 class TestFeatureMap:
     """Tests for feature_map.py."""
@@ -478,6 +491,7 @@ class TestFeatureMap:
 # Tests: Type checker
 # ---------------------------------------------------------------------------
 
+
 class TestTypeChecker:
     """Tests for type_checker.py."""
 
@@ -511,6 +525,7 @@ class TestTypeChecker:
 # ---------------------------------------------------------------------------
 # Tests: CUI headers and naming conventions
 # ---------------------------------------------------------------------------
+
 
 class TestConstants:
     """Tests for translation constants."""

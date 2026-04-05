@@ -15,7 +15,7 @@ Stores in proposal_knowledge_base table (allows UPDATE for refinement).
 Usage:
     python tools/govcon/knowledge_base.py --list --json
     python tools/govcon/knowledge_base.py --search --query "DevSecOps pipeline" --json
-    python tools/govcon/knowledge_base.py --add --title "..." --content "..." --category capability_description --domain devsecops --json
+    python tools/govcon/knowledge_base.py --add --title "..." --content "..." --category capability_description --domain devsecops --json  # noqa: E501
     python tools/govcon/knowledge_base.py --get --block-id <id> --json
     python tools/govcon/knowledge_base.py --seed --json
 """
@@ -49,16 +49,29 @@ _CATEGORIES = [
 ]
 
 _DOMAINS = [
-    "devsecops", "ai_ml", "ato_rmf", "cloud", "security",
-    "compliance", "agile", "data", "management", "general",
+    "devsecops",
+    "ai_ml",
+    "ato_rmf",
+    "cloud",
+    "security",
+    "compliance",
+    "agile",
+    "data",
+    "management",
+    "general",
 ]
 
 _VOLUME_TYPES = [
-    "technical", "management", "past_performance", "cost", "staffing",
+    "technical",
+    "management",
+    "past_performance",
+    "cost",
+    "staffing",
 ]
 
 
 # ── helpers ───────────────────────────────────────────────────────────
+
 
 def _get_db():
     conn = sqlite3.connect(str(_DB_PATH))
@@ -88,8 +101,10 @@ def _audit(conn, action, details="", actor="knowledge_base"):
 
 # ── CRUD ──────────────────────────────────────────────────────────────
 
-def add_block(title, content, category, domain, volume_type="technical",
-              keywords=None, naics_codes=None, capability_ids=None):
+
+def add_block(
+    title, content, category, domain, volume_type="technical", keywords=None, naics_codes=None, capability_ids=None
+):
     """Add a reusable content block to the knowledge base."""
     if category not in _CATEGORIES:
         return {"status": "error", "message": f"Invalid category: {category}. Valid: {_CATEGORIES}"}
@@ -105,12 +120,18 @@ def add_block(title, content, category, domain, volume_type="technical",
         "naics_codes, usage_count, status, created_at, updated_at, classification) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            block_id, title, content, category, domain, volume_type,
+            block_id,
+            title,
+            content,
+            category,
+            domain,
+            volume_type,
             json.dumps(keywords or []),
             json.dumps(naics_codes or []),
             0,
             "active",
-            _now(), _now(),
+            _now(),
+            _now(),
             "CUI // SP-CTI",
         ),
     )
@@ -217,6 +238,7 @@ def increment_usage(block_id):
 
 # ── seeding from capability catalog ──────────────────────────────────
 
+
 def seed_from_catalog():
     """Seed knowledge base from ICDEV capability catalog.
 
@@ -248,8 +270,7 @@ def seed_from_catalog():
         if not existing:
             overview = (
                 f"{prod.get('description', '')}\n\n"
-                f"Key Capabilities:\n"
-                + "\n".join(f"- {kc}" for kc in prod.get("key_capabilities", [])) + "\n\n"
+                f"Key Capabilities:\n" + "\n".join(f"- {kc}" for kc in prod.get("key_capabilities", [])) + "\n\n"
                 f"NIST 800-53 Controls: {', '.join(prod.get('compliance_controls', []))}\n\n"
                 f"Evidence: {prod.get('evidence', '')}"
             )
@@ -259,12 +280,19 @@ def seed_from_catalog():
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    str(uuid.uuid4()), prod_name, overview, "product_overview",
+                    str(uuid.uuid4()),
+                    prod_name,
+                    overview,
+                    "product_overview",
                     prod_cat if prod_cat in _DOMAINS else "general",
                     "technical",
                     json.dumps(keywords[:10]),
                     json.dumps([]),
-                    0, "active", _now(), _now(), "CUI // SP-CTI",
+                    0,
+                    "active",
+                    _now(),
+                    _now(),
+                    "CUI // SP-CTI",
                 ),
             )
             created += 1
@@ -275,9 +303,8 @@ def seed_from_catalog():
             (f"{prod_name} — Customer Value",),
         ).fetchone()
         if not existing_cv and prod.get("customer_value"):
-            cv_content = (
-                f"Customer Benefits of {prod_name}:\n\n"
-                + "\n".join(f"- {v}" for v in prod.get("customer_value", []))
+            cv_content = f"Customer Benefits of {prod_name}:\n\n" + "\n".join(
+                f"- {v}" for v in prod.get("customer_value", [])
             )
             conn.execute(
                 "INSERT INTO proposal_knowledge_base "
@@ -285,13 +312,19 @@ def seed_from_catalog():
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    str(uuid.uuid4()), f"{prod_name} — Customer Value",
-                    cv_content, "customer_value",
+                    str(uuid.uuid4()),
+                    f"{prod_name} — Customer Value",
+                    cv_content,
+                    "customer_value",
                     prod_cat if prod_cat in _DOMAINS else "general",
                     "management",
                     json.dumps(keywords[:5]),
                     json.dumps([]),
-                    0, "active", _now(), _now(), "CUI // SP-CTI",
+                    0,
+                    "active",
+                    _now(),
+                    _now(),
+                    "CUI // SP-CTI",
                 ),
             )
             created += 1
@@ -306,7 +339,8 @@ def seed_from_catalog():
                 f"{prod_name} provides an integrated, end-to-end solution that unifies "
                 f"multiple capabilities into a single platform. Rather than point solutions "
                 f"for individual requirements, the platform delivers:\n\n"
-                + "\n".join(f"- {kc}" for kc in prod.get("key_capabilities", [])) + "\n\n"
+                + "\n".join(f"- {kc}" for kc in prod.get("key_capabilities", []))
+                + "\n\n"
                 "These capabilities are not standalone tools — they are deeply integrated "
                 "through shared databases, unified audit trails, cross-domain compliance "
                 "crosswalks, and orchestrated agent collaboration."
@@ -317,13 +351,19 @@ def seed_from_catalog():
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    str(uuid.uuid4()), f"{prod_name} — Integrated Solution",
-                    is_content, "integrated_solution",
+                    str(uuid.uuid4()),
+                    f"{prod_name} — Integrated Solution",
+                    is_content,
+                    "integrated_solution",
                     prod_cat if prod_cat in _DOMAINS else "general",
                     "technical",
                     json.dumps(keywords[:5]),
                     json.dumps([]),
-                    0, "active", _now(), _now(), "CUI // SP-CTI",
+                    0,
+                    "active",
+                    _now(),
+                    _now(),
+                    "CUI // SP-CTI",
                 ),
             )
             created += 1
@@ -332,7 +372,7 @@ def seed_from_catalog():
     capabilities = catalog.get("capabilities", [])
 
     for cap in capabilities:
-        cap_id = cap["id"]
+        cap["id"]
         name = cap["name"]
         category = cap.get("category", "general")
         description = cap.get("description", "")
@@ -364,12 +404,19 @@ def seed_from_catalog():
             "naics_codes, usage_count, status, created_at, updated_at, classification) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                str(uuid.uuid4()), name, content, "capability_description",
+                str(uuid.uuid4()),
+                name,
+                content,
+                "capability_description",
                 category if category in _DOMAINS else "general",
                 "technical",
                 json.dumps(keywords[:10]),
                 json.dumps([]),
-                0, "active", _now(), _now(), "CUI // SP-CTI",
+                0,
+                "active",
+                _now(),
+                _now(),
+                "CUI // SP-CTI",
             ),
         )
         created += 1
@@ -378,7 +425,8 @@ def seed_from_catalog():
         if tools:
             tools_content = (
                 f"ICDEV implements {name} through the following automated tools:\n\n"
-                + "\n".join(f"- {t}" for t in tools) + "\n\n"
+                + "\n".join(f"- {t}" for t in tools)
+                + "\n\n"
                 "All tools are deterministic Python scripts following the GOTCHA framework. "
                 "They produce reproducible, auditable output with CUI markings and audit trail logging."
             )
@@ -388,12 +436,19 @@ def seed_from_catalog():
                 "naics_codes, usage_count, status, created_at, updated_at, classification) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    str(uuid.uuid4()), f"{name} — Tools", tools_content, "tools_used",
+                    str(uuid.uuid4()),
+                    f"{name} — Tools",
+                    tools_content,
+                    "tools_used",
                     category if category in _DOMAINS else "general",
                     "technical",
                     json.dumps(keywords[:5]),
                     json.dumps([]),
-                    0, "active", _now(), _now(), "CUI // SP-CTI",
+                    0,
+                    "active",
+                    _now(),
+                    _now(),
+                    "CUI // SP-CTI",
                 ),
             )
             created += 1
@@ -406,6 +461,7 @@ def seed_from_catalog():
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="ICDEV GovCon Knowledge Base (D368)")
@@ -439,8 +495,9 @@ def main():
         if not all([args.title, args.content, args.category, args.domain]):
             print("Error: --title, --content, --category, --domain required", file=sys.stderr)
             sys.exit(1)
-        result = add_block(args.title, args.content, args.category, args.domain,
-                          volume_type=args.volume_type or "technical")
+        result = add_block(
+            args.title, args.content, args.category, args.domain, volume_type=args.volume_type or "technical"
+        )
     elif args.get:
         if not args.block_id:
             print("Error: --block-id required", file=sys.stderr)

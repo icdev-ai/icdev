@@ -23,8 +23,7 @@ def _update_cross_canvas_link(design_id, source_canvas, source_design_id, score)
         conn = get_connection()
         try:
             existing = conn.execute(
-                "SELECT id FROM qdc_cross_canvas_links "
-                "WHERE design_id = ? AND source_canvas = ?",
+                "SELECT id FROM qdc_cross_canvas_links WHERE design_id = ? AND source_canvas = ?",
                 (design_id, source_canvas),
             ).fetchone()
             now = _now()

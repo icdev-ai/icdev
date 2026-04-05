@@ -35,6 +35,7 @@ def _get_db() -> sqlite3.Connection:
 
 # ── Metrics Summary ────────────────────────────────────────────
 
+
 @code_quality_api.route("/summary", methods=["GET"])
 def metrics_summary():
     """Summary statistics from latest scan."""
@@ -49,9 +50,7 @@ def metrics_summary():
             return jsonify({"error": "No scan data found", "has_data": False})
 
         scan_id = latest["scan_id"]
-        rows = conn.execute(
-            "SELECT * FROM code_quality_metrics WHERE scan_id = ?", (scan_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM code_quality_metrics WHERE scan_id = ?", (scan_id,)).fetchall()
         conn.close()
 
         metrics = [dict(r) for r in rows]
@@ -62,22 +61,25 @@ def metrics_summary():
         avg_maint = round(sum(m.get("maintainability_score", 0) for m in fn_metrics) / max(len(fn_metrics), 1), 4)
         high_cc = len([m for m in fn_metrics if m.get("cyclomatic_complexity", 0) > 15])
 
-        return jsonify({
-            "has_data": True,
-            "scan_id": scan_id,
-            "total_files": len(set(m.get("file_path") for m in metrics)),
-            "total_functions": len(fn_metrics),
-            "total_loc": total_loc,
-            "total_smells": total_smells,
-            "avg_complexity": avg_cc,
-            "avg_maintainability": avg_maint,
-            "high_complexity_count": high_cc,
-        })
+        return jsonify(
+            {
+                "has_data": True,
+                "scan_id": scan_id,
+                "total_files": len(set(m.get("file_path") for m in metrics)),
+                "total_functions": len(fn_metrics),
+                "total_loc": total_loc,
+                "total_smells": total_smells,
+                "avg_complexity": avg_cc,
+                "avg_maintainability": avg_maint,
+                "high_complexity_count": high_cc,
+            }
+        )
     except sqlite3.Error as e:
         return jsonify({"error": str(e)}), 500
 
 
 # ── Top Complex Functions ──────────────────────────────────────
+
 
 @code_quality_api.route("/top-complex", methods=["GET"])
 def top_complex():
@@ -101,6 +103,7 @@ def top_complex():
 
 
 # ── Smell Breakdown ────────────────────────────────────────────
+
 
 @code_quality_api.route("/smells", methods=["GET"])
 def smell_breakdown():
@@ -130,6 +133,7 @@ def smell_breakdown():
 
 # ── Trend Data ─────────────────────────────────────────────────
 
+
 @code_quality_api.route("/trend", methods=["GET"])
 def trend_data():
     """Maintainability trend over scans."""
@@ -157,6 +161,7 @@ def trend_data():
 
 # ── Runtime Feedback Stats ─────────────────────────────────────
 
+
 @code_quality_api.route("/feedback", methods=["GET"])
 def feedback_stats():
     """Runtime feedback summary — test pass rates by source function."""
@@ -181,13 +186,15 @@ def feedback_stats():
         for r in rows:
             total = r["test_total"]
             passed = r["test_passed"]
-            results.append({
-                "source_function": r["source_function"],
-                "test_total": total,
-                "test_passed": passed,
-                "pass_rate": round(passed / max(total, 1), 4),
-                "avg_duration_ms": round(r["avg_duration"] or 0, 2),
-            })
+            results.append(
+                {
+                    "source_function": r["source_function"],
+                    "test_total": total,
+                    "test_passed": passed,
+                    "pass_rate": round(passed / max(total, 1), 4),
+                    "avg_duration_ms": round(r["avg_duration"] or 0, 2),
+                }
+            )
         return jsonify({"feedback": results})
     except sqlite3.Error as e:
         return jsonify({"error": str(e)}), 500
@@ -195,12 +202,14 @@ def feedback_stats():
 
 # ── Trigger Scan ───────────────────────────────────────────────
 
+
 @code_quality_api.route("/scan", methods=["POST"])
 def trigger_scan():
     """Trigger a code quality scan on the tools/ directory."""
     try:
         sys.path.insert(0, str(BASE_DIR))
         from tools.analysis.code_analyzer import CodeAnalyzer
+
         analyzer = CodeAnalyzer(
             project_dir=str(BASE_DIR / "tools"),
             project_id="icdev",

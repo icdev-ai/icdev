@@ -33,10 +33,12 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -46,6 +48,7 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_create_intake_session(args: dict) -> dict:
     """Create a new intake session."""
@@ -250,6 +253,7 @@ def handle_generate_bdd(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     """Create and configure the Requirements Intake MCP server."""
     server = MCPServer(name="icdev-requirements", version="1.0.0")
@@ -263,7 +267,12 @@ def create_server() -> MCPServer:
                 "project_id": {"type": "string", "description": "ICDEV project ID"},
                 "customer_name": {"type": "string", "description": "Customer/stakeholder name"},
                 "customer_org": {"type": "string", "description": "Customer organization"},
-                "impact_level": {"type": "string", "default": "IL4", "enum": ["IL2", "IL4", "IL5", "IL6"], "description": "DoD Impact Level"},
+                "impact_level": {
+                    "type": "string",
+                    "default": "IL4",
+                    "enum": ["IL2", "IL4", "IL5", "IL6"],
+                    "description": "DoD Impact Level",
+                },
                 "classification": {"type": "string", "default": "CUI", "description": "Classification marking"},
             },
             "required": ["project_id", "customer_name"],
@@ -319,7 +328,12 @@ def create_server() -> MCPServer:
             "properties": {
                 "session_id": {"type": "string", "description": "Intake session ID"},
                 "file_path": {"type": "string", "description": "Path to the document file"},
-                "document_type": {"type": "string", "default": "other", "enum": ["sow", "cdd", "conops", "srd", "srs", "other"], "description": "Type of document being uploaded"},
+                "document_type": {
+                    "type": "string",
+                    "default": "other",
+                    "enum": ["sow", "cdd", "conops", "srd", "srs", "other"],
+                    "description": "Type of document being uploaded",
+                },
             },
             "required": ["session_id", "file_path"],
         },
@@ -346,11 +360,31 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "Intake session ID"},
-                "check_security": {"type": "boolean", "default": True, "description": "Check for missing security requirements"},
-                "check_compliance": {"type": "boolean", "default": True, "description": "Check for missing compliance requirements"},
-                "check_testability": {"type": "boolean", "default": True, "description": "Check requirement testability"},
-                "check_interfaces": {"type": "boolean", "default": False, "description": "Check for missing interface definitions"},
-                "check_data": {"type": "boolean", "default": False, "description": "Check for missing data requirements"},
+                "check_security": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Check for missing security requirements",
+                },
+                "check_compliance": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Check for missing compliance requirements",
+                },
+                "check_testability": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Check requirement testability",
+                },
+                "check_interfaces": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Check for missing interface definitions",
+                },
+                "check_data": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Check for missing data requirements",
+                },
             },
             "required": ["session_id"],
         },
@@ -364,7 +398,11 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "Intake session ID"},
-                "threshold": {"type": "number", "default": 0.7, "description": "Minimum readiness score (0.0-1.0) to pass"},
+                "threshold": {
+                    "type": "number",
+                    "default": 0.7,
+                    "description": "Minimum readiness score (0.0-1.0) to pass",
+                },
             },
             "required": ["session_id"],
         },
@@ -378,8 +416,17 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "Intake session ID"},
-                "target_level": {"type": "string", "default": "story", "enum": ["epic", "capability", "feature", "story"], "description": "Target decomposition level"},
-                "generate_bdd": {"type": "boolean", "default": False, "description": "Generate BDD acceptance criteria for stories"},
+                "target_level": {
+                    "type": "string",
+                    "default": "story",
+                    "enum": ["epic", "capability", "feature", "story"],
+                    "description": "Target decomposition level",
+                },
+                "generate_bdd": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Generate BDD acceptance criteria for stories",
+                },
                 "estimate": {"type": "boolean", "default": True, "description": "Generate story point estimates"},
             },
             "required": ["session_id"],

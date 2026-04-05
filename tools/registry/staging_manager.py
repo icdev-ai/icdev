@@ -71,6 +71,7 @@ DEFAULT_EXPIRY_HOURS = 72
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -213,9 +214,7 @@ class StagingManager:
         except Exception as e:
             print(f"Warning: Table creation failed: {e}", file=sys.stderr)
 
-    def create_staging(
-        self, capability_id: str, genome_version: str = None
-    ) -> Optional[dict]:
+    def create_staging(self, capability_id: str, genome_version: str = None) -> Optional[dict]:
         """Create an isolated staging environment using a git worktree.
 
         Creates a new git worktree under trees/staging/<staging_id> with a
@@ -236,20 +235,30 @@ class StagingManager:
         STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
         # Create git worktree with new branch
-        result = _run_git([
-            "worktree", "add", "--no-checkout",
-            str(worktree_path), "-b", branch_name,
-        ])
+        result = _run_git(
+            [
+                "worktree",
+                "add",
+                "--no-checkout",
+                str(worktree_path),
+                "-b",
+                branch_name,
+            ]
+        )
 
         if result.returncode != 0:
             # Branch might exist; try without -b
-            result = _run_git([
-                "worktree", "add", "--no-checkout", str(worktree_path),
-            ])
+            result = _run_git(
+                [
+                    "worktree",
+                    "add",
+                    "--no-checkout",
+                    str(worktree_path),
+                ]
+            )
             if result.returncode != 0:
                 error_msg = f"Failed to create worktree: {result.stderr.strip()}"
-                _audit("staging.create.failed", error_msg,
-                       {"capability_id": capability_id, "error": error_msg})
+                _audit("staging.create.failed", error_msg, {"capability_id": capability_id, "error": error_msg})
                 return {"error": error_msg}
 
         # Checkout all files in staging worktree
@@ -268,9 +277,7 @@ class StagingManager:
             pass
 
         # Calculate expiry
-        expires_at = (
-            datetime.now(timezone.utc) + timedelta(hours=DEFAULT_EXPIRY_HOURS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=DEFAULT_EXPIRY_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Store in database
         conn = self._get_conn()
@@ -417,17 +424,13 @@ class StagingManager:
         after_findings = compliance_after.get("security_findings", 0)
         if after_findings > before_findings:
             preserved = False
-            issues.append(
-                f"Security findings increased: {before_findings} -> {after_findings}"
-            )
+            issues.append(f"Security findings increased: {before_findings} -> {after_findings}")
 
         # Check: test count should not decrease
         before_tests = compliance_before.get("test_count", 0)
         after_tests = compliance_after.get("test_count", 0)
         if after_tests < before_tests:
-            issues.append(
-                f"Test count decreased: {before_tests} -> {after_tests} (warning)"
-            )
+            issues.append(f"Test count decreased: {before_tests} -> {after_tests} (warning)")
 
         # Check: CUI markings present
         if not compliance_after.get("cui_markings_present", True):
@@ -511,8 +514,18 @@ class StagingManager:
 
         # Run bandit (SAST) if available -- count findings
         bandit_result = _run_subprocess(
-            [sys.executable, "-m", "bandit", "-r", str(dir_path / "tools"),
-             "-f", "json", "-q", "--severity-level", "high"],
+            [
+                sys.executable,
+                "-m",
+                "bandit",
+                "-r",
+                str(dir_path / "tools"),
+                "-f",
+                "json",
+                "-q",
+                "--severity-level",
+                "high",
+            ],
             cwd=directory,
             timeout=120,
         )
@@ -546,8 +559,7 @@ class StagingManager:
         if worktree_path and Path(worktree_path).exists():
             result = _run_git(["worktree", "remove", worktree_path, "--force"])
             if result.returncode != 0:
-                print(f"Warning: worktree remove failed: {result.stderr}",
-                      file=sys.stderr)
+                print(f"Warning: worktree remove failed: {result.stderr}", file=sys.stderr)
                 success = False
 
         # Update DB status
@@ -597,9 +609,7 @@ class StagingManager:
         """Get a staging environment record by ID."""
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                "SELECT * FROM staging_environments WHERE id = ?", (staging_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM staging_environments WHERE id = ?", (staging_id,)).fetchone()
             return dict(row) if row else None
         finally:
             conn.close()
@@ -627,21 +637,14 @@ def main():
         description="ICDEV Staging Manager -- isolated capability testing environments (D211)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--create", action="store_true",
-                       help="Create a staging environment")
-    group.add_argument("--test", action="store_true",
-                       help="Run tests in staging environment")
-    group.add_argument("--check-compliance", action="store_true",
-                       help="Check compliance preservation")
-    group.add_argument("--destroy", action="store_true",
-                       help="Destroy a staging environment")
-    group.add_argument("--list", action="store_true",
-                       help="List all staging environments")
+    group.add_argument("--create", action="store_true", help="Create a staging environment")
+    group.add_argument("--test", action="store_true", help="Run tests in staging environment")
+    group.add_argument("--check-compliance", action="store_true", help="Check compliance preservation")
+    group.add_argument("--destroy", action="store_true", help="Destroy a staging environment")
+    group.add_argument("--list", action="store_true", help="List all staging environments")
 
     parser.add_argument("--capability-id", help="Capability ID (for --create)")
     parser.add_argument("--genome-version", help="Genome version (for --create)")
@@ -668,9 +671,7 @@ def main():
         elif args.check_compliance:
             if not args.staging_id:
                 parser.error("--check-compliance requires --staging-id")
-            result = manager.check_compliance_preservation(
-                staging_id=args.staging_id
-            )
+            result = manager.check_compliance_preservation(staging_id=args.staging_id)
 
         elif args.destroy:
             if not args.staging_id:
@@ -697,17 +698,18 @@ def main():
                     status = env.get("status", "?")
                     comp = env.get("compliance_preserved")
                     comp_str = "yes" if comp == 1 else ("no" if comp == 0 else "N/A")
-                    print(f"  {env.get('id', '?'):16s}  "
-                          f"{status:10s}  "
-                          f"cap={env.get('capability_id', '?'):16s}  "
-                          f"compliance={comp_str}")
+                    print(
+                        f"  {env.get('id', '?'):16s}  "
+                        f"{status:10s}  "
+                        f"cap={env.get('capability_id', '?'):16s}  "
+                        f"compliance={comp_str}"
+                    )
             elif isinstance(result, dict):
                 if "error" in result:
                     print(f"ERROR: {result['error']}", file=sys.stderr)
                 elif "destroyed" in result:
                     ok = result.get("destroyed", False)
-                    print(f"{'Destroyed' if ok else 'Failed to destroy'}: "
-                          f"{result.get('staging_id')}")
+                    print(f"{'Destroyed' if ok else 'Failed to destroy'}: {result.get('staging_id')}")
                 elif "staging_id" in result and "status" in result:
                     print(f"Staging: {result.get('staging_id')}")
                     print(f"  Capability: {result.get('capability_id', 'N/A')}")

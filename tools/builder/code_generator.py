@@ -29,26 +29,28 @@ def _build_profile_context(project_id, task_type="code_generation"):
     """
     try:
         from tools.builder.dev_profile_manager import inject_for_task
+
         context = inject_for_task(project_id, task_type)
         return context or ""
     except (ImportError, Exception):
         return ""
 
-CUI_HEADER = '''\
+
+CUI_HEADER = """\
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
 # POC: ICDEV System Administrator
-'''
+"""
 
-CUI_HEADER_C_STYLE = '''\
+CUI_HEADER_C_STYLE = """\
 // CUI // SP-CTI
 // Controlled by: Department of Defense
 // CUI Category: CTI
 // Distribution: D
 // POC: ICDEV System Administrator
-'''
+"""
 
 CUI_HEADERS = {
     "python": CUI_HEADER,
@@ -83,8 +85,10 @@ def _detect_spec_type(spec: str) -> str:
     elif any(kw in spec_lower for kw in ["model config", "agent card", "agent config"]):
         return "model_config"
     # Phase 26: MOSA interface spec types
-    elif any(kw in spec_lower for kw in ["mosa interface", "interface contract", "icd interface",
-                                          "open interface", "modular interface"]):
+    elif any(
+        kw in spec_lower
+        for kw in ["mosa interface", "interface contract", "icd interface", "open interface", "modular interface"]
+    ):
         return "mosa_interface"
     # Original spec types
     elif any(kw in spec_lower for kw in ["api", "endpoint", "rest", "route", "http"]):
@@ -178,14 +182,14 @@ def _validate_fields(data, required=None):
     validate_create = ""
     validate_update = ""
     if secure:
-        validate_create = '''
+        validate_create = """
         err = _validate_fields(data)
         if err:
-            return jsonify({{"error": err}}), 400'''
-        validate_update = '''
+            return jsonify({{"error": err}}), 400"""
+        validate_update = """
         err = _validate_fields(data)
         if err:
-            return jsonify({{"error": err}}), 400'''
+            return jsonify({{"error": err}}), 400"""
 
     return f'''{CUI_HEADER}
 """API endpoints for {entity} resource.
@@ -720,6 +724,7 @@ class {class_name}:
 # Java code generators
 # ---------------------------------------------------------------------------
 
+
 def _generate_java_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate a Spring Boot REST controller (Java)."""
     class_name = entity.capitalize()
@@ -727,10 +732,12 @@ def _generate_java_api_code(entity: str, spec: str, secure: bool = True) -> str:
     auth_ann = ""
     valid_ann = ""
     if secure:
-        auth_import = "\nimport org.springframework.security.access.prepost.PreAuthorize;\nimport jakarta.validation.Valid;"
+        auth_import = (
+            "\nimport org.springframework.security.access.prepost.PreAuthorize;\nimport jakarta.validation.Valid;"
+        )
         auth_ann = '\n    @PreAuthorize("isAuthenticated()")'
         valid_ann = "@Valid "
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 package com.icdev.api;
 
 import org.springframework.http.HttpStatus;
@@ -777,7 +784,7 @@ public class {class_name}Controller {{
     }}
 
     @PutMapping("/{{id}}"){auth_ann}
-    public ResponseEntity<Map<String, Object>> update(@PathVariable String id, {valid_ann}@RequestBody Map<String, Object> data) {{
+    public ResponseEntity<Map<String, Object>> update(@PathVariable String id, {valid_ann}@RequestBody Map<String, Object> data) {{  # noqa: E501
         Map<String, Object> updated = service.update(id, data);
         if (updated == null) {{
             return ResponseEntity.notFound().build();
@@ -794,7 +801,7 @@ public class {class_name}Controller {{
         return ResponseEntity.noContent().build();
     }}
 }}
-'''
+"""
 
 
 def _generate_java_model_code(entity: str, spec: str) -> str:
@@ -939,6 +946,7 @@ public class {class_name}Service {{
 # Go code generators
 # ---------------------------------------------------------------------------
 
+
 def _generate_go_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate a net/http handler (Go)."""
     auth_check = ""
@@ -962,7 +970,7 @@ func authMiddleware(w http.ResponseWriter, r *http.Request) bool {{
     return true
 }}
 """
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 package api
 
 // API handlers for {entity}.
@@ -1069,13 +1077,13 @@ func (h *{entity.capitalize()}Handler) handleDelete(w http.ResponseWriter, r *ht
     delete(h.store, id)
     w.WriteHeader(http.StatusNoContent)
 }}
-'''
+"""
 
 
 def _generate_go_model_code(entity: str, spec: str) -> str:
     """Generate a Go struct model with JSON tags."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 package model
 
 // {class_name} represents the {entity} data model.
@@ -1134,7 +1142,7 @@ func (m *{class_name}) Validate() []string {{
     }}
     return errors
 }}
-'''
+"""
 
 
 def _generate_go_service_code(entity: str, spec: str) -> str:
@@ -1230,6 +1238,7 @@ func (s *{class_name}Service) validate(data map[string]interface{{}}) error {{
 # TypeScript code generators
 # ---------------------------------------------------------------------------
 
+
 def _generate_typescript_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate an Express router (TypeScript)."""
     class_name = entity.capitalize()
@@ -1257,7 +1266,7 @@ function validateBody(body: Record<string, unknown>, required: string[]): string
         validate_put = """
         const err = validateBody(req.body, []);
         if (err) return res.status(400).json({{ error: err }});"""
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 /**
  * API routes for {entity}.
  *
@@ -1342,13 +1351,13 @@ router.delete('/:id'{auth_mw}, async (req: Request, res: Response) => {{
 }});
 
 export default router;
-'''
+"""
 
 
 def _generate_typescript_model_code(entity: str, spec: str) -> str:
     """Generate a TypeScript interface and class model."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 /**
  * Data model for {entity}.
  *
@@ -1409,13 +1418,13 @@ export class {class_name} implements I{class_name} {{
         return errors;
     }}
 }}
-'''
+"""
 
 
 def _generate_typescript_service_code(entity: str, spec: str) -> str:
     """Generate a TypeScript service class."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 /**
  * Service layer for {entity} business logic.
  *
@@ -1494,12 +1503,13 @@ class InMemory{class_name}Repository implements I{class_name}Repository {{
         return this.store.delete(id);
     }}
 }}
-'''
+"""
 
 
 # ---------------------------------------------------------------------------
 # Rust code generators
 # ---------------------------------------------------------------------------
+
 
 def _generate_rust_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate Actix-web handlers (Rust)."""
@@ -1621,7 +1631,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {{
 def _generate_rust_model_code(entity: str, spec: str) -> str:
     """Generate a Rust struct with serde Serialize/Deserialize."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 //! Data model for {entity}.
 //!
 //! Spec: {spec}
@@ -1680,13 +1690,13 @@ impl Default for {class_name} {{
         Self::new("", "")
     }}
 }}
-'''
+"""
 
 
 def _generate_rust_service_code(entity: str, spec: str) -> str:
     """Generate a Rust service with trait."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 //! Service layer for {entity} business logic.
 //!
 //! Spec: {spec}
@@ -1740,12 +1750,13 @@ impl {class_name}Service {{
         Ok(())
     }}
 }}
-'''
+"""
 
 
 # ---------------------------------------------------------------------------
 # C# code generators
 # ---------------------------------------------------------------------------
+
 
 def _generate_csharp_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate an ASP.NET controller (C#)."""
@@ -1830,7 +1841,7 @@ namespace ICDev.Controllers
 def _generate_csharp_model_code(entity: str, spec: str) -> str:
     """Generate a C# record/class model with data annotations."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER_C_STYLE}
+    return f"""{CUI_HEADER_C_STYLE}
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -1872,7 +1883,7 @@ namespace ICDev.Models
         }}
     }}
 }}
-'''
+"""
 
 
 def _generate_csharp_service_code(entity: str, spec: str) -> str:
@@ -1958,6 +1969,7 @@ namespace ICDev.Services
 # ---------------------------------------------------------------------------
 # Phase 19: Agentic spec type generators (Python — GOTCHA child apps)
 # ---------------------------------------------------------------------------
+
 
 def _generate_agent_skill_code(entity: str, spec: str) -> str:
     """Generate A2A skill handler with register_skill().
@@ -3256,6 +3268,7 @@ if __name__ == "__main__":
 # Phase 19: generate_from_blueprint — batch generation for GOTCHA child apps
 # ---------------------------------------------------------------------------
 
+
 def generate_from_blueprint(
     project_path: str,
     blueprint: Dict[str, Any],
@@ -3282,9 +3295,7 @@ def generate_from_blueprint(
         List of paths to all generated files.
     """
     if language != "python":
-        raise ValueError(
-            f"Agentic blueprint generation currently supports Python only, got: {language}"
-        )
+        raise ValueError(f"Agentic blueprint generation currently supports Python only, got: {language}")
 
     project = Path(project_path)
     src_dir = project / "src"
@@ -3316,8 +3327,7 @@ def generate_from_blueprint(
 
     # 2. Generate LLM service wrapper
     llm_spec = (
-        f"Bedrock LLM service for {app_name}. "
-        f"Model: {blueprint.get('llm_config', {}).get('model_id', 'default')}."
+        f"Bedrock LLM service for {app_name}. Model: {blueprint.get('llm_config', {}).get('model_id', 'default')}."
     )
     code = _generate_llm_service_code(app_name, llm_spec)
     filename = f"llm_service_{_slugify(app_name)}.py"
@@ -3572,9 +3582,8 @@ def generate_from_spec(
         List of paths to generated files.
     """
     # Phase 34: Build profile context for LLM-aware generation
-    profile_context = ""
     if project_id:
-        profile_context = _build_profile_context(project_id, "code_generation")
+        _build_profile_context(project_id, "code_generation")
     project = Path(project_path)
     src_dir = Path(output_dir) if output_dir else project / "src"
     src_dir.mkdir(parents=True, exist_ok=True)
@@ -3592,10 +3601,7 @@ def generate_from_spec(
     # Get language-specific generators
     lang_generators = LANGUAGE_GENERATORS.get(language)
     if not lang_generators:
-        raise ValueError(
-            f"Unsupported language: {language}. "
-            f"Supported: {', '.join(LANGUAGE_GENERATORS.keys())}"
-        )
+        raise ValueError(f"Unsupported language: {language}. Supported: {', '.join(LANGUAGE_GENERATORS.keys())}")
 
     # Find the generator for this code type
     generator = lang_generators.get(code_type)
@@ -3605,12 +3611,12 @@ def generate_from_spec(
         if not generator:
             available = ", ".join(lang_generators.keys())
             raise ValueError(
-                f"No '{code_type}' generator for language '{language}'. "
-                f"Available types for {language}: {available}"
+                f"No '{code_type}' generator for language '{language}'. Available types for {language}: {available}"
             )
 
     # Pass secure flag to API generators (D-EPSEC-5)
     import inspect
+
     if "secure" in inspect.signature(generator).parameters:
         code = generator(entity, spec, secure=secure)
     else:
@@ -3663,24 +3669,38 @@ def main():
     parser.add_argument(
         "--type",
         choices=[
-            "api", "model", "service", "cli", "utility", "middleware", "config", "module",
-            "agent_skill", "llm_service", "prompt_template", "agent_collaboration", "model_config",
+            "api",
+            "model",
+            "service",
+            "cli",
+            "utility",
+            "middleware",
+            "config",
+            "module",
+            "agent_skill",
+            "llm_service",
+            "prompt_template",
+            "agent_collaboration",
+            "model_config",
         ],
         help="Force a specific code type",
     )
     parser.add_argument(
-        "--language", default="python",
+        "--language",
+        default="python",
         choices=["python", "java", "go", "typescript", "csharp", "rust"],
         help="Target language for code generation (default: python)",
     )
     parser.add_argument(
-        "--project-id", default=None,
+        "--project-id",
+        default=None,
         help="Project ID for dev profile injection (Phase 34, D187)",
     )
     parser.add_argument(
-        "--no-auth", action="store_true",
+        "--no-auth",
+        action="store_true",
         help="Disable auth decorators and validation in generated API code (D-EPSEC-5). "
-             "WARNING: Generated code will fail endpoint_security gate.",
+        "WARNING: Generated code will fail endpoint_security gate.",
     )
     args = parser.parse_args()
 

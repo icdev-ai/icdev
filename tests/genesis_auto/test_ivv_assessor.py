@@ -17,50 +17,61 @@ import pytest
 
 # --- Module Import ---
 
+
 def test_ivv_assessor_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.compliance.ivv_assessor
+        import tools.compliance.ivv_assessor  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 
 
 # --- Function Signature Tests ---
 
+
 def test_ivv_assessor_run_ivv_assessment_exists():
     """Verify run_ivv_assessment exists and is callable."""
     try:
         from tools.compliance.ivv_assessor import run_ivv_assessment
-        assert callable(run_ivv_assessment), 'run_ivv_assessment is not callable'
+
+        assert callable(run_ivv_assessment), "run_ivv_assessment is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_ivv_assessor_run_ivv_assessment_signature():
     """Verify run_ivv_assessment accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.ivv_assessor import run_ivv_assessment
+
         sig = inspect.signature(run_ivv_assessment)
         params = list(sig.parameters.keys())
-        assert "project_id" in params, f"Missing parameter \"project_id\" in {params}"
+        assert "project_id" in params, f'Missing parameter "project_id" in {params}'
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_ivv_assessor_assess_project_exists():
     """Verify assess_project exists and is callable."""
     try:
         from tools.compliance.ivv_assessor import assess_project
-        assert callable(assess_project), 'assess_project is not callable'
+
+        assert callable(assess_project), "assess_project is not callable"
     except ImportError:
         pytest.skip("Module not importable")
+
 
 def test_ivv_assessor_assess_project_signature():
     """Verify assess_project accepts expected parameters."""
     import inspect
+
     try:
         from tools.compliance.ivv_assessor import assess_project
+
         sig = inspect.signature(assess_project)
         params = list(sig.parameters.keys())
-        assert "project_id" in params, f"Missing parameter \"project_id\" in {params}"
+        assert "project_id" in params, f'Missing parameter "project_id" in {params}'
     except ImportError:
         pytest.skip("Module not importable")

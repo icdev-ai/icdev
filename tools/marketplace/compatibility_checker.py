@@ -72,7 +72,7 @@ def parse_semver(version_str):
     """Parse semantic version string into tuple (major, minor, patch)."""
     if not version_str:
         return (0, 0, 0)
-    match = re.match(r'^(\d+)\.(\d+)\.(\d+)', version_str)
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", version_str)
     if match:
         return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
     return (0, 0, 0)
@@ -98,15 +98,12 @@ def version_satisfies(version, constraint):
     # Handle ~X.Y.Z (approximately: same major.minor)
     if constraint.startswith("~"):
         target = parse_semver(constraint[1:])
-        return (version_tuple[0] == target[0] and
-                version_tuple[1] == target[1] and
-                version_tuple[2] >= target[2])
+        return version_tuple[0] == target[0] and version_tuple[1] == target[1] and version_tuple[2] >= target[2]
 
     # Handle ^X.Y.Z (compatible: same major)
     if constraint.startswith("^"):
         target = parse_semver(constraint[1:])
-        return (version_tuple[0] == target[0] and
-                version_tuple >= target)
+        return version_tuple[0] == target[0] and version_tuple >= target
 
     # Exact match
     return version_tuple == parse_semver(constraint)
@@ -115,6 +112,7 @@ def version_satisfies(version, constraint):
 # ---------------------------------------------------------------------------
 # Compatibility checks
 # ---------------------------------------------------------------------------
+
 
 def check_il_compatibility(asset_id, consumer_il, db_path=None):
     """Check if a tenant's IL can consume an asset.
@@ -144,11 +142,9 @@ def check_il_compatibility(asset_id, consumer_il, db_path=None):
             "asset_classification": row["classification"],
             "consumer_il": consumer_il,
             "reason": (
-                f"Consumer IL {consumer_il} (rank {consumer_rank}) can consume "
-                f"asset IL {asset_il} (rank {asset_rank})"
-                if compatible else
-                f"Consumer IL {consumer_il} cannot consume IL {asset_il} asset. "
-                f"Allowed: {sorted(allowed)}"
+                f"Consumer IL {consumer_il} (rank {consumer_rank}) can consume asset IL {asset_il} (rank {asset_rank})"
+                if compatible
+                else f"Consumer IL {consumer_il} cannot consume IL {asset_il} asset. Allowed: {sorted(allowed)}"
             ),
         }
     finally:
@@ -188,8 +184,8 @@ def check_version_compatibility(asset_id, platform_version=None, db_path=None):
             "platform_version": platform_version,
             "reason": (
                 f"Platform {platform_version} >= required {min_version}"
-                if compatible else
-                f"Platform {platform_version} < required {min_version}"
+                if compatible
+                else f"Platform {platform_version} < required {min_version}"
             ),
         }
     finally:
@@ -262,8 +258,8 @@ def check_dependency_compatibility(asset_id, tenant_id=None, db_path=None):
                     "compatible": ver_ok,
                     "reason": (
                         f"Version {dep_asset['current_version']} satisfies {constraint}"
-                        if ver_ok else
-                        f"Version {dep_asset['current_version']} does not satisfy {constraint}"
+                        if ver_ok
+                        else f"Version {dep_asset['current_version']} does not satisfy {constraint}"
                     ),
                 }
 
@@ -280,8 +276,7 @@ def check_dependency_compatibility(asset_id, tenant_id=None, db_path=None):
         conn.close()
 
 
-def full_compatibility_check(asset_id, consumer_il=None, tenant_id=None,
-                             platform_version=None, db_path=None):
+def full_compatibility_check(asset_id, consumer_il=None, tenant_id=None, platform_version=None, db_path=None):
     """Run all compatibility checks for an asset.
 
     Returns combined result with IL, version, and dependency checks.
@@ -322,8 +317,7 @@ def main():
 
     parser.add_argument("--asset-id", required=True, help="Asset ID to check")
     parser.add_argument("--tenant-id", help="Consumer tenant ID")
-    parser.add_argument("--consumer-il", choices=sorted(IL_HIERARCHY.keys()),
-                        help="Consumer impact level")
+    parser.add_argument("--consumer-il", choices=sorted(IL_HIERARCHY.keys()), help="Consumer impact level")
     parser.add_argument("--platform-version", help="ICDEV platform version")
     parser.add_argument("--check-deps", action="store_true", help="Check dependencies only")
     parser.add_argument("--check-il", action="store_true", help="Check IL only")

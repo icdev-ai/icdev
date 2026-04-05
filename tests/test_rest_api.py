@@ -105,20 +105,17 @@ SEED_USER_ID = "user-test-001"
 def _seed_platform(conn):
     """Insert seed data matching what rest_api.py expects."""
     conn.execute(
-        "INSERT OR IGNORE INTO tenants (id, name, slug, tier, impact_level, status) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO tenants (id, name, slug, tier, impact_level, status) VALUES (?, ?, ?, ?, ?, ?)",
         (SEED_TENANT_ID, "Test Org", "test-org", "professional", "IL4", "active"),
     )
     conn.execute(
-        "INSERT OR IGNORE INTO users (id, tenant_id, email, role, display_name) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO users (id, tenant_id, email, role, display_name) VALUES (?, ?, ?, ?, ?)",
         (SEED_USER_ID, SEED_TENANT_ID, "admin@test.gov", "admin", "Test Admin"),
     )
     conn.execute(
         "INSERT OR IGNORE INTO api_keys (id, tenant_id, user_id, name, key_hash, key_prefix, status) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("key-test-001", SEED_TENANT_ID, SEED_USER_ID, "test-key",
-         "abc123hash", "icdev_te", "active"),
+        ("key-test-001", SEED_TENANT_ID, SEED_USER_ID, "test-key", "abc123hash", "icdev_te", "active"),
     )
     conn.execute(
         "INSERT OR IGNORE INTO usage_records (tenant_id, endpoint, method, status_code, duration_ms, tokens_used) "
@@ -131,6 +128,7 @@ def _seed_platform(conn):
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def platform_db_path(tmp_path):
@@ -186,6 +184,7 @@ def client(rest_app):
 # HEALTH endpoint
 # ============================================================================
 
+
 class TestHealthEndpoint:
     """Tests for GET /api/v1/health."""
 
@@ -209,6 +208,7 @@ class TestHealthEndpoint:
 # ============================================================================
 # TENANT endpoints
 # ============================================================================
+
 
 class TestTenantEndpoints:
     """Tests for /api/v1/tenants/me."""
@@ -259,15 +259,18 @@ class TestTenantEndpoints:
 # USER endpoints
 # ============================================================================
 
+
 class TestUserEndpoints:
     """Tests for /api/v1/users."""
 
     def test_get_users_returns_list(self, client):
         """GET /api/v1/users must return a list of users."""
         with patch("icdev.tools.saas.rest_api._import_tenant_manager") as mock_import:
-            mock_list = MagicMock(return_value=[
-                {"id": SEED_USER_ID, "email": "admin@test.gov", "role": "admin"},
-            ])
+            mock_list = MagicMock(
+                return_value=[
+                    {"id": SEED_USER_ID, "email": "admin@test.gov", "role": "admin"},
+                ]
+            )
             mock_import.return_value = (None, None, mock_list, None, None)
             resp = client.get("/api/v1/users")
             assert resp.status_code == 200
@@ -307,6 +310,7 @@ class TestUserEndpoints:
 # API KEY endpoints
 # ============================================================================
 
+
 class TestAPIKeyEndpoints:
     """Tests for /api/v1/keys."""
 
@@ -340,6 +344,7 @@ class TestAPIKeyEndpoints:
 # ============================================================================
 # PROJECT endpoints
 # ============================================================================
+
 
 class TestProjectEndpoints:
     """Tests for /api/v1/projects."""
@@ -389,6 +394,7 @@ class TestProjectEndpoints:
 # USAGE endpoint
 # ============================================================================
 
+
 class TestUsageEndpoint:
     """Tests for GET /api/v1/usage."""
 
@@ -403,6 +409,7 @@ class TestUsageEndpoint:
 # ============================================================================
 # Response format tests
 # ============================================================================
+
 
 class TestResponseFormats:
     """Cross-cutting tests for response formatting."""

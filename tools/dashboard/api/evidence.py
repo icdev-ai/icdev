@@ -41,12 +41,14 @@ def evidence_stats():
             if _table_exists(conn, table_name):
                 row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
                 total += row[0]
-        stats["frameworks"].append({
-            "id": fw_id,
-            "description": fw_config["description"],
-            "required": fw_config["required"],
-            "total_records": total,
-        })
+        stats["frameworks"].append(
+            {
+                "id": fw_id,
+                "description": fw_config["description"],
+                "required": fw_config["required"],
+                "total_records": total,
+            }
+        )
 
     conn.close()
     return jsonify(stats)

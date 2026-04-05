@@ -9,7 +9,6 @@ Adds: child_capabilities, child_telemetry, child_learned_behaviors,
 """
 
 
-
 def _table_exists(conn, table):
     """Check if a table exists."""
     cursor = conn.execute(

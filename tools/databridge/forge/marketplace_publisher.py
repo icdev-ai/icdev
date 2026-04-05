@@ -4,6 +4,7 @@
 Packages connector code as ZIP, uploads via marketplace API, updates
 db_forge_connectors with marketplace_artifact_id and published_slug.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -35,9 +36,7 @@ def publish_connector(
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute(
-            "SELECT * FROM db_forge_connectors WHERE id = ?", (connector_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM db_forge_connectors WHERE id = ?", (connector_id,)).fetchone()
 
         if not row:
             conn.close()
@@ -60,9 +59,7 @@ def publish_connector(
         # Upload to marketplace (if URL provided)
         artifact_id = None
         if marketplace_url:
-            artifact_id = _upload_to_marketplace(
-                marketplace_url, slug, zip_bytes, zip_hash, connector_name
-            )
+            artifact_id = _upload_to_marketplace(marketplace_url, slug, zip_bytes, zip_hash, connector_name)
 
         # Update status
         now = datetime.now(timezone.utc).isoformat()
@@ -84,9 +81,11 @@ def publish_connector(
         conn.execute(
             """INSERT INTO audit_trail (id, event_type, actor, action, details, created_at)
                VALUES (?, 'connector_forge_published', 'marketplace_publisher', 'publish', ?, ?)""",
-            (f"audit-{uuid.uuid4().hex[:12]}",
-             json.dumps({"connector_id": connector_id, "slug": slug, "artifact_id": artifact_id}),
-             now),
+            (
+                f"audit-{uuid.uuid4().hex[:12]}",
+                json.dumps({"connector_id": connector_id, "slug": slug, "artifact_id": artifact_id}),
+                now,
+            ),
         )
 
         conn.commit()
@@ -115,12 +114,15 @@ def _package_connector_zip(code: str, connector_name: str) -> tuple:
         zf.writestr(f"{connector_name}_connector.py", code)
         zf.writestr(
             "manifest.json",
-            json.dumps({
-                "connector_name": connector_name,
-                "asset_type": "databridge_connector",
-                "generated_by": "connector_forge",
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-            }, indent=2),
+            json.dumps(
+                {
+                    "connector_name": connector_name,
+                    "asset_type": "databridge_connector",
+                    "generated_by": "connector_forge",
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                indent=2,
+            ),
         )
     zip_bytes = buf.getvalue()
     zip_hash = hashlib.sha256(zip_bytes).hexdigest()

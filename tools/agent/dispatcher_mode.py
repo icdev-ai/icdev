@@ -87,12 +87,13 @@ def _ensure_table(db_path: Path = None):
         conn.close()
 
 
-def _audit(event_type: str, actor: str, action: str,
-           project_id: str = None, details: dict = None,
-           db_path: Path = None):
+def _audit(
+    event_type: str, actor: str, action: str, project_id: str = None, details: dict = None, db_path: Path = None
+):
     """Best-effort audit trail logging."""
     try:
         from tools.audit.audit_logger import log_event
+
         log_event(
             event_type=event_type,
             actor=actor,
@@ -126,10 +127,20 @@ def _load_dispatcher_config() -> dict:
             "prompt_chain_execute",
         ],
         "blocked_when_dispatching": [
-            "scaffold", "generate_code", "write_tests", "run_tests",
-            "lint", "format", "ssp_generate", "poam_generate",
-            "stig_check", "sbom_generate", "terraform_plan",
-            "terraform_apply", "ansible_run", "k8s_deploy",
+            "scaffold",
+            "generate_code",
+            "write_tests",
+            "run_tests",
+            "lint",
+            "format",
+            "ssp_generate",
+            "poam_generate",
+            "stig_check",
+            "sbom_generate",
+            "terraform_plan",
+            "terraform_apply",
+            "ansible_run",
+            "k8s_deploy",
         ],
     }
 
@@ -139,6 +150,7 @@ def _load_dispatcher_config() -> dict:
 
     try:
         import yaml
+
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
 
@@ -277,8 +289,7 @@ def get_blocked_tools(project_id: str = None, db_path: Path = None) -> List[str]
     return blocked_tools
 
 
-def is_tool_allowed(tool_name: str, project_id: str = None,
-                    db_path: Path = None) -> bool:
+def is_tool_allowed(tool_name: str, project_id: str = None, db_path: Path = None) -> bool:
     """Check if a specific tool is allowed for the orchestrator.
 
     When dispatcher mode is disabled, all tools are allowed.
@@ -311,9 +322,7 @@ def is_tool_allowed(tool_name: str, project_id: str = None,
     return False
 
 
-def filter_tools_for_dispatcher(tool_list: List[str],
-                                project_id: str = None,
-                                db_path: Path = None) -> List[str]:
+def filter_tools_for_dispatcher(tool_list: List[str], project_id: str = None, db_path: Path = None) -> List[str]:
     """Filter a tool list to only include tools allowed in dispatcher mode.
 
     When dispatcher mode is disabled, returns the full list unchanged.
@@ -329,10 +338,7 @@ def filter_tools_for_dispatcher(tool_list: List[str],
     if not is_dispatcher_mode(project_id=project_id, db_path=db_path):
         return list(tool_list)
 
-    return [
-        tool for tool in tool_list
-        if is_tool_allowed(tool, project_id=project_id, db_path=db_path)
-    ]
+    return [tool for tool in tool_list if is_tool_allowed(tool, project_id=project_id, db_path=db_path)]
 
 
 def get_redirect_agent(tool_name: str) -> Optional[str]:
@@ -371,10 +377,13 @@ def get_redirect_agent(tool_name: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # DB operations (enable/disable per-project)
 # ---------------------------------------------------------------------------
-def enable_for_project(project_id: str, created_by: str = "system",
-                       custom_dispatch_tools: List[str] = None,
-                       custom_blocked_tools: List[str] = None,
-                       db_path: Path = None) -> dict:
+def enable_for_project(
+    project_id: str,
+    created_by: str = "system",
+    custom_dispatch_tools: List[str] = None,
+    custom_blocked_tools: List[str] = None,
+    db_path: Path = None,
+) -> dict:
     """Enable dispatcher mode for a specific project.
 
     Args:
@@ -439,8 +448,7 @@ def enable_for_project(project_id: str, created_by: str = "system",
         conn.close()
 
 
-def disable_for_project(project_id: str, disabled_by: str = "system",
-                        db_path: Path = None) -> dict:
+def disable_for_project(project_id: str, disabled_by: str = "system", db_path: Path = None) -> dict:
     """Disable dispatcher mode for a specific project.
 
     Args:
@@ -519,15 +527,18 @@ def main():
         description="ICDEV Dispatcher Mode — restrict orchestrator to delegation-only (Phase 61)"
     )
     parser.add_argument(
-        "--status", action="store_true",
+        "--status",
+        action="store_true",
         help="Show current dispatcher mode status",
     )
     parser.add_argument(
-        "--enable", action="store_true",
+        "--enable",
+        action="store_true",
         help="Enable dispatcher mode for a project",
     )
     parser.add_argument(
-        "--disable", action="store_true",
+        "--disable",
+        action="store_true",
         help="Disable dispatcher mode for a project",
     )
     parser.add_argument(
@@ -640,9 +651,7 @@ def main():
         result = {
             "tool_name": args.check_tool,
             "allowed": allowed,
-            "dispatcher_mode_active": is_dispatcher_mode(
-                project_id=args.project_id, db_path=db_path
-            ),
+            "dispatcher_mode_active": is_dispatcher_mode(project_id=args.project_id, db_path=db_path),
             "redirect_agent": redirect,
             "classification": "CUI",
         }

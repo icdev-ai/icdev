@@ -102,9 +102,9 @@ def check_readability(text: str) -> dict:
             if flesch >= 60:
                 score = min(100, 95 + (flesch - 60) * 0.125)
             elif flesch >= 40:
-                score = 85 + (flesch - 40) * 0.5   # 40→85, 60→95
+                score = 85 + (flesch - 40) * 0.5  # 40→85, 60→95
             elif flesch >= 20:
-                score = 75 + (flesch - 20) * 0.5   # 20→75, 40→85
+                score = 75 + (flesch - 20) * 0.5  # 20→75, 40→85
             else:
                 score = max(60, 65 + flesch * 0.5)  # 0→65, 20→75
         else:
@@ -141,8 +141,13 @@ def check_tone(text: str, target_tone: str = "thought-leadership-educational") -
         profile = result.get("profile", {})
         if (not isinstance(score, (int, float)) or score == 70) and profile:
             # Desired tone weights for Pulse articles
-            desired = {"authoritative": 0.30, "technical": 0.30,
-                       "plain_language": 0.20, "formal": 0.10, "academic": 0.10}
+            desired = {
+                "authoritative": 0.30,
+                "technical": 0.30,
+                "plain_language": 0.20,
+                "formal": 0.10,
+                "academic": 0.10,
+            }
             alignment = 0.0
             for dim, weight in desired.items():
                 val = profile.get(dim, 0.0)
@@ -152,9 +157,12 @@ def check_tone(text: str, target_tone: str = "thought-leadership-educational") -
 
         if not isinstance(score, (int, float)):
             score = 70
-        return {"status": "ok", "score": score, "findings": findings, **{
-            k: v for k, v in result.items() if k not in ("findings", "issues", "score", "overall_score")
-        }}
+        return {
+            "status": "ok",
+            "score": score,
+            "findings": findings,
+            **{k: v for k, v in result.items() if k not in ("findings", "issues", "score", "overall_score")},
+        }
     except Exception as e:
         logger.error("Tone check error: %s", e)
         return {"status": "error", "score": 70, "findings": [], "error": str(e)}
@@ -173,9 +181,12 @@ def check_plagiarism(text: str) -> dict:
             raw_score = 0
         # Invert: raw 0 (no plagiarism) = quality 100, raw 100 (full copy) = quality 0
         quality_score = round(100 - raw_score, 1)
-        return {"status": "ok", "score": quality_score, "raw_similarity": raw_score, **{
-            k: v for k, v in result.items() if k not in ("score", "similarity_score")
-        }}
+        return {
+            "status": "ok",
+            "score": quality_score,
+            "raw_similarity": raw_score,
+            **{k: v for k, v in result.items() if k not in ("score", "similarity_score")},
+        }
     except Exception as e:
         logger.error("Plagiarism check error: %s", e)
         return {"status": "error", "score": 100, "error": str(e)}
@@ -200,9 +211,12 @@ def check_ai_detection(text: str) -> dict:
             raw_pct = raw_score
         # Invert: low AI probability = high quality score
         quality_score = round(100 - raw_pct, 1)
-        return {"status": "ok", "score": quality_score, "ai_score": raw_score, **{
-            k: v for k, v in result.items() if k not in ("score", "ai_probability", "ai_score")
-        }}
+        return {
+            "status": "ok",
+            "score": quality_score,
+            "ai_score": raw_score,
+            **{k: v for k, v in result.items() if k not in ("score", "ai_probability", "ai_score")},
+        }
     except Exception as e:
         logger.error("AI detection error: %s", e)
         return {"status": "error", "score": 50, "error": str(e)}
@@ -240,9 +254,7 @@ def run_full_quality_check(text: str) -> dict:
     # Pass threshold: overall >= 60 and no critical failures
     # plagiarism score is now inverted (100=clean, 0=full copy), so check > 15 (=clean)
     plagiarism_quality = results["plagiarism"].get("score", 100)
-    passed = overall_score >= 60 and (
-        plagiarism_quality > 15 if isinstance(plagiarism_quality, (int, float)) else True
-    )
+    passed = overall_score >= 60 and (plagiarism_quality > 15 if isinstance(plagiarism_quality, (int, float)) else True)
 
     return {
         "passed": passed,
@@ -286,6 +298,7 @@ def rewrite_content(text: str, quality_results: dict) -> dict:
     # Apply deterministic fixes (regex-based, always runs)
     try:
         from tools.writing.rewriter import _apply_deterministic_fixes
+
         text, det_changes = _apply_deterministic_fixes(text)
     except ImportError:
         det_changes = []
@@ -293,7 +306,8 @@ def rewrite_content(text: str, quality_results: dict) -> dict:
     # Build instruction list for Claude Code to use
     instructions = "\n".join(
         f"- {f.get('category', 'general')}: {f.get('message', '')} → {f.get('suggestion', '')}"
-        for f in findings if f.get("message")
+        for f in findings
+        if f.get("message")
     )
 
     changes = det_changes + [f.get("message", "") for f in findings if f.get("message")]
@@ -320,55 +334,67 @@ def _extract_findings(quality_results: dict) -> list[dict]:
     # Grammar findings
     grammar = details.get("grammar", {})
     for issue in grammar.get("issues", grammar.get("findings", [])):
-        findings.append({
-            "category": "grammar",
-            "message": issue.get("message", issue.get("description", "")),
-            "suggestion": issue.get("suggestion", issue.get("replacement", "")),
-        })
+        findings.append(
+            {
+                "category": "grammar",
+                "message": issue.get("message", issue.get("description", "")),
+                "suggestion": issue.get("suggestion", issue.get("replacement", "")),
+            }
+        )
 
     # Readability findings
     readability = details.get("readability", {})
     grade = readability.get("grade_level", 12)
     if isinstance(grade, (int, float)) and grade > 14:
-        findings.append({
-            "category": "readability",
-            "message": f"Reading grade level {grade:.0f} is too high for broad audience",
-            "suggestion": "Simplify complex sentences, use shorter words, break up long paragraphs",
-        })
+        findings.append(
+            {
+                "category": "readability",
+                "message": f"Reading grade level {grade:.0f} is too high for broad audience",
+                "suggestion": "Simplify complex sentences, use shorter words, break up long paragraphs",
+            }
+        )
     avg_sentence = readability.get("avg_sentence_length", 0)
     if isinstance(avg_sentence, (int, float)) and avg_sentence > 25:
-        findings.append({
-            "category": "readability",
-            "message": f"Average sentence length ({avg_sentence:.0f} words) is too long",
-            "suggestion": "Break long sentences into shorter ones (target 15-20 words)",
-        })
+        findings.append(
+            {
+                "category": "readability",
+                "message": f"Average sentence length ({avg_sentence:.0f} words) is too long",
+                "suggestion": "Break long sentences into shorter ones (target 15-20 words)",
+            }
+        )
 
     # Tone findings
     tone = details.get("tone", {})
     for issue in tone.get("issues", tone.get("findings", [])):
-        findings.append({
-            "category": "tone",
-            "message": issue.get("message", issue.get("description", "")),
-            "suggestion": issue.get("suggestion", ""),
-        })
+        findings.append(
+            {
+                "category": "tone",
+                "message": issue.get("message", issue.get("description", "")),
+                "suggestion": issue.get("suggestion", ""),
+            }
+        )
 
     # AI detection — high raw ai_score (0-1) means text sounds robotic
     ai_det = details.get("ai_detection", {})
     ai_score = ai_det.get("ai_score", 0)  # raw 0-1 scale
     if isinstance(ai_score, (int, float)) and ai_score > 0.7:
-        findings.append({
-            "category": "ai_detection",
-            "message": "Content reads as AI-generated (high predictability score)",
-            "suggestion": "Vary sentence structure, add concrete examples, use specific details instead of generalities",
-        })
+        findings.append(
+            {
+                "category": "ai_detection",
+                "message": "Content reads as AI-generated (high predictability score)",
+                "suggestion": "Vary sentence structure, add concrete examples, use specific details instead of generalities",  # noqa: E501
+            }
+        )
 
     # Recommendations as fallback findings
     for rec in quality_results.get("recommendations", []):
-        findings.append({
-            "category": "recommendation",
-            "message": rec,
-            "suggestion": "",
-        })
+        findings.append(
+            {
+                "category": "recommendation",
+                "message": rec,
+                "suggestion": "",
+            }
+        )
 
     return findings
 
@@ -390,9 +416,7 @@ def _generate_recommendations(results: dict) -> list[str]:
     # Use raw ai_score (0-1, where >0.7 = likely AI)
     raw_ai = ai_detection.get("ai_score", 0)
     if isinstance(raw_ai, (int, float)) and raw_ai > 0.7:
-        recs.append(
-            "Content reads as AI-generated — add more personal anecdotes and varied sentence structure"
-        )
+        recs.append("Content reads as AI-generated — add more personal anecdotes and varied sentence structure")
 
     plagiarism = results.get("plagiarism", {})
     # Use raw_similarity (0-100, where >60 = high plagiarism)

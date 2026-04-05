@@ -65,6 +65,7 @@ class BedrockMode(str, Enum):
 
 class LLMProvider(str, Enum):
     """Supported LLM providers for tenant BYOK keys (Phase 32 — D141)."""
+
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     BEDROCK = "bedrock"
@@ -73,6 +74,7 @@ class LLMProvider(str, Enum):
 
 
 # ---- Request/Response Models ----
+
 
 class ArtifactConfig(BaseModel):
     type: ArtifactDestType
@@ -224,9 +226,18 @@ TIER_LIMITS = {
         "max_users": 15,
         "allowed_il_levels": ["IL2", "IL4", "IL5"],
         "allowed_frameworks": [
-            "nist_800_53", "fedramp_moderate", "fedramp_high",
-            "nist_800_171", "cmmc_l2", "cmmc_l3", "dod_cssp",
-            "cisa_sbd", "ieee_ivv", "dodi_des", "oscal", "emass",
+            "nist_800_53",
+            "fedramp_moderate",
+            "fedramp_high",
+            "nist_800_171",
+            "cmmc_l2",
+            "cmmc_l3",
+            "dod_cssp",
+            "cisa_sbd",
+            "ieee_ivv",
+            "dodi_des",
+            "oscal",
+            "emass",
         ],
         "bedrock_pool_enabled": True,
         "byok_llm_enabled": True,
@@ -245,10 +256,22 @@ TIER_LIMITS = {
         "max_users": -1,
         "allowed_il_levels": ["IL2", "IL4", "IL5", "IL6"],
         "allowed_frameworks": [
-            "nist_800_53", "fedramp_moderate", "fedramp_high",
-            "nist_800_171", "cmmc_l2", "cmmc_l3", "dod_cssp",
-            "cisa_sbd", "ieee_ivv", "dodi_des", "oscal", "emass",
-            "cnssi_1253", "cato", "fips_199", "fips_200",
+            "nist_800_53",
+            "fedramp_moderate",
+            "fedramp_high",
+            "nist_800_171",
+            "cmmc_l2",
+            "cmmc_l3",
+            "dod_cssp",
+            "cisa_sbd",
+            "ieee_ivv",
+            "dodi_des",
+            "oscal",
+            "emass",
+            "cnssi_1253",
+            "cato",
+            "fips_199",
+            "fips_200",
         ],
         "bedrock_pool_enabled": True,
         "byok_llm_enabled": True,

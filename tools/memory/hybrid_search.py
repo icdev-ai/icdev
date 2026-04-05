@@ -41,6 +41,7 @@ def bm25_search(query, entries):
 
     try:
         from rank_bm25 import BM25Okapi
+
         tokenized = [doc.lower().split() for doc in documents]
         bm25 = BM25Okapi(tokenized)
         scores = bm25.get_scores(query.lower().split())
@@ -64,6 +65,7 @@ def semantic_search(query, entries):
     query_emb = None
     try:
         from tools.llm import get_embedding_provider
+
         provider = get_embedding_provider()
         query_emb = provider.embed(query)
     except Exception:
@@ -73,17 +75,20 @@ def semantic_search(query, entries):
     if query_emb is None:
         try:
             from dotenv import load_dotenv
+
             load_dotenv(BASE_DIR / ".env")
         except ImportError:
             pass
 
         import os
+
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             return None
 
         try:
             import openai
+
             client = openai.OpenAI(api_key=api_key)
             response = client.embeddings.create(input=query, model="text-embedding-3-small")
             query_emb = response.data[0].embedding
@@ -105,6 +110,7 @@ def semantic_search(query, entries):
         # Cosine similarity
         try:
             import numpy as np
+
             a, b = np.array(query_emb), np.array(stored_emb)
             score = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
         except ImportError:
@@ -120,8 +126,9 @@ def semantic_search(query, entries):
     return [s / max_score for s in scores]
 
 
-def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight,
-                time_decay_enabled=False, decay_config=None):
+def hybrid_rank(
+    entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight, time_decay_enabled=False, decay_config=None
+):
     """Combine BM25 and semantic scores, with optional time-decay (D147)."""
     results = []
     for i, entry in enumerate(entries):
@@ -140,6 +147,7 @@ def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_wei
         if time_decay_enabled:
             try:
                 from tools.memory.time_decay import compute_time_aware_score
+
                 combined = compute_time_aware_score(
                     base_score=combined,
                     created_at=created_at or "",
@@ -187,13 +195,21 @@ def main():
     if args.time_decay:
         try:
             from tools.memory.time_decay import load_decay_config
+
             decay_config = load_decay_config()
         except (ImportError, Exception):
             if not args.json:
                 print("(Time-decay module unavailable — using standard ranking)")
 
-    results = hybrid_rank(entries, bm25_scores, semantic_scores, args.bm25_weight, args.semantic_weight,
-                          time_decay_enabled=args.time_decay, decay_config=decay_config)
+    results = hybrid_rank(
+        entries,
+        bm25_scores,
+        semantic_scores,
+        args.bm25_weight,
+        args.semantic_weight,
+        time_decay_enabled=args.time_decay,
+        decay_config=decay_config,
+    )
 
     # Log access
     search_type = "hybrid_time_decay" if args.time_decay else "hybrid"
@@ -210,21 +226,28 @@ def main():
         output_entries = []
         for score, id_, content, type_, importance, created_at in results[: args.limit]:
             if score > 0:
-                output_entries.append({
-                    "id": id_,
-                    "score": round(score, 4),
-                    "content": content,
-                    "type": type_,
-                    "importance": importance,
-                    "created_at": created_at,
-                })
-        print(json.dumps({
-            "classification": "CUI // SP-CTI",
-            "count": len(output_entries),
-            "search_type": search_type,
-            "semantic_available": semantic_scores is not None,
-            "entries": output_entries,
-        }, indent=2))
+                output_entries.append(
+                    {
+                        "id": id_,
+                        "score": round(score, 4),
+                        "content": content,
+                        "type": type_,
+                        "importance": importance,
+                        "created_at": created_at,
+                    }
+                )
+        print(
+            json.dumps(
+                {
+                    "classification": "CUI // SP-CTI",
+                    "count": len(output_entries),
+                    "search_type": search_type,
+                    "semantic_available": semantic_scores is not None,
+                    "entries": output_entries,
+                },
+                indent=2,
+            )
+        )
     else:
         for score, id_, content, type_, importance, created_at in results[: args.limit]:
             if score > 0:

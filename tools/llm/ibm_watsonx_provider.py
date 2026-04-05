@@ -27,6 +27,7 @@ try:
     from ibm_watsonx_ai import Credentials as WatsonxCredentials
     from ibm_watsonx_ai.foundation_models import ModelInference
     from ibm_watsonx_ai.metanames import GenTextParamsMetaNames
+
     HAS_WATSONX = True
 except ImportError:
     HAS_WATSONX = False
@@ -47,13 +48,10 @@ class IBMWatsonxProvider(LLMProvider):
         IBM_WATSONX_URL: watsonx.ai endpoint URL
     """
 
-    def __init__(self, api_key: str = "", project_id: str = "",
-                 url: str = "", model_id: str = ""):
+    def __init__(self, api_key: str = "", project_id: str = "", url: str = "", model_id: str = ""):
         self._api_key = api_key or os.environ.get("IBM_CLOUD_API_KEY", "")
         self._project_id = project_id or os.environ.get("IBM_WATSONX_PROJECT_ID", "")
-        self._url = url or os.environ.get(
-            "IBM_WATSONX_URL", "https://us-south.ml.cloud.ibm.com"
-        )
+        self._url = url or os.environ.get("IBM_WATSONX_URL", "https://us-south.ml.cloud.ibm.com")
         self._default_model_id = model_id or "ibm/granite-3.1-8b-instruct"
         self._credentials = None
         self._models: Dict[str, Any] = {}
@@ -92,8 +90,7 @@ class IBMWatsonxProvider(LLMProvider):
             logger.error("Failed to create watsonx model %s: %s", model_id, exc)
             return None
 
-    def invoke(self, request: LLMRequest, model_id: str = "",
-               model_config: dict = None) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str = "", model_config: dict = None) -> LLMResponse:
         """Invoke watsonx.ai model with the given request."""
         if model_config is None:
             model_config = {}
@@ -151,8 +148,9 @@ class IBMWatsonxProvider(LLMProvider):
             logger.error("watsonx invoke error: %s", exc)
             raise
 
-    def invoke_streaming(self, request: LLMRequest, model_id: str = "",
-                         model_config: dict = None) -> Generator[dict, None, None]:
+    def invoke_streaming(
+        self, request: LLMRequest, model_id: str = "", model_config: dict = None
+    ) -> Generator[dict, None, None]:
         """Invoke watsonx.ai model with streaming response."""
         if model_config is None:
             model_config = {}

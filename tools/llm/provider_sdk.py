@@ -170,6 +170,8 @@ class ProviderTestHarness:
         total = len(results)
         logger.info(
             "ProviderTestHarness: %d/%d tests passed for %s",
-            passed, total, self.provider.provider_name,
+            passed,
+            total,
+            self.provider.provider_name,
         )
         return results

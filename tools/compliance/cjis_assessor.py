@@ -31,7 +31,9 @@ class CJISAssessor(BaseAssessor):
     CATALOG_FILENAME = "cjis_security_policy.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """CJIS-specific automated checks.
 

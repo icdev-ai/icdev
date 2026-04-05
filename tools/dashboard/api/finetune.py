@@ -51,26 +51,26 @@ def stats():
         datasets = conn.execute("SELECT COUNT(*) as cnt FROM ft_datasets").fetchone()
         jobs = conn.execute("SELECT COUNT(*) as cnt FROM ft_training_jobs").fetchone()
         active_jobs = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ft_training_jobs WHERE status IN ('pending','preparing','training','exporting','evaluating')"
+            "SELECT COUNT(*) as cnt FROM ft_training_jobs WHERE status IN ('pending','preparing','training','exporting','evaluating')"  # noqa: E501
         ).fetchone()
         models = conn.execute("SELECT COUNT(*) as cnt FROM ft_model_versions").fetchone()
-        promoted = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ft_model_versions WHERE status = 'promoted'"
-        ).fetchone()
+        promoted = conn.execute("SELECT COUNT(*) as cnt FROM ft_model_versions WHERE status = 'promoted'").fetchone()
         active_overrides = conn.execute(
             "SELECT COUNT(*) as cnt FROM ft_active_models WHERE deactivated_at IS NULL"
         ).fetchone()
         evaluations = conn.execute("SELECT COUNT(*) as cnt FROM ft_evaluations").fetchone()
         conn.close()
-        return jsonify({
-            "datasets": datasets["cnt"] if datasets else 0,
-            "total_jobs": jobs["cnt"] if jobs else 0,
-            "active_jobs": active_jobs["cnt"] if active_jobs else 0,
-            "model_versions": models["cnt"] if models else 0,
-            "promoted_models": promoted["cnt"] if promoted else 0,
-            "active_overrides": active_overrides["cnt"] if active_overrides else 0,
-            "evaluations": evaluations["cnt"] if evaluations else 0,
-        })
+        return jsonify(
+            {
+                "datasets": datasets["cnt"] if datasets else 0,
+                "total_jobs": jobs["cnt"] if jobs else 0,
+                "active_jobs": active_jobs["cnt"] if active_jobs else 0,
+                "model_versions": models["cnt"] if models else 0,
+                "promoted_models": promoted["cnt"] if promoted else 0,
+                "active_overrides": active_overrides["cnt"] if active_overrides else 0,
+                "evaluations": evaluations["cnt"] if evaluations else 0,
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -83,9 +83,7 @@ def list_datasets():
     """List all fine-tuning datasets."""
     try:
         conn = _get_db()
-        rows = conn.execute(
-            "SELECT * FROM ft_datasets ORDER BY updated_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM ft_datasets ORDER BY updated_at DESC").fetchall()
         conn.close()
         return jsonify({"datasets": [dict(r) for r in rows], "total": len(rows)})
     except Exception as e:
@@ -97,9 +95,7 @@ def get_dataset(dataset_id):
     """Get dataset details with example count."""
     try:
         conn = _get_db()
-        ds = conn.execute(
-            "SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)
-        ).fetchone()
+        ds = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
         if not ds:
             conn.close()
             return jsonify({"error": "Dataset not found"}), 404
@@ -108,11 +104,13 @@ def get_dataset(dataset_id):
             (dataset_id,),
         ).fetchall()
         conn.close()
-        return jsonify({
-            "dataset": dict(ds),
-            "examples": [dict(e) for e in examples],
-            "example_count": len(examples),
-        })
+        return jsonify(
+            {
+                "dataset": dict(ds),
+                "examples": [dict(e) for e in examples],
+                "example_count": len(examples),
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -125,9 +123,7 @@ def list_jobs():
     """List all training jobs."""
     try:
         conn = _get_db()
-        rows = conn.execute(
-            "SELECT * FROM ft_training_jobs ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM ft_training_jobs ORDER BY created_at DESC").fetchall()
         conn.close()
         jobs = []
         for r in rows:
@@ -145,9 +141,7 @@ def get_job(job_id):
     """Get training job details with events."""
     try:
         conn = _get_db()
-        job = conn.execute(
-            "SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)
-        ).fetchone()
+        job = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
         if not job:
             conn.close()
             return jsonify({"error": "Job not found"}), 404
@@ -159,10 +153,12 @@ def get_job(job_id):
         j = dict(job)
         j["loss_history"] = _safe_json(j.get("loss_history", "[]"), [])
         j["hyperparams"] = _safe_json(j.get("hyperparams", "{}"), {})
-        return jsonify({
-            "job": j,
-            "events": [dict(e) for e in events],
-        })
+        return jsonify(
+            {
+                "job": j,
+                "events": [dict(e) for e in events],
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -175,9 +171,7 @@ def list_models():
     """List all model versions."""
     try:
         conn = _get_db()
-        rows = conn.execute(
-            "SELECT * FROM ft_model_versions ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM ft_model_versions ORDER BY created_at DESC").fetchall()
         conn.close()
         return jsonify({"models": [dict(r) for r in rows], "total": len(rows)})
     except Exception as e:
@@ -189,9 +183,7 @@ def get_model(model_id):
     """Get model version details with evaluations and promotion history."""
     try:
         conn = _get_db()
-        model = conn.execute(
-            "SELECT * FROM ft_model_versions WHERE id = ?", (model_id,)
-        ).fetchone()
+        model = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_id,)).fetchone()
         if not model:
             conn.close()
             return jsonify({"error": "Model not found"}), 404
@@ -204,11 +196,13 @@ def get_model(model_id):
             (model_id,),
         ).fetchall()
         conn.close()
-        return jsonify({
-            "model": dict(model),
-            "evaluations": [dict(e) for e in evals],
-            "promotions": [dict(p) for p in promotions],
-        })
+        return jsonify(
+            {
+                "model": dict(model),
+                "evaluations": [dict(e) for e in evals],
+                "promotions": [dict(p) for p in promotions],
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -238,9 +232,7 @@ def list_evaluations():
     """List all evaluations."""
     try:
         conn = _get_db()
-        rows = conn.execute(
-            "SELECT * FROM ft_evaluations ORDER BY evaluated_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM ft_evaluations ORDER BY evaluated_at DESC").fetchall()
         conn.close()
         evals = []
         for r in rows:
@@ -262,9 +254,7 @@ def list_promotions():
     """List promotion log entries."""
     try:
         conn = _get_db()
-        rows = conn.execute(
-            "SELECT * FROM ft_promotion_log ORDER BY created_at DESC LIMIT 100"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM ft_promotion_log ORDER BY created_at DESC LIMIT 100").fetchall()
         conn.close()
         return jsonify({"promotions": [dict(r) for r in rows], "total": len(rows)})
     except Exception as e:
@@ -286,9 +276,7 @@ def list_hyperparam_results():
                 (search_id,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM ft_hyperparam_results ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM ft_hyperparam_results ORDER BY created_at DESC LIMIT 50").fetchall()
         conn.close()
         results = []
         for r in rows:
@@ -308,6 +296,7 @@ def gpu_status():
     """Get current GPU detection info."""
     try:
         from tools.finetune.gpu_detector import detect_gpu
+
         result = detect_gpu()
         return jsonify(result.to_dict())
     except Exception as e:

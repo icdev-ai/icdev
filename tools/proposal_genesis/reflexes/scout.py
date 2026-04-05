@@ -37,10 +37,12 @@ def _is_air_gapped() -> bool:
 # Award scanning wrapper
 # ---------------------------------------------------------------------------
 
+
 def _scan_awards() -> Dict[str, Any]:
     """Run award tracker scan, return results."""
     try:
         from tools.govcon.award_tracker import scan_awards
+
         return scan_awards()
     except Exception as exc:
         return {"status": "error", "message": str(exc), "new_awards": 0}
@@ -50,10 +52,12 @@ def _scan_awards() -> Dict[str, Any]:
 # Competitor profiling
 # ---------------------------------------------------------------------------
 
+
 def _get_top_competitors(limit: int = 10) -> List[Dict]:
     """Get top competitors by award count from DB."""
     try:
         from tools.govcon.competitor_profiler import get_leaderboard
+
         result = get_leaderboard(limit=limit)
         return result.get("leaderboard", [])
     except Exception:
@@ -64,6 +68,7 @@ def _profile_competitor(vendor_name: str) -> Dict[str, Any]:
     """Get detailed profile for a competitor."""
     try:
         from tools.govcon.competitor_profiler import profile_vendor
+
         return profile_vendor(vendor_name)
     except Exception:
         return {"vendor": vendor_name, "status": "error"}
@@ -72,6 +77,7 @@ def _profile_competitor(vendor_name: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Opportunity overlap detection
 # ---------------------------------------------------------------------------
+
 
 def _find_competitor_overlaps() -> List[Dict]:
     """Find opportunities where known competitors also bid.
@@ -115,16 +121,17 @@ def _find_competitor_overlaps() -> List[Dict]:
             ).fetchall()
 
             if competitors:
-                overlaps.append({
-                    "opportunity_id": opp["id"],
-                    "opportunity_title": opp["title"],
-                    "naics": naics,
-                    "agency": agency,
-                    "likely_competitors": [
-                        {"name": c["awardee_name"], "awards_in_space": c["award_count"]}
-                        for c in competitors
-                    ],
-                })
+                overlaps.append(
+                    {
+                        "opportunity_id": opp["id"],
+                        "opportunity_title": opp["title"],
+                        "naics": naics,
+                        "agency": agency,
+                        "likely_competitors": [
+                            {"name": c["awardee_name"], "awards_in_space": c["award_count"]} for c in competitors
+                        ],
+                    }
+                )
     except Exception:
         pass
     finally:
@@ -135,6 +142,7 @@ def _find_competitor_overlaps() -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Brief generation (deterministic, scanner-tier)
 # ---------------------------------------------------------------------------
+
 
 def _generate_brief(
     award_scan: Dict,
@@ -239,6 +247,7 @@ def _store_brief(brief_md: str) -> str:
 # Bid decision outcome tracking
 # ---------------------------------------------------------------------------
 
+
 def _match_awards_to_decisions() -> Dict[str, int]:
     """Match award notices against bid decisions to record outcomes.
 
@@ -275,8 +284,7 @@ def _match_awards_to_decisions() -> Dict[str, int]:
             award = None
             if sol_number:
                 award = conn.execute(
-                    "SELECT awardee_name, award_amount, award_date "
-                    "FROM govcon_awards WHERE sol_number = ? LIMIT 1",
+                    "SELECT awardee_name, award_amount, award_date FROM govcon_awards WHERE sol_number = ? LIMIT 1",
                     (sol_number,),
                 ).fetchone()
 
@@ -358,12 +366,14 @@ def _match_awards_to_decisions() -> Dict[str, int]:
                     "scout",
                     "green",
                     opp_id,
-                    json.dumps({
-                        "decision_id": row["decision_id"],
-                        "outcome": outcome,
-                        "awardee": award["awardee_name"],
-                        "award_amount": award["award_amount"],
-                    }),
+                    json.dumps(
+                        {
+                            "decision_id": row["decision_id"],
+                            "outcome": outcome,
+                            "awardee": award["awardee_name"],
+                            "award_amount": award["award_amount"],
+                        }
+                    ),
                     1,
                     now,
                 ),
@@ -384,6 +394,7 @@ def _match_awards_to_decisions() -> Dict[str, int]:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Scout Reflex (R2).

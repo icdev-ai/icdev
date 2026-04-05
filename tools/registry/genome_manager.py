@@ -56,6 +56,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -177,8 +178,7 @@ class GenomeManager:
             print(f"Warning: Table creation failed: {e}", file=sys.stderr)
 
     def create_version(
-        self, genome_data: dict, created_by: str = "system", change_type: str = None,
-        change_summary: str = None
+        self, genome_data: dict, created_by: str = "system", change_type: str = None, change_summary: str = None
     ) -> Optional[dict]:
         """Create a new genome version with semver + SHA-256 content hash.
 
@@ -207,9 +207,7 @@ class GenomeManager:
         conn = self._get_conn()
         try:
             # Get latest version for auto-increment
-            row = conn.execute(
-                "SELECT version FROM genome_versions ORDER BY created_at DESC LIMIT 1"
-            ).fetchone()
+            row = conn.execute("SELECT version FROM genome_versions ORDER BY created_at DESC LIMIT 1").fetchone()
 
             if row:
                 parent_version = row["version"]
@@ -264,9 +262,7 @@ class GenomeManager:
         finally:
             conn.close()
 
-    def get_version(
-        self, version_id: str = None, version: str = None
-    ) -> Optional[dict]:
+    def get_version(self, version_id: str = None, version: str = None) -> Optional[dict]:
         """Get a specific genome version or the latest.
 
         Args:
@@ -279,17 +275,11 @@ class GenomeManager:
         conn = self._get_conn()
         try:
             if version_id:
-                row = conn.execute(
-                    "SELECT * FROM genome_versions WHERE id = ?", (version_id,)
-                ).fetchone()
+                row = conn.execute("SELECT * FROM genome_versions WHERE id = ?", (version_id,)).fetchone()
             elif version:
-                row = conn.execute(
-                    "SELECT * FROM genome_versions WHERE version = ?", (version,)
-                ).fetchone()
+                row = conn.execute("SELECT * FROM genome_versions WHERE version = ?", (version,)).fetchone()
             else:
-                row = conn.execute(
-                    "SELECT * FROM genome_versions ORDER BY created_at DESC LIMIT 1"
-                ).fetchone()
+                row = conn.execute("SELECT * FROM genome_versions ORDER BY created_at DESC LIMIT 1").fetchone()
 
             if row:
                 result = dict(row)
@@ -359,11 +349,13 @@ class GenomeManager:
             val1 = json.dumps(caps1[key], sort_keys=True)
             val2 = json.dumps(caps2[key], sort_keys=True)
             if val1 != val2:
-                modified.append({
-                    "capability": key,
-                    "v1_hash": hashlib.sha256(val1.encode()).hexdigest()[:12],
-                    "v2_hash": hashlib.sha256(val2.encode()).hexdigest()[:12],
-                })
+                modified.append(
+                    {
+                        "capability": key,
+                        "v1_hash": hashlib.sha256(val1.encode()).hexdigest()[:12],
+                        "v2_hash": hashlib.sha256(val2.encode()).hexdigest()[:12],
+                    }
+                )
 
         # Also diff top-level keys beyond capabilities
         top_keys1 = set(data1.keys())
@@ -391,9 +383,7 @@ class GenomeManager:
         )
         return result
 
-    def rollback(
-        self, target_version: str, rolled_back_by: str = "system"
-    ) -> Optional[dict]:
+    def rollback(self, target_version: str, rolled_back_by: str = "system") -> Optional[dict]:
         """Rollback genome to a previous version.
 
         Creates a new version entry with the content of the target version
@@ -525,9 +515,7 @@ def main():
         description="ICDEV Capability Genome Manager -- versioned genome with semver + SHA-256"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--get", action="store_true", help="Get genome version (latest or specific)")
@@ -540,8 +528,7 @@ def main():
     parser.add_argument("--version-id", help="Specific version ID (for --get, --verify)")
     parser.add_argument("--version", help="Specific semver string (for --get)")
     parser.add_argument("--genome-data", help="JSON string of genome data (for --create)")
-    parser.add_argument("--change-type", choices=["major", "minor", "patch"],
-                        help="Semver change type (for --create)")
+    parser.add_argument("--change-type", choices=["major", "minor", "patch"], help="Semver change type (for --create)")
     parser.add_argument("--change-summary", help="Change description (for --create)")
     parser.add_argument("--created-by", default="system", help="Creator identity (for --create)")
     parser.add_argument("--v1", help="First version for diff")
@@ -556,9 +543,7 @@ def main():
         manager = GenomeManager(db_path=args.db_path)
 
         if args.get:
-            result = manager.get_version(
-                version_id=args.version_id, version=args.version
-            )
+            result = manager.get_version(version_id=args.version_id, version=args.version)
             if result is None:
                 result = {"error": "No genome version found"}
 
@@ -619,8 +604,7 @@ def main():
                 print(f"  Created By:   {result.get('created_by', 'N/A')}")
                 print(f"  Created At:   {result.get('created_at', 'N/A')}")
             elif args.create and result and "error" not in result:
-                print(f"Created genome version {result.get('version')} "
-                      f"(ID: {result.get('id')})")
+                print(f"Created genome version {result.get('version')} (ID: {result.get('id')})")
                 print(f"  Hash: {result.get('content_hash')}")
             elif args.diff and "error" not in result:
                 print(f"Genome Diff: {result.get('v1')} -> {result.get('v2')}")
@@ -639,10 +623,12 @@ def main():
                     print("Genome Version History")
                     print("=" * 70)
                     for entry in result:
-                        print(f"  {entry.get('version', '?'):10s}  "
-                              f"{entry.get('change_type', '?'):6s}  "
-                              f"{entry.get('created_at', '?'):22s}  "
-                              f"{entry.get('change_summary', '') or ''}")
+                        print(
+                            f"  {entry.get('version', '?'):10s}  "
+                            f"{entry.get('change_type', '?'):6s}  "
+                            f"{entry.get('created_at', '?'):22s}  "
+                            f"{entry.get('change_summary', '') or ''}"
+                        )
                 else:
                     print(json.dumps(result, indent=2, default=str))
             elif args.verify:
@@ -652,8 +638,7 @@ def main():
                 print(f"  Stored Hash:   {result.get('stored_hash', 'N/A')}")
                 print(f"  Computed Hash: {result.get('computed_hash', 'N/A')}")
             elif args.rollback and result and "error" not in result:
-                print(f"Rolled back to {args.target_version}, "
-                      f"new version: {result.get('version')}")
+                print(f"Rolled back to {args.target_version}, new version: {result.get('version')}")
             else:
                 print(json.dumps(result, indent=2, default=str))
 

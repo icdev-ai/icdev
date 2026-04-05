@@ -293,9 +293,13 @@ output "master_key_id" {
 """
 
 
-def generate(project_name: str = "icdev", environment: str = "production",
-             region: str = "us-south", resource_group: str = "default",
-             output_dir: str = ""):
+def generate(
+    project_name: str = "icdev",
+    environment: str = "production",
+    region: str = "us-south",
+    resource_group: str = "default",
+    output_dir: str = "",
+):
     """Generate IBM Cloud Terraform configuration files."""
     out = Path(output_dir) if output_dir else Path.cwd() / "terraform" / "ibm"
     out.mkdir(parents=True, exist_ok=True)
@@ -324,21 +328,17 @@ def generate(project_name: str = "icdev", environment: str = "production",
 
 def run_cli():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Generate IBM Cloud Terraform configurations"
-    )
+    parser = argparse.ArgumentParser(description="Generate IBM Cloud Terraform configurations")
     parser.add_argument("--project-id", default="icdev", help="Project name")
-    parser.add_argument("--environment", default="production",
-                        help="Environment (production, staging, dev)")
+    parser.add_argument("--environment", default="production", help="Environment (production, staging, dev)")
     parser.add_argument("--region", default="us-south", help="IBM Cloud region")
-    parser.add_argument("--resource-group", default="default",
-                        help="IBM Cloud resource group")
+    parser.add_argument("--resource-group", default="default", help="IBM Cloud resource group")
     parser.add_argument("--output-dir", default="", help="Output directory")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     import json
+
     result = generate(
         project_name=args.project_id,
         environment=args.environment,

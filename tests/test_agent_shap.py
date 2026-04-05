@@ -71,9 +71,13 @@ def _insert_spans(db_path: Path, trace_id: str, tools: list) -> None:
                 status_code, attributes, project_id)
                VALUES (?, ?, 'mcp.tool_call', ?, ?, ?, ?, ?, 'proj-test')""",
             (
-                f"span-{i}", trace_id, f"2025-01-01T00:0{i}:00Z",
-                f"2025-01-01T00:0{i}:01Z", 1000,
-                status, attrs,
+                f"span-{i}",
+                trace_id,
+                f"2025-01-01T00:0{i}:00Z",
+                f"2025-01-01T00:0{i}:01Z",
+                1000,
+                status,
+                attrs,
             ),
         )
     conn.commit()
@@ -129,46 +133,55 @@ class TestAnalyzeTrace(unittest.TestCase):
         self.assertIn("attributions", result)
         self.assertIn("scaffold", result["attributions"])
         # Single tool should get normalized value of 1.0
-        self.assertAlmostEqual(
-            result["attributions"]["scaffold"]["normalized"], 1.0, places=2
-        )
+        self.assertAlmostEqual(result["attributions"]["scaffold"]["normalized"], 1.0, places=2)
 
     def test_two_tools_attribution(self):
         """Two tools split attribution."""
-        _insert_spans(self.db_path, "trace-two", [
-            ("scaffold", "OK"),
-            ("generate_code", "OK"),
-        ])
+        _insert_spans(
+            self.db_path,
+            "trace-two",
+            [
+                ("scaffold", "OK"),
+                ("generate_code", "OK"),
+            ],
+        )
         result = self.shap.analyze_trace("trace-two", iterations=500)
         self.assertIn("attributions", result)
         self.assertEqual(result["tool_count"], 2)
         # Both tools should have normalized values summing to ~1.0
-        total = sum(
-            r["normalized"] for r in result["attributions"].values()
-        )
+        total = sum(r["normalized"] for r in result["attributions"].values())
         self.assertAlmostEqual(total, 1.0, places=2)
 
     def test_three_tools_with_mixed_status(self):
         """Three tools with mixed success/failure."""
-        _insert_spans(self.db_path, "trace-mixed", [
-            ("scaffold", "OK"),
-            ("generate_code", "OK"),
-            ("lint", "ERROR"),
-        ])
+        _insert_spans(
+            self.db_path,
+            "trace-mixed",
+            [
+                ("scaffold", "OK"),
+                ("generate_code", "OK"),
+                ("lint", "ERROR"),
+            ],
+        )
         result = self.shap.analyze_trace("trace-mixed", iterations=500)
         self.assertEqual(result["tool_count"], 3)
         # Successful tools should have positive attribution
         for tool in ["scaffold", "generate_code"]:
-            self.assertGreaterEqual(
-                result["attributions"][tool]["shapley_value"], 0.0
-            )
+            self.assertGreaterEqual(result["attributions"][tool]["shapley_value"], 0.0)
 
     def test_deterministic_with_seed(self):
         """Same seed produces same results when run sequentially."""
         import random
-        _insert_spans(self.db_path, "trace-det", [
-            ("tool_a", "OK"), ("tool_b", "OK"), ("tool_c", "OK"),
-        ])
+
+        _insert_spans(
+            self.db_path,
+            "trace-det",
+            [
+                ("tool_a", "OK"),
+                ("tool_b", "OK"),
+                ("tool_c", "OK"),
+            ],
+        )
         random.seed(999)
         shap1 = AgentSHAP(db_path=self.db_path)
         r1 = shap1.analyze_trace("trace-det", iterations=200)
@@ -184,9 +197,14 @@ class TestAnalyzeTrace(unittest.TestCase):
 
     def test_confidence_intervals(self):
         """Results include confidence intervals."""
-        _insert_spans(self.db_path, "trace-ci", [
-            ("scaffold", "OK"), ("test", "OK"),
-        ])
+        _insert_spans(
+            self.db_path,
+            "trace-ci",
+            [
+                ("scaffold", "OK"),
+                ("test", "OK"),
+            ],
+        )
         result = self.shap.analyze_trace("trace-ci", iterations=200)
         for tool_result in result["attributions"].values():
             self.assertIn("confidence_low", tool_result)
@@ -201,30 +219,34 @@ class TestAnalyzeTrace(unittest.TestCase):
         _insert_spans(self.db_path, "trace-store", [("scaffold", "OK")])
         self.shap.analyze_trace("trace-store", iterations=100)
         conn = sqlite3.connect(str(self.db_path))
-        count = conn.execute(
-            "SELECT COUNT(*) FROM shap_attributions WHERE trace_id = 'trace-store'"
-        ).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM shap_attributions WHERE trace_id = 'trace-store'").fetchone()[0]
         conn.close()
         self.assertGreater(count, 0)
 
     def test_outcome_metric_success(self):
         """Success metric computes fraction of OK spans."""
-        _insert_spans(self.db_path, "trace-suc", [
-            ("a", "OK"), ("b", "ERROR"),
-        ])
-        result = self.shap.analyze_trace(
-            "trace-suc", iterations=100, outcome_metric="success"
+        _insert_spans(
+            self.db_path,
+            "trace-suc",
+            [
+                ("a", "OK"),
+                ("b", "ERROR"),
+            ],
         )
+        result = self.shap.analyze_trace("trace-suc", iterations=100, outcome_metric="success")
         self.assertEqual(result["outcome_metric"], "success")
 
     def test_outcome_metric_duration(self):
         """Duration metric produces valid results."""
-        _insert_spans(self.db_path, "trace-dur", [
-            ("a", "OK"), ("b", "OK"),
-        ])
-        result = self.shap.analyze_trace(
-            "trace-dur", iterations=100, outcome_metric="duration"
+        _insert_spans(
+            self.db_path,
+            "trace-dur",
+            [
+                ("a", "OK"),
+                ("b", "OK"),
+            ],
         )
+        result = self.shap.analyze_trace("trace-dur", iterations=100, outcome_metric="duration")
         self.assertEqual(result["outcome_metric"], "duration")
         self.assertIn("full_outcome", result)
 
@@ -241,9 +263,15 @@ class TestAnalyzeTrace(unittest.TestCase):
 
     def test_coalition_size_in_results(self):
         """Each tool result includes coalition_size."""
-        _insert_spans(self.db_path, "trace-coal", [
-            ("a", "OK"), ("b", "OK"), ("c", "OK"),
-        ])
+        _insert_spans(
+            self.db_path,
+            "trace-coal",
+            [
+                ("a", "OK"),
+                ("b", "OK"),
+                ("c", "OK"),
+            ],
+        )
         result = self.shap.analyze_trace("trace-coal", iterations=50)
         for tool_result in result["attributions"].values():
             self.assertEqual(tool_result["coalition_size"], 3)

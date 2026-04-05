@@ -23,6 +23,7 @@ def _utcnow_iso() -> str:
 
 def _is_air_gapped() -> bool:
     import os
+
     return os.environ.get("ICDEV_ENVIRONMENT", "").lower() == "air-gapped"
 
 
@@ -30,6 +31,7 @@ def _scan_sam_gov(config: Dict[str, Any]) -> Dict[str, Any]:
     """Run SAM.gov scanner and return results."""
     try:
         from tools.govcon.sam_scanner import scan_sam_gov
+
         result = scan_sam_gov()
         return result if isinstance(result, dict) else {"status": "ok", "raw": str(result)}
     except ImportError:
@@ -42,6 +44,7 @@ def _check_amendments(config: Dict[str, Any]) -> Dict[str, Any]:
     """Check for amendments on tracked opportunities."""
     try:
         from tools.govcon.amendment_tracker import list_amendments
+
         conn = get_connection()
         try:
             # Get active opportunities to check for amendments
@@ -69,18 +72,20 @@ def _check_amendments(config: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-def _store_amendment_diff(opp_id: str, diff_type: str, section: str,
-                          old_text: str, new_text: str) -> None:
+def _store_amendment_diff(opp_id: str, diff_type: str, section: str, old_text: str, new_text: str) -> None:
     """Store an amendment diff for R5 re-extraction."""
     import uuid
+
     conn = get_connection()
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pg_amendment_diffs
                 (id, opportunity_id, diff_type, section, old_text, new_text, re_extracted, created_at)
             VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-        """, (f"pgad-{uuid.uuid4().hex[:10]}", opp_id, diff_type,
-              section, old_text, new_text, _utcnow_iso()))
+        """,
+            (f"pgad-{uuid.uuid4().hex[:10]}", opp_id, diff_type, section, old_text, new_text, _utcnow_iso()),
+        )
         conn.commit()
     except Exception:
         pass
@@ -96,7 +101,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """
     if _is_air_gapped():
         return {
-            "success": True, "metric_value": 0,
+            "success": True,
+            "metric_value": 0,
             "details": {"status": "air_gapped", "message": "Skipped -- air-gapped mode"},
         }
 

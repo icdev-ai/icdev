@@ -89,25 +89,20 @@ def _init_platform_db(db_path):
     key_hash = hashlib.sha256(test_key.encode("utf-8")).hexdigest()
 
     conn.execute(
-        "INSERT INTO tenants (id, name, slug, status, tier, impact_level) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tenants (id, name, slug, status, tier, impact_level) VALUES (?, ?, ?, ?, ?, ?)",
         ("tenant-001", "Test Org", "test-org", "active", "starter", "IL4"),
     )
     conn.execute(
-        "INSERT INTO users (id, tenant_id, email, display_name, role, status) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        ("user-001", "tenant-001", "admin@test.local", "Test Admin",
-         "tenant_admin", "active"),
+        "INSERT INTO users (id, tenant_id, email, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)",
+        ("user-001", "tenant-001", "admin@test.local", "Test Admin", "tenant_admin", "active"),
     )
     conn.execute(
         "INSERT INTO api_keys (id, tenant_id, user_id, key_hash, key_prefix, "
         "name, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("key-001", "tenant-001", "user-001", key_hash, "testkey1",
-         "Test key", "active"),
+        ("key-001", "tenant-001", "user-001", key_hash, "testkey1", "Test key", "active"),
     )
     conn.execute(
-        "INSERT INTO subscriptions (id, tenant_id, tier, max_projects, "
-        "max_users, status) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO subscriptions (id, tenant_id, tier, max_projects, max_users, status) VALUES (?, ?, ?, ?, ?, ?)",
         ("sub-001", "tenant-001", "starter", 5, 3, "active"),
     )
     conn.commit()
@@ -126,9 +121,12 @@ def portal_app(tmp_path):
     }
 
     with patch.dict(os.environ, env_patches):
-        with patch("icdev.tools.saas.platform_db.SQLITE_PATH", db_path), \
-             patch("icdev.tools.saas.portal.app.PLATFORM_DB", db_path):
+        with (
+            patch("icdev.tools.saas.platform_db.SQLITE_PATH", db_path),
+            patch("icdev.tools.saas.portal.app.PLATFORM_DB", db_path),
+        ):
             from icdev.tools.saas.api_gateway import create_app
+
             app = create_app()
             app.config["TESTING"] = True
             app.config["test_api_key"] = test_key
@@ -143,16 +141,20 @@ def client(portal_app):
     login_page = c.get("/portal/login")
     # Extract CSRF token from the rendered form
     import re
+
     csrf_match = re.search(
         r'name="_csrf_token"\s+value="([^"]+)"',
         login_page.data.decode("utf-8"),
     )
     csrf_token = csrf_match.group(1) if csrf_match else ""
     # Login via POST with CSRF token
-    c.post("/portal/login", data={
-        "api_key": portal_app.config["test_api_key"],
-        "_csrf_token": csrf_token,
-    })
+    c.post(
+        "/portal/login",
+        data={
+            "api_key": portal_app.config["test_api_key"],
+            "_csrf_token": csrf_token,
+        },
+    )
     return c
 
 
@@ -172,6 +174,7 @@ class TestPortalLogin:
 
     def test_login_with_valid_key(self, portal_app):
         import re
+
         c = portal_app.test_client()
         # GET login page to obtain CSRF token
         login_page = c.get("/portal/login")
@@ -323,6 +326,7 @@ class TestSeedDemoData:
     def test_seed_creates_tenant_and_key(self, tmp_path):
         db_path = tmp_path / "seed_test.db"
         import icdev.tools.saas.platform_db as pdb
+
         orig_path = pdb.SQLITE_PATH
         orig_dir = pdb.DATA_DIR
         try:
@@ -342,6 +346,7 @@ class TestSeedDemoData:
     def test_seed_is_idempotent(self, tmp_path):
         db_path = tmp_path / "seed_idem.db"
         import icdev.tools.saas.platform_db as pdb
+
         orig_path = pdb.SQLITE_PATH
         orig_dir = pdb.DATA_DIR
         try:
@@ -361,6 +366,7 @@ class TestSeedDemoData:
 # ============================================================================
 # TestProfilePage — profile page tests (extension)
 # ============================================================================
+
 
 class TestProfilePage:
     """Tests for /portal/profile page."""
@@ -387,6 +393,7 @@ class TestProfilePage:
     def test_profile_byok_hidden_when_disabled(self, portal_app):
         """BYOK section is not shown when ICDEV_BYOK_ENABLED is false."""
         import re
+
         c = portal_app.test_client()
         # Login
         login_page = c.get("/portal/login")
@@ -395,10 +402,13 @@ class TestProfilePage:
             login_page.data.decode("utf-8"),
         )
         csrf_token = csrf_match.group(1) if csrf_match else ""
-        c.post("/portal/login", data={
-            "api_key": portal_app.config["test_api_key"],
-            "_csrf_token": csrf_token,
-        })
+        c.post(
+            "/portal/login",
+            data={
+                "api_key": portal_app.config["test_api_key"],
+                "_csrf_token": csrf_token,
+            },
+        )
         with patch.dict(os.environ, {"ICDEV_BYOK_ENABLED": "false"}):
             resp = c.get("/portal/profile")
             html = resp.data.decode("utf-8")
@@ -415,6 +425,7 @@ class TestProfilePage:
 # ============================================================================
 # TestAuditPage — audit page tests (extension)
 # ============================================================================
+
 
 class TestAuditPage:
     """Tests for /portal/audit page."""
@@ -438,13 +449,13 @@ class TestAuditPage:
     def test_audit_shows_entries_when_seeded(self, portal_app):
         """Audit page shows seeded audit entries."""
         import re
+
         # Seed an audit entry
         db_path = os.environ.get("PLATFORM_DB_PATH")
         if db_path:
             conn = sqlite3.connect(db_path)
             conn.execute(
-                "INSERT INTO audit_platform (tenant_id, event_type, action, details) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO audit_platform (tenant_id, event_type, action, details) VALUES (?, ?, ?, ?)",
                 ("tenant-001", "test.event", "Test action", "{}"),
             )
             conn.commit()
@@ -457,10 +468,13 @@ class TestAuditPage:
             login_page.data.decode("utf-8"),
         )
         csrf_token = csrf_match.group(1) if csrf_match else ""
-        c.post("/portal/login", data={
-            "api_key": portal_app.config["test_api_key"],
-            "_csrf_token": csrf_token,
-        })
+        c.post(
+            "/portal/login",
+            data={
+                "api_key": portal_app.config["test_api_key"],
+                "_csrf_token": csrf_token,
+            },
+        )
         resp = c.get("/portal/audit")
         assert resp.status_code == 200
 
@@ -473,6 +487,7 @@ class TestAuditPage:
 # ============================================================================
 # TestUsagePage — usage page tests (extension)
 # ============================================================================
+
 
 class TestUsagePage:
     """Tests for /portal/usage page."""
@@ -511,6 +526,7 @@ class TestUsagePage:
 # TestCSRFProtection — CSRF token tests (extension)
 # ============================================================================
 
+
 class TestCSRFProtection:
     """Tests for CSRF protection on portal POST endpoints."""
 
@@ -535,6 +551,7 @@ class TestCSRFProtection:
     def test_post_with_valid_csrf_processes(self, portal_app):
         """POST with correct CSRF token and valid key processes the login."""
         import re
+
         c = portal_app.test_client()
         login_page = c.get("/portal/login")
         csrf_match = re.search(
@@ -557,6 +574,7 @@ class TestCSRFProtection:
     def test_csrf_token_different_per_session(self, portal_app):
         """Each new session gets a distinct CSRF token."""
         import re
+
         c1 = portal_app.test_client()
         c2 = portal_app.test_client()
         page1 = c1.get("/portal/login")

@@ -98,10 +98,17 @@ class ProvRecorder:
                     trace_id, span_id, agent_id, project_id, classification)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    entity_id, entity_type, label, content_hash, stored_content,
+                    entity_id,
+                    entity_type,
+                    label,
+                    content_hash,
+                    stored_content,
                     json.dumps(attributes or {}),
-                    trace_id, span_id,
-                    self._agent_id, self._project_id, self._classification,
+                    trace_id,
+                    span_id,
+                    self._agent_id,
+                    self._project_id,
+                    self._classification,
                 ),
             )
             conn.commit()
@@ -149,11 +156,17 @@ class ProvRecorder:
                     trace_id, span_id, agent_id, project_id, classification)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    activity_id, activity_type, label,
-                    start_time or now, end_time,
+                    activity_id,
+                    activity_type,
+                    label,
+                    start_time or now,
+                    end_time,
                     json.dumps(attributes or {}),
-                    trace_id, span_id,
-                    self._agent_id, self._project_id, self._classification,
+                    trace_id,
+                    span_id,
+                    self._agent_id,
+                    self._project_id,
+                    self._classification,
                 ),
             )
             conn.commit()
@@ -194,9 +207,13 @@ class ProvRecorder:
                     trace_id, project_id, classification)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    relation_type, subject_id, object_id,
+                    relation_type,
+                    subject_id,
+                    object_id,
                     json.dumps(attributes or {}),
-                    trace_id, self._project_id, self._classification,
+                    trace_id,
+                    self._project_id,
+                    self._classification,
                 ),
             )
             conn.commit()

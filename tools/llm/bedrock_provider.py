@@ -26,6 +26,7 @@ logger = logging.getLogger("icdev.llm.bedrock")
 try:
     import boto3
     from botocore.exceptions import ClientError
+
     HAS_BOTO3 = True
 except ImportError:
     boto3 = None
@@ -64,9 +65,7 @@ class BedrockLLMProvider(LLMProvider):
         """Lazy-init boto3 bedrock-runtime client."""
         if self._client is None:
             if not HAS_BOTO3:
-                raise ImportError(
-                    "boto3 is required for Bedrock. Install: pip install boto3"
-                )
+                raise ImportError("boto3 is required for Bedrock. Install: pip install boto3")
             self._client = boto3.client("bedrock-runtime", region_name=self._region)
         return self._client
 
@@ -94,11 +93,10 @@ class BedrockLLMProvider(LLMProvider):
     @staticmethod
     def _backoff_delay(attempt: int) -> float:
         """Exponential backoff with jitter."""
-        delay = min(MAX_RETRY_DELAY, BASE_RETRY_DELAY * (2 ** attempt))
+        delay = min(MAX_RETRY_DELAY, BASE_RETRY_DELAY * (2**attempt))
         return delay * random.uniform(0.5, 1.0)
 
-    def _build_body(self, request: LLMRequest, model_id: str,
-                    model_config: dict) -> dict:
+    def _build_body(self, request: LLMRequest, model_id: str, model_config: dict) -> dict:
         """Build Anthropic-format request body for Bedrock."""
         max_output = model_config.get("max_output_tokens", 8192)
         effective_max = min(request.max_tokens, max_output)
@@ -163,11 +161,13 @@ class BedrockLLMProvider(LLMProvider):
             if btype == "text":
                 text_parts.append(block.get("text", ""))
             elif btype == "tool_use":
-                tool_calls.append({
-                    "id": block.get("id", ""),
-                    "name": block.get("name", ""),
-                    "input": block.get("input", {}),
-                })
+                tool_calls.append(
+                    {
+                        "id": block.get("id", ""),
+                        "name": block.get("name", ""),
+                        "input": block.get("input", {}),
+                    }
+                )
             elif btype == "thinking":
                 resp.thinking_tokens += block.get("tokens", 0)
 
@@ -183,8 +183,7 @@ class BedrockLLMProvider(LLMProvider):
 
         return resp
 
-    def invoke(self, request: LLMRequest, model_id: str,
-               model_config: dict) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Bedrock synchronously with retry."""
         body = self._build_body(request, model_id, model_config)
         client = self._get_client()
@@ -206,7 +205,10 @@ class BedrockLLMProvider(LLMProvider):
                     delay = self._backoff_delay(attempt)
                     logger.warning(
                         "Bedrock retry %d/%d: %s — %.1fs",
-                        attempt + 1, MAX_RETRIES, exc, delay,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        exc,
+                        delay,
                     )
                     time.sleep(delay)
                 else:
@@ -214,8 +216,7 @@ class BedrockLLMProvider(LLMProvider):
 
         raise RuntimeError("Bedrock invocation failed after retries")
 
-    def invoke_streaming(self, request: LLMRequest, model_id: str,
-                         model_config: dict) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke Bedrock with streaming response."""
         body = self._build_body(request, model_id, model_config)
         client = self._get_client()

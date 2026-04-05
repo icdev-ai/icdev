@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.cloud.secrets_provider import LocalSecretsProvider
@@ -122,14 +123,13 @@ class TestLocalKMS:
         # Should be available if cryptography is installed
         # (it's in our requirements)
         from icdev.tools.cloud.kms_provider import _HAS_FERNET
+
         assert p.check_availability() == _HAS_FERNET
 
-    @pytest.mark.skipif(
-        not __import__("importlib").util.find_spec("cryptography"),
-        reason="cryptography not installed"
-    )
+    @pytest.mark.skipif(not __import__("importlib").util.find_spec("cryptography"), reason="cryptography not installed")
     def test_encrypt_decrypt(self):
         from cryptography.fernet import Fernet
+
         key = Fernet.generate_key().decode()
         p = LocalKMSProvider(key=key)
         encrypted = p.encrypt(b"hello world")
@@ -137,12 +137,10 @@ class TestLocalKMS:
         decrypted = p.decrypt(encrypted)
         assert decrypted == b"hello world"
 
-    @pytest.mark.skipif(
-        not __import__("importlib").util.find_spec("cryptography"),
-        reason="cryptography not installed"
-    )
+    @pytest.mark.skipif(not __import__("importlib").util.find_spec("cryptography"), reason="cryptography not installed")
     def test_generate_data_key(self):
         from cryptography.fernet import Fernet
+
         key = Fernet.generate_key().decode()
         p = LocalKMSProvider(key=key)
         result = p.generate_data_key()
@@ -161,6 +159,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         assert factory.global_provider == "local"
 
@@ -168,6 +167,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_secrets_provider()
         assert provider.provider_name == "local"
@@ -176,6 +176,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_storage_provider()
         assert provider.provider_name == "local"
@@ -184,6 +185,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_kms_provider()
         assert provider.provider_name == "local"
@@ -192,6 +194,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         health = factory.health_check()
         assert health["global_provider"] == "local"
@@ -203,6 +206,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         p1 = factory.get_secrets_provider()
         p2 = factory.get_secrets_provider()
@@ -210,6 +214,7 @@ class TestCSPProviderFactory:
 
     def test_factory_missing_config(self, tmp_path):
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(tmp_path / "nonexistent.yaml"))
         assert factory.global_provider == "local"
 
@@ -217,6 +222,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: aws\n  region: us-gov-west-1\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_secrets_provider()
         assert provider.provider_name == "aws_secrets_manager"
@@ -226,6 +232,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_monitoring_provider()
         assert provider.provider_name == "local"
@@ -235,6 +242,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_iam_provider()
         assert provider.provider_name == "local"
@@ -244,6 +252,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_registry_provider()
         assert provider.provider_name == "local"
@@ -253,6 +262,7 @@ class TestCSPProviderFactory:
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
         from icdev.tools.cloud.provider_factory import CSPProviderFactory
+
         factory = CSPProviderFactory(config_path=str(config))
         health = factory.health_check()
         for svc in ("secrets", "storage", "kms", "monitoring", "iam", "registry"):
@@ -267,30 +277,37 @@ class TestIBMProviderImports:
 
     def test_import_ibm_secrets(self):
         from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
+
         assert IBMSecretsProvider is not None
 
     def test_import_ibm_storage(self):
         from icdev.tools.cloud.storage_provider import IBMStorageProvider
+
         assert IBMStorageProvider is not None
 
     def test_import_ibm_kms(self):
         from icdev.tools.cloud.kms_provider import IBMKMSProvider
+
         assert IBMKMSProvider is not None
 
     def test_import_ibm_monitoring(self):
         from icdev.tools.cloud.monitoring_provider import IBMMonitoringProvider
+
         assert IBMMonitoringProvider is not None
 
     def test_import_ibm_iam(self):
         from icdev.tools.cloud.iam_provider import IBMIAMProvider
+
         assert IBMIAMProvider is not None
 
     def test_import_ibm_registry(self):
         from icdev.tools.cloud.registry_provider import IBMRegistryProvider
+
         assert IBMRegistryProvider is not None
 
     def test_import_ibm_watsonx(self):
         from icdev.tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+
         assert IBMWatsonxProvider is not None
 
     def test_ibm_providers_degrade_gracefully(self):
@@ -302,9 +319,13 @@ class TestIBMProviderImports:
         from icdev.tools.cloud.iam_provider import IBMIAMProvider
         from icdev.tools.cloud.registry_provider import IBMRegistryProvider
 
-        for cls in (IBMSecretsProvider, IBMStorageProvider, IBMKMSProvider,
-                    IBMMonitoringProvider, IBMIAMProvider, IBMRegistryProvider):
+        for cls in (
+            IBMSecretsProvider,
+            IBMStorageProvider,
+            IBMKMSProvider,
+            IBMMonitoringProvider,
+            IBMIAMProvider,
+            IBMRegistryProvider,
+        ):
             p = cls()
-            assert p.check_availability() is False, (
-                f"{cls.__name__} should not be available without IBM SDK"
-            )
+            assert p.check_availability() is False, f"{cls.__name__} should not be available without IBM SDK"

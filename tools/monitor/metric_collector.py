@@ -121,9 +121,7 @@ def query_range(
                     "query": promql,
                     "result_type": data.get("data", {}).get("resultType"),
                     "results": results,
-                    "data_points": sum(
-                        len(r.get("values", [])) for r in results
-                    ),
+                    "data_points": sum(len(r.get("values", [])) for r in results),
                 }
             else:
                 return {
@@ -173,9 +171,9 @@ def get_application_metrics(
             f'sum(rate(http_requests_total{{namespace="{ns}",status=~"5.."}}[5m])) / '
             f'sum(rate(http_requests_total{{namespace="{ns}"}}[5m]))'
         ),
-        "latency_p50": f'histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))',
-        "latency_p95": f'histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))',
-        "latency_p99": f'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))',
+        "latency_p50": f'histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))',  # noqa: E501
+        "latency_p95": f'histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))',  # noqa: E501
+        "latency_p99": f'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{{namespace="{ns}"}}[5m])) by (le))',  # noqa: E501
         "cpu_usage": f'sum(rate(container_cpu_usage_seconds_total{{namespace="{ns}"}}[5m]))',
         "memory_usage_bytes": f'sum(container_memory_working_set_bytes{{namespace="{ns}"}})',
         "memory_limit_bytes": f'sum(kube_pod_container_resource_limits{{namespace="{ns}",resource="memory"}})',
@@ -434,21 +432,23 @@ def main():
         if args.format == "json":
             print(json.dumps(result, indent=2))
         else:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  SLA CHECK — {result['project_id']}")
             print(f"  Status: {'PASSED' if result['sla_met'] else 'VIOLATIONS DETECTED'}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
 
             for check in result["checks"]:
                 status = "PASS" if check["passed"] else "FAIL"
-                print(f"  [{status:>4s}] {check['metric']}: "
-                      f"{check['current']} {check['unit']} "
-                      f"(threshold: {check['threshold']} {check['unit']})")
+                print(
+                    f"  [{status:>4s}] {check['metric']}: "
+                    f"{check['current']} {check['unit']} "
+                    f"(threshold: {check['threshold']} {check['unit']})"
+                )
 
             if result["violations"]:
                 print(f"\n  ** {len(result['violations'])} SLA VIOLATIONS **")
 
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
         return
 
     # Standard metrics collection
@@ -462,10 +462,10 @@ def main():
     if args.format == "json":
         print(json.dumps(result, indent=2))
     else:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  APPLICATION METRICS — {result['project_id']}")
         print(f"  Collected: {result['collected_at']}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         metrics = result.get("metrics", {})
         for name, value in sorted(metrics.items()):
@@ -476,7 +476,7 @@ def main():
                 elif "pct" in name or "rate" in name:
                     formatted = f"{value:.3f}"
                 elif "latency" in name:
-                    formatted = f"{value*1000:.1f} ms"
+                    formatted = f"{value * 1000:.1f} ms"
                 else:
                     formatted = f"{value:.2f}"
                 print(f"  {name:>30s}: {formatted}")
@@ -488,7 +488,7 @@ def main():
             for err in result["errors"][:5]:
                 print(f"    - {err}")
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
 
 
 if __name__ == "__main__":

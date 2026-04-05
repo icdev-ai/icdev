@@ -33,6 +33,7 @@ from icdev.tools.compliance.ai_reassessment_scheduler import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def db_path(tmp_path):
     """Create a temp DB with the ai_reassessment_schedule table."""
@@ -58,6 +59,7 @@ def db_path(tmp_path):
 # ============================================================
 # create_schedule
 # ============================================================
+
 
 def test_create_schedule_annual(db_path):
     """Creating an annual schedule returns status=scheduled with correct fields."""
@@ -110,6 +112,7 @@ def test_create_schedule_replaces_existing(db_path):
 # ============================================================
 # check_overdue
 # ============================================================
+
 
 def test_check_overdue_empty(db_path):
     """Empty DB returns zero overdue items."""
@@ -170,6 +173,7 @@ def test_check_overdue_days_calculation(db_path):
 # complete_reassessment
 # ============================================================
 
+
 def test_complete_reassessment_basic(db_path):
     """Completing a reassessment returns status=completed."""
     create_schedule("proj-1", "System-X", "annual", db_path=db_path)
@@ -212,6 +216,7 @@ def test_complete_reassessment_not_found(db_path):
 # get_schedule_summary
 # ============================================================
 
+
 def test_get_schedule_summary_empty(db_path):
     """Empty project returns zero schedules."""
     result = get_schedule_summary("proj-1", db_path=db_path)
@@ -244,6 +249,7 @@ def test_get_schedule_summary_overdue_count(db_path):
 # ============================================================
 # Constants & edge cases
 # ============================================================
+
 
 def test_all_valid_frequencies(db_path):
     """All VALID_FREQUENCIES can be used to create a schedule."""

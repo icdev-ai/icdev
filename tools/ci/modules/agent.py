@@ -161,8 +161,12 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
     try:
         with open(output_file, "w") as f:
             result = subprocess.run(
-                cmd, stdout=f, stderr=subprocess.PIPE, text=True,
-                env=env, timeout=timeout,
+                cmd,
+                stdout=f,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                timeout=timeout,
                 cwd=request.project_dir or str(PROJECT_ROOT),
                 stdin=subprocess.DEVNULL,
             )

@@ -30,6 +30,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     p = db_path or DB_PATH
     if not p.exists():
@@ -52,6 +53,7 @@ def _uid() -> str:
 # ---------------------------------------------------------------------------
 # RuntimeFeedbackCollector
 # ---------------------------------------------------------------------------
+
 
 class RuntimeFeedbackCollector:
     """Parse test results and correlate with source functions (D334)."""
@@ -112,27 +114,25 @@ class RuntimeFeedbackCollector:
                     error_message = (error.get("message", "") or "")[:500]
 
                 # Map test to source
-                source_file, source_function = self._map_test_to_source(
-                    name, test_file
-                )
+                source_file, source_function = self._map_test_to_source(name, test_file)
 
-                results.append({
-                    "test_file": test_file,
-                    "test_function": name,
-                    "test_passed": passed,
-                    "test_duration_ms": round(time_s * 1000, 2),
-                    "error_type": error_type,
-                    "error_message": error_message,
-                    "source_file": source_file or "",
-                    "source_function": source_function,
-                })
+                results.append(
+                    {
+                        "test_file": test_file,
+                        "test_function": name,
+                        "test_passed": passed,
+                        "test_duration_ms": round(time_s * 1000, 2),
+                        "error_type": error_type,
+                        "error_message": error_message,
+                        "source_file": source_file or "",
+                        "source_function": source_function,
+                    }
+                )
         return results
 
     # ---- Stdout fallback parser ----
 
-    _RESULT_RE = re.compile(
-        r"(PASSED|FAILED|ERROR)\s+([\w/\\.-]+)::(\w+)(?:::(\w+))?"
-    )
+    _RESULT_RE = re.compile(r"(PASSED|FAILED|ERROR)\s+([\w/\\.-]+)::(\w+)(?:::(\w+))?")
 
     def parse_pytest_stdout(self, stdout_text: str) -> List[Dict[str, Any]]:
         """Parse pytest -v output as fallback when no JUnit XML available."""
@@ -144,23 +144,26 @@ class RuntimeFeedbackCollector:
             test_fn = m.group(4) or m.group(3)
 
             source_file, source_fn = self._map_test_to_source(test_fn, test_file)
-            results.append({
-                "test_file": test_file,
-                "test_function": test_fn,
-                "test_passed": status == "PASSED",
-                "test_duration_ms": 0.0,
-                "error_type": None if status == "PASSED" else status,
-                "error_message": None,
-                "source_file": source_file or "",
-                "source_function": source_fn,
-            })
+            results.append(
+                {
+                    "test_file": test_file,
+                    "test_function": test_fn,
+                    "test_passed": status == "PASSED",
+                    "test_duration_ms": 0.0,
+                    "error_type": None if status == "PASSED" else status,
+                    "error_message": None,
+                    "source_file": source_file or "",
+                    "source_function": source_fn,
+                }
+            )
         return results
 
     # ---- Test-to-source mapping (D334 — naming convention, advisory) ----
 
     @staticmethod
     def _map_test_to_source(
-        test_function: str, test_file: str,
+        test_function: str,
+        test_file: str,
     ) -> Tuple[Optional[str], Optional[str]]:
         """Map test function/file to source function/file via convention."""
         source_fn = None
@@ -202,7 +205,8 @@ class RuntimeFeedbackCollector:
                      coverage_pct, run_id)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
-                        _uid(), self.project_id,
+                        _uid(),
+                        self.project_id,
                         fb.get("source_file", ""),
                         fb.get("source_function"),
                         fb.get("test_file", ""),
@@ -303,9 +307,7 @@ class RuntimeFeedbackCollector:
 
         # Health = weighted combination of code quality + test reliability
         complexity_factor = max(0.0, 1.0 - cc / 25.0)
-        health = round(
-            0.40 * complexity_factor + 0.35 * pass_rate + 0.25 * maint, 4
-        )
+        health = round(0.40 * complexity_factor + 0.35 * pass_rate + 0.25 * maint, 4)
 
         return {
             "function_name": source_function,
@@ -323,20 +325,17 @@ class RuntimeFeedbackCollector:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Runtime Feedback Collector — test-to-source correlation (Phase 52)"
-    )
+    parser = argparse.ArgumentParser(description="Runtime Feedback Collector — test-to-source correlation (Phase 52)")
     parser.add_argument("--xml", help="Path to JUnit XML file")
     parser.add_argument("--stdout", help="Raw pytest -v output text")
     parser.add_argument("--project-id", help="ICDEV project ID")
     parser.add_argument("--run-id", help="Test run identifier")
     parser.add_argument("--db-path", help="Override DB path")
-    parser.add_argument("--health", action="store_true",
-                        help="Compute health for a function")
+    parser.add_argument("--health", action="store_true", help="Compute health for a function")
     parser.add_argument("--function", help="Function name (for --health)")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
@@ -346,9 +345,7 @@ def main():
     )
 
     if args.health and args.function:
-        result = collector.compute_function_health(
-            args.function, args.project_id, db_path
-        )
+        result = collector.compute_function_health(args.function, args.project_id, db_path)
         if result:
             print(json.dumps(result, indent=2))
         else:

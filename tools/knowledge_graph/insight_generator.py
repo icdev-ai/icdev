@@ -48,6 +48,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(ICDEV_DB)))
 # =========================================================================
 try:
     from tools.llm.router import LLMRouter
+
     _HAS_LLM = True
 except ImportError:
     _HAS_LLM = False
@@ -60,9 +61,7 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -111,13 +110,11 @@ def _ensure_tables(conn):
 def _load_graph(conn, graph_id):
     """Load nodes and edges for a graph.  Returns (nodes_list, edges_list)."""
     nodes = conn.execute(
-        "SELECT id, label, entity_type, centrality, properties "
-        "FROM kg_nodes WHERE graph_id = ?",
+        "SELECT id, label, entity_type, centrality, properties FROM kg_nodes WHERE graph_id = ?",
         (graph_id,),
     ).fetchall()
     edges = conn.execute(
-        "SELECT id, source_id, target_id, relationship, weight "
-        "FROM kg_edges WHERE graph_id = ?",
+        "SELECT id, source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id = ?",
         (graph_id,),
     ).fetchall()
     return nodes, edges
@@ -171,9 +168,14 @@ def find_bridge_gaps(graph_id, db_path=None):
     try:
         nodes, edges = _load_graph(conn, graph_id)
         if not nodes:
-            return {"status": "ok", "graph_id": graph_id,
-                    "connected_components": 0, "bridge_gaps": [],
-                    "orphan_count": 0, "orphan_nodes": []}
+            return {
+                "status": "ok",
+                "graph_id": graph_id,
+                "connected_components": 0,
+                "bridge_gaps": [],
+                "orphan_count": 0,
+                "orphan_nodes": [],
+            }
 
         node_map = {n["id"]: dict(n) for n in nodes}
         adj = _build_adjacency(nodes, edges)
@@ -182,9 +184,9 @@ def find_bridge_gaps(graph_id, db_path=None):
         # Identify orphan nodes (0 neighbours)
         orphan_ids = [nid for nid, nbrs in adj.items() if len(nbrs) == 0]
         orphan_nodes = [
-            {"id": nid, "label": node_map[nid]["label"],
-             "entity_type": node_map[nid]["entity_type"]}
-            for nid in orphan_ids if nid in node_map
+            {"id": nid, "label": node_map[nid]["label"], "entity_type": node_map[nid]["entity_type"]}
+            for nid in orphan_ids
+            if nid in node_map
         ]
 
         # Build entity-type index per component
@@ -198,14 +200,9 @@ def find_bridge_gaps(graph_id, db_path=None):
 
         # Find bridge gap opportunities between component pairs
         bridge_gaps = []
-        non_orphan_comps = [
-            (i, c) for i, c in enumerate(components) if len(c) > 1
-        ]
+        non_orphan_comps = [(i, c) for i, c in enumerate(components) if len(c) > 1]
         # Include single-node components that are not true orphans
-        single_comps = [
-            (i, c) for i, c in enumerate(components)
-            if len(c) == 1 and list(c)[0] not in orphan_ids
-        ]
+        single_comps = [(i, c) for i, c in enumerate(components) if len(c) == 1 and list(c)[0] not in orphan_ids]
         candidate_comps = non_orphan_comps + single_comps
 
         for idx_a in range(len(candidate_comps)):
@@ -222,35 +219,39 @@ def find_bridge_gaps(graph_id, db_path=None):
                     nodes_b = comp_types[ci_b][etype]
                     for na in nodes_a[:3]:  # limit to avoid combinatorial explosion
                         for nb in nodes_b[:3]:
-                            potential_bridges.append({
-                                "from_node": node_map[na]["label"],
-                                "from_id": na,
-                                "to_node": node_map[nb]["label"],
-                                "to_id": nb,
-                                "shared_type": etype,
-                            })
+                            potential_bridges.append(
+                                {
+                                    "from_node": node_map[na]["label"],
+                                    "from_id": na,
+                                    "to_node": node_map[nb]["label"],
+                                    "to_id": nb,
+                                    "shared_type": etype,
+                                }
+                            )
 
                 if shared_types or len(comp_a) > 1 or len(comp_b) > 1:
                     # Summarise each component by its dominant entity type
-                    topic_a = max(comp_types[ci_a], key=lambda t: len(comp_types[ci_a][t])) if comp_types[ci_a] else "unknown"
-                    topic_b = max(comp_types[ci_b], key=lambda t: len(comp_types[ci_b][t])) if comp_types[ci_b] else "unknown"
+                    topic_a = (
+                        max(comp_types[ci_a], key=lambda t: len(comp_types[ci_a][t])) if comp_types[ci_a] else "unknown"
+                    )
+                    topic_b = (
+                        max(comp_types[ci_b], key=lambda t: len(comp_types[ci_b][t])) if comp_types[ci_b] else "unknown"
+                    )
 
-                    bridge_gaps.append({
-                        "component_a": sorted(
-                            [node_map[n]["label"] for n in comp_a]
-                        )[:10],
-                        "component_a_size": len(comp_a),
-                        "component_b": sorted(
-                            [node_map[n]["label"] for n in comp_b]
-                        )[:10],
-                        "component_b_size": len(comp_b),
-                        "potential_bridges": potential_bridges[:10],
-                        "suggested_relationship": (
-                            f"Connect {topic_a} cluster to {topic_b} cluster"
-                            if shared_types
-                            else f"Investigate link between {topic_a} and {topic_b} clusters"
-                        ),
-                    })
+                    bridge_gaps.append(
+                        {
+                            "component_a": sorted([node_map[n]["label"] for n in comp_a])[:10],
+                            "component_a_size": len(comp_a),
+                            "component_b": sorted([node_map[n]["label"] for n in comp_b])[:10],
+                            "component_b_size": len(comp_b),
+                            "potential_bridges": potential_bridges[:10],
+                            "suggested_relationship": (
+                                f"Connect {topic_a} cluster to {topic_b} cluster"
+                                if shared_types
+                                else f"Investigate link between {topic_a} and {topic_b} clusters"
+                            ),
+                        }
+                    )
 
         return {
             "status": "ok",
@@ -276,9 +277,9 @@ def find_orphan_nodes(graph_id, db_path=None):
             connected.add(e["target_id"])
 
         orphans = [
-            {"id": n["id"], "label": n["label"],
-             "entity_type": n["entity_type"]}
-            for n in nodes if n["id"] not in connected
+            {"id": n["id"], "label": n["label"], "entity_type": n["entity_type"]}
+            for n in nodes
+            if n["id"] not in connected
         ]
         return {
             "status": "ok",
@@ -303,8 +304,7 @@ def generate_questions(graph_id, use_llm=False, db_path=None):
     try:
         nodes, edges = _load_graph(conn, graph_id)
         if not nodes:
-            return {"status": "ok", "graph_id": graph_id,
-                    "questions": [], "question_count": 0}
+            return {"status": "ok", "graph_id": graph_id, "questions": [], "question_count": 0}
 
         node_map = {n["id"]: dict(n) for n in nodes}
         adj = _build_adjacency(nodes, edges)
@@ -313,26 +313,23 @@ def generate_questions(graph_id, use_llm=False, db_path=None):
         questions = []
 
         # --- 1. High-centrality nodes (expansion questions) -----------------
-        sorted_by_centrality = sorted(
-            nodes, key=lambda n: n["centrality"], reverse=True
-        )
+        sorted_by_centrality = sorted(nodes, key=lambda n: n["centrality"], reverse=True)
         top_central = sorted_by_centrality[:5]
         for n in top_central:
             if n["centrality"] > 0:
                 neighbour_count = len(adj.get(n["id"], set()))
-                questions.append({
-                    "question": (
-                        f'Are there additional {n["entity_type"]} entities '
-                        f'related to "{n["label"]}"?'
-                    ),
-                    "type": "expansion",
-                    "priority": "high" if n["centrality"] >= 0.5 else "medium",
-                    "context": {
-                        "node_id": n["id"],
-                        "centrality": round(n["centrality"], 4),
-                        "current_neighbours": neighbour_count,
-                    },
-                })
+                questions.append(
+                    {
+                        "question": (f'Are there additional {n["entity_type"]} entities related to "{n["label"]}"?'),
+                        "type": "expansion",
+                        "priority": "high" if n["centrality"] >= 0.5 else "medium",
+                        "context": {
+                            "node_id": n["id"],
+                            "centrality": round(n["centrality"], 4),
+                            "current_neighbours": neighbour_count,
+                        },
+                    }
+                )
 
         # --- 2. Sparse entity types (knowledge gap questions) ---------------
         type_counts = defaultdict(int)
@@ -347,16 +344,18 @@ def generate_questions(graph_id, use_llm=False, db_path=None):
                         (n["label"] for n in nodes if n["entity_type"] == etype),
                         etype,
                     )
-                    questions.append({
-                        "question": (
-                            f'The entity type "{etype}" has only {count} '
-                            f'instance(s) (e.g., "{example}"). '
-                            f"Are there additional {etype} entities to add?"
-                        ),
-                        "type": "knowledge_gap",
-                        "priority": "medium" if count == 1 else "low",
-                        "context": {"entity_type": etype, "count": count},
-                    })
+                    questions.append(
+                        {
+                            "question": (
+                                f'The entity type "{etype}" has only {count} '
+                                f'instance(s) (e.g., "{example}"). '
+                                f"Are there additional {etype} entities to add?"
+                            ),
+                            "type": "knowledge_gap",
+                            "priority": "medium" if count == 1 else "low",
+                            "context": {"entity_type": etype, "count": count},
+                        }
+                    )
 
         # --- 3. Bridge gap questions ----------------------------------------
         if len(components) > 1:
@@ -365,35 +364,40 @@ def generate_questions(graph_id, use_llm=False, db_path=None):
                 types = defaultdict(list)
                 for nid in comp:
                     if nid in node_map:
-                        types[node_map[nid]["entity_type"]].append(
-                            node_map[nid]["label"]
-                        )
+                        types[node_map[nid]["entity_type"]].append(node_map[nid]["label"])
                 comp_types_list.append(types)
 
             for i in range(min(len(components), 5)):
                 for j in range(i + 1, min(len(components), 5)):
                     if len(components[i]) < 2 and len(components[j]) < 2:
                         continue
-                    topic_i = max(
-                        comp_types_list[i],
-                        key=lambda t: len(comp_types_list[i][t]),
-                    ) if comp_types_list[i] else "unknown"
-                    topic_j = max(
-                        comp_types_list[j],
-                        key=lambda t: len(comp_types_list[j][t]),
-                    ) if comp_types_list[j] else "unknown"
-                    questions.append({
-                        "question": (
-                            f"What connects the {topic_i} cluster "
-                            f"to the {topic_j} cluster?"
-                        ),
-                        "type": "bridge_gap",
-                        "priority": "high",
-                        "context": {
-                            "component_a_size": len(components[i]),
-                            "component_b_size": len(components[j]),
-                        },
-                    })
+                    topic_i = (
+                        max(
+                            comp_types_list[i],
+                            key=lambda t: len(comp_types_list[i][t]),
+                        )
+                        if comp_types_list[i]
+                        else "unknown"
+                    )
+                    topic_j = (
+                        max(
+                            comp_types_list[j],
+                            key=lambda t: len(comp_types_list[j][t]),
+                        )
+                        if comp_types_list[j]
+                        else "unknown"
+                    )
+                    questions.append(
+                        {
+                            "question": (f"What connects the {topic_i} cluster to the {topic_j} cluster?"),
+                            "type": "bridge_gap",
+                            "priority": "high",
+                            "context": {
+                                "component_a_size": len(components[i]),
+                                "component_b_size": len(components[j]),
+                            },
+                        }
+                    )
 
         # --- 4. Cross-entity-type questions (relationship discovery) --------
         edge_type_pairs = set()
@@ -411,15 +415,14 @@ def generate_questions(graph_id, use_llm=False, db_path=None):
 
         missing_pairs = all_type_pairs - edge_type_pairs
         for ta, tb in list(missing_pairs)[:5]:
-            questions.append({
-                "question": (
-                    f'What is the relationship between "{ta}" '
-                    f'and "{tb}" entities?'
-                ),
-                "type": "bridge_gap",
-                "priority": "medium",
-                "context": {"type_a": ta, "type_b": tb},
-            })
+            questions.append(
+                {
+                    "question": (f'What is the relationship between "{ta}" and "{tb}" entities?'),
+                    "type": "bridge_gap",
+                    "priority": "medium",
+                    "context": {"type_a": ta, "type_b": tb},
+                }
+            )
 
         # --- 5. Optional LLM refinement (scanner-tier only) -----------------
         if use_llm and _HAS_LLM and questions:
@@ -439,9 +442,7 @@ def _refine_questions_llm(graph_id, questions, node_map):
     """Optionally refine questions via scanner-tier qwen3.5 (zero Claude tokens)."""
     try:
         router = LLMRouter()
-        raw_qs = "\n".join(
-            f"- [{q['type']}] {q['question']}" for q in questions[:15]
-        )
+        raw_qs = "\n".join(f"- [{q['type']}] {q['question']}" for q in questions[:15])
         prompt = (
             "Given these research questions about a knowledge graph, "
             "rewrite each to be clearer and more actionable. "
@@ -458,7 +459,7 @@ def _refine_questions_llm(graph_id, questions, node_map):
         start = content.find("[")
         end = content.rfind("]")
         if start >= 0 and end > start:
-            refined = json.loads(content[start:end + 1])
+            refined = json.loads(content[start : end + 1])
             for i, rq in enumerate(refined):
                 if i < len(questions):
                     questions[i]["question"] = rq.get("question", questions[i]["question"])
@@ -472,9 +473,7 @@ def graph_summary(graph_id, db_path=None):
     conn = _get_db(db_path)
     _ensure_tables(conn)
     try:
-        graph = conn.execute(
-            "SELECT * FROM kg_graphs WHERE id = ?", (graph_id,)
-        ).fetchone()
+        graph = conn.execute("SELECT * FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
         if not graph:
             return {"status": "error", "message": f"Graph {graph_id} not found"}
 
@@ -511,22 +510,14 @@ def graph_summary(graph_id, db_path=None):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="Knowledge Graph Insight Generator — scanner-tier analysis"
-    )
+    parser = argparse.ArgumentParser(description="Knowledge Graph Insight Generator — scanner-tier analysis")
     parser.add_argument("--graph-id", required=True, help="Knowledge graph ID")
-    parser.add_argument("--questions", action="store_true",
-                        help="Generate research questions from graph structure")
-    parser.add_argument("--bridge-gaps", action="store_true",
-                        help="Find bridge gaps between disconnected clusters")
-    parser.add_argument("--orphans", action="store_true",
-                        help="Find orphan nodes with zero edges")
-    parser.add_argument("--summary", action="store_true",
-                        help="Quick graph summary statistics")
-    parser.add_argument("--use-llm", action="store_true",
-                        help="Use scanner-tier LLM (qwen3.5) for question refinement")
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
+    parser.add_argument("--questions", action="store_true", help="Generate research questions from graph structure")
+    parser.add_argument("--bridge-gaps", action="store_true", help="Find bridge gaps between disconnected clusters")
+    parser.add_argument("--orphans", action="store_true", help="Find orphan nodes with zero edges")
+    parser.add_argument("--summary", action="store_true", help="Quick graph summary statistics")
+    parser.add_argument("--use-llm", action="store_true", help="Use scanner-tier LLM (qwen3.5) for question refinement")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -573,10 +564,8 @@ def main():
             print(f"  Bridge Gaps Found:    {len(result['bridge_gaps'])}")
             for i, gap in enumerate(result["bridge_gaps"], 1):
                 print(f"\n  Gap {i}: {gap['suggested_relationship']}")
-                print(f"    Component A ({gap['component_a_size']} nodes): "
-                      f"{', '.join(gap['component_a'][:5])}")
-                print(f"    Component B ({gap['component_b_size']} nodes): "
-                      f"{', '.join(gap['component_b'][:5])}")
+                print(f"    Component A ({gap['component_a_size']} nodes): {', '.join(gap['component_a'][:5])}")
+                print(f"    Component B ({gap['component_b_size']} nodes): {', '.join(gap['component_b'][:5])}")
                 if gap["potential_bridges"]:
                     print(f"    Potential bridges: {len(gap['potential_bridges'])}")
 
@@ -588,9 +577,7 @@ def main():
         if "questions" in result:
             print(f"\n  Questions Generated: {result['question_count']}")
             for i, q in enumerate(result["questions"], 1):
-                priority_marker = {"high": "!!!", "medium": "!!", "low": "!"}.get(
-                    q["priority"], ""
-                )
+                priority_marker = {"high": "!!!", "medium": "!!", "low": "!"}.get(q["priority"], "")
                 print(f"\n  {i}. [{q['type']}] {priority_marker} {q['question']}")
 
 

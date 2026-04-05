@@ -248,8 +248,7 @@ variable "project_name" {
 """
 
 
-def generate(project_name: str = "icdev", environment: str = "production",
-             target: str = "k8s", output_dir: str = ""):
+def generate(project_name: str = "icdev", environment: str = "production", target: str = "k8s", output_dir: str = ""):
     """Generate on-premises Terraform configuration files."""
     out = Path(output_dir) if output_dir else Path.cwd() / "terraform" / "onprem"
     out.mkdir(parents=True, exist_ok=True)
@@ -284,21 +283,16 @@ def generate(project_name: str = "icdev", environment: str = "production",
 
 def run_cli():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Generate on-premises Terraform configurations"
-    )
+    parser = argparse.ArgumentParser(description="Generate on-premises Terraform configurations")
     parser.add_argument("--project-id", default="icdev", help="Project name")
-    parser.add_argument("--environment", default="production",
-                        help="Environment (production, staging, dev)")
-    parser.add_argument("--target", default="k8s",
-                        choices=["k8s", "docker"],
-                        help="Deployment target")
+    parser.add_argument("--environment", default="production", help="Environment (production, staging, dev)")
+    parser.add_argument("--target", default="k8s", choices=["k8s", "docker"], help="Deployment target")
     parser.add_argument("--output-dir", default="", help="Output directory")
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     import json
+
     result = generate(
         project_name=args.project_id,
         environment=args.environment,

@@ -223,12 +223,13 @@ class TestLLMRouterInstrumentation:
         router._injection_cache = {}
         router._injection_detector = None
 
-        with patch.object(router, "_scan_for_injection", return_value="allow"), \
-             patch.object(router, "get_effort", return_value="medium"), \
-             patch.object(router, "_get_chain_for_function", return_value=["test-model"]), \
-             patch.object(router, "_get_model_config", return_value={"provider": "test", "model_id": "m1"}), \
-             patch.object(router, "_get_provider") as mock_prov:
-
+        with (
+            patch.object(router, "_scan_for_injection", return_value="allow"),
+            patch.object(router, "get_effort", return_value="medium"),
+            patch.object(router, "_get_chain_for_function", return_value=["test-model"]),
+            patch.object(router, "_get_model_config", return_value={"provider": "test", "model_id": "m1"}),
+            patch.object(router, "_get_provider") as mock_prov,
+        ):
             mock_provider = MagicMock()
             mock_provider.invoke.return_value = mock_response
             mock_prov.return_value = mock_provider
@@ -263,12 +264,13 @@ class TestLLMRouterInstrumentation:
         router._injection_cache = {}
         router._injection_detector = None
 
-        with patch.object(router, "_scan_for_injection", return_value="allow"), \
-             patch.object(router, "get_effort", return_value="medium"), \
-             patch.object(router, "_get_chain_for_function", return_value=["m1"]), \
-             patch.object(router, "_get_model_config", return_value={"provider": "fail_prov", "model_id": "m1"}), \
-             patch.object(router, "_get_provider") as mock_prov:
-
+        with (
+            patch.object(router, "_scan_for_injection", return_value="allow"),
+            patch.object(router, "get_effort", return_value="medium"),
+            patch.object(router, "_get_chain_for_function", return_value=["m1"]),
+            patch.object(router, "_get_model_config", return_value={"provider": "fail_prov", "model_id": "m1"}),
+            patch.object(router, "_get_provider") as mock_prov,
+        ):
             mock_provider = MagicMock()
             mock_provider.invoke.side_effect = RuntimeError("provider down")
             mock_prov.return_value = mock_provider

@@ -117,11 +117,25 @@ def check_database() -> CheckResult:
         tables = [row[0] for row in cursor.fetchall()]
 
         expected_tables = [
-            "a2a_task_artifacts", "a2a_task_history", "a2a_tasks", "agents",
-            "alerts", "audit_trail", "code_reviews", "compliance_controls",
-            "deployments", "failure_log", "knowledge_patterns", "metric_snapshots",
-            "poam_items", "project_controls", "projects", "sbom_records",
-            "self_healing_events", "ssp_documents", "stig_findings",
+            "a2a_task_artifacts",
+            "a2a_task_history",
+            "a2a_tasks",
+            "agents",
+            "alerts",
+            "audit_trail",
+            "code_reviews",
+            "compliance_controls",
+            "deployments",
+            "failure_log",
+            "knowledge_patterns",
+            "metric_snapshots",
+            "poam_items",
+            "project_controls",
+            "projects",
+            "sbom_records",
+            "self_healing_events",
+            "ssp_documents",
+            "stig_findings",
         ]
 
         missing_tables = [t for t in expected_tables if t not in tables]
@@ -270,8 +284,7 @@ def check_git_repo() -> CheckResult:
     """Check git repository configuration."""
     try:
         result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT)
+            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=str(PROJECT_ROOT)
         )
 
         if result.returncode != 0:
@@ -305,9 +318,7 @@ def check_claude_code() -> CheckResult:
     claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
 
     try:
-        result = subprocess.run(
-            [claude_path, "--version"], capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run([claude_path, "--version"], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             return CheckResult(
                 success=False,
@@ -333,11 +344,14 @@ def check_claude_code() -> CheckResult:
 def check_playwright() -> CheckResult:
     """Check if Playwright is installed and browsers are available."""
     from tools.compat.platform_utils import get_npx_cmd
+
     npx = get_npx_cmd()
     try:
         result = subprocess.run(
             [npx, "playwright", "--version"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
             cwd=str(PROJECT_ROOT),
         )
         if result.returncode != 0:
@@ -350,7 +364,11 @@ def check_playwright() -> CheckResult:
         version = result.stdout.strip()
 
         # Check for native test files
-        native_tests = list((PROJECT_ROOT / "tests" / "e2e").glob("*.spec.ts")) if (PROJECT_ROOT / "tests" / "e2e").exists() else []
+        native_tests = (
+            list((PROJECT_ROOT / "tests" / "e2e").glob("*.spec.ts"))
+            if (PROJECT_ROOT / "tests" / "e2e").exists()
+            else []
+        )
 
         return CheckResult(
             success=True,
@@ -458,7 +476,12 @@ def main():
             print(f"\n  [{status_str}] {check_name.replace('_', ' ').title()}")
 
             for key, value in check_result.details.items():
-                if value is not None and key not in ["missing_required", "missing_optional", "unavailable", "invalid_servers"]:
+                if value is not None and key not in [
+                    "missing_required",
+                    "missing_optional",
+                    "unavailable",
+                    "invalid_servers",
+                ]:
                     print(f"       {key}: {value}")
 
             if check_result.error:

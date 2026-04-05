@@ -70,12 +70,14 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -115,23 +117,44 @@ COMPLIANCE_ANTI_PATTERNS = [
 
 # Keywords indicating new external connections (ORANGE+)
 EXTERNAL_CONNECTION_KEYWORDS = [
-    "external api", "third-party", "third party", "new endpoint",
-    "outbound connection", "webhook to external", "saas integration",
-    "public internet", "cross-boundary", "inter-enclave",
+    "external api",
+    "third-party",
+    "third party",
+    "new endpoint",
+    "outbound connection",
+    "webhook to external",
+    "saas integration",
+    "public internet",
+    "cross-boundary",
+    "inter-enclave",
 ]
 
 # Keywords indicating classification changes (RED)
 CLASSIFICATION_CHANGE_KEYWORDS = [
-    "classification change", "upgrade to secret", "downgrade",
-    "reclassify", "il6", "sipr", "secret data", "ts/sci",
-    "boundary expansion", "new enclave", "new authorization boundary",
+    "classification change",
+    "upgrade to secret",
+    "downgrade",
+    "reclassify",
+    "il6",
+    "sipr",
+    "secret data",
+    "ts/sci",
+    "boundary expansion",
+    "new enclave",
+    "new authorization boundary",
 ]
 
 # Keywords indicating new data flows (YELLOW+)
 DATA_FLOW_KEYWORDS = [
-    "new data flow", "data exchange", "new integration",
-    "ingest from", "export to", "data pipeline",
-    "new database", "new storage", "new queue",
+    "new data flow",
+    "data exchange",
+    "new integration",
+    "ingest from",
+    "export to",
+    "data pipeline",
+    "new database",
+    "new storage",
+    "new queue",
 ]
 
 # License patterns for detection in signal text
@@ -205,23 +228,15 @@ def _ensure_triage_tables(conn):
     """)
 
     # Add triage columns to innovation_signals if not present
-    existing_cols = {
-        row[1] for row in conn.execute("PRAGMA table_info(innovation_signals)").fetchall()
-    }
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(innovation_signals)").fetchall()}
 
     alter_stmts = []
     if "triage_result" not in existing_cols:
-        alter_stmts.append(
-            "ALTER TABLE innovation_signals ADD COLUMN triage_result TEXT"
-        )
+        alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN triage_result TEXT")
     if "gotcha_layer" not in existing_cols:
-        alter_stmts.append(
-            "ALTER TABLE innovation_signals ADD COLUMN gotcha_layer TEXT"
-        )
+        alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN gotcha_layer TEXT")
     if "boundary_tier" not in existing_cols:
-        alter_stmts.append(
-            "ALTER TABLE innovation_signals ADD COLUMN boundary_tier TEXT"
-        )
+        alter_stmts.append("ALTER TABLE innovation_signals ADD COLUMN boundary_tier TEXT")
 
     for stmt in alter_stmts:
         try:
@@ -454,10 +469,12 @@ def _stage_compliance_precheck(signal, config):
     for pattern in COMPLIANCE_ANTI_PATTERNS:
         matches = re.findall(pattern, text, re.IGNORECASE)
         if matches:
-            violations.append({
-                "pattern": pattern,
-                "matches": matches,
-            })
+            violations.append(
+                {
+                    "pattern": pattern,
+                    "matches": matches,
+                }
+            )
 
     if violations:
         result = "block" if block_on_weakening else "warn"
@@ -509,9 +526,7 @@ def _stage_duplicate_license(signal, config, conn):
     # --- Duplicate check ---
     if dedup_config.get("enabled", True):
         time_window = dedup_config.get("time_window_days", 90)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=time_window)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=time_window)).strftime("%Y-%m-%dT%H:%M:%SZ")
         content_hash = signal.get("content_hash", "")
 
         if content_hash:
@@ -527,12 +542,14 @@ def _stage_duplicate_license(signal, config, conn):
             ).fetchone()
 
             if existing:
-                issues.append({
-                    "type": "duplicate",
-                    "existing_signal_id": existing["id"],
-                    "existing_title": existing["title"],
-                    "existing_date": existing["discovered_at"],
-                })
+                issues.append(
+                    {
+                        "type": "duplicate",
+                        "existing_signal_id": existing["id"],
+                        "existing_title": existing["title"],
+                        "existing_date": existing["discovered_at"],
+                    }
+                )
 
         # Also do a title similarity check (simple exact-prefix match)
         title = signal.get("title", "").strip()
@@ -549,13 +566,13 @@ def _stage_duplicate_license(signal, config, conn):
             ).fetchall()
 
             if similar:
-                issues.append({
-                    "type": "similar_title",
-                    "similar_count": len(similar),
-                    "similar_signals": [
-                        {"id": s["id"], "title": s["title"]} for s in similar
-                    ],
-                })
+                issues.append(
+                    {
+                        "type": "similar_title",
+                        "similar_count": len(similar),
+                        "similar_signals": [{"id": s["id"], "title": s["title"]} for s in similar],
+                    }
+                )
 
     # --- License check ---
     if license_config.get("enabled", True):
@@ -565,8 +582,7 @@ def _stage_duplicate_license(signal, config, conn):
         detected_licenses = []
         for license_id, patterns in LICENSE_PATTERNS.items():
             if license_id in blocked_licenses or any(
-                bl.replace("-", "").lower() == license_id.replace("-", "").lower()
-                for bl in blocked_licenses
+                bl.replace("-", "").lower() == license_id.replace("-", "").lower() for bl in blocked_licenses
             ):
                 for pat in patterns:
                     if re.search(pat, text, re.IGNORECASE):
@@ -574,11 +590,13 @@ def _stage_duplicate_license(signal, config, conn):
                         break
 
         if detected_licenses:
-            issues.append({
-                "type": "blocked_license",
-                "licenses": detected_licenses,
-                "allowed_licenses": license_config.get("allowed_licenses", []),
-            })
+            issues.append(
+                {
+                    "type": "blocked_license",
+                    "licenses": detected_licenses,
+                    "allowed_licenses": license_config.get("allowed_licenses", []),
+                }
+            )
 
     # Determine result
     has_duplicate = any(i["type"] == "duplicate" for i in issues)
@@ -589,11 +607,7 @@ def _stage_duplicate_license(signal, config, conn):
         if has_duplicate:
             reasons.append("Duplicate signal detected within time window")
         if has_blocked_license:
-            lics = [
-                i["licenses"]
-                for i in issues
-                if i["type"] == "blocked_license"
-            ]
+            lics = [i["licenses"] for i in issues if i["type"] == "blocked_license"]
             flat_lics = [l for sublist in lics for l in sublist]
             reasons.append(f"Blocked license(s) detected: {', '.join(flat_lics)}")
         return "block", {
@@ -676,12 +690,14 @@ def triage_signal(signal_id, db_path=None):
 
             _log_triage_stage(conn, signal_id, stage_num, stage_name, result, details)
 
-            stage_results.append({
-                "stage": stage_num,
-                "name": stage_name,
-                "result": result,
-                "details": details,
-            })
+            stage_results.append(
+                {
+                    "stage": stage_num,
+                    "name": stage_name,
+                    "result": result,
+                    "details": details,
+                }
+            )
 
             if result == "block":
                 blocked = True
@@ -704,12 +720,14 @@ def triage_signal(signal_id, db_path=None):
 
             _log_triage_stage(conn, signal_id, 5, "duplicate_license_check", result, details)
 
-            stage_results.append({
-                "stage": 5,
-                "name": "duplicate_license_check",
-                "result": result,
-                "details": details,
-            })
+            stage_results.append(
+                {
+                    "stage": 5,
+                    "name": "duplicate_license_check",
+                    "result": result,
+                    "details": details,
+                }
+            )
 
             if result == "block":
                 blocked = True
@@ -825,17 +843,19 @@ def triage_all_scored(db_path=None):
             else:
                 triage_result = outcome.get("triage_result", "logged")
                 counts[triage_result] = counts.get(triage_result, 0) + 1
-                results.append({
-                    "signal_id": sid,
-                    "title": outcome.get("title", ""),
-                    "triage_result": triage_result,
-                    "score": outcome.get("score", 0.0),
-                    "category": outcome.get("category"),
-                    "gotcha_layer": outcome.get("gotcha_layer"),
-                    "boundary_tier": outcome.get("boundary_tier"),
-                    "blocked": outcome.get("blocked", False),
-                    "block_stage": outcome.get("block_stage"),
-                })
+                results.append(
+                    {
+                        "signal_id": sid,
+                        "title": outcome.get("title", ""),
+                        "triage_result": triage_result,
+                        "score": outcome.get("score", 0.0),
+                        "category": outcome.get("category"),
+                        "gotcha_layer": outcome.get("gotcha_layer"),
+                        "boundary_tier": outcome.get("boundary_tier"),
+                        "blocked": outcome.get("blocked", False),
+                        "block_stage": outcome.get("block_stage"),
+                    }
+                )
         except Exception as e:
             counts["error"] += 1
             results.append({"signal_id": sid, "error": str(e)})
@@ -916,9 +936,9 @@ def get_triage_summary(db_path=None):
             by_boundary[row["boundary_tier"]] = row["cnt"]
 
         # Pending triage (scored but not yet triaged)
-        pending = conn.execute(
-            "SELECT COUNT(*) as cnt FROM innovation_signals WHERE status = 'scored'"
-        ).fetchone()["cnt"]
+        pending = conn.execute("SELECT COUNT(*) as cnt FROM innovation_signals WHERE status = 'scored'").fetchone()[
+            "cnt"
+        ]
 
         # Recent triage log entries (last 20 blocked)
         recent_blocks = []
@@ -937,18 +957,18 @@ def get_triage_summary(db_path=None):
                 details = json.loads(details) if details else {}
             except (json.JSONDecodeError, TypeError):
                 details = {"raw": details}
-            recent_blocks.append({
-                "signal_id": row["signal_id"],
-                "title": row["title"],
-                "blocked_at_stage": row["stage_name"],
-                "details": details,
-                "triaged_at": row["triaged_at"],
-            })
+            recent_blocks.append(
+                {
+                    "signal_id": row["signal_id"],
+                    "title": row["title"],
+                    "blocked_at_stage": row["stage_name"],
+                    "details": details,
+                    "triaged_at": row["triaged_at"],
+                }
+            )
 
         # Total triage log entries
-        total_log_entries = conn.execute(
-            "SELECT COUNT(*) as cnt FROM innovation_triage_log"
-        ).fetchone()["cnt"]
+        total_log_entries = conn.execute("SELECT COUNT(*) as cnt FROM innovation_triage_log").fetchone()["cnt"]
 
         # Stage pass/block/warn distribution
         stage_stats = {}
@@ -987,9 +1007,7 @@ def main():
         description="ICDEV Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -1008,9 +1026,7 @@ def main():
         help="Show triage outcome summary",
     )
 
-    parser.add_argument(
-        "--signal-id", type=str, help="Signal ID to triage (with --triage)"
-    )
+    parser.add_argument("--signal-id", type=str, help="Signal ID to triage (with --triage)")
 
     args = parser.parse_args()
 
@@ -1077,9 +1093,7 @@ def _print_human(args, result):
 
         print("\nStage Details:")
         for stage in sig.get("stages", []):
-            icon = {"pass": "OK", "block": "BLOCK", "warn": "WARN"}.get(
-                stage["result"], "?"
-            )
+            icon = {"pass": "OK", "block": "BLOCK", "warn": "WARN"}.get(stage["result"], "?")
             print(f"  {stage['stage']}. {stage['name']}: [{icon}]")
             details = stage.get("details", {})
             if isinstance(details, dict):

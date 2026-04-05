@@ -5,6 +5,7 @@ Stores inferred table schemas in icdev.db so that downstream
 consumers (dashboards, mapping, data quality) can reference column
 metadata without re-connecting to the source.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,6 +41,7 @@ def register_schema(
     # Normalise schema to a JSON-serialisable dict
     if hasattr(schema, "__dataclass_fields__"):
         from dataclasses import asdict
+
         schema_dict = asdict(schema)
     elif isinstance(schema, dict):
         schema_dict = schema
@@ -54,8 +56,7 @@ def register_schema(
 
         # Upsert: update if exists, insert otherwise
         existing = conn.execute(
-            "SELECT id FROM db_inferred_schemas "
-            "WHERE connection_id = ? AND table_name = ?",
+            "SELECT id FROM db_inferred_schemas WHERE connection_id = ? AND table_name = ?",
             (connection_id, table_name),
         ).fetchone()
 
@@ -79,9 +80,7 @@ def register_schema(
         return {"status": "ok", "connection_id": connection_id, "table_name": table_name}
 
     except Exception as exc:
-        logger.error(
-            "register_schema(%s, %s) failed: %s", connection_id, table_name, exc
-        )
+        logger.error("register_schema(%s, %s) failed: %s", connection_id, table_name, exc)
         return {"status": "error", "error": str(exc)}
 
 
@@ -99,8 +98,7 @@ def get_schema(
         conn = _get_conn(db)
         _ensure_table(conn)
         row = conn.execute(
-            "SELECT schema_json FROM db_inferred_schemas "
-            "WHERE connection_id = ? AND table_name = ?",
+            "SELECT schema_json FROM db_inferred_schemas WHERE connection_id = ? AND table_name = ?",
             (connection_id, table_name),
         ).fetchone()
         conn.close()

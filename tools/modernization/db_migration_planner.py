@@ -17,7 +17,7 @@ Usage:
     python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type all
     python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type schema
     python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type data
-    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type procedures --source-path /opt/legacy/sql
+    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type procedures --source-path /opt/legacy/sql  # noqa: E501
     python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type validation
     python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type all --json
 """
@@ -42,16 +42,8 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 TYPE_MAPPINGS_PATH = BASE_DIR / "context" / "modernization" / "db_type_mappings.json"
 
 CUI_BANNER = "CUI // SP-CTI"
-SQL_CUI_HEADER = (
-    f"-- {'=' * 68}\n"
-    f"-- {CUI_BANNER}\n"
-    f"-- {'=' * 68}\n"
-)
-SQL_CUI_FOOTER = (
-    f"\n-- {'=' * 68}\n"
-    f"-- {CUI_BANNER}\n"
-    f"-- {'=' * 68}\n"
-)
+SQL_CUI_HEADER = f"-- {'=' * 68}\n-- {CUI_BANNER}\n-- {'=' * 68}\n"
+SQL_CUI_FOOTER = f"\n-- {'=' * 68}\n-- {CUI_BANNER}\n-- {'=' * 68}\n"
 MD_CUI_HEADER = f"<!-- {CUI_BANNER} -->"
 MD_CUI_FOOTER = f"<!-- {CUI_BANNER} -->"
 
@@ -107,6 +99,7 @@ _PATH_ALIASES = {
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db() -> sqlite3.Connection:
     """Return a sqlite3 connection with Row factory for dict-style access."""
     if not DB_PATH.exists():
@@ -127,6 +120,7 @@ def _normalise_db_name(name: str) -> str:
 # Type mapping loader
 # ---------------------------------------------------------------------------
 
+
 def load_type_mappings(source_db: str, target_db: str) -> dict:
     """Load type, function, and syntax mappings for a specific migration path.
 
@@ -138,8 +132,7 @@ def load_type_mappings(source_db: str, target_db: str) -> dict:
     Returns empty lists if no matching path is found.
     """
     if not TYPE_MAPPINGS_PATH.exists():
-        print(f"WARNING: Type mappings file not found at {TYPE_MAPPINGS_PATH}",
-              file=sys.stderr)
+        print(f"WARNING: Type mappings file not found at {TYPE_MAPPINGS_PATH}", file=sys.stderr)
         return {
             "data_type_mappings": [],
             "function_mappings": [],
@@ -175,8 +168,7 @@ def load_type_mappings(source_db: str, target_db: str) -> dict:
                 "syntax_mappings": entry.get("syntax_mappings", []),
             }
 
-    print(f"WARNING: No migration path found for {source_db} -> {target_db}",
-          file=sys.stderr)
+    print(f"WARNING: No migration path found for {source_db} -> {target_db}", file=sys.stderr)
     return {
         "data_type_mappings": [],
         "function_mappings": [],
@@ -188,8 +180,8 @@ def load_type_mappings(source_db: str, target_db: str) -> dict:
 # Data type conversion
 # ---------------------------------------------------------------------------
 
-def _map_data_type(source_type: str, source_db: str, target_db: str,
-                   mappings: dict) -> str:
+
+def _map_data_type(source_type: str, source_db: str, target_db: str, mappings: dict) -> str:
     """Convert a single data type from source to target using mappings.
 
     Handles parametric types such as NUMBER(10,2) -> NUMERIC(10,2) and
@@ -199,7 +191,7 @@ def _map_data_type(source_type: str, source_db: str, target_db: str,
     raw = source_type.strip()
 
     # Extract base type and optional parameters — e.g. "NUMBER(10,2)" -> ("NUMBER", "(10,2)")
-    param_match = re.match(r'^([A-Za-z_][A-Za-z0-9_ ]*)\s*(\(.*\))?$', raw)
+    param_match = re.match(r"^([A-Za-z_][A-Za-z0-9_ ]*)\s*(\(.*\))?$", raw)
     if param_match:
         base_type = param_match.group(1).strip().upper()
         params = param_match.group(2) or ""
@@ -234,6 +226,7 @@ def _map_data_type(source_type: str, source_db: str, target_db: str,
 # Function translation
 # ---------------------------------------------------------------------------
 
+
 def translate_functions(app_id: str, target_db: str, content: str) -> str:
     """Translate built-in function calls within SQL content.
 
@@ -251,90 +244,61 @@ def translate_functions(app_id: str, target_db: str, content: str) -> str:
     # ------- Oracle -> PostgreSQL translations -------
     # NVL2(a, b, c) -> CASE WHEN a IS NOT NULL THEN b ELSE c END
     result = re.sub(
-        r'\bNVL2\s*\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'CASE WHEN \1 IS NOT NULL THEN \2 ELSE \3 END',
-        result, flags=re.IGNORECASE
+        r"\bNVL2\s*\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)",
+        r"CASE WHEN \1 IS NOT NULL THEN \2 ELSE \3 END",
+        result,
+        flags=re.IGNORECASE,
     )
     # NVL(a, b) -> COALESCE(a, b)
-    result = re.sub(
-        r'\bNVL\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'COALESCE(\1, \2)',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bNVL\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)", r"COALESCE(\1, \2)", result, flags=re.IGNORECASE)
     # DECODE(a, b, c, d) -> CASE WHEN a=b THEN c ELSE d END
     result = re.sub(
-        r'\bDECODE\s*\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'CASE WHEN \1 = \2 THEN \3 ELSE \4 END',
-        result, flags=re.IGNORECASE
+        r"\bDECODE\s*\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)",
+        r"CASE WHEN \1 = \2 THEN \3 ELSE \4 END",
+        result,
+        flags=re.IGNORECASE,
     )
     # TO_DATE(s, 'fmt') -> TO_TIMESTAMP(s, 'fmt')
-    result = re.sub(
-        r'\bTO_DATE\s*\(',
-        'TO_TIMESTAMP(',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bTO_DATE\s*\(", "TO_TIMESTAMP(", result, flags=re.IGNORECASE)
     # SYSDATE -> CURRENT_TIMESTAMP
-    result = re.sub(
-        r'\bSYSDATE\b',
-        'CURRENT_TIMESTAMP',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bSYSDATE\b", "CURRENT_TIMESTAMP", result, flags=re.IGNORECASE)
     # SUBSTR(s, p, l) -> SUBSTRING(s FROM p FOR l)
     result = re.sub(
-        r'\bSUBSTR\s*\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'SUBSTRING(\1 FROM \2 FOR \3)',
-        result, flags=re.IGNORECASE
+        r"\bSUBSTR\s*\(\s*([^,]+?)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)",
+        r"SUBSTRING(\1 FROM \2 FOR \3)",
+        result,
+        flags=re.IGNORECASE,
     )
     # INSTR(s, sub) -> POSITION(sub IN s)
-    result = re.sub(
-        r'\bINSTR\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'POSITION(\2 IN \1)',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bINSTR\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)", r"POSITION(\2 IN \1)", result, flags=re.IGNORECASE)
 
     # ------- MSSQL -> PostgreSQL translations -------
     # GETDATE() -> CURRENT_TIMESTAMP
-    result = re.sub(
-        r'\bGETDATE\s*\(\s*\)',
-        'CURRENT_TIMESTAMP',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bGETDATE\s*\(\s*\)", "CURRENT_TIMESTAMP", result, flags=re.IGNORECASE)
     # ISNULL(a, b) -> COALESCE(a, b)
-    result = re.sub(
-        r'\bISNULL\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'COALESCE(\1, \2)',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bISNULL\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)", r"COALESCE(\1, \2)", result, flags=re.IGNORECASE)
     # LEN(s) -> LENGTH(s)
-    result = re.sub(
-        r'\bLEN\s*\(',
-        'LENGTH(',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bLEN\s*\(", "LENGTH(", result, flags=re.IGNORECASE)
     # CHARINDEX(sub, s) -> POSITION(sub IN s)
     result = re.sub(
-        r'\bCHARINDEX\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'POSITION(\1 IN \2)',
-        result, flags=re.IGNORECASE
+        r"\bCHARINDEX\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)", r"POSITION(\1 IN \2)", result, flags=re.IGNORECASE
     )
     # DATEADD(day, n, d) -> d + INTERVAL 'n days'
     result = re.sub(
-        r'\bDATEADD\s*\(\s*(\w+)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
+        r"\bDATEADD\s*\(\s*(\w+)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)",
         r"\3 + INTERVAL '\2 \1s'",
-        result, flags=re.IGNORECASE
+        result,
+        flags=re.IGNORECASE,
     )
     # DATEDIFF(day, a, b) -> EXTRACT(DAY FROM b - a)
     result = re.sub(
-        r'\bDATEDIFF\s*\(\s*(\w+)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'EXTRACT(\1 FROM \3 - \2)',
-        result, flags=re.IGNORECASE
+        r"\bDATEDIFF\s*\(\s*(\w+)\s*,\s*([^,]+?)\s*,\s*([^)]+?)\s*\)",
+        r"EXTRACT(\1 FROM \3 - \2)",
+        result,
+        flags=re.IGNORECASE,
     )
     # CONVERT(type, val) -> CAST(val AS type)
-    result = re.sub(
-        r'\bCONVERT\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)',
-        r'CAST(\2 AS \1)',
-        result, flags=re.IGNORECASE
-    )
+    result = re.sub(r"\bCONVERT\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)", r"CAST(\2 AS \1)", result, flags=re.IGNORECASE)
 
     return result
 
@@ -342,6 +306,7 @@ def translate_functions(app_id: str, target_db: str, content: str) -> str:
 # ---------------------------------------------------------------------------
 # Schema DDL generation
 # ---------------------------------------------------------------------------
+
 
 def generate_schema_ddl(app_id: str, target_db: str, output_dir: str) -> str:
     """Generate CREATE TABLE DDL for the target database.
@@ -361,7 +326,7 @@ def generate_schema_ddl(app_id: str, target_db: str, output_dir: str) -> str:
                JOIN legacy_applications la ON la.id = lds.legacy_app_id
                WHERE lds.legacy_app_id = ?
                ORDER BY lds.schema_name, lds.table_name, lds.column_name""",
-            (app_id,)
+            (app_id,),
         ).fetchall()
     finally:
         conn.close()
@@ -405,9 +370,7 @@ def generate_schema_ddl(app_id: str, target_db: str, output_dir: str) -> str:
         fk_constraints = []
 
         for col in columns:
-            mapped_type = _map_data_type(
-                col["data_type"], source_db, target_db, mappings
-            )
+            mapped_type = _map_data_type(col["data_type"], source_db, target_db, mappings)
             parts = [f"    {col['column_name']}", mapped_type]
 
             # NOT NULL
@@ -434,16 +397,12 @@ def generate_schema_ddl(app_id: str, target_db: str, output_dir: str) -> str:
                 )
                 # Index for FK column
                 idx_name = f"idx_{table}_{col['column_name']}"
-                index_statements.append(
-                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON {qualified}({col['column_name']});"
-                )
+                index_statements.append(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {qualified}({col['column_name']});")
 
         # Add primary key constraint
         if pk_columns:
             pk_name = f"pk_{table}"
-            col_defs.append(
-                f"    CONSTRAINT {pk_name} PRIMARY KEY ({', '.join(pk_columns)})"
-            )
+            col_defs.append(f"    CONSTRAINT {pk_name} PRIMARY KEY ({', '.join(pk_columns)})")
 
         # Add foreign key constraints
         col_defs.extend(fk_constraints)
@@ -492,7 +451,7 @@ def _translate_default(default_value: str, source_db: str, target_db: str) -> st
         if val.upper() in ("NEWID()", "(NEWID())"):
             return "gen_random_uuid()"
         # Strip outer parentheses common in MSSQL defaults
-        stripped = re.sub(r'^\((.+)\)$', r'\1', val)
+        stripped = re.sub(r"^\((.+)\)$", r"\1", val)
         if stripped != val:
             return stripped
 
@@ -503,8 +462,8 @@ def _translate_default(default_value: str, source_db: str, target_db: str) -> st
 # Data migration script generation
 # ---------------------------------------------------------------------------
 
-def generate_data_migration_scripts(app_id: str, target_db: str,
-                                    output_dir: str) -> str:
+
+def generate_data_migration_scripts(app_id: str, target_db: str, output_dir: str) -> str:
     """Generate INSERT/SELECT migration SQL for each table.
 
     For each table produces:
@@ -523,7 +482,7 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
                JOIN legacy_applications la ON la.id = lds.legacy_app_id
                WHERE lds.legacy_app_id = ?
                ORDER BY lds.schema_name, lds.table_name, lds.column_name""",
-            (app_id,)
+            (app_id,),
         ).fetchall()
     finally:
         conn.close()
@@ -577,8 +536,8 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
             clean_mapped = mapped_type.split("--")[0].strip().upper()
 
             # Extract base type from mapped for comparison
-            source_base = re.match(r'^([A-Za-z_][A-Za-z0-9_ ]*)', source_type)
-            target_base = re.match(r'^([A-Za-z_][A-Za-z0-9_ ]*)', clean_mapped)
+            source_base = re.match(r"^([A-Za-z_][A-Za-z0-9_ ]*)", source_type)
+            target_base = re.match(r"^([A-Za-z_][A-Za-z0-9_ ]*)", clean_mapped)
             source_base_str = source_base.group(1).strip() if source_base else source_type
             target_base_str = target_base.group(1).strip() if target_base else clean_mapped
 
@@ -602,12 +561,8 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
 
         # Row count validation
         validation_lines.append(f"-- Validate row counts: {qualified}")
-        validation_lines.append(
-            f"SELECT 'source' AS side, COUNT(*) AS row_count FROM {source_qualified};"
-        )
-        validation_lines.append(
-            f"SELECT 'target' AS side, COUNT(*) AS row_count FROM {qualified};"
-        )
+        validation_lines.append(f"SELECT 'source' AS side, COUNT(*) AS row_count FROM {source_qualified};")
+        validation_lines.append(f"SELECT 'target' AS side, COUNT(*) AS row_count FROM {qualified};")
         validation_lines.append("")
 
     # Append validation section
@@ -631,8 +586,8 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
 # Stored procedure translation
 # ---------------------------------------------------------------------------
 
-def translate_stored_procedures(app_id: str, target_db: str,
-                                source_path: str, output_dir: str) -> tuple:
+
+def translate_stored_procedures(app_id: str, target_db: str, source_path: str, output_dir: str) -> tuple:
     """Translate stored procedure and function SQL files to target dialect.
 
     Scans source_path for .sql files containing CREATE PROCEDURE/FUNCTION,
@@ -665,12 +620,9 @@ def translate_stored_procedures(app_id: str, target_db: str,
     # Determine source DB from the app record
     conn = _get_db()
     try:
-        conn.execute(
-            "SELECT * FROM legacy_applications WHERE id = ?", (app_id,)
-        ).fetchone()
+        conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (app_id,)).fetchone()
         schema_row = conn.execute(
-            "SELECT db_type FROM legacy_db_schemas WHERE legacy_app_id = ? LIMIT 1",
-            (app_id,)
+            "SELECT db_type FROM legacy_db_schemas WHERE legacy_app_id = ? LIMIT 1", (app_id,)
         ).fetchone()
     finally:
         conn.close()
@@ -691,10 +643,7 @@ def translate_stored_procedures(app_id: str, target_db: str,
     translated_blocks.append(f"-- {'=' * 68}")
     translated_blocks.append("")
 
-    proc_pattern = re.compile(
-        r'\bCREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION)\b',
-        re.IGNORECASE
-    )
+    proc_pattern = re.compile(r"\bCREATE\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION)\b", re.IGNORECASE)
 
     for sql_file in sql_files:
         content = sql_file.read_text(encoding="utf-8", errors="replace")
@@ -712,128 +661,103 @@ def translate_stored_procedures(app_id: str, target_db: str,
         if src_key == "oracle":
             # IS -> AS (in procedure/function declarations)
             translated_content = re.sub(
-                r'\b(CREATE\s+(?:OR\s+REPLACE\s+)?(?:PROCEDURE|FUNCTION)\s+\w+[^;]*?)\bIS\b',
-                r'\1AS',
-                translated_content, flags=re.IGNORECASE
+                r"\b(CREATE\s+(?:OR\s+REPLACE\s+)?(?:PROCEDURE|FUNCTION)\s+\w+[^;]*?)\bIS\b",
+                r"\1AS",
+                translated_content,
+                flags=re.IGNORECASE,
             )
             # VARCHAR2 -> VARCHAR
-            translated_content = re.sub(
-                r'\bVARCHAR2\b', 'VARCHAR',
-                translated_content, flags=re.IGNORECASE
-            )
+            translated_content = re.sub(r"\bVARCHAR2\b", "VARCHAR", translated_content, flags=re.IGNORECASE)
             # NUMBER -> NUMERIC
-            translated_content = re.sub(
-                r'\bNUMBER\b', 'NUMERIC',
-                translated_content, flags=re.IGNORECASE
-            )
+            translated_content = re.sub(r"\bNUMBER\b", "NUMERIC", translated_content, flags=re.IGNORECASE)
             # DBMS_OUTPUT.PUT_LINE -> RAISE NOTICE
             translated_content = re.sub(
                 r"\bDBMS_OUTPUT\.PUT_LINE\s*\(\s*'([^']*)'\s*\)",
                 r"RAISE NOTICE '\1'",
-                translated_content, flags=re.IGNORECASE
+                translated_content,
+                flags=re.IGNORECASE,
             )
             translated_content = re.sub(
                 r"\bDBMS_OUTPUT\.PUT_LINE\s*\(\s*([^)]+)\s*\)",
                 r"RAISE NOTICE '%', \1",
-                translated_content, flags=re.IGNORECASE
+                translated_content,
+                flags=re.IGNORECASE,
             )
             # sequence.NEXTVAL -> nextval('sequence')
             translated_content = re.sub(
-                r'\b(\w+)\.NEXTVAL\b',
-                r"nextval('\1')",
-                translated_content, flags=re.IGNORECASE
+                r"\b(\w+)\.NEXTVAL\b", r"nextval('\1')", translated_content, flags=re.IGNORECASE
             )
             # sequence.CURRVAL -> currval('sequence')
             translated_content = re.sub(
-                r'\b(\w+)\.CURRVAL\b',
-                r"currval('\1')",
-                translated_content, flags=re.IGNORECASE
+                r"\b(\w+)\.CURRVAL\b", r"currval('\1')", translated_content, flags=re.IGNORECASE
             )
 
             # Detect untranslatable constructs
-            if re.search(r'\bCONNECT\s+BY\b', translated_content, re.IGNORECASE):
-                untranslatable.append(
-                    f"{sql_file.name}: CONNECT BY (hierarchical query) -> use WITH RECURSIVE CTE"
-                )
+            if re.search(r"\bCONNECT\s+BY\b", translated_content, re.IGNORECASE):
+                untranslatable.append(f"{sql_file.name}: CONNECT BY (hierarchical query) -> use WITH RECURSIVE CTE")
                 translated_content = re.sub(
-                    r'\bCONNECT\s+BY\b',
-                    '-- TODO: CONNECT BY requires manual rewrite to WITH RECURSIVE CTE\n-- CONNECT BY',
-                    translated_content, flags=re.IGNORECASE
+                    r"\bCONNECT\s+BY\b",
+                    "-- TODO: CONNECT BY requires manual rewrite to WITH RECURSIVE CTE\n-- CONNECT BY",
+                    translated_content,
+                    flags=re.IGNORECASE,
                 )
-            if re.search(r'\bCREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b', translated_content, re.IGNORECASE):
-                untranslatable.append(
-                    f"{sql_file.name}: PACKAGE -> split into schema + individual functions"
-                )
+            if re.search(r"\bCREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b", translated_content, re.IGNORECASE):
+                untranslatable.append(f"{sql_file.name}: PACKAGE -> split into schema + individual functions")
                 translated_content = re.sub(
-                    r'\bCREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b',
-                    '-- TODO: PACKAGEs have no PostgreSQL equivalent; split into schema + functions\n-- CREATE PACKAGE',
-                    translated_content, flags=re.IGNORECASE
+                    r"\bCREATE\s+(OR\s+REPLACE\s+)?PACKAGE\b",
+                    "-- TODO: PACKAGEs have no PostgreSQL equivalent; split into schema + functions\n-- CREATE PACKAGE",
+                    translated_content,
+                    flags=re.IGNORECASE,
                 )
-            if re.search(r'\bPRAGMA\b', translated_content, re.IGNORECASE):
-                untranslatable.append(
-                    f"{sql_file.name}: PRAGMA directives have no PostgreSQL equivalent"
-                )
+            if re.search(r"\bPRAGMA\b", translated_content, re.IGNORECASE):
+                untranslatable.append(f"{sql_file.name}: PRAGMA directives have no PostgreSQL equivalent")
 
         # Apply MSSQL T-SQL -> PL/pgSQL conversions
         if src_key == "mssql":
             # Remove SET NOCOUNT ON
             translated_content = re.sub(
-                r'\bSET\s+NOCOUNT\s+ON\s*;?',
-                '-- SET NOCOUNT ON removed (not needed in PostgreSQL)',
-                translated_content, flags=re.IGNORECASE
+                r"\bSET\s+NOCOUNT\s+ON\s*;?",
+                "-- SET NOCOUNT ON removed (not needed in PostgreSQL)",
+                translated_content,
+                flags=re.IGNORECASE,
             )
             # GO -> ; (statement separator)
-            translated_content = re.sub(
-                r'^\s*GO\s*$',
-                ';',
-                translated_content, flags=re.MULTILINE | re.IGNORECASE
-            )
+            translated_content = re.sub(r"^\s*GO\s*$", ";", translated_content, flags=re.MULTILINE | re.IGNORECASE)
             # DECLARE @var TYPE = value -> DECLARE var TYPE := value
             translated_content = re.sub(
-                r'\bDECLARE\s+@(\w+)\s+(\w+(?:\([^)]*\))?)\s*=\s*',
-                r'DECLARE \1 \2 := ',
-                translated_content, flags=re.IGNORECASE
+                r"\bDECLARE\s+@(\w+)\s+(\w+(?:\([^)]*\))?)\s*=\s*",
+                r"DECLARE \1 \2 := ",
+                translated_content,
+                flags=re.IGNORECASE,
             )
             # DECLARE @var TYPE (without initial value)
             translated_content = re.sub(
-                r'\bDECLARE\s+@(\w+)\s+',
-                r'DECLARE \1 ',
-                translated_content, flags=re.IGNORECASE
+                r"\bDECLARE\s+@(\w+)\s+", r"DECLARE \1 ", translated_content, flags=re.IGNORECASE
             )
             # @variable -> variable (remove @ prefix)
-            translated_content = re.sub(
-                r'@(\w+)',
-                r'\1',
-                translated_content
-            )
+            translated_content = re.sub(r"@(\w+)", r"\1", translated_content)
             # PRINT 'message' -> RAISE NOTICE 'message'
-            translated_content = re.sub(
-                r'\bPRINT\s+',
-                'RAISE NOTICE ',
-                translated_content, flags=re.IGNORECASE
-            )
+            translated_content = re.sub(r"\bPRINT\s+", "RAISE NOTICE ", translated_content, flags=re.IGNORECASE)
             # TOP N -> needs rewrite to LIMIT
-            top_matches = re.findall(r'\bSELECT\s+TOP\s+(\d+)\b', translated_content, re.IGNORECASE)
+            top_matches = re.findall(r"\bSELECT\s+TOP\s+(\d+)\b", translated_content, re.IGNORECASE)
             if top_matches:
                 for n in top_matches:
                     translated_content = re.sub(
-                        r'\bSELECT\s+TOP\s+' + n + r'\b',
-                        f'SELECT /* TODO: add LIMIT {n} at end of query */',
-                        translated_content, flags=re.IGNORECASE, count=1
+                        r"\bSELECT\s+TOP\s+" + n + r"\b",
+                        f"SELECT /* TODO: add LIMIT {n} at end of query */",
+                        translated_content,
+                        flags=re.IGNORECASE,
+                        count=1,
                     )
                 untranslatable.append(
                     f"{sql_file.name}: SELECT TOP N -> requires LIMIT at end of query (manual placement)"
                 )
 
             # Detect untranslatable constructs
-            if re.search(r'\bEXEC(?:UTE)?\s+sp_', translated_content, re.IGNORECASE):
-                untranslatable.append(
-                    f"{sql_file.name}: System stored procedures (sp_*) need PostgreSQL equivalents"
-                )
-            if re.search(r'\bOPENJSON\b', translated_content, re.IGNORECASE):
-                untranslatable.append(
-                    f"{sql_file.name}: OPENJSON -> use json_to_recordset or json_array_elements"
-                )
+            if re.search(r"\bEXEC(?:UTE)?\s+sp_", translated_content, re.IGNORECASE):
+                untranslatable.append(f"{sql_file.name}: System stored procedures (sp_*) need PostgreSQL equivalents")
+            if re.search(r"\bOPENJSON\b", translated_content, re.IGNORECASE):
+                untranslatable.append(f"{sql_file.name}: OPENJSON -> use json_to_recordset or json_array_elements")
 
         # Apply generic function translations
         translated_content = translate_functions(app_id, target_db, translated_content)
@@ -861,6 +785,7 @@ def translate_stored_procedures(app_id: str, target_db: str,
 # Migration validation queries
 # ---------------------------------------------------------------------------
 
+
 def generate_migration_validation(app_id: str, output_dir: str) -> str:
     """Generate comprehensive validation queries for post-migration checks.
 
@@ -878,7 +803,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
             """SELECT * FROM legacy_db_schemas
                WHERE legacy_app_id = ?
                ORDER BY schema_name, table_name, column_name""",
-            (app_id,)
+            (app_id,),
         ).fetchall()
     finally:
         conn.close()
@@ -922,9 +847,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
         pk_cols = [c for c in columns if c["is_primary_key"]]
         if pk_cols:
             ", ".join(c["column_name"] for c in pk_cols)
-            pk_concat = " || '|' || ".join(
-                f"COALESCE(CAST({c['column_name']} AS TEXT), 'NULL')" for c in pk_cols
-            )
+            pk_concat = " || '|' || ".join(f"COALESCE(CAST({c['column_name']} AS TEXT), 'NULL')" for c in pk_cols)
             lines.append("-- Primary key checksum")
             lines.append(
                 f"SELECT '{qualified}' AS table_name, "
@@ -940,8 +863,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
             null_selects = []
             for col in nullable_cols:
                 null_selects.append(
-                    f"SUM(CASE WHEN {col['column_name']} IS NULL THEN 1 ELSE 0 END) "
-                    f"AS {col['column_name']}_nulls"
+                    f"SUM(CASE WHEN {col['column_name']} IS NULL THEN 1 ELSE 0 END) AS {col['column_name']}_nulls"
                 )
             lines.append(
                 f"SELECT '{qualified}' AS table_name,\n"
@@ -952,15 +874,26 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
 
         # 4. MIN/MAX checks for numeric and date columns
         numeric_types = {
-            "NUMBER", "NUMERIC", "DECIMAL", "INTEGER", "INT", "BIGINT",
-            "SMALLINT", "FLOAT", "REAL", "DOUBLE", "MONEY", "TINYINT",
-            "BINARY_FLOAT", "BINARY_DOUBLE",
+            "NUMBER",
+            "NUMERIC",
+            "DECIMAL",
+            "INTEGER",
+            "INT",
+            "BIGINT",
+            "SMALLINT",
+            "FLOAT",
+            "REAL",
+            "DOUBLE",
+            "MONEY",
+            "TINYINT",
+            "BINARY_FLOAT",
+            "BINARY_DOUBLE",
         }
         date_types = {"DATE", "TIMESTAMP", "DATETIME", "TIMESTAMPTZ", "TIME"}
 
         minmax_cols = []
         for col in columns:
-            base = re.match(r'^([A-Za-z_]+)', col["data_type"].upper())
+            base = re.match(r"^([A-Za-z_]+)", col["data_type"].upper())
             base_type = base.group(1) if base else col["data_type"].upper()
             if base_type in numeric_types or base_type in date_types:
                 minmax_cols.append(col)
@@ -992,6 +925,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
 # Data volume estimation
 # ---------------------------------------------------------------------------
 
+
 def estimate_data_volume(app_id: str) -> dict:
     """Estimate data volume based on schema column types.
 
@@ -1016,7 +950,7 @@ def estimate_data_volume(app_id: str) -> dict:
             """SELECT * FROM legacy_db_schemas
                WHERE legacy_app_id = ?
                ORDER BY schema_name, table_name, column_name""",
-            (app_id,)
+            (app_id,),
         ).fetchall()
     finally:
         conn.close()
@@ -1046,13 +980,12 @@ def estimate_data_volume(app_id: str) -> dict:
             dtype_upper = col["data_type"].upper().strip()
 
             # Extract base type
-            base_match = re.match(r'^([A-Za-z_][A-Za-z0-9_ ]*)', dtype_upper)
+            base_match = re.match(r"^([A-Za-z_][A-Za-z0-9_ ]*)", dtype_upper)
             base_type = base_match.group(1).strip() if base_match else dtype_upper
 
             # Check for parametric length — e.g. VARCHAR(255) -> use 255
-            param_match = re.match(r'.*\(\s*(\d+)', dtype_upper)
-            if param_match and base_type in ("VARCHAR", "VARCHAR2", "NVARCHAR",
-                                              "NVARCHAR2", "CHAR", "NCHAR"):
+            param_match = re.match(r".*\(\s*(\d+)", dtype_upper)
+            if param_match and base_type in ("VARCHAR", "VARCHAR2", "NVARCHAR", "NVARCHAR2", "CHAR", "NCHAR"):
                 # Use declared length as average estimate (halved for VARCHAR)
                 declared = int(param_match.group(1))
                 row_bytes += max(declared // 2, 10)
@@ -1065,12 +998,14 @@ def estimate_data_volume(app_id: str) -> dict:
         # Add row overhead (tuple header, alignment)
         row_bytes += 24
 
-        table_estimates.append({
-            "name": table,
-            "schema": schema,
-            "estimated_row_bytes": row_bytes,
-            "column_count": len(columns),
-        })
+        table_estimates.append(
+            {
+                "name": table,
+                "schema": schema,
+                "estimated_row_bytes": row_bytes,
+                "column_count": len(columns),
+            }
+        )
         total_bytes += row_bytes
 
     return {
@@ -1085,8 +1020,8 @@ def estimate_data_volume(app_id: str) -> dict:
 # Full migration orchestration
 # ---------------------------------------------------------------------------
 
-def generate_full_migration(app_id: str, target_db: str,
-                            source_path: str, output_dir: str) -> dict:
+
+def generate_full_migration(app_id: str, target_db: str, source_path: str, output_dir: str) -> dict:
     """Orchestrate all migration artifact generation.
 
     Creates an output subdirectory and calls each generation function:
@@ -1135,9 +1070,7 @@ def generate_full_migration(app_id: str, target_db: str,
                     has_sql = True
                     break
         if has_sql:
-            proc_path, untranslatable = translate_stored_procedures(
-                app_id, target_db, source_path, str(migration_dir)
-            )
+            proc_path, untranslatable = translate_stored_procedures(app_id, target_db, source_path, str(migration_dir))
     if proc_path:
         summary["artifacts"]["stored_procedures"] = proc_path
     if untranslatable:
@@ -1200,17 +1133,10 @@ def _generate_migration_index(summary: dict, output_dir: str) -> str:
         lines.append("| Table | Schema | Columns | Est. Row Size (bytes) |")
         lines.append("|-------|--------|---------|----------------------|")
         for t in volume["tables"]:
-            lines.append(
-                f"| {t['name']} | {t['schema']} | {t['column_count']} | "
-                f"{t['estimated_row_bytes']:,} |"
-            )
+            lines.append(f"| {t['name']} | {t['schema']} | {t['column_count']} | {t['estimated_row_bytes']:,} |")
         lines.append("")
-        lines.append(
-            f"**Total tables:** {volume['table_count']}  "
-        )
-        lines.append(
-            f"**Combined est. row bytes:** {volume['total_estimated_bytes_per_row']:,}"
-        )
+        lines.append(f"**Total tables:** {volume['table_count']}  ")
+        lines.append(f"**Combined est. row bytes:** {volume['total_estimated_bytes_per_row']:,}")
         lines.append("")
 
     # Untranslatable constructs
@@ -1246,12 +1172,13 @@ def _generate_migration_index(summary: dict, output_dir: str) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI entry point for database migration planning."""
     parser = argparse.ArgumentParser(
         description="Database Migration Planner — generate DDL, data migration SQL, "
-                    "stored procedure translations, and validation queries for "
-                    "legacy database modernization.",
+        "stored procedure translations, and validation queries for "
+        "legacy database modernization.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
@@ -1274,44 +1201,32 @@ def main():
         """),
     )
 
+    parser.add_argument("--app-id", required=True, help="Legacy application ID from legacy_applications table")
     parser.add_argument(
-        "--app-id", required=True,
-        help="Legacy application ID from legacy_applications table"
-    )
-    parser.add_argument(
-        "--target", default="postgresql",
+        "--target",
+        default="postgresql",
         choices=["postgresql", "mysql", "aurora"],
-        help="Target database platform (default: postgresql)"
+        help="Target database platform (default: postgresql)",
     )
+    parser.add_argument("--source-path", default=None, help="Path to directory containing stored procedure .sql files")
+    parser.add_argument("--output-dir", required=True, help="Directory to write generated migration artifacts")
     parser.add_argument(
-        "--source-path", default=None,
-        help="Path to directory containing stored procedure .sql files"
-    )
-    parser.add_argument(
-        "--output-dir", required=True,
-        help="Directory to write generated migration artifacts"
-    )
-    parser.add_argument(
-        "--type", default="all", dest="gen_type",
+        "--type",
+        default="all",
+        dest="gen_type",
         choices=["schema", "data", "procedures", "validation", "all"],
-        help="Type of artifacts to generate (default: all)"
+        help="Type of artifacts to generate (default: all)",
     )
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output",
-        help="Output results as JSON to stdout"
-    )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Output results as JSON to stdout")
 
     args = parser.parse_args()
 
     # Validate app exists
     conn = _get_db()
     try:
-        app = conn.execute(
-            "SELECT * FROM legacy_applications WHERE id = ?", (args.app_id,)
-        ).fetchone()
+        app = conn.execute("SELECT * FROM legacy_applications WHERE id = ?", (args.app_id,)).fetchone()
         if not app:
-            print(f"ERROR: Application '{args.app_id}' not found in legacy_applications.",
-                  file=sys.stderr)
+            print(f"ERROR: Application '{args.app_id}' not found in legacy_applications.", file=sys.stderr)
             sys.exit(1)
     finally:
         conn.close()
@@ -1339,12 +1254,9 @@ def main():
 
     elif args.gen_type == "procedures":
         if not args.source_path:
-            print("ERROR: --source-path is required for --type procedures",
-                  file=sys.stderr)
+            print("ERROR: --source-path is required for --type procedures", file=sys.stderr)
             sys.exit(1)
-        path, untranslatable = translate_stored_procedures(
-            args.app_id, target_db, args.source_path, args.output_dir
-        )
+        path, untranslatable = translate_stored_procedures(args.app_id, target_db, args.source_path, args.output_dir)
         result = {
             "artifact": "stored_procedures",
             "path": path,

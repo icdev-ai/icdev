@@ -32,6 +32,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Graceful audit import (air-gap safe)
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -44,9 +45,7 @@ def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -61,13 +60,15 @@ def _generate_id(prefix="sqc"):
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class CheckResult:
     """Result of a single quality check."""
+
     check_id: str
     name: str
-    status: str       # "pass", "fail", "warn"
-    severity: str     # "critical", "high", "medium", "low"
+    status: str  # "pass", "fail", "warn"
+    severity: str  # "critical", "high", "medium", "low"
     message: str
     suggestion: str = ""
     section: str = ""
@@ -79,6 +80,7 @@ class CheckResult:
 # ---------------------------------------------------------------------------
 # Markdown parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_spec_sections(spec_path: Path) -> dict:
     """Parse markdown by ``## Header`` into a dict.
@@ -114,8 +116,7 @@ def parse_spec_sections(spec_path: Path) -> dict:
 _DEFAULT_CHECKLIST = {
     "required_sections": [
         {"name": "Feature Description", "severity": "critical", "min_words": 20},
-        {"name": "User Story", "severity": "critical",
-         "pattern": r"(?i)as a .+ i want .+ so that .+"},
+        {"name": "User Story", "severity": "critical", "pattern": r"(?i)as a .+ i want .+ so that .+"},
         {"name": "Solution Statement", "severity": "critical", "min_words": 30},
         {"name": "ATO Impact Assessment", "severity": "critical"},
         {"name": "Acceptance Criteria", "severity": "critical", "min_items": 3},
@@ -128,36 +129,41 @@ _DEFAULT_CHECKLIST = {
 }
 
 _DEFAULT_AMBIGUITY_PATTERNS = [
-    {"phrase": "as needed", "severity": "high",
-     "clarification": "Define the specific conditions that trigger this action."},
-    {"phrase": "appropriate", "severity": "high",
-     "clarification": "Define measurable criteria for 'appropriate'."},
-    {"phrase": "timely", "severity": "high",
-     "clarification": "Specify an exact time threshold."},
-    {"phrase": "user-friendly", "severity": "medium",
-     "clarification": "Define specific usability criteria."},
-    {"phrase": "fast", "severity": "high",
-     "clarification": "Specify a measurable target (e.g., <2s response time)."},
-    {"phrase": "secure", "severity": "critical",
-     "clarification": "Specify security requirements: FIPS, CAC, STIG, NIST controls."},
-    {"phrase": "scalable", "severity": "medium",
-     "clarification": "Define target scale: concurrent users, data volume."},
-    {"phrase": "efficient", "severity": "medium",
-     "clarification": "Define efficiency metric: CPU, memory, cost."},
-    {"phrase": "reasonable", "severity": "high",
-     "clarification": "Define the quantitative threshold."},
-    {"phrase": "adequate", "severity": "high",
-     "clarification": "Define the minimum acceptable criteria."},
-    {"phrase": "flexible", "severity": "medium",
-     "clarification": "Define what specifically needs to be configurable."},
-    {"phrase": "robust", "severity": "medium",
-     "clarification": "Define failure scenarios and recovery time objectives."},
-    {"phrase": "etc.", "severity": "high",
-     "clarification": "Enumerate all items explicitly."},
-    {"phrase": "and/or", "severity": "medium",
-     "clarification": "Clarify inclusive OR vs exclusive OR."},
-    {"phrase": "should", "severity": "medium",
-     "clarification": "Is this MUST (mandatory) or SHOULD (recommended)? Use RFC 2119."},
+    {
+        "phrase": "as needed",
+        "severity": "high",
+        "clarification": "Define the specific conditions that trigger this action.",
+    },
+    {"phrase": "appropriate", "severity": "high", "clarification": "Define measurable criteria for 'appropriate'."},
+    {"phrase": "timely", "severity": "high", "clarification": "Specify an exact time threshold."},
+    {"phrase": "user-friendly", "severity": "medium", "clarification": "Define specific usability criteria."},
+    {"phrase": "fast", "severity": "high", "clarification": "Specify a measurable target (e.g., <2s response time)."},
+    {
+        "phrase": "secure",
+        "severity": "critical",
+        "clarification": "Specify security requirements: FIPS, CAC, STIG, NIST controls.",
+    },
+    {
+        "phrase": "scalable",
+        "severity": "medium",
+        "clarification": "Define target scale: concurrent users, data volume.",
+    },
+    {"phrase": "efficient", "severity": "medium", "clarification": "Define efficiency metric: CPU, memory, cost."},
+    {"phrase": "reasonable", "severity": "high", "clarification": "Define the quantitative threshold."},
+    {"phrase": "adequate", "severity": "high", "clarification": "Define the minimum acceptable criteria."},
+    {"phrase": "flexible", "severity": "medium", "clarification": "Define what specifically needs to be configurable."},
+    {
+        "phrase": "robust",
+        "severity": "medium",
+        "clarification": "Define failure scenarios and recovery time objectives.",
+    },
+    {"phrase": "etc.", "severity": "high", "clarification": "Enumerate all items explicitly."},
+    {"phrase": "and/or", "severity": "medium", "clarification": "Clarify inclusive OR vs exclusive OR."},
+    {
+        "phrase": "should",
+        "severity": "medium",
+        "clarification": "Is this MUST (mandatory) or SHOULD (recommended)? Use RFC 2119.",
+    },
 ]
 
 
@@ -223,6 +229,7 @@ def _load_constitutions(project_id: str = None, db_path=None) -> list:
 # Individual check functions
 # ---------------------------------------------------------------------------
 
+
 def _count_list_items(text: str) -> int:
     """Count markdown list items (``- `` or ``N. ``)."""
     count = 0
@@ -251,15 +258,17 @@ def check_required_sections(sections: dict, checklist: dict) -> list:
                     break
 
         if not content or not content.strip():
-            results.append(CheckResult(
-                check_id=_generate_id("sec"),
-                name=f"Section: {name}",
-                status="fail",
-                severity=severity,
-                message=f"Required section '{name}' is missing.",
-                suggestion=f"Add a '## {name}' section to the spec.",
-                section=name,
-            ))
+            results.append(
+                CheckResult(
+                    check_id=_generate_id("sec"),
+                    name=f"Section: {name}",
+                    status="fail",
+                    severity=severity,
+                    message=f"Required section '{name}' is missing.",
+                    suggestion=f"Add a '## {name}' section to the spec.",
+                    section=name,
+                )
+            )
             continue
 
         # Min words check
@@ -267,30 +276,34 @@ def check_required_sections(sections: dict, checklist: dict) -> list:
         if min_words:
             word_count = len(content.split())
             if word_count < min_words:
-                results.append(CheckResult(
-                    check_id=_generate_id("sec"),
-                    name=f"Section: {name} (word count)",
-                    status="fail",
-                    severity=severity,
-                    message=f"Section '{name}' has {word_count} words, minimum is {min_words}.",
-                    suggestion=f"Expand '{name}' to at least {min_words} words.",
-                    section=name,
-                ))
+                results.append(
+                    CheckResult(
+                        check_id=_generate_id("sec"),
+                        name=f"Section: {name} (word count)",
+                        status="fail",
+                        severity=severity,
+                        message=f"Section '{name}' has {word_count} words, minimum is {min_words}.",
+                        suggestion=f"Expand '{name}' to at least {min_words} words.",
+                        section=name,
+                    )
+                )
                 continue
 
         # Pattern check
         pattern = req.get("pattern")
         if pattern:
             if not re.search(pattern, content):
-                results.append(CheckResult(
-                    check_id=_generate_id("sec"),
-                    name=f"Section: {name} (pattern)",
-                    status="fail",
-                    severity=severity,
-                    message=f"Section '{name}' does not match required pattern.",
-                    suggestion=f"Ensure '{name}' follows the expected format.",
-                    section=name,
-                ))
+                results.append(
+                    CheckResult(
+                        check_id=_generate_id("sec"),
+                        name=f"Section: {name} (pattern)",
+                        status="fail",
+                        severity=severity,
+                        message=f"Section '{name}' does not match required pattern.",
+                        suggestion=f"Ensure '{name}' follows the expected format.",
+                        section=name,
+                    )
+                )
                 continue
 
         # Min items check
@@ -298,26 +311,30 @@ def check_required_sections(sections: dict, checklist: dict) -> list:
         if min_items:
             item_count = _count_list_items(content)
             if item_count < min_items:
-                results.append(CheckResult(
-                    check_id=_generate_id("sec"),
-                    name=f"Section: {name} (items)",
-                    status="fail",
-                    severity=severity,
-                    message=f"Section '{name}' has {item_count} list items, minimum is {min_items}.",
-                    suggestion=f"Add at least {min_items} list items to '{name}'.",
-                    section=name,
-                ))
+                results.append(
+                    CheckResult(
+                        check_id=_generate_id("sec"),
+                        name=f"Section: {name} (items)",
+                        status="fail",
+                        severity=severity,
+                        message=f"Section '{name}' has {item_count} list items, minimum is {min_items}.",
+                        suggestion=f"Add at least {min_items} list items to '{name}'.",
+                        section=name,
+                    )
+                )
                 continue
 
         # All checks passed for this section
-        results.append(CheckResult(
-            check_id=_generate_id("sec"),
-            name=f"Section: {name}",
-            status="pass",
-            severity=severity,
-            message=f"Section '{name}' present and meets criteria.",
-            section=name,
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("sec"),
+                name=f"Section: {name}",
+                status="pass",
+                severity=severity,
+                message=f"Section '{name}' present and meets criteria.",
+                section=name,
+            )
+        )
 
     return results
 
@@ -342,18 +359,20 @@ def check_ambiguity(sections: dict, patterns: list) -> list:
                 if re.search(regex, sec_content, re.IGNORECASE):
                     match_sections.append(sec_name)
 
-            results.append(CheckResult(
-                check_id=_generate_id("amb"),
-                name=f"Ambiguity: '{phrase}'",
-                status="fail",
-                severity=pat.get("severity", "medium"),
-                message=(
-                    f"Ambiguous phrase '{phrase}' found {len(matches)} time(s) "
-                    f"in section(s): {', '.join(match_sections)}."
-                ),
-                suggestion=pat.get("clarification", "Replace with specific, measurable language."),
-                section=", ".join(match_sections),
-            ))
+            results.append(
+                CheckResult(
+                    check_id=_generate_id("amb"),
+                    name=f"Ambiguity: '{phrase}'",
+                    status="fail",
+                    severity=pat.get("severity", "medium"),
+                    message=(
+                        f"Ambiguous phrase '{phrase}' found {len(matches)} time(s) "
+                        f"in section(s): {', '.join(match_sections)}."
+                    ),
+                    suggestion=pat.get("clarification", "Replace with specific, measurable language."),
+                    section=", ".join(match_sections),
+                )
+            )
 
     return results
 
@@ -385,15 +404,17 @@ def check_acceptance_criteria(sections: dict) -> list:
             break
 
     if not ac_content.strip():
-        results.append(CheckResult(
-            check_id=_generate_id("acc"),
-            name="Acceptance Criteria: presence",
-            status="fail",
-            severity="critical",
-            message="No acceptance criteria section found.",
-            suggestion="Add '## Acceptance Criteria' with at least 3 testable items.",
-            section="acceptance criteria",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("acc"),
+                name="Acceptance Criteria: presence",
+                status="fail",
+                severity="critical",
+                message="No acceptance criteria section found.",
+                suggestion="Add '## Acceptance Criteria' with at least 3 testable items.",
+                section="acceptance criteria",
+            )
+        )
         return results
 
     # Count items
@@ -404,24 +425,28 @@ def check_acceptance_criteria(sections: dict) -> list:
             items.append(stripped)
 
     if len(items) < 3:
-        results.append(CheckResult(
-            check_id=_generate_id("acc"),
-            name="Acceptance Criteria: count",
-            status="fail",
-            severity="critical",
-            message=f"Only {len(items)} acceptance criteria found, minimum is 3.",
-            suggestion="Add at least 3 specific, testable acceptance criteria.",
-            section="acceptance criteria",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("acc"),
+                name="Acceptance Criteria: count",
+                status="fail",
+                severity="critical",
+                message=f"Only {len(items)} acceptance criteria found, minimum is 3.",
+                suggestion="Add at least 3 specific, testable acceptance criteria.",
+                section="acceptance criteria",
+            )
+        )
     else:
-        results.append(CheckResult(
-            check_id=_generate_id("acc"),
-            name="Acceptance Criteria: count",
-            status="pass",
-            severity="critical",
-            message=f"{len(items)} acceptance criteria found.",
-            section="acceptance criteria",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("acc"),
+                name="Acceptance Criteria: count",
+                status="pass",
+                severity="critical",
+                message=f"{len(items)} acceptance criteria found.",
+                section="acceptance criteria",
+            )
+        )
 
     # Check each item for testable assertion
     untestable = []
@@ -430,46 +455,48 @@ def check_acceptance_criteria(sections: dict) -> list:
             untestable.append(item[:80])
 
     if untestable:
-        results.append(CheckResult(
-            check_id=_generate_id("acc"),
-            name="Acceptance Criteria: testability",
-            status="fail",
-            severity="high",
-            message=(
-                f"{len(untestable)} of {len(items)} criteria lack testable verbs: "
-                f"{untestable[0]}..."
-            ),
-            suggestion=(
-                "Each criterion should contain a measurable verb "
-                "(shows, returns, displays, loads without, etc.)."
-            ),
-            section="acceptance criteria",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("acc"),
+                name="Acceptance Criteria: testability",
+                status="fail",
+                severity="high",
+                message=(f"{len(untestable)} of {len(items)} criteria lack testable verbs: {untestable[0]}..."),
+                suggestion=(
+                    "Each criterion should contain a measurable verb (shows, returns, displays, loads without, etc.)."
+                ),
+                section="acceptance criteria",
+            )
+        )
     else:
-        results.append(CheckResult(
-            check_id=_generate_id("acc"),
-            name="Acceptance Criteria: testability",
-            status="pass",
-            severity="high",
-            message="All acceptance criteria contain testable assertions.",
-            section="acceptance criteria",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("acc"),
+                name="Acceptance Criteria: testability",
+                status="pass",
+                severity="high",
+                message="All acceptance criteria contain testable assertions.",
+                section="acceptance criteria",
+            )
+        )
 
     # Check for Given/When/Then format
     has_gwt = bool(re.search(r"\b(given|when|then)\b", ac_content, re.IGNORECASE))
-    results.append(CheckResult(
-        check_id=_generate_id("acc"),
-        name="Acceptance Criteria: BDD format",
-        status="pass" if has_gwt else "warn",
-        severity="low",
-        message=(
-            "BDD Given/When/Then format detected."
-            if has_gwt else
-            "No Given/When/Then BDD format found. Consider using BDD for clearer test mapping."
-        ),
-        suggestion="" if has_gwt else "Rewrite criteria in Given/When/Then format for BDD.",
-        section="acceptance criteria",
-    ))
+    results.append(
+        CheckResult(
+            check_id=_generate_id("acc"),
+            name="Acceptance Criteria: BDD format",
+            status="pass" if has_gwt else "warn",
+            severity="low",
+            message=(
+                "BDD Given/When/Then format detected."
+                if has_gwt
+                else "No Given/When/Then BDD format found. Consider using BDD for clearer test mapping."
+            ),
+            suggestion="" if has_gwt else "Rewrite criteria in Given/When/Then format for BDD.",
+            section="acceptance criteria",
+        )
+    )
 
     return results
 
@@ -489,77 +516,90 @@ def check_ato_coverage(sections: dict) -> list:
             break
 
     if not ato_content.strip():
-        results.append(CheckResult(
-            check_id=_generate_id("ato"),
-            name="ATO: section presence",
-            status="fail",
-            severity="critical",
-            message="ATO Impact Assessment section is missing.",
-            suggestion="Add '## ATO Impact Assessment' with boundary tier, NIST controls, SSP impact.",
-            section="ato impact assessment",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("ato"),
+                name="ATO: section presence",
+                status="fail",
+                severity="critical",
+                message="ATO Impact Assessment section is missing.",
+                suggestion="Add '## ATO Impact Assessment' with boundary tier, NIST controls, SSP impact.",
+                section="ato impact assessment",
+            )
+        )
         return results
 
     # Boundary impact tier
     tier_pattern = re.compile(r"\b(GREEN|YELLOW|ORANGE|RED)\b")
     tier_match = tier_pattern.search(ato_content)
     if tier_match:
-        results.append(CheckResult(
-            check_id=_generate_id("ato"),
-            name="ATO: boundary tier",
-            status="pass",
-            severity="critical",
-            message=f"Boundary impact tier specified: {tier_match.group(1)}.",
-            section="ato impact assessment",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("ato"),
+                name="ATO: boundary tier",
+                status="pass",
+                severity="critical",
+                message=f"Boundary impact tier specified: {tier_match.group(1)}.",
+                section="ato impact assessment",
+            )
+        )
     else:
-        results.append(CheckResult(
-            check_id=_generate_id("ato"),
-            name="ATO: boundary tier",
-            status="fail",
-            severity="critical",
-            message="No boundary impact tier (GREEN/YELLOW/ORANGE/RED) found.",
-            suggestion="Specify one of: GREEN (no impact), YELLOW (minor), ORANGE (significant), RED (ATO-invalidating).",
-            section="ato impact assessment",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("ato"),
+                name="ATO: boundary tier",
+                status="fail",
+                severity="critical",
+                message="No boundary impact tier (GREEN/YELLOW/ORANGE/RED) found.",
+                suggestion="Specify one of: GREEN (no impact), YELLOW (minor), ORANGE (significant), RED (ATO-invalidating).",  # noqa: E501
+                section="ato impact assessment",
+            )
+        )
 
     # NIST controls
     nist_pattern = re.compile(r"\b[A-Z]{2}-\d+(?:\(\d+\))?\b")
     nist_matches = nist_pattern.findall(ato_content)
     if nist_matches:
-        results.append(CheckResult(
-            check_id=_generate_id("ato"),
-            name="ATO: NIST controls",
-            status="pass",
-            severity="high",
-            message=f"NIST controls referenced: {', '.join(nist_matches[:5])}.",
-            section="ato impact assessment",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("ato"),
+                name="ATO: NIST controls",
+                status="pass",
+                severity="high",
+                message=f"NIST controls referenced: {', '.join(nist_matches[:5])}.",
+                section="ato impact assessment",
+            )
+        )
     else:
-        results.append(CheckResult(
-            check_id=_generate_id("ato"),
-            name="ATO: NIST controls",
-            status="fail",
-            severity="high",
-            message="No NIST 800-53 control IDs found in ATO section.",
-            suggestion="Reference applicable controls (e.g., AC-2, AU-2, IA-2, SC-8).",
-            section="ato impact assessment",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("ato"),
+                name="ATO: NIST controls",
+                status="fail",
+                severity="high",
+                message="No NIST 800-53 control IDs found in ATO section.",
+                suggestion="Reference applicable controls (e.g., AC-2, AU-2, IA-2, SC-8).",
+                section="ato impact assessment",
+            )
+        )
 
     # SSP impact
     ssp_mentioned = bool(re.search(r"\bSSP\b", ato_content, re.IGNORECASE))
-    results.append(CheckResult(
-        check_id=_generate_id("ato"),
-        name="ATO: SSP impact",
-        status="pass" if ssp_mentioned else "warn",
-        severity="medium",
-        message=(
-            "SSP impact noted." if ssp_mentioned
-            else "No mention of SSP impact. Consider documenting whether SSP requires update."
-        ),
-        suggestion="" if ssp_mentioned else "Add SSP impact statement (e.g., 'SSP addendum required').",
-        section="ato impact assessment",
-    ))
+    results.append(
+        CheckResult(
+            check_id=_generate_id("ato"),
+            name="ATO: SSP impact",
+            status="pass" if ssp_mentioned else "warn",
+            severity="medium",
+            message=(
+                "SSP impact noted."
+                if ssp_mentioned
+                else "No mention of SSP impact. Consider documenting whether SSP requires update."
+            ),
+            suggestion="" if ssp_mentioned else "Add SSP impact statement (e.g., 'SSP addendum required').",
+            section="ato impact assessment",
+        )
+    )
 
     return results
 
@@ -579,24 +619,28 @@ def check_testability(sections: dict) -> list:
             break
 
     if ts_content.strip():
-        results.append(CheckResult(
-            check_id=_generate_id("tst"),
-            name="Testability: testing strategy",
-            status="pass",
-            severity="high",
-            message="Testing strategy section present with content.",
-            section="testing strategy",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("tst"),
+                name="Testability: testing strategy",
+                status="pass",
+                severity="high",
+                message="Testing strategy section present with content.",
+                section="testing strategy",
+            )
+        )
     else:
-        results.append(CheckResult(
-            check_id=_generate_id("tst"),
-            name="Testability: testing strategy",
-            status="fail",
-            severity="high",
-            message="Testing strategy section is missing or empty.",
-            suggestion="Add '## Testing Strategy' describing unit, BDD, edge case, and E2E approaches.",
-            section="testing strategy",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("tst"),
+                name="Testability: testing strategy",
+                status="fail",
+                severity="high",
+                message="Testing strategy section is missing or empty.",
+                suggestion="Add '## Testing Strategy' describing unit, BDD, edge case, and E2E approaches.",
+                section="testing strategy",
+            )
+        )
 
     # Validation commands
     vc_content = ""
@@ -610,32 +654,34 @@ def check_testability(sections: dict) -> list:
 
     if vc_content.strip():
         # Check for actual command-like content (backticks or bash patterns)
-        has_commands = bool(
-            re.search(r"(```|python |pytest |behave |curl |bash |npm |go |cargo )", vc_content)
+        has_commands = bool(re.search(r"(```|python |pytest |behave |curl |bash |npm |go |cargo )", vc_content))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("tst"),
+                name="Testability: validation commands",
+                status="pass" if has_commands else "warn",
+                severity="medium",
+                message=(
+                    "Validation commands section has executable commands."
+                    if has_commands
+                    else "Validation commands section exists but may lack executable commands."
+                ),
+                suggestion="" if has_commands else "Include runnable bash/python commands to verify implementation.",
+                section="validation commands",
+            )
         )
-        results.append(CheckResult(
-            check_id=_generate_id("tst"),
-            name="Testability: validation commands",
-            status="pass" if has_commands else "warn",
-            severity="medium",
-            message=(
-                "Validation commands section has executable commands."
-                if has_commands else
-                "Validation commands section exists but may lack executable commands."
-            ),
-            suggestion="" if has_commands else "Include runnable bash/python commands to verify implementation.",
-            section="validation commands",
-        ))
     else:
-        results.append(CheckResult(
-            check_id=_generate_id("tst"),
-            name="Testability: validation commands",
-            status="fail",
-            severity="medium",
-            message="Validation commands section is missing or empty.",
-            suggestion="Add '## Validation Commands' with bash commands to verify the implementation.",
-            section="validation commands",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("tst"),
+                name="Testability: validation commands",
+                status="fail",
+                severity="medium",
+                message="Validation commands section is missing or empty.",
+                suggestion="Add '## Validation Commands' with bash commands to verify the implementation.",
+                section="validation commands",
+            )
+        )
 
     return results
 
@@ -682,15 +728,17 @@ def check_task_completeness(sections: dict) -> list:
             phases.append((str(idx), item.strip()))
 
     if not phases:
-        results.append(CheckResult(
-            check_id=_generate_id("task"),
-            name="Task Completeness: phase extraction",
-            status="warn",
-            severity="medium",
-            message="Could not extract phases from implementation plan.",
-            suggestion="Use '### Phase N: Name' format in the Implementation Plan.",
-            section="implementation plan",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("task"),
+                name="Task Completeness: phase extraction",
+                status="warn",
+                severity="medium",
+                message="Could not extract phases from implementation plan.",
+                suggestion="Use '### Phase N: Name' format in the Implementation Plan.",
+                section="implementation plan",
+            )
+        )
         return results
 
     tasks_lower = tasks_content.lower()
@@ -706,24 +754,28 @@ def check_task_completeness(sections: dict) -> list:
             uncovered.append(f"Phase {num}: {name.strip()}")
 
     if uncovered:
-        results.append(CheckResult(
-            check_id=_generate_id("task"),
-            name="Task Completeness: phase coverage",
-            status="fail",
-            severity="high",
-            message=f"{len(uncovered)} phase(s) have no corresponding tasks: {'; '.join(uncovered[:3])}.",
-            suggestion="Ensure each implementation phase has detailed tasks in 'Step by Step Tasks'.",
-            section="step by step tasks",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("task"),
+                name="Task Completeness: phase coverage",
+                status="fail",
+                severity="high",
+                message=f"{len(uncovered)} phase(s) have no corresponding tasks: {'; '.join(uncovered[:3])}.",
+                suggestion="Ensure each implementation phase has detailed tasks in 'Step by Step Tasks'.",
+                section="step by step tasks",
+            )
+        )
     else:
-        results.append(CheckResult(
-            check_id=_generate_id("task"),
-            name="Task Completeness: phase coverage",
-            status="pass",
-            severity="high",
-            message=f"All {len(phases)} implementation phases are covered in tasks.",
-            section="step by step tasks",
-        ))
+        results.append(
+            CheckResult(
+                check_id=_generate_id("task"),
+                name="Task Completeness: phase coverage",
+                status="pass",
+                severity="high",
+                message=f"All {len(phases)} implementation phases are covered in tasks.",
+                section="step by step tasks",
+            )
+        )
 
     return results
 
@@ -749,26 +801,30 @@ def check_constitution_compliance(sections: dict, principles: list) -> list:
         found_keywords = [kw for kw in keywords if kw.lower() in all_content]
 
         if found_keywords:
-            results.append(CheckResult(
-                check_id=_generate_id("con"),
-                name=f"Constitution: {category}",
-                status="pass",
-                severity="critical" if priority == 1 else "high" if priority == 2 else "medium",
-                message=f"Principle addressed: '{p_text[:60]}...' (keywords: {', '.join(found_keywords[:3])}).",
-                section="constitution",
-            ))
+            results.append(
+                CheckResult(
+                    check_id=_generate_id("con"),
+                    name=f"Constitution: {category}",
+                    status="pass",
+                    severity="critical" if priority == 1 else "high" if priority == 2 else "medium",
+                    message=f"Principle addressed: '{p_text[:60]}...' (keywords: {', '.join(found_keywords[:3])}).",
+                    section="constitution",
+                )
+            )
         else:
             severity = "critical" if priority == 1 else "high" if priority == 2 else "medium"
             status = "fail" if priority == 1 else "warn"
-            results.append(CheckResult(
-                check_id=_generate_id("con"),
-                name=f"Constitution: {category}",
-                status=status,
-                severity=severity,
-                message=f"Principle not addressed: '{p_text[:80]}'.",
-                suggestion=f"Ensure the spec addresses: {', '.join(keywords[:4])}.",
-                section="constitution",
-            ))
+            results.append(
+                CheckResult(
+                    check_id=_generate_id("con"),
+                    name=f"Constitution: {category}",
+                    status=status,
+                    severity=severity,
+                    message=f"Principle not addressed: '{p_text[:80]}'.",
+                    suggestion=f"Ensure the spec addresses: {', '.join(keywords[:4])}.",
+                    section="constitution",
+                )
+            )
 
     return results
 
@@ -776,6 +832,7 @@ def check_constitution_compliance(sections: dict, principles: list) -> list:
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
+
 
 def run_all_checks(spec_path: Path, project_id: str = None, db_path=None) -> dict:
     """Run all quality checks on a spec file.
@@ -807,19 +864,13 @@ def run_all_checks(spec_path: Path, project_id: str = None, db_path=None) -> dic
 
     # Quality score: pass_count / total * 100, cap at 50 if any critical failure
     quality_score = (passed / max(total, 1)) * 100.0
-    critical_failures = [
-        c.to_dict() for c in all_checks
-        if c.status == "fail" and c.severity == "critical"
-    ]
+    critical_failures = [c.to_dict() for c in all_checks if c.status == "fail" and c.severity == "critical"]
     if critical_failures:
         quality_score = min(quality_score, 50.0)
 
     quality_score = round(quality_score, 1)
 
-    suggestions = [
-        c.suggestion for c in all_checks
-        if c.suggestion and c.status in ("fail", "warn")
-    ]
+    suggestions = [c.suggestion for c in all_checks if c.suggestion and c.status in ("fail", "warn")]
 
     if _HAS_AUDIT:
         log_event(
@@ -864,10 +915,7 @@ def annotate_spec(spec_path: Path, check_results: list, max_markers: int = 3) ->
     content = Path(spec_path).read_text(encoding="utf-8")
 
     # Filter to critical/high failures only
-    failures = [
-        c for c in check_results
-        if c.get("status") == "fail" and c.get("severity") in ("critical", "high")
-    ]
+    failures = [c for c in check_results if c.get("status") == "fail" and c.get("severity") in ("critical", "high")]
 
     inserted = 0
     for fail in failures:
@@ -919,6 +967,7 @@ def count_markers(spec_path: Path) -> int:
 # Human-readable output
 # ---------------------------------------------------------------------------
 
+
 def _format_human(result: dict) -> str:
     """Format check results for terminal display."""
     lines = []
@@ -937,7 +986,9 @@ def _format_human(result: dict) -> str:
     lines.append(f"Spec Quality Report: {spec}")
     lines.append(f"{'=' * 60}")
     lines.append(f"  Score: {score:.1f}% {indicator}")
-    lines.append(f"  Passed: {result.get('passed', 0)} | Failed: {result.get('failed', 0)} | Warnings: {result.get('warnings', 0)}")
+    lines.append(
+        f"  Passed: {result.get('passed', 0)} | Failed: {result.get('failed', 0)} | Warnings: {result.get('warnings', 0)}"  # noqa: E501
+    )
     lines.append("")
 
     # Group by status
@@ -967,10 +1018,9 @@ def _format_human(result: dict) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Spec Quality Checker -- 'unit tests for English'"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV Spec Quality Checker -- 'unit tests for English'")
     parser.add_argument("--spec-file", type=str, help="Check a single spec markdown file")
     parser.add_argument("--spec-dir", type=str, help="Check all .md files in directory (recursive)")
     parser.add_argument("--annotate", action="store_true", help="Output annotated spec with inline markers")
@@ -1068,10 +1118,12 @@ def main():
                 print(json.dumps(batch_result, indent=2, default=str))
             elif args.human:
                 print(f"Batch Quality Report: {spec_dir}")
-                print(f"  Specs: {batch_result['total_specs']} | "
-                      f"Avg Score: {batch_result['average_score']}% | "
-                      f"Passing: {batch_result['specs_passing']} | "
-                      f"Failing: {batch_result['specs_failing']}")
+                print(
+                    f"  Specs: {batch_result['total_specs']} | "
+                    f"Avg Score: {batch_result['average_score']}% | "
+                    f"Passing: {batch_result['specs_passing']} | "
+                    f"Failing: {batch_result['specs_failing']}"
+                )
                 print()
                 for r in all_results:
                     print(_format_human(r))

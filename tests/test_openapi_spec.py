@@ -25,6 +25,7 @@ from icdev.tools.saas.openapi_spec import (
 # OPENAPI_BASE structure tests
 # ============================================================================
 
+
 class TestOpenAPIBase:
     """Tests for the OPENAPI_BASE skeleton dict."""
 
@@ -60,6 +61,7 @@ class TestOpenAPIBase:
 # SCHEMAS tests
 # ============================================================================
 
+
 class TestSchemas:
     """Tests for the reusable SCHEMAS dict."""
 
@@ -86,6 +88,7 @@ class TestSchemas:
 # ============================================================================
 # generate_openapi_spec() tests
 # ============================================================================
+
 
 class TestGenerateSpec:
     """Tests for the generate_openapi_spec() function."""
@@ -116,17 +119,13 @@ class TestGenerateSpec:
         # ENDPOINT_DOCS has 23 (method, path) tuples
         assert len(ENDPOINT_DOCS) == 23
         # All paths should be present in the spec
-        for (_method, path) in ENDPOINT_DOCS:
-            assert path in self.spec["paths"], (
-                f"Path '{path}' missing from generated spec"
-            )
+        for _method, path in ENDPOINT_DOCS:
+            assert path in self.spec["paths"], f"Path '{path}' missing from generated spec"
 
     def test_spec_paths_have_correct_http_methods(self):
         """Each documented (method, path) must appear under the correct method."""
         for (method, path), _doc in ENDPOINT_DOCS.items():
-            assert method in self.spec["paths"][path], (
-                f"Method '{method}' missing for path '{path}'"
-            )
+            assert method in self.spec["paths"][path], f"Method '{method}' missing for path '{path}'"
 
     def test_get_tenants_me_exists(self):
         """GET /tenants/me endpoint must exist in the spec."""

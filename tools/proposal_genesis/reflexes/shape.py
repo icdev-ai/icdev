@@ -35,6 +35,7 @@ def _generate_id(prefix: str = "pg") -> str:
 # Capture plan creation
 # ---------------------------------------------------------------------------
 
+
 def _get_opportunities_needing_plans() -> List[Dict]:
     """Find tracked opportunities without a capture plan."""
     conn = get_connection()
@@ -66,31 +67,35 @@ def _create_capture_plan(opp: Dict) -> Optional[str]:
     now = _utcnow_iso()
 
     # Derive win strategy from opportunity attributes
-    value = opp.get("estimated_value", 0) or 0
-    agency = opp.get("agency", "") or ""
-    naics = opp.get("naics_code", "") or ""
+    opp.get("estimated_value", 0) or 0
+    opp.get("agency", "") or ""
+    opp.get("naics_code", "") or ""
 
     win_strategy = _derive_win_strategy(opp)
     discriminators = _derive_discriminators(opp)
 
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pg_capture_plans
                 (id, opportunity_id, status, win_strategy, discriminators,
                  teaming_strategy, price_strategy, gate_reviews,
                  created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            plan_id,
-            opp["id"],
-            "draft",
-            win_strategy,
-            json.dumps(discriminators),
-            "",  # Filled after teaming assessment
-            "",  # Filled in later phases
-            json.dumps({"pink_team": None, "red_team": None, "gold_team": None}),
-            now, now,
-        ))
+        """,
+            (
+                plan_id,
+                opp["id"],
+                "draft",
+                win_strategy,
+                json.dumps(discriminators),
+                "",  # Filled after teaming assessment
+                "",  # Filled in later phases
+                json.dumps({"pink_team": None, "red_team": None, "gold_team": None}),
+                now,
+                now,
+            ),
+        )
 
         # Create default capture activities
         activities = [
@@ -101,19 +106,22 @@ def _create_capture_plan(opp: Dict) -> Optional[str]:
             ("Assess competitive landscape", "competitive_analysis"),
         ]
         for desc, activity_type in activities:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO pg_capture_activities
                     (id, capture_plan_id, activity_type, description,
                      status, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                _generate_id("pgact"),
-                plan_id,
-                activity_type,
-                desc,
-                "pending",
-                now,
-            ))
+            """,
+                (
+                    _generate_id("pgact"),
+                    plan_id,
+                    activity_type,
+                    desc,
+                    "pending",
+                    now,
+                ),
+            )
 
         # Audit
         conn.execute(
@@ -148,20 +156,17 @@ def _derive_win_strategy(opp: Dict) -> str:
     strategies = []
 
     # Technical superiority signals
-    tech_keywords = ["cloud", "cyber", "devsecops", "zero trust", "ai", "ml",
-                     "automation", "modernization", "digital"]
+    tech_keywords = ["cloud", "cyber", "devsecops", "zero trust", "ai", "ml", "automation", "modernization", "digital"]
     if any(kw in title for kw in tech_keywords):
         strategies.append("Technical differentiation through proven automation and DevSecOps capabilities")
 
     # Compliance-heavy signals
-    compliance_keywords = ["fedramp", "ato", "rmf", "nist", "cmmc", "stig",
-                           "compliance", "authorization"]
+    compliance_keywords = ["fedramp", "ato", "rmf", "nist", "cmmc", "stig", "compliance", "authorization"]
     if any(kw in title for kw in compliance_keywords):
         strategies.append("Compliance-first approach with accelerated ATO timeline")
 
     # DoD/IC signals
-    dod_keywords = ["dod", "army", "navy", "air force", "space force",
-                    "defense", "intelligence", "nsa", "disa"]
+    dod_keywords = ["dod", "army", "navy", "air force", "space force", "defense", "intelligence", "nsa", "disa"]
     if any(kw in title or kw in agency for kw in dod_keywords):
         strategies.append("Mission understanding with cleared personnel and DoD past performance")
 
@@ -200,13 +205,13 @@ def _derive_discriminators(opp: Dict) -> List[str]:
 # Teaming assessment
 # ---------------------------------------------------------------------------
 
+
 def _get_partners() -> List[Dict]:
     """Get all active teaming partners from DB."""
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM pg_teaming_partners WHERE status IN ('active', 'prospect') "
-            "ORDER BY name"
+            "SELECT * FROM pg_teaming_partners WHERE status IN ('active', 'prospect') ORDER BY name"
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -236,15 +241,13 @@ def _get_unassessed_opportunities() -> List[Dict]:
         conn.close()
 
 
-def _assess_partner_fit(
-    opp: Dict, partner: Dict
-) -> Dict[str, Any]:
+def _assess_partner_fit(opp: Dict, partner: Dict) -> Dict[str, Any]:
     """Assess partner fit for an opportunity.
 
     Uses deterministic keyword overlap + capability matching.
     """
     opp_title = (opp.get("title", "") or "").lower()
-    opp_naics = opp.get("naics_code", "") or ""
+    opp.get("naics_code", "") or ""
 
     partner_caps = (partner.get("capabilities", "") or "").lower()
     partner_certs = (partner.get("certifications", "") or "").lower()
@@ -266,8 +269,7 @@ def _assess_partner_fit(
             gaps_filled.append(f"Keyword overlap: {overlap} matching capabilities")
 
     # Certification relevance (20% weight)
-    cert_keywords = ["fedramp", "cmmc", "iso", "soc", "cleared", "secret",
-                     "top secret", "certified"]
+    cert_keywords = ["fedramp", "cmmc", "iso", "soc", "cleared", "secret", "top secret", "certified"]
     cert_matches = sum(1 for kw in cert_keywords if kw in partner_certs)
     cert_score = min(1.0, cert_matches * 0.25)
     score += cert_score * 0.20
@@ -276,8 +278,7 @@ def _assess_partner_fit(
 
     # Contract vehicle match (20% weight)
     if partner_vehicles:
-        vehicle_keywords = ["gwac", "bpa", "idiq", "gsa", "sewp", "ites",
-                            "alliant", "8a", "stars"]
+        vehicle_keywords = ["gwac", "bpa", "idiq", "gsa", "sewp", "ites", "alliant", "8a", "stars"]
         vehicle_matches = sum(1 for kw in vehicle_keywords if kw in partner_vehicles)
         vehicle_score = min(1.0, vehicle_matches * 0.3)
         score += vehicle_score * 0.20
@@ -286,8 +287,7 @@ def _assess_partner_fit(
 
     # Set-aside alignment (20% weight)
     if partner_set_asides:
-        sa_keywords = ["8a", "hubzone", "sdvosb", "wosb", "small business",
-                       "mentor-protege", "sdb"]
+        sa_keywords = ["8a", "hubzone", "sdvosb", "wosb", "small business", "mentor-protege", "sdb"]
         sa_matches = sum(1 for kw in sa_keywords if kw in partner_set_asides)
         sa_score = min(1.0, sa_matches * 0.3)
         score += sa_score * 0.20
@@ -318,29 +318,30 @@ def _assess_partner_fit(
     }
 
 
-def _store_assessment(
-    opp_id: str, partner_id: str, assessment: Dict
-) -> Optional[str]:
+def _store_assessment(opp_id: str, partner_id: str, assessment: Dict) -> Optional[str]:
     """Store teaming assessment in DB."""
     conn = get_connection()
     assessment_id = _generate_id("pgta")
     try:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pg_teaming_assessments
                 (id, opportunity_id, partner_id, fit_score,
                  capability_gaps_filled, risk_assessment,
                  recommendation, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            assessment_id,
-            opp_id,
-            partner_id,
-            assessment["fit_score"],
-            json.dumps(assessment["capability_gaps_filled"]),
-            json.dumps(assessment["risk_assessment"]),
-            assessment["recommendation"],
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                assessment_id,
+                opp_id,
+                partner_id,
+                assessment["fit_score"],
+                json.dumps(assessment["capability_gaps_filled"]),
+                json.dumps(assessment["risk_assessment"]),
+                assessment["recommendation"],
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
         return assessment_id
     except Exception:
@@ -352,6 +353,7 @@ def _store_assessment(
 # ---------------------------------------------------------------------------
 # Capture plan teaming strategy update
 # ---------------------------------------------------------------------------
+
 
 def _update_teaming_strategy(opp_id: str) -> None:
     """Update capture plan's teaming_strategy from assessment results."""
@@ -383,8 +385,7 @@ def _update_teaming_strategy(opp_id: str) -> None:
         strategy = "; ".join(strategy_parts) if strategy_parts else "No strong teaming matches found"
 
         conn.execute(
-            "UPDATE pg_capture_plans SET teaming_strategy = ?, updated_at = ? "
-            "WHERE opportunity_id = ?",
+            "UPDATE pg_capture_plans SET teaming_strategy = ?, updated_at = ? WHERE opportunity_id = ?",
             (strategy, _utcnow_iso(), opp_id),
         )
         conn.commit()
@@ -397,6 +398,7 @@ def _update_teaming_strategy(opp_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Shape Reflex (R3).
@@ -433,9 +435,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             assessment = _assess_partner_fit(opp, partner)
             # Only store if at least marginal fit
             if assessment["recommendation"] != "not_recommended":
-                result = _store_assessment(
-                    opp["opportunity_id"], partner["id"], assessment
-                )
+                result = _store_assessment(opp["opportunity_id"], partner["id"], assessment)
                 if result:
                     assessments_made += 1
 

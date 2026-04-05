@@ -16,6 +16,7 @@ Usage:
     tokens = sync_tokens()
     result = verify_token_locally(token_data, mode="saas")
 """
+
 from __future__ import annotations
 
 import base64
@@ -96,6 +97,7 @@ def sync_tokens(
     # Store locally for offline access
     try:
         from tools.marketplace.token_store import store_tokens
+
         store_tokens(licenses)
     except Exception:
         pass
@@ -145,10 +147,15 @@ def renew_token(
     if result.get("renewed") and "token" in result:
         try:
             from tools.marketplace.token_store import store_tokens
-            store_tokens([{
-                "token": result["token"],
-                "license_id": result["token"].get("license_id"),
-            }])
+
+            store_tokens(
+                [
+                    {
+                        "token": result["token"],
+                        "license_id": result["token"].get("license_id"),
+                    }
+                ]
+            )
         except Exception:
             pass
 
@@ -253,9 +260,7 @@ def verify_token_locally(
 
     # Build canonical payload (same algorithm as SaaS token_signer)
     payload = {k: v for k, v in token_data.items() if k != "signature"}
-    canonical = json.dumps(
-        payload, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
     # Load public key
     pk_path = public_key_path or DEFAULT_PUBLIC_KEY_PATH
@@ -281,9 +286,7 @@ def verify_token_locally(
     # Verify RSA-SHA256 signature
     try:
         sig_bytes = base64.b64decode(signature_b64)
-        public_key.verify(
-            sig_bytes, canonical, padding.PKCS1v15(), hashes.SHA256()
-        )
+        public_key.verify(sig_bytes, canonical, padding.PKCS1v15(), hashes.SHA256())
     except Exception as exc:
         errors.append(f"Signature verification failed: {exc}")
         return {"valid": False, "errors": errors}

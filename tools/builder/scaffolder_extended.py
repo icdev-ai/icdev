@@ -91,6 +91,7 @@ CUI_HEADER_RUST = CUI_HEADER_C_STYLE
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_file(path: Path, content: str) -> None:
     """Write content to a file, creating parent dirs as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +168,7 @@ All artifacts in this directory are classified as CUI // SP-CTI.
 # ===================================================================
 # 1. Java Backend (Spring Boot / Maven)
 # ===================================================================
+
 
 def scaffold_java_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Spring Boot / Maven Java backend project.
@@ -494,6 +496,7 @@ tmp/
 # 2. Go Backend
 # ===================================================================
 
+
 def scaffold_go_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Go module backend project.
 
@@ -760,6 +763,7 @@ tmp/
 # 3. Rust Backend (Actix-web / Cargo)
 # ===================================================================
 
+
 def scaffold_rust_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Rust Actix-web backend project.
 
@@ -1014,6 +1018,7 @@ tmp/
 # ===================================================================
 # 4. C# Backend (.NET 8 ASP.NET)
 # ===================================================================
+
 
 def scaffold_csharp_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a .NET 8 ASP.NET backend project.
@@ -1302,6 +1307,7 @@ tmp/
 # 5. TypeScript Backend (Node.js + Express)
 # ===================================================================
 
+
 def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Node.js + TypeScript + Express backend project.
 
@@ -1324,8 +1330,11 @@ def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
     # Note: CUI_HEADER_C_STYLE at top of JSON is non-standard but signals classification.
     # In practice a .cui-header file or banner comment in the actual source is preferred.
     # We strip the header for valid JSON by writing the JSON portion only.
-    package_json_content = """{
-  "name": """ + f'"{name}"' + """,
+    package_json_content = (
+        """{
+  "name": """
+        + f'"{name}"'
+        + """,
   "version": "0.1.0",
   "description": "ICDEV scaffolded TypeScript backend — CUI // SP-CTI",
   "main": "dist/index.js",
@@ -1358,6 +1367,7 @@ def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
   "private": true
 }
 """
+    )
     p = root / "package.json"
     _write_file(p, package_json_content)
     files.append(str(p))
@@ -1641,8 +1651,11 @@ def generate_agentic_sidecar(project_root: Path, app_name: str, language: str) -
 
     # sidecar/agentic/requirements.txt
     reqs = [
-        "pyyaml>=6.0", "jinja2>=3.1", "flask>=3.0",
-        "requests>=2.31", "boto3>=1.34",
+        "pyyaml>=6.0",
+        "jinja2>=3.1",
+        "flask>=3.0",
+        "requests>=2.31",
+        "boto3>=1.34",
     ]
     req_path = sidecar_dir / "requirements.txt"
     _write_file(req_path, "\n".join(reqs) + "\n")

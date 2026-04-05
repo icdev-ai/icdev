@@ -22,6 +22,7 @@ from icdev.tools.analysis.runtime_feedback import RuntimeFeedbackCollector
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def tmp_db(tmp_path):
     """Create a temp DB with code_quality_metrics and runtime_feedback tables."""
@@ -77,7 +78,8 @@ def tmp_db(tmp_path):
 def sample_junit_xml(tmp_path):
     """Create a sample JUnit XML file."""
     xml = tmp_path / "results.xml"
-    xml.write_text(textwrap.dedent("""\
+    xml.write_text(
+        textwrap.dedent("""\
         <?xml version="1.0" encoding="utf-8"?>
         <testsuites>
           <testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="1.234">
@@ -88,7 +90,8 @@ def sample_junit_xml(tmp_path):
             <testcase classname="tests.test_bar" name="test_multiply" time="0.003" />
           </testsuite>
         </testsuites>
-    """))
+    """)
+    )
     return xml
 
 
@@ -96,7 +99,8 @@ def sample_junit_xml(tmp_path):
 def single_suite_xml(tmp_path):
     """Create a JUnit XML with <testsuite> as root (no <testsuites> wrapper)."""
     xml = tmp_path / "single.xml"
-    xml.write_text(textwrap.dedent("""\
+    xml.write_text(
+        textwrap.dedent("""\
         <?xml version="1.0" encoding="utf-8"?>
         <testsuite name="pytest" errors="1" failures="0" tests="2" time="0.5">
           <testcase classname="tests.test_utils" name="test_parse" time="0.100" />
@@ -104,7 +108,8 @@ def single_suite_xml(tmp_path):
             <error type="RuntimeError" message="Connection refused" />
           </testcase>
         </testsuite>
-    """))
+    """)
+    )
     return xml
 
 
@@ -112,8 +117,8 @@ def single_suite_xml(tmp_path):
 # TestJUnitXMLParsing
 # ---------------------------------------------------------------------------
 
-class TestJUnitXMLParsing:
 
+class TestJUnitXMLParsing:
     def test_parse_basic_xml(self, sample_junit_xml):
         collector = RuntimeFeedbackCollector()
         results = collector.parse_pytest_xml(sample_junit_xml)
@@ -168,8 +173,8 @@ class TestJUnitXMLParsing:
 # TestStdoutParsing
 # ---------------------------------------------------------------------------
 
-class TestStdoutParsing:
 
+class TestStdoutParsing:
     def test_parse_passed_line(self):
         stdout = "PASSED tests/test_foo.py::TestClass::test_add\n"
         collector = RuntimeFeedbackCollector()
@@ -204,8 +209,8 @@ class TestStdoutParsing:
 # TestTestToSourceMapping
 # ---------------------------------------------------------------------------
 
-class TestTestToSourceMapping:
 
+class TestTestToSourceMapping:
     def test_strip_test_prefix_from_function(self):
         source_file, source_fn = RuntimeFeedbackCollector._map_test_to_source(
             "test_analyze_code", "tests/test_code_analyzer.py"
@@ -213,15 +218,11 @@ class TestTestToSourceMapping:
         assert source_fn == "analyze_code"
 
     def test_strip_test_prefix_from_file(self):
-        source_file, source_fn = RuntimeFeedbackCollector._map_test_to_source(
-            "test_parse", "tests/test_utils.py"
-        )
+        source_file, source_fn = RuntimeFeedbackCollector._map_test_to_source("test_parse", "tests/test_utils.py")
         assert source_file == "utils.py"
 
     def test_no_test_prefix_returns_none(self):
-        source_file, source_fn = RuntimeFeedbackCollector._map_test_to_source(
-            "helper_function", ""
-        )
+        source_file, source_fn = RuntimeFeedbackCollector._map_test_to_source("helper_function", "")
         assert source_fn is None
         assert source_file is None
 
@@ -237,18 +238,29 @@ class TestTestToSourceMapping:
 # TestDBStorage
 # ---------------------------------------------------------------------------
 
-class TestDBStorage:
 
+class TestDBStorage:
     def test_store_feedback_inserts_rows(self, tmp_db):
         collector = RuntimeFeedbackCollector(project_id="test", db_path=tmp_db)
         feedback = [
-            {"test_file": "tests/test_foo.py", "test_function": "test_add",
-             "test_passed": True, "test_duration_ms": 12.0,
-             "source_file": "foo.py", "source_function": "add"},
-            {"test_file": "tests/test_foo.py", "test_function": "test_sub",
-             "test_passed": False, "test_duration_ms": 8.0,
-             "error_type": "AssertionError", "error_message": "assert 5==4",
-             "source_file": "foo.py", "source_function": "sub"},
+            {
+                "test_file": "tests/test_foo.py",
+                "test_function": "test_add",
+                "test_passed": True,
+                "test_duration_ms": 12.0,
+                "source_file": "foo.py",
+                "source_function": "add",
+            },
+            {
+                "test_file": "tests/test_foo.py",
+                "test_function": "test_sub",
+                "test_passed": False,
+                "test_duration_ms": 8.0,
+                "error_type": "AssertionError",
+                "error_message": "assert 5==4",
+                "source_file": "foo.py",
+                "source_function": "sub",
+            },
         ]
         count = collector.store_feedback(feedback, run_id="run-001", db_path=tmp_db)
         assert count == 2
@@ -261,27 +273,36 @@ class TestDBStorage:
     def test_store_feedback_uses_run_id(self, tmp_db):
         collector = RuntimeFeedbackCollector(project_id="test", db_path=tmp_db)
         feedback = [
-            {"test_file": "t.py", "test_function": "test_a", "test_passed": True,
-             "test_duration_ms": 1.0, "source_file": "", "source_function": "a"},
+            {
+                "test_file": "t.py",
+                "test_function": "test_a",
+                "test_passed": True,
+                "test_duration_ms": 1.0,
+                "source_file": "",
+                "source_function": "a",
+            },
         ]
         collector.store_feedback(feedback, run_id="run-abc", db_path=tmp_db)
 
         conn = sqlite3.connect(str(tmp_db))
-        run_id = conn.execute(
-            "SELECT run_id FROM runtime_feedback LIMIT 1"
-        ).fetchone()[0]
+        run_id = conn.execute("SELECT run_id FROM runtime_feedback LIMIT 1").fetchone()[0]
         conn.close()
         assert run_id == "run-abc"
 
     def test_store_feedback_missing_db_raises(self, tmp_path):
-        collector = RuntimeFeedbackCollector(
-            project_id="test", db_path=tmp_path / "missing.db"
-        )
+        collector = RuntimeFeedbackCollector(project_id="test", db_path=tmp_path / "missing.db")
         with pytest.raises(FileNotFoundError):
             collector.store_feedback(
-                [{"test_file": "t.py", "test_function": "test_a",
-                  "test_passed": True, "test_duration_ms": 1.0,
-                  "source_file": "", "source_function": "a"}],
+                [
+                    {
+                        "test_file": "t.py",
+                        "test_function": "test_a",
+                        "test_passed": True,
+                        "test_duration_ms": 1.0,
+                        "source_file": "",
+                        "source_function": "a",
+                    }
+                ],
                 db_path=tmp_path / "missing.db",
             )
 
@@ -290,8 +311,8 @@ class TestDBStorage:
 # TestCollectPipeline
 # ---------------------------------------------------------------------------
 
-class TestCollectPipeline:
 
+class TestCollectPipeline:
     def test_collect_from_xml_returns_summary(self, sample_junit_xml, tmp_db):
         collector = RuntimeFeedbackCollector(project_id="test", db_path=tmp_db)
         summary = collector.collect_from_xml(sample_junit_xml, run_id="run-x", db_path=tmp_db)
@@ -303,9 +324,7 @@ class TestCollectPipeline:
         assert summary["run_id"] == "run-x"
 
     def test_collect_from_xml_without_db(self, sample_junit_xml, tmp_path):
-        collector = RuntimeFeedbackCollector(
-            project_id="test", db_path=tmp_path / "nonexistent.db"
-        )
+        collector = RuntimeFeedbackCollector(project_id="test", db_path=tmp_path / "nonexistent.db")
         summary = collector.collect_from_xml(sample_junit_xml, run_id="run-y")
         assert summary["total_tests"] == 3
         assert summary["stored_rows"] == 0  # DB missing, graceful fallback
@@ -315,8 +334,8 @@ class TestCollectPipeline:
 # TestHealthScore
 # ---------------------------------------------------------------------------
 
-class TestHealthScore:
 
+class TestHealthScore:
     def test_health_score_with_both_tables(self, tmp_db):
         conn = sqlite3.connect(str(tmp_db))
         # Insert code quality metric
@@ -326,8 +345,7 @@ class TestHealthScore:
              cyclomatic_complexity, cognitive_complexity, nesting_depth,
              smell_count, maintainability_score, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-            ("cqm-test1", "proj", "foo.py", "process", "python",
-             8, 5, 3, 1, 0.75),
+            ("cqm-test1", "proj", "foo.py", "process", "python", 8, 5, 3, 1, 0.75),
         )
         # Insert runtime feedback
         for i, passed in enumerate([1, 1, 1, 0]):
@@ -337,9 +355,17 @@ class TestHealthScore:
                  test_file, test_function, test_passed, test_duration_ms,
                  run_id, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-                (f"rf-test{i}", "proj", "foo.py", "process",
-                 "tests/test_foo.py", f"test_process_{i}", passed,
-                 10.0 + i, "run-health"),
+                (
+                    f"rf-test{i}",
+                    "proj",
+                    "foo.py",
+                    "process",
+                    "tests/test_foo.py",
+                    f"test_process_{i}",
+                    passed,
+                    10.0 + i,
+                    "run-health",
+                ),
             )
         conn.commit()
         conn.close()
@@ -361,8 +387,6 @@ class TestHealthScore:
         assert health is None
 
     def test_health_score_missing_db_returns_none(self, tmp_path):
-        collector = RuntimeFeedbackCollector(
-            project_id="proj", db_path=tmp_path / "missing.db"
-        )
+        collector = RuntimeFeedbackCollector(project_id="proj", db_path=tmp_path / "missing.db")
         health = collector.compute_function_health("func")
         assert health is None

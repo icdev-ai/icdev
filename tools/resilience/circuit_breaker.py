@@ -50,9 +50,9 @@ logger = logging.getLogger("icdev.resilience.circuit_breaker")
 # Circuit breaker states
 # ---------------------------------------------------------------------------
 class CircuitState(Enum):
-    CLOSED = "closed"       # Normal operation — requests flow through
-    OPEN = "open"           # Tripped — requests are rejected
-    HALF_OPEN = "half_open" # Testing — limited requests allowed
+    CLOSED = "closed"  # Normal operation — requests flow through
+    OPEN = "open"  # Tripped — requests are rejected
+    HALF_OPEN = "half_open"  # Testing — limited requests allowed
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +69,7 @@ def _load_config() -> dict:
     """Load circuit breaker config from args/resilience_config.yaml."""
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "resilience_config.yaml"
         if config_path.exists():
             with open(config_path, "r") as f:
@@ -261,16 +262,12 @@ def get_circuit_breaker(service_name: str) -> CircuitBreakerBackend:
             config = _get_service_config(service_name)
             _registry[service_name] = InMemoryCircuitBreaker(
                 service_name=service_name,
-                failure_threshold=config.get(
-                    "failure_threshold", _DEFAULT_CONFIG["failure_threshold"]
-                ),
+                failure_threshold=config.get("failure_threshold", _DEFAULT_CONFIG["failure_threshold"]),
                 recovery_timeout_seconds=config.get(
                     "recovery_timeout_seconds",
                     _DEFAULT_CONFIG["recovery_timeout_seconds"],
                 ),
-                half_open_max_calls=config.get(
-                    "half_open_max_calls", _DEFAULT_CONFIG["half_open_max_calls"]
-                ),
+                half_open_max_calls=config.get("half_open_max_calls", _DEFAULT_CONFIG["half_open_max_calls"]),
             )
         return _registry[service_name]
 

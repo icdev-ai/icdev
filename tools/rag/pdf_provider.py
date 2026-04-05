@@ -54,6 +54,7 @@ class PDFExtraction:
 # PDFProvider ABC (D66 pattern)
 # ---------------------------------------------------------------------------
 
+
 class PDFProvider(ABC):
     """Abstract base class for PDF text extraction."""
 
@@ -75,6 +76,7 @@ class PDFProvider(ABC):
 # Anthropic PDF Provider (native PDF support)
 # ---------------------------------------------------------------------------
 
+
 class AnthropicPDFProvider(PDFProvider):
     """Anthropic native PDF support via messages API (D-RAG-15).
 
@@ -91,6 +93,7 @@ class AnthropicPDFProvider(PDFProvider):
     def check_availability(self) -> bool:
         try:
             import anthropic  # noqa: F401
+
             key = self._resolve_key()
             return bool(key)
         except ImportError:
@@ -101,10 +104,12 @@ class AnthropicPDFProvider(PDFProvider):
             return self._api_key
         try:
             from tools.rag.secret_ref import resolve_secret
+
             return resolve_secret("env:ANTHROPIC_API_KEY")
         except Exception:
             pass
         import os
+
         return os.environ.get("ANTHROPIC_API_KEY", "")
 
     def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
@@ -122,28 +127,30 @@ class AnthropicPDFProvider(PDFProvider):
         message = client.messages.create(
             model=self._model,
             max_tokens=4096,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": b64,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": b64,
+                            },
                         },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Extract all text content from this PDF document. "
-                            "Return the text organized by page, with each page "
-                            "prefixed by [PAGE N]. Preserve structure, headings, "
-                            "and tables where possible."
-                        ),
-                    },
-                ],
-            }],
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract all text content from this PDF document. "
+                                "Return the text organized by page, with each page "
+                                "prefixed by [PAGE N]. Preserve structure, headings, "
+                                "and tables where possible."
+                            ),
+                        },
+                    ],
+                }
+            ],
         )
 
         raw_text = message.content[0].text if message.content else ""
@@ -152,8 +159,9 @@ class AnthropicPDFProvider(PDFProvider):
     def _parse_pages(self, text: str) -> List[PDFPage]:
         """Parse LLM output with [PAGE N] markers into PDFPage list."""
         import re
+
         pages: List[PDFPage] = []
-        parts = re.split(r'\[PAGE\s+(\d+)\]', text)
+        parts = re.split(r"\[PAGE\s+(\d+)\]", text)
 
         if len(parts) < 3:
             # No page markers — treat as single page
@@ -174,6 +182,7 @@ class AnthropicPDFProvider(PDFProvider):
 # Google PDF Provider (Gemini multimodal)
 # ---------------------------------------------------------------------------
 
+
 class GooglePDFProvider(PDFProvider):
     """Google Gemini PDF extraction (D-RAG-15).
 
@@ -190,6 +199,7 @@ class GooglePDFProvider(PDFProvider):
     def check_availability(self) -> bool:
         try:
             import google.generativeai  # noqa: F401
+
             key = self._resolve_key()
             return bool(key)
         except ImportError:
@@ -200,10 +210,12 @@ class GooglePDFProvider(PDFProvider):
             return self._api_key
         try:
             from tools.rag.secret_ref import resolve_secret
+
             return resolve_secret("env:GOOGLE_API_KEY")
         except Exception:
             pass
         import os
+
         return os.environ.get("GOOGLE_API_KEY", "")
 
     def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
@@ -217,17 +229,19 @@ class GooglePDFProvider(PDFProvider):
         model = genai.GenerativeModel(self._model)
 
         pdf_data = pdf_path.read_bytes()
-        response = model.generate_content([
-            {
-                "mime_type": "application/pdf",
-                "data": pdf_data,
-            },
-            (
-                "Extract all text content from this PDF document. "
-                "Return the text organized by page, with each page "
-                "prefixed by [PAGE N]. Preserve structure and tables."
-            ),
-        ])
+        response = model.generate_content(
+            [
+                {
+                    "mime_type": "application/pdf",
+                    "data": pdf_data,
+                },
+                (
+                    "Extract all text content from this PDF document. "
+                    "Return the text organized by page, with each page "
+                    "prefixed by [PAGE N]. Preserve structure and tables."
+                ),
+            ]
+        )
 
         raw_text = response.text if response else ""
         return AnthropicPDFProvider._parse_pages(None, raw_text)  # Reuse parser
@@ -236,6 +250,7 @@ class GooglePDFProvider(PDFProvider):
 # ---------------------------------------------------------------------------
 # Vision PDF Provider (LLaVA via Ollama — page-by-page)
 # ---------------------------------------------------------------------------
+
 
 class VisionPDFProvider(PDFProvider):
     """Page-by-page vision extraction via LLaVA/Ollama (D-RAG-15).
@@ -253,6 +268,7 @@ class VisionPDFProvider(PDFProvider):
     def check_availability(self) -> bool:
         try:
             import requests
+
             base = self._base_url or self._get_base_url()
             resp = requests.get(f"{base}/api/tags", timeout=3)
             if resp.status_code == 200:
@@ -266,6 +282,7 @@ class VisionPDFProvider(PDFProvider):
         if self._base_url:
             return self._base_url
         import os
+
         return os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/v1").rstrip("/")
 
     def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
@@ -285,23 +302,27 @@ class VisionPDFProvider(PDFProvider):
             # Try text extraction first
             text = page.extract_text() or ""
             if len(text.strip()) > 50:
-                pages.append(PDFPage(
-                    page_number=i + 1,
-                    text=text.strip(),
-                    provider_used="pypdf_text",
-                    metadata={"fallback": True},
-                ))
+                pages.append(
+                    PDFPage(
+                        page_number=i + 1,
+                        text=text.strip(),
+                        provider_used="pypdf_text",
+                        metadata={"fallback": True},
+                    )
+                )
                 continue
 
             # Vision fallback for pages with no/little text (scanned)
             try:
                 # Use pdf2image if available, otherwise skip vision for this page
                 from pdf2image import convert_from_path
+
                 images = convert_from_path(str(pdf_path), first_page=i + 1, last_page=i + 1, dpi=150)
                 if not images:
                     continue
 
                 import io
+
                 buf = io.BytesIO()
                 images[0].save(buf, format="PNG")
                 img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -319,28 +340,34 @@ class VisionPDFProvider(PDFProvider):
                 if resp.status_code == 200:
                     text = resp.json().get("response", "").strip()
                     if text:
-                        pages.append(PDFPage(
-                            page_number=i + 1,
-                            text=text,
-                            provider_used=self.provider_name,
-                        ))
+                        pages.append(
+                            PDFPage(
+                                page_number=i + 1,
+                                text=text,
+                                provider_used=self.provider_name,
+                            )
+                        )
             except ImportError:
                 # pdf2image not available — use pypdf text even if sparse
                 if text.strip():
-                    pages.append(PDFPage(
-                        page_number=i + 1,
-                        text=text.strip(),
-                        provider_used="pypdf_text",
-                        metadata={"sparse": True},
-                    ))
+                    pages.append(
+                        PDFPage(
+                            page_number=i + 1,
+                            text=text.strip(),
+                            provider_used="pypdf_text",
+                            metadata={"sparse": True},
+                        )
+                    )
             except Exception as exc:
                 logger.debug("Vision extraction failed for page %d: %s", i + 1, exc)
                 if text.strip():
-                    pages.append(PDFPage(
-                        page_number=i + 1,
-                        text=text.strip(),
-                        provider_used="pypdf_text",
-                    ))
+                    pages.append(
+                        PDFPage(
+                            page_number=i + 1,
+                            text=text.strip(),
+                            provider_used="pypdf_text",
+                        )
+                    )
 
         return pages
 
@@ -348,6 +375,7 @@ class VisionPDFProvider(PDFProvider):
 # ---------------------------------------------------------------------------
 # PyPDF Provider (text-only, air-gap baseline)
 # ---------------------------------------------------------------------------
+
 
 class PyPDFProvider(PDFProvider):
     """pypdf text-only extraction — air-gap baseline (D-RAG-15).
@@ -360,6 +388,7 @@ class PyPDFProvider(PDFProvider):
     def check_availability(self) -> bool:
         try:
             from pypdf import PdfReader  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -373,11 +402,13 @@ class PyPDFProvider(PDFProvider):
         for i, page in enumerate(reader.pages[:max_pages]):
             text = page.extract_text() or ""
             if text.strip():
-                pages.append(PDFPage(
-                    page_number=i + 1,
-                    text=text.strip(),
-                    provider_used=self.provider_name,
-                ))
+                pages.append(
+                    PDFPage(
+                        page_number=i + 1,
+                        text=text.strip(),
+                        provider_used=self.provider_name,
+                    )
+                )
 
         return pages
 
@@ -385,6 +416,7 @@ class PyPDFProvider(PDFProvider):
 # ---------------------------------------------------------------------------
 # Provider chain factory
 # ---------------------------------------------------------------------------
+
 
 def get_pdf_provider_chain(config: Optional[dict] = None) -> List[PDFProvider]:
     """Build PDF provider chain from config (D-RAG-15).
@@ -396,9 +428,15 @@ def get_pdf_provider_chain(config: Optional[dict] = None) -> List[PDFProvider]:
         Ordered list of available PDFProviders (fallback chain).
     """
     cfg = config or {}
-    chain_order = cfg.get("provider_chain", [
-        "anthropic", "google", "vision_llava", "pypdf_text",
-    ])
+    chain_order = cfg.get(
+        "provider_chain",
+        [
+            "anthropic",
+            "google",
+            "vision_llava",
+            "pypdf_text",
+        ],
+    )
 
     provider_map = {
         "anthropic": lambda: AnthropicPDFProvider(
@@ -457,18 +495,28 @@ def extract_pdf(
     path = Path(pdf_path)
     if not path.exists():
         return PDFExtraction(
-            file_name=path.name, file_path=str(path), file_hash="",
-            page_count=0, pages=[], provider_used="none",
-            status="failed", error=f"File not found: {path}",
+            file_name=path.name,
+            file_path=str(path),
+            file_hash="",
+            page_count=0,
+            pages=[],
+            provider_used="none",
+            status="failed",
+            error=f"File not found: {path}",
         )
 
     # Check file size
     size_mb = path.stat().st_size / (1024 * 1024)
     if size_mb > max_size_mb:
         return PDFExtraction(
-            file_name=path.name, file_path=str(path), file_hash="",
-            page_count=0, pages=[], provider_used="none",
-            status="failed", error=f"File too large: {size_mb:.1f}MB > {max_size_mb}MB limit",
+            file_name=path.name,
+            file_path=str(path),
+            file_hash="",
+            page_count=0,
+            pages=[],
+            provider_used="none",
+            status="failed",
+            error=f"File too large: {size_mb:.1f}MB > {max_size_mb}MB limit",
         )
 
     # Compute file hash for dedup (D-RAG-5)
@@ -482,9 +530,14 @@ def extract_pdf(
     chain = get_pdf_provider_chain(cfg)
     if not chain:
         return PDFExtraction(
-            file_name=path.name, file_path=str(path), file_hash=file_hash,
-            page_count=0, pages=[], provider_used="none",
-            status="failed", error="No PDF extraction provider available (install pypdf)",
+            file_name=path.name,
+            file_path=str(path),
+            file_hash=file_hash,
+            page_count=0,
+            pages=[],
+            provider_used="none",
+            status="failed",
+            error="No PDF extraction provider available (install pypdf)",
         )
 
     last_error = ""
@@ -494,7 +547,9 @@ def extract_pdf(
             if pages:
                 logger.info(
                     "Extracted %d pages from %s via %s",
-                    len(pages), path.name, provider.provider_name,
+                    len(pages),
+                    path.name,
+                    provider.provider_name,
                 )
                 return PDFExtraction(
                     file_name=path.name,
@@ -510,7 +565,12 @@ def extract_pdf(
             continue
 
     return PDFExtraction(
-        file_name=path.name, file_path=str(path), file_hash=file_hash,
-        page_count=0, pages=[], provider_used="none",
-        status="failed", error=f"All providers failed. Last: {last_error}",
+        file_name=path.name,
+        file_path=str(path),
+        file_hash=file_hash,
+        page_count=0,
+        pages=[],
+        provider_used="none",
+        status="failed",
+        error=f"All providers failed. Last: {last_error}",
     )

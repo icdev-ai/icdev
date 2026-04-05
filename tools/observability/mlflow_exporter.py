@@ -29,6 +29,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
     import mlflow
+
     HAS_MLFLOW = True
 except ImportError:
     HAS_MLFLOW = False
@@ -52,9 +53,8 @@ class MLflowExporter:
         self._experiment_name = experiment_name
 
         import os
-        self._tracking_uri = tracking_uri or os.environ.get(
-            "ICDEV_MLFLOW_TRACKING_URI", ""
-        )
+
+        self._tracking_uri = tracking_uri or os.environ.get("ICDEV_MLFLOW_TRACKING_URI", "")
 
         if HAS_MLFLOW and self._tracking_uri:
             mlflow.set_tracking_uri(self._tracking_uri)
@@ -129,7 +129,7 @@ class MLflowExporter:
         with mlflow.start_run(run_name=f"trace-{trace_id[:12]}"):
             for span in spans:
                 attrs = json.loads(span.get("attributes", "{}"))
-                events = json.loads(span.get("events", "[]"))
+                json.loads(span.get("events", "[]"))
 
                 mlflow.log_param(f"span.{span['id']}.name", span["name"])
                 mlflow.log_metric(f"span.{span['id']}.duration_ms", span.get("duration_ms", 0))

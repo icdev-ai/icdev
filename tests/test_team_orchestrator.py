@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.agent.team_orchestrator — DAG-based multi-agent workflow engine."""
@@ -23,6 +24,7 @@ from icdev.tools.agent.team_orchestrator import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def orch_db(tmp_path):
@@ -137,6 +139,7 @@ def _mock_llm_invoke(function_name, llm_request):
 # TestSubtaskDataclass
 # ---------------------------------------------------------------------------
 
+
 class TestSubtaskDataclass:
     """Subtask dataclass: defaults, serialization, field values."""
 
@@ -169,6 +172,7 @@ class TestSubtaskDataclass:
 # TestWorkflowDataclass
 # ---------------------------------------------------------------------------
 
+
 class TestWorkflowDataclass:
     """Workflow dataclass: defaults, subtask dict, status."""
 
@@ -192,6 +196,7 @@ class TestWorkflowDataclass:
 # TestEnsureTables
 # ---------------------------------------------------------------------------
 
+
 class TestEnsureTables:
     """_ensure_tables: creates agent_workflows and agent_subtasks if missing."""
 
@@ -202,7 +207,7 @@ class TestEnsureTables:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('agent_workflows', 'agent_subtasks') ORDER BY name"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('agent_workflows', 'agent_subtasks') ORDER BY name"  # noqa: E501
         )
         tables = sorted([r[0] for r in cursor.fetchall()])
         conn.close()
@@ -222,6 +227,7 @@ class TestEnsureTables:
 # ---------------------------------------------------------------------------
 # TestDecompose
 # ---------------------------------------------------------------------------
+
 
 class TestDecompose:
     """decompose_task: LLM-based decomposition with fallback."""
@@ -280,9 +286,7 @@ class TestDecompose:
         assert row is not None
         assert dict(row)["status"] == "pending"
 
-        subtask_rows = conn.execute(
-            "SELECT * FROM agent_subtasks WHERE workflow_id = ?", (wf.id,)
-        ).fetchall()
+        subtask_rows = conn.execute("SELECT * FROM agent_subtasks WHERE workflow_id = ?", (wf.id,)).fetchall()
         assert len(subtask_rows) == 3
         conn.close()
 
@@ -290,6 +294,7 @@ class TestDecompose:
 # ---------------------------------------------------------------------------
 # TestExecuteWorkflow
 # ---------------------------------------------------------------------------
+
 
 class TestExecuteWorkflow:
     """execute_workflow: DAG-based parallel subtask execution."""
@@ -367,6 +372,7 @@ class TestExecuteWorkflow:
 # TestWorkflowPersistence
 # ---------------------------------------------------------------------------
 
+
 class TestWorkflowPersistence:
     """_persist_workflow: upsert workflow and subtasks to SQLite."""
 
@@ -412,6 +418,7 @@ class TestWorkflowPersistence:
 # TestWorkflowStatus
 # ---------------------------------------------------------------------------
 
+
 class TestWorkflowStatus:
     """get_workflow_status: query workflow and subtask details from DB."""
 
@@ -453,6 +460,7 @@ class TestWorkflowStatus:
 # ---------------------------------------------------------------------------
 # TestBlockDownstream
 # ---------------------------------------------------------------------------
+
 
 class TestBlockDownstream:
     """_block_downstream: marks dependent subtasks as blocked on failure."""

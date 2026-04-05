@@ -36,6 +36,7 @@ def _generate_id(prefix: str = "pg") -> str:
 # Active contracts
 # ---------------------------------------------------------------------------
 
+
 def _get_active_contracts() -> List[Dict]:
     """Find all active contracts from CPMP."""
     conn = get_connection()
@@ -60,11 +61,13 @@ def _get_active_contracts() -> List[Dict]:
 # EVM health check
 # ---------------------------------------------------------------------------
 
+
 def _get_latest_evm(contract_id: str) -> Optional[Dict]:
     """Get the most recent EVM period for a contract."""
     conn = get_connection()
     try:
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT contract_id, period_date, cpi, spi,
                    cost_variance, schedule_variance,
                    eac, etc, vac, tcpi,
@@ -74,7 +77,9 @@ def _get_latest_evm(contract_id: str) -> Optional[Dict]:
             WHERE contract_id = ?
             ORDER BY period_date DESC
             LIMIT 1
-        """, (contract_id,)).fetchone()
+        """,
+            (contract_id,),
+        ).fetchone()
         return dict(row) if row else None
     except Exception:
         return None
@@ -98,36 +103,63 @@ def _assess_evm_health(evm: Optional[Dict]) -> Dict:
 
     if cpi is not None:
         if cpi < 0.80:
-            alerts.append({"level": "critical", "metric": "CPI",
-                           "value": cpi, "message": f"CPI {cpi:.2f} < 0.80 -- severe cost overrun"})
+            alerts.append(
+                {
+                    "level": "critical",
+                    "metric": "CPI",
+                    "value": cpi,
+                    "message": f"CPI {cpi:.2f} < 0.80 -- severe cost overrun",
+                }
+            )
             score -= 0.40
         elif cpi < 0.90:
-            alerts.append({"level": "warning", "metric": "CPI",
-                           "value": cpi, "message": f"CPI {cpi:.2f} < 0.90 -- cost overrun risk"})
+            alerts.append(
+                {
+                    "level": "warning",
+                    "metric": "CPI",
+                    "value": cpi,
+                    "message": f"CPI {cpi:.2f} < 0.90 -- cost overrun risk",
+                }
+            )
             score -= 0.20
         elif cpi < 0.95:
-            alerts.append({"level": "info", "metric": "CPI",
-                           "value": cpi, "message": f"CPI {cpi:.2f} -- monitor cost trends"})
+            alerts.append(
+                {"level": "info", "metric": "CPI", "value": cpi, "message": f"CPI {cpi:.2f} -- monitor cost trends"}
+            )
             score -= 0.05
 
     if spi is not None:
         if spi < 0.80:
-            alerts.append({"level": "critical", "metric": "SPI",
-                           "value": spi, "message": f"SPI {spi:.2f} < 0.80 -- severe schedule slip"})
+            alerts.append(
+                {
+                    "level": "critical",
+                    "metric": "SPI",
+                    "value": spi,
+                    "message": f"SPI {spi:.2f} < 0.80 -- severe schedule slip",
+                }
+            )
             score -= 0.40
         elif spi < 0.90:
-            alerts.append({"level": "warning", "metric": "SPI",
-                           "value": spi, "message": f"SPI {spi:.2f} < 0.90 -- schedule risk"})
+            alerts.append(
+                {"level": "warning", "metric": "SPI", "value": spi, "message": f"SPI {spi:.2f} < 0.90 -- schedule risk"}
+            )
             score -= 0.20
         elif spi < 0.95:
-            alerts.append({"level": "info", "metric": "SPI",
-                           "value": spi, "message": f"SPI {spi:.2f} -- monitor schedule trends"})
+            alerts.append(
+                {"level": "info", "metric": "SPI", "value": spi, "message": f"SPI {spi:.2f} -- monitor schedule trends"}
+            )
             score -= 0.05
 
     tcpi = evm.get("tcpi")
     if tcpi is not None and tcpi > 1.20:
-        alerts.append({"level": "warning", "metric": "TCPI",
-                       "value": tcpi, "message": f"TCPI {tcpi:.2f} > 1.20 -- recovery unlikely"})
+        alerts.append(
+            {
+                "level": "warning",
+                "metric": "TCPI",
+                "value": tcpi,
+                "message": f"TCPI {tcpi:.2f} > 1.20 -- recovery unlikely",
+            }
+        )
         score -= 0.10
 
     return {
@@ -142,12 +174,14 @@ def _assess_evm_health(evm: Optional[Dict]) -> Dict:
 # Deliverable timeliness
 # ---------------------------------------------------------------------------
 
+
 def _get_overdue_deliverables(contract_id: str) -> List[Dict]:
     """Find deliverables that are overdue or approaching deadline."""
     conn = get_connection()
     now = _utcnow_iso()[:10]  # YYYY-MM-DD
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, cdrl_number, title, deliverable_type,
                    due_date, status, days_overdue
             FROM cpmp_deliverables
@@ -156,7 +190,9 @@ def _get_overdue_deliverables(contract_id: str) -> List[Dict]:
             AND due_date IS NOT NULL
             AND due_date <= ?
             ORDER BY due_date ASC
-        """, (contract_id, now)).fetchall()
+        """,
+            (contract_id, now),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -168,7 +204,8 @@ def _get_upcoming_deliverables(contract_id: str, days: int = 14) -> List[Dict]:
     """Find deliverables due within N days."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, cdrl_number, title, deliverable_type,
                    due_date, status
             FROM cpmp_deliverables
@@ -178,7 +215,9 @@ def _get_upcoming_deliverables(contract_id: str, days: int = 14) -> List[Dict]:
             AND due_date > date('now')
             AND due_date <= date('now', '+' || ? || ' days')
             ORDER BY due_date ASC
-        """, (contract_id, days)).fetchall()
+        """,
+            (contract_id, days),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -199,25 +238,29 @@ def _assess_schedule_health(overdue: List[Dict], upcoming: List[Dict]) -> Dict:
         for d in overdue:
             days = d.get("days_overdue", 0) or 0
             level = "critical" if days > 30 else "warning" if days > 7 else "info"
-            alerts.append({
-                "level": level,
-                "metric": "deliverable_overdue",
-                "deliverable_id": d.get("id", ""),
-                "title": d.get("title", ""),
-                "days_overdue": days,
-                "message": f"'{d.get('title', '')}' overdue by {days} days",
-            })
+            alerts.append(
+                {
+                    "level": level,
+                    "metric": "deliverable_overdue",
+                    "deliverable_id": d.get("id", ""),
+                    "title": d.get("title", ""),
+                    "days_overdue": days,
+                    "message": f"'{d.get('title', '')}' overdue by {days} days",
+                }
+            )
         # Score penalty based on overdue count
         penalty = min(0.50, len(overdue) * 0.10)
         score -= penalty
 
     if len(upcoming) > 3:
-        alerts.append({
-            "level": "info",
-            "metric": "deliverable_surge",
-            "count": len(upcoming),
-            "message": f"{len(upcoming)} deliverables due within 14 days",
-        })
+        alerts.append(
+            {
+                "level": "info",
+                "metric": "deliverable_surge",
+                "count": len(upcoming),
+                "message": f"{len(upcoming)} deliverables due within 14 days",
+            }
+        )
 
     return {
         "score": max(0.0, score),
@@ -231,11 +274,13 @@ def _assess_schedule_health(overdue: List[Dict], upcoming: List[Dict]) -> Dict:
 # Negative events
 # ---------------------------------------------------------------------------
 
+
 def _get_open_negative_events(contract_id: str) -> List[Dict]:
     """Find unresolved negative events for a contract."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT id, event_type, severity, description,
                    corrective_action_status, corrective_action_due,
                    cpars_impact, created_at
@@ -243,7 +288,9 @@ def _get_open_negative_events(contract_id: str) -> List[Dict]:
             WHERE contract_id = ?
             AND corrective_action_status IN ('open', 'in_progress')
             ORDER BY severity DESC, created_at DESC
-        """, (contract_id,)).fetchall()
+        """,
+            (contract_id,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -263,13 +310,15 @@ def _assess_risk_health(events: List[Dict]) -> Dict:
 
     for e in events:
         sev = e.get("severity", "low")
-        alerts.append({
-            "level": "critical" if sev in ("critical", "high") else "warning",
-            "metric": "negative_event",
-            "event_type": e.get("event_type", ""),
-            "severity": sev,
-            "message": f"{e.get('event_type', 'event')} ({sev}): {e.get('description', '')[:80]}",
-        })
+        alerts.append(
+            {
+                "level": "critical" if sev in ("critical", "high") else "warning",
+                "metric": "negative_event",
+                "event_type": e.get("event_type", ""),
+                "severity": sev,
+                "message": f"{e.get('event_type', 'event')} ({sev}): {e.get('description', '')[:80]}",
+            }
+        )
         score -= severity_weights.get(sev, 0.05)
 
     return {
@@ -283,8 +332,8 @@ def _assess_risk_health(events: List[Dict]) -> Dict:
 # CPARS prediction (deterministic weighted average, D-CPMP-3)
 # ---------------------------------------------------------------------------
 
-def _predict_cpars(contract_id: str, evm_health: Dict,
-                   schedule_health: Dict, risk_health: Dict) -> Dict:
+
+def _predict_cpars(contract_id: str, evm_health: Dict, schedule_health: Dict, risk_health: Dict) -> Dict:
     """Predict CPARS rating using deterministic weighted average.
 
     Weights (D-CPMP-3):
@@ -308,13 +357,7 @@ def _predict_cpars(contract_id: str, evm_health: Dict,
     # Trend score (placeholder — would compare consecutive EVM periods)
     trend_score = 3.0  # Default satisfactory
 
-    composite = (
-        evm_score * 0.35
-        + sched_score * 0.25
-        + risk_score * 0.20
-        + sb_score * 0.10
-        + trend_score * 0.10
-    )
+    composite = evm_score * 0.35 + sched_score * 0.25 + risk_score * 0.20 + sb_score * 0.10 + trend_score * 0.10
 
     # Map score to rating
     if composite >= 4.5:
@@ -345,8 +388,8 @@ def _predict_cpars(contract_id: str, evm_health: Dict,
 # Contract health update
 # ---------------------------------------------------------------------------
 
-def _compute_contract_health(evm_health: Dict, schedule_health: Dict,
-                             risk_health: Dict) -> Dict:
+
+def _compute_contract_health(evm_health: Dict, schedule_health: Dict, risk_health: Dict) -> Dict:
     """Compute overall contract health score (D-CPMP-8).
 
     Returns:
@@ -356,8 +399,8 @@ def _compute_contract_health(evm_health: Dict, schedule_health: Dict,
         evm_health.get("score", 1.0) * 0.35
         + schedule_health.get("score", 1.0) * 0.25
         + risk_health.get("score", 1.0) * 0.20
-        + 1.0 * 0.10   # sb_health placeholder
-        + 1.0 * 0.10   # trend placeholder
+        + 1.0 * 0.10  # sb_health placeholder
+        + 1.0 * 0.10  # trend placeholder
     )
 
     if score >= 0.80:
@@ -370,8 +413,7 @@ def _compute_contract_health(evm_health: Dict, schedule_health: Dict,
     return {"health": health, "health_score": round(score, 3)}
 
 
-def _store_monitoring_result(contract_id: str, health: Dict,
-                             cpars_prediction: Dict, all_alerts: List[Dict]) -> None:
+def _store_monitoring_result(contract_id: str, health: Dict, cpars_prediction: Dict, all_alerts: List[Dict]) -> None:
     """Store monitoring results to audit trail."""
     conn = get_connection()
     try:
@@ -386,12 +428,14 @@ def _store_monitoring_result(contract_id: str, health: Dict,
                 "monitor",
                 "green",
                 contract_id,
-                json.dumps({
-                    "health": health,
-                    "cpars_prediction": cpars_prediction,
-                    "alert_count": len(all_alerts),
-                    "critical_alerts": sum(1 for a in all_alerts if a.get("level") == "critical"),
-                }),
+                json.dumps(
+                    {
+                        "health": health,
+                        "cpars_prediction": cpars_prediction,
+                        "alert_count": len(all_alerts),
+                        "critical_alerts": sum(1 for a in all_alerts if a.get("level") == "critical"),
+                    }
+                ),
                 1,
                 _utcnow_iso(),
             ),
@@ -406,6 +450,7 @@ def _store_monitoring_result(contract_id: str, health: Dict,
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Monitor Reflex (R10).
@@ -471,16 +516,18 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         _store_monitoring_result(cid, health, cpars_pred, all_alerts)
         contracts_monitored += 1
 
-        contract_results.append({
-            "contract_id": cid,
-            "contract_number": contract.get("contract_number", ""),
-            "health": health["health"],
-            "health_score": health["health_score"],
-            "cpars_predicted": cpars_pred["predicted_rating"],
-            "cpars_score": cpars_pred["predicted_score"],
-            "alert_count": len(all_alerts),
-            "overdue_deliverables": len(overdue),
-        })
+        contract_results.append(
+            {
+                "contract_id": cid,
+                "contract_number": contract.get("contract_number", ""),
+                "health": health["health"],
+                "health_score": health["health_score"],
+                "cpars_predicted": cpars_pred["predicted_rating"],
+                "cpars_score": cpars_pred["predicted_score"],
+                "alert_count": len(all_alerts),
+                "overdue_deliverables": len(overdue),
+            }
+        )
 
     return {
         "success": True,

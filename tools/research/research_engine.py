@@ -18,6 +18,7 @@ Architecture:
   D-RES-10: Dossier → child app fitness via HITL
   D-RES-13: Parent-only (excluded from child apps)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,15 +42,18 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # --- Graceful imports ---
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
 
@@ -62,9 +66,7 @@ def _now():
 def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -117,6 +119,7 @@ def _in_quiet_hours(config):
 # =========================================================================
 # Pipeline Stages
 # =========================================================================
+
 
 def stage_scope(session_id, vertical_slug, db_path=None):
     """Stage 1: SCOPE — Create session, load vertical config, define focus."""
@@ -405,8 +408,7 @@ STAGE_FUNCTIONS = {
 }
 
 
-def run_pipeline(session_id=None, vertical=None, name=None, description=None,
-                 focus_areas=None, db_path=None):
+def run_pipeline(session_id=None, vertical=None, name=None, description=None, focus_areas=None, db_path=None):
     """Run the full 9-stage research pipeline."""
     config = _load_config()
     pipeline_id = f"rpipe-{uuid.uuid4().hex[:8]}"
@@ -485,29 +487,17 @@ def get_status(session_id=None, db_path=None):
             if get_session:
                 return get_session(session_id, db_path=db_path)
             # Fallback
-            row = conn.execute(
-                "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
             if not row:
                 return {"error": f"Session not found: {session_id}"}
             return dict(row)
 
         # Engine-wide status
-        sessions = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM research_sessions GROUP BY status"
-        ).fetchall()
-        verticals = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_verticals WHERE active = 1"
-        ).fetchone()
-        signals = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_signals"
-        ).fetchone()
-        challenges = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_challenges"
-        ).fetchone()
-        dossiers = conn.execute(
-            "SELECT COUNT(*) as cnt FROM research_dossiers"
-        ).fetchone()
+        sessions = conn.execute("SELECT status, COUNT(*) as cnt FROM research_sessions GROUP BY status").fetchall()
+        verticals = conn.execute("SELECT COUNT(*) as cnt FROM research_verticals WHERE active = 1").fetchone()
+        signals = conn.execute("SELECT COUNT(*) as cnt FROM research_signals").fetchone()
+        challenges = conn.execute("SELECT COUNT(*) as cnt FROM research_challenges").fetchone()
+        dossiers = conn.execute("SELECT COUNT(*) as cnt FROM research_dossiers").fetchone()
 
         return {
             "engine": "research",
@@ -568,6 +558,7 @@ def run_daemon(db_path=None):
 # =========================================================================
 # CLI
 # =========================================================================
+
 
 def _print_human(args, result):
     print("=" * 70)
@@ -642,8 +633,13 @@ def main():
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--run", action="store_true", help="Run full pipeline")
-    group.add_argument("--run-stage", type=str, metavar="STAGE", dest="run_stage",
-                        help="Run single stage (SCOPE, LANDSCAPE, REGULATE, COMMUNITY, ACADEMIC, BUILD_BUY, SYNTHESIZE, DOSSIER)")
+    group.add_argument(
+        "--run-stage",
+        type=str,
+        metavar="STAGE",
+        dest="run_stage",
+        help="Run single stage (SCOPE, LANDSCAPE, REGULATE, COMMUNITY, ACADEMIC, BUILD_BUY, SYNTHESIZE, DOSSIER)",
+    )
     group.add_argument("--status", action="store_true", help="Engine or session status")
     group.add_argument("--daemon", action="store_true", help="Run in daemon mode")
 
@@ -657,7 +653,6 @@ def main():
     args = parser.parse_args()
 
     # Resolve stage from positional or named arg
-    stage = args.run_stage or args.stage
 
     try:
         if args.run:

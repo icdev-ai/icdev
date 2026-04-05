@@ -54,33 +54,96 @@ CONFIG_PATH = BASE_DIR / "args" / "govcon_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # =========================================================================
 # CONSTANTS
 # =========================================================================
 # Stopwords for keyword extraction (common words to ignore)
-_STOPWORDS = frozenset({
-    "the", "and", "for", "that", "with", "this", "from", "are", "not",
-    "will", "shall", "must", "have", "has", "been", "being", "were",
-    "was", "can", "may", "should", "would", "could", "also", "all",
-    "any", "each", "other", "such", "than", "into", "over", "more",
-    "its", "their", "they", "which", "when", "where", "who", "how",
-    "but", "about", "between", "through", "during", "before", "after",
-    "above", "below", "both", "these", "those", "only", "very",
-    "provide", "ensure", "support", "include", "including", "required",
-    "contractor", "government", "agency", "federal", "services",
-})
+_STOPWORDS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "that",
+        "with",
+        "this",
+        "from",
+        "are",
+        "not",
+        "will",
+        "shall",
+        "must",
+        "have",
+        "has",
+        "been",
+        "being",
+        "were",
+        "was",
+        "can",
+        "may",
+        "should",
+        "would",
+        "could",
+        "also",
+        "all",
+        "any",
+        "each",
+        "other",
+        "such",
+        "than",
+        "into",
+        "over",
+        "more",
+        "its",
+        "their",
+        "they",
+        "which",
+        "when",
+        "where",
+        "who",
+        "how",
+        "but",
+        "about",
+        "between",
+        "through",
+        "during",
+        "before",
+        "after",
+        "above",
+        "below",
+        "both",
+        "these",
+        "those",
+        "only",
+        "very",
+        "provide",
+        "ensure",
+        "support",
+        "include",
+        "including",
+        "required",
+        "contractor",
+        "government",
+        "agency",
+        "federal",
+        "services",
+    }
+)
 
 MIN_KEYWORD_LEN = 3
 MAX_KEYWORDS_PER_STATEMENT = 15
@@ -102,10 +165,10 @@ _OBLIGATION_VERBS = [
 _OBLIGATION_PATTERN = re.compile("|".join(_OBLIGATION_VERBS), re.IGNORECASE)
 
 # Sentence boundary detection
-_SENTENCE_SPLIT = re.compile(r'(?<=[.!?;])\s+|\n{2,}')
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?;])\s+|\n{2,}")
 
 # Token pattern for keyword extraction
-_TOKEN_PATTERN = re.compile(r'\b[a-z][a-z0-9/_-]{2,}\b')
+_TOKEN_PATTERN = re.compile(r"\b[a-z][a-z0-9/_-]{2,}\b")
 
 
 # =========================================================================
@@ -146,7 +209,9 @@ def _audit(event_type, actor, action, details=None):
     if _HAS_AUDIT:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor, action=action,
+                event_type=event_type,
+                actor=actor,
+                action=action,
                 details=json.dumps(details) if details else None,
                 project_id="govcon-engine",
             )
@@ -218,13 +283,15 @@ def extract_shall_statements(text, config=None):
         # Classify domain
         domain = _classify_domain(sentence, keywords, req_config)
 
-        results.append({
-            "text": sentence,
-            "type": stmt_type,
-            "keywords": keywords,
-            "domain_category": domain,
-            "content_hash": stmt_hash,
-        })
+        results.append(
+            {
+                "text": sentence,
+                "type": stmt_type,
+                "keywords": keywords,
+                "domain_category": domain,
+                "content_hash": stmt_hash,
+            }
+        )
 
     return results
 
@@ -310,13 +377,10 @@ def extract_and_store(opp_id=None, db_path=None, config=None):
     # Fetch opportunities
     if opp_id:
         rows = conn.execute(
-            "SELECT id, description, title FROM sam_gov_opportunities WHERE id = ?",
-            (opp_id,)
+            "SELECT id, description, title FROM sam_gov_opportunities WHERE id = ?", (opp_id,)
         ).fetchall()
     else:
-        rows = conn.execute(
-            "SELECT id, description, title FROM sam_gov_opportunities WHERE active = 'true'"
-        ).fetchall()
+        rows = conn.execute("SELECT id, description, title FROM sam_gov_opportunities WHERE active = 'true'").fetchall()
 
     total_extracted = 0
     new_count = 0
@@ -332,8 +396,7 @@ def extract_and_store(opp_id=None, db_path=None, config=None):
         for stmt in statements:
             # Check for existing by content_hash
             existing = conn.execute(
-                "SELECT id FROM rfp_shall_statements WHERE content_hash = ?",
-                (stmt["content_hash"],)
+                "SELECT id FROM rfp_shall_statements WHERE content_hash = ?", (stmt["content_hash"],)
             ).fetchone()
 
             if existing:
@@ -346,10 +409,18 @@ def extract_and_store(opp_id=None, db_path=None, config=None):
                 "domain_category, keywords, keyword_fingerprint, content_hash, "
                 "extracted_at, classification) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (_stmt_id(), row["id"], stmt["text"], stmt["type"],
-                 stmt["domain_category"], json.dumps(stmt["keywords"]),
-                 _keyword_fingerprint(stmt["keywords"]), stmt["content_hash"],
-                 _now(), "CUI")
+                (
+                    _stmt_id(),
+                    row["id"],
+                    stmt["text"],
+                    stmt["type"],
+                    stmt["domain_category"],
+                    json.dumps(stmt["keywords"]),
+                    _keyword_fingerprint(stmt["keywords"]),
+                    stmt["content_hash"],
+                    _now(),
+                    "CUI",
+                ),
             )
             new_count += 1
             total_extracted += 1
@@ -357,8 +428,11 @@ def extract_and_store(opp_id=None, db_path=None, config=None):
     conn.commit()
     conn.close()
 
-    _audit("govcon.extract", "requirement-extractor",
-           f"Extracted {new_count} new shall statements from {len(rows)} opportunities")
+    _audit(
+        "govcon.extract",
+        "requirement-extractor",
+        f"Extracted {new_count} new shall statements from {len(rows)} opportunities",
+    )
 
     return {
         "opportunity_count": len(rows),
@@ -389,7 +463,7 @@ def cluster_patterns(db_path=None, config=None):
     req_config = config.get("requirement_extraction", {})
     cluster_config = req_config.get("clustering", {})
     min_shared = cluster_config.get("min_shared_keywords", 3)
-    min_freq = req_config.get("min_pattern_frequency", 3)
+    req_config.get("min_pattern_frequency", 3)
 
     try:
         conn = _get_db(db_path)
@@ -398,8 +472,7 @@ def cluster_patterns(db_path=None, config=None):
 
     # Fetch all shall statements
     stmts = conn.execute(
-        "SELECT id, statement_text, domain_category, keywords, keyword_fingerprint "
-        "FROM rfp_shall_statements"
+        "SELECT id, statement_text, domain_category, keywords, keyword_fingerprint FROM rfp_shall_statements"
     ).fetchall()
 
     if not stmts:
@@ -450,10 +523,7 @@ def cluster_patterns(db_path=None, config=None):
 
             fingerprint = _keyword_fingerprint(cluster_kws)
             stmt_ids = [s["id"] for s in cluster_stmts]
-            opp_ids = list(set(
-                s.get("sam_opportunity_id", "") for s in cluster_stmts
-                if s.get("sam_opportunity_id")
-            ))
+            opp_ids = list(set(s.get("sam_opportunity_id", "") for s in cluster_stmts if s.get("sam_opportunity_id")))
 
             # Representative text: longest statement
             representative = max(cluster_stmts, key=lambda s: len(s.get("statement_text", "")))
@@ -462,7 +532,7 @@ def cluster_patterns(db_path=None, config=None):
             existing = conn.execute(
                 "SELECT id, shall_statement_ids, sam_opportunity_ids, frequency "
                 "FROM rfp_requirement_patterns WHERE keyword_fingerprint = ? AND domain_category = ?",
-                (fingerprint, domain)
+                (fingerprint, domain),
             ).fetchone()
 
             if existing:
@@ -477,8 +547,7 @@ def cluster_patterns(db_path=None, config=None):
                     "UPDATE rfp_requirement_patterns SET "
                     "frequency=?, shall_statement_ids=?, sam_opportunity_ids=?, last_seen=? "
                     "WHERE id=?",
-                    (new_freq, json.dumps(merged_ids), json.dumps(merged_opp_ids),
-                     _now(), existing["id"])
+                    (new_freq, json.dumps(merged_ids), json.dumps(merged_opp_ids), _now(), existing["id"]),
                 )
                 updated_patterns += 1
             else:
@@ -492,13 +561,25 @@ def cluster_patterns(db_path=None, config=None):
                     "icdev_capability_ids, status, first_seen, last_seen, "
                     "metadata, classification) "
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (_pattern_id(), pattern_name,
-                     representative["statement_text"][:500],
-                     domain, len(set(opp_ids)) or len(cluster_stmts),
-                     json.dumps(stmt_ids), json.dumps(opp_ids),
-                     fingerprint, json.dumps(cluster_kws[:20]),
-                     representative["statement_text"],
-                     0.0, "[]", "new", _now(), _now(), "{}", "CUI")
+                    (
+                        _pattern_id(),
+                        pattern_name,
+                        representative["statement_text"][:500],
+                        domain,
+                        len(set(opp_ids)) or len(cluster_stmts),
+                        json.dumps(stmt_ids),
+                        json.dumps(opp_ids),
+                        fingerprint,
+                        json.dumps(cluster_kws[:20]),
+                        representative["statement_text"],
+                        0.0,
+                        "[]",
+                        "new",
+                        _now(),
+                        _now(),
+                        "{}",
+                        "CUI",
+                    ),
                 )
                 new_patterns += 1
 
@@ -508,8 +589,9 @@ def cluster_patterns(db_path=None, config=None):
     total = conn.execute("SELECT COUNT(*) as c FROM rfp_requirement_patterns").fetchone()
     conn.close()
 
-    _audit("govcon.cluster", "requirement-extractor",
-           f"Clustered patterns: {new_patterns} new, {updated_patterns} updated")
+    _audit(
+        "govcon.cluster", "requirement-extractor", f"Clustered patterns: {new_patterns} new, {updated_patterns} updated"
+    )
 
     return {
         "new_patterns": new_patterns,
@@ -530,8 +612,7 @@ def _generate_pattern_name(keywords, domain):
 # =========================================================================
 # QUERY FUNCTIONS
 # =========================================================================
-def get_patterns(db_path=None, domain=None, min_frequency=1, status=None,
-                 limit=100):
+def get_patterns(db_path=None, domain=None, min_frequency=1, status=None, limit=100):
     """Get requirement patterns, optionally filtered.
 
     Returns:
@@ -586,7 +667,7 @@ def get_trends(db_path=None, top_k=20):
         "SELECT id, pattern_name, domain_category, frequency, capability_coverage, status "
         "FROM rfp_requirement_patterns "
         "ORDER BY frequency DESC LIMIT ?",
-        (top_k,)
+        (top_k,),
     ).fetchall()
 
     # Gap patterns (high frequency, low coverage)
@@ -595,7 +676,7 @@ def get_trends(db_path=None, top_k=20):
         "FROM rfp_requirement_patterns "
         "WHERE capability_coverage < 0.4 AND frequency >= 3 "
         "ORDER BY frequency DESC LIMIT ?",
-        (top_k,)
+        (top_k,),
     ).fetchall()
 
     conn.close()
@@ -613,21 +694,17 @@ def get_trends(db_path=None, top_k=20):
 def main():
     parser = argparse.ArgumentParser(description="RFP Requirement Extractor")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--extract-all", action="store_true",
-                       help="Extract shall statements from all cached opportunities")
-    group.add_argument("--extract", action="store_true",
-                       help="Extract from a specific opportunity (use --opp-id)")
-    group.add_argument("--cluster", action="store_true",
-                       help="Cluster statements into requirement patterns")
-    group.add_argument("--patterns", action="store_true",
-                       help="List requirement patterns")
-    group.add_argument("--trends", action="store_true",
-                       help="Show requirement trend analysis")
+    group.add_argument(
+        "--extract-all", action="store_true", help="Extract shall statements from all cached opportunities"
+    )
+    group.add_argument("--extract", action="store_true", help="Extract from a specific opportunity (use --opp-id)")
+    group.add_argument("--cluster", action="store_true", help="Cluster statements into requirement patterns")
+    group.add_argument("--patterns", action="store_true", help="List requirement patterns")
+    group.add_argument("--trends", action="store_true", help="Show requirement trend analysis")
 
     parser.add_argument("--opp-id", help="Specific opportunity ID for extraction")
     parser.add_argument("--domain", help="Filter patterns by domain category")
-    parser.add_argument("--min-frequency", type=int, default=1,
-                        help="Minimum pattern frequency")
+    parser.add_argument("--min-frequency", type=int, default=1, help="Minimum pattern frequency")
     parser.add_argument("--status", help="Filter patterns by status")
     parser.add_argument("--limit", type=int, default=100, help="Max results")
     parser.add_argument("--json", action="store_true", help="JSON output")
@@ -648,8 +725,9 @@ def main():
     elif args.cluster:
         result = cluster_patterns()
     elif args.patterns:
-        result = get_patterns(domain=args.domain, min_frequency=args.min_frequency,
-                              status=args.status, limit=args.limit)
+        result = get_patterns(
+            domain=args.domain, min_frequency=args.min_frequency, status=args.status, limit=args.limit
+        )
     elif args.trends:
         result = get_trends()
     else:
@@ -669,7 +747,7 @@ def _print_human(result, args):
 
     if args.extract_all or args.extract:
         print("\n  Requirement Extraction Complete")
-        print(f"  {'='*40}")
+        print(f"  {'=' * 40}")
         print(f"  Opportunities: {result.get('opportunity_count', 0)}")
         print(f"  Extracted:     {result.get('extracted_count', 0)}")
         print(f"  New:           {result.get('new_count', 0)}")
@@ -683,15 +761,17 @@ def _print_human(result, args):
     elif args.patterns:
         patterns = result.get("patterns", [])
         print(f"\n  Requirement Patterns ({len(patterns)})")
-        print(f"  {'='*60}")
+        print(f"  {'=' * 60}")
         for p in patterns:
             coverage = p.get("capability_coverage", 0)
             cov_bar = "=" * int(coverage * 10)
-            print(f"  [{p.get('domain_category','?'):12s}] {p.get('pattern_name','')[:40]}")
-            print(f"      Freq: {p.get('frequency',0):3d} | Coverage: [{cov_bar:<10s}] {coverage:.0%} | Status: {p.get('status','')}")
+            print(f"  [{p.get('domain_category', '?'):12s}] {p.get('pattern_name', '')[:40]}")
+            print(
+                f"      Freq: {p.get('frequency', 0):3d} | Coverage: [{cov_bar:<10s}] {coverage:.0%} | Status: {p.get('status', '')}"  # noqa: E501
+            )
     elif args.trends:
         print("\n  Requirement Trends")
-        print(f"  {'='*50}")
+        print(f"  {'=' * 50}")
         print("\n  Domain Distribution:")
         for d in result.get("domain_trends", []):
             bar = "#" * min(d.get("total_freq", 0), 30)
@@ -700,7 +780,9 @@ def _print_human(result, args):
         if gaps:
             print("\n  High-Frequency Gaps (no ICDEV capability):")
             for g in gaps[:10]:
-                print(f"    [{g.get('domain_category','')}] {g.get('pattern_name','')[:40]} (freq={g.get('frequency',0)})")
+                print(
+                    f"    [{g.get('domain_category', '')}] {g.get('pattern_name', '')[:40]} (freq={g.get('frequency', 0)})"  # noqa: E501
+                )
     print()
 
 

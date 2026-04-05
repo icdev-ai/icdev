@@ -66,17 +66,17 @@ def get_recent_events():
         params.extend([limit, offset])
 
         rows = conn.execute(query, params).fetchall()
-        total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM hook_events"
-        ).fetchone()["cnt"]
+        total = conn.execute("SELECT COUNT(*) as cnt FROM hook_events").fetchone()["cnt"]
 
-        return jsonify({
-            "events": [dict(r) for r in rows],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "classification": DEFAULT_CLASSIFICATION,
-        })
+        return jsonify(
+            {
+                "events": [dict(r) for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()
 
@@ -131,13 +131,15 @@ def poll_events():
         # New cursor = most recent event timestamp, or pass through old cursor
         new_cursor = events[0]["created_at"] if events else since
 
-        return jsonify({
-            "events": events,
-            "cursor": new_cursor,
-            "count": len(events),
-            "poll_interval_ms": DEFAULT_POLL_INTERVAL_MS,
-            "classification": DEFAULT_CLASSIFICATION,
-        })
+        return jsonify(
+            {
+                "events": events,
+                "cursor": new_cursor,
+                "count": len(events),
+                "poll_interval_ms": DEFAULT_POLL_INTERVAL_MS,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()
 
@@ -174,17 +176,23 @@ def get_filter_options():
     """Return distinct hook types and tool names for filter dropdowns."""
     conn = _get_db()
     try:
-        hook_types = [r["hook_type"] for r in conn.execute(
-            "SELECT DISTINCT hook_type FROM hook_events ORDER BY hook_type"
-        ).fetchall()]
-        tool_names = [r["tool_name"] for r in conn.execute(
-            "SELECT DISTINCT tool_name FROM hook_events WHERE tool_name IS NOT NULL ORDER BY tool_name"
-        ).fetchall()]
-        return jsonify({
-            "hook_types": hook_types,
-            "tool_names": tool_names,
-            "classification": DEFAULT_CLASSIFICATION,
-        })
+        hook_types = [
+            r["hook_type"]
+            for r in conn.execute("SELECT DISTINCT hook_type FROM hook_events ORDER BY hook_type").fetchall()
+        ]
+        tool_names = [
+            r["tool_name"]
+            for r in conn.execute(
+                "SELECT DISTINCT tool_name FROM hook_events WHERE tool_name IS NOT NULL ORDER BY tool_name"
+            ).fetchall()
+        ]
+        return jsonify(
+            {
+                "hook_types": hook_types,
+                "tool_names": tool_names,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()
 
@@ -235,16 +243,19 @@ def ingest_event():
     # WebSocket broadcast for activity feed (D170)
     try:
         from tools.dashboard.websocket import broadcast_activity
-        broadcast_activity({
-            "source": "hook",
-            "id": data.get("id", ""),
-            "event_type": data.get("hook_type", ""),
-            "actor_or_agent": data.get("agent_id", data.get("tool_name", "")),
-            "summary": data.get("tool_name", data.get("message", "")),
-            "project_id": data.get("project_id", ""),
-            "classification": data.get("classification", ""),
-            "created_at": data.get("timestamp", data.get("created_at", "")),
-        })
+
+        broadcast_activity(
+            {
+                "source": "hook",
+                "id": data.get("id", ""),
+                "event_type": data.get("hook_type", ""),
+                "actor_or_agent": data.get("agent_id", data.get("tool_name", "")),
+                "summary": data.get("tool_name", data.get("message", "")),
+                "project_id": data.get("project_id", ""),
+                "classification": data.get("classification", ""),
+                "created_at": data.get("timestamp", data.get("created_at", "")),
+            }
+        )
     except Exception:
         pass  # WebSocket broadcast is best-effort
 

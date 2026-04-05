@@ -41,9 +41,7 @@ def project_status(project_id):
     conn = _get_db()
     try:
         # Project basics
-        project = conn.execute(
-            "SELECT * FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
+        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
@@ -162,17 +160,19 @@ def project_compliance(project_id):
             st = cd.get("implementation_status", "planned")
             control_summary["by_status"][st] = control_summary["by_status"].get(st, 0) + 1
 
-        return jsonify({
-            "project_id": project_id,
-            "ssp_documents": [dict(r) for r in ssps],
-            "poam_summary": poam_summary,
-            "poam_items": [dict(r) for r in poams],
-            "stig_summary": stig_summary,
-            "stig_findings": [dict(r) for r in stigs],
-            "sbom_records": [dict(r) for r in sboms],
-            "control_summary": control_summary,
-            "controls": [dict(r) for r in controls],
-        })
+        return jsonify(
+            {
+                "project_id": project_id,
+                "ssp_documents": [dict(r) for r in ssps],
+                "poam_summary": poam_summary,
+                "poam_items": [dict(r) for r in poams],
+                "stig_summary": stig_summary,
+                "stig_findings": [dict(r) for r in stigs],
+                "sbom_records": [dict(r) for r in sboms],
+                "control_summary": control_summary,
+                "controls": [dict(r) for r in controls],
+            }
+        )
     finally:
         conn.close()
 

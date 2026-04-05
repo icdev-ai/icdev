@@ -34,10 +34,12 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -47,6 +49,7 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_register_legacy_app(args: dict) -> dict:
     """Register a legacy application for analysis."""
@@ -152,7 +155,9 @@ def handle_create_migration_plan(args: dict) -> dict:
 
     try:
         return create_plan(
-            project_id, app_id, strategy,
+            project_id,
+            app_id,
+            strategy,
             target_lang=args.get("target_language"),
             target_framework=args.get("target_framework"),
             target_db=args.get("target_database"),
@@ -320,6 +325,7 @@ def handle_migrate_version(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     """Create and configure the Modernization MCP server."""
     server = MCPServer(name="icdev-modernization", version="1.0.0")
@@ -342,7 +348,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="analyze_legacy",
-        description="Run full legacy code analysis — AST parsing, dependency extraction, framework detection, API discovery, complexity metrics",
+        description="Run full legacy code analysis — AST parsing, dependency extraction, framework detection, API discovery, complexity metrics",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -356,7 +362,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="extract_architecture",
-        description="Reverse-engineer architecture from analyzed legacy code — call graph, component diagram, data flow, service boundaries",
+        description="Reverse-engineer architecture from analyzed legacy code — call graph, component diagram, data flow, service boundaries",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -369,7 +375,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_docs",
-        description="Generate documentation from legacy code analysis — API docs, data dictionary, component docs, dependency map",
+        description="Generate documentation from legacy code analysis — API docs, data dictionary, component docs, dependency map",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -383,7 +389,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="assess_seven_r",
-        description="Run 7R migration strategy assessment — scores all 7 Rs (Rehost, Replatform, Refactor, Re-architect, Repurchase, Retire, Retain) with weighted decision matrix",
+        description="Run 7R migration strategy assessment — scores all 7 Rs (Rehost, Replatform, Refactor, Re-architect, Repurchase, Retire, Retain) with weighted decision matrix",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -404,12 +410,23 @@ def create_server() -> MCPServer:
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV project ID"},
                 "app_id": {"type": "string", "description": "Legacy application ID"},
-                "strategy": {"type": "string", "enum": ["rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain"]},
+                "strategy": {
+                    "type": "string",
+                    "enum": ["rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain"],
+                },
                 "target_language": {"type": "string", "description": "Target programming language"},
                 "target_framework": {"type": "string", "description": "Target framework"},
                 "target_database": {"type": "string", "description": "Target database"},
-                "target_architecture": {"type": "string", "default": "microservices", "enum": ["microservices", "modular_monolith", "serverless", "event_driven", "layered", "hexagonal"]},
-                "migration_approach": {"type": "string", "default": "strangler_fig", "enum": ["big_bang", "strangler_fig", "parallel_run", "blue_green", "canary", "phased"]},
+                "target_architecture": {
+                    "type": "string",
+                    "default": "microservices",
+                    "enum": ["microservices", "modular_monolith", "serverless", "event_driven", "layered", "hexagonal"],
+                },
+                "migration_approach": {
+                    "type": "string",
+                    "default": "strangler_fig",
+                    "enum": ["big_bang", "strangler_fig", "parallel_run", "blue_green", "canary", "phased"],
+                },
             },
             "required": ["project_id", "app_id", "strategy"],
         },
@@ -423,9 +440,17 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "plan_id": {"type": "string", "description": "Migration plan ID"},
-                "action": {"type": "string", "default": "dashboard", "enum": ["snapshot", "velocity", "burndown", "dashboard"]},
+                "action": {
+                    "type": "string",
+                    "default": "dashboard",
+                    "enum": ["snapshot", "velocity", "burndown", "dashboard"],
+                },
                 "pi_number": {"type": "string", "description": "PI identifier (e.g., PI-25.3) — required for snapshot"},
-                "snapshot_type": {"type": "string", "default": "manual", "enum": ["pi_start", "pi_end", "milestone", "manual"]},
+                "snapshot_type": {
+                    "type": "string",
+                    "default": "manual",
+                    "enum": ["pi_start", "pi_end", "milestone", "manual"],
+                },
             },
             "required": ["plan_id"],
         },
@@ -434,7 +459,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_migration_code",
-        description="Generate migration code — adapters, facades, service scaffolding, data access layers, tests, rollback scripts",
+        description="Generate migration code — adapters, facades, service scaffolding, data access layers, tests, rollback scripts",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -448,12 +473,16 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="check_compliance_bridge",
-        description="Validate ATO compliance coverage during migration — control inheritance, gap analysis, coverage validation",
+        description="Validate ATO compliance coverage during migration — control inheritance, gap analysis, coverage validation",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "plan_id": {"type": "string", "description": "Migration plan ID"},
-                "action": {"type": "string", "default": "validate", "enum": ["validate", "gaps", "dashboard", "report"]},
+                "action": {
+                    "type": "string",
+                    "default": "validate",
+                    "enum": ["validate", "gaps", "dashboard", "report"],
+                },
                 "output_dir": {"type": "string", "description": "Output directory for reports"},
             },
             "required": ["plan_id"],
@@ -463,14 +492,18 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="migrate_version",
-        description="Run version or framework migration transforms — Python 2→3, Java 8→17, .NET Framework→.NET 8, Struts→Spring, WCF→ASP.NET Core, etc.",
+        description="Run version or framework migration transforms — Python 2→3, Java 8→17, .NET Framework→.NET 8, Struts→Spring, WCF→ASP.NET Core, etc.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "source_path": {"type": "string", "description": "Source code directory"},
                 "output_path": {"type": "string", "description": "Output directory for transformed code"},
                 "migration_type": {"type": "string", "default": "version", "enum": ["version", "framework"]},
-                "language": {"type": "string", "description": "Language (for version migration)", "enum": ["python", "java", "csharp"]},
+                "language": {
+                    "type": "string",
+                    "description": "Language (for version migration)",
+                    "enum": ["python", "java", "csharp"],
+                },
                 "from_version": {"type": "string", "description": "Source version (e.g., 2.7, 8, 4.8)"},
                 "to_version": {"type": "string", "description": "Target version (e.g., 3.11, 17, 8.0)"},
                 "from_framework": {"type": "string", "description": "Source framework (for framework migration)"},

@@ -90,7 +90,10 @@ class MattermostConnector(ChatConnectorAdapter):
         return EventEnvelope.from_mattermost_event(raw_payload)
 
     def send_message(
-        self, channel_id: str, text: str, thread_id: str = None,
+        self,
+        channel_id: str,
+        text: str,
+        thread_id: str = None,
     ) -> bool:
         """Send message to Mattermost channel/thread.
 
@@ -129,10 +132,7 @@ class MattermostConnector(ChatConnectorAdapter):
             if response.status_code in (200, 201):
                 return True
             else:
-                print(
-                    f"Warning: Mattermost API error: "
-                    f"{response.status_code} {response.text[:200]}"
-                )
+                print(f"Warning: Mattermost API error: {response.status_code} {response.text[:200]}")
                 return False
 
         except Exception as e:
@@ -150,6 +150,7 @@ class MattermostConnector(ChatConnectorAdapter):
             secret_name = ref.split(":", 2)[-1]
             try:
                 import boto3
+
                 client = boto3.client("secretsmanager", region_name="us-gov-west-1")
                 response = client.get_secret_value(SecretId=secret_name)
                 return response.get("SecretString", "")

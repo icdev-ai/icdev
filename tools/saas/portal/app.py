@@ -76,6 +76,7 @@ def _load_yaml(filepath: Path) -> dict:
     """Load a YAML file. Uses PyYAML if available, otherwise minimal parser."""
     try:
         import yaml
+
         with open(filepath, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -121,9 +122,7 @@ CUI_BANNER_BOTTOM = os.environ.get(
     "ICDEV_CUI_BANNER_BOTTOM",
     _CUI_CONFIG.get("banner_bottom", "CUI // SP-CTI"),
 )
-CUI_BANNER_ENABLED = os.environ.get(
-    "ICDEV_CUI_BANNER_ENABLED", "true"
-).lower() in ("1", "true", "yes")
+CUI_BANNER_ENABLED = os.environ.get("ICDEV_CUI_BANNER_ENABLED", "true").lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
 # Blueprint
@@ -364,7 +363,10 @@ def login_post():
         # Generate opaque portal session token (Enhancement #1A)
         portal_token = "psess_" + secrets.token_hex(24)
         _register_portal_session(
-            portal_token, row["tenant_id"], row["user_id"], row["role"],
+            portal_token,
+            row["tenant_id"],
+            row["user_id"],
+            row["role"],
         )
 
         # Set session — NO raw API key stored (Enhancement #1A)
@@ -430,17 +432,13 @@ def dashboard():
             except Exception:
                 pass
             try:
-                row = tconn.execute(
-                    "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"
-                ).fetchone()
+                row = tconn.execute("SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'").fetchone()
                 active_projects = row["cnt"] if row else 0
             except Exception:
                 pass
             # Compliance score: average across projects
             try:
-                row = tconn.execute(
-                    "SELECT AVG(compliance_score) as avg_score FROM projects"
-                ).fetchone()
+                row = tconn.execute("SELECT AVG(compliance_score) as avg_score FROM projects").fetchone()
                 compliance_score = round(row["avg_score"] or 0)
             except Exception:
                 compliance_score = 0
@@ -596,7 +594,7 @@ def profile():
     tenant = _get_tenant_info(tenant_id)
     tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
 
-    user_email = session.get("portal_user_email", "")
+    session.get("portal_user_email", "")
     user_name = session.get("portal_user_name", "User")
     user_role = session.get("portal_user_role", "viewer")
     user_id = session.get("portal_user_id", "")
@@ -619,9 +617,7 @@ def profile():
         conn.close()
 
     # BYOK LLM keys (only if enabled via env var)
-    byok_enabled = os.environ.get(
-        "ICDEV_BYOK_ENABLED", "false"
-    ).lower() in ("1", "true", "yes")
+    byok_enabled = os.environ.get("ICDEV_BYOK_ENABLED", "false").lower() in ("1", "true", "yes")
     llm_keys = []
     if byok_enabled:
         tconn = _get_tenant_conn(tenant_id)
@@ -865,9 +861,13 @@ def phases():
     # Load phases from registry
     try:
         from tools.dashboard.phase_loader import (
-            load_phases, load_categories, load_statuses,
-            get_phase_summary, filter_phases,
+            load_phases,
+            load_categories,
+            load_statuses,
+            get_phase_summary,
+            filter_phases,
         )
+
         all_phases = load_phases()
         categories = load_categories()
         statuses = load_statuses()
@@ -882,8 +882,7 @@ def phases():
         phases_list = []
         categories = {}
         statuses = {}
-        summary = {"total": 0, "completed": 0, "active": 0, "planned": 0,
-                   "progress_pct": 0, "by_category": {}}
+        summary = {"total": 0, "completed": 0, "active": 0, "planned": 0, "progress_pct": 0, "by_category": {}}
         all_summary = summary
 
     # Optional category filter
@@ -959,16 +958,12 @@ def oscal():
     tconn = _get_tenant_conn(tenant_id)
     if tconn:
         try:
-            val_rows = tconn.execute(
-                "SELECT * FROM oscal_validation_log ORDER BY created_at DESC LIMIT 50"
-            ).fetchall()
+            val_rows = tconn.execute("SELECT * FROM oscal_validation_log ORDER BY created_at DESC LIMIT 50").fetchall()
             validations = [dict(r) for r in val_rows]
         except Exception:
             pass
         try:
-            art_rows = tconn.execute(
-                "SELECT * FROM oscal_artifacts ORDER BY generated_at DESC LIMIT 50"
-            ).fetchall()
+            art_rows = tconn.execute("SELECT * FROM oscal_artifacts ORDER BY generated_at DESC LIMIT 50").fetchall()
             artifacts = [dict(r) for r in art_rows]
         except Exception:
             pass
@@ -1016,8 +1011,11 @@ def translations():
 
             total = len(jobs)
             completed = sum(1 for j in jobs if j.get("status") == "completed")
-            in_progress = sum(1 for j in jobs if j.get("status") in
-                              ("pending", "extracting", "translating", "assembling", "validating"))
+            in_progress = sum(
+                1
+                for j in jobs
+                if j.get("status") in ("pending", "extracting", "translating", "assembling", "validating")
+            )
             failed = sum(1 for j in jobs if j.get("status") in ("failed", "partial"))
 
             try:
@@ -1064,9 +1062,7 @@ def translation_detail(job_id):
     if tconn:
         try:
             try:
-                row = tconn.execute(
-                    "SELECT * FROM translation_jobs WHERE id = ?", (job_id,)
-                ).fetchone()
+                row = tconn.execute("SELECT * FROM translation_jobs WHERE id = ?", (job_id,)).fetchone()
                 job = dict(row) if row else None
             except Exception:
                 pass
@@ -1078,7 +1074,8 @@ def translation_detail(job_id):
                                   source_complexity, target_complexity,
                                   repair_count, candidate_selected
                            FROM translation_units WHERE job_id = ?
-                           ORDER BY created_at""", (job_id,)
+                           ORDER BY created_at""",
+                        (job_id,),
                     ).fetchall()
                     units = [dict(u) for u in rows]
                 except Exception:
@@ -1088,7 +1085,7 @@ def translation_detail(job_id):
                     rows = tconn.execute(
                         """SELECT check_type, passed, score, findings
                            FROM translation_validations WHERE job_id = ?""",
-                        (job_id,)
+                        (job_id,),
                     ).fetchall()
                     validations = [dict(v) for v in rows]
                 except Exception:
@@ -1099,7 +1096,7 @@ def translation_detail(job_id):
                         """SELECT source_import, target_import, mapping_source,
                                   confidence, domain
                            FROM translation_dependency_mappings WHERE job_id = ?""",
-                        (job_id,)
+                        (job_id,),
                     ).fetchall()
                     deps = [dict(d) for d in rows]
                 except Exception:
@@ -1205,9 +1202,7 @@ def ai_transparency():
     if tconn:
         try:
             try:
-                rows = tconn.execute(
-                    "SELECT * FROM ai_use_case_inventory ORDER BY name"
-                ).fetchall()
+                rows = tconn.execute("SELECT * FROM ai_use_case_inventory ORDER BY name").fetchall()
                 inventory = [dict(r) for r in rows]
             except Exception:
                 pass

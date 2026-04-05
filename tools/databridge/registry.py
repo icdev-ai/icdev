@@ -6,6 +6,7 @@ Provides:
   - ``get_connector_instance(name)`` to instantiate a registered connector
   - ``load_forge_connectors(db_path=)`` to bulk-load promoted forge connectors
 """
+
 from __future__ import annotations
 
 import logging
@@ -78,8 +79,7 @@ def load_forge_connectors(db_path: Optional[str] = None) -> int:
         conn = sqlite3.connect(db)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT connector_name, connector_code FROM db_forge_connectors "
-            "WHERE status IN ('promoted', 'published')"
+            "SELECT connector_name, connector_code FROM db_forge_connectors WHERE status IN ('promoted', 'published')"
         ).fetchall()
         conn.close()
 
@@ -91,10 +91,13 @@ def load_forge_connectors(db_path: Optional[str] = None) -> int:
             try:
                 # Execute the connector module code which should call
                 # @register_connector internally
-                exec(compile(code, f"<forge:{name}>", "exec"), {
-                    "__name__": f"forge_{name}",
-                    "__builtins__": __builtins__,
-                })
+                exec(
+                    compile(code, f"<forge:{name}>", "exec"),
+                    {
+                        "__name__": f"forge_{name}",
+                        "__builtins__": __builtins__,
+                    },
+                )
                 loaded += 1
             except Exception as exc:
                 logger.warning("Failed to load forge connector '%s': %s", name, exc)

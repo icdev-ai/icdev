@@ -40,8 +40,7 @@ def icdev_db(tmp_path):
         )
     """)
     project_id = f"proj-{uuid.uuid4().hex[:8]}"
-    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)",
-                 (project_id, "Test Iron Bank App"))
+    conn.execute("INSERT INTO projects (id, name) VALUES (?, ?)", (project_id, "Test Iron Bank App"))
     conn.commit()
     conn.close()
     return db_path, project_id
@@ -56,9 +55,7 @@ class TestBaseImages:
 
     def test_registry_references_ironbank(self):
         for lang, info in IRONBANK_BASE_IMAGES.items():
-            assert "registry1.dso.mil" in info["registry"], (
-                f"{lang} base image must reference Iron Bank registry"
-            )
+            assert "registry1.dso.mil" in info["registry"], f"{lang} base image must reference Iron Bank registry"
 
     def test_all_images_have_required_fields(self):
         for lang, info in IRONBANK_BASE_IMAGES.items():
@@ -103,8 +100,16 @@ class TestManifestGeneration:
     def test_generate_returns_required_keys(self, icdev_db):
         db_path, project_id = icdev_db
         result = generate_hardening_manifest(project_id, db_path=db_path)
-        required = {"project_id", "project_name", "manifest_yaml", "approval_record",
-                    "output_paths", "language_detected", "base_image", "generated_at"}
+        required = {
+            "project_id",
+            "project_name",
+            "manifest_yaml",
+            "approval_record",
+            "output_paths",
+            "language_detected",
+            "base_image",
+            "generated_at",
+        }
         assert required.issubset(set(result.keys()))
 
     def test_manifest_yaml_has_required_fields(self, icdev_db):
@@ -136,9 +141,7 @@ class TestManifestGeneration:
     def test_output_written_to_dir(self, icdev_db, tmp_path):
         db_path, project_id = icdev_db
         out_dir = str(tmp_path / "ironbank_out")
-        result = generate_hardening_manifest(
-            project_id, db_path=db_path, output_dir=out_dir
-        )
+        result = generate_hardening_manifest(project_id, db_path=db_path, output_dir=out_dir)
         assert "hardening_manifest" in result["output_paths"]
         assert Path(result["output_paths"]["hardening_manifest"]).exists()
         assert "container_approval" in result["output_paths"]
@@ -148,9 +151,7 @@ class TestManifestGeneration:
         db_path, project_id = icdev_db
         # Create a Python project
         (tmp_path / "requirements.txt").write_text("flask\n")
-        result = generate_hardening_manifest(
-            project_id, project_dir=str(tmp_path), db_path=db_path
-        )
+        result = generate_hardening_manifest(project_id, project_dir=str(tmp_path), db_path=db_path)
         assert result["language_detected"] == "python"
         assert "python" in result["base_image"].lower() or "registry1" in result["base_image"]
 
@@ -161,17 +162,13 @@ class TestManifestValidation:
     def test_valid_manifest_passes(self, icdev_db, tmp_path):
         db_path, project_id = icdev_db
         out_dir = str(tmp_path / "out")
-        result = generate_hardening_manifest(
-            project_id, db_path=db_path, output_dir=out_dir
-        )
+        result = generate_hardening_manifest(project_id, db_path=db_path, output_dir=out_dir)
         manifest_path = result["output_paths"]["hardening_manifest"]
         validation = validate_hardening_manifest(project_id, manifest_path=manifest_path)
         assert validation["error_count"] == 0
 
     def test_missing_manifest_file_returns_error(self):
-        result = validate_hardening_manifest(
-            "proj-test", manifest_path="/nonexistent/hardening_manifest.yaml"
-        )
+        result = validate_hardening_manifest("proj-test", manifest_path="/nonexistent/hardening_manifest.yaml")
         assert not result["passed"]
         assert result["error_count"] > 0
 

@@ -80,6 +80,7 @@ CUI_BANNER = "CUI // SP-CTI"
 # Database helper
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
     """Return a sqlite3 connection to the ICDEV operational database.
 
@@ -87,10 +88,7 @@ def _get_db():
     Uses row_factory = sqlite3.Row for dict-like access.
     """
     if not DB_PATH.exists():
-        raise FileNotFoundError(
-            f"ICDEV database not found at {DB_PATH}. "
-            "Run 'python tools/db/init_icdev_db.py' first."
-        )
+        raise FileNotFoundError(f"ICDEV database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first.")
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -98,8 +96,7 @@ def _get_db():
     return conn
 
 
-def _log_audit(conn, project_id, event_type, actor, action, details=None,
-               classification="CUI"):
+def _log_audit(conn, project_id, event_type, actor, action, details=None, classification="CUI"):
     """Write an immutable audit trail entry within an existing connection.
 
     Audit trail is append-only per NIST 800-53 AU controls.
@@ -123,6 +120,7 @@ def _log_audit(conn, project_id, event_type, actor, action, details=None,
 # Helper: resolve project_id from plan
 # ---------------------------------------------------------------------------
 
+
 def _get_plan_project_id(conn, plan_id):
     """Look up the project_id for a migration plan via legacy_applications."""
     row = conn.execute(
@@ -139,6 +137,7 @@ def _get_plan_project_id(conn, plan_id):
 # 1. Create strangler fig plan
 # ---------------------------------------------------------------------------
 
+
 def create_strangler_plan(plan_id):
     """Initialize strangler fig tracking for a migration plan.
 
@@ -154,9 +153,7 @@ def create_strangler_plan(plan_id):
     """
     conn = _get_db()
     try:
-        plan = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-        ).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
 
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
@@ -186,11 +183,13 @@ def create_strangler_plan(plan_id):
         tasks_created = 0
         for comp in components:
             task_id = f"mtask-{uuid.uuid4().hex[:12]}"
-            description = json.dumps({
-                "strangler_fig_status": "legacy",
-                "component_type": comp["component_type"],
-                "qualified_name": comp["qualified_name"],
-            })
+            description = json.dumps(
+                {
+                    "strangler_fig_status": "legacy",
+                    "component_type": comp["component_type"],
+                    "qualified_name": comp["qualified_name"],
+                }
+            )
             try:
                 conn.execute(
                     """INSERT INTO migration_tasks
@@ -262,6 +261,7 @@ def create_strangler_plan(plan_id):
 # 2. Register facade
 # ---------------------------------------------------------------------------
 
+
 def register_facade(plan_id, legacy_endpoint, modern_endpoint, component_id=None):
     """Register an endpoint facade mapping for strangler fig routing.
 
@@ -279,9 +279,7 @@ def register_facade(plan_id, legacy_endpoint, modern_endpoint, component_id=None
     """
     conn = _get_db()
     try:
-        plan = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-        ).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -333,6 +331,7 @@ def register_facade(plan_id, legacy_endpoint, modern_endpoint, component_id=None
 # 3. Track cutover
 # ---------------------------------------------------------------------------
 
+
 def track_cutover(plan_id, component_id, status):
     """Update the cutover status for a specific component.
 
@@ -348,10 +347,7 @@ def track_cutover(plan_id, component_id, status):
         dict with updated component status information.
     """
     if status not in CUTOVER_STATUSES:
-        raise ValueError(
-            f"Invalid cutover status '{status}'. "
-            f"Valid: {', '.join(CUTOVER_STATUSES)}"
-        )
+        raise ValueError(f"Invalid cutover status '{status}'. Valid: {', '.join(CUTOVER_STATUSES)}")
 
     conn = _get_db()
     try:
@@ -364,10 +360,7 @@ def track_cutover(plan_id, component_id, status):
         ).fetchone()
 
         if not task:
-            raise ValueError(
-                f"No cutover task found for component '{component_id}' "
-                f"in plan '{plan_id}'."
-            )
+            raise ValueError(f"No cutover task found for component '{component_id}' in plan '{plan_id}'.")
 
         now = datetime.now(timezone.utc).isoformat()
         task_status = CUTOVER_TO_TASK_STATUS[status]
@@ -458,6 +451,7 @@ def track_cutover(plan_id, component_id, status):
 # 4. Get cutover status dashboard
 # ---------------------------------------------------------------------------
 
+
 def get_cutover_status(plan_id):
     """Get per-component cutover status dashboard for a migration plan.
 
@@ -472,9 +466,7 @@ def get_cutover_status(plan_id):
     """
     conn = _get_db()
     try:
-        plan = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-        ).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -502,15 +494,17 @@ def get_cutover_status(plan_id):
             sf_status = desc.get("strangler_fig_status", "legacy")
             status_counts[sf_status] += 1
 
-            components.append({
-                "component_id": task["legacy_component_id"],
-                "name": task["comp_name"] or "unknown",
-                "type": task["component_type"] or "unknown",
-                "qualified_name": task["qualified_name"],
-                "cutover_status": sf_status,
-                "task_id": task["id"],
-                "task_status": task["status"],
-            })
+            components.append(
+                {
+                    "component_id": task["legacy_component_id"],
+                    "name": task["comp_name"] or "unknown",
+                    "type": task["component_type"] or "unknown",
+                    "qualified_name": task["qualified_name"],
+                    "cutover_status": sf_status,
+                    "task_id": task["id"],
+                    "task_status": task["status"],
+                }
+            )
 
         total = len(tasks)
         modern_count = status_counts.get("modern", 0)
@@ -531,9 +525,11 @@ def get_cutover_status(plan_id):
         }
 
         print(f"[INFO] Cutover Status for '{plan['plan_name']}'")
-        print(f"       Total: {total} | Legacy: {status_counts.get('legacy', 0)} | "
-              f"Parallel: {status_counts.get('parallel', 0)} | "
-              f"Modern: {modern_count} | Decommissioned: {decommissioned_count}")
+        print(
+            f"       Total: {total} | Legacy: {status_counts.get('legacy', 0)} | "
+            f"Parallel: {status_counts.get('parallel', 0)} | "
+            f"Modern: {modern_count} | Decommissioned: {decommissioned_count}"
+        )
         print(f"       Progress: {progress_pct}%")
         return result
 
@@ -544,6 +540,7 @@ def get_cutover_status(plan_id):
 # ---------------------------------------------------------------------------
 # 5. Generate routing config
 # ---------------------------------------------------------------------------
+
 
 def generate_routing_config(plan_id):
     """Generate API gateway routing rules for the strangler fig facade.
@@ -587,9 +584,7 @@ def generate_routing_config(plan_id):
                         desc = json.loads(ct["description"])
                     except (json.JSONDecodeError, TypeError):
                         desc = {}
-                comp_status_map[ct["legacy_component_id"]] = desc.get(
-                    "strangler_fig_status", "legacy"
-                )
+                comp_status_map[ct["legacy_component_id"]] = desc.get("strangler_fig_status", "legacy")
 
         routes = []
         nginx_lines = [
@@ -644,11 +639,13 @@ def generate_routing_config(plan_id):
             nginx_lines.append("")
 
             # K8s Ingress annotation
-            k8s_annotations.append({
-                "path": legacy_path,
-                "service": f"{'modern' if target == 'modern' else 'legacy'}-service",
-                "port": 8443 if target == "modern" else 8080,
-            })
+            k8s_annotations.append(
+                {
+                    "path": legacy_path,
+                    "service": f"{'modern' if target == 'modern' else 'legacy'}-service",
+                    "port": 8443 if target == "modern" else 8080,
+                }
+            )
 
         nginx_lines.append(f"# {CUI_BANNER}")
         nginx_snippet = "\n".join(nginx_lines)
@@ -700,6 +697,7 @@ def generate_routing_config(plan_id):
 # 6. Generate ACL code
 # ---------------------------------------------------------------------------
 
+
 def generate_acl_code(plan_id, boundary_name, language="python"):
     """Generate anti-corruption layer (ACL) adapter code.
 
@@ -717,9 +715,7 @@ def generate_acl_code(plan_id, boundary_name, language="python"):
     """
     conn = _get_db()
     try:
-        plan = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-        ).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -751,24 +747,13 @@ def generate_acl_code(plan_id, boundary_name, language="python"):
         now = datetime.now(timezone.utc).isoformat()
 
         if language == "python":
-            code = _generate_python_acl(
-                class_name, boundary_name, components, api_by_comp, now
-            )
+            code = _generate_python_acl(class_name, boundary_name, components, api_by_comp, now)
         elif language == "java":
-            code = _generate_java_acl(
-                class_name, interface_name, boundary_name, components,
-                api_by_comp, now
-            )
+            code = _generate_java_acl(class_name, interface_name, boundary_name, components, api_by_comp, now)
         elif language == "csharp":
-            code = _generate_csharp_acl(
-                class_name, interface_name, boundary_name, components,
-                api_by_comp, now
-            )
+            code = _generate_csharp_acl(class_name, interface_name, boundary_name, components, api_by_comp, now)
         else:
-            raise ValueError(
-                f"Unsupported language '{language}'. "
-                "Supported: python, java, csharp"
-            )
+            raise ValueError(f"Unsupported language '{language}'. Supported: python, java, csharp")
 
         print(f"[INFO] Generated {language} ACL code: {class_name}")
         return code
@@ -826,8 +811,8 @@ def _generate_python_acl(class_name, boundary, components, api_by_comp, now):
         lines.append(f"    def {method_name}(self, request_data):")
         lines.append(f'        """Translate legacy {comp["name"]} request to modern format.')
         lines.append("")
-        lines.append(f'        Legacy component: {comp["qualified_name"] or comp["name"]}')
-        lines.append(f'        Component type: {comp["component_type"]}')
+        lines.append(f"        Legacy component: {comp['qualified_name'] or comp['name']}")
+        lines.append(f"        Component type: {comp['component_type']}")
         if comp_apis:
             lines.append("        Legacy endpoints:")
             for api in comp_apis:
@@ -860,8 +845,7 @@ def _generate_python_acl(class_name, boundary, components, api_by_comp, now):
     return "\n".join(lines)
 
 
-def _generate_java_acl(class_name, interface_name, boundary, components,
-                       api_by_comp, now):
+def _generate_java_acl(class_name, interface_name, boundary, components, api_by_comp, now):
     """Generate Java ACL adapter interface and implementation class."""
     lines = [
         f"// {CUI_BANNER}",
@@ -880,7 +864,7 @@ def _generate_java_acl(class_name, interface_name, boundary, components,
     for comp in components:
         method_name = _to_method_name(comp["name"], "java")
         lines.append("    /**")
-        lines.append(f'     * Translate legacy {comp["name"]} request to modern format.')
+        lines.append(f"     * Translate legacy {comp['name']} request to modern format.")
         lines.append("     */")
         lines.append(f"    Map<String, Object> {method_name}(Map<String, Object> requestData);")
         lines.append("")
@@ -925,8 +909,7 @@ def _generate_java_acl(class_name, interface_name, boundary, components,
     return "\n".join(lines)
 
 
-def _generate_csharp_acl(class_name, interface_name, boundary, components,
-                         api_by_comp, now):
+def _generate_csharp_acl(class_name, interface_name, boundary, components, api_by_comp, now):
     """Generate C# ACL adapter interface and implementation class."""
     lines = [
         f"// {CUI_BANNER}",
@@ -996,6 +979,7 @@ def _generate_csharp_acl(class_name, interface_name, boundary, components,
 # 7. Check coexistence health
 # ---------------------------------------------------------------------------
 
+
 def check_coexistence_health(plan_id):
     """Verify that legacy and modern systems can safely coexist.
 
@@ -1012,9 +996,7 @@ def check_coexistence_health(plan_id):
     """
     conn = _get_db()
     try:
-        plan = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-        ).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
@@ -1068,16 +1050,18 @@ def check_coexistence_health(plan_id):
                 parallel_components.append(task)
                 comp_id = task["legacy_component_id"]
                 if comp_id and comp_id not in facade_component_ids:
-                    issues.append({
-                        "check": "parallel_without_facade",
-                        "severity": "error",
-                        "component_id": comp_id,
-                        "component_name": task["comp_name"],
-                        "message": (
-                            f"Component '{task['comp_name']}' is in parallel mode "
-                            "but has no facade route registered."
-                        ),
-                    })
+                    issues.append(
+                        {
+                            "check": "parallel_without_facade",
+                            "severity": "error",
+                            "component_id": comp_id,
+                            "component_name": task["comp_name"],
+                            "message": (
+                                f"Component '{task['comp_name']}' is in parallel mode "
+                                "but has no facade route registered."
+                            ),
+                        }
+                    )
 
         # Check 2: Look for potential circular dependencies
         # between components that are in different cutover states
@@ -1090,9 +1074,7 @@ def check_coexistence_health(plan_id):
                         desc = json.loads(task["description"])
                     except (json.JSONDecodeError, TypeError):
                         desc = {}
-                comp_status_map[task["legacy_component_id"]] = desc.get(
-                    "strangler_fig_status", "legacy"
-                )
+                comp_status_map[task["legacy_component_id"]] = desc.get("strangler_fig_status", "legacy")
 
         # Query dependencies for cross-status circular references
         deps = conn.execute(
@@ -1117,29 +1099,30 @@ def check_coexistence_health(plan_id):
                 pair_key = (src, tgt)
                 if pair_key not in dep_pairs:
                     dep_pairs.add(pair_key)
-                    warnings.append({
-                        "check": "cross_boundary_dependency",
-                        "severity": "warning",
-                        "source_id": src,
-                        "target_id": tgt,
-                        "message": (
-                            f"Modern component {src} depends on legacy component {tgt}. "
-                            "Consider adding an ACL adapter."
-                        ),
-                    })
+                    warnings.append(
+                        {
+                            "check": "cross_boundary_dependency",
+                            "severity": "warning",
+                            "source_id": src,
+                            "target_id": tgt,
+                            "message": (
+                                f"Modern component {src} depends on legacy component {tgt}. "
+                                "Consider adding an ACL adapter."
+                            ),
+                        }
+                    )
 
             # Flag circular: A depends on B and B depends on A across boundaries
             reverse_key = (tgt, src)
             if reverse_key in dep_pairs:
-                issues.append({
-                    "check": "circular_cross_boundary",
-                    "severity": "error",
-                    "components": [src, tgt],
-                    "message": (
-                        f"Circular dependency detected between {src} and {tgt} "
-                        "across cutover boundaries."
-                    ),
-                })
+                issues.append(
+                    {
+                        "check": "circular_cross_boundary",
+                        "severity": "error",
+                        "components": [src, tgt],
+                        "message": (f"Circular dependency detected between {src} and {tgt} across cutover boundaries."),
+                    }
+                )
 
         # Check 3: All APIs for parallel/modern components should have facades
         apis = conn.execute(
@@ -1153,17 +1136,18 @@ def check_coexistence_health(plan_id):
                 continue
             comp_status = comp_status_map.get(comp_id, "legacy")
             if comp_status in ("parallel", "modern") and comp_id not in facade_component_ids:
-                warnings.append({
-                    "check": "api_without_facade",
-                    "severity": "warning",
-                    "component_id": comp_id,
-                    "api_path": api["path"],
-                    "api_method": api["method"],
-                    "message": (
-                        f"API {api['method']} {api['path']} on "
-                        f"{comp_status} component has no facade route."
-                    ),
-                })
+                warnings.append(
+                    {
+                        "check": "api_without_facade",
+                        "severity": "warning",
+                        "component_id": comp_id,
+                        "api_path": api["path"],
+                        "api_method": api["method"],
+                        "message": (
+                            f"API {api['method']} {api['path']} on {comp_status} component has no facade route."
+                        ),
+                    }
+                )
 
         healthy = len(issues) == 0
 
@@ -1195,6 +1179,7 @@ def check_coexistence_health(plan_id):
 # 8. Generate cutover checklist
 # ---------------------------------------------------------------------------
 
+
 def generate_cutover_checklist(plan_id, component_id):
     """Generate a pre-cutover validation checklist for a component.
 
@@ -1211,15 +1196,11 @@ def generate_cutover_checklist(plan_id, component_id):
     conn = _get_db()
     try:
         # Verify plan and component exist
-        plan = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-        ).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
-        comp = conn.execute(
-            "SELECT * FROM legacy_components WHERE id = ?", (component_id,)
-        ).fetchone()
+        comp = conn.execute("SELECT * FROM legacy_components WHERE id = ?", (component_id,)).fetchone()
         if not comp:
             raise ValueError(f"Component '{component_id}' not found.")
 
@@ -1275,7 +1256,8 @@ def generate_cutover_checklist(plan_id, component_id):
                 "verified": modern_link is not None,
                 "details": (
                     f"Digital thread link found: {modern_link['target_id']}"
-                    if modern_link else "No modern implementation linked yet"
+                    if modern_link
+                    else "No modern implementation linked yet"
                 ),
             },
             {
@@ -1283,27 +1265,26 @@ def generate_cutover_checklist(plan_id, component_id):
                 "verified": tests_passing,
                 "details": (
                     f"{len(test_tasks)} test task(s) completed"
-                    if tests_passing else
-                    f"{len(test_tasks)} test task(s) found, not all passing"
-                    if tests_exist else "No test tasks found"
+                    if tests_passing
+                    else f"{len(test_tasks)} test task(s) found, not all passing"
+                    if tests_exist
+                    else "No test tasks found"
                 ),
             },
             {
                 "item": "API compatibility verified",
                 "verified": facade is not None,
-                "details": (
-                    "Facade route registered"
-                    if facade else "No facade route registered"
-                ),
+                "details": ("Facade route registered" if facade else "No facade route registered"),
             },
             {
                 "item": "Data migration complete",
                 "verified": data_migrated,
                 "details": (
                     f"{len(schema_task)} schema/data task(s) completed"
-                    if data_migrated else
-                    f"{len(schema_task)} schema/data task(s) pending"
-                    if schema_task else "No data migration tasks defined"
+                    if data_migrated
+                    else f"{len(schema_task)} schema/data task(s) pending"
+                    if schema_task
+                    else "No data migration tasks defined"
                 ),
             },
             {
@@ -1311,7 +1292,8 @@ def generate_cutover_checklist(plan_id, component_id):
                 "verified": facade is not None,
                 "details": (
                     "Facade allows instant rollback to legacy routing"
-                    if facade else "No facade — manual rollback required"
+                    if facade
+                    else "No facade — manual rollback required"
                 ),
             },
             {
@@ -1324,7 +1306,8 @@ def generate_cutover_checklist(plan_id, component_id):
                 "verified": len(compliance_links) > 0,
                 "details": (
                     f"{len(compliance_links)} compliance link(s) found"
-                    if compliance_links else "No compliance controls linked"
+                    if compliance_links
+                    else "No compliance controls linked"
                 ),
             },
         ]
@@ -1360,6 +1343,7 @@ def generate_cutover_checklist(plan_id, component_id):
 # 9. Execute cutover
 # ---------------------------------------------------------------------------
 
+
 def execute_cutover(plan_id, component_id):
     """Execute the cutover for a component, marking it as migrated to modern.
 
@@ -1380,16 +1364,12 @@ def execute_cutover(plan_id, component_id):
     conn = _get_db()
     try:
         # Verify plan exists
-        plan = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-        ).fetchone()
+        plan = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
         if not plan:
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
         # Verify component exists
-        comp = conn.execute(
-            "SELECT * FROM legacy_components WHERE id = ?", (component_id,)
-        ).fetchone()
+        comp = conn.execute("SELECT * FROM legacy_components WHERE id = ?", (component_id,)).fetchone()
         if not comp:
             raise ValueError(f"Component '{component_id}' not found.")
 
@@ -1401,10 +1381,7 @@ def execute_cutover(plan_id, component_id):
             (plan_id, component_id),
         ).fetchone()
         if not task:
-            raise ValueError(
-                f"No cutover task found for component '{component_id}' "
-                f"in plan '{plan_id}'."
-            )
+            raise ValueError(f"No cutover task found for component '{component_id}' in plan '{plan_id}'.")
 
         now = datetime.now(timezone.utc).isoformat()
         project_id = _get_plan_project_id(conn, plan_id)
@@ -1545,6 +1522,7 @@ def execute_cutover(plan_id, component_id):
 # CLI interface
 # ---------------------------------------------------------------------------
 
+
 def main():
     """Command-line entry point for the strangler fig migration manager."""
     parser = argparse.ArgumentParser(
@@ -1588,7 +1566,8 @@ def main():
     )
 
     parser.add_argument(
-        "--plan-id", required=True,
+        "--plan-id",
+        required=True,
         help="Migration plan ID (required for all operations)",
     )
     parser.add_argument(
@@ -1599,44 +1578,54 @@ def main():
     # Action flags
     action_group = parser.add_mutually_exclusive_group(required=True)
     action_group.add_argument(
-        "--create", action="store_true",
+        "--create",
+        action="store_true",
         help="Initialize strangler fig tracking for the plan",
     )
     action_group.add_argument(
-        "--status", action="store_true",
+        "--status",
+        action="store_true",
         help="Show cutover status dashboard",
     )
     action_group.add_argument(
-        "--cutover", action="store_true",
+        "--cutover",
+        action="store_true",
         help="Track component cutover status change (requires --component-id and --to)",
     )
     action_group.add_argument(
-        "--routing", action="store_true",
+        "--routing",
+        action="store_true",
         help="Generate API gateway routing configuration",
     )
     action_group.add_argument(
-        "--health", action="store_true",
+        "--health",
+        action="store_true",
         help="Check coexistence health between legacy and modern",
     )
     action_group.add_argument(
-        "--checklist", action="store_true",
+        "--checklist",
+        action="store_true",
         help="Generate pre-cutover validation checklist (requires --component-id)",
     )
     action_group.add_argument(
-        "--execute-cutover", action="store_true",
+        "--execute-cutover",
+        action="store_true",
         help="Execute cutover, marking component as modern (requires --component-id)",
     )
 
     # Cutover options
     parser.add_argument(
-        "--to", dest="cutover_target",
+        "--to",
+        dest="cutover_target",
         choices=CUTOVER_STATUSES,
         help="Target cutover status (used with --cutover)",
     )
 
     # Output format
     parser.add_argument(
-        "--json", action="store_true", dest="json_output",
+        "--json",
+        action="store_true",
+        dest="json_output",
         help="Output results as JSON",
     )
 
@@ -1658,9 +1647,7 @@ def main():
                 parser.error("--cutover requires --component-id")
             if not args.cutover_target:
                 parser.error("--cutover requires --to <status>")
-            result = track_cutover(
-                args.plan_id, args.component_id, args.cutover_target
-            )
+            result = track_cutover(args.plan_id, args.component_id, args.cutover_target)
             if args.json_output:
                 print(json.dumps(result, indent=2))
 

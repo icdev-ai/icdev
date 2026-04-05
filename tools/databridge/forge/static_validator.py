@@ -9,6 +9,7 @@
   5. secret_scan — regex scan for hardcoded secrets
   6. import_whitelist — AST import walk against allowed list
 """
+
 from __future__ import annotations
 
 import ast
@@ -39,25 +40,47 @@ _REQUIRED_ABSTRACT_METHODS = {
 # Methods provided by known base classes (don't need re-implementation)
 _BASE_CLASS_METHODS = {
     "SaaSBaseConnector": {
-        "connector_type", "capabilities", "connect", "disconnect",
-        "health_check", "read", "infer_schema", "list_tables",
+        "connector_type",
+        "capabilities",
+        "connect",
+        "disconnect",
+        "health_check",
+        "read",
+        "infer_schema",
+        "list_tables",
     },
     "SoapBaseConnector": {
-        "connector_type", "capabilities", "connect", "disconnect",
-        "health_check", "read", "write", "infer_schema", "list_tables",
+        "connector_type",
+        "capabilities",
+        "connect",
+        "disconnect",
+        "health_check",
+        "read",
+        "write",
+        "infer_schema",
+        "list_tables",
     },
     "HealthBaseConnector": {
-        "connector_type", "capabilities", "connect", "disconnect",
-        "health_check", "read", "infer_schema", "list_tables",
+        "connector_type",
+        "capabilities",
+        "connect",
+        "disconnect",
+        "health_check",
+        "read",
+        "infer_schema",
+        "list_tables",
     },
     "SQLBaseConnector": {
-        "connector_type", "capabilities",
+        "connector_type",
+        "capabilities",
     },
     "FsspecBaseConnector": {
-        "connector_type", "capabilities",
+        "connector_type",
+        "capabilities",
     },
     "MessagingBaseConnector": {
-        "connector_type", "capabilities",
+        "connector_type",
+        "capabilities",
     },
     "DataConnector": set(),  # ABC — nothing provided
 }
@@ -65,29 +88,60 @@ _BASE_CLASS_METHODS = {
 # Default import whitelist (overridden by args/databridge_config.yaml)
 _DEFAULT_ALLOWED_ROOTS = {
     # stdlib
-    "json", "logging", "time", "datetime", "re", "typing", "dataclasses",
-    "abc", "enum", "pathlib", "hashlib", "ssl", "socket", "urllib",
-    "xml", "html", "base64", "collections", "functools", "itertools",
-    "io", "os",  # os.path is OK; os.system blocked separately
+    "json",
+    "logging",
+    "time",
+    "datetime",
+    "re",
+    "typing",
+    "dataclasses",
+    "abc",
+    "enum",
+    "pathlib",
+    "hashlib",
+    "ssl",
+    "socket",
+    "urllib",
+    "xml",
+    "html",
+    "base64",
+    "collections",
+    "functools",
+    "itertools",
+    "io",
+    "os",  # os.path is OK; os.system blocked separately
     # project
     "tools",
     # optional deps
-    "requests", "requests_toolbelt", "oauthlib",
-    "zeep", "hl7", "fhirclient",
-    "pyarrow", "sqlalchemy", "pymysql", "psycopg2",
+    "requests",
+    "requests_toolbelt",
+    "oauthlib",
+    "zeep",
+    "hl7",
+    "fhirclient",
+    "pyarrow",
+    "sqlalchemy",
+    "pymysql",
+    "psycopg2",
 }
 
 # Dangerous function calls to block
 _DANGEROUS_CALLS = {"eval", "exec", "__import__", "compile"}
-_DANGEROUS_ATTRS = {"os.system", "os.popen", "subprocess.run", "subprocess.call",
-                    "subprocess.Popen", "subprocess.check_output"}
+_DANGEROUS_ATTRS = {
+    "os.system",
+    "os.popen",
+    "subprocess.run",
+    "subprocess.call",
+    "subprocess.Popen",
+    "subprocess.check_output",
+}
 
 # Secret patterns
 _SECRET_PATTERNS = [
     re.compile(r'(?i)(password|passwd|secret|api_key|token|credential)\s*=\s*["\'][^"\']{8,}["\']'),
-    re.compile(r'(?i)bearer\s+[a-zA-Z0-9_\-\.]{20,}'),
-    re.compile(r'(?i)sk-[a-zA-Z0-9]{20,}'),
-    re.compile(r'(?i)AKIA[A-Z0-9]{16}'),  # AWS access key
+    re.compile(r"(?i)bearer\s+[a-zA-Z0-9_\-\.]{20,}"),
+    re.compile(r"(?i)sk-[a-zA-Z0-9]{20,}"),
+    re.compile(r"(?i)AKIA[A-Z0-9]{16}"),  # AWS access key
 ]
 
 
@@ -157,9 +211,7 @@ def _gate_py_compile(code: str) -> Dict[str, Any]:
 def _gate_ruff(code: str, name: str) -> Dict[str, Any]:
     """Gate 2: Ruff linting."""
     start = time.time()
-    with tempfile.NamedTemporaryFile(
-        suffix=".py", mode="w", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
         f.write(code)
         tmp = f.name
     try:
@@ -199,16 +251,20 @@ def _gate_ast_abc(code: str) -> Dict[str, Any]:
     still_needed = _REQUIRED_ABSTRACT_METHODS - base_provided - implemented
     if still_needed:
         return _result(
-            "ast_abc", False,
-            f"Missing abstract methods: {sorted(still_needed)}", start,
+            "ast_abc",
+            False,
+            f"Missing abstract methods: {sorted(still_needed)}",
+            start,
         )
 
     if not _has_connector_name(tree, implemented, base_provided):
         return _result("ast_abc", False, "Missing: connector_name property or _connector_name attribute", start)
 
     return _result(
-        "ast_abc", True,
-        f"ABC compliance verified (base provides {len(base_provided)} methods)", start,
+        "ast_abc",
+        True,
+        f"ABC compliance verified (base provides {len(base_provided)} methods)",
+        start,
     )
 
 
@@ -231,10 +287,7 @@ def _collect_base_provided(tree: ast.Module) -> Set[str]:
 
 def _collect_implemented_methods(tree: ast.Module) -> Set[str]:
     """Collect all method/property names defined in any class."""
-    return {
-        node.name for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
+    return {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
 
 
 def _has_connector_name(tree: ast.Module, implemented: Set[str], base_provided: Set[str]) -> bool:
@@ -256,9 +309,7 @@ def _has_connector_name(tree: ast.Module, implemented: Set[str], base_provided: 
 def _gate_bandit(code: str, name: str) -> Dict[str, Any]:
     """Gate 4: Bandit SAST security scan."""
     start = time.time()
-    with tempfile.NamedTemporaryFile(
-        suffix=".py", mode="w", delete=False, encoding="utf-8"
-    ) as f:
+    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
         f.write(code)
         tmp = f.name
     try:
@@ -272,22 +323,12 @@ def _gate_bandit(code: str, name: str) -> Dict[str, Any]:
 
         try:
             report = json.loads(proc.stdout)
-            highs = [
-                r
-                for r in report.get("results", [])
-                if r.get("issue_severity") in ("HIGH", "CRITICAL")
-            ]
+            highs = [r for r in report.get("results", []) if r.get("issue_severity") in ("HIGH", "CRITICAL")]
             passed = len(highs) == 0
-            detail = (
-                f"{len(highs)} HIGH/CRITICAL findings"
-                if highs
-                else "No HIGH/CRITICAL findings"
-            )
+            detail = f"{len(highs)} HIGH/CRITICAL findings" if highs else "No HIGH/CRITICAL findings"
             return _result("bandit", passed, detail, start)
         except (json.JSONDecodeError, KeyError):
-            return _result(
-                "bandit", True, "bandit output unparseable — skipped", start
-            )
+            return _result("bandit", True, "bandit output unparseable — skipped", start)
     except FileNotFoundError:
         return _result("bandit", True, "bandit not installed — skipped", start)
     except subprocess.TimeoutExpired:

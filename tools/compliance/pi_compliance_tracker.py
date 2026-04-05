@@ -59,14 +59,12 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # Database helpers
 # ------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
@@ -74,9 +72,7 @@ def _get_connection(db_path=None):
 
 def _verify_project(conn, project_id):
     """Verify project exists and return its data."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -106,6 +102,7 @@ def _log_audit(conn, project_id, action, details):
 # ------------------------------------------------------------------
 # Compliance snapshot helpers
 # ------------------------------------------------------------------
+
 
 def _count_implemented_controls(conn, project_id):
     """Count controls by implementation status for a project."""
@@ -314,11 +311,13 @@ def _list_artifacts_generated(conn, project_id, since_date=None):
             query += " AND generated_at >= ?"
             params.append(since_date)
         for row in conn.execute(query, params).fetchall():
-            artifacts.append({
-                "type": f"OSCAL-{row['artifact_type']}",
-                "path": row["file_path"],
-                "created_at": row["generated_at"],
-            })
+            artifacts.append(
+                {
+                    "type": f"OSCAL-{row['artifact_type']}",
+                    "path": row["file_path"],
+                    "created_at": row["generated_at"],
+                }
+            )
     except Exception:
         pass
 
@@ -328,6 +327,7 @@ def _list_artifacts_generated(conn, project_id, since_date=None):
 # ------------------------------------------------------------------
 # Core PI tracking functions
 # ------------------------------------------------------------------
+
 
 def start_pi(project_id, pi_number, start_date, end_date, db_path=None):
     """Initialize PI tracking with a baseline compliance snapshot.
@@ -386,11 +386,13 @@ def start_pi(project_id, pi_number, start_date, end_date, db_path=None):
                 remaining,
                 open_poam,
                 findings_remediated,
-                json.dumps({
-                    "baseline_control_counts": control_counts,
-                    "baseline_poam_counts": poam_counts,
-                    "status": "active",
-                }),
+                json.dumps(
+                    {
+                        "baseline_control_counts": control_counts,
+                        "baseline_poam_counts": poam_counts,
+                        "status": "active",
+                    }
+                ),
             ),
         )
         conn.commit()
@@ -447,10 +449,7 @@ def record_pi_progress(project_id, pi_number, db_path=None):
             (project_id, pi_number),
         ).fetchone()
         if not pi_row:
-            raise ValueError(
-                f"PI '{pi_number}' not found for project '{project_id}'. "
-                "Use start_pi first."
-            )
+            raise ValueError(f"PI '{pi_number}' not found for project '{project_id}'. Use start_pi first.")
         pi_data = dict(pi_row)
 
         # Snapshot current state
@@ -566,10 +565,7 @@ def close_pi(project_id, pi_number, db_path=None):
             (project_id, pi_number),
         ).fetchone()
         if not pi_row:
-            raise ValueError(
-                f"PI '{pi_number}' not found for project '{project_id}'. "
-                "Use start_pi first."
-            )
+            raise ValueError(f"PI '{pi_number}' not found for project '{project_id}'. Use start_pi first.")
         pi_data = dict(pi_row)
 
         # Final snapshot
@@ -835,11 +831,13 @@ def get_compliance_burndown(project_id, target_framework=None, db_path=None):
             velocity = notes.get("velocity", {})
             is_closed = notes.get("status") == "closed"
 
-            pi_history.append({
-                "pi_number": pi["pi_number"],
-                "controls_remaining": pi["controls_remaining"],
-                "status": "closed" if is_closed else "active",
-            })
+            pi_history.append(
+                {
+                    "pi_number": pi["pi_number"],
+                    "controls_remaining": pi["controls_remaining"],
+                    "status": "closed" if is_closed else "active",
+                }
+            )
 
             if is_closed:
                 velocities.append(velocity.get("controls_implemented", 0))
@@ -854,6 +852,7 @@ def get_compliance_burndown(project_id, target_framework=None, db_path=None):
 
         if avg_velocity > 0 and remaining > 0:
             import math
+
             projected_pis_remaining = math.ceil(remaining / avg_velocity)
 
             # Estimate completion PI number
@@ -879,6 +878,7 @@ def get_compliance_burndown(project_id, target_framework=None, db_path=None):
                     last_end = last_pi.get("pi_end_date")
                     if last_end:
                         from datetime import timedelta
+
                         last_date = datetime.strptime(last_end, "%Y-%m-%d")
                         projected_date = last_date + timedelta(weeks=10 * projected_pis_remaining)
                         projected_completion_date = projected_date.strftime("%Y-%m-%d")
@@ -1030,25 +1030,18 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
         else:
             score_delta_str = str(score_delta)
 
-        lines.append(
-            f"| Compliance Score | {score_start} | {score_display} | {score_delta_str} |"
-        )
+        lines.append(f"| Compliance Score | {score_start} | {score_display} | {score_delta_str} |")
         lines.append(
             f"| Controls Implemented | {pi_data['controls_implemented']} | "
             f"{pi_data['controls_implemented']} | "
             f"{velocity.get('controls_implemented', 'N/A')} |"
         )
+        lines.append(f"| Controls Remaining | {pi_data['controls_remaining']} | {pi_data['controls_remaining']} | -- |")
         lines.append(
-            f"| Controls Remaining | {pi_data['controls_remaining']} | "
-            f"{pi_data['controls_remaining']} | -- |"
+            f"| POAM Items Closed | -- | {pi_data['poam_items_closed'] or 0} | {pi_data['poam_items_closed'] or 0} |"
         )
         lines.append(
-            f"| POAM Items Closed | -- | {pi_data['poam_items_closed'] or 0} | "
-            f"{pi_data['poam_items_closed'] or 0} |"
-        )
-        lines.append(
-            f"| Open POAM Items | {pi_data['poam_items_opened'] or 0} | "
-            f"{pi_data['poam_items_opened'] or 0} | -- |"
+            f"| Open POAM Items | {pi_data['poam_items_opened'] or 0} | {pi_data['poam_items_opened'] or 0} | -- |"
         )
         lines.append(
             f"| Findings Remediated | -- | {pi_data['findings_remediated'] or 0} | "
@@ -1074,9 +1067,7 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
                 delta = f"{s_end - s_start:+.1f}"
             else:
                 delta = "..."
-            lines.append(
-                f"| {pi['pi_number']} | {s_start} | {s_end or '...'} | {delta} |"
-            )
+            lines.append(f"| {pi['pi_number']} | {s_start} | {s_end or '...'} | {delta} |")
 
         lines.extend(["", "---", ""])
 
@@ -1108,7 +1099,9 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
             lines.append(f"**{len(artifacts)}** compliance artifacts generated during this PI:")
             lines.append("")
             for art in artifacts:
-                lines.append(f"- **{art.get('type', 'Unknown')}:** {art.get('path', 'N/A')} ({art.get('created_at', '')})")
+                lines.append(
+                    f"- **{art.get('type', 'Unknown')}:** {art.get('path', 'N/A')} ({art.get('created_at', '')})"
+                )
         else:
             if is_closed:
                 lines.append("No artifacts recorded for this PI.")
@@ -1140,13 +1133,15 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
             recommendations.append("- Continue current pace. Compliance posture is on track.")
         lines.extend(recommendations)
 
-        lines.extend([
-            "",
-            "---",
-            "",
-            cui_footer,
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                cui_footer,
+                "",
+            ]
+        )
 
         content = "\n".join(lines)
 
@@ -1167,10 +1162,15 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
         with open(out_file, "w", encoding="utf-8") as f:
             f.write(content)
 
-        _log_audit(conn, project_id, f"PI {pi_number} compliance report generated", {
-            "pi_number": pi_number,
-            "output_file": str(out_file),
-        })
+        _log_audit(
+            conn,
+            project_id,
+            f"PI {pi_number} compliance report generated",
+            {
+                "pi_number": pi_number,
+                "output_file": str(out_file),
+            },
+        )
 
         print(f"PI compliance report generated: {out_file}")
         return str(out_file)
@@ -1212,28 +1212,32 @@ def list_pis(project_id, db_path=None):
 
             is_closed = notes.get("status") == "closed"
 
-            pis.append({
-                "pi_number": pi["pi_number"],
-                "pi_start_date": pi["pi_start_date"],
-                "pi_end_date": pi["pi_end_date"],
-                "status": "closed" if is_closed else "active",
-                "compliance_score_start": pi["compliance_score_start"],
-                "compliance_score_end": pi["compliance_score_end"],
-                "controls_implemented": pi["controls_implemented"],
-                "controls_remaining": pi["controls_remaining"],
-                "poam_items_closed": pi["poam_items_closed"] or 0,
-                "findings_remediated": pi["findings_remediated"] or 0,
-            })
+            pis.append(
+                {
+                    "pi_number": pi["pi_number"],
+                    "pi_start_date": pi["pi_start_date"],
+                    "pi_end_date": pi["pi_end_date"],
+                    "status": "closed" if is_closed else "active",
+                    "compliance_score_start": pi["compliance_score_start"],
+                    "compliance_score_end": pi["compliance_score_end"],
+                    "controls_implemented": pi["controls_implemented"],
+                    "controls_remaining": pi["controls_remaining"],
+                    "poam_items_closed": pi["poam_items_closed"] or 0,
+                    "findings_remediated": pi["findings_remediated"] or 0,
+                }
+            )
 
         print(f"PIs for project {project_id}: ({len(pis)} total)")
         print()
         if pis:
             print(f"  {'PI':<12} {'Status':<10} {'Period':<25} {'Score Start':<14} {'Score End':<12}")
-            print(f"  {'-'*12} {'-'*10} {'-'*25} {'-'*14} {'-'*12}")
+            print(f"  {'-' * 12} {'-' * 10} {'-' * 25} {'-' * 14} {'-' * 12}")
             for pi in pis:
                 period = f"{pi['pi_start_date']} - {pi['pi_end_date']}"
                 score_end = pi["compliance_score_end"] if pi["compliance_score_end"] is not None else "..."
-                print(f"  {pi['pi_number']:<12} {pi['status']:<10} {period:<25} {pi['compliance_score_start']:<14} {score_end:<12}")
+                print(
+                    f"  {pi['pi_number']:<12} {pi['status']:<10} {period:<25} {pi['compliance_score_start']:<14} {score_end:<12}"  # noqa: E501
+                )
         else:
             print("  No PIs found. Use --start-pi to create one.")
 
@@ -1333,6 +1337,7 @@ def get_pi_details(project_id, pi_number, db_path=None):
 # CLI
 # ------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="SAFe PI Compliance Tracker — track compliance across Program Increments"
@@ -1358,7 +1363,9 @@ def main():
     parser.add_argument("--list-pis", action="store_true", help="List all PIs for the project")
     parser.add_argument("--details", action="store_true", help="Get detailed PI metrics")
 
-    parser.add_argument("--pi", metavar="PI_NUMBER", help="PI number (used with --record-progress, --report, --details)")
+    parser.add_argument(
+        "--pi", metavar="PI_NUMBER", help="PI number (used with --record-progress, --report, --details)"
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()

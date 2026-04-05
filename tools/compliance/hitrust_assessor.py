@@ -31,7 +31,9 @@ class HITRUSTAssessor(BaseAssessor):
     CATALOG_FILENAME = "hitrust_csf_v11.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """HITRUST-specific automated checks.
 

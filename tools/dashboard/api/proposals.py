@@ -68,17 +68,28 @@ SECTION_TRANSITIONS = {
 
 # Ordered status list for pipeline rendering
 SECTION_STATUS_ORDER = [
-    "not_started", "outlining", "drafting", "internal_review",
-    "pink_team_ready", "pink_team_review", "rework_pink",
-    "red_team_ready", "red_team_review", "rework_red",
-    "gold_team_ready", "gold_team_review",
-    "white_glove", "final", "submitted",
+    "not_started",
+    "outlining",
+    "drafting",
+    "internal_review",
+    "pink_team_ready",
+    "pink_team_review",
+    "rework_pink",
+    "red_team_ready",
+    "red_team_review",
+    "rework_red",
+    "gold_team_ready",
+    "gold_team_review",
+    "white_glove",
+    "final",
+    "submitted",
 ]
 
 
 # =====================================================================
 # Opportunity CRUD
 # =====================================================================
+
 
 @proposals_api.route("/opportunities", methods=["GET"])
 def list_opportunities():
@@ -158,9 +169,7 @@ def get_opportunity(opp_id):
         opp = dict(row)
 
         # Aggregate stats
-        sections = conn.execute(
-            "SELECT status FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)
-        ).fetchall()
+        sections = conn.execute("SELECT status FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)).fetchall()
         total_sections = len(sections)
         complete_sections = sum(1 for s in sections if s["status"] in ("final", "submitted"))
 
@@ -178,7 +187,9 @@ def get_opportunity(opp_id):
             (opp_id,),
         ).fetchall()
         open_findings = sum(1 for f in findings if f["status"] in ("open", "in_progress"))
-        critical_findings = sum(1 for f in findings if f["severity"] == "critical" and f["status"] in ("open", "in_progress"))
+        critical_findings = sum(
+            1 for f in findings if f["severity"] == "critical" and f["status"] in ("open", "in_progress")
+        )
 
         # Days to deadline
         try:
@@ -189,7 +200,7 @@ def get_opportunity(opp_id):
 
         # Review gate status
         reviews = conn.execute(
-            "SELECT review_type, status, scheduled_date, overall_rating FROM proposal_reviews WHERE opportunity_id = ? ORDER BY created_at",
+            "SELECT review_type, status, scheduled_date, overall_rating FROM proposal_reviews WHERE opportunity_id = ? ORDER BY created_at",  # noqa: E501
             (opp_id,),
         ).fetchall()
         gate_status = {}
@@ -223,11 +234,23 @@ def update_opportunity(opp_id):
     conn = _get_db()
     try:
         allowed = [
-            "title", "agency", "sub_agency", "due_date", "due_time",
-            "set_aside_type", "naics_code", "estimated_value_low",
-            "estimated_value_high", "proposal_type", "rfp_document_path",
-            "rfp_url", "capture_manager", "proposal_manager",
-            "bid_decision", "bid_decision_date", "bid_decision_rationale",
+            "title",
+            "agency",
+            "sub_agency",
+            "due_date",
+            "due_time",
+            "set_aside_type",
+            "naics_code",
+            "estimated_value_low",
+            "estimated_value_high",
+            "proposal_type",
+            "rfp_document_path",
+            "rfp_url",
+            "capture_manager",
+            "proposal_manager",
+            "bid_decision",
+            "bid_decision_date",
+            "bid_decision_rationale",
             "questions_due_date",
         ]
         sets = []
@@ -265,7 +288,9 @@ def change_opportunity_status(opp_id):
             "UPDATE proposal_opportunities SET status = ?, updated_at = ? WHERE id = ?",
             (new_status, _now(), opp_id),
         )
-        _record_status_change(conn, "opportunity", opp_id, old_status, new_status, data.get("changed_by"), data.get("reason"))
+        _record_status_change(
+            conn, "opportunity", opp_id, old_status, new_status, data.get("changed_by"), data.get("reason")
+        )
         conn.commit()
         return jsonify({"id": opp_id, "old_status": old_status, "new_status": new_status})
     finally:
@@ -275,6 +300,7 @@ def change_opportunity_status(opp_id):
 # =====================================================================
 # Volume CRUD
 # =====================================================================
+
 
 @proposals_api.route("/opportunities/<opp_id>/volumes", methods=["GET"])
 def list_volumes(opp_id):
@@ -304,7 +330,8 @@ def create_volume(opp_id):
                (id, opportunity_id, volume_number, title, description, page_limit, word_limit, sort_order)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                vol_id, opp_id,
+                vol_id,
+                opp_id,
                 data.get("volume_number", 1),
                 data["title"],
                 data.get("description"),
@@ -347,6 +374,7 @@ def update_volume(vol_id):
 # =====================================================================
 # Section CRUD
 # =====================================================================
+
 
 @proposals_api.route("/opportunities/<opp_id>/sections", methods=["GET"])
 def list_sections(opp_id):
@@ -392,13 +420,18 @@ def create_section(opp_id):
                 priority, due_date, notes, sort_order)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                sec_id, data["volume_id"], opp_id,
+                sec_id,
+                data["volume_id"],
+                opp_id,
                 data.get("parent_section_id"),
-                data["section_number"], data["title"],
+                data["section_number"],
+                data["title"],
                 data.get("description"),
-                data.get("writer"), data.get("writer_email"),
+                data.get("writer"),
+                data.get("writer_email"),
                 data.get("reviewer"),
-                data.get("page_limit"), data.get("word_limit"),
+                data.get("page_limit"),
+                data.get("word_limit"),
                 data.get("priority", "standard"),
                 data.get("due_date"),
                 data.get("notes"),
@@ -430,7 +463,7 @@ def get_section(sec_id):
 
         # Status history
         history = conn.execute(
-            "SELECT * FROM proposal_status_history WHERE entity_type = 'section' AND entity_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM proposal_status_history WHERE entity_type = 'section' AND entity_id = ? ORDER BY created_at DESC",  # noqa: E501
             (sec_id,),
         ).fetchall()
         section["history"] = [dict(h) for h in history]
@@ -476,10 +509,22 @@ def update_section(sec_id):
     conn = _get_db()
     try:
         allowed = [
-            "title", "description", "writer", "writer_email", "reviewer",
-            "page_limit", "word_limit", "current_word_count", "current_page_count",
-            "priority", "due_date", "notes", "content_path", "sort_order",
-            "section_number", "parent_section_id",
+            "title",
+            "description",
+            "writer",
+            "writer_email",
+            "reviewer",
+            "page_limit",
+            "word_limit",
+            "current_word_count",
+            "current_page_count",
+            "priority",
+            "due_date",
+            "notes",
+            "content_path",
+            "sort_order",
+            "section_number",
+            "parent_section_id",
         ]
         sets = []
         params = []
@@ -519,10 +564,12 @@ def advance_section_status(sec_id):
         if not force:
             valid = SECTION_TRANSITIONS.get(old_status, [])
             if new_status not in valid:
-                return jsonify({
-                    "error": f"Invalid transition: {old_status} -> {new_status}",
-                    "valid_transitions": valid,
-                }), 400
+                return jsonify(
+                    {
+                        "error": f"Invalid transition: {old_status} -> {new_status}",
+                        "valid_transitions": valid,
+                    }
+                ), 400
 
             # Check dependencies (D-PROP-5)
             deps = conn.execute(
@@ -534,14 +581,24 @@ def advance_section_status(sec_id):
             ).fetchall()
             blocked_by = []
             for dep in deps:
-                req_idx = SECTION_STATUS_ORDER.index(dep["required_status"]) if dep["required_status"] in SECTION_STATUS_ORDER else 0
-                cur_idx = SECTION_STATUS_ORDER.index(dep["current_dep_status"]) if dep["current_dep_status"] in SECTION_STATUS_ORDER else 0
+                req_idx = (
+                    SECTION_STATUS_ORDER.index(dep["required_status"])
+                    if dep["required_status"] in SECTION_STATUS_ORDER
+                    else 0
+                )
+                cur_idx = (
+                    SECTION_STATUS_ORDER.index(dep["current_dep_status"])
+                    if dep["current_dep_status"] in SECTION_STATUS_ORDER
+                    else 0
+                )
                 if cur_idx < req_idx:
-                    blocked_by.append({
-                        "section": dep["title"],
-                        "current_status": dep["current_dep_status"],
-                        "required_status": dep["required_status"],
-                    })
+                    blocked_by.append(
+                        {
+                            "section": dep["title"],
+                            "current_status": dep["current_dep_status"],
+                            "required_status": dep["required_status"],
+                        }
+                    )
             if blocked_by:
                 return jsonify({"error": "Blocked by dependencies", "blocked_by": blocked_by}), 409
 
@@ -549,7 +606,9 @@ def advance_section_status(sec_id):
             "UPDATE proposal_sections SET status = ?, updated_at = ? WHERE id = ?",
             (new_status, _now(), sec_id),
         )
-        _record_status_change(conn, "section", sec_id, old_status, new_status, data.get("changed_by"), data.get("reason"))
+        _record_status_change(
+            conn, "section", sec_id, old_status, new_status, data.get("changed_by"), data.get("reason")
+        )
         conn.commit()
         return jsonify({"id": sec_id, "old_status": old_status, "new_status": new_status})
     finally:
@@ -567,8 +626,13 @@ def add_section_dependency(opp_id):
     conn = _get_db()
     try:
         conn.execute(
-            "INSERT INTO proposal_section_dependencies (section_id, depends_on_section_id, dependency_type, required_status) VALUES (?, ?, ?, ?)",
-            (data["section_id"], data["depends_on_section_id"], data.get("dependency_type", "content"), data.get("required_status", "drafting")),
+            "INSERT INTO proposal_section_dependencies (section_id, depends_on_section_id, dependency_type, required_status) VALUES (?, ?, ?, ?)",  # noqa: E501
+            (
+                data["section_id"],
+                data["depends_on_section_id"],
+                data.get("dependency_type", "content"),
+                data.get("required_status", "drafting"),
+            ),
         )
         conn.commit()
         return jsonify({"created": True}), 201
@@ -579,6 +643,7 @@ def add_section_dependency(opp_id):
 # =====================================================================
 # Compliance Matrix
 # =====================================================================
+
 
 @proposals_api.route("/opportunities/<opp_id>/compliance", methods=["GET"])
 def list_compliance(opp_id):
@@ -600,7 +665,14 @@ def list_compliance(opp_id):
 
         # Stats
         total = len(items)
-        stats = {"total": total, "compliant": 0, "partial": 0, "non_compliant": 0, "not_addressed": 0, "not_applicable": 0}
+        stats = {
+            "total": total,
+            "compliant": 0,
+            "partial": 0,
+            "non_compliant": 0,
+            "not_addressed": 0,
+            "not_applicable": 0,
+        }
         for item in items:
             st = item.get("compliance_status", "not_addressed")
             if st in stats:
@@ -627,8 +699,10 @@ def create_compliance_item(opp_id):
                 requirement_type, compliance_status, proposal_section_id, response_summary, notes, sort_order)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                cm_id, opp_id,
-                data["section_ref"], data.get("volume_ref"),
+                cm_id,
+                opp_id,
+                data["section_ref"],
+                data.get("volume_ref"),
                 data["requirement_text"],
                 data.get("requirement_type", "L"),
                 data.get("compliance_status", "not_addressed"),
@@ -662,7 +736,8 @@ def batch_create_compliance(opp_id):
                     requirement_type, compliance_status, proposal_section_id, sort_order)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    cm_id, opp_id,
+                    cm_id,
+                    opp_id,
                     item.get("section_ref", ""),
                     item.get("volume_ref"),
                     item.get("requirement_text", ""),
@@ -686,8 +761,15 @@ def update_compliance_item(item_id):
     conn = _get_db()
     try:
         allowed = [
-            "section_ref", "volume_ref", "requirement_text", "requirement_type",
-            "compliance_status", "proposal_section_id", "response_summary", "notes", "sort_order",
+            "section_ref",
+            "volume_ref",
+            "requirement_text",
+            "requirement_type",
+            "compliance_status",
+            "proposal_section_id",
+            "response_summary",
+            "notes",
+            "sort_order",
         ]
         sets = []
         params = []
@@ -700,9 +782,13 @@ def update_compliance_item(item_id):
 
         # Record status change if compliance_status changed
         if "compliance_status" in data:
-            old = conn.execute("SELECT compliance_status FROM proposal_compliance_matrix WHERE id = ?", (item_id,)).fetchone()
+            old = conn.execute(
+                "SELECT compliance_status FROM proposal_compliance_matrix WHERE id = ?", (item_id,)
+            ).fetchone()
             if old and old["compliance_status"] != data["compliance_status"]:
-                _record_status_change(conn, "compliance_item", item_id, old["compliance_status"], data["compliance_status"])
+                _record_status_change(
+                    conn, "compliance_item", item_id, old["compliance_status"], data["compliance_status"]
+                )
 
         sets.append("updated_at = ?")
         params.append(_now())
@@ -729,12 +815,14 @@ def compliance_gaps(opp_id):
             "SELECT COUNT(*) FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
         ).fetchone()[0]
         gaps = [dict(r) for r in rows]
-        return jsonify({
-            "gaps": gaps,
-            "total_gaps": len(gaps),
-            "total_requirements": total,
-            "gap_pct": round((len(gaps) / total * 100) if total > 0 else 0, 1),
-        })
+        return jsonify(
+            {
+                "gaps": gaps,
+                "total_gaps": len(gaps),
+                "total_requirements": total,
+                "gap_pct": round((len(gaps) / total * 100) if total > 0 else 0, 1),
+            }
+        )
     finally:
         conn.close()
 
@@ -742,6 +830,7 @@ def compliance_gaps(opp_id):
 # =====================================================================
 # Color Team Reviews & Findings
 # =====================================================================
+
 
 @proposals_api.route("/opportunities/<opp_id>/reviews", methods=["GET"])
 def list_reviews(opp_id):
@@ -787,7 +876,8 @@ def schedule_review(opp_id):
                 lead_reviewer, participants, summary)
                VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?)""",
             (
-                rev_id, opp_id,
+                rev_id,
+                opp_id,
                 data["review_type"],
                 data.get("scheduled_date"),
                 data.get("lead_reviewer"),
@@ -871,7 +961,8 @@ def add_finding(rev_id):
                 recommendation, assigned_to)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                find_id, rev_id,
+                find_id,
+                rev_id,
                 data.get("section_id"),
                 data.get("finding_type", "other"),
                 data.get("severity", "minor"),
@@ -921,6 +1012,7 @@ def update_finding(find_id):
 # =====================================================================
 # Aggregate / Dashboard Data
 # =====================================================================
+
 
 @proposals_api.route("/opportunities/<opp_id>/timeline", methods=["GET"])
 def get_timeline(opp_id):
@@ -994,9 +1086,7 @@ def get_stats(opp_id):
         if not opp:
             return jsonify({"error": "Opportunity not found"}), 404
 
-        sections = conn.execute(
-            "SELECT status FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)
-        ).fetchall()
+        sections = conn.execute("SELECT status FROM proposal_sections WHERE opportunity_id = ?", (opp_id,)).fetchall()
         total = len(sections)
         complete = sum(1 for s in sections if s["status"] in ("final", "submitted"))
 
@@ -1031,17 +1121,19 @@ def get_stats(opp_id):
         except (ValueError, TypeError):
             days_left = None
 
-        return jsonify({
-            "sections_total": total,
-            "sections_complete": complete,
-            "section_status_distribution": status_dist,
-            "compliance_total": cm_total,
-            "compliance_addressed": cm_addressed,
-            "compliance_coverage_pct": round((cm_addressed / cm_total * 100) if cm_total > 0 else 0, 1),
-            "open_findings": open_findings,
-            "finding_severity_distribution": severity_dist,
-            "days_to_deadline": days_left,
-        })
+        return jsonify(
+            {
+                "sections_total": total,
+                "sections_complete": complete,
+                "section_status_distribution": status_dist,
+                "compliance_total": cm_total,
+                "compliance_addressed": cm_addressed,
+                "compliance_coverage_pct": round((cm_addressed / cm_total * 100) if cm_total > 0 else 0, 1),
+                "open_findings": open_findings,
+                "finding_severity_distribution": severity_dist,
+                "days_to_deadline": days_left,
+            }
+        )
     finally:
         conn.close()
 
@@ -1064,6 +1156,7 @@ def get_status_history(entity_type, entity_id):
 # Proposal → Contract Transition (Phase 60 — D-CPMP-9)
 # =====================================================================
 
+
 @proposals_api.route("/opportunities/<opp_id>/create-contract", methods=["POST"])
 def create_contract_from_opportunity(opp_id):
     """POST /api/proposals/opportunities/<opp_id>/create-contract
@@ -1073,6 +1166,7 @@ def create_contract_from_opportunity(opp_id):
     """
     try:
         from tools.govcon.portfolio_manager import transition_from_opportunity
+
         data = request.get_json(silent=True) or {}
         result = transition_from_opportunity(opp_id, created_by=data.get("created_by"))
         if result.get("status") == "error":
