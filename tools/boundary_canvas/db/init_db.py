@@ -181,6 +181,31 @@ CREATE INDEX IF NOT EXISTS idx_bd_alerts_design ON bd_alerts(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_alerts_acknowledged ON bd_alerts(acknowledged);
 CREATE INDEX IF NOT EXISTS idx_bdc_runbooks_design ON bdc_runbooks(design_id);
 CREATE INDEX IF NOT EXISTS idx_bdc_runbooks_trigger ON bdc_runbooks(trigger_event);
+
+CREATE TABLE IF NOT EXISTS bdc_sops (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    sop_type        TEXT NOT NULL DEFAULT 'custom',
+    description     TEXT DEFAULT '',
+    purpose         TEXT DEFAULT '',
+    scope           TEXT DEFAULT '',
+    steps           TEXT DEFAULT '[]',
+    nist_controls   TEXT DEFAULT '[]',
+    owner           TEXT DEFAULT '',
+    reviewer        TEXT DEFAULT '',
+    approval_status TEXT NOT NULL DEFAULT 'draft',
+    version         TEXT DEFAULT '1.0',
+    next_review_date TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    approved_by     TEXT DEFAULT '',
+    approved_at     TEXT DEFAULT '',
+    rejected_reason TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_bdc_sops_type ON bdc_sops(sop_type);
+CREATE INDEX IF NOT EXISTS idx_bdc_sops_status ON bdc_sops(approval_status);
 """
 
 
@@ -1687,6 +1712,14 @@ def init_db():
             print(f"[init_db] BDC seeded {rb_added} new runbooks (total: {rb_count + rb_added}).")
         else:
             print(f"[init_db] BDC all {rb_count} runbooks up to date.")
+
+        # ── Seed SOPs ──────────────────────────────────────────────────────
+        try:
+            from tools.boundary_canvas.sops import seed_sops
+            seed_sops()
+            print("[init_db] BDC SOPs seeded.")
+        except Exception as _e:
+            print(f"[init_db] BDC SOP seed skipped: {_e}")
 
     finally:
         conn.close()
