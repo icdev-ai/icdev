@@ -136,6 +136,15 @@ const TOOL_INFO = {
 {% endfor %}{% endfor %}};
 </script>
 <script src="{{ url_for('static', filename='js/canvas-tooltips.js') }}"></script>
+<script>
+// Build NODE_DESCS from TOOL_INFO for enhanced tooltips
+window.NODE_DESCS = {};
+if (typeof TOOL_INFO !== 'undefined') {
+  Object.keys(TOOL_INFO).forEach(function(k) {
+    if (TOOL_INFO[k].desc) window.NODE_DESCS[k] = TOOL_INFO[k].desc;
+  });
+}
+</script>
 <script src="{{ url_for('static', filename='js/pipeline-canvas.js') }}?v=3"></script>
 <script>
   // Initialize
