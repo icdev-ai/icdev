@@ -1012,4 +1012,97 @@ def create_observability_blueprint():
         result = estimate_log_volume(nodes, retention_days=retention_days)
         return jsonify(result)
 
+    # ====================================================================
+    # SOP ROUTES
+    # ====================================================================
+
+    from tools.observability_canvas import sops as _sops_mod
+
+    @bp.route("/sops")
+    @oc_login_required
+    def oc_sops_page():
+        """Render the SOPs management page."""
+        sop_type = request.args.get("sop_type")
+        approval_status = request.args.get("approval_status")
+        sops_list = _sops_mod.get_all_sops(sop_type=sop_type, approval_status=approval_status)
+        return render_template(
+            "observability_canvas/sops.html",
+            sops=sops_list,
+            active_page="observability",
+        )
+
+    @bp.route("/api/sops", methods=["GET"])
+    @oc_login_required
+    def oc_api_sops_list():
+        sop_type = request.args.get("sop_type")
+        approval_status = request.args.get("approval_status")
+        return jsonify(_sops_mod.get_all_sops(sop_type=sop_type, approval_status=approval_status))
+
+    @bp.route("/api/sops/<sop_id>", methods=["GET"])
+    @oc_login_required
+    def oc_api_sop_get(sop_id):
+        sop = _sops_mod.get_sop_by_id(sop_id)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(sop)
+
+    @bp.route("/api/sops", methods=["POST"])
+    @oc_login_required
+    def oc_api_sop_create():
+        data = request.get_json(silent=True) or {}
+        sop = _sops_mod.create_sop(data)
+        _audit("sop_create", details=sop.get("title", ""))
+        return jsonify(sop), 201
+
+    @bp.route("/api/sops/<sop_id>", methods=["PUT"])
+    @oc_login_required
+    def oc_api_sop_update(sop_id):
+        data = request.get_json(silent=True) or {}
+        sop = _sops_mod.update_sop(sop_id, data)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        _audit("sop_update", details=sop_id)
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
+    @oc_login_required
+    def oc_api_sop_delete(sop_id):
+        deleted = _sops_mod.delete_sop(sop_id)
+        if not deleted:
+            return jsonify({"error": "Not found"}), 404
+        _audit("sop_delete", details=sop_id)
+        return jsonify({"deleted": True})
+
+    @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
+    @oc_login_required
+    def oc_api_sop_submit(sop_id):
+        sop, err = _sops_mod.submit_for_review(sop_id)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("sop_submit", details=sop_id)
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
+    @oc_login_required
+    def oc_api_sop_approve(sop_id):
+        data = request.get_json(silent=True) or {}
+        approved_by = data.get("approved_by", session.get("user_id", ""))
+        sop, err = _sops_mod.approve_sop(sop_id, approved_by=approved_by)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("sop_approve", details=sop_id)
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/reject", methods=["POST"])
+    @oc_login_required
+    def oc_api_sop_reject(sop_id):
+        data = request.get_json(silent=True) or {}
+        reason = data.get("reason", "")
+        rejected_by = data.get("rejected_by", session.get("user_id", ""))
+        sop, err = _sops_mod.reject_sop(sop_id, reason=reason, rejected_by=rejected_by)
+        if err:
+            return jsonify({"error": err}), 400
+        _audit("sop_reject", details=sop_id)
+        return jsonify(sop)
+
     return bp
