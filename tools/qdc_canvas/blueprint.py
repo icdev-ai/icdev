@@ -216,7 +216,7 @@ def canvas_editor(design_id: str):
     return render_template(
         "qdc_canvas/canvas.html",
         design=design_dict,
-        objects=QDC_OBJECTS,
+        objects=QDC_OBJECTS.get("categories", QDC_OBJECTS),
         rules=QDC_COMPLIANCE_RULES,
         sa11_map=QDC_SA11_MAP,
         node_descs=QDC_NODE_DESCS,
@@ -381,7 +381,7 @@ def remediation_page(design_id: str):
     return render_template(
         "qdc_canvas/canvas.html",
         design=design_dict,
-        objects=QDC_OBJECTS,
+        objects=QDC_OBJECTS.get("categories", QDC_OBJECTS),
         rules=QDC_COMPLIANCE_RULES,
         sa11_map=QDC_SA11_MAP,
         node_descs=QDC_NODE_DESCS,
@@ -714,6 +714,20 @@ def api_list_snippets():
     return jsonify({"snippets": rows, "count": len(rows)})
 
 
+@qdc_bp.route("/api/snippets/<snippet_id>", methods=["GET"])
+def api_get_snippet(snippet_id):
+    """Get a single snippet by ID."""
+    conn = _get_conn()
+    try:
+        row = conn.execute("SELECT * FROM qdc_snippets WHERE id = ?", (snippet_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Snippet not found"}), 404
+        snippet = dict(row) if hasattr(row, "keys") else {}
+        return jsonify({"status": "ok", "snippet": snippet})
+    finally:
+        conn.close()
+
+
 @qdc_bp.route("/api/runbooks", methods=["GET"])
 def api_list_runbooks():
     """List all runbooks as JSON."""
@@ -761,11 +775,10 @@ def api_execute_runbook(runbook_id: str):
 
     return jsonify(
         {
-            "ok": True,
+            "status": "ok",
             "runbook_id": runbook_id,
             "name": rb.get("name", ""),
-            "steps": steps,
-            "executed_at": now,
+            "result": {"steps": steps, "executed_at": now},
         }
     )
 
