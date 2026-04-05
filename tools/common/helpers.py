@@ -9,6 +9,10 @@ def now_isoformat() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Alias used by rename branch code
+now_iso = now_isoformat
+
+
 def row_to_dict(row) -> dict:
     """Convert a sqlite3.Row to a plain dict."""
     if row is None:
