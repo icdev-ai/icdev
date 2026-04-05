@@ -1,0 +1,366 @@
+{% extends "network/base.html" %}
+{% block title %}Auto-Discovery — Network Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Auto-Discovery</h1>
+    <p class="page-subtitle">Scan live networks via SNMP/SSH/Ping — bridge as-designed vs as-built</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/" class="btn btn-secondary">Dashboard</a>
+    <button class="btn btn-primary" onclick="showScanForm()">+ New Scan</button>
+  </div>
+</div>
+
+<!-- Protocol Capabilities -->
+<div class="stats-bar">
+  <div class="stat-card">
+    <div class="stat-label">SNMP</div>
+    <div class="stat-value {% if has_pysnmp %}text-green{% else %}text-red{% endif %}">
+      {{ 'Available' if has_pysnmp else 'Not Installed' }}
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">SSH (Netmiko)</div>
+    <div class="stat-value {% if has_netmiko %}text-green{% else %}text-red{% endif %}">
+      {{ 'Available' if has_netmiko else 'Not Installed' }}
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Ping Sweep</div>
+    <div class="stat-value text-green">Available</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Scans</div>
+    <div class="stat-value">{{ scans|length }}</div>
+  </div>
+</div>
+
+<!-- New Scan Form -->
+<section id="scan-form" class="panel panel-wide" style="display:none;">
+  <div class="panel-header">
+    <h2 class="panel-title">New Discovery Scan</h2>
+    <button class="btn btn-secondary-sm" onclick="hideScanForm()">Cancel</button>
+  </div>
+  <div style="padding:1rem;">
+    <div class="form-grid" style="max-width:700px;">
+      <label>Scan Name
+        <input type="text" id="scan-name" placeholder="e.g. DC-East Sweep" />
+      </label>
+      <label>Targets (IPs or CIDRs, comma-separated)
+        <input type="text" id="scan-targets" placeholder="10.0.0.0/24, 192.168.1.1" />
+      </label>
+      <label>Method
+        <select id="scan-method" onchange="toggleMethodFields()">
+          <option value="snmp">SNMP (v2c)</option>
+          <option value="ssh">SSH (CDP/LLDP)</option>
+          <option value="ping">Ping Sweep Only</option>
+        </select>
+      </label>
+      <div id="snmp-fields">
+        <label>Community String
+          <input type="text" id="scan-community" value="public" />
+        </label>
+      </div>
+      <div id="ssh-fields" style="display:none;">
+        <label>Username
+          <input type="text" id="scan-username" />
+        </label>
+        <label>Password
+          <input type="password" id="scan-password" />
+        </label>
+        <label>Device Type
+          <select id="scan-device-type">
+            <option value="cisco_ios">Cisco IOS</option>
+            <option value="cisco_nxos">Cisco NX-OS</option>
+            <option value="arista_eos">Arista EOS</option>
+            <option value="juniper_junos">Juniper JunOS</option>
+            <option value="linux">Linux</option>
+          </select>
+        </label>
+      </div>
+      <label>Hop Limit (neighbor crawl depth)
+        <input type="number" id="scan-hoplimit" value="2" min="0" max="5" />
+      </label>
+      <label>Layout
+        <select id="scan-layout">
+          <option value="grid">Grid</option>
+          <option value="radial">Radial</option>
+        </select>
+      </label>
+      <label>Compare with Topology (optional)
+        <select id="scan-topology">
+          <option value="">None — standalone scan</option>
+          {% for t in topologies %}
+          <option value="{{ t.id }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div style="margin-top:1rem;">
+      <button class="btn btn-primary" onclick="launchScan()">Launch Scan</button>
+    </div>
+  </div>
+</section>
+
+<!-- Scan Results -->
+<section class="panel panel-wide">
+  <div class="panel-header">
+    <h2 class="panel-title">Scan History</h2>
+    <button class="btn btn-secondary-sm" onclick="refreshScans()">Refresh</button>
+  </div>
+  <div id="scan-status" style="display:none;padding:0.75rem 1rem;border-bottom:1px solid var(--border);background:var(--bg-highlight);">
+  </div>
+  <table class="data-table" id="scans-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Method</th>
+        <th>Status</th>
+        <th>Devices</th>
+        <th>Nodes</th>
+        <th>Edges</th>
+        <th>Date</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in scans %}
+      <tr id="scan-row-{{ s.id }}">
+        <td>{{ s.name }}</td>
+        <td><span class="badge badge-info">{{ s.method|upper }}</span></td>
+        <td>
+          {% if s.status == 'completed' %}
+            <span class="badge badge-success">Completed</span>
+          {% elif s.status == 'running' %}
+            <span class="badge badge-warning">Running</span>
+          {% elif s.status == 'failed' %}
+            <span class="badge badge-danger">Failed</span>
+          {% else %}
+            <span class="badge">{{ s.status }}</span>
+          {% endif %}
+        </td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+        <td>{{ s.created_at[:16] if s.created_at else '' }}</td>
+        <td>
+          <button class="btn btn-secondary-sm" onclick="viewScan('{{ s.id }}')">View</button>
+          <button class="btn btn-danger-sm" onclick="deleteScan('{{ s.id }}')">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not scans %}
+      <tr><td colspan="8" style="text-align:center;color:var(--text-muted);">No scans yet. Click "+ New Scan" to discover your network.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+<!-- Scan Detail Modal -->
+<div id="scan-detail-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop" onclick="closeScanDetail()"></div>
+  <div class="modal-content" style="max-width:900px;max-height:80vh;overflow-y:auto;">
+    <div class="modal-header">
+      <h3 id="detail-title">Scan Details</h3>
+      <button class="btn btn-secondary-sm" onclick="closeScanDetail()">&times;</button>
+    </div>
+    <div id="detail-body" style="padding:1rem;">Loading...</div>
+    <div class="modal-footer" style="padding:1rem;border-top:1px solid var(--border);">
+      <select id="import-topo-select" style="max-width:250px;">
+        <option value="">Select topology to import into...</option>
+        {% for t in topologies %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-primary" onclick="importToTopology()">Import (Merge)</button>
+      <button class="btn btn-warning" onclick="importToTopology('replace')">Import (Replace)</button>
+      <button class="btn btn-secondary" onclick="runDiff()">Diff vs Topology</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.modal { position:fixed;top:0;left:0;right:0;bottom:0;z-index:1000;display:flex;align-items:center;justify-content:center; }
+.modal-backdrop { position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5); }
+.modal-content { position:relative;background:var(--bg-card);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.3);width:90%; }
+.modal-header { display:flex;justify-content:space-between;align-items:center;padding:1rem;border-bottom:1px solid var(--border); }
+.modal-footer { display:flex;gap:0.5rem;align-items:center; }
+.text-green { color: var(--green, #22c55e); }
+.text-red { color: var(--red, #ef4444); }
+.device-card { border:1px solid var(--border);border-radius:6px;padding:0.75rem;margin:0.5rem 0; }
+.diff-added { background:rgba(34,197,94,0.1);border-left:3px solid #22c55e; }
+.diff-removed { background:rgba(239,68,68,0.1);border-left:3px solid #ef4444; }
+.diff-changed { background:rgba(234,179,8,0.1);border-left:3px solid #eab308; }
+</style>
+
+<script>
+let currentScanId = null;
+
+function showScanForm() { document.getElementById('scan-form').style.display = 'block'; }
+function hideScanForm() { document.getElementById('scan-form').style.display = 'none'; }
+
+function toggleMethodFields() {
+  const m = document.getElementById('scan-method').value;
+  document.getElementById('snmp-fields').style.display = m === 'snmp' ? 'block' : 'none';
+  document.getElementById('ssh-fields').style.display = m === 'ssh' ? 'block' : 'none';
+}
+
+function launchScan() {
+  const targets = document.getElementById('scan-targets').value;
+  if (!targets.trim()) { alert('Enter at least one target IP or CIDR'); return; }
+  const method = document.getElementById('scan-method').value;
+  const body = {
+    name: document.getElementById('scan-name').value || undefined,
+    targets: targets,
+    method: method,
+    community: document.getElementById('scan-community').value,
+    username: document.getElementById('scan-username').value,
+    password: document.getElementById('scan-password').value,
+    device_type: document.getElementById('scan-device-type').value,
+    hop_limit: parseInt(document.getElementById('scan-hoplimit').value) || 2,
+    layout: document.getElementById('scan-layout').value,
+    topology_id: document.getElementById('scan-topology').value || undefined,
+  };
+  const status = document.getElementById('scan-status');
+  status.style.display = 'block';
+  status.innerHTML = '<span class="badge badge-warning">Scanning...</span> Discovery in progress. This may take a moment.';
+  fetch('/network/api/discovery/scan', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        status.innerHTML = '<span class="badge badge-danger">Error</span> ' + data.error;
+      } else {
+        status.innerHTML = '<span class="badge badge-success">Complete</span> Discovered ' +
+          (data.stats?.devices_discovered || 0) + ' devices, ' +
+          (data.stats?.nodes_generated || 0) + ' nodes, ' +
+          (data.stats?.edges_generated || 0) + ' edges.';
+        hideScanForm();
+        refreshScans();
+      }
+    })
+    .catch(e => { status.innerHTML = '<span class="badge badge-danger">Error</span> ' + e.message; });
+}
+
+function refreshScans() { location.reload(); }
+
+function viewScan(scanId) {
+  currentScanId = scanId;
+  document.getElementById('scan-detail-modal').style.display = 'flex';
+  document.getElementById('detail-body').innerHTML = 'Loading...';
+  fetch('/network/api/discovery/scans/' + scanId)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { document.getElementById('detail-body').innerHTML = 'Error: ' + data.error; return; }
+      let devices = data.devices_json || [];
+      if (typeof devices === 'string') try { devices = JSON.parse(devices); } catch(e) { devices = []; }
+      let stats = data.stats_json || {};
+      if (typeof stats === 'string') try { stats = JSON.parse(stats); } catch(e) { stats = {}; }
+      document.getElementById('detail-title').textContent = data.name || 'Scan Details';
+      let html = '<div class="stats-bar">';
+      html += '<div class="stat-card"><div class="stat-label">Method</div><div class="stat-value">' + (data.method||'').toUpperCase() + '</div></div>';
+      html += '<div class="stat-card"><div class="stat-label">Devices</div><div class="stat-value">' + (stats.devices_discovered||0) + '</div></div>';
+      html += '<div class="stat-card"><div class="stat-label">Nodes</div><div class="stat-value">' + (stats.nodes_generated||0) + '</div></div>';
+      html += '<div class="stat-card"><div class="stat-label">Edges</div><div class="stat-value">' + (stats.edges_generated||0) + '</div></div>';
+      html += '</div>';
+      html += '<h4 style="margin:1rem 0 0.5rem;">Discovered Devices</h4>';
+      for (const dev of devices) {
+        html += '<div class="device-card">';
+        html += '<strong>' + (dev.hostname||dev.ip||'Unknown') + '</strong>';
+        html += ' <span class="badge badge-info">' + (dev.device_type||'server') + '</span>';
+        html += ' <span class="badge">' + (dev.vendor||'') + '</span>';
+        html += ' <span style="color:var(--text-muted);">' + (dev.ip||'') + '</span>';
+        if (dev.interfaces && dev.interfaces.length) {
+          html += ' | ' + dev.interfaces.length + ' interfaces';
+        }
+        if (dev.neighbors && dev.neighbors.length) {
+          html += ' | ' + dev.neighbors.length + ' neighbors';
+          html += '<div style="margin-top:0.25rem;font-size:0.85em;color:var(--text-muted);">Neighbors: ';
+          html += dev.neighbors.map(n => n.neighbor + ' (' + n.protocol + ')').join(', ');
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      document.getElementById('detail-body').innerHTML = html;
+    });
+}
+
+function closeScanDetail() { document.getElementById('scan-detail-modal').style.display = 'none'; }
+
+function deleteScan(scanId) {
+  if (!confirm('Delete this scan?')) return;
+  fetch('/network/api/discovery/scans/' + scanId, {method:'DELETE'})
+    .then(r => r.json())
+    .then(() => {
+      const row = document.getElementById('scan-row-' + scanId);
+      if (row) row.remove();
+    });
+}
+
+function importToTopology(mode) {
+  mode = mode || 'merge';
+  const topoId = document.getElementById('import-topo-select').value;
+  if (!topoId) { alert('Select a topology to import into'); return; }
+  if (!currentScanId) return;
+  fetch('/network/api/discovery/scans/' + currentScanId + '/import/' + topoId, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({mode: mode})
+  }).then(r => r.json()).then(data => {
+    if (data.error) { alert('Error: ' + data.error); return; }
+    alert('Imported ' + data.nodes + ' nodes, ' + data.edges + ' edges (' + mode + ')');
+    closeScanDetail();
+  });
+}
+
+function runDiff() {
+  const topoId = document.getElementById('import-topo-select').value;
+  if (!topoId) { alert('Select a topology to diff against'); return; }
+  if (!currentScanId) return;
+  fetch('/network/api/discovery/diff', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({scan_id: currentScanId, topology_id: topoId})
+  }).then(r => r.json()).then(data => {
+    if (data.error) { alert('Error: ' + data.error); return; }
+    const s = data.summary;
+    let html = '<h4>As-Designed vs As-Built Diff</h4>';
+    html += '<div class="stats-bar">';
+    html += '<div class="stat-card"><div class="stat-label">Drift Score</div><div class="stat-value">' + s.drift_score + '%</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">Matched</div><div class="stat-value">' + s.matched + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">Designed Only</div><div class="stat-value">' + s.designed_only + '</div></div>';
+    html += '<div class="stat-card"><div class="stat-label">Discovered Only</div><div class="stat-value">' + s.discovered_only + '</div></div>';
+    html += '</div>';
+    if (data.designed_only && data.designed_only.length) {
+      html += '<h5>In Design, Not Found Live:</h5>';
+      for (const n of data.designed_only) {
+        html += '<div class="device-card diff-removed">' + (n.label||n.id) + ' <span class="badge">' + (n.type||'') + '</span></div>';
+      }
+    }
+    if (data.discovered_only && data.discovered_only.length) {
+      html += '<h5>Found Live, Not In Design:</h5>';
+      for (const n of data.discovered_only) {
+        html += '<div class="device-card diff-added">' + (n.label||n.id) + ' <span class="badge">' + (n.type||'') + '</span></div>';
+      }
+    }
+    if (data.matched) {
+      const drifted = data.matched.filter(m => m.diffs && m.diffs.length);
+      if (drifted.length) {
+        html += '<h5>Matched With Drift:</h5>';
+        for (const m of drifted) {
+          html += '<div class="device-card diff-changed">' + (m.designed.label||'') + ': ' + m.diffs.join('; ') + '</div>';
+        }
+      }
+    }
+    if (data.edge_mismatches && data.edge_mismatches.length) {
+      html += '<h5>Edge Mismatches:</h5>';
+      for (const e of data.edge_mismatches) {
+        const cls = e.type === 'designed_only' ? 'diff-removed' : 'diff-added';
+        html += '<div class="device-card ' + cls + '">' + e.type.replace('_',' ') + ': ' + e.endpoints.join(' — ') + '</div>';
+      }
+    }
+    document.getElementById('detail-body').innerHTML = html;
+  });
+}
+</script>
+{% endblock %}

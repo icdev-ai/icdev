@@ -1,0 +1,105 @@
+{% extends "network/base.html" %}
+{% block title %}{{ project.name }} — Presentation{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ project.name }}</h1>
+    <p class="page-subtitle">Business Case & Review Presentation</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="printPresentation()">Print / Export</button>
+    <a href="/network/projects/{{ project.id }}" class="btn btn-secondary">Back to Project</a>
+  </div>
+</div>
+
+<div id="presentation-content" style="max-width:900px;">
+  <div class="pres-loading" id="pres-loading">Loading presentation data...</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadPresentation() {
+  const r = await fetch(NC_BASE + '/api/projects/{{ project.id }}/presentation');
+  const d = await r.json();
+  const el = document.getElementById('presentation-content');
+  const s = d.executive_summary || {};
+  const roi = s.roi || {};
+  el.innerHTML = `
+    <section class="panel panel-wide pres-section">
+      <div class="panel-header"><h2 class="panel-title">Executive Summary</h2></div>
+      <div style="padding:16px;">
+        <p><strong>Project:</strong> ${d.title} &mdash; <span class="badge">${d.status}</span></p>
+        <p><strong>Owner:</strong> ${d.owner || '&mdash;'}</p>
+        ${d.description ? `<p>${d.description}</p>` : ''}
+        <div class="stats-bar" style="margin-top:12px;">
+          <div class="stat-card"><div class="stat-value">${s.topology_count || 0}</div><div class="stat-label">Topologies</div></div>
+          <div class="stat-card"><div class="stat-value">${s.total_devices || 0}</div><div class="stat-label">Devices</div></div>
+          <div class="stat-card"><div class="stat-value">${s.compliance_pct != null ? s.compliance_pct + '%' : '&mdash;'}</div><div class="stat-label">Compliance</div></div>
+          <div class="stat-card"><div class="stat-value">${s.cat1_findings || 0}</div><div class="stat-label">CAT1 Findings</div></div>
+          <div class="stat-card"><div class="stat-value">$${(s.total_capex||0).toLocaleString()}</div><div class="stat-label">Est. CapEx</div></div>
+          <div class="stat-card"><div class="stat-value">$${(s.monthly_circuit_cost||0).toLocaleString()}/mo</div><div class="stat-label">Circuit OpEx</div></div>
+        </div>
+      </div>
+    </section>
+
+    ${roi.capex ? `
+    <section class="panel panel-wide pres-section">
+      <div class="panel-header"><h2 class="panel-title">ROI & Business Case</h2></div>
+      <div style="padding:16px;">
+        <div class="roi-summary" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
+          <div><span class="roi-label">CapEx:</span> $${(roi.capex||0).toLocaleString()}</div>
+          <div><span class="roi-label">Annual OpEx:</span> $${(roi.opex_annual||0).toLocaleString()}</div>
+          <div><span class="roi-label">Annual Savings:</span> $${(roi.savings_annual||0).toLocaleString()}</div>
+          <div><span class="roi-label">Payback:</span> ${roi.payback_months||0} months</div>
+          <div><span class="roi-label">5-Year NPV:</span> <span class="${(roi.npv_5yr||0) > 0 ? 'text-success' : 'text-danger'}">$${(roi.npv_5yr||0).toLocaleString()}</span></div>
+        </div>
+        ${s.justification ? `<p style="margin-top:12px;"><strong>Justification:</strong> ${s.justification}</p>` : ''}
+        ${s.alternatives ? `<p><strong>Alternatives Considered:</strong> ${s.alternatives}</p>` : ''}
+      </div>
+    </section>` : ''}
+
+    ${d.topologies && d.topologies.length ? `
+    <section class="panel panel-wide pres-section">
+      <div class="panel-header"><h2 class="panel-title">Topology Overview</h2></div>
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Classification</th><th>Nodes</th><th>Links</th></tr></thead>
+        <tbody>${d.topologies.map(t => `<tr><td>${t.name}</td><td><span class="badge">${t.classification}</span></td><td>${t.node_count}</td><td>${t.edge_count}</td></tr>`).join('')}</tbody>
+      </table>
+    </section>` : ''}
+
+    ${d.circuits && d.circuits.length ? `
+    <section class="panel panel-wide pres-section">
+      <div class="panel-header"><h2 class="panel-title">Circuits</h2></div>
+      <table class="data-table">
+        <thead><tr><th>ID</th><th>Carrier</th><th>Type</th><th>BW</th><th>Status</th><th>$/mo</th></tr></thead>
+        <tbody>${d.circuits.map(c => `<tr><td>${c.circuit_id}</td><td>${c.carrier||''}</td><td>${c.circuit_type||''}</td><td>${c.bandwidth||''}</td><td>${c.install_status||''}</td><td>$${c.monthly_cost_usd||0}</td></tr>`).join('')}</tbody>
+      </table>
+    </section>` : ''}
+
+    ${d.milestones && d.milestones.length ? `
+    <section class="panel panel-wide pres-section">
+      <div class="panel-header"><h2 class="panel-title">Milestones</h2></div>
+      <table class="data-table">
+        <thead><tr><th>Title</th><th>Due Date</th><th>Status</th></tr></thead>
+        <tbody>${d.milestones.map(m => `<tr><td>${m.title}</td><td>${m.due_date||'&mdash;'}</td><td><span class="badge">${m.status}</span></td></tr>`).join('')}</tbody>
+      </table>
+    </section>` : ''}
+
+    ${d.review_history && d.review_history.length ? `
+    <section class="panel panel-wide pres-section">
+      <div class="panel-header"><h2 class="panel-title">Review History</h2></div>
+      <table class="data-table">
+        <thead><tr><th>Board</th><th>Phase</th><th>Decision</th><th>Notes</th></tr></thead>
+        <tbody>${d.review_history.map(r => `<tr><td>${r.board}</td><td>${r.phase}</td><td><span class="health-pill ${r.decision==='approved'?'pill-green':r.decision==='rejected'?'pill-red':'pill-yellow'}">${r.decision||r.status}</span></td><td>${r.decision_notes||''}</td></tr>`).join('')}</tbody>
+      </table>
+    </section>` : ''}
+
+    <div style="text-align:center;color:var(--text-dim);font-size:11px;margin-top:20px;">
+      Generated ${d.generated_at ? d.generated_at.substring(0,16) : ''} &mdash; ICDEV&trade; Network Design Canvas
+    </div>
+  `;
+}
+loadPresentation();
+function printPresentation() { window.print(); }
+</script>
+{% endblock %}

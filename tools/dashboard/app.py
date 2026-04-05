@@ -1026,8 +1026,13 @@ def create_app() -> Flask:
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
-            app.register_blueprint(_cbp)
-            app.logger.info("Canvas %s registered at %s/", _ck.upper(), _CANVAS_ROUTES.get(_ck, ""))
+            prefix = _CANVAS_ROUTES.get(_ck, f"/{_ck}")
+            # Set url_prefix if not already set on the blueprint
+            if not _cbp.url_prefix:
+                app.register_blueprint(_cbp, url_prefix=prefix)
+            else:
+                app.register_blueprint(_cbp)
+            app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
 

@@ -1,0 +1,47 @@
+<!-- CUI // SP-CTI — Data Design Canvas Assessment History -->
+{% extends "base.html" %}
+{% block title %}Assessments — Data Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .assess-hero { padding: 20px 30px; }
+  .assess-hero h1 { font-size: 22px; margin: 0 0 4px; }
+  .assess-hero p { color: #7a8cb0; font-size: 13px; margin: 0; }
+  .assess-table { width: calc(100% - 60px); margin: 0 30px; border-collapse: collapse; }
+  .assess-table th { text-align: left; padding: 10px 12px; font-size: 11px; color: #7a8cb0; border-bottom: 1px solid #1e3a6e; text-transform: uppercase; }
+  .assess-table td { padding: 10px 12px; font-size: 12px; border-bottom: 1px solid #0f1e36; }
+  .assess-table tr:hover { background: #16213e; }
+  .score-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 12px; }
+  .score-high { background: #1b5e20; color: #4caf50; }
+  .score-med { background: #e65100; color: #ff9800; }
+  .score-low { background: #b71c1c; color: #ef5350; }
+  .back-btn { display: inline-block; padding: 6px 16px; background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; border-radius: 4px; text-decoration: none; font-size: 12px; margin-top: 12px; }
+  .accent { color: #ff9800; }
+</style>
+<div class="assess-hero">
+  <h1 class="accent">Assessment History</h1>
+  <p>Compliance assessment results across all data designs.</p>
+  <a href="/data/" class="back-btn">Back to Dashboard</a>
+</div>
+<table class="assess-table">
+  <thead>
+    <tr>
+      <th>Design</th>
+      <th>Score</th>
+      <th>Type</th>
+      <th>Date</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in assessments %}
+    <tr>
+      <td>{{ a.design_name or a.design_id }}</td>
+      <td><span class="score-badge {% if a.score >= 80 %}score-high{% elif a.score >= 50 %}score-med{% else %}score-low{% endif %}">{{ a.score|round(0)|int }}/100</span></td>
+      <td>{{ a.assessment_type or 'compliance' }}</td>
+      <td>{{ a.created_at[:16] if a.created_at else '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="color:#5a6e8c;">No assessments yet. Open a design and click Assess.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
