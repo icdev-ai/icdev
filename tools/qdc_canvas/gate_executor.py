@@ -495,6 +495,83 @@ def execute_pytest_coverage(project_dir: str | None = None) -> dict:
     }
 
 
+def execute_diagram_quality(image_path: str | None = None) -> dict:
+    """Execute CSP-agnostic infrastructure diagram validation.
+
+    Gate: PL-2 (System Security and Privacy Plans — Architecture Diagrams)
+    Dimension: compliance_readiness
+
+    Validates infrastructure diagrams for ATO readiness using vision LLM.
+    Checks: HA, network segmentation, encryption at trust boundaries,
+    logging/monitoring, IAM, management plane separation, data tier isolation.
+    Works with any CSP icons (AWS, Azure, GCP, OCI, IBM, or generic).
+    """
+    if not image_path:
+        # Look for diagrams in standard screenshot directory
+        screenshot_dir = ICDEV_ROOT / "playwright" / "screenshots"
+        candidates = []
+        if screenshot_dir.exists():
+            for ext in ("*.png", "*.jpg", "*.jpeg"):
+                candidates.extend(screenshot_dir.glob(ext))
+        # Filter for infra/architecture related filenames
+        infra_keywords = ("infra", "architecture", "network", "boundary", "vpc", "diagram")
+        infra_files = [f for f in candidates if any(k in f.stem.lower() for k in infra_keywords)]
+        if not infra_files:
+            return {
+                "gate_id": "diagram_quality",
+                "sa11_control": "PL-2",
+                "dimension": "compliance_readiness",
+                "status": "skip",
+                "score": 0.0,
+                "error": "No infrastructure diagram found. Provide --image-path or place diagrams in playwright/screenshots/",
+                "executed_at": _utcnow(),
+            }
+        image_path = str(infra_files[0])
+
+    # Use the diagram_validator tool via subprocess for isolation
+    result = _run_tool([
+        sys.executable,
+        str(ICDEV_ROOT / "tools" / "compliance" / "diagram_validator.py"),
+        "--image", image_path,
+        "--type", "infrastructure",
+        "--json",
+    ], timeout=180)
+
+    validations = []
+    passed_count = 0
+    total_count = 0
+
+    if result["stdout"]:
+        parsed = _parse_json_output(result["stdout"])
+        if isinstance(parsed, dict):
+            validations = parsed.get("validations", [])
+            for v in validations:
+                total_count += 1
+                if v.get("passed") is True:
+                    passed_count += 1
+
+    if total_count == 0:
+        status = "skip"
+        score = 0.0
+    else:
+        score = round(100.0 * passed_count / total_count, 1)
+        status = "pass" if score >= 75.0 else "fail"
+
+    return {
+        "gate_id": "diagram_quality",
+        "sa11_control": "PL-2",
+        "dimension": "compliance_readiness",
+        "status": status,
+        "score": score,
+        "tool": "diagram_validator",
+        "image_path": image_path,
+        "checks_passed": passed_count,
+        "checks_total": total_count,
+        "validations": validations[:20],
+        "executed_at": _utcnow(),
+    }
+
+
 # ── Orchestration ─────────────────────────────────────────────────────────────
 
 # Gate registry: gate_id → executor function
@@ -508,6 +585,7 @@ GATE_EXECUTORS: dict[str, Any] = {
     "deprecation": execute_pyupgrade_deprecation,
     "dependency_audit": execute_pip_audit,
     "test_coverage": execute_pytest_coverage,
+    "diagram_quality": execute_diagram_quality,
 }
 
 
@@ -527,7 +605,7 @@ def execute_gate(gate_id: str, project_dir: str | None = None) -> dict:
         }
 
     try:
-        if gate_id in ("dependency_audit",):
+        if gate_id in ("dependency_audit", "diagram_quality"):
             return executor()
         return executor(project_dir)
     except Exception as e:
@@ -564,6 +642,7 @@ def check_tool_availability() -> dict:
         "pyupgrade": _tool_available("pyupgrade"),
         "pip_audit": _tool_available("pip_audit"),
         "pytest": _tool_available("pytest"),
+        "diagram_validator": (ICDEV_ROOT / "tools" / "compliance" / "diagram_validator.py").exists(),
     }
     return {
         "tools": tools,
