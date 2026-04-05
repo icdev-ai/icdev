@@ -97,7 +97,7 @@
         </div>
       </div>
       <button class="tb-btn" onclick="toggleTopologyLegend()" title="Topology Legend — show/hide legend of all node types and protocols on the canvas">&#x1f5fa; Legend</button>
-      <button class="tb-btn" onclick="window.print()" title="Print — open browser print dialog (landscape recommended)">&#x1f5a8; Print</button>
+      <button class="tb-btn" onclick="exportCanvasPDF()" title="Export PDF — opens print-ready canvas in new tab for Print to PDF">&#x1f4c4; Export PDF</button>
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — toggle to highlight protected (green) vs unprotected (red dashed) links">🔒 FIPS <span id="fips-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
       <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
@@ -2223,6 +2223,23 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/canvas-tooltips.js') }}"></script>
+<script>
+// Build NODE_DESCS from palette item title attributes (already have descriptions)
+window.NODE_DESCS = {};
+document.querySelectorAll('.palette-item[data-type]').forEach(function(el) {
+  var t = el.getAttribute('data-type');
+  var d = el.getAttribute('title');
+  if (t && d) window.NODE_DESCS[t] = d;
+});
+// Also fetch cloud object descriptions from API
+fetch('/api/network/cloud-objects').then(function(r) { return r.json(); }).then(function(data) {
+  Object.values(data).forEach(function(group) {
+    (Array.isArray(group) ? group : Object.values(group).flat()).forEach(function(obj) {
+      if (obj && obj.type && obj.desc) window.NODE_DESCS[obj.type] = obj.desc;
+    });
+  });
+}).catch(function() {});
+</script>
 <script src="{{ url_for('static', filename='js/network-canvas.js') }}"></script>
 <script src="{{ url_for('static', filename='js/network-simulation.js') }}"></script>
 <script>

@@ -24,6 +24,7 @@
       <button class="tb-btn" onclick="saveDesign()" title="Save (Ctrl+S)">&#x1f4be; Save</button>
       <button class="tb-btn" onclick="undo()" title="Undo">&#x21a9; Undo</button>
       <button class="tb-btn" onclick="redo()" title="Redo">&#x21aa; Redo</button>
+      <button class="tb-btn" onclick="exportCanvasPDF()" title="Export PDF">&#x1f4c4; Export PDF</button>
     </div>
     <div class="tb-group">
       <button class="tb-btn" onclick="runStrideAnalysis()" title="STRIDE Threat Analysis" style="color:#e94560;">&#x1f6e1; STRIDE</button>
@@ -264,5 +265,42 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/canvas-tooltips.js') }}"></script>
+<script>
+window.NODE_DESCS = {
+  'asset-server':    'Server asset — physical or virtual compute resource within the authorization boundary',
+  'asset-db':        'Database asset — relational, NoSQL, or data warehouse holding structured data',
+  'asset-app':       'Application asset — software system or service (web app, API, microservice)',
+  'asset-endpoint':  'Endpoint asset — user workstation, laptop, or mobile device',
+  'asset-network':   'Network device — router, switch, load balancer, or network appliance',
+  'asset-storage':   'Storage asset — SAN, NAS, object storage, or file share',
+  'asset-cloud':     'Cloud service — IaaS/PaaS/SaaS resource hosted by a CSP',
+  'asset-iot':       'IoT/OT device — sensor, controller, SCADA, or embedded system',
+  'ctrl-access':     'Access control — authentication, authorization, RBAC, MFA, SSO (AC family)',
+  'ctrl-audit':      'Audit & accountability — logging, SIEM integration, log retention (AU family)',
+  'ctrl-network':    'Network security control — firewall rules, ACLs, segmentation, IDS/IPS (SC-7)',
+  'ctrl-encrypt':    'Encryption control — data at rest/in transit, TLS, FIPS 140-2/3 validated (SC-8, SC-28)',
+  'ctrl-identity':   'Identity management — IAM, directory services, PKI, certificate management (IA family)',
+  'ctrl-patch':      'Patch management — vulnerability remediation, update cadence, STIG compliance (SI family)',
+  'ctrl-backup':     'Backup & recovery — RPO/RTO, disaster recovery, continuity of operations (CP family)',
+  'ctrl-monitor':    'Continuous monitoring — vulnerability scanning, compliance checking, CSPM (CA family)',
+  'ctrl-config':     'Configuration management — baseline, change control, hardening, STIG (CM family)',
+  'ctrl-incident':   'Incident response — detection, containment, eradication, recovery plan (IR family)',
+  'ctrl-physical':   'Physical security — facility access, environmental controls, media protection (PE family)',
+  'threat-external': 'External threat actor — nation-state, cybercriminal, hacktivist, or competitor',
+  'threat-internal': 'Insider threat — malicious or negligent employee, contractor, or partner',
+  'threat-malware':  'Malware threat — ransomware, trojan, worm, rootkit, or spyware',
+  'threat-dos':      'Denial of service — DDoS, resource exhaustion, or application-layer flood',
+  'threat-exploit':  'Exploit — vulnerability exploitation, zero-day, privilege escalation',
+  'threat-social':   'Social engineering — phishing, spear-phishing, pretexting, baiting',
+  'threat-supply':   'Supply chain threat — compromised vendor, dependency, or update mechanism',
+  'threat-data':     'Data exfiltration — unauthorized data transfer, leakage, or theft',
+  'boundary-auth':   'Authorization boundary — outer boundary of the system under ATO assessment',
+  'boundary-network':'Network boundary — logical or physical network segmentation zone',
+  'boundary-data':   'Data boundary — classification zone for CUI, PII, PHI, or sensitive data',
+  'boundary-trust':  'Trust boundary — demarcation between different trust/privilege levels',
+  'boundary-cloud':  'Cloud boundary — CSP responsibility vs customer responsibility (shared model)',
+  'boundary-enclave':'Security enclave — isolated, hardened environment (SIPR, JWICS, SCIFnet)',
+};
+</script>
 <script src="{{ url_for('static', filename='js/security-canvas.js') }}"></script>
 {% endblock %}

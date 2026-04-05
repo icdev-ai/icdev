@@ -87,6 +87,7 @@
       <button onclick="canvasSave()" title="Save (Ctrl+S)">Save</button>
       <button class="secondary" onclick="canvasUndo()" title="Undo (Ctrl+Z)">&#8617;</button>
       <button class="secondary" onclick="canvasRedo()" title="Redo (Ctrl+Y)">&#8618;</button>
+      <button class="secondary" onclick="exportCanvasPDF()" title="Export PDF">&#x1f4c4; PDF</button>
       <!-- Zoom -->
       <button class="secondary" onclick="canvasZoomIn()" title="Zoom In">+</button>
       <button class="secondary" onclick="canvasZoomOut()" title="Zoom Out">&minus;</button>
@@ -144,6 +145,11 @@ if (typeof window.CANVAS_CONFIG.graphJson === 'string') {
   try { window.CANVAS_CONFIG.graphJson = JSON.parse(window.CANVAS_CONFIG.graphJson); } catch(e) {}
 }
 window.CANVAS_CONFIG.graphJson = JSON.stringify(window.CANVAS_CONFIG.graphJson);
+window.NODE_DESCS = {
+  {% for catname, catdata in objects.items() %}{% if catdata is mapping %}{% for csp, items in catdata.items() %}{% for obj in items %}'{{ obj.type }}': {{ obj.desc | tojson }},
+  {% endfor %}{% endfor %}{% else %}{% for obj in catdata %}'{{ obj.type }}': {{ obj.desc | tojson }},
+  {% endfor %}{% endif %}{% endfor %}
+};
 </script>
 <script src="/static/js/canvas-tooltips.js"></script>
 <script src="/static/js/design-canvas.js"></script>
