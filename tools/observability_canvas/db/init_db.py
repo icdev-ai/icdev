@@ -126,6 +126,32 @@ CREATE TABLE IF NOT EXISTS od_collab_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_od_collab_design ON od_collab_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS odc_sops (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    sop_type            TEXT NOT NULL DEFAULT 'custom',
+    description         TEXT DEFAULT '',
+    purpose             TEXT DEFAULT '',
+    scope               TEXT DEFAULT '',
+    steps               TEXT DEFAULT '[]',
+    nist_controls       TEXT DEFAULT '[]',
+    owner               TEXT DEFAULT '',
+    reviewer            TEXT DEFAULT '',
+    approval_status     TEXT NOT NULL DEFAULT 'draft'
+                            CHECK (approval_status IN ('draft','pending_review','approved','rejected')),
+    approved_by         TEXT DEFAULT '',
+    approved_at         TEXT DEFAULT '',
+    rejected_reason     TEXT DEFAULT '',
+    version             TEXT DEFAULT '1.0',
+    next_review_date    TEXT DEFAULT '',
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_sops_status ON odc_sops(approval_status);
+CREATE INDEX IF NOT EXISTS idx_odc_sops_type ON odc_sops(sop_type);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -665,6 +691,13 @@ def init_db():
 
     finally:
         conn.close()
+
+    # Seed SOPs (separate connection, uses module's get_connection)
+    try:
+        from tools.observability_canvas.sops import seed_sops
+        seed_sops()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
