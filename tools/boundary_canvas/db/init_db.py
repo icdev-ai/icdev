@@ -157,6 +157,20 @@ CREATE TABLE IF NOT EXISTS bd_alerts (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS bdc_runbooks (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES boundary_designs(id),
+    title           TEXT NOT NULL,
+    trigger_event   TEXT NOT NULL DEFAULT 'boundary_breach',
+    severity        TEXT DEFAULT 'high',
+    description     TEXT DEFAULT '',
+    steps_json      TEXT DEFAULT '[]',
+    owner           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_bd_assessments_design ON bd_assessments(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_isa_tracker_design ON bd_isa_tracker(design_id);
@@ -165,6 +179,8 @@ CREATE INDEX IF NOT EXISTS idx_bd_audit_design ON bd_audit(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_audit_action ON bd_audit(action);
 CREATE INDEX IF NOT EXISTS idx_bd_alerts_design ON bd_alerts(design_id);
 CREATE INDEX IF NOT EXISTS idx_bd_alerts_acknowledged ON bd_alerts(acknowledged);
+CREATE INDEX IF NOT EXISTS idx_bdc_runbooks_design ON bdc_runbooks(design_id);
+CREATE INDEX IF NOT EXISTS idx_bdc_runbooks_trigger ON bdc_runbooks(trigger_event);
 """
 
 
@@ -1450,6 +1466,97 @@ TEMPLATES = [
 ]
 
 
+# ── Seed Runbooks ─────────────────────────────────────────────────────────────
+BDC_SEED_RUNBOOKS = [
+    {
+        "id": "rb-boundary-breach",
+        "title": "Boundary Breach Detected",
+        "trigger_event": "boundary_breach",
+        "severity": "critical",
+        "description": (
+            "Unauthorized traffic has been detected crossing an ATO boundary without a valid ISA. "
+            "This runbook governs the initial triage, containment, and ISSO notification steps."
+        ),
+        "steps_json": json.dumps([
+            {"order": 1, "action": "Identify source and destination of unauthorized traffic via SIEM query.", "owner": "SOC Analyst"},
+            {"order": 2, "action": "Immediately isolate the affected interconnection at the boundary firewall.", "owner": "Network Engineer"},
+            {"order": 3, "action": "Notify ISSO and ISSM within 1 hour per NIST IR-6 reporting requirement.", "owner": "SOC Lead"},
+            {"order": 4, "action": "Capture packet logs and preserve evidence per AU-9 audit integrity.", "owner": "SOC Analyst"},
+            {"order": 5, "action": "Open incident ticket and assign P1 severity in the ITSM system.", "owner": "ISSO"},
+            {"order": 6, "action": "Perform root-cause analysis — determine if ISA was missing, expired, or misconfigured.", "owner": "Security Engineer"},
+            {"order": 7, "action": "Draft SCAR (Security Corrective Action Report) and update POAM if required.", "owner": "ISSO"},
+            {"order": 8, "action": "Restore connectivity only after ISSO approval and CA-3 authorization update.", "owner": "Change Manager"},
+        ]),
+        "owner": "ISSO",
+        "classification": "CUI // SP-CTI",
+    },
+    {
+        "id": "rb-isa-expiry",
+        "title": "ISA Expiry Response",
+        "trigger_event": "isa_expiry",
+        "severity": "high",
+        "description": (
+            "An Interconnection Security Agreement (ISA) has expired or will expire within 30 days. "
+            "This runbook governs renewal, emergency extension, or graceful termination procedures."
+        ),
+        "steps_json": json.dumps([
+            {"order": 1, "action": "Identify all affected interconnections linked to the expiring ISA in the ISA Tracker.", "owner": "ISSO"},
+            {"order": 2, "action": "Contact the interconnection owner and counterpart ISSO at the remote system.", "owner": "ISSO"},
+            {"order": 3, "action": "Determine if renewal is feasible — initiate ISA renewal package (updated ATO letters, PPS matrix, MOU).", "owner": "Security Engineer"},
+            {"order": 4, "action": "If renewal is not feasible within 7 days, request emergency extension via AO approval.", "owner": "ISSO"},
+            {"order": 5, "action": "If no extension approved, schedule graceful termination — coordinate with operations on cutover.", "owner": "Change Manager"},
+            {"order": 6, "action": "Update boundary design canvas to reflect ISA status change.", "owner": "ISSO"},
+            {"order": 7, "action": "Verify SIEM alert rules are in place for post-termination traffic detection.", "owner": "SOC Analyst"},
+        ]),
+        "owner": "ISSO",
+        "classification": "CUI // SP-CTI",
+    },
+    {
+        "id": "rb-unauthorized-interconnection",
+        "title": "Unauthorized Interconnection Found",
+        "trigger_event": "unauthorized_interconnection",
+        "severity": "critical",
+        "description": (
+            "A system-to-system connection has been discovered that lacks an approved ISA or ATO authorization. "
+            "This is a CAT1 BDC-ISA-001 violation requiring immediate remediation."
+        ),
+        "steps_json": json.dumps([
+            {"order": 1, "action": "Confirm the interconnection is unauthorized by checking ISA Tracker and boundary design.", "owner": "SOC Analyst"},
+            {"order": 2, "action": "Block traffic at the perimeter firewall immediately — document the block rule.", "owner": "Network Engineer"},
+            {"order": 3, "action": "Identify the system owner and business justification for the undocumented connection.", "owner": "ISSO"},
+            {"order": 4, "action": "Assess data classification and potential data exfiltration risk.", "owner": "Security Engineer"},
+            {"order": 5, "action": "If legitimate need exists, begin emergency ISA drafting process — escalate to AO for 72-hour interim approval.", "owner": "ISSO"},
+            {"order": 6, "action": "If no legitimate need, permanently terminate the connection and document in POAM.", "owner": "ISSO"},
+            {"order": 7, "action": "Update boundary design canvas and run BDC compliance assessment to verify CAT1 is cleared.", "owner": "Security Engineer"},
+            {"order": 8, "action": "Submit incident report to leadership and update supply chain risk register if external system involved.", "owner": "ISSO"},
+        ]),
+        "owner": "ISSO",
+        "classification": "CUI // SP-CTI",
+    },
+    {
+        "id": "rb-pps-violation",
+        "title": "PPS Matrix Violation",
+        "trigger_event": "pps_violation",
+        "severity": "high",
+        "description": (
+            "Traffic has been detected on a port, protocol, or service not listed in the approved "
+            "PPS matrix for an active ISA. This is a BDC-CTL-004 violation (CM-7 non-compliance)."
+        ),
+        "steps_json": json.dumps([
+            {"order": 1, "action": "Query firewall and SIEM logs to identify the specific port/protocol/service in violation.", "owner": "SOC Analyst"},
+            {"order": 2, "action": "Cross-reference against the approved PPS matrix for the affected ISA.", "owner": "Security Engineer"},
+            {"order": 3, "action": "Block the unauthorized port/protocol immediately and create a change record.", "owner": "Network Engineer"},
+            {"order": 4, "action": "Determine if the traffic was malicious (exploit attempt) or misconfiguration.", "owner": "SOC Lead"},
+            {"order": 5, "action": "If misconfiguration: update PPS matrix in ISA and obtain AO approval for the change.", "owner": "ISSO"},
+            {"order": 6, "action": "If malicious: escalate to incident response and initiate boundary breach runbook.", "owner": "SOC Lead"},
+            {"order": 7, "action": "Regenerate PPS matrix in BDC and re-run compliance assessment to verify BDC-CTL-004 is cleared.", "owner": "Security Engineer"},
+        ]),
+        "owner": "Network Engineer",
+        "classification": "CUI // SP-CTI",
+    },
+]
+
+
 def init_db():
     """Initialize the boundary_canvas database schema and seed templates."""
     conn = get_connection()
@@ -1551,6 +1658,35 @@ def init_db():
             print(f"[init_db] BDC seeded {snp_added} new snippets (total: {snp_count + snp_added}).")
         else:
             print(f"[init_db] BDC all {snp_count} snippets up to date.")
+
+        # ── Seed runbooks ──────────────────────────────────────────────────
+        cur.execute("SELECT COUNT(*) FROM bdc_runbooks")
+        rb_count = cur.fetchone()[0]
+        rb_added = 0
+        for rb in BDC_SEED_RUNBOOKS:
+            cur.execute("SELECT 1 FROM bdc_runbooks WHERE id=?", (rb["id"],))
+            if not cur.fetchone():
+                conn.execute(
+                    "INSERT INTO bdc_runbooks "
+                    "(id, title, trigger_event, severity, description, steps_json, owner, classification) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        rb["id"],
+                        rb["title"],
+                        rb["trigger_event"],
+                        rb["severity"],
+                        rb["description"],
+                        rb["steps_json"],
+                        rb["owner"],
+                        rb["classification"],
+                    ),
+                )
+                rb_added += 1
+        if rb_added:
+            conn.commit()
+            print(f"[init_db] BDC seeded {rb_added} new runbooks (total: {rb_count + rb_added}).")
+        else:
+            print(f"[init_db] BDC all {rb_count} runbooks up to date.")
 
     finally:
         conn.close()
