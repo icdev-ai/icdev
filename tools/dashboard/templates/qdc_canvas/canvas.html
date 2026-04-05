@@ -16,21 +16,35 @@
         <input type="text" id="palette-search" placeholder="Search nodes..."
                style="width:100%;padding:4px 8px;background:#16213e;border:1px solid #1e3a6e;border-radius:4px;color:#eaeaea;font-size:12px;box-sizing:border-box;" />
       </div>
+      {% set category_colors = {
+        'quality_gates': '#e94560',
+        'quality_sources': '#27ae60',
+        'quality_consumers': '#f39c12',
+        'cross_canvas': '#9c27b0',
+        'compliance_targets': '#2196f3'
+      } %}
+      {% set category_labels = {
+        'quality_gates': 'Quality Gates',
+        'quality_sources': 'Data Sources',
+        'quality_consumers': 'Consumers & Reports',
+        'cross_canvas': 'Cross-Canvas Links',
+        'compliance_targets': 'Compliance Targets'
+      } %}
       {% for category, items in objects.items() if objects %}
       <div class="dc-palette-group" style="margin-bottom:6px;">
         <div class="dc-palette-header" onclick="togglePaletteGroup(this)"
-             style="padding:6px 8px;background:#16213e;border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#2196f3;font-weight:600;">
-          <span>{{ category }}</span>
+             style="padding:6px 8px;background:#16213e;border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:{{ category_colors.get(category, '#2196f3') }};font-weight:600;">
+          <span>{{ category_labels.get(category, category|replace('_', ' ')|title) }}</span>
           <span class="dc-chevron" style="transition:transform 0.2s;">&#9660;</span>
         </div>
         <div class="dc-palette-items" style="display:none;padding:4px 0;">
           {% for item in items %}
           <div class="dc-palette-item" draggable="true"
-               data-node-type="{{ item.type }}" data-category="{{ category }}"
-               style="padding:4px 8px;margin:2px 0;cursor:grab;font-size:11px;color:#eaeaea;border-radius:3px;display:flex;align-items:center;gap:6px;"
-               onmouseenter="this.style.background='#1e3a6e'" onmouseleave="this.style.background='transparent'"
-               title="{{ item.description or '' }}">
-            <span style="color:{{ item.color or '#2196f3' }};font-size:14px;">{{ item.icon or '&#9632;' }}</span>
+               data-node-type="{{ item.type }}" data-label="{{ item.label }}" data-category="{{ category }}"
+               style="padding:5px 8px;margin:2px 0;cursor:grab;font-size:11px;color:#eaeaea;border-radius:3px;display:flex;align-items:center;gap:6px;border:1px solid transparent;"
+               onmouseenter="this.style.background='#1e3a6e';this.style.borderColor='{{ category_colors.get(category, '#2196f3') }}'" onmouseleave="this.style.background='transparent';this.style.borderColor='transparent'"
+               title="{{ node_descs.get(item.type, '') }}">
+            <span style="color:{{ category_colors.get(category, '#2196f3') }};font-size:8px;">&#9632;</span>
             <span>{{ item.label }}</span>
           </div>
           {% endfor %}
@@ -456,10 +470,20 @@
     fetch(API_BASE + '/snippets/' + snippetId)
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        if (d.status === 'ok' && d.snippet && d.snippet.canvas_data) {
-          // Merge snippet nodes into current canvas — implemented in qdc-canvas.js
-          if (window.mergeSnippet) window.mergeSnippet(d.snippet.canvas_data);
-          setStatus('Snippet applied: ' + (d.snippet.name || snippetId));
+        if (d.status === 'ok' && d.snippet) {
+          var graphData = d.snippet.graph_json;
+          if (typeof graphData === 'string') {
+            try { graphData = JSON.parse(graphData); } catch(e) { graphData = null; }
+          }
+          if (graphData) {
+            // Render snippet nodes on canvas
+            renderGraphNodes(graphData);
+            setStatus('Snippet applied: ' + (d.snippet.name || snippetId));
+          } else {
+            setStatus('Snippet has no graph data');
+          }
+        } else {
+          setStatus('Snippet not found');
         }
       })
       .catch(function(e) { setStatus('Snippet error: ' + e.message); });
@@ -486,6 +510,155 @@
       document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + e.message + '</p>';
     });
   };
+
+  // ── Canvas Rendering ─────────────────────────────────────────
+  var _nodeColors = {
+    'gate-': '#e94560', 'src-': '#27ae60', 'con-': '#f39c12',
+    'xc-': '#9c27b0', 'tgt-': '#2196f3'
+  };
+
+  function getNodeColor(type) {
+    for (var prefix in _nodeColors) {
+      if (type && type.indexOf(prefix) === 0) return _nodeColors[prefix];
+    }
+    return '#5a6e8c';
+  }
+
+  window.renderGraphNodes = function(graphData) {
+    var container = document.getElementById('canvas-container');
+    if (!container || !graphData) return;
+
+    var nodes = graphData.nodes || [];
+    var edges = graphData.edges || [];
+
+    // Clear existing
+    container.innerHTML = '';
+    window._canvasData = graphData;
+
+    // Render nodes as positioned divs
+    nodes.forEach(function(n) {
+      var div = document.createElement('div');
+      div.id = 'node-' + n.id;
+      div.className = 'canvas-node';
+      div.setAttribute('data-node-id', n.id);
+      div.setAttribute('data-node-type', n.type || '');
+      var color = getNodeColor(n.type);
+      div.style.cssText = 'position:absolute;left:' + (n.x || 50) + 'px;top:' + (n.y || 50) + 'px;' +
+        'width:' + (n.w || 130) + 'px;height:' + (n.h || 50) + 'px;' +
+        'background:#16213e;border:2px solid ' + color + ';border-radius:6px;' +
+        'display:flex;align-items:center;justify-content:center;' +
+        'color:#eaeaea;font-size:11px;font-weight:600;cursor:move;' +
+        'text-align:center;padding:4px 8px;box-sizing:border-box;' +
+        'transition:box-shadow 0.15s;z-index:2;';
+      div.textContent = n.label || n.type || '?';
+      div.title = (window.NODE_DESCS || {})[n.type] || n.label || '';
+
+      // Hover effect
+      div.onmouseenter = function() { this.style.boxShadow = '0 0 12px ' + color + '66'; };
+      div.onmouseleave = function() { this.style.boxShadow = 'none'; };
+
+      container.appendChild(div);
+    });
+
+    // Render edges as SVG lines
+    if (edges.length > 0) {
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;';
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
+
+      var nodeMap = {};
+      nodes.forEach(function(n) {
+        nodeMap[n.id] = { x: (n.x || 50) + (n.w || 130) / 2, y: (n.y || 50) + (n.h || 50) / 2 };
+      });
+
+      edges.forEach(function(e) {
+        var src = nodeMap[e.source];
+        var tgt = nodeMap[e.target];
+        if (src && tgt) {
+          var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', src.x);
+          line.setAttribute('y1', src.y);
+          line.setAttribute('x2', tgt.x);
+          line.setAttribute('y2', tgt.y);
+          line.setAttribute('stroke', '#1e3a6e');
+          line.setAttribute('stroke-width', '2');
+          line.setAttribute('stroke-dasharray', '6,3');
+          svg.appendChild(line);
+
+          // Arrow at target
+          var angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
+          var arrowLen = 10;
+          var ax = tgt.x - arrowLen * Math.cos(angle - 0.4);
+          var ay = tgt.y - arrowLen * Math.sin(angle - 0.4);
+          var bx = tgt.x - arrowLen * Math.cos(angle + 0.4);
+          var by = tgt.y - arrowLen * Math.sin(angle + 0.4);
+          var arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          arrow.setAttribute('points', tgt.x + ',' + tgt.y + ' ' + ax + ',' + ay + ' ' + bx + ',' + by);
+          arrow.setAttribute('fill', '#2196f3');
+          svg.appendChild(arrow);
+        }
+      });
+
+      container.appendChild(svg);
+    }
+
+    setStatus(nodes.length + ' nodes, ' + edges.length + ' edges');
+  };
+
+  // ── Drag-and-drop from palette ──────────────────────────────
+  document.querySelectorAll('.dc-palette-item').forEach(function(item) {
+    item.addEventListener('dragstart', function(e) {
+      e.dataTransfer.setData('application/json', JSON.stringify({
+        type: item.getAttribute('data-node-type'),
+        label: item.getAttribute('data-label') || item.textContent.trim()
+      }));
+    });
+  });
+
+  var canvasEl = document.getElementById('canvas-container');
+  if (canvasEl) {
+    canvasEl.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      canvasEl.classList.add('drag-over');
+    });
+    canvasEl.addEventListener('dragleave', function() {
+      canvasEl.classList.remove('drag-over');
+    });
+    canvasEl.addEventListener('drop', function(e) {
+      e.preventDefault();
+      canvasEl.classList.remove('drag-over');
+      try {
+        var data = JSON.parse(e.dataTransfer.getData('application/json'));
+        var rect = canvasEl.getBoundingClientRect();
+        var x = Math.round(e.clientX - rect.left);
+        var y = Math.round(e.clientY - rect.top);
+        var nodeId = 'n-' + Math.random().toString(36).substr(2, 8);
+        var newNode = {id: nodeId, type: data.type, label: data.label, x: x - 65, y: y - 25, w: 130, h: 50};
+
+        // Add to canvas data
+        if (!window._canvasData) window._canvasData = {nodes: [], edges: []};
+        window._canvasData.nodes.push(newNode);
+
+        // Render the new node
+        renderGraphNodes(window._canvasData);
+        setStatus('Added: ' + data.label);
+      } catch(err) {
+        setStatus('Drop failed: ' + err.message);
+      }
+    });
+  }
+
+  // ── Load initial graph from design data ─────────────────────
+  var _initialGraph = {{ (design.graph_json if design and design.graph_json else '{}')|safe }};
+  if (typeof _initialGraph === 'string') {
+    try { _initialGraph = JSON.parse(_initialGraph); } catch(e) { _initialGraph = {nodes:[], edges:[]}; }
+  }
+  if (_initialGraph && (_initialGraph.nodes || []).length > 0) {
+    renderGraphNodes(_initialGraph);
+  } else {
+    setStatus('Empty canvas — drag nodes from palette or use a template');
+  }
 
   // ── Close export menu on outside click ────────────────────────
   document.addEventListener('click', function(e) {

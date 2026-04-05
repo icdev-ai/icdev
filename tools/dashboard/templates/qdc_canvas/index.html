@@ -59,8 +59,9 @@
             <td style="padding:0.5rem;color:#eaeaea;">{{ d.name }}</td>
             <td style="padding:0.5rem;color:#7a8cb0;">{{ d.classification or 'CUI' }}</td>
             <td style="padding:0.5rem;text-align:center;">
-              {% if d.uqs_score is not none %}
-                <span style="color:{% if d.uqs_score >= 80 %}#4caf50{% elif d.uqs_score >= 60 %}#ff9800{% else %}#e94560{% endif %};font-weight:bold;">{{ '%.1f'|format(d.uqs_score) }}</span>
+              {% set uqs = d.get('uqs_score', None) if d.get is defined else None %}
+              {% if uqs is not none and uqs %}
+                <span style="color:{% if uqs >= 80 %}#4caf50{% elif uqs >= 60 %}#ff9800{% else %}#e94560{% endif %};font-weight:bold;">{{ '%.1f'|format(uqs) }}</span>
               {% else %}
                 <span style="color:#7a8cb0;">&mdash;</span>
               {% endif %}
