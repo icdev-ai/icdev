@@ -52,6 +52,17 @@ from tools.pipeline.runbooks import (  # noqa: E402
     get_all_runbooks as _pdc_get_all_runbooks,
     get_runbook_by_id as _pdc_get_runbook_by_id,
 )
+from tools.pipeline.sops import (  # noqa: E402
+    get_all_sops as _pdc_get_all_sops,
+    get_sop_by_id as _pdc_get_sop_by_id,
+    create_sop as _pdc_create_sop,
+    update_sop as _pdc_update_sop,
+    delete_sop as _pdc_delete_sop,
+    submit_for_review as _pdc_submit_for_review,
+    approve_sop as _pdc_approve_sop,
+    reject_sop as _pdc_reject_sop,
+    seed_sops as _pdc_seed_sops,
+)
 
 # ── Optional imports from existing ICDEV modules ─────────────────────────────
 try:
@@ -1295,5 +1306,95 @@ def create_pipeline_blueprint():
     def pc_collab_participants(design_id):
         """Return current participants in a PDC collaborative session."""
         return jsonify({"participants": _pdc_collab.get_participants(design_id)})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SOPs — Standard Operating Procedures
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/sops")
+    @pc_login_required
+    def pc_sops_page():
+        """Browse all pipeline standard operating procedures."""
+        _pdc_seed_sops()
+        return render_template(
+            "pipeline/sops.html",
+            sops=_pdc_get_all_sops(),
+        )
+
+    @bp.route("/api/sops", methods=["GET"])
+    @pc_login_required
+    def pc_api_list_sops():
+        """Return all pipeline SOPs with optional type/status filters."""
+        sop_type = request.args.get("type")
+        approval_status = request.args.get("status")
+        return jsonify(_pdc_get_all_sops(sop_type=sop_type, approval_status=approval_status))
+
+    @bp.route("/api/sops/<sop_id>", methods=["GET"])
+    @pc_login_required
+    def pc_api_get_sop(sop_id):
+        """Return a single pipeline SOP by ID."""
+        sop = _pdc_get_sop_by_id(sop_id)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(sop)
+
+    @bp.route("/api/sops", methods=["POST"])
+    @pc_login_required
+    def pc_api_create_sop():
+        """Create a new pipeline SOP."""
+        data = request.json or {}
+        sop = _pdc_create_sop(data)
+        return jsonify(sop), 201
+
+    @bp.route("/api/sops/<sop_id>", methods=["PUT"])
+    @pc_login_required
+    def pc_api_update_sop(sop_id):
+        """Update an existing pipeline SOP."""
+        data = request.json or {}
+        sop = _pdc_update_sop(sop_id, data)
+        if not sop:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
+    @pc_login_required
+    def pc_api_delete_sop(sop_id):
+        """Delete a pipeline SOP."""
+        deleted = _pdc_delete_sop(sop_id)
+        if not deleted:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify({"ok": True})
+
+    @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
+    @pc_login_required
+    def pc_api_submit_sop(sop_id):
+        """Submit a pipeline SOP for review (draft → pending_review)."""
+        sop, err = _pdc_submit_for_review(sop_id)
+        if err:
+            return jsonify({"error": err}), 400
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
+    @pc_login_required
+    def pc_api_approve_sop(sop_id):
+        """Approve a pending pipeline SOP."""
+        body = request.json or {}
+        approved_by = body.get("approved_by", "")
+        sop, err = _pdc_approve_sop(sop_id, approved_by=approved_by)
+        if err:
+            return jsonify({"error": err}), 400
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>/reject", methods=["POST"])
+    @pc_login_required
+    def pc_api_reject_sop(sop_id):
+        """Reject a pending pipeline SOP."""
+        body = request.json or {}
+        reason = body.get("reason", "")
+        rejected_by = body.get("rejected_by", "")
+        sop, err = _pdc_reject_sop(sop_id, reason=reason, rejected_by=rejected_by)
+        if err:
+            return jsonify({"error": err}), 400
+        return jsonify(sop)
 
     return bp
