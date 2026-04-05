@@ -208,12 +208,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Enable element moving
+  // Enable element selection
   paper.on('element:pointerdown', (cellView) => {
     selectedCell = cellView.model;
   });
+  paper.on('link:pointerdown', (linkView) => {
+    selectedCell = linkView.model;
+  });
+  paper.on('blank:pointerdown', () => {
+    selectedCell = null;
+  });
 
-  // Load graph data
+  // Load graph data (pause undo tracking during initial load)
+  window._mcUndoPaused = true;
   let graphData = { nodes: [], edges: [] };
   try {
     graphData = JSON.parse(cfg.graphJson || '{"nodes":[],"edges":[]}');
@@ -236,6 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
       graph.addCell(link);
     }
   });
+  // (undo pause lifted in toolbar section after initial _pushUndo)
 
   // Zoom to fit if there are nodes
   if (graphData.nodes && graphData.nodes.length > 0) {
@@ -569,22 +577,60 @@ document.addEventListener('DOMContentLoaded', () => {
   const undoStack = [];
   const redoStack = [];
 
+  function _pushUndo() {
+    if (window._mcUndoPaused) return;
+    undoStack.push(JSON.stringify(graph.toJSON()));
+    if (undoStack.length > 50) undoStack.shift();
+    redoStack.length = 0;
+  }
+
+  // Track mutations for undo: add, remove
+  graph.on('add', () => { _pushUndo(); isDirty = true; });
+  graph.on('remove', () => { _pushUndo(); isDirty = true; });
+  graph.on('change:position', () => { isDirty = true; });
   graph.on('change', () => { isDirty = true; });
 
+  // Capture state after initial load completed (initial state is the baseline)
+  window._mcUndoPaused = false;
+  _pushUndo();
+
   window.canvasUndo = function() {
-    if (undoStack.length) {
-      const state = undoStack.pop();
-      redoStack.push(JSON.stringify(graph.toJSON()));
-      graph.fromJSON(JSON.parse(state));
-    }
+    if (undoStack.length <= 1) return;
+    window._mcUndoPaused = true;
+    redoStack.push(undoStack.pop());
+    const state = undoStack[undoStack.length - 1];
+    graph.fromJSON(JSON.parse(state));
+    window._mcUndoPaused = false;
+    selectedCell = null;
   };
   window.canvasRedo = function() {
-    if (redoStack.length) {
-      const state = redoStack.pop();
-      undoStack.push(JSON.stringify(graph.toJSON()));
-      graph.fromJSON(JSON.parse(state));
+    if (!redoStack.length) return;
+    window._mcUndoPaused = true;
+    const state = redoStack.pop();
+    undoStack.push(state);
+    graph.fromJSON(JSON.parse(state));
+    window._mcUndoPaused = false;
+    selectedCell = null;
+  };
+
+  // ── Delete selected node/edge ─────────────────────────────────────────
+  window.canvasDeleteSelected = function() {
+    if (selectedCell) {
+      selectedCell.remove();
+      selectedCell = null;
+      isDirty = true;
     }
   };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      // Don't intercept if typing in an input/textarea
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      e.preventDefault();
+      canvasDeleteSelected();
+    }
+  });
 
   // ── Zoom ───────────────────────────────────────────────────────────────
   let currentScale = 1;
