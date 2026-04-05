@@ -126,9 +126,12 @@
         }
     }
 
-    // Initialize on page load — prefer SSE, fall back to polling
+    // Initialize on page load — prefer SSE, fall back to polling.
+    // Skip if the task board page owns #kanban-board (it has its own
+    // inline renderTaskKanban that uses task-specific columns).
     document.addEventListener("DOMContentLoaded", function () {
-        if (document.getElementById("kanban-board")) {
+        var board = document.getElementById("kanban-board");
+        if (board && !board.querySelector('[data-status="in_progress"]')) {
             if (typeof EventSource !== "undefined") {
                 connectKanbanSSE();
             } else {
