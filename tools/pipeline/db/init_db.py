@@ -200,6 +200,30 @@ CREATE TABLE IF NOT EXISTS pc_collab_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pc_collab_design ON pc_collab_sessions(design_id);
+
+CREATE TABLE IF NOT EXISTS pdc_sops (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    sop_type        TEXT NOT NULL DEFAULT 'custom',
+    description     TEXT DEFAULT '',
+    purpose         TEXT DEFAULT '',
+    scope           TEXT DEFAULT '',
+    steps           TEXT,
+    nist_controls   TEXT,
+    owner           TEXT DEFAULT '',
+    reviewer        TEXT DEFAULT '',
+    approval_status TEXT DEFAULT 'draft',
+    version         TEXT DEFAULT '1.0',
+    approved_by     TEXT,
+    approved_at     TEXT,
+    next_review_date TEXT,
+    rejected_reason TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_sops_type ON pdc_sops(sop_type);
+CREATE INDEX IF NOT EXISTS idx_pdc_sops_status ON pdc_sops(approval_status);
 """
 
 
