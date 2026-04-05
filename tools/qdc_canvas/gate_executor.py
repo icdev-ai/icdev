@@ -403,7 +403,7 @@ def execute_pytest_coverage(project_dir: str | None = None) -> dict:
     result = _run_tool(
         [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "--no-header", "-x",
          "--ignore=tests/e2e", "--ignore=tests/genesis_auto",
-         f"--cov={target}/tools/qdc_canvas", "--cov-report=json:/dev/null"],
+         f"--cov={target}/tools/qdc_canvas", f"--cov-report=json:{os.devnull}"],
         timeout=180,
         cwd=target,
     )

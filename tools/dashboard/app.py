@@ -114,16 +114,39 @@ except ImportError:
     _HAS_CHAT_API = False
 from tools.dashboard.ux_helpers import register_ux_filters
 
-# QDC — Quality Design Canvas (Phase 65)
-_QDC_ENABLED = os.environ.get("ICDEV_QDC_ENABLED", "true").lower() in ("true", "1", "yes")
-_HAS_QDC = False
-if _QDC_ENABLED:
-    try:
-        from tools.qdc_canvas.blueprint import qdc_bp  # noqa: E402
+# ── Design Canvases (conditional registration) ────────────────────────────
+_CANVAS_FLAGS = {}
+_CANVAS_BLUEPRINTS = {}
 
-        _HAS_QDC = True
-    except ImportError:
-        _HAS_QDC = False
+_CANVAS_DEFS = [
+    ("idc", "ICDEV_IDC_ENABLED", "tools.infra_canvas.blueprint", "infra_bp"),
+    ("ndc", "ICDEV_NDC_ENABLED", "tools.network.blueprint", "create_network_blueprint"),
+    ("sdc", "ICDEV_SDC_ENABLED", "tools.security_canvas.blueprint", "create_security_blueprint"),
+    ("bdc", "ICDEV_BDC_ENABLED", "tools.boundary_canvas.blueprint", "create_boundary_blueprint"),
+    ("pdc", "ICDEV_PDC_ENABLED", "tools.pipeline.blueprint", "create_pipeline_blueprint"),
+    ("odc", "ICDEV_ODC_ENABLED", "tools.observability_canvas.blueprint", "create_observability_blueprint"),
+    ("ddc", "ICDEV_DDC_ENABLED", "tools.data_canvas.blueprint", "create_data_canvas_blueprint"),
+    ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
+]
+
+for _key, _env, _mod, _attr in _CANVAS_DEFS:
+    _enabled = os.environ.get(_env, "true").lower() in ("true", "1", "yes")
+    _CANVAS_FLAGS[_key] = False
+    if _enabled:
+        try:
+            import importlib
+
+            _m = importlib.import_module(_mod)
+            _bp = getattr(_m, _attr, None)
+            if callable(_bp) and not hasattr(_bp, "name"):
+                _bp = _bp()  # factory function
+            if _bp:
+                _CANVAS_BLUEPRINTS[_key] = _bp
+                _CANVAS_FLAGS[_key] = True
+        except (ImportError, Exception):
+            pass
+
+_HAS_QDC = _CANVAS_FLAGS.get("qdc", False)
 
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
@@ -935,7 +958,15 @@ def create_app() -> Flask:
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
             "govcon_enabled": _HAS_GOVCON,
-            "qdc_enabled": _HAS_QDC,
+            "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
+            "idc_enabled": _CANVAS_FLAGS.get("idc", False),
+            "ndc_enabled": _CANVAS_FLAGS.get("ndc", False),
+            "sdc_enabled": _CANVAS_FLAGS.get("sdc", False),
+            "bdc_enabled": _CANVAS_FLAGS.get("bdc", False),
+            "pdc_enabled": _CANVAS_FLAGS.get("pdc", False),
+            "odc_enabled": _CANVAS_FLAGS.get("odc", False),
+            "ddc_enabled": _CANVAS_FLAGS.get("ddc", False),
+            "canvas_flags": _CANVAS_FLAGS,
         }
 
     # ---- Auto-register A2A agents from card files ----
@@ -987,13 +1018,18 @@ def create_app() -> Flask:
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
-    # ---- QDC — Quality Design Canvas ----
-    if _HAS_QDC:
+    # ---- Design Canvases (all 8) ----
+    _CANVAS_ROUTES = {
+        "idc": "/infra", "ndc": "/network", "sdc": "/security",
+        "bdc": "/boundary", "pdc": "/devops", "odc": "/observability",
+        "ddc": "/data", "qdc": "/quality",
+    }
+    for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
-            app.register_blueprint(qdc_bp)
-            app.logger.info("Quality Design Canvas registered at /quality/")
+            app.register_blueprint(_cbp)
+            app.logger.info("Canvas %s registered at %s/", _ck.upper(), _CANVAS_ROUTES.get(_ck, ""))
         except Exception as exc:
-            app.logger.warning("QDC registration failed: %s", exc)
+            app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
