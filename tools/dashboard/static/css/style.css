@@ -744,3 +744,19 @@ tbody tr:hover {
         flex-direction: column;
     }
 }
+
+/* ── Print Styles (Base) ──────────────────────────────────────────────────── */
+@media print {
+  .navbar, .footer, .sidebar, .cui-banner, .page-actions,
+  .modal, .dropdown-menu, .toast, .notification-panel { display: none !important; }
+  .main-content { padding: 8px !important; margin: 0 !important; }
+  body { background: #fff !important; color: #111 !important; font-size: 11px; }
+  .card, .panel, .data-table { background: #fff !important; color: #111 !important; border: 1px solid #ccc !important; }
+  .card { break-inside: avoid; margin-bottom: 8px; }
+  .data-table th { background: #f0f0f0 !important; color: #111 !important; }
+  .data-table td { color: #111 !important; }
+  a { color: #111 !important; text-decoration: underline; }
+  .health-pill { border: 1px solid #999 !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  @page { margin: 0.5in; }
+}

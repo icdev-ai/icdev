@@ -768,9 +768,56 @@ a:hover { text-decoration: underline; }
 /* ── Presentation Sections ─────────────────────────────────────────────────── */
 .pres-section { margin-bottom: 16px; }
 @media print {
-  .navbar, .footer, .page-actions, .cui-banner { display: none !important; }
-  .main-content { padding: 0; }
+  /* ── Hide non-content chrome ── */
+  .navbar, .footer, .page-actions, .cui-banner,
+  .toolbar, .palette, .config-panel, .boundary-panel,
+  .canvas-tooltip, .heatmap-legend, .topo-legend-close,
+  .btn, button, .modal, .dropdown-menu,
+  .sidebar, .nav-tabs, .tab-bar { display: none !important; }
+
+  .main-content { padding: 0 !important; margin: 0 !important; }
   .pres-section { break-inside: avoid; }
+
+  /* ── Canvas fills the page ── */
+  #canvas-container, .canvas-wrapper {
+    width: 100% !important; height: auto !important;
+    overflow: visible !important; position: relative !important;
+    border: none !important; background: #fff !important;
+  }
+  #canvas-container svg { width: 100% !important; height: auto !important; }
+
+  /* ── Force white background, dark text ── */
+  body, .main-content, .card, .panel {
+    background: #fff !important; color: #111 !important;
+  }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  /* ── Show legend in print ── */
+  .topo-legend {
+    display: block !important; position: relative !important;
+    bottom: auto !important; left: auto !important;
+    margin-top: 16px; page-break-inside: avoid;
+    border: 1px solid #ccc !important; background: #fff !important;
+    color: #111 !important; box-shadow: none !important;
+  }
+  .topo-legend-swatch, .topo-legend-line { print-color-adjust: exact !important; }
+  .topo-legend-title, .topo-legend-section { color: #333 !important; }
+  .topo-legend-item { color: #111 !important; }
+
+  /* ── Boundary zones print with borders ── */
+  .boundary-zone {
+    border-style: solid !important; border-width: 1px !important;
+    background: transparent !important; opacity: 1 !important;
+  }
+  .boundary-label { print-color-adjust: exact !important; }
+
+  /* ── Data tables print cleanly ── */
+  .data-table { border: 1px solid #ccc !important; }
+  .data-table th, .data-table td { border: 1px solid #ddd !important; color: #111 !important; }
+  .data-table th { background: #f0f0f0 !important; }
+
+  /* ── Page layout ── */
+  @page { size: landscape; margin: 0.5in; }
 }
 
 /* ── Enterprise Dashboard ──────────────────────────────────────────────────── */
@@ -1312,11 +1359,58 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 /* ── Canvas Tooltip ─────────────────────────────────────────────────────────── */
 .canvas-tooltip {
   display: none; position: fixed; z-index: 9999;
-  background: #1a1a2eee; border: 1px solid var(--border); border-radius: 6px;
-  padding: 8px 12px; font-size: 11px; color: var(--text); line-height: 1.5;
-  max-width: 280px; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  background: #1a1a2eee; border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; font-size: 11px; color: var(--text); line-height: 1.5;
+  max-width: 360px; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
 }
-.canvas-tooltip .tt-type { color: var(--text-dim); font-size: 10px; }
+.canvas-tooltip .tt-header { margin-bottom: 4px; font-size: 13px; }
+.canvas-tooltip .tt-type-badge {
+  display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .04em;
+  padding: 1px 8px; border-radius: 3px; margin-bottom: 6px; text-transform: uppercase;
+}
+.canvas-tooltip .tt-table {
+  width: 100%; border-collapse: collapse; margin: 4px 0;
+  border-top: 1px solid var(--border);
+}
+.canvas-tooltip .tt-table td { padding: 2px 0; font-size: 10.5px; vertical-align: top; }
+.canvas-tooltip .tt-k {
+  color: var(--text-dim); font-weight: 600; padding-right: 10px; white-space: nowrap; width: 1%;
+}
+.canvas-tooltip .tt-notes {
+  margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--text-dim); font-style: italic; line-height: 1.4;
+}
+.canvas-tooltip .tt-cable-label { color: var(--text-dim); font-weight: 600; }
+
+/* ── Topology Legend ───────────────────────────────────────────────────────── */
+.topo-legend {
+  position: absolute; bottom: 16px; left: 16px; z-index: 100;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; font-size: 10px; max-height: 50vh; overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4); min-width: 180px;
+}
+.topo-legend-title {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-dim); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;
+}
+.topo-legend-close {
+  background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px; padding: 0 2px;
+}
+.topo-legend-close:hover { color: var(--red); }
+.topo-legend-section { margin-top: 6px; font-size: 9px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
+.topo-legend-item {
+  display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 10.5px; color: var(--text);
+}
+.topo-legend-swatch {
+  width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; font-weight: 700; color: #fff;
+}
+.topo-legend-line {
+  width: 20px; height: 0; border-top: 2px solid; flex-shrink: 0;
+}
+.topo-legend-line.dashed { border-top-style: dashed; }
 /* ── Palette button ────────────────────────────────────────────────────────── */
 .palette-add-btn {
   float: right; background: var(--bg3); border: 1px solid var(--border);

@@ -143,3 +143,17 @@ a:hover { color: #f06292; }
   .pc-config-panel { width: 240px; min-width: 240px; }
   .palette-item { width: 100%; }
 }
+
+/* ── Print styles ───────────────────────────────────────────────────────── */
+@media print {
+  .navbar, .footer, .pc-palette, .pc-config-panel, .pc-toolbar,
+  .canvas-tooltip, .btn, button, .modal, .sidebar { display: none !important; }
+  .main-content { padding: 0 !important; }
+  .pc-canvas-container, .canvas-wrapper {
+    width: 100% !important; height: auto !important; overflow: visible !important;
+    border: none !important; background: #fff !important;
+  }
+  body, .main-content, .card { background: #fff !important; color: #111 !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  @page { size: landscape; margin: 0.5in; }
+}

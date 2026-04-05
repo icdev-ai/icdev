@@ -678,15 +678,66 @@ function initCanvasTooltips() {
     const config = cell.get('configData') || {};
     const style = getStyle(type);
 
-    let html = `<strong>${label}</strong><br><span class="tt-type">${style.label} (${type})</span>`;
-    if (config.ip) html += `<br>IP: ${config.ip}`;
-    if (config.asn) html += `<br>ASN: ${config.asn}`;
-    if (config.protocol) html += `<br>Protocol: ${config.protocol}`;
-    if (config.mtu && config.mtu !== '1500') html += `<br>MTU: ${config.mtu}`;
-    if (config.local_pref && config.local_pref !== '100') html += `<br>LOCAL_PREF: ${config.local_pref}`;
-    if (config.ospf_area) html += `<br>OSPF Area: ${config.ospf_area}`;
-    if (config.vlan) html += `<br>VLAN: ${config.vlan}`;
-    if (config.vrf) html += `<br>VRF: ${config.vrf}`;
+    let html = `<div class="tt-header"><strong>${label}</strong></div>`;
+    html += `<div class="tt-type-badge" style="background:${style.stroke || '#555'}22;color:${style.stroke || '#aaa'};border:1px solid ${style.stroke || '#555'}44;">${style.label}</div>`;
+
+    // ── Networking fields ──
+    const netFields = [
+      ['ip', 'IP'], ['ipv6', 'IPv6'], ['asn', 'ASN'], ['peer_asn', 'Peer ASN'],
+      ['peer_ip', 'Peer IP'], ['protocol', 'Protocol'], ['vlan', 'VLAN'],
+      ['vrf', 'VRF'], ['ospf_area', 'OSPF Area'], ['ospf_cost', 'OSPF Cost'],
+      ['peering_type', 'Peering'], ['bgp_asn', 'BGP ASN'],
+    ];
+    const netHtml = netFields.filter(([k]) => config[k]).map(([k, l]) => `<tr><td class="tt-k">${l}</td><td>${config[k]}</td></tr>`).join('');
+    if (netHtml) html += `<table class="tt-table"><tbody>${netHtml}</tbody></table>`;
+
+    // ── BGP tuning ──
+    const bgpFields = [
+      ['local_pref', 'LOCAL_PREF', '100'], ['med', 'MED'], ['weight', 'Weight'],
+      ['community', 'Community'], ['mtu', 'MTU', '1500'],
+    ];
+    const bgpHtml = bgpFields.filter(([k,, def]) => config[k] && config[k] !== def).map(([k, l]) => `<tr><td class="tt-k">${l}</td><td>${config[k]}</td></tr>`).join('');
+    if (bgpHtml) html += `<table class="tt-table"><tbody>${bgpHtml}</tbody></table>`;
+
+    // ── Infrastructure fields ──
+    const infraFields = [
+      ['hostname', 'Hostname'], ['os', 'OS'], ['model', 'Model'],
+      ['serial', 'Serial'], ['sw_version', 'SW Ver'], ['hw_revision', 'HW Rev'],
+      ['site', 'Site'], ['location', 'Location'], ['rack', 'Rack'],
+      ['slot', 'Slot'], ['port', 'Port'], ['bandwidth', 'Bandwidth'],
+      ['circuit_id', 'Circuit ID'],
+    ];
+    const infraHtml = infraFields.filter(([k]) => config[k]).map(([k, l]) => `<tr><td class="tt-k">${l}</td><td>${config[k]}</td></tr>`).join('');
+    if (infraHtml) html += `<table class="tt-table"><tbody>${infraHtml}</tbody></table>`;
+
+    // ── Template config (from graph_json — role, notes, STIG, FIPS, etc.) ──
+    if (config.config && typeof config.config === 'object') {
+      const c = config.config;
+      const tplFields = [
+        ['role', 'Role'], ['cidr', 'CIDR'], ['protocols', 'Protocols'],
+        ['features', 'Features'], ['redundancy', 'Redundancy'],
+        ['classification', 'Classification'], ['stig_baseline', 'STIG'],
+        ['fips_mode', 'FIPS'], ['encryption', 'Encryption'],
+        ['macsec', 'MACsec'], ['model', 'Device'], ['speed', 'Speed'],
+        ['degree', 'ROADM Degree'], ['channels', 'Channels'],
+        ['region', 'Region'], ['services', 'Services'],
+        ['owner', 'Owner'], ['diversity', 'Diversity'],
+        ['limits', 'Limits'], ['attachments', 'Attachments'],
+      ];
+      const tplHtml = tplFields.filter(([k]) => c[k]).map(([k, l]) => `<tr><td class="tt-k">${l}</td><td>${c[k]}</td></tr>`).join('');
+      if (tplHtml) html += `<table class="tt-table"><tbody>${tplHtml}</tbody></table>`;
+      if (c.notes) html += `<div class="tt-notes">${c.notes}</div>`;
+    }
+
+    // ── Lifecycle ──
+    const lcFields = [['install_date', 'Installed'], ['eos_date', 'End of Sale'], ['eol_date', 'End of Life']];
+    const lcHtml = lcFields.filter(([k]) => config[k]).map(([k, l]) => `<tr><td class="tt-k">${l}</td><td>${config[k]}</td></tr>`).join('');
+    if (lcHtml) html += `<table class="tt-table"><tbody>${lcHtml}</tbody></table>`;
+
+    // ── Notes (standalone) ──
+    if (config.notes && !(config.config && config.config.notes)) {
+      html += `<div class="tt-notes">${config.notes}</div>`;
+    }
 
     tooltip.innerHTML = html;
     tooltip.style.display = 'block';
@@ -730,6 +781,100 @@ function initCanvasTooltips() {
     tooltip.style.display = 'none';
   });
 }
+
+/* ── Topology Legend ────────────────────────────────────────────────────────── */
+var _legendVisible = false;
+
+function toggleTopologyLegend() {
+  if (_legendVisible) { hideTopologyLegend(); return; }
+  showTopologyLegend();
+}
+
+function showTopologyLegend() {
+  let el = document.getElementById('topo-legend');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'topo-legend';
+    el.className = 'topo-legend';
+    const container = document.getElementById('canvas-container') || document.body;
+    container.appendChild(el);
+  }
+  // Scan canvas for node types and edge protocols in use
+  const nodeTypes = {};
+  const edgeProtocols = {};
+  graph.getElements().forEach(cell => {
+    const t = cell.get('nodeType');
+    if (t && !nodeTypes[t]) {
+      nodeTypes[t] = getStyle(t);
+    }
+  });
+  graph.getLinks().forEach(link => {
+    const p = link.get('protocol');
+    if (p && !edgeProtocols[p]) edgeProtocols[p] = true;
+  });
+
+  // Group node types by category
+  const categories = {};
+  Object.entries(nodeTypes).forEach(([type, style]) => {
+    let cat = 'Devices';
+    if (type.startsWith('aws-')) cat = 'AWS';
+    else if (type.startsWith('az-')) cat = 'Azure';
+    else if (type.startsWith('gcp-')) cat = 'GCP';
+    else if (type.startsWith('oci-')) cat = 'OCI';
+    else if (['roadm','oadm','edfa','transponder','odf','sonet-adm','olt'].includes(type)) cat = 'Optical / DWDM';
+    else if (['mpls-pe','mpls-p','route-reflector','pop'].includes(type)) cat = 'MPLS / Carrier';
+    else if (['firewall','waf','ids','ips','siem','fips-140-l3'].includes(type)) cat = 'Security';
+    else if (['switch-l2','switch-l3','router'].includes(type)) cat = 'Network';
+    else if (['media-fiber','media-optical','patch-panel-fiber'].includes(type)) cat = 'Physical / Media';
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push({ type, style });
+  });
+
+  let html = '<div class="topo-legend-title">Legend <button class="topo-legend-close" onclick="hideTopologyLegend()">&times;</button></div>';
+
+  // Node types by category
+  Object.entries(categories).sort(([a],[b]) => a.localeCompare(b)).forEach(([cat, items]) => {
+    html += `<div class="topo-legend-section">${cat}</div>`;
+    items.sort((a,b) => a.style.label.localeCompare(b.style.label)).forEach(({ type, style }) => {
+      const sym = style.symbol || type.charAt(0).toUpperCase();
+      html += `<div class="topo-legend-item"><div class="topo-legend-swatch" style="background:${style.fill || '#1a2a3a'};border:1px solid ${style.stroke || '#555'};">${sym}</div>${style.label}</div>`;
+    });
+  });
+
+  // Edge protocols
+  const protocols = Object.keys(edgeProtocols).filter(p => p);
+  if (protocols.length) {
+    html += '<div class="topo-legend-section">Protocols / Links</div>';
+    const protoColors = {
+      'BGP': '#3498db', 'eBGP': '#2980b9', 'iBGP': '#1abc9c',
+      'OSPF': '#e67e22', 'OSPF/IS-IS': '#e67e22',
+      'DWDM': '#9b59b6', 'DWDM BLSR': '#8e44ad',
+      'IPsec': '#e74c3c', 'IPsec/BGP': '#c0392b', 'IPsec Type1': '#c0392b',
+      'MPLS': '#2ecc71', '802.1Q': '#f39c12',
+    };
+    protocols.sort().forEach(p => {
+      const color = protoColors[p] || '#7f8c8d';
+      const dashed = p.includes('backup') || p.includes('protect');
+      html += `<div class="topo-legend-item"><div class="topo-legend-line${dashed ? ' dashed' : ''}" style="border-color:${color};"></div>${p}</div>`;
+    });
+  }
+
+  el.innerHTML = html;
+  el.style.display = 'block';
+  _legendVisible = true;
+}
+
+function hideTopologyLegend() {
+  const el = document.getElementById('topo-legend');
+  if (el) el.style.display = 'none';
+  _legendVisible = false;
+}
+
+// Expose globally
+if (typeof window.ICDEV === 'undefined') window.ICDEV = {};
+window.ICDEV.toggleTopologyLegend = toggleTopologyLegend;
+window.ICDEV.showTopologyLegend = showTopologyLegend;
+window.ICDEV.hideTopologyLegend = hideTopologyLegend;
 
 /* ── Create a node on the canvas ─────────────────────────────────────────────── */
 function createNode(type, x, y, label, nodeId, configData) {

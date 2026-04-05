@@ -96,6 +96,8 @@
           <button class="tb-dropdown-item" id="hm-opt-clear" onclick="clearHeatmap();document.getElementById('heatmap-dropdown').classList.add('hidden')" style="color:#e74c3c;">✕ Clear Heatmap</button>
         </div>
       </div>
+      <button class="tb-btn" onclick="toggleTopologyLegend()" title="Topology Legend — show/hide legend of all node types and protocols on the canvas">&#x1f5fa; Legend</button>
+      <button class="tb-btn" onclick="window.print()" title="Print — open browser print dialog (landscape recommended)">&#x1f5a8; Print</button>
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — toggle to highlight protected (green) vs unprotected (red dashed) links">🔒 FIPS <span id="fips-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
       <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
