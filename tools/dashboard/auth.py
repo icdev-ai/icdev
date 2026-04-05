@@ -377,6 +377,18 @@ def _auth_before_request():
     if request.path.startswith("/static"):
         return None
 
+    # Auto-login from ICDEV_DASHBOARD_API_KEY env var (dev convenience)
+    import os
+
+    if not session.get("user_id"):
+        env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+        if env_key:
+            env_user = validate_api_key(env_key)
+            if env_user:
+                session["user_id"] = env_user["id"]
+                g.current_user = dict(env_user)
+                return None
+
     # Check session first (cookie-based, set after login)
     user_id = session.get("user_id")
     if user_id:

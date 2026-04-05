@@ -329,6 +329,29 @@ reflexes:
       claude_md_route_drift: true
       readme_staleness: true
 
+  quality:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    description: "QDC quality gate execution, regression detection, auto-remediation, Oracle predictions, GKP proposals"
+    module: "tools.genesis.reflexes.quality"
+    entry_point: "run_reflex"
+    success_metric:
+      name: uqs_score
+      threshold: 70
+      operator: gte
+    oracle_lens: "tools.oracle.lenses.lens_quality.QualityLens"
+    persistence:
+      db: "data/genesis_quality.db"
+      snapshots_table: "quality_snapshots"
+      trends_table: "quality_trends"
+      gkps_table: "quality_gkps"
+    auto_fix:
+      enabled: true
+      gates: ["lint", "deprecation"]
+      confidence_threshold: 0.7
+      max_per_run: 5
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

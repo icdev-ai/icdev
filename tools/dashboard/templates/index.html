@@ -187,9 +187,13 @@
     }
 })();
 
-// Load charts from API
-(function() {
-    if (!window.ICDEV || !ICDEV.barChart) return;
+// Load charts from API — wait for charts.js to load (defer)
+function _initDashboardCharts() {
+    if (!window.ICDEV || !ICDEV.barChart) {
+        // charts.js not loaded yet — retry in 200ms
+        setTimeout(_initDashboardCharts, 200);
+        return;
+    }
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
@@ -249,6 +253,7 @@
                 }
             });
         });
-})();
+}
+_initDashboardCharts();
 </script>
 {% endblock %}
