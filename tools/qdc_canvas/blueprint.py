@@ -1192,3 +1192,83 @@ def api_collab_participants(design_id: str):
     finally:
         conn.close()
     return jsonify({"participants": rows, "count": len(rows)})
+
+
+# ── Gate Execution API ─────────────────────────────────────────────────────
+
+
+@qdc_bp.route("/api/gates/execute/<gate_id>", methods=["POST"])
+def api_execute_gate(gate_id):
+    """Execute a single quality gate and return results."""
+    try:
+        from tools.qdc_canvas.gate_executor import execute_gate
+
+        data = request.get_json(force=True, silent=True) or {}
+        project_dir = data.get("project_dir")
+        result = execute_gate(gate_id, project_dir)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "gate_id": gate_id}), 500
+
+
+@qdc_bp.route("/api/gates/execute-all", methods=["POST"])
+def api_execute_all_gates():
+    """Execute all registered quality gates."""
+    try:
+        from tools.qdc_canvas.gate_executor import execute_all_gates
+
+        data = request.get_json(force=True, silent=True) or {}
+        project_dir = data.get("project_dir")
+        results = execute_all_gates(project_dir)
+        return jsonify({"gates": results, "count": len(results)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@qdc_bp.route("/api/gates/tools", methods=["GET"])
+def api_gate_tools():
+    """Check which QA/QC tools are installed and available."""
+    try:
+        from tools.qdc_canvas.gate_executor import check_tool_availability
+
+        return jsonify(check_tool_availability())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@qdc_bp.route("/api/gates/auto-fix/<gate_id>", methods=["POST"])
+def api_auto_fix_gate(gate_id):
+    """Attempt auto-fix for a specific gate's findings."""
+    try:
+        from tools.qdc_canvas.gate_executor import auto_fix, execute_gate
+
+        result = execute_gate(gate_id)
+        fix_result = auto_fix(result)
+        return jsonify(fix_result)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "gate_id": gate_id}), 500
+
+
+@qdc_bp.route("/api/oracle/quality", methods=["GET"])
+def api_oracle_quality():
+    """Run Oracle Quality Lens predictions."""
+    try:
+        from tools.oracle.lenses.lens_quality import QualityLens
+
+        lens = QualityLens()
+        predictions = lens.run()
+        return jsonify({"predictions": [p.to_dict() for p in predictions], "count": len(predictions)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@qdc_bp.route("/api/genesis/quality", methods=["POST"])
+def api_genesis_quality():
+    """Run Genesis Quality Reflex (scan + detect + remediate + GKP)."""
+    try:
+        from tools.genesis.reflexes.quality import run_reflex
+
+        result = run_reflex()
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
