@@ -206,6 +206,22 @@
             </li>
             {% endif %}
 
+            {% if qdc_enabled %}
+            <!-- Quality Design Canvas (QDC) -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/quality' in request.path %}active{% endif %}" style="color:#2196f3;">QA/QC</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/quality/">Dashboard</a></li>
+                    <li><a href="/quality/canvas/new">New Design</a></li>
+                    <li><a href="/quality/templates">Templates</a></li>
+                    <li><a href="/quality/snippets">Snippets</a></li>
+                    <li><a href="/quality/assessments">Assessments</a></li>
+                    <li><a href="/quality/runbooks">Runbooks</a></li>
+                    <li><a href="/quality/sops">SOPs</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             <!-- Canvas Compliance (Cross-Canvas Integration) -->
             <li>
                 <a href="/canvas-compliance" class="{% if '/canvas-compliance' in request.path %}active{% endif %}" style="color:#e94560;font-weight:600;">Canvas Posture</a>
