@@ -1233,4 +1233,214 @@ def create_boundary_blueprint():
             }
         )
 
+    # ====================================================================
+    # RUNBOOK ROUTES
+    # ====================================================================
+
+    _VALID_TRIGGERS = {
+        "boundary_breach",
+        "isa_expiry",
+        "unauthorized_interconnection",
+        "pps_violation",
+        "classification_boundary_cross",
+        "isa_review_due",
+        "fedramp_status_change",
+        "supply_chain_alert",
+    }
+    _VALID_SEVERITIES = {"critical", "high", "medium", "low"}
+
+    @bp.route("/runbooks")
+    @bdc_login_required
+    def bdc_runbooks_page():
+        """Runbook library — all BDC response runbooks."""
+        with get_connection() as conn:
+            runbooks = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, title, trigger_event, severity, description, owner, "
+                    "created_at, updated_at FROM bdc_runbooks ORDER BY severity, title"
+                ).fetchall()
+            ]
+            designs = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT id, name FROM boundary_designs ORDER BY name"
+                ).fetchall()
+            ]
+        return render_template(
+            "boundary_canvas/runbooks.html",
+            runbooks=runbooks,
+            designs=designs,
+            valid_triggers=sorted(_VALID_TRIGGERS),
+            valid_severities=["critical", "high", "medium", "low"],
+        )
+
+    @bp.route("/api/runbooks", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_list_runbooks():
+        """List all runbooks, optionally filtered by trigger_event or design_id."""
+        trigger = request.args.get("trigger_event", "")
+        design_id = request.args.get("design_id", "")
+        with get_connection() as conn:
+            if trigger and design_id:
+                rows = conn.execute(
+                    "SELECT * FROM bdc_runbooks WHERE trigger_event=? AND (design_id=? OR design_id IS NULL) "
+                    "ORDER BY severity, title",
+                    (trigger, design_id),
+                ).fetchall()
+            elif trigger:
+                rows = conn.execute(
+                    "SELECT * FROM bdc_runbooks WHERE trigger_event=? ORDER BY severity, title",
+                    (trigger,),
+                ).fetchall()
+            elif design_id:
+                rows = conn.execute(
+                    "SELECT * FROM bdc_runbooks WHERE design_id=? OR design_id IS NULL ORDER BY severity, title",
+                    (design_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM bdc_runbooks ORDER BY severity, title"
+                ).fetchall()
+        runbooks = []
+        for r in rows:
+            rb = _row_to_dict(r)
+            try:
+                rb["steps"] = json.loads(rb.get("steps_json") or "[]")
+            except Exception:
+                rb["steps"] = []
+            runbooks.append(rb)
+        return jsonify({"runbooks": runbooks, "count": len(runbooks)})
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_get_runbook(runbook_id):
+        """Get a single runbook by ID."""
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM bdc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Runbook not found"}), 404
+        rb = _row_to_dict(row)
+        try:
+            rb["steps"] = json.loads(rb.get("steps_json") or "[]")
+        except Exception:
+            rb["steps"] = []
+        return jsonify(rb)
+
+    @bp.route("/api/runbooks", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_create_runbook():
+        """Create a new runbook."""
+        data = request.get_json(silent=True) or {}
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "title is required"}), 400
+        trigger = data.get("trigger_event", "boundary_breach")
+        if trigger not in _VALID_TRIGGERS:
+            return jsonify({"error": f"invalid trigger_event: {trigger}"}), 400
+        severity = data.get("severity", "high")
+        if severity not in _VALID_SEVERITIES:
+            severity = "high"
+        steps = data.get("steps", [])
+        if not isinstance(steps, list):
+            steps = []
+        rb_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO bdc_runbooks "
+                "(id, design_id, title, trigger_event, severity, description, steps_json, owner, classification, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    rb_id,
+                    data.get("design_id") or None,
+                    title,
+                    trigger,
+                    severity,
+                    (data.get("description") or "").strip(),
+                    json.dumps(steps),
+                    (data.get("owner") or "").strip(),
+                    data.get("classification", "CUI // SP-CTI"),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        _audit(data.get("design_id") or "global", "runbook_created", f"id={rb_id} title={title}")
+        return jsonify({"id": rb_id, "status": "created"}), 201
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["PUT"])
+    @bdc_login_required
+    def bdc_api_update_runbook(runbook_id):
+        """Update an existing runbook."""
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM bdc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Runbook not found"}), 404
+            data = request.get_json(silent=True) or {}
+            existing = _row_to_dict(row)
+            title = (data.get("title") or existing.get("title") or "").strip()
+            trigger = data.get("trigger_event", existing.get("trigger_event", "boundary_breach"))
+            if trigger not in _VALID_TRIGGERS:
+                trigger = existing.get("trigger_event", "boundary_breach")
+            severity = data.get("severity", existing.get("severity", "high"))
+            if severity not in _VALID_SEVERITIES:
+                severity = existing.get("severity", "high")
+            steps = data.get("steps", None)
+            if steps is None:
+                steps_json = existing.get("steps_json", "[]")
+            else:
+                steps_json = json.dumps(steps if isinstance(steps, list) else [])
+            conn.execute(
+                "UPDATE bdc_runbooks SET title=?, trigger_event=?, severity=?, description=?, "
+                "steps_json=?, owner=?, classification=?, updated_at=? WHERE id=?",
+                (
+                    title,
+                    trigger,
+                    severity,
+                    (data.get("description") or existing.get("description") or "").strip(),
+                    steps_json,
+                    (data.get("owner") or existing.get("owner") or "").strip(),
+                    data.get("classification", existing.get("classification", "CUI // SP-CTI")),
+                    now_isoformat(),
+                    runbook_id,
+                ),
+            )
+            conn.commit()
+        _audit(existing.get("design_id") or "global", "runbook_updated", f"id={runbook_id}")
+        return jsonify({"id": runbook_id, "status": "updated"})
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["DELETE"])
+    @bdc_login_required
+    def bdc_api_delete_runbook(runbook_id):
+        """Delete a runbook."""
+        with get_connection() as conn:
+            row = conn.execute("SELECT design_id FROM bdc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Runbook not found"}), 404
+            design_id = row["design_id"] or "global"
+            conn.execute("DELETE FROM bdc_runbooks WHERE id=?", (runbook_id,))
+            conn.commit()
+        _audit(design_id, "runbook_deleted", f"id={runbook_id}")
+        return jsonify({"status": "deleted"})
+
+    @bp.route("/api/designs/<design_id>/runbooks", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_design_runbooks(design_id):
+        """List runbooks associated with a specific design (or global runbooks)."""
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM bdc_runbooks WHERE design_id=? OR design_id IS NULL ORDER BY severity, title",
+                (design_id,),
+            ).fetchall()
+        runbooks = []
+        for r in rows:
+            rb = _row_to_dict(r)
+            try:
+                rb["steps"] = json.loads(rb.get("steps_json") or "[]")
+            except Exception:
+                rb["steps"] = []
+            runbooks.append(rb)
+        return jsonify({"design_id": design_id, "runbooks": runbooks, "count": len(runbooks)})
+
     return bp
