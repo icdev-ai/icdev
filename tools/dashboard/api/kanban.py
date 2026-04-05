@@ -37,7 +37,7 @@ def list_tasks():
         select = (
             "SELECT kt.*, "
             "op.confidence AS oracle_confidence, "
-            "op.proposed_action AS oracle_proposed_action, "
+            "op.prediction_text AS oracle_proposed_action, "
             "op.lens_name AS oracle_lens "
             "FROM kanban_tasks kt "
             "LEFT JOIN oracle_predictions op "
