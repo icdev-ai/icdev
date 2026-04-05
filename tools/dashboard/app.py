@@ -265,8 +265,10 @@ for _key, _env, _mod, _attr in _CANVAS_DEFS:
             if _bp:
                 _CANVAS_BLUEPRINTS[_key] = _bp
                 _CANVAS_FLAGS[_key] = True
-        except (ImportError, Exception):
-            pass
+        except Exception as _exc:
+            logging.getLogger("icdev.dashboard").warning(
+                "Canvas %s import failed (%s): %s", _key.upper(), _mod, _exc
+            )
 
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
