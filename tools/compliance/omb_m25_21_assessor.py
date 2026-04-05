@@ -21,7 +21,6 @@ Usage:
     python tools/compliance/omb_m25_21_assessor.py --project-id proj-123 --json
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

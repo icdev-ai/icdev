@@ -9,7 +9,7 @@ import logging
 import time
 from abc import abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from xml.etree import ElementTree as ET
 
 from tools.databridge.connector import (

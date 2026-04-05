@@ -2,8 +2,6 @@
 # CUI // SP-CTI
 """Seed the ICDEV Playground database with sample data."""
 import sqlite3
-import uuid
-from datetime import datetime, timezone
 
 
 def seed_playground_db(db_path):

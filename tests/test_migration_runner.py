@@ -10,7 +10,7 @@ import sqlite3
 
 import pytest
 
-from icdev.tools.db.migration_runner import MigrationRunner, SCHEMA_MIGRATIONS_DDL
+from icdev.tools.db.migration_runner import MigrationRunner
 
 
 @pytest.fixture

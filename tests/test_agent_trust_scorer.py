@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for AgentTrustScorer (Phase 45, Gap 5, D260)."""
 
-import json
 import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta

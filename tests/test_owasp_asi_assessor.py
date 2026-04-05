@@ -13,10 +13,8 @@ Validates:
 import json
 import sqlite3
 import sys
-import tempfile
 import uuid
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import struct
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -32,7 +31,6 @@ class FAISSVectorStore(VectorStoreProvider):
 
     def __init__(self, index_dir: str = "", tenant_id: str = "", dim: int = 768):
         import faiss
-        import numpy as np
 
         self._tenant_id = tenant_id
         base_dir = index_dir or str(BASE_DIR / "data" / "rag" / "faiss")
@@ -81,7 +79,6 @@ class FAISSVectorStore(VectorStoreProvider):
         return "faiss"
 
     def upsert(self, chunks: List[VectorChunk]) -> int:
-        import numpy as np
 
         if not chunks:
             return 0
@@ -125,7 +122,6 @@ class FAISSVectorStore(VectorStoreProvider):
         top_k: int = 50,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
-        import numpy as np
 
         if self._index.ntotal == 0:
             return []

@@ -11,7 +11,6 @@ writes directly into the knowledge graph for RAG retrieval.
 GREEN tier (non-destructive writes to KG tables).  Air-gap safe.
 """
 
-import json
 import os
 import sys
 from datetime import datetime, timezone

@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from icdev.tools.monitor.heartbeat_daemon import (
     CHECK_REGISTRY,

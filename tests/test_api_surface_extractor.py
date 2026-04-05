@@ -4,13 +4,11 @@
 
 from __future__ import annotations
 
-import json
 import textwrap
 
 import pytest
 
 from tools.testing.api_surface_extractor import (
-    APISurfaceVisitor,
     _compute_mock_targets,
     _compute_module_path,
     extract_api_surface,

@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import json
-import os
 import signal
 import sqlite3
 import sys

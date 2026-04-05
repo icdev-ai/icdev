@@ -10,7 +10,6 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from icdev.tools.monitor.auto_resolver import (
     _check_rate_limit,

@@ -7,13 +7,12 @@ card_hash, classification markings, data integration (ai_bom, ai_telemetry),
 CLI entry point.  All tests work without optional dependencies.
 """
 
-import hashlib
 import json
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

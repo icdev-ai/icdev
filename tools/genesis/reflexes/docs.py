@@ -13,8 +13,6 @@ GREEN tier (read-only analysis, no writes).
 Scanner-tier only (zero Claude tokens).
 """
 
-import json
-import os
 import re
 import sys
 from datetime import datetime, timezone

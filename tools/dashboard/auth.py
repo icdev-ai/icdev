@@ -13,17 +13,14 @@ Provides:
 
 import functools
 import hashlib
-import os
 import secrets
 import sqlite3
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 from flask import (
     Flask,
     abort,
-    flash,
     g,
     redirect,
     request,
@@ -484,7 +481,7 @@ def _cli_main():
     if args.command == "create-admin":
         user, raw_key = bootstrap_admin(args.email, args.name)
         print(f"Admin user created: {user['email']} (id: {user['id']})")
-        print(f"API Key (save this — it won't be shown again):")
+        print("API Key (save this — it won't be shown again):")
         print(f"  {raw_key}")
     elif args.command == "list-users":
         users = list_users()

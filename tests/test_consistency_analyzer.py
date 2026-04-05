@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import pytest
 
 from icdev.tools.requirements.consistency_analyzer import (
     analyze_spec_consistency,
@@ -13,7 +12,6 @@ from icdev.tools.requirements.consistency_analyzer import (
     _check_nist_vs_ato,
     _check_user_story_vs_acceptance,
     _parse_spec_sections,
-    _check_spec_directory_consistency,
 )
 
 

@@ -8,8 +8,7 @@ Concrete connectors override: _wsdl_url(), _operation_name(), connector_name.
 import logging
 import time
 from abc import abstractmethod
-from typing import Any, Dict, List, Optional
-from xml.etree import ElementTree as ET
+from typing import Any, Dict, List
 
 from tools.databridge.connector import (
     ConnectorCapabilities,

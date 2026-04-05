@@ -5,7 +5,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.devsecops.zta_maturity_scorer — ZTA 7-pillar maturity scoring."""
 
-import json
 import sqlite3
 from unittest.mock import patch
 

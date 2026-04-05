@@ -10,7 +10,6 @@ Validates:
     - CLI interface
 """
 
-import json
 import sqlite3
 import sys
 import uuid

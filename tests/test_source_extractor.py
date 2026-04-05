@@ -2,10 +2,7 @@
 # CUI // SP-CTI
 """Tests for tools/translation/source_extractor.py — Phase 43 IR extraction."""
 
-import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -16,8 +13,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.translation.source_extractor import (
     extract_source,
     build_dependency_graph,
-    _extract_python,
-    _extract_regex,
     _detect_python_idioms,
     _count_branches,
     SUPPORTED_LANGUAGES,

@@ -6,10 +6,7 @@ evidence package export, POAM CSV creation, and export_all orchestration.
 """
 
 import csv
-import io
-import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pytest

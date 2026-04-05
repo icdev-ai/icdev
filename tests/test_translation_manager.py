@@ -3,12 +3,8 @@
 """Tests for tools/translation/translation_manager.py — Phase 43 full pipeline."""
 
 import json
-import os
-import sqlite3
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -39,7 +35,6 @@ from icdev.tools.translation.feature_map import FeatureMapLoader
 from icdev.tools.translation.type_checker import (
     load_type_mappings,
     map_type,
-    check_signature_compatibility,
 )
 
 

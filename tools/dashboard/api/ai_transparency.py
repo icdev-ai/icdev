@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """AI Transparency API Blueprint — REST endpoints for Phase 48 dashboard."""
 
-import json
 import os
 import sqlite3
 import sys

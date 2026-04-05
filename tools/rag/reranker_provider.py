@@ -17,7 +17,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger("icdev.rag.reranker")
 

@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import pytest
 
 from icdev.tools.requirements.spec_quality_checker import (
     parse_spec_sections,

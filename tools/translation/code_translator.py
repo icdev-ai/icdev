@@ -9,7 +9,6 @@ Architecture Decision D254: pass@k from Google ICSE 2025.
 Architecture Decision D256: Mock-and-continue from Amazon Oxidizer."""
 
 import argparse
-import hashlib
 import json
 import sqlite3
 import uuid
@@ -542,7 +541,7 @@ def main():
         print(f"  Failed:       {stats['failed_count']}")
         print(f"  Mock %:       {stats['mock_percentage']}%")
         if stats["mock_threshold_exceeded"]:
-            print(f"  WARNING: Mock percentage exceeds threshold!")
+            print("  WARNING: Mock percentage exceeds threshold!")
 
 
 if __name__ == "__main__":

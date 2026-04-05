@@ -12,13 +12,10 @@ Requires environment variables:
 Decision D133: Channel adapters are ABC + implementations.
 """
 
-import hashlib
-import hmac
 import json
 import logging
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional

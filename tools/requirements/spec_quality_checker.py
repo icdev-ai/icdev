@@ -24,7 +24,6 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

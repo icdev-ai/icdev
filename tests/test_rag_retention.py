@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from tools.rag.retention_manager import (
     get_retention_status,

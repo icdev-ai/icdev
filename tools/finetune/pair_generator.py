@@ -417,7 +417,6 @@ def main():
 
     if args.generate and args.dataset_id:
         # For CLI, user provides document ID and we extract chunks from doc_extractor
-        from tools.finetune.doc_extractor import extract_document
         if args.document_id:
             # Try to load chunks from a previous extraction
             result = {"success": False, "error": "Provide --file with --generate to extract and generate pairs"}

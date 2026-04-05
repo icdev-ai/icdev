@@ -24,7 +24,6 @@ Usage:
     summary = collector.get_health_summary("child-abc")
 """
 
-import hashlib
 import json
 import sqlite3
 import sys

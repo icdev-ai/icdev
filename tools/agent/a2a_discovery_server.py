@@ -21,7 +21,6 @@ Usage:
 import argparse
 import json
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -234,7 +233,7 @@ def main():
         if args.json_output:
             print(json.dumps(summary, indent=2))
         else:
-            print(f"\n=== Discovery Summary ===")
+            print("\n=== Discovery Summary ===")
             print(f"  Total Agents: {summary['total_agents']}")
             print(f"  Protocol: v{summary['protocol_version']}")
             print(f"  Total Skills: {summary['total_skills']}")

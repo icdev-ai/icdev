@@ -2,13 +2,10 @@
 # CUI // SP-CTI
 """Tests for tools/dx/tool_detector.py."""
 
-import json
 import os
 import sys
 from pathlib import Path
-from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.dx.tool_detector import detect_tools

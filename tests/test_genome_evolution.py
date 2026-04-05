@@ -5,15 +5,12 @@
 Covers: AbsorptionEngine, LearningCollector, CrossPollinator.
 """
 
-import json
 import os
 import sqlite3
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

@@ -4,7 +4,6 @@
 auto-capture buffer (D181), thinking type (D182), and D72 embed fix."""
 
 import hashlib
-import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -252,7 +251,7 @@ class TestAutoCapture:
 
     def test_flush_dedup_against_entries(self, memory_db):
         from icdev.tools.memory.auto_capture import capture, flush_buffer
-        from icdev.tools.memory.memory_write import write_to_db, DB_PATH
+        from icdev.tools.memory.memory_write import write_to_db
         import icdev.tools.memory.memory_write as mw
 
         # Monkeypatch DB_PATH for write_to_db
@@ -384,7 +383,6 @@ class TestMigration:
         conn.commit()
 
         # Run migration
-        from icdev.tools.db.migrations import __path__ as _  # noqa: ensure importable
         sys.path.insert(0, str(BASE_DIR / "tools" / "db" / "migrations" / "002_memory_enhancements"))
         from up import up as migrate_up
         migrate_up(conn)

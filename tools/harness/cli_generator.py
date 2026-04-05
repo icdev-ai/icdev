@@ -10,7 +10,6 @@ Architecture decision: deterministic code generation (no LLM).
 
 from __future__ import annotations
 
-import os
 import pathlib
 from datetime import datetime, timezone
 

@@ -8,7 +8,7 @@ Admin sees all users' usage; others see only their own.
 
 import sqlite3
 
-from flask import Blueprint, g, jsonify, render_template, request
+from flask import Blueprint, g, jsonify, request
 
 from tools.dashboard.config import DB_PATH
 

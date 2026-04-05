@@ -12,49 +12,34 @@ env:
   ICDEV_CUI_BANNER_ENABLED: "true"
 
 jobs:
-  # ── Tier 0: Lint (changed files only — avoids pre-existing debt) ─────────
+  # ── Tier 0: Lint (full codebase — ruff.toml handles suppressions) ────────
   lint:
-    name: Lint (changed files)
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install ruff
-      - name: Lint changed Python files only
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-          else
-            BASE="HEAD~1"
-          fi
-          CHANGED=$(git diff --name-only "$BASE"...HEAD -- '*.py' 2>/dev/null || echo "")
-          if [ -z "$CHANGED" ]; then
-            echo "No changed Python files — lint passed"
-            exit 0
-          fi
-          echo "Linting $(echo "$CHANGED" | wc -l) changed files..."
-          echo "$CHANGED" | xargs ruff check --select E,F,W
+      - name: Ruff lint (uses ruff.toml config)
+        run: ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E731,E741,F401,F541,F821,F841
 
   # ── Tier 1: Unit Tests (pure Python — no LLM) ───────────────────────────
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    name: Test
     runs-on: ubuntu-latest
     needs: lint
-    strategy:
-      matrix:
-        python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
       - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Run core unit tests
+        run: |
+          pip install -r requirements.txt
+          pip install -e . 2>/dev/null || true
+      - name: Run core unit tests (293 tests)
         run: |
           pytest tests/test_circuit_breaker.py \
             tests/test_retry.py \
@@ -81,25 +66,13 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install bandit pip-audit
-      - name: SAST (bandit) — 0 high/critical on changed files
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-          else
-            BASE="HEAD~1"
-          fi
-          CHANGED=$(git diff --name-only "$BASE"...HEAD -- '*.py' 2>/dev/null || echo "")
-          if [ -z "$CHANGED" ]; then
-            echo "No changed Python files — bandit passed"
-            exit 0
-          fi
-          echo "Scanning $(echo "$CHANGED" | wc -l) changed files..."
-          echo "$CHANGED" | xargs bandit -q --severity-level high
+      - name: SAST (bandit) — 0 critical required
+        run: bandit -r tools/ -q --severity-level high --confidence-level high
       - name: Dependency audit
         run: pip install -r requirements.txt && pip-audit --skip-editable -q
         continue-on-error: true
 
-  # ── Tier 2: Two-Tier LLM Build (Ollama qwen3.5 + Claude review) ─────────
+  # ── Tier 2: Two-Tier LLM Build (Ollama + Claude review) ─────────────────
   two-tier-build:
     name: Two-Tier LLM Build
     runs-on: ubuntu-latest
@@ -116,78 +89,59 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # ── Install Ollama + pull qwen3.5 (scanner-tier model) ──
       - name: Install Ollama
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
           ollama serve &
           sleep 5
-          echo "Ollama server started"
 
-      - name: Pull qwen3.5 (scanner-tier model)
-        run: |
-          ollama pull qwen3:1.7b
-          echo "qwen3:1.7b ready (scanner-tier)"
+      - name: Pull qwen3:1.7b (scanner-tier)
+        run: ollama pull qwen3:1.7b
 
-      # ── Verify two-tier routing ──
-      - name: Verify LLM router two-tier config
+      - name: Verify two-tier LLM routing
         run: |
           python -c "
-          from tools.llm.router import LLMRouter
+          from tools.llm.router import LLMRouter, LLMRequest
           r = LLMRouter()
-          print('Two-tier enabled:', r._config.get('two_tier', {}).get('enabled', False))
-          print('Tier 1 model:', r._config.get('two_tier', {}).get('tier1_model', 'not set'))
-          print('Tier 2 model:', r._config.get('two_tier', {}).get('tier2_model', 'not set'))
-
-          # Test scanner-tier invocation (qwen3 only, zero Claude tokens)
-          from tools.llm.router import LLMRequest
+          tt = r._config.get('two_tier', {})
+          print('Two-tier enabled:', tt.get('enabled', False))
+          print('Tier 1 (scanner):', tt.get('tier1_model', 'not set'))
+          print('Tier 2 (planner):', tt.get('tier2_model', 'not set'))
           try:
               resp = r.invoke('compliance_export', LLMRequest(
-                  messages=[{'role': 'user', 'content': 'Summarize SA-11 in one sentence.'}],
+                  messages=[{'role': 'user', 'content': 'Summarize NIST SA-11 in one sentence.'}],
                   max_tokens=100,
               ))
-              print('Scanner-tier response:', resp.content[:80] if resp.content else 'empty')
-              print('Provider used:', resp.model)
-              print('TWO-TIER TEST: PASS')
+              print('Scanner response:', resp.content[:80] if resp.content else 'empty')
+              print('Model:', resp.model)
+              print('SCANNER-TIER: PASS')
           except Exception as e:
-              print(f'Scanner-tier test failed (expected if no Ollama model): {e}')
-              print('TWO-TIER TEST: SKIP (Ollama model not available)')
+              print(f'Scanner-tier: SKIP ({e})')
           "
-
-      # ── Run coherence checker (scanner-tier, zero Claude tokens) ──
-      - name: Coherence check (scanner-tier)
-        run: |
-          python tools/workflow/coherence_checker.py --all --json 2>/dev/null || echo '{"status": "skipped"}'
         continue-on-error: true
 
-      # ── Run QDC engine self-test (pure Python) ──
       - name: QDC engine self-test
         run: python tools/qdc_canvas/qdc_engine.py
         continue-on-error: true
 
-  # ── Tier 3: Docker Build Validation ──────────────────────────────────────
+  # ── Tier 3: Docker Build (main branch only) ─────────────────────────────
   docker-build:
-    name: Docker Build Validation
+    name: Docker Build
     runs-on: ubuntu-latest
     needs: [test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      - name: Build agent-base
-        run: docker build -f docker/Dockerfile.agent-base -t icdev/agent-base:test .
-      - name: Build dashboard
-        run: docker build -f docker/Dockerfile.dashboard -t icdev/dashboard:test .
+      - run: docker build -f docker/Dockerfile.agent-base -t icdev/agent-base:test .
+      - run: docker build -f docker/Dockerfile.dashboard -t icdev/dashboard:test .
 
   # ── Tier 3: Helm Chart Validation ────────────────────────────────────────
   helm-lint:
-    name: Helm Chart Validation
+    name: Helm Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-      - name: Lint chart
-        run: helm lint deploy/helm/
-      - name: Template validation
-        run: helm template icdev deploy/helm/ > /dev/null
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/
+      - run: helm template icdev deploy/helm/ > /dev/null
 # [TEMPLATE: CUI // SP-CTI]

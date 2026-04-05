@@ -11,8 +11,6 @@ sys.path.insert(
 )
 from ai_incident_response import (
     VALID_INCIDENT_TYPES,
-    VALID_SEVERITIES,
-    VALID_STATUSES,
     get_incident_stats,
     get_open_incidents,
     log_incident,

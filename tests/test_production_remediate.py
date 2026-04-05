@@ -6,12 +6,8 @@ Covers: data structures, registry validation, auto-fix logic,
 suggestion/escalation, verification targeting, full pipeline.
 """
 
-import dataclasses
-import json
-import os
 import sqlite3
 import sys
-import time
 from pathlib import Path
 from unittest import mock
 

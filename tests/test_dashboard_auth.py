@@ -9,10 +9,7 @@ register_dashboard_auth.
 """
 
 import sqlite3
-import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from flask import Flask, g

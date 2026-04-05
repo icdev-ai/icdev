@@ -3,12 +3,10 @@
 """Tests for tools/testing/production_audit.py — Production Readiness Audit."""
 
 import json
-import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -21,29 +19,21 @@ from icdev.tools.testing.production_audit import (
     run_audit,
     check_python_version,
     check_stdlib_modules,
-    check_platform_compat,
     check_dockerfile_syntax,
     check_sast_bandit,
-    check_dependency_audit,
     check_secret_detection,
     check_prompt_injection_gate,
     check_owasp_agentic,
-    check_code_pattern_scan,
     check_cui_markings,
-    check_claude_governance,
     check_append_only_tables,
-    check_security_gates_config,
     check_xai_compliance,
     check_sbom_generation,
     check_mcp_servers,
     check_db_schema,
     check_cross_imports,
-    check_dashboard_health,
     check_api_gateway,
-    check_migration_status,
     check_backup_config,
     check_resilience_config,
-    check_test_collection,
     check_claude_md_table_count,
     check_tools_manifest,
     check_goals_manifest,

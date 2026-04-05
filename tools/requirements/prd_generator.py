@@ -148,11 +148,11 @@ def _render_cover(session: dict, readiness: dict | None, req_count: int) -> str:
     score = readiness["overall_score"] if readiness else session.get("readiness_score", 0)
 
     lines = [
-        f"# CUI // SP-CTI",
-        f"# Product Requirements Document (PRD)",
+        "# CUI // SP-CTI",
+        "# Product Requirements Document (PRD)",
         "",
-        f"| Field | Value |",
-        f"|-------|-------|",
+        "| Field | Value |",
+        "|-------|-------|",
         f"| **Session** | `{session['id']}` |",
         f"| **Customer** | {customer}{(' — ' + org) if org else ''} |",
         f"| **Classification** | {classification} |",
@@ -210,16 +210,16 @@ def _render_executive_summary(
         "",
         "### Requirements Overview",
         "",
-        f"| Priority | Count |",
-        f"|----------|-------|",
+        "| Priority | Count |",
+        "|----------|-------|",
     ]
     for p in ["critical", "high", "medium", "low"]:
         if priority_counts.get(p, 0) > 0:
             lines.append(f"| {p.title()} | {priority_counts[p]} |")
     lines.append("")
 
-    lines.append(f"| Type | Count |")
-    lines.append(f"|------|-------|")
+    lines.append("| Type | Count |")
+    lines.append("|------|-------|")
     for t, c in sorted(type_counts.items(), key=lambda x: -x[1]):
         lines.append(f"| {t.replace('_', ' ').title()} | {c} |")
     lines.append("")
@@ -227,8 +227,8 @@ def _render_executive_summary(
     lines.append(f"**Readiness Score:** {_pct(score)}")
     if readiness:
         lines.append("")
-        lines.append(f"| Dimension | Score |")
-        lines.append(f"|-----------|-------|")
+        lines.append("| Dimension | Score |")
+        lines.append("|-----------|-------|")
         for dim in ["completeness", "clarity", "feasibility", "compliance", "testability"]:
             lines.append(f"| {dim.title()} | {_pct(readiness.get(dim, 0))} |")
     lines.append("")
@@ -258,8 +258,8 @@ def _render_requirements(reqs: list[dict]) -> str:
         label = req_type.replace("_", " ").title()
         lines.append(f"### 2.{section_num} {label} Requirements")
         lines.append("")
-        lines.append(f"| ID | Requirement | Priority | Status |")
-        lines.append(f"|----|-------------|----------|--------|")
+        lines.append("| ID | Requirement | Priority | Status |")
+        lines.append("|----|-------------|----------|--------|")
         for r in sorted(type_reqs, key=lambda x: _PRIORITY_ORDER.get(x.get("priority", "medium"), 2)):
             rid = r.get("id", "—")
             text = (r.get("refined_text") or r.get("raw_text", ""))[:120]
@@ -414,8 +414,8 @@ def _render_user_stories(decomp: list[dict]) -> str:
             continue
         lines.append(f"### {lv.title()}s ({len(items)})")
         lines.append("")
-        lines.append(f"| ID | Title | Size | WSJF | ATO Tier | Status |")
-        lines.append(f"|----|-------|------|------|----------|--------|")
+        lines.append("| ID | Title | Size | WSJF | ATO Tier | Status |")
+        lines.append("|----|-------|------|------|----------|--------|")
         for d in items:
             did = d.get("id", "—")
             title = (d.get("title", ""))[:80]

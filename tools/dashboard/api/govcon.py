@@ -18,7 +18,6 @@ Integration points:
     competitor_profiler   → govcon_awards            (vendor intelligence)
 """
 
-import json
 import os
 import sqlite3
 import sys

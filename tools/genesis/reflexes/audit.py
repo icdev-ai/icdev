@@ -155,18 +155,18 @@ def _generate_audit_report(checks: List[Dict]) -> str:
     failed = [c for c in checks if c.get("status") == "failed"]
 
     lines = [
-        f"# Genesis Self-Audit Report",
-        f"",
+        "# Genesis Self-Audit Report",
+        "",
         f"**Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
         f"**Checks Completed:** {len(completed)}/{len(checks)}",
-        f"**Classification:** CUI // SP-CTI",
-        f"",
-        f"---",
-        f"",
-        f"## Results",
-        f"",
-        f"| Check | Status | Key Finding |",
-        f"|-------|--------|-------------|",
+        "**Classification:** CUI // SP-CTI",
+        "",
+        "---",
+        "",
+        "## Results",
+        "",
+        "| Check | Status | Key Finding |",
+        "|-------|--------|-------------|",
     ]
 
     for check in checks:

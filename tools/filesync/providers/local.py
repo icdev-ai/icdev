@@ -6,7 +6,6 @@ D-SYNC-1: Always available as fallback. Zero external dependencies.
 """
 
 import os
-import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 

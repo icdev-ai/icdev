@@ -27,7 +27,6 @@ import argparse
 import json
 import os
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -432,7 +431,7 @@ def _print_human(result, args):
         print(f"  Gap rate:       {s['gap_rate']:.0%}")
 
     if "gaps" in result:
-        print(f"\n  Top Gaps (priority-ranked):")
+        print("\n  Top Gaps (priority-ranked):")
         for g in result["gaps"][:15]:
             print(f"  ❌ [{g['domain']:12s}] priority={g['priority']:5.1f}  freq={g['frequency']:3d}  {g['pattern_name'][:45]}")
 

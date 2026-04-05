@@ -700,7 +700,7 @@ def _print_human(result, args):
         return
 
     if args.scan:
-        print(f"\n  SAM.gov Scan Complete")
+        print("\n  SAM.gov Scan Complete")
         print(f"  {'='*40}")
         print(f"  New:     {result.get('new_count', 0)}")
         print(f"  Updated: {result.get('updated_count', 0)}")
@@ -709,11 +709,11 @@ def _print_human(result, args):
         print(f"  Duration: {result.get('scan_duration_seconds', 0)}s")
         if result.get("cross_registration"):
             cr = result["cross_registration"]
-            print(f"\n  Cross-Registration:")
+            print("\n  Cross-Registration:")
             print(f"    Innovation signals: {cr.get('innovation_signals', 0)}")
             print(f"    Creative signals:   {cr.get('creative_signals', 0)}")
     elif args.stats:
-        print(f"\n  SAM.gov Scanner Stats")
+        print("\n  SAM.gov Scanner Stats")
         print(f"  {'='*40}")
         print(f"  Total:    {result.get('total_opportunities', 0)}")
         print(f"  Active:   {result.get('active_opportunities', 0)}")

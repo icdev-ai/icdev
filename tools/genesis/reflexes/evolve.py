@@ -231,7 +231,7 @@ def _run_tests_for_file(file_path: str, timeout: int = 120) -> Dict[str, Any]:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pytest", "-x", "--tb=short", "-q",
-             f"tests/"],
+             "tests/"],
             capture_output=True, text=True, timeout=timeout,
             cwd=str(BASE_DIR),
             env={**os.environ, "PYTHONPATH": str(BASE_DIR)},

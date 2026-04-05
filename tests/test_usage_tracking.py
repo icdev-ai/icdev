@@ -1,10 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Tests for the usage tracking API blueprint (tools/dashboard/api/usage.py)."""
 
-import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 

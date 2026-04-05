@@ -18,7 +18,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
 
 # =========================================================================
 # PATH SETUP
@@ -762,7 +762,7 @@ def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:
     Returns:
         Dict with watch status.
     """
-    from tools.filesync.watcher import FileWatcher, _HAS_WATCHDOG
+    from tools.filesync.watcher import FileWatcher
 
     config = _load_config()
     watcher_cfg = config.get("watcher", {})

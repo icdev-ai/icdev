@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Dashboard API: Evidence Collection (Phase 56, D347)."""
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

@@ -6,7 +6,6 @@ Standalone Flask app on port 5001 with no authentication.
 Pre-loaded with sample projects, compliance data, and assessments
 for demonstration purposes.
 """
-import json
 import logging
 import os
 import sqlite3

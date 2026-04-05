@@ -6,7 +6,6 @@ Provides /api/traces/*, /api/provenance/*, /api/xai/* endpoints
 for the dashboard trace explorer, provenance viewer, and XAI dashboard.
 """
 
-import json
 import os
 import sqlite3
 from pathlib import Path

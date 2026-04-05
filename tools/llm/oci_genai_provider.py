@@ -30,7 +30,6 @@ from tools.llm.provider import (
     LLMProvider,
     LLMRequest,
     LLMResponse,
-    messages_to_openai,
 )
 
 logger = logging.getLogger("icdev.llm.oci_genai")

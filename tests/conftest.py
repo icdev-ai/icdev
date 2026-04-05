@@ -6,7 +6,6 @@ D155: Project-root conftest.py centralizes test DB setup, Flask test clients,
 and auth header helpers. Prevents duplication across 20+ test files.
 """
 
-import json
 import os
 import sqlite3
 import sys

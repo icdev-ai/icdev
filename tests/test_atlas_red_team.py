@@ -5,14 +5,12 @@
 Covers: ATLASRedTeamScanner — opt-in adversarial testing (D219).
 """
 
-import json
 import os
 import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

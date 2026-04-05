@@ -20,9 +20,8 @@ import importlib
 import json
 import os
 import sys
-from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 # ---------------------------------------------------------------------------
 # Path bootstrapping
@@ -37,8 +36,6 @@ from tools.daemon.base import (
     ReflexStateBase,
     TrustKernelBase,
     RISK_GREEN,
-    RISK_YELLOW,
-    RISK_ORANGE,
     generate_id,
     utcnow,
     utcnow_iso,

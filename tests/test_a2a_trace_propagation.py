@@ -12,14 +12,12 @@ Verifies:
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.observability.trace_context import (
-    TraceContext,
     clear_current_context,
     generate_traceparent,
     get_current_context,

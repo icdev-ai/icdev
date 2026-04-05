@@ -13,7 +13,6 @@ Covers:
   - Edge cases: nested traced calls, no tracer
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest

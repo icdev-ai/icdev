@@ -546,7 +546,7 @@ def _print_human(args, result):
         return
 
     if args.create:
-        print(f"\n  Session Created")
+        print("\n  Session Created")
         print("-" * 70)
         print(f"  ID:       {result.get('id', '')}")
         print(f"  Name:     {result.get('name', '')}")
@@ -555,7 +555,7 @@ def _print_human(args, result):
         print(f"  Stage:    {result.get('pipeline_stage', '')}")
 
     elif args.get:
-        print(f"\n  Session Detail")
+        print("\n  Session Detail")
         print("-" * 70)
         print(f"  ID:         {result.get('id', '')}")
         print(f"  Name:       {result.get('name', '')}")
@@ -580,7 +580,7 @@ def _print_human(args, result):
             )
 
     elif args.advance:
-        print(f"\n  Stage Advanced")
+        print("\n  Stage Advanced")
         print("-" * 70)
         print(f"  ID:        {result.get('id', '')}")
         print(f"  Name:      {result.get('name', '')}")
@@ -588,7 +588,7 @@ def _print_human(args, result):
         print(f"  Stage:     {result.get('pipeline_stage', '')}")
 
     elif args.status:
-        print(f"\n  Session Status")
+        print("\n  Session Status")
         print("-" * 70)
         print(f"  ID:               {result.get('session_id', '')}")
         print(f"  Name:             {result.get('name', '')}")

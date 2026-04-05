@@ -35,7 +35,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -571,7 +571,7 @@ def main():
                 ov = result["project_override"]
                 print(f"  Project override ({args.project_id}): enabled={ov['enabled']}")
             else:
-                print(f"  Project override: (none)")
+                print("  Project override: (none)")
             print(f"  Effective mode: {'DISPATCHER-ONLY' if effective else 'FULL ACCESS'}")
             print()
             print("  Dispatch-only tools:")

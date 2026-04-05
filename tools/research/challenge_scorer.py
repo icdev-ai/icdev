@@ -1173,7 +1173,7 @@ def _print_human(args, result):
                     print(f"  {i:3d}  {ch['category']:>14s}  "
                           f"{ch['signal_count']:7d}  {ch['title'][:40]}")
         else:
-            print(f"\n  No signals to cluster.")
+            print("\n  No signals to cluster.")
 
     elif args.score_one:
         print(f"\n  Challenge: {result.get('challenge_id', '')}")
@@ -1226,7 +1226,7 @@ def _print_human(args, result):
                     print(f"       {dim_str}")
                 print()
         else:
-            print(f"\n  No results.")
+            print("\n  No results.")
 
     elif args.challenges:
         if isinstance(result, list):
@@ -1245,7 +1245,7 @@ def _print_human(args, result):
                       f"{ch.get('category', ''):>14s}  "
                       f"{ch.get('title', '')[:40]}")
         else:
-            print(f"\n  No challenges found.")
+            print("\n  No challenges found.")
 
     print()
     print("=" * 70)

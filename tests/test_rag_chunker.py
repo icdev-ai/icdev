@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from tools.rag.chunker import (
     CHARS_PER_TOKEN,
@@ -13,7 +12,6 @@ from tools.rag.chunker import (
     chunk_content,
     chunk_fields,
 )
-from tools.rag.vector_store_provider import VectorChunk
 
 
 class TestEstimateTokens:

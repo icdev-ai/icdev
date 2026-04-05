@@ -12,10 +12,9 @@ import json
 import os
 import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 
-from tools.finetune.provider import FineTuneRequest, FineTuneStatus
+from tools.finetune.provider import FineTuneRequest
 
 
 # ── OpenAI Provider Tests ─────────────────────────────────────────────

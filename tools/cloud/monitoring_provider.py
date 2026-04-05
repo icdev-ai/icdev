@@ -289,8 +289,6 @@ class GCPMonitoringProvider(MonitoringProvider):
         if not client or not self._project_id:
             return False
         try:
-            from google.protobuf import timestamp_pb2
-            from google.api import metric_pb2, monitored_resource_pb2
             project_name = f"projects/{self._project_id}"
             series = _gcp_mon.TimeSeries()
             series.metric.type = f"custom.googleapis.com/{namespace}/{metric_name}"

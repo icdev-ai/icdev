@@ -25,7 +25,14 @@ Usage:
     python tools/innovation/competitive_intel.py --report --json
 """
 
-import argparse, hashlib, json, os, re, sqlite3, sys, uuid
+import argparse
+import hashlib
+import json
+import os
+import re
+import sqlite3
+import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 

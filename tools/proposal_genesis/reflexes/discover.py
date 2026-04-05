@@ -6,7 +6,6 @@ Wraps tools/govcon/sam_scanner.py and tools/govcon/amendment_tracker.py.
 Scanner-tier only (zero Claude tokens).  Air-gap safe (graceful degradation).
 """
 
-import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path

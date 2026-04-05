@@ -2,10 +2,7 @@
 # CUI // SP-CTI
 """Tests for A2A v0.3 Agent Card Generator and Discovery Server (Phase 55, D344)."""
 
-import json
-from pathlib import Path
 
-import pytest
 
 
 # ---------------------------------------------------------------------------

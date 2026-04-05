@@ -7,9 +7,7 @@ in the two-tier LLM routing pipeline.
 """
 
 import sqlite3
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -472,7 +470,7 @@ class TestTwoTierFineTunedIntegration:
         self, mock_ft_check, mock_direct, mock_ft_invoke, mock_rag,
     ):
         """When fine-tuned model fails, falls through to chain routing."""
-        from tools.llm.provider import LLMRequest, LLMResponse
+        from tools.llm.provider import LLMRequest
 
         router = self._make_router_with_two_tier()
         request = LLMRequest(

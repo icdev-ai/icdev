@@ -7,7 +7,6 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 Each implementation ~40-60 lines with try/except ImportError.
 """
 
-import json
 import os
 import sqlite3
 import uuid

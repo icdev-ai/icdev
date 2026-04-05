@@ -7,15 +7,12 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.ci.pipeline_config_generator import (
     CHECK_REGISTRY,
     generate_pipeline,
     _build_gate_evaluation_script,
-    _generate_github_workflow,
-    _generate_gitlab_ci,
 )
 
 

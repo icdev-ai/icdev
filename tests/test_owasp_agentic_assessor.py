@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for OWASPAgenticAssessor (Phase 45, Gap 8, D264)."""
 
-import json
 import sqlite3
 from pathlib import Path
 

@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """AI Accountability API Blueprint — REST endpoints for Phase 49 dashboard."""
 
-import json
 import os
 import sqlite3
 import sys

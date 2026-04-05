@@ -28,7 +28,6 @@ import json
 import os
 import random
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

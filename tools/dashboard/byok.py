@@ -13,7 +13,6 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 from tools.dashboard.config import BYOK_ENABLED, BYOK_ENCRYPTION_KEY, DB_PATH
 

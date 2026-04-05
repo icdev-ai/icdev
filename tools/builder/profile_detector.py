@@ -13,9 +13,7 @@ Usage:
 
 import argparse
 import json
-import os
 import re
-import sqlite3
 import subprocess
 from collections import Counter
 from datetime import datetime, timezone

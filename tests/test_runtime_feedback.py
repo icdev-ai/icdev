@@ -6,12 +6,10 @@ Covers: JUnit XML parsing, stdout parsing, test-to-source mapping,
 DB storage, collect pipeline, health score computation.
 """
 
-import json
 import sqlite3
 import sys
 import textwrap
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 

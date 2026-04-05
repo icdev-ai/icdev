@@ -13,7 +13,6 @@ from icdev.tools.requirements.constitution_manager import (
     remove_principle,
     load_defaults,
     validate_spec,
-    VALID_CATEGORIES,
 )
 
 

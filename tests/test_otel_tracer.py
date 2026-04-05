@@ -3,7 +3,6 @@
 """Tests for OTel tracer wrapper (D280 Stage 4)."""
 
 import sys
-import types
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch

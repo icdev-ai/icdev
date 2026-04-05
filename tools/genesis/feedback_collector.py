@@ -14,7 +14,6 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone

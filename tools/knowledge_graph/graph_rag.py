@@ -26,11 +26,10 @@ import json
 import logging
 import math
 import sqlite3
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("icdev.knowledge_graph.graph_rag")
 

@@ -8,10 +8,8 @@ trust level tagging, and security assessment dimensions.
 """
 
 import inspect
-import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 

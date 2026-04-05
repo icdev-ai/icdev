@@ -7,13 +7,9 @@ ADRs: D239, D240, D241
 """
 
 import json
-import os
 import sqlite3
 import sys
-import tempfile
-from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 

@@ -8,8 +8,6 @@ Architecture Decision D249: Compliance bridge — CUI markings on all translated
 
 import argparse
 import json
-import os
-import uuid
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

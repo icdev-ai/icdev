@@ -5,7 +5,6 @@
 REST endpoints for sync job CRUD, execution, conflicts, and health.
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

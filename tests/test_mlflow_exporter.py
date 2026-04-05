@@ -17,7 +17,6 @@ Covers:
 
 import json
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.finetune.provider import FineTuneRequest, FineTuneStatus
+from tools.finetune.provider import FineTuneRequest
 from tools.finetune.provider_factory import get_provider
 from tools.finetune.dataset_manager import export_jsonl, get_dataset
 

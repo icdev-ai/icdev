@@ -884,14 +884,14 @@ def _generate_dashboard_stub(
         stub_content += fn + "\n"
 
     stub_content += (
-        f'    return app\n'
-        f'\n'
-        f'\n'
-        f'app = create_app()\n'
-        f'\n'
-        f'\n'
-        f'if __name__ == "__main__":\n'
-        f'    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")\n'
+        '    return app\n'
+        '\n'
+        '\n'
+        'app = create_app()\n'
+        '\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")\n'
     )
 
     dash_dir = child_root / "tools" / "dashboard"
@@ -1199,8 +1199,8 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
 
     if demo_mode:
         memory_content += (
-            f"- **Mode:** DEMONSTRATION ONLY\n"
-            f"  - This is a demo application. Do NOT use for operational or classified data.\n"
+            "- **Mode:** DEMONSTRATION ONLY\n"
+            "  - This is a demo application. Do NOT use for operational or classified data.\n"
         )
 
     # Agent details — only if the app has agents
@@ -1229,22 +1229,22 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
 
     if active_caps:
         memory_content += (
-            f"\n"
-            f"## Capabilities\n"
+            "\n"
+            "## Capabilities\n"
         )
         for cap in active_caps:
             memory_content += f"- {cap}\n"
 
     memory_content += (
-        f"\n"
-        f"## User Preferences\n"
-        f"(To be populated during first session)\n"
-        f"\n"
-        f"## Key Facts\n"
-        f"- This is a generated child application of ICDEV\n"
-        f"- This application CANNOT generate child applications "
-        f"(grandchild prevention)\n"
-        f"- ATLAS workflow does not include fitness assessment step\n"
+        "\n"
+        "## User Preferences\n"
+        "(To be populated during first session)\n"
+        "\n"
+        "## Key Facts\n"
+        "- This is a generated child application of ICDEV\n"
+        "- This application CANNOT generate child applications "
+        "(grandchild prevention)\n"
+        "- ATLAS workflow does not include fitness assessment step\n"
     )
     if parent_cb.get("enabled"):
         memory_content += (
@@ -2380,13 +2380,13 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
     # Title + ICDEV intro
     sections.append(f"# {app_name}\n")
     sections.append(
-        f"**Built with [ICDEV](https://github.com/icdev) — the Intelligent "
-        f"Coding Development platform.**\n\n"
-        f"ICDEV is a meta-builder that autonomously constructs Gov/DoD applications "
-        f"using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
-        f"Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
-        f"→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
-        f"compliance, and self-healing capabilities.\n"
+        "**Built with [ICDEV](https://github.com/icdev) — the Intelligent "
+        "Coding Development platform.**\n\n"
+        "ICDEV is a meta-builder that autonomously constructs Gov/DoD applications "
+        "using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
+        "Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
+        "→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
+        "compliance, and self-healing capabilities.\n"
     )
 
     # Classification badge

@@ -33,7 +33,6 @@ from rich.markdown import Markdown
 # Add ICDEV root to path for imports
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent.parent))
 
-from tools.pulse.config import BASE_DIR
 from tools.pulse.db import init_db, get_connection, get_row, insert_row, query_rows, update_row
 
 console = Console()
@@ -97,7 +96,6 @@ def research(max_results):
 def cluster():
     """Cluster research results into article topics."""
     init_db()
-    from tools.pulse.engine.researcher import research_all_topics
     from tools.pulse.engine.topic_clusterer import cluster_research, rank_clusters
 
     results = query_rows("research_cache", limit=500)
@@ -399,7 +397,7 @@ def publish(post_id):
     })
 
     exports = export_both(post_id)
-    console.print(f"[green bold]Published![/green bold]")
+    console.print("[green bold]Published![/green bold]")
     console.print(f"  MDX: {exports['mdx']}")
     console.print(f"  HTML: {exports['html']}")
 
@@ -435,7 +433,7 @@ def schedule():
     init_db()
     from tools.pulse.engine.scheduler import run_scheduled
 
-    console.print(f"[bold]Starting ICDEV Pulse scheduler...[/bold]")
+    console.print("[bold]Starting ICDEV Pulse scheduler...[/bold]")
     run_scheduled()
 
 

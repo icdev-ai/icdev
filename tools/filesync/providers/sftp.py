@@ -9,7 +9,6 @@ Graceful degradation: paramiko → subprocess ssh/scp → unavailable.
 import os
 import stat
 import subprocess
-import time
 from pathlib import PurePosixPath
 from typing import Dict, List, Optional
 

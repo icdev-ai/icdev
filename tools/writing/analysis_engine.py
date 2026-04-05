@@ -11,7 +11,7 @@ Scanner-tier only when ``skip_llm=True`` (zero Claude tokens, D-WG-2).
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 # ---------------------------------------------------------------------------

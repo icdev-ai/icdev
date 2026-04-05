@@ -23,7 +23,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 

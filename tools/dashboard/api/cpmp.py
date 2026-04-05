@@ -16,7 +16,6 @@ Integration points:
     sam_contract_sync.py     → SAM.gov Contract Awards API
 """
 
-import json
 import os
 import sqlite3
 import sys

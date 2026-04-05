@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import MINIMAL_ICDEV_SCHEMA, SEED_PROJECT_ID
+from tests.conftest import MINIMAL_ICDEV_SCHEMA
 
 
 # ---------------------------------------------------------------------------

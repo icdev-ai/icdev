@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Callable, Dict, Optional

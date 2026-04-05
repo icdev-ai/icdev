@@ -27,7 +27,7 @@ if str(BASE_DIR) not in sys.path:
 
 from functools import wraps
 
-from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for, flash
+from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for
 
 from tools.dashboard.config import (
     DB_PATH,
@@ -224,7 +224,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             else:
                 contracts = []
             return render_template("cpmp/cor_portal.html", contracts=contracts, cor_email=cor_email)
-        except Exception as e:
+        except Exception:
             import traceback; traceback.print_exc()
             return render_template("cpmp/cor_portal.html", contracts=[], cor_email=cor_email)
         finally:

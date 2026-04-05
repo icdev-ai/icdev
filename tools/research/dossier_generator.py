@@ -647,16 +647,16 @@ def _build_forecast_section(session_id, db_path=None):
         horizon = fc.get("time_horizon", "6mo")
 
         lines.append(f"### {i}. {title}")
-        lines.append(f"")
+        lines.append("")
         lines.append(f"- **Type:** {pred_type.replace('_', ' ').title()}")
         lines.append(f"- **Confidence:** {confidence:.0%}")
         lines.append(f"- **Surprise Score:** {surprise:.0%}")
         lines.append(f"- **Composite Rank:** {composite:.3f}")
         lines.append(f"- **Time Horizon:** {horizon}")
         if desc:
-            lines.append(f"")
+            lines.append("")
             lines.append(f"{desc}")
-        lines.append(f"")
+        lines.append("")
 
     return "\n".join(lines)
 
@@ -1325,7 +1325,7 @@ def _print_human(action, result):
             print("")
 
     elif action == "review":
-        print(f"\n  Dossier Reviewed")
+        print("\n  Dossier Reviewed")
         print("-" * 70)
         print(f"  New Dossier ID: {result.get('dossier_id')}")
         print(f"  Original ID:    {result.get('original_dossier_id')}")
@@ -1336,7 +1336,7 @@ def _print_human(action, result):
             print(f"  Notes:          {result.get('review_notes')}")
 
     elif action == "trigger_fitness":
-        print(f"\n  Fitness Assessment Triggered")
+        print("\n  Fitness Assessment Triggered")
         print("-" * 70)
         print(f"  New Dossier ID: {result.get('dossier_id')}")
         print(f"  Original ID:    {result.get('original_dossier_id')}")

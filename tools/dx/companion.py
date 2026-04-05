@@ -25,7 +25,7 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.dx.tool_detector import detect_tools
 from tools.dx.instruction_generator import generate_instructions, collect_project_data
 from tools.dx.mcp_config_generator import generate_mcp_config
-from tools.dx.skill_translator import translate_skills, list_skills
+from tools.dx.skill_translator import translate_skills
 
 try:
     import yaml as _yaml

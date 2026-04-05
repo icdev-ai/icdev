@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for cross-phase workflow composer (Phase 54, D343)."""
 
-import json
 from pathlib import Path
 
 import pytest
