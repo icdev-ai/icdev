@@ -579,8 +579,10 @@ def api_assess_design(design_id: str):
 
     return jsonify(
         {
+            "status": "ok",
             "assessment_id": assess_id,
             "design_id": design_id,
+            "assessment": result,
             "result": result,
             "uqs": uqs_result,
             "sa11_mapping": sa11_mapping,
@@ -610,7 +612,7 @@ def api_get_uqs(design_id: str):
         dims = {}
     score = d.get("uqs_score", 0.0)
     grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
-    return jsonify({"uqs_score": score, "dimensions": dims, "grade": grade, "assessed_at": d.get("created_at")})
+    return jsonify({"status": "ok", "uqs_score": score, "dimensions": dims, "grade": grade, "assessed_at": d.get("created_at")})
 
 
 @qdc_bp.route("/api/designs/<design_id>/uqs/history", methods=["GET"])
@@ -649,6 +651,27 @@ def api_get_gates(design_id: str):
     finally:
         conn.close()
     return jsonify({"gates": rows, "count": len(rows)})
+
+
+@qdc_bp.route("/api/designs/<design_id>/gaps", methods=["GET"])
+def api_get_gaps(design_id: str):
+    """Get quality gaps for a design based on latest assessment."""
+    conn = _get_conn()
+    try:
+        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Design not found"}), 404
+        graph_raw = row[0] if not hasattr(row, "keys") else row["graph_json"]
+        try:
+            graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+        except (json.JSONDecodeError, TypeError):
+            graph_data = {"nodes": [], "edges": []}
+
+        result = assess_quality_design(graph_data)
+        gaps = detect_quality_gaps(result)
+    finally:
+        conn.close()
+    return jsonify({"status": "ok", "gaps": gaps, "count": len(gaps)})
 
 
 @qdc_bp.route("/api/designs/<design_id>/evidence", methods=["GET"])
