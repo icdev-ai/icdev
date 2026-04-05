@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-Three ICDEV engines were run in parallel to assess the feasibility and architecture for **FreeRTOS-ai** — a child application that integrates ICDEV's compliance, multi-agent orchestration, and traceability framework with FreeRTOS embedded development.
+Three ICDEV™ engines were run in parallel to assess the feasibility and architecture for **FreeRTOS-ai** — a child application that integrates ICDEV™'s compliance, multi-agent orchestration, and traceability framework with FreeRTOS embedded development.
 
 ### Key Finding: Three-Tier Architecture
 
@@ -29,12 +29,12 @@ Tier 2: Edge Gateway (Raspberry Pi, Jetson, Greengrass Core)
 ├── Edge inference (SageMaker Neo / DLR runtime)
 └── Forwards to Tier 3 when needed
 
-Tier 3: Cloud/ICDEV (Bedrock, SageMaker, ICDEV Agents)
+Tier 3: Cloud/ICDEV™ (Bedrock, SageMaker, ICDEV™ Agents)
 ├── Full LLM orchestration (Bedrock AgentCore)
 ├── Model training + deployment to Tier 2
 ├── Compliance monitoring + audit trail
 ├── Self-healing firmware crash analysis
-└── ICDEV GOTCHA/ATLAS workflow
+└── ICDEV™ FORGE/ANVIL workflow
 ```
 
 ---
@@ -66,7 +66,7 @@ Tier 3: Cloud/ICDEV (Bedrock, SageMaker, ICDEV Agents)
 | **ThreadX/Eclipse** | IEC 62443 pre-certified, Azure IoT integration | MEDIUM |
 
 ### Regulatory Landscape
-| Framework | FreeRTOS-ai Relevance | ICDEV Status |
+| Framework | FreeRTOS-ai Relevance | ICDEV™ Status |
 |-----------|----------------------|--------------|
 | DO-178C (avionics) | DAL A-E traceability | Not implemented — needs new assessor |
 | IEC 62443 (industrial) | SL 1-4 cybersecurity | Not implemented — needs new assessor |
@@ -74,7 +74,7 @@ Tier 3: Cloud/ICDEV (Bedrock, SageMaker, ICDEV Agents)
 | IEC 62304 (medical devices) | Class A-C software lifecycle | Not implemented — needs new assessor |
 | EU AI Act (embedded AI) | Annex III high-risk AI | Implemented (Phase 57) — extend for embedded |
 | NIST AI RMF (IoT) | 4 functions, 12 subcategories | Implemented (Phase 37) — extend for IoT |
-| NIST 800-53 (cyber) | Full catalog | Implemented — core ICDEV |
+| NIST 800-53 (cyber) | Full catalog | Implemented — core ICDEV™ |
 | EO 14028 (SBOM) | Mandatory for firmware | Implemented — extend for embedded SBOM |
 
 ---
@@ -88,7 +88,7 @@ Tier 3: Cloud/ICDEV (Bedrock, SageMaker, ICDEV Agents)
 4. **LLM-Assisted Self-Healing** — First-of-kind academic project (FYP, Feb 2026)
 5. **AWS Greengrass V2 ML Inference** — Production edge AI pattern for Gov/DoD
 6. **TFLite Micro** (2.8K stars) — De facto MCU ML inference standard
-7. **NIST AI RMF for IoT** — Extends existing ICDEV assessor
+7. **NIST AI RMF for IoT** — Extends existing ICDEV™ assessor
 8. **27 FreeRTOS CVEs** in NVD — Active security research on FreeRTOS
 
 ### Architecture Gap: No Multi-Agent Framework for RTOS
@@ -172,13 +172,13 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 │  │ • Edge coord │  │ • OTA deploy │  │ • Firmware        │   │
 │  │ • Task DAG   │  │ • Health     │  │   attestation    │   │
 │  │ • A2A bridge │  │   heartbeat  │  │ • Stack overflow │   │
-│  │   to ICDEV   │  │ • Telemetry  │  │   detection      │   │
+│  │   to ICDEV™   │  │ • Telemetry  │  │   detection      │   │
 │  │ • State      │  │   dashboard  │  │ • Auto-rollback  │   │
 │  │   machines   │  │ • Shadow     │  │ • Priority inver │   │
 │  └──────────────┘  └──────────────┘  └──────────────────┘   │
 │                                                              │
-│  GOTCHA Framework │ ATLAS Workflow │ 10-12 Agents            │
-│  TDD/BDD for C   │ Memory System  │ ICDEV A2A Bridge        │
+│  FORGE Framework │ ANVIL Workflow │ 10-12 Agents            │
+│  TDD/BDD for C   │ Memory System  │ ICDEV™ A2A Bridge        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -203,9 +203,9 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 - **Lightweight MQTT Agent Protocol**: CBOR-encoded agent messages (< 256 bytes)
 - **Agent State Machines**: Each agent is a FreeRTOS task with a finite state machine
 - **Edge Coordinator**: Runs on gateway device, orchestrates fleet of MCU agents
-- **A2A Bridge to ICDEV**: Gateway bridges MQTT agent protocol to ICDEV's JSON-RPC A2A
+- **A2A Bridge to ICDEV™**: Gateway bridges MQTT agent protocol to ICDEV™'s JSON-RPC A2A
 - **Task DAG**: Deterministic task scheduling using FreeRTOS priorities + dependencies
-- **Hierarchical Delegation**: MCU agents → Edge coordinator → Cloud ICDEV agents
+- **Hierarchical Delegation**: MCU agents → Edge coordinator → Cloud ICDEV™ agents
 
 #### 4. Compliance & Traceability
 - **Embedded SBOM**: CycloneDX BOM including FreeRTOS version, vendor SDK, HAL, TFLite Micro, all dependencies
@@ -255,7 +255,7 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 | Agent | Port | Role |
 |-------|------|------|
 | Orchestrator | 9443 | Task routing, workflow management |
-| Architect | 9444 | ATLAS A/T phases, firmware design |
+| Architect | 9444 | ANVIL A/T phases, firmware design |
 | Embedded Builder | 9445 | TDD C/C++ code gen, CMake, linker scripts |
 | Compliance | 9446 | ATO artifacts, IEC 62443, DO-178C, ISO 26262 |
 | Security | 9447 | SAST (Cppcheck/MISRA), CVE triage, secret detection |
@@ -266,7 +266,7 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 | MBSE | 9453 | SysML model-to-firmware traceability |
 | DevSecOps | 9457 | Embedded CI/CD, firmware signing, FIPS |
 
-### New Compliance Frameworks (Beyond Parent ICDEV)
+### New Compliance Frameworks (Beyond Parent ICDEV™)
 | Framework | Catalog File | Use Case |
 |-----------|-------------|----------|
 | IEC 62443 | `iec_62443_requirements.json` | Industrial cybersecurity |
@@ -294,7 +294,7 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | FreeRTOS MCUs cannot run LLMs | HIGH | Three-tier architecture: MCU → Gateway → Cloud |
-| No existing embedded multi-agent standard | MEDIUM | Build on MQTT patterns, bridge to ICDEV A2A |
+| No existing embedded multi-agent standard | MEDIUM | Build on MQTT patterns, bridge to ICDEV™ A2A |
 | Safety certification complexity (DO-178C) | HIGH | Start with advisory assessment, not certification |
 | Zephyr competitive threat | MEDIUM | Support both FreeRTOS and Zephyr in future |
 | Hardware diversity (40+ MCU ports) | MEDIUM | Start with top 5 MCU families, expand |
@@ -307,5 +307,5 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 1. **Fitness Assessment** — Run `agentic_fitness.py` with this spec
 2. **Blueprint Generation** — Generate app blueprint from fitness scorecard
 3. **Child App Generation** — Use `child_app_generator.py` pipeline
-4. **GOTCHA Validation** — Run `gotcha_validator.py --gate` post-generation
+4. **FORGE Validation** — Run `forge_validator.py --gate` post-generation
 5. **Prototype** — Start with Cortex-M7 + TFLite Micro + MQTT agent protocol

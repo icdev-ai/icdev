@@ -2,11 +2,9 @@
 # CUI // SP-CTI
 """Tests for tools/dx/skill_translator.py."""
 
-import json
 import sys
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.dx.skill_translator import (
@@ -21,7 +19,8 @@ def _create_test_skill(tmp_path, name="test-skill", description="A test skill"):
     skill_dir = tmp_path / ".claude" / "skills" / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_md = skill_dir / "SKILL.md"
-    skill_md.write_text(f"""---
+    skill_md.write_text(
+        f"""---
 name: {name}
 description: {description}
 context: fork
@@ -66,7 +65,9 @@ Display summary of what was done.
 
 ## Error Handling
 - If step 2 fails: retry once, then ask for guidance
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     return str(skill_dir)
 
 
@@ -106,9 +107,7 @@ class TestListSkills:
 class TestTranslateSkills:
     def test_codex_skill_format(self, tmp_path):
         _create_test_skill(tmp_path)
-        results = translate_skills(
-            directory=str(tmp_path), platforms=["codex"], skills=["test-skill"]
-        )
+        results = translate_skills(directory=str(tmp_path), platforms=["codex"], skills=["test-skill"])
         content = results["codex"]["test-skill"]["content"]
         assert content.startswith("---")
         assert "name: test-skill" in content
@@ -117,18 +116,14 @@ class TestTranslateSkills:
 
     def test_copilot_prompt_format(self, tmp_path):
         _create_test_skill(tmp_path)
-        results = translate_skills(
-            directory=str(tmp_path), platforms=["copilot"], skills=["test-skill"]
-        )
+        results = translate_skills(directory=str(tmp_path), platforms=["copilot"], skills=["test-skill"])
         content = results["copilot"]["test-skill"]["content"]
         assert "mode: agent" in content
         assert ".github/prompts/" in results["copilot"]["test-skill"]["path"]
 
     def test_cursor_mdc_format(self, tmp_path):
         _create_test_skill(tmp_path)
-        results = translate_skills(
-            directory=str(tmp_path), platforms=["cursor"], skills=["test-skill"]
-        )
+        results = translate_skills(directory=str(tmp_path), platforms=["cursor"], skills=["test-skill"])
         content = results["cursor"]["test-skill"]["content"]
         assert content.startswith("---")
         assert "description:" in content
@@ -136,18 +131,14 @@ class TestTranslateSkills:
 
     def test_all_platforms_translate(self, tmp_path):
         _create_test_skill(tmp_path)
-        results = translate_skills(
-            directory=str(tmp_path), platforms=["all"], skills=["test-skill"]
-        )
+        results = translate_skills(directory=str(tmp_path), platforms=["all"], skills=["test-skill"])
         assert "codex" in results
         assert "copilot" in results
         assert "cursor" in results
 
     def test_step_content_preserved(self, tmp_path):
         _create_test_skill(tmp_path)
-        results = translate_skills(
-            directory=str(tmp_path), platforms=["codex"], skills=["test-skill"]
-        )
+        results = translate_skills(directory=str(tmp_path), platforms=["codex"], skills=["test-skill"])
         content = results["codex"]["test-skill"]["content"]
         assert "Load Context" in content
         assert "Execute Task" in content
@@ -155,8 +146,10 @@ class TestTranslateSkills:
     def test_write_creates_files(self, tmp_path):
         _create_test_skill(tmp_path)
         results = translate_skills(
-            directory=str(tmp_path), platforms=["codex"],
-            skills=["test-skill"], write=True,
+            directory=str(tmp_path),
+            platforms=["codex"],
+            skills=["test-skill"],
+            write=True,
         )
         assert results["codex"]["test-skill"]["written"] is True
         skill_file = tmp_path / ".agents" / "skills" / "test-skill" / "SKILL.md"
@@ -165,7 +158,8 @@ class TestTranslateSkills:
     def test_unknown_platform_returns_error(self, tmp_path):
         _create_test_skill(tmp_path)
         results = translate_skills(
-            directory=str(tmp_path), platforms=["nonexistent"],
+            directory=str(tmp_path),
+            platforms=["nonexistent"],
             skills=["test-skill"],
         )
         assert "error" in results["nonexistent"]

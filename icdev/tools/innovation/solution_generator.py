@@ -3,17 +3,17 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Solution Spec Generator — auto-generate solution specs from triaged innovation signals.
 
 Takes triaged+approved signals and generates structured solution specifications that
-feed into ICDEV's existing ATLAS build pipeline. Specs are deterministic (template-based,
-not LLM) with GOTCHA layer mapping, BDD acceptance criteria, compliance impact, test
+feed into ICDEV™'s existing ANVIL build pipeline. Specs are deterministic (template-based,
+not LLM) with FORGE layer mapping, BDD acceptance criteria, compliance impact, test
 plans, and marketplace asset type classification.
 
 Architecture:
     - Template-based generation (no LLM, air-gap safe)
-    - Maps signal categories to GOTCHA layers (goal/tool/arg/context/hardprompt)
+    - Maps signal categories to FORGE layers (goal/tool/arg/context/hardprompt)
     - Optional spec quality checking via spec_quality_checker.py (D156)
     - Results stored in innovation_solutions table (append-only, D6)
 
@@ -84,14 +84,14 @@ EFFORT_MAP = {
     "XL": {"label": "Extra-Large", "story_points": "13-21", "days": "10-20"},
 }
 
-# GOTCHA layer info: description, proposed solution template, asset type, base effort, test templates
-GOTCHA_LAYER_INFO = {
+# FORGE layer info: description, proposed solution template, asset type, base effort, test templates
+FORGE_LAYER_INFO = {
     "goal": {
         "description": "Process definitions -- what to achieve, which tools to use, expected outputs",
         "proposed_template": ("Create a new goal workflow in `goals/` that defines:\n"
             "1. Objective and success criteria\n2. Required tools and invocation order\n"
             "3. Expected outputs and validation rules\n4. Error handling and edge cases\n"
-            "5. Integration with existing ATLAS/M-ATLAS phases"),
+            "5. Integration with existing ANVIL/M-ANVIL phases"),
         "asset_type": "goal", "effort": "M",
         "test_unit": "Validate goal YAML/markdown structure, required sections present",
         "test_bdd": ("Feature: {title} workflow\n  Scenario: Execute {title} end-to-end\n"
@@ -244,9 +244,9 @@ def _ensure_solutions_table(conn):
 # RESOLUTION HELPERS
 # =========================================================================
 def _resolve_gotcha_layer(signal):
-    """Determine GOTCHA layer: explicit column > category map > keyword match > default 'tool'."""
+    """Determine FORGE layer: explicit column > category map > keyword match > default 'tool'."""
     explicit = signal.get("gotcha_layer")
-    if explicit and explicit in GOTCHA_LAYER_INFO:
+    if explicit and explicit in FORGE_LAYER_INFO:
         return explicit
     category = signal.get("category") or ""
     if category in CATEGORY_LAYER_MAP:
@@ -255,14 +255,14 @@ def _resolve_gotcha_layer(signal):
     layer_mapping = config.get("triage", {}).get("gotcha_fit", {}).get("layer_mapping", {})
     text = (signal.get("title", "") + " " + signal.get("description", "")).lower()
     for layer, keywords in layer_mapping.items():
-        if layer in GOTCHA_LAYER_INFO and any(kw.lower() in text for kw in keywords):
+        if layer in FORGE_LAYER_INFO and any(kw.lower() in text for kw in keywords):
             return layer
     return "tool"
 
 
 def _estimate_effort(gotcha_layer, signal):
     """Estimate effort (S/M/L/XL) from layer base + community score + boundary tier."""
-    base = GOTCHA_LAYER_INFO.get(gotcha_layer, {}).get("effort", "M")
+    base = FORGE_LAYER_INFO.get(gotcha_layer, {}).get("effort", "M")
     order = ["S", "M", "L", "XL"]
     idx = order.index(base)
     if (signal.get("community_score") or 0.0) > 0.8:
@@ -333,7 +333,7 @@ CUI // SP-CTI
 - Innovation Score: {innovation_score:.2f}
 - Category: {category}
 
-## GOTCHA Layer
+## FORGE Layer
 **{gotcha_layer}** -- {layer_description}
 
 ## Proposed Solution
@@ -365,7 +365,7 @@ CUI // SP-CTI
 def generate_solution_spec(signal_id, db_path=None):
     """Generate a full solution specification from an approved signal.
 
-    Reads signal from DB, resolves GOTCHA layer, generates structured spec with
+    Reads signal from DB, resolves FORGE layer, generates structured spec with
     acceptance criteria, compliance impact, test plan, marketplace classification.
     Stores result in innovation_solutions table.
 
@@ -396,7 +396,7 @@ def generate_solution_spec(signal_id, db_path=None):
                     "solution_id": existing["id"], "solution_status": existing["status"]}
 
         gotcha_layer = _resolve_gotcha_layer(signal)
-        layer_info = GOTCHA_LAYER_INFO.get(gotcha_layer, GOTCHA_LAYER_INFO["tool"])
+        layer_info = FORGE_LAYER_INFO.get(gotcha_layer, FORGE_LAYER_INFO["tool"])
         effort = _estimate_effort(gotcha_layer, signal)
         effort_details = EFFORT_MAP.get(effort, EFFORT_MAP["M"])
         boundary_tier = signal.get("boundary_tier") or "GREEN"
@@ -614,7 +614,7 @@ def _print_human(args, result):
     if args.generate:
         q = result.get("spec_quality_score")
         print(f"Solution generated: {result.get('solution_id')}\n"
-              f"  Signal: {result.get('signal_id')}  GOTCHA: {result.get('gotcha_layer')}\n"
+              f"  Signal: {result.get('signal_id')}  FORGE: {result.get('gotcha_layer')}\n"
               f"  Asset: {result.get('asset_type')}  Effort: {result.get('estimated_effort')}\n"
               f"  Boundary: {result.get('boundary_tier')}  Quality: {f'{q:.2f}' if q else 'N/A'}\n"
               f"  Frameworks: {', '.join(result.get('frameworks_affected', [])) or 'None'}\n\n"
@@ -630,7 +630,7 @@ def _print_human(args, result):
         q = result.get("spec_quality_score")
         print(f"Solution: {result.get('solution_id')}\n"
               f"  Signal: {result.get('signal_id')} ({sig.get('title', 'N/A')})\n"
-              f"  GOTCHA: {result.get('gotcha_layer')}  Asset: {result.get('asset_type')}\n"
+              f"  FORGE: {result.get('gotcha_layer')}  Asset: {result.get('asset_type')}\n"
               f"  Effort: {result.get('estimated_effort')}  Status: {result.get('status')}\n"
               f"  Quality: {f'{q:.2f}' if q else 'N/A'}")
     elif args.list:
@@ -647,7 +647,7 @@ def _print_human(args, result):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Solution Spec Generator -- generate specs from triaged innovation signals")
+        description="ICDEV™ Solution Spec Generator -- generate specs from triaged innovation signals")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 

@@ -13,9 +13,7 @@ Covers:
 
 import json
 import sqlite3
-import tempfile
 import threading
-import uuid
 from pathlib import Path
 
 import pytest
@@ -24,6 +22,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _create_db(path: Path):
     """Create an in-memory-like SQLite DB with otel_spans table at the given path."""
@@ -62,6 +61,7 @@ def db_path(tmp_path):
 @pytest.fixture
 def tracer(db_path):
     from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+
     t = SQLiteTracer(db_path=db_path, agent_id="test-agent", project_id="proj-test")
     t._buffer_size = 1  # Immediate flush for testing
     return t
@@ -70,6 +70,7 @@ def tracer(db_path):
 # ---------------------------------------------------------------------------
 # SQLiteSpan Tests
 # ---------------------------------------------------------------------------
+
 
 class TestSQLiteSpan:
     def test_span_creation(self, tracer):
@@ -151,6 +152,7 @@ class TestSQLiteSpan:
 # SQLiteTracer Tests
 # ---------------------------------------------------------------------------
 
+
 class TestSQLiteTracer:
     def test_tracer_creates_root_span(self, tracer):
         span = tracer.start_span("root")
@@ -206,9 +208,10 @@ class TestSQLiteTracer:
 
     def test_flush_missing_db(self, tmp_path):
         from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+
         t = SQLiteTracer(db_path=tmp_path / "nonexistent.db")
         t._buffer_size = 1
-        with t.start_span("orphan") as span:
+        with t.start_span("orphan"):
             pass
         # Should not raise, spans just discarded
 
@@ -258,7 +261,7 @@ class TestSQLiteTracer:
         tracer.flush()
 
     def test_classification_default(self, db_path, tracer):
-        with tracer.start_span("classified") as span:
+        with tracer.start_span("classified"):
             pass
         conn = sqlite3.connect(str(db_path))
         row = conn.execute("SELECT classification FROM otel_spans LIMIT 1").fetchone()

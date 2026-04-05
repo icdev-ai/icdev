@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """ISO/IEC 27001:2022 Assessment Engine.
 
 Assesses projects against ISO 27001:2022 Annex A controls (93 controls
@@ -34,7 +34,9 @@ class ISO27001Assessor(BaseAssessor):
     CATALOG_FILENAME = "iso27001_2022_controls.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """ISO 27001-specific automated checks.
 
@@ -57,8 +59,7 @@ class ISO27001Assessor(BaseAssessor):
         has_secure_coding = False
 
         # Check for config management
-        for config in ("requirements.txt", "Pipfile", "package.json",
-                        "go.mod", "Cargo.toml", "pom.xml"):
+        for config in ("requirements.txt", "Pipfile", "package.json", "go.mod", "Cargo.toml", "pom.xml"):
             if (project_path / config).exists():
                 has_config_mgmt = True
                 break

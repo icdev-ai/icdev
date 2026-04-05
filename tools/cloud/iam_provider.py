@@ -7,10 +7,9 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 Each implementation ~40-60 lines with try/except ImportError.
 """
 
-import json
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,8 +45,7 @@ class IAMProvider(ABC):
         """Assign a role to a service account."""
 
     @abstractmethod
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         """Check if a service account has permission for an action on a resource."""
 
     @abstractmethod
@@ -64,6 +62,7 @@ class IAMProvider(ABC):
 # ============================================================
 try:
     import boto3 as _boto3_iam
+
     _HAS_BOTO3_IAM = True
 except ImportError:
     _HAS_BOTO3_IAM = False
@@ -90,13 +89,15 @@ class AWSIAMProvider(IAMProvider):
         if not client:
             return None
         try:
-            resp = client.create_user(UserName=name, Tags=[
-                {"Key": "Description", "Value": description or "ICDEV service account"},
-                {"Key": "ManagedBy", "Value": "icdev"},
-            ])
+            resp = client.create_user(
+                UserName=name,
+                Tags=[
+                    {"Key": "Description", "Value": description or "ICDEV™ service account"},
+                    {"Key": "ManagedBy", "Value": "icdev"},
+                ],
+            )
             user = resp["User"]
-            return {"id": user["UserName"], "arn": user["Arn"],
-                    "created_at": str(user["CreateDate"])}
+            return {"id": user["UserName"], "arn": user["Arn"], "created_at": str(user["CreateDate"])}
         except Exception:
             return None
 
@@ -107,8 +108,7 @@ class AWSIAMProvider(IAMProvider):
         try:
             resp = client.get_user(UserName=account_id)
             user = resp["User"]
-            return {"id": user["UserName"], "arn": user["Arn"],
-                    "created_at": str(user["CreateDate"])}
+            return {"id": user["UserName"], "arn": user["Arn"], "created_at": str(user["CreateDate"])}
         except Exception:
             return None
 
@@ -118,9 +118,10 @@ class AWSIAMProvider(IAMProvider):
             return []
         try:
             resp = client.list_users(MaxItems=100)
-            return [{"id": u["UserName"], "arn": u["Arn"],
-                      "created_at": str(u["CreateDate"])}
-                     for u in resp.get("Users", [])]
+            return [
+                {"id": u["UserName"], "arn": u["Arn"], "created_at": str(u["CreateDate"])}
+                for u in resp.get("Users", [])
+            ]
         except Exception:
             return []
 
@@ -134,8 +135,7 @@ class AWSIAMProvider(IAMProvider):
         except Exception:
             return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         client = self._get_client()
         if not client:
             return False
@@ -175,8 +175,6 @@ class AWSIAMProvider(IAMProvider):
 # Azure Entra ID (formerly Azure AD)
 # ============================================================
 try:
-    from azure.identity import DefaultAzureCredential as _AzureCredIAM
-    from azure.mgmt.authorization import AuthorizationManagementClient
     _HAS_AZURE_IAM = True
 except ImportError:
     _HAS_AZURE_IAM = False
@@ -206,8 +204,7 @@ class AzureEntraIDProvider(IAMProvider):
     def assign_role(self, account_id: str, role: str, scope: str = "") -> bool:
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         return False
 
     def delete_service_account(self, account_id: str) -> bool:
@@ -222,6 +219,7 @@ class AzureEntraIDProvider(IAMProvider):
 # ============================================================
 try:
     from google.cloud import iam_admin_v1 as _gcp_iam
+
     _HAS_GCP_IAM = True
 except ImportError:
     _HAS_GCP_IAM = False
@@ -275,11 +273,8 @@ class GCPCloudIAMProvider(IAMProvider):
         if not client or not self._project_id:
             return []
         try:
-            resp = client.list_service_accounts(
-                request={"name": f"projects/{self._project_id}"}
-            )
-            return [{"id": sa.unique_id, "email": sa.email, "name": sa.display_name}
-                     for sa in resp.accounts]
+            resp = client.list_service_accounts(request={"name": f"projects/{self._project_id}"})
+            return [{"id": sa.unique_id, "email": sa.email, "name": sa.display_name} for sa in resp.accounts]
         except Exception:
             return []
 
@@ -287,8 +282,7 @@ class GCPCloudIAMProvider(IAMProvider):
         # GCP role assignment requires Resource Manager API — simplified stub
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         return False
 
     def delete_service_account(self, account_id: str) -> bool:
@@ -310,7 +304,6 @@ class GCPCloudIAMProvider(IAMProvider):
 # OCI IAM
 # ============================================================
 try:
-    import oci as _oci_iam
     _HAS_OCI_IAM = True
 except ImportError:
     _HAS_OCI_IAM = False
@@ -340,8 +333,7 @@ class OCIIAMProvider(IAMProvider):
     def assign_role(self, account_id: str, role: str, scope: str = "") -> bool:
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         return False
 
     def delete_service_account(self, account_id: str) -> bool:
@@ -357,6 +349,7 @@ class OCIIAMProvider(IAMProvider):
 try:
     from ibm_platform_services import IamIdentityV1
     from ibm_cloud_sdk_core.authenticators import IAMAuthenticator as _IBMIAMAuth
+
     _HAS_IBM_IAM = True
 except ImportError:
     _HAS_IBM_IAM = False
@@ -411,8 +404,7 @@ class IBMIAMProvider(IAMProvider):
             resp = client.list_service_ids(
                 account_id=os.environ.get("IBM_ACCOUNT_ID", ""),
             ).get_result()
-            return [{"id": s.get("id", ""), "name": s.get("name", "")}
-                    for s in resp.get("serviceids", [])]
+            return [{"id": s.get("id", ""), "name": s.get("name", "")} for s in resp.get("serviceids", [])]
         except Exception:
             return []
 
@@ -420,8 +412,7 @@ class IBMIAMProvider(IAMProvider):
         # IBM IAM role assignment requires Policy Management API — simplified stub
         return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         # IBM IAM permission check requires Authorization API — simplified stub
         return False
 
@@ -443,8 +434,7 @@ class IBMIAMProvider(IAMProvider):
             resp = client.get_api_keys_details(
                 iam_api_key=self._api_key,
             ).get_result()
-            return {"id": resp.get("id", ""), "name": resp.get("name", ""),
-                    "account_id": resp.get("account_id", "")}
+            return {"id": resp.get("id", ""), "name": resp.get("name", ""), "account_id": resp.get("account_id", "")}
         except Exception:
             return None
 
@@ -468,7 +458,7 @@ class LocalIAMProvider(IAMProvider):
     def _init_db(self):
         """Create IAM tables if not exists."""
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS local_service_accounts (
                     id TEXT PRIMARY KEY,
@@ -505,23 +495,20 @@ class LocalIAMProvider(IAMProvider):
         try:
             account_id = f"local-sa-{uuid.uuid4().hex[:12]}"
             now = datetime.now(timezone.utc).isoformat()
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "INSERT INTO local_service_accounts (id, name, description, created_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO local_service_accounts (id, name, description, created_at) VALUES (?, ?, ?, ?)",
                 (account_id, name, description, now),
             )
             conn.commit()
             conn.close()
-            return {"id": account_id, "name": name, "description": description,
-                    "created_at": now}
+            return {"id": account_id, "name": name, "description": description, "created_at": now}
         except Exception:
             return None
 
     def get_service_account(self, account_id: str) -> Optional[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             row = conn.execute(
                 "SELECT * FROM local_service_accounts WHERE id = ? AND status = 'active'",
                 (account_id,),
@@ -535,11 +522,9 @@ class LocalIAMProvider(IAMProvider):
 
     def list_service_accounts(self) -> List[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
-                "SELECT * FROM local_service_accounts WHERE status = 'active' "
-                "ORDER BY created_at DESC"
+                "SELECT * FROM local_service_accounts WHERE status = 'active' ORDER BY created_at DESC"
             ).fetchall()
             conn.close()
             return [dict(r) for r in rows]
@@ -550,10 +535,9 @@ class LocalIAMProvider(IAMProvider):
         try:
             role_id = f"role-{uuid.uuid4().hex[:12]}"
             now = datetime.now(timezone.utc).isoformat()
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
-                "INSERT INTO local_role_assignments (id, account_id, role, scope, assigned_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO local_role_assignments (id, account_id, role, scope, assigned_at) VALUES (?, ?, ?, ?, ?)",
                 (role_id, account_id, role, scope, now),
             )
             conn.commit()
@@ -562,13 +546,11 @@ class LocalIAMProvider(IAMProvider):
         except Exception:
             return False
 
-    def check_permission(self, account_id: str, action: str,
-                         resource: str = "") -> bool:
+    def check_permission(self, account_id: str, action: str, resource: str = "") -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             row = conn.execute(
-                "SELECT COUNT(*) FROM local_role_assignments "
-                "WHERE account_id = ? AND (role = ? OR role = 'admin')",
+                "SELECT COUNT(*) FROM local_role_assignments WHERE account_id = ? AND (role = ? OR role = 'admin')",
                 (account_id, action),
             ).fetchone()
             conn.close()
@@ -578,7 +560,7 @@ class LocalIAMProvider(IAMProvider):
 
     def delete_service_account(self, account_id: str) -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "UPDATE local_service_accounts SET status = 'deleted' WHERE id = ?",
                 (account_id,),

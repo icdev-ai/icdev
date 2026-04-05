@@ -8,7 +8,6 @@ generation, and security scanning. Declarative YAML patterns (D26).
 
 Usage:
     from icdev.tools.security.code_pattern_scanner import CodePatternScanner
-from icdev._paths import get_project_root
 
     scanner = CodePatternScanner()
     result = scanner.scan_file("/path/to/file.py", "python")
@@ -17,6 +16,7 @@ from icdev._paths import get_project_root
     gate = scanner.evaluate_gate("proj-123")
 """
 
+from icdev._paths import get_project_root
 import json
 import logging
 import os

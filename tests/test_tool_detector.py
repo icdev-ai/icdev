@@ -2,13 +2,10 @@
 # CUI // SP-CTI
 """Tests for tools/dx/tool_detector.py."""
 
-import json
 import os
 import sys
 from pathlib import Path
-from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.dx.tool_detector import detect_tools
@@ -40,10 +37,21 @@ class TestDetectTools:
         """No tools detected in empty directory."""
         # Clear env vars that could trigger false detection
         for key in list(os.environ):
-            if any(tok in key.upper() for tok in (
-                "ANTHROPIC", "OPENAI", "CLAUDE", "CURSOR", "CODEX",
-                "COPILOT", "WINDSURF", "AIDER", "AMAZON_Q", "GEMINI",
-            )):
+            if any(
+                tok in key.upper()
+                for tok in (
+                    "ANTHROPIC",
+                    "OPENAI",
+                    "CLAUDE",
+                    "CURSOR",
+                    "CODEX",
+                    "COPILOT",
+                    "WINDSURF",
+                    "AIDER",
+                    "AMAZON_Q",
+                    "GEMINI",
+                )
+            ):
                 monkeypatch.delenv(key, raising=False)
         result = detect_tools(directory=str(tmp_path))
         assert result["detected"] == []

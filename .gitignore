@@ -64,7 +64,59 @@ playwright/
 
 # Vendored binaries (downloaded via setup, not committed)
 vendor/
+# But keep dashboard static vendor (JS/CSS libs for air-gap)
+!tools/dashboard/static/vendor/
 
 # Generated projects (created by project_create.py)
 # projects/  # Uncomment to ignore generated projects
 videos/
+
+# Build artifacts (child apps)
+intaas-saas/.build/
+intaas-saas/.build-*.zip
+marketplace-saas/.aws-sam/
+marketplace-saas/.pytest_cache/
+
+# Hypothesis (property-based testing cache)
+.hypothesis/
+
+# Claude Code project settings (local only)
+.claude/projects/
+
+# Private keys (NEVER commit)
+*.private_key.pem
+args/marketplace_private_key.pem
+
+# Genesis runtime exports (GKP artifacts)
+data/genesis/exports/
+
+# Pulse runtime data
+data/pulse/
+data/pulse_content/
+
+# Runtime data files
+data/installed_assets.json
+data/license_tokens.json
+
+# Local ICDEV databases (icdev package)
+icdev/data/*.db
+
+# PostgreSQL data directory (Docker bind mount)
+data/pgdata/
+
+# Marketplace modules and child apps (synced to D:\ICDEV_BACKUP)
+marketplace-saas/
+intaas-frontend/
+intaas-saas/
+
+# AlphaDesk — Marketplace module, not part of ICDEV core
+apps/alphadesk/
+tools/trading/
+args/trading_config.yaml
+args/trading_daemon_config.yaml
+args/llm_config_trading.yaml
+data/alphadesk.db
+data/alphadesk.db-shm
+data/alphadesk.db-wal
+data/network_canvas.db-shm
+data/network_canvas.db-wal

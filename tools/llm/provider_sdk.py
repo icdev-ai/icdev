@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV LLM Provider SDK — Public API for custom provider development.
+"""ICDEV™ LLM Provider SDK — Public API for custom provider development.
 
 Re-exports the core provider interfaces, request/response types, format
 helpers, and a test harness for validating custom implementations.
@@ -170,6 +170,8 @@ class ProviderTestHarness:
         total = len(results)
         logger.info(
             "ProviderTestHarness: %d/%d tests passed for %s",
-            passed, total, self.provider.provider_name,
+            passed,
+            total,
+            self.provider.provider_name,
         )
         return results

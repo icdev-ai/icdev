@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Translation Repair Prompt — ICDEV Phase 43 (D255)
+# Translation Repair Prompt — ICDEV™ Phase 43 (D255)
 # Compiler-feedback repair loop (adopted from Google ICSE 2025 + CoTran ECAI 2024)
 
 You are a senior software engineer fixing a **{{ target_language }}** code translation that failed validation.

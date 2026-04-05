@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """HIPAA Security Rule Assessment Engine.
 
 Assesses projects against HIPAA Security Rule (45 CFR §164.308-316)
@@ -30,7 +30,9 @@ class HIPAAAssessor(BaseAssessor):
     CATALOG_FILENAME = "hipaa_security_rule.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """HIPAA-specific automated checks.
 

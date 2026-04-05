@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS Platform -- Platform Database Schema & Connection.
+"""ICDEV™ SaaS Platform -- Platform Database Schema & Connection.
 
 CUI // SP-CTI
 
@@ -17,6 +17,8 @@ Usage:
     python tools/saas/platform_db.py --verify
     python tools/saas/platform_db.py --info
 """
+
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -49,7 +51,7 @@ SQLITE_PATH = DATA_DIR / "platform.db"
 # PostgreSQL Schema
 # ---------------------------------------------------------------------------
 PG_SCHEMA_SQL = """
--- ICDEV SaaS Platform -- PostgreSQL Schema (CUI // SP-CTI)
+-- ICDEV™ SaaS Platform -- PostgreSQL Schema (CUI // SP-CTI)
 
 CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -165,7 +167,7 @@ CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_provider ON tenant_llm_keys(tenan
 # SQLite Schema (translated from PG)
 # ---------------------------------------------------------------------------
 SQLITE_SCHEMA_SQL = """
--- ICDEV SaaS Platform -- SQLite Schema (CUI // SP-CTI)
+-- ICDEV™ SaaS Platform -- SQLite Schema (CUI // SP-CTI)
 
 CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
@@ -289,8 +291,13 @@ CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_provider ON tenant_llm_keys(tenan
 # Expected tables for verification
 # ---------------------------------------------------------------------------
 EXPECTED_TABLES = [
-    "tenants", "users", "api_keys", "subscriptions",
-    "usage_records", "audit_platform", "rate_limits",
+    "tenants",
+    "users",
+    "api_keys",
+    "subscriptions",
+    "usage_records",
+    "audit_platform",
+    "rate_limits",
     "tenant_llm_keys",
 ]
 
@@ -327,10 +334,7 @@ def _get_pg_connection():
         import psycopg2
         import psycopg2.extras
     except ImportError:
-        raise ImportError(
-            "psycopg2 is required for PostgreSQL. "
-            "Install with: pip install psycopg2-binary"
-        )
+        raise ImportError("psycopg2 is required for PostgreSQL. Install with: pip install psycopg2-binary")
     url = _get_db_url()
     try:
         conn = psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
@@ -386,15 +390,19 @@ def init_platform_db(force=False):
 
         if missing:
             result = {
-                "status": "error", "backend": backend,
-                "tables_created": tables, "missing_tables": missing,
+                "status": "error",
+                "backend": backend,
+                "tables_created": tables,
+                "missing_tables": missing,
                 "message": f"Schema incomplete -- missing tables: {missing}",
             }
             logger.error(result["message"])
         else:
             result = {
-                "status": "ok", "backend": backend,
-                "tables_created": tables, "missing_tables": [],
+                "status": "ok",
+                "backend": backend,
+                "tables_created": tables,
+                "missing_tables": [],
                 "message": f"Platform DB initialized: {len(tables)} tables ({backend})",
             }
             logger.info(result["message"])
@@ -457,8 +465,13 @@ def _split_sql_statements(sql):
 def _drop_all_tables(cursor, backend):
     """Drop all platform tables (for --force reinit)."""
     drop_order = [
-        "rate_limits", "audit_platform", "usage_records",
-        "subscriptions", "api_keys", "users", "tenants",
+        "rate_limits",
+        "audit_platform",
+        "usage_records",
+        "subscriptions",
+        "api_keys",
+        "users",
+        "tenants",
     ]
     if backend == "postgresql":
         cursor.execute("DROP TRIGGER IF EXISTS trg_audit_no_update ON audit_platform")
@@ -478,10 +491,7 @@ def _list_tables(cursor, backend):
         cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
         return [row["tablename"] for row in cursor.fetchall()]
     else:
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         return [row["name"] for row in cursor.fetchall()]
 
 
@@ -499,28 +509,34 @@ def verify_platform_db():
         counts = {}
         for table in tables:
             if table in EXPECTED_TABLES:
-                cursor.execute(f"SELECT COUNT(*) as cnt FROM {table}")
+                cursor.execute(f"SELECT COUNT(*) as cnt FROM {table}")  # nosec B608 -- table/column names are internal constants, not user input
                 row = cursor.fetchone()
                 counts[table] = row["cnt"] if row else 0
         cursor.close()
         conn.close()
         if missing:
             return {
-                "status": "incomplete", "backend": backend,
-                "tables": tables, "missing": missing,
+                "status": "incomplete",
+                "backend": backend,
+                "tables": tables,
+                "missing": missing,
                 "row_counts": counts,
                 "message": f"Missing tables: {missing}",
             }
         return {
-            "status": "ok", "backend": backend,
-            "tables": tables, "missing": [],
+            "status": "ok",
+            "backend": backend,
+            "tables": tables,
+            "missing": [],
             "row_counts": counts,
             "message": f"Schema verified: {len(tables)} tables ({backend})",
         }
     except Exception as exc:
         return {
-            "status": "error", "backend": backend,
-            "tables": [], "missing": EXPECTED_TABLES,
+            "status": "error",
+            "backend": backend,
+            "tables": [],
+            "missing": EXPECTED_TABLES,
             "row_counts": {},
             "message": f"Verification failed: {exc}",
         }
@@ -567,16 +583,14 @@ def log_platform_audit(
                 "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
                 "action, details, ip_address, user_agent) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (tenant_id, user_id, event_type, action, details_json,
-                 ip_address, user_agent),
+                (tenant_id, user_id, event_type, action, details_json, ip_address, user_agent),
             )
         else:
             cursor.execute(
                 "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
                 "action, details, ip_address, user_agent) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (tenant_id, user_id, event_type, action, details_json,
-                 ip_address, user_agent),
+                (tenant_id, user_id, event_type, action, details_json, ip_address, user_agent),
             )
         conn.commit()
     except Exception as exc:
@@ -591,8 +605,82 @@ def log_platform_audit(
 # ---------------------------------------------------------------------------
 # Seed Demo Data
 # ---------------------------------------------------------------------------
+def _get_env_api_key() -> str | None:
+    """Read ICDEV_DASHBOARD_API_KEY from .env or environment."""
+    key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "").strip()
+    if key:
+        return key
+    # Try reading .env directly
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("ICDEV_DASHBOARD_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
+def ensure_env_key_registered():
+    """Ensure ICDEV_DASHBOARD_API_KEY from .env is registered in platform DB.
+
+    If the icdev-demo tenant exists, checks whether the .env key hash is already
+    in api_keys.  If not, inserts it so the key works for portal login.
+
+    Returns:
+        dict with status and message.
+    """
+    env_key = _get_env_api_key()
+    if not env_key:
+        return {"status": "skip", "message": "No ICDEV_DASHBOARD_API_KEY in .env"}
+
+    key_hash = hashlib.sha256(env_key.encode("utf-8")).hexdigest()
+
+    conn = get_platform_connection()
+    cursor = conn.cursor()
+    try:
+        # Already registered?
+        cursor.execute("SELECT id FROM api_keys WHERE key_hash = ?", (key_hash,))
+        if cursor.fetchone():
+            return {"status": "ok", "message": "Env key already registered"}
+
+        # Find demo tenant + admin user
+        cursor.execute(
+            "SELECT t.id as tenant_id, u.id as user_id "
+            "FROM tenants t JOIN users u ON t.id = u.tenant_id "
+            "WHERE t.slug = 'icdev-demo' AND u.email = 'admin@icdev.local' "
+            "AND t.status = 'active' AND u.status = 'active' LIMIT 1"
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"status": "skip", "message": "No icdev-demo tenant — run --seed first"}
+
+        tenant_id, user_id = row[0], row[1]
+        key_id = str(uuid.uuid4())
+        key_prefix = env_key[:16] if len(env_key) >= 16 else env_key
+
+        cursor.execute(
+            "INSERT INTO api_keys (id, tenant_id, user_id, key_hash, key_prefix, "
+            "name, scopes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (key_id, tenant_id, user_id, key_hash, key_prefix, "env-dashboard-key", "admin", "active"),
+        )
+        conn.commit()
+        logger.info("Registered ICDEV_DASHBOARD_API_KEY in platform DB (prefix=%s)", key_prefix)
+        return {"status": "ok", "message": f"Env key registered (prefix={key_prefix})"}
+    except Exception as exc:
+        conn.rollback()
+        logger.error("Failed to register env key: %s", exc)
+        return {"status": "error", "message": str(exc)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def seed_demo_data():
     """Create a demo tenant, admin user, API key, and subscription.
+
+    Uses ICDEV_DASHBOARD_API_KEY from .env when available, otherwise generates
+    a random key.
 
     Returns:
         dict with tenant_id, user_id, raw_api_key, and status.
@@ -603,7 +691,8 @@ def seed_demo_data():
         # Check if demo tenant already exists
         cursor.execute("SELECT id FROM tenants WHERE slug = 'icdev-demo'")
         if cursor.fetchone():
-            logger.info("Demo tenant already exists — skipping seed")
+            logger.info("Demo tenant already exists — ensuring env key is registered")
+            result = ensure_env_key_registered()
             # Fetch existing key prefix for display
             cursor.execute(
                 "SELECT k.key_prefix FROM api_keys k "
@@ -616,6 +705,7 @@ def seed_demo_data():
             return {
                 "status": "exists",
                 "message": f"Demo tenant already exists. Key prefix: {prefix}...",
+                "env_key_sync": result.get("message", ""),
             }
 
         tenant_id = str(uuid.uuid4())
@@ -623,24 +713,26 @@ def seed_demo_data():
         key_id = str(uuid.uuid4())
         sub_id = str(uuid.uuid4())
 
-        # Generate API key
-        raw_key = "icdev_" + secrets.token_hex(32)
+        # Use .env key if available, otherwise generate random
+        env_key = _get_env_api_key()
+        if env_key:
+            raw_key = env_key
+            logger.info("Using ICDEV_DASHBOARD_API_KEY from .env for demo tenant")
+        else:
+            raw_key = "icdev_" + secrets.token_hex(32)
         key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
         key_prefix = raw_key[:16]
 
         # 1. Create tenant
         cursor.execute(
-            "INSERT INTO tenants (id, name, slug, status, tier, impact_level) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (tenant_id, "ICDEV Demo", "icdev-demo", "active", "starter", "IL4"),
+            "INSERT INTO tenants (id, name, slug, status, tier, impact_level) VALUES (?, ?, ?, ?, ?, ?)",
+            (tenant_id, "ICDEV™ Demo", "icdev-demo", "active", "starter", "IL4"),
         )
 
         # 2. Create admin user
         cursor.execute(
-            "INSERT INTO users (id, tenant_id, email, display_name, role, status) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, tenant_id, "admin@icdev.local", "Demo Admin",
-             "tenant_admin", "active"),
+            "INSERT INTO users (id, tenant_id, email, display_name, role, status) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, tenant_id, "admin@icdev.local", "Demo Admin", "tenant_admin", "active"),
         )
 
         # 3. Create API key
@@ -660,10 +752,14 @@ def seed_demo_data():
         # 5. Audit event
         try:
             cursor.execute(
-                "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
-                "action, details) VALUES (?, ?, ?, ?, ?)",
-                (tenant_id, user_id, "tenant.seed", "seed_demo_data",
-                 json.dumps({"tenant": "ICDEV Demo", "user": "admin@icdev.local"})),
+                "INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details) VALUES (?, ?, ?, ?, ?)",
+                (
+                    tenant_id,
+                    user_id,
+                    "tenant.seed",
+                    "seed_demo_data",
+                    json.dumps({"tenant": "ICDEV™ Demo", "user": "admin@icdev.local"}),
+                ),
             )
         except Exception:
             pass  # Audit logging should not block seed
@@ -693,20 +789,14 @@ def seed_demo_data():
 def main():
     """CLI entry point for platform database management."""
     parser = argparse.ArgumentParser(
-        description="ICDEV SaaS Platform Database Manager (CUI // SP-CTI)",
+        description="ICDEV™ SaaS Platform Database Manager (CUI // SP-CTI)",
     )
-    parser.add_argument("--init", action="store_true",
-                        help="Initialize the platform database schema")
-    parser.add_argument("--force", action="store_true",
-                        help="Drop existing tables before creating (DESTRUCTIVE)")
-    parser.add_argument("--verify", action="store_true",
-                        help="Verify schema integrity")
-    parser.add_argument("--info", action="store_true",
-                        help="Show connection info")
-    parser.add_argument("--seed", action="store_true",
-                        help="Create demo tenant + admin user + API key")
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
+    parser.add_argument("--init", action="store_true", help="Initialize the platform database schema")
+    parser.add_argument("--force", action="store_true", help="Drop existing tables before creating (DESTRUCTIVE)")
+    parser.add_argument("--verify", action="store_true", help="Verify schema integrity")
+    parser.add_argument("--info", action="store_true", help="Show connection info")
+    parser.add_argument("--seed", action="store_true", help="Create demo tenant + admin user + API key")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -772,9 +862,9 @@ def main():
                 print(f"[INFO] {result['message']}")
             elif result["status"] == "ok":
                 print(f"[OK] {result['message']}")
-                print(f"  Tenant: ICDEV Demo (IL4 / Starter)")
-                print(f"  Admin:  admin@icdev.local")
-                print(f"  API Key (copy this to log in — shown only once):")
+                print("  Tenant: ICDEV™ Demo (IL4 / Starter)")
+                print("  Admin:  admin@icdev.local")
+                print("  API Key (copy this to log in — shown only once):")
                 print(f"    {result['raw_api_key']}")
             else:
                 print(f"[ERROR] {result.get('message', 'Unknown error')}")

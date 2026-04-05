@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Intelligence Configuration — Phase 59
+# ICDEV™ GovCon Intelligence Configuration — Phase 59
 # SAM.gov opportunity scanning, requirement mining, capability mapping, proposal automation
 
 # =========================================================================
@@ -12,6 +12,7 @@ sam_gov:
   rate_limit:
     requests_per_second: 10
     daily_limit: 10000
+    quota_buffer: 50             # Stop this many calls before hard limit
     delay_between_requests: 0.15
   naics_codes:
     - "541512"    # Computer Systems Design Services
@@ -150,7 +151,7 @@ knowledge_base:
     - differentiator           # Competitive advantage
     - management_approach      # Project management methodology
     - transition_plan          # Deployment / transition approach
-    - product_overview         # Whole-product description (ICDEV, CPMP)
+    - product_overview         # Whole-product description (ICDEV™, CPMP)
     - integrated_solution      # How products integrate end-to-end
     - customer_value           # Benefits and ROI for government customers
 
@@ -160,7 +161,7 @@ knowledge_base:
 business_model:
   default_licensing: tbd
   licensing_options:
-    - on_prem_free       # winning customers get ICDEV free on-prem
+    - on_prem_free       # winning customers get ICDEV™ free on-prem
     - saas_paid          # other bidders pay SaaS pricing
     - negotiated         # custom terms
     - tbd                # not yet decided
@@ -313,7 +314,7 @@ cpmp:
       termination_default: 0.50
       fraud_waste_abuse: 0.50
 
-  # CDRL auto-generation (D-CPMP-5 — dispatches to ICDEV tools)
+  # CDRL auto-generation (D-CPMP-5 — dispatches to ICDEV™ tools)
   cdrl:
     output_dir: data/cdrl_output
     auto_generate_days_before_due: 14
@@ -387,7 +388,7 @@ questions_to_government:
     include_cui_banner: true
     include_priority: true
     include_rfp_reference: true
-    default_company_name: "ICDEV"
+    default_company_name: "ICDEV™"
 
   # Amendment diff settings (D-QTG-3 — Python stdlib difflib)
   amendment_diff:

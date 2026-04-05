@@ -15,15 +15,13 @@ import functools
 import hashlib
 import os
 import secrets
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
-from pathlib import Path
 
 from flask import (
     Flask,
     abort,
-    flash,
     g,
     redirect,
     request,
@@ -54,7 +52,7 @@ def hash_api_key(raw_key: str) -> str:
 
 def key_prefix(raw_key: str) -> str:
     """Extract the first 8 visible chars after the prefix for display."""
-    after_prefix = raw_key[len(API_KEY_PREFIX):]
+    after_prefix = raw_key[len(API_KEY_PREFIX) :]
     return after_prefix[:8] if len(after_prefix) >= 8 else after_prefix
 
 
@@ -62,10 +60,10 @@ def key_prefix(raw_key: str) -> str:
 # Database helpers (OS-agnostic — uses config DB_PATH)
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
-    """Get a connection to the ICDEV database."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    """Get a connection to the ICDEV™ database."""
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -90,6 +88,7 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
 # User + key CRUD
 # ---------------------------------------------------------------------------
 
+
 def create_user(email, display_name, role="developer", created_by=None):
     """Create a new dashboard user. Returns user dict."""
     user_id = str(uuid.uuid4())
@@ -104,9 +103,7 @@ def create_user(email, display_name, role="developer", created_by=None):
     finally:
         conn.close()
 
-    log_auth_event(
-        user_id, "user_created", details=f"email={email}, role={role}"
-    )
+    log_auth_event(user_id, "user_created", details=f"email={email}, role={role}")
     return {
         "id": user_id,
         "email": email,
@@ -136,7 +133,8 @@ def create_api_key_for_user(user_id, label=None, created_by=None, expires_at=Non
         conn.close()
 
     log_auth_event(
-        user_id, "key_created",
+        user_id,
+        "key_created",
         details=f"key_id={key_id}, prefix={prefix}, label={label}",
     )
     return {"key_id": key_id, "raw_key": raw_key, "prefix": prefix}
@@ -192,9 +190,7 @@ def get_user_by_id(user_id):
     """Fetch a dashboard user by ID."""
     conn = _get_db()
     try:
-        return conn.execute(
-            "SELECT * FROM dashboard_users WHERE id = ?", (user_id,)
-        ).fetchone()
+        return conn.execute("SELECT * FROM dashboard_users WHERE id = ?", (user_id,)).fetchone()
     finally:
         conn.close()
 
@@ -209,9 +205,7 @@ def list_users(status=None):
                 (status,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM dashboard_users ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM dashboard_users ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -234,12 +228,11 @@ def revoke_api_key(key_id, revoked_by=None):
     # Find user_id for logging
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT user_id FROM dashboard_api_keys WHERE id = ?", (key_id,)
-        ).fetchone()
+        row = conn.execute("SELECT user_id FROM dashboard_api_keys WHERE id = ?", (key_id,)).fetchone()
         if row:
             log_auth_event(
-                row["user_id"], "key_revoked",
+                row["user_id"],
+                "key_revoked",
                 details=f"key_id={key_id}, revoked_by={revoked_by}",
             )
     finally:
@@ -322,6 +315,7 @@ RBAC_MATRIX = {
 
 def require_role(*roles):
     """Decorator to restrict access to specific roles."""
+
     def decorator(f):
         @functools.wraps(f)
         def decorated_function(*args, **kwargs):
@@ -339,7 +333,9 @@ def require_role(*roles):
                 )
                 abort(403)
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator
 
 
@@ -348,13 +344,16 @@ def require_role(*roles):
 # ---------------------------------------------------------------------------
 
 # Public endpoints that don't require authentication
-PUBLIC_ENDPOINTS = frozenset({
-    "login",
-    "login_page",
-    "static",
-    "api_events.ingest_event",
-    "api_events.healthcheck",
-})
+PUBLIC_ENDPOINTS = frozenset(
+    {
+        "login",
+        "login_page",
+        "static",
+        "api_events.ingest_event",
+        "api_events.healthcheck",
+        "api_contact_submit",
+    }
+)
 
 
 def _extract_api_key_from_request():
@@ -400,7 +399,8 @@ def _auth_before_request():
             # Set session so subsequent requests use cookie
             session["user_id"] = user["id"]
             log_auth_event(
-                user["id"], "login_success",
+                user["id"],
+                "login_success",
                 ip_address=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:256],
                 details="via_api_key",
@@ -409,13 +409,23 @@ def _auth_before_request():
         else:
             # API requests get 401, browser requests redirect
             log_auth_event(
-                None, "login_failed",
+                None,
+                "login_failed",
                 ip_address=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:256],
                 details="invalid_api_key",
             )
             if request.is_json or request.path.startswith("/api/"):
                 abort(401)
+
+    # Auto-login via .env API key if configured
+    env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+    if env_key:
+        user = bootstrap_env_user(env_key)
+        if user:
+            g.current_user = dict(user)
+            session["user_id"] = user["id"]
+            return None
 
     # Not authenticated — redirect to login for browser requests
     if request.is_json or request.path.startswith("/api/"):
@@ -432,11 +442,65 @@ def _security_after_request(response):
     return response
 
 
+def _auto_provision_env_key():
+    """Auto-generate ICDEV_DASHBOARD_API_KEY in .env if not set.
+
+    On first install: creates admin user, generates key, appends to .env,
+    and sets the env var for the current process. Prints key to console.
+    """
+    if os.environ.get("ICDEV_DASHBOARD_API_KEY"):
+        return  # Already configured
+
+    # Generate key and provision admin user
+    email = "admin@icdev.local"
+    conn = _get_db()
+    try:
+        row = conn.execute("SELECT id FROM dashboard_users WHERE email = ?", (email,)).fetchone()
+        if row:
+            user_id = row["id"]
+        else:
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO dashboard_users (id, email, display_name, role, created_by) VALUES (?, ?, ?, ?, ?)",
+                (user_id, email, "Admin", "admin", "auto_provision"),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+    key_info = create_api_key_for_user(user_id, label="auto_provision")
+    raw_key = key_info["raw_key"]
+
+    # Write to .env
+    from pathlib import Path
+
+    env_path = Path(DB_PATH).parent.parent / ".env"
+    try:
+        if env_path.exists():
+            content = env_path.read_text(encoding="utf-8")
+            if "ICDEV_DASHBOARD_API_KEY" not in content:
+                with open(env_path, "a", encoding="utf-8") as f:
+                    f.write("\n# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
+                    f.write(f"ICDEV_DASHBOARD_API_KEY={raw_key}\n")
+        else:
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.write("# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
+                f.write(f"ICDEV_DASHBOARD_API_KEY={raw_key}\n")
+    except OSError:
+        pass  # Can't write .env — print to console instead
+
+    os.environ["ICDEV_DASHBOARD_API_KEY"] = raw_key
+    print(f"[ICDEV™ Dashboard] Auto-generated API key: {raw_key}")
+    print(f"[ICDEV™ Dashboard] Saved to {env_path}")
+    print("[ICDEV™ Dashboard] To rotate: change ICDEV_DASHBOARD_API_KEY in .env and restart")
+
+
 def register_dashboard_auth(app: Flask):
     """Register auth middleware on a Flask app.
 
     Sets ``app.secret_key`` from config (or generates one) and installs
     the ``before_request`` / ``after_request`` hooks.
+    Auto-provisions an API key in .env on first run.
     """
     # Secret key for signed sessions (D171)
     if DASHBOARD_SECRET:
@@ -444,6 +508,9 @@ def register_dashboard_auth(app: Flask):
     else:
         # Auto-generate — sessions won't survive restarts but that's OK for dev
         app.secret_key = secrets.token_hex(32)
+
+    # Auto-provision API key on first install
+    _auto_provision_env_key()
 
     app.before_request(_auth_before_request)
     app.after_request(_security_after_request)
@@ -453,6 +520,7 @@ def register_dashboard_auth(app: Flask):
 # CLI bootstrap — create first admin user
 # ---------------------------------------------------------------------------
 
+
 def bootstrap_admin(email, display_name="Admin"):
     """Create the first admin user + API key via CLI.
 
@@ -461,6 +529,39 @@ def bootstrap_admin(email, display_name="Admin"):
     user = create_user(email, display_name, role="admin", created_by="cli_bootstrap")
     key_info = create_api_key_for_user(user["id"], label="Bootstrap key")
     return user, key_info["raw_key"]
+
+
+def bootstrap_env_user(raw_key):
+    """Ensure .env API key has a matching DB entry. Returns user Row or None."""
+    # Check if key already exists
+    user = validate_api_key(raw_key)
+    if user:
+        return user
+    # Create admin user + store the specific key
+    email = "admin@icdev.local"
+    conn = _get_db()
+    try:
+        row = conn.execute("SELECT * FROM dashboard_users WHERE email = ?", (email,)).fetchone()
+        if row:
+            user_id = row["id"]
+        else:
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO dashboard_users (id, email, display_name, role, created_by) VALUES (?, ?, ?, ?, ?)",
+                (user_id, email, "Admin", "admin", "env_bootstrap"),
+            )
+        # Store the provided key
+        key_id = str(uuid.uuid4())
+        hashed = hash_api_key(raw_key)
+        prefix = key_prefix(raw_key)
+        conn.execute(
+            "INSERT INTO dashboard_api_keys (id, user_id, key_hash, key_prefix, label) VALUES (?, ?, ?, ?, ?)",
+            (key_id, user_id, hashed, prefix, "env_key"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return validate_api_key(raw_key)
 
 
 def _cli_main():
@@ -484,7 +585,7 @@ def _cli_main():
     if args.command == "create-admin":
         user, raw_key = bootstrap_admin(args.email, args.name)
         print(f"Admin user created: {user['email']} (id: {user['id']})")
-        print(f"API Key (save this — it won't be shown again):")
+        print("API Key (save this — it won't be shown again):")
         print(f"  {raw_key}")
     elif args.command == "list-users":
         users = list_users()

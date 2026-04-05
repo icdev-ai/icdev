@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from tools.rag.source_registry import SOURCE_REGISTRY, get_source_config
 from tools.rag.chunker import chunk_content
@@ -45,8 +44,12 @@ class TestSourceRegistry:
     def test_source_types_match_dashboard(self):
         """Key source types used in dashboard should exist."""
         expected = [
-            "innovation_signals", "creative_pain_points", "creative_feature_gaps",
-            "compliance_artifacts", "memory_entries", "research_challenges",
+            "innovation_signals",
+            "creative_pain_points",
+            "creative_feature_gaps",
+            "compliance_artifacts",
+            "memory_entries",
+            "research_challenges",
         ]
         for src in expected:
             assert src in SOURCE_REGISTRY, f"Missing source type: {src}"
@@ -61,10 +64,12 @@ class TestIngestionManager:
     def test_import(self):
         """Ingestion manager should be importable."""
         from tools.rag import ingestion_manager
+
         assert ingestion_manager is not None
 
     def test_get_status(self):
         from tools.rag.ingestion_manager import get_status
+
         status = get_status()
         assert isinstance(status, dict)
         assert "total_chunks" in status
@@ -73,12 +78,14 @@ class TestIngestionManager:
 
     def test_get_realtime_sources(self):
         from tools.rag.ingestion_manager import get_realtime_sources
+
         sources = get_realtime_sources()
         assert isinstance(sources, list)
         assert len(sources) > 0
 
     def test_get_batch_sources(self):
         from tools.rag.ingestion_manager import get_batch_sources
+
         sources = get_batch_sources()
         assert isinstance(sources, list)
 

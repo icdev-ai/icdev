@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% set active = "map" %}
+{% block title %}Map — GeoSIGINT{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Geospatial Signal Map</h1>
+    <div class="map-controls">
+        <label><input type="checkbox" id="show-stations" checked> Stations</label>
+        <label><input type="checkbox" id="show-emitters" checked> Emitters</label>
+        <label><input type="checkbox" id="show-signals" checked> Signal Clusters</label>
+        <select id="map-style">
+            <option value="dark">Dark</option>
+            <option value="satellite">Satellite</option>
+            <option value="terrain">Terrain</option>
+        </select>
+    </div>
+</div>
+<div id="sigint-map" class="sigint-map"></div>
+
+<!-- Legend -->
+<div class="map-legend">
+    <div class="map-legend__item"><span class="legend-dot" style="background:#22c55e"></span> Receiver Station</div>
+    <div class="map-legend__item"><span class="legend-dot" style="background:#ef4444"></span> Emitter (Comms)</div>
+    <div class="map-legend__item"><span class="legend-dot" style="background:#f59e0b"></span> Emitter (Radar)</div>
+    <div class="map-legend__item"><span class="legend-dot" style="background:#6366f1"></span> Signal Cluster</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const map = L.map('sigint-map', {
+        center: [25, 50], zoom: 3,
+        zoomControl: true,
+        attributionControl: true
+    });
+
+    const tiles = {
+        dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 18
+        }),
+        satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri', maxZoom: 18
+        }),
+        terrain: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap', maxZoom: 18
+        })
+    };
+    tiles.dark.addTo(map);
+
+    document.getElementById('map-style').addEventListener('change', function() {
+        Object.values(tiles).forEach(t => map.removeLayer(t));
+        tiles[this.value].addTo(map);
+    });
+
+    const layers = { stations: L.layerGroup().addTo(map), emitters: L.layerGroup().addTo(map), signals: L.layerGroup().addTo(map) };
+
+    // Load stations
+    fetch('/api/map/stations').then(r=>r.json()).then(data => {
+        data.stations.forEach(s => {
+            L.circleMarker([s.lat, s.lon], {radius: 7, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8, weight: 2})
+                .bindPopup(`<b>${s.callsign || s.name}</b><br>${s.name}<br>Type: ${s.station_type}`)
+                .addTo(layers.stations);
+        });
+    });
+
+    // Load emitters
+    fetch('/api/map/emitters').then(r=>r.json()).then(data => {
+        data.emitters.forEach(e => {
+            const color = e.emitter_type === 'radar' ? '#f59e0b' : e.emitter_type === 'comms' ? '#ef4444' : '#a855f7';
+            L.circleMarker([e.lat, e.lon], {radius: 5 + Math.min(e.signal_count/20, 8), color, fillColor: color, fillOpacity: 0.6, weight: 1})
+                .bindPopup(`<b>${e.name}</b><br>Type: ${e.emitter_type}<br>Freq: ${(e.freq_hz/1e6).toFixed(3)} MHz<br>Mod: ${e.modulation}<br>Signals: ${e.signal_count}<br>Confidence: ${(e.confidence*100).toFixed(0)}%`)
+                .addTo(layers.emitters);
+        });
+    });
+
+    // Load signal clusters
+    fetch('/api/map/signals?resolution=2').then(r=>r.json()).then(data => {
+        data.clusters.forEach(c => {
+            const r = 4 + Math.min(Math.sqrt(c.count), 15);
+            const hasAnom = c.classifications && c.classifications.includes('anomalous');
+            const color = hasAnom ? '#ef4444' : '#6366f1';
+            L.circleMarker([c.grid_lat, c.grid_lon], {radius: r, color, fillColor: color, fillOpacity: 0.35, weight: 1})
+                .bindPopup(`<b>${c.count} signals</b><br>Avg power: ${c.avg_power ? c.avg_power.toFixed(1) : '?'} dBm<br>Modulations: ${c.modulations || '?'}`)
+                .addTo(layers.signals);
+        });
+    });
+
+    // Toggle layers
+    ['stations','emitters','signals'].forEach(name => {
+        document.getElementById('show-'+name).addEventListener('change', function() {
+            this.checked ? map.addLayer(layers[name]) : map.removeLayer(layers[name]);
+        });
+    });
+})();
+</script>
+{% endblock %}

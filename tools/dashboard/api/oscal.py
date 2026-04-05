@@ -6,9 +6,9 @@ Provides /api/oscal/* endpoints for the dashboard OSCAL page:
 tool detection, validation log, artifact browser, and catalog lookup.
 """
 
-import json
 import os
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -27,8 +27,7 @@ oscal_api = Blueprint("oscal_api", __name__, url_prefix="/api/oscal")
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -40,16 +39,19 @@ def oscal_status():
     """Detect available OSCAL ecosystem tools."""
     try:
         from tools.compliance.oscal_tools import detect_oscal_tools
+
         result = detect_oscal_tools()
         return jsonify(result)
     except ImportError:
-        return jsonify({
-            "java_available": False,
-            "oscal_cli_available": False,
-            "oscal_pydantic_available": False,
-            "nist_catalog_available": False,
-            "error": "oscal_tools module not available",
-        })
+        return jsonify(
+            {
+                "java_available": False,
+                "oscal_cli_available": False,
+                "oscal_pydantic_available": False,
+                "nist_catalog_available": False,
+                "error": "oscal_tools module not available",
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -59,6 +61,7 @@ def detect_tools():
     """Force re-detection of OSCAL tools."""
     try:
         from tools.compliance.oscal_tools import detect_oscal_tools
+
         result = detect_oscal_tools()
         return jsonify(result)
     except Exception as e:
@@ -81,12 +84,13 @@ def list_validations():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM oscal_validation_log {where}", params
+            f"SELECT COUNT(*) FROM oscal_validation_log {where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -111,12 +115,13 @@ def list_artifacts():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM oscal_artifacts {where}", params
+            f"SELECT COUNT(*) FROM oscal_artifacts {where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -133,6 +138,7 @@ def catalog_stats():
     """Get OSCAL catalog statistics."""
     try:
         from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+
         adapter = OscalCatalogAdapter()
         stats = adapter.get_catalog_stats()
         return jsonify(stats)
@@ -147,6 +153,7 @@ def catalog_lookup(control_id: str):
     """Look up a specific control from the OSCAL catalog."""
     try:
         from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+
         adapter = OscalCatalogAdapter()
         control = adapter.get_control(control_id)
         if not control:
@@ -172,6 +179,7 @@ def validate_file():
 
     try:
         from tools.compliance.oscal_tools import validate_oscal_deep
+
         result = validate_oscal_deep(file_path)
         return jsonify(result)
     except ImportError:

@@ -1,0 +1,60 @@
+# CUI // SP-CTI
+# Autoresearch Experiment Program — Compliance Domain
+#
+# Optimizes gate pass rate across all compliance frameworks.
+# Modifies assessor logic, gate thresholds, catalog data, and crosswalk mappings.
+
+domain: compliance
+
+objective:
+  metric_name: gate_pass_rate
+  direction: maximize
+  measurement_command: "python tools/compliance/multi_regime_assessor.py --project-id sparkpilot --json"
+  metric_path: "overall_pass_rate"
+
+modifiable_paths:
+  - tools/compliance/
+  - context/compliance/
+  - args/security_gates.yaml
+
+forbidden_paths:
+  - tools/db/storage.py
+  - tools/db/init_icdev_db.py
+  - tools/genesis/daemon.py
+  - .env
+  - .claude/
+
+time_budget_seconds: 300
+keep_threshold: 0.01  # 1% improvement minimum
+
+category_order:
+  - gate_configuration
+  - assessor_logic
+  - catalog_completeness
+  - crosswalk_coverage
+
+categories:
+  gate_configuration:
+    description: "Adjust security gate thresholds and blocking conditions"
+    risk: low
+    example_hypotheses:
+      - "Relax warning-only thresholds to reduce false gate failures"
+      - "Add missing warning conditions for edge cases"
+  assessor_logic:
+    description: "Improve assessor check implementations for accuracy"
+    risk: medium
+    example_hypotheses:
+      - "Fix assessor returning not_assessed when evidence exists in DB"
+      - "Improve control status detection for inherited controls"
+  catalog_completeness:
+    description: "Add missing controls or requirements to compliance catalogs"
+    risk: low
+    example_hypotheses:
+      - "Add missing NIST 800-53 Rev 5 enhancement controls"
+      - "Update FedRAMP baseline with recently-added controls"
+  crosswalk_coverage:
+    description: "Improve cross-framework mapping coverage"
+    risk: low
+    example_hypotheses:
+      - "Add missing NIST-to-CMMC crosswalk mappings"
+      - "Improve ISO 27001 bridge coverage for HIPAA controls"

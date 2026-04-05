@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Defend ICDEV and its child applications against AI/ML-specific adversarial threats using the MITRE ATLAS (Adversarial Threat Landscape for AI Systems) framework. This goal orchestrates prompt injection detection, AI telemetry, multi-framework AI security assessment, red teaming, and marketplace hardening.
+Defend ICDEV™ and its child applications against AI/ML-specific adversarial threats using the MITRE ATLAS (Adversarial Threat Landscape for AI Systems) framework. This goal orchestrates prompt injection detection, AI telemetry, multi-framework AI security assessment, red teaming, and marketplace hardening.
 
 **Why this matters:** Traditional security frameworks (NIST 800-53, STIG) address infrastructure threats but not AI-specific attack surfaces. LLM-powered systems face unique risks — prompt injection, model poisoning, data exfiltration via model responses, jailbreaking, and supply chain attacks on AI components. MITRE ATLAS provides the threat taxonomy; this goal operationalizes it through automated detection, assessment, and defense.
 
@@ -12,7 +12,7 @@ Defend ICDEV and its child applications against AI/ML-specific adversarial threa
 
 ## When to Use
 
-- When building or deploying any LLM-powered application (ICDEV or child apps)
+- When building or deploying any LLM-powered application (ICDEV™ or child apps)
 - When assessing AI security posture for ATO/cATO
 - When child applications report learned behaviors (Phase 36 cross-phase integration)
 - When publishing or installing marketplace assets
@@ -24,7 +24,7 @@ Defend ICDEV and its child applications against AI/ML-specific adversarial threa
 
 ## Prerequisites
 
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] ATLAS catalogs present: `context/compliance/atlas_mitigations.json`, `context/compliance/atlas_techniques.json`
 - [ ] OWASP LLM Top 10 catalog: `context/compliance/owasp_llm_top10.json`
 - [ ] NIST AI RMF catalog: `context/compliance/nist_ai_rmf.json`
@@ -370,9 +370,9 @@ This integration addresses AML.T0080 (Context Poisoning) and AML.T0104 (Poisoned
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Prompt Injection Detection | Tools | `prompt_injection_detector.py` |
 | AI Telemetry | Tools | `ai_telemetry_logger.py` |

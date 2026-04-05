@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""3-Dimension Composite Gap Scorer for ICDEV Creative Engine.
+# POC: ICDEV™ System Administrator
+"""3-Dimension Composite Gap Scorer for ICDEV™ Creative Engine.
 
 Scores creative pain points using a 3-dimension weighted average
 (D21 deterministic scoring pattern, D355):
@@ -42,12 +42,11 @@ Usage:
 
 import argparse
 import json
-import math
 import os
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
 
 # =========================================================================
@@ -65,18 +64,21 @@ CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
 
     def audit_log_event(**kwargs):
         return -1
+
 
 # =========================================================================
 # DEFAULT CONFIGURATION
@@ -127,17 +129,9 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
-
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _gap_id():
@@ -220,7 +214,7 @@ def _get_latest_by_fingerprint(conn, table="creative_pain_points"):
     Returns dict mapping keyword_fingerprint -> row dict.
     """
     rows = conn.execute(
-        f"SELECT * FROM {table} ORDER BY rowid ASC"
+        f"SELECT * FROM {table} ORDER BY last_seen ASC"  # noqa: S608 — table from hardcoded constant  # nosec B608 -- table/column names are internal constants, not user input
     ).fetchall()
     latest = {}
     for row in rows:
@@ -249,9 +243,7 @@ def _score_pain_frequency(pain_point, conn):
     """
     # Get total signal count from creative_signals table
     try:
-        total_signals = conn.execute(
-            "SELECT COUNT(*) as cnt FROM creative_signals"
-        ).fetchone()["cnt"]
+        total_signals = conn.execute("SELECT COUNT(*) as cnt FROM creative_signals").fetchone()["cnt"]
     except Exception:
         total_signals = 0
 
@@ -316,11 +308,9 @@ def _score_gap_uniqueness(pain_point, conn):
     # For each confirmed competitor, check if their features overlap with pain keywords
     competitors_addressing = 0
     try:
-        confirmed = conn.execute(
-            "SELECT id, features FROM creative_competitors WHERE status='confirmed'"
-        ).fetchall()
+        confirmed = conn.execute("SELECT id, features FROM creative_competitors WHERE status='confirmed'").fetchall()
         for comp in confirmed:
-            comp_id = comp["id"]
+            comp["id"]
             try:
                 features_raw = comp["features"] or "[]"
                 features = json.loads(features_raw)
@@ -386,9 +376,7 @@ def _score_effort_to_impact(pain_point, conn):
 
     # Maximum possible impact: use the highest observed frequency * 1.0 (critical)
     try:
-        max_freq_row = conn.execute(
-            "SELECT MAX(frequency) as max_f FROM creative_pain_points"
-        ).fetchone()
+        max_freq_row = conn.execute("SELECT MAX(frequency) as max_f FROM creative_pain_points").fetchone()
         max_frequency = max_freq_row["max_f"] if max_freq_row and max_freq_row["max_f"] else frequency
     except Exception:
         max_frequency = frequency
@@ -424,9 +412,7 @@ def score_pain_point(pain_point_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM creative_pain_points WHERE id = ?", (pain_point_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM creative_pain_points WHERE id = ?", (pain_point_id,)).fetchone()
         if not row:
             raise ValueError(f"Pain point not found: {pain_point_id}")
 
@@ -440,9 +426,7 @@ def score_pain_point(pain_point_id, db_path=None):
         }
 
         # Weighted average (D21 deterministic pattern)
-        composite = sum(
-            dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions
-        )
+        composite = sum(dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions)
         composite = round(max(0.0, min(1.0, composite)), 4)
 
         # Determine threshold band
@@ -459,7 +443,7 @@ def score_pain_point(pain_point_id, db_path=None):
             "weights": weights,
             "composite": composite,
             "threshold_band": threshold_band,
-            "scored_at": _now(),
+            "scored_at": now_iso(),
         }
 
         # Append-only: INSERT new row with same keyword_fingerprint but scored status
@@ -484,16 +468,15 @@ def score_pain_point(pain_point_id, db_path=None):
                 pain_point.get("severity", "medium"),
                 composite,
                 json.dumps(score_breakdown),
-                pain_point.get("first_seen", _now()),
-                _now(),
+                pain_point.get("first_seen", now_iso()),
+                now_iso(),
             ),
         )
         conn.commit()
 
         _audit(
             "creative.score",
-            f"Scored pain point {pain_point_id} -> {new_id}: "
-            f"{composite:.4f} ({threshold_band})",
+            f"Scored pain point {pain_point_id} -> {new_id}: {composite:.4f} ({threshold_band})",
             {
                 "original_id": pain_point_id,
                 "scored_id": new_id,
@@ -540,7 +523,7 @@ def score_all_new(db_path=None):
         rows = conn.execute(
             """SELECT * FROM creative_pain_points
                WHERE status = 'new'
-               ORDER BY rowid ASC"""
+               ORDER BY last_seen ASC"""
         ).fetchall()
     finally:
         conn.close()
@@ -551,7 +534,7 @@ def score_all_new(db_path=None):
             "skipped": 0,
             "avg_score": 0.0,
             "top_5": [],
-            "scored_at": _now(),
+            "scored_at": now_iso(),
         }
 
     # Deduplicate by keyword_fingerprint (latest row per fingerprint)
@@ -583,13 +566,15 @@ def score_all_new(db_path=None):
     results.sort(key=lambda r: r.get("composite_score", 0.0), reverse=True)
     top_5 = []
     for r in results[:5]:
-        top_5.append({
-            "pain_point_id": r["pain_point_id"],
-            "title": r["title"],
-            "composite_score": r["composite_score"],
-            "threshold_band": r["threshold_band"],
-            "category": r["category"],
-        })
+        top_5.append(
+            {
+                "pain_point_id": r["pain_point_id"],
+                "title": r["title"],
+                "composite_score": r["composite_score"],
+                "threshold_band": r["threshold_band"],
+                "category": r["category"],
+            }
+        )
 
     _audit(
         "creative.score_batch",
@@ -606,7 +591,7 @@ def score_all_new(db_path=None):
         "skipped": skipped_count,
         "avg_score": avg_score,
         "top_5": top_5,
-        "scored_at": _now(),
+        "scored_at": now_iso(),
     }
 
 
@@ -631,7 +616,7 @@ def get_top_scored(limit=20, min_score=0.0, db_path=None):
             """SELECT * FROM creative_pain_points
                WHERE status = 'scored'
                AND composite_score IS NOT NULL
-               ORDER BY rowid ASC"""
+               ORDER BY last_seen ASC"""
         ).fetchall()
 
         # Deduplicate by keyword_fingerprint (latest row wins)
@@ -652,22 +637,24 @@ def get_top_scored(limit=20, min_score=0.0, db_path=None):
                 except (json.JSONDecodeError, TypeError):
                     breakdown = {}
 
-                scored.append({
-                    "pain_point_id": pp["id"],
-                    "title": pp.get("title", ""),
-                    "description": pp.get("description", ""),
-                    "category": pp.get("category", ""),
-                    "severity": pp.get("severity", "medium"),
-                    "frequency": pp.get("frequency", 1),
-                    "composite_score": score,
-                    "breakdown": breakdown.get("dimensions", {}),
-                    "threshold_band": breakdown.get("threshold_band", ""),
-                    "keywords": json.loads(pp.get("keywords") or "[]"),
-                    "signal_ids": json.loads(pp.get("signal_ids") or "[]"),
-                    "competitor_ids": json.loads(pp.get("competitor_ids") or "[]"),
-                    "first_seen": pp.get("first_seen", ""),
-                    "last_seen": pp.get("last_seen", ""),
-                })
+                scored.append(
+                    {
+                        "pain_point_id": pp["id"],
+                        "title": pp.get("title", ""),
+                        "description": pp.get("description", ""),
+                        "category": pp.get("category", ""),
+                        "severity": pp.get("severity", "medium"),
+                        "frequency": pp.get("frequency", 1),
+                        "composite_score": score,
+                        "breakdown": breakdown.get("dimensions", {}),
+                        "threshold_band": breakdown.get("threshold_band", ""),
+                        "keywords": json.loads(pp.get("keywords") or "[]"),
+                        "signal_ids": json.loads(pp.get("signal_ids") or "[]"),
+                        "competitor_ids": json.loads(pp.get("competitor_ids") or "[]"),
+                        "first_seen": pp.get("first_seen", ""),
+                        "last_seen": pp.get("last_seen", ""),
+                    }
+                )
 
         scored.sort(key=lambda x: x.get("composite_score", 0.0), reverse=True)
         return scored[:limit]
@@ -701,7 +688,7 @@ def identify_feature_gaps(db_path=None):
                WHERE status = 'scored'
                AND composite_score IS NOT NULL
                AND composite_score >= ?
-               ORDER BY rowid ASC""",
+               ORDER BY last_seen ASC""",
             (suggest_threshold,),
         ).fetchall()
 
@@ -713,7 +700,7 @@ def identify_feature_gaps(db_path=None):
             by_fingerprint[fp] = d
 
         gaps_identified = 0
-        now = _now()
+        now = now_iso()
 
         for pp in by_fingerprint.values():
             pp_id = pp["id"]
@@ -742,7 +729,7 @@ def identify_feature_gaps(db_path=None):
             # Clean up common prefixes
             for prefix in ("Pain: ", "Issue: ", "Problem: "):
                 if feature_name.startswith(prefix):
-                    feature_name = feature_name[len(prefix):]
+                    feature_name = feature_name[len(prefix) :]
 
             # Build competitor coverage dict
             competitor_coverage = {}
@@ -762,7 +749,7 @@ def identify_feature_gaps(db_path=None):
             except (json.JSONDecodeError, TypeError):
                 keywords = []
 
-            pain_text = f"{(pp.get('title') or '').lower()} {(pp.get('description') or '').lower()}"
+            f"{(pp.get('title') or '').lower()} {(pp.get('description') or '').lower()}"
 
             # Check each confirmed competitor
             try:
@@ -825,9 +812,7 @@ def identify_feature_gaps(db_path=None):
         conn.commit()
 
         # Total feature gaps in DB
-        total_gaps = conn.execute(
-            "SELECT COUNT(*) as cnt FROM creative_feature_gaps"
-        ).fetchone()["cnt"]
+        total_gaps = conn.execute("SELECT COUNT(*) as cnt FROM creative_feature_gaps").fetchone()["cnt"]
 
     finally:
         conn.close()
@@ -842,7 +827,7 @@ def identify_feature_gaps(db_path=None):
         "gaps_identified": gaps_identified,
         "total_gaps": total_gaps,
         "threshold_used": suggest_threshold,
-        "identified_at": _now(),
+        "identified_at": now_iso(),
     }
 
 
@@ -867,8 +852,7 @@ def _print_human(args, result):
         print(f"  Category:   {result.get('category', '')}")
         print(f"  Severity:   {result.get('severity', '')}")
         print(f"  Frequency:  {result.get('frequency', 0)}")
-        print(f"  Score:      {result.get('composite_score', 0):.4f}  "
-              f"[{result.get('threshold_band', '')}]")
+        print(f"  Score:      {result.get('composite_score', 0):.4f}  [{result.get('threshold_band', '')}]")
         print(f"  Status:     {result.get('status', '')}")
         print()
         print("  Dimensions:")
@@ -887,12 +871,13 @@ def _print_human(args, result):
             print("  Top 5 Pain Points:")
             print(f"    {'#':>3s}  {'Score':>7s}  {'Band':>10s}  {'Category':>14s}  Title")
             sep = "-" * 14
-            print(f"    {'---':>3s}  {'-------':>7s}  {'----------':>10s}  "
-                  f"{sep:>14s}  -----")
+            print(f"    {'---':>3s}  {'-------':>7s}  {'----------':>10s}  {sep:>14s}  -----")
             for i, t in enumerate(result["top_5"], 1):
-                print(f"    {i:3d}  {t['composite_score']:7.4f}  "
-                      f"{t['threshold_band']:>10s}  {t['category']:>14s}  "
-                      f"{t['title'][:40]}")
+                print(
+                    f"    {i:3d}  {t['composite_score']:7.4f}  "
+                    f"{t['threshold_band']:>10s}  {t['category']:>14s}  "
+                    f"{t['title'][:40]}"
+                )
 
     elif args.top:
         if isinstance(result, list):
@@ -902,21 +887,21 @@ def _print_human(args, result):
                 score = pp.get("composite_score", 0)
                 band = pp.get("threshold_band", "")
                 print(f"  {i:3d}. [{score:.4f}] {pp.get('title', '')[:60]}")
-                print(f"       Category: {pp.get('category', '')}  |  "
-                      f"Severity: {pp.get('severity', '')}  |  "
-                      f"Freq: {pp.get('frequency', 0)}  |  Band: {band}")
+                print(
+                    f"       Category: {pp.get('category', '')}  |  "
+                    f"Severity: {pp.get('severity', '')}  |  "
+                    f"Freq: {pp.get('frequency', 0)}  |  Band: {band}"
+                )
                 dims = pp.get("breakdown", {})
                 if dims:
-                    dim_str = "  ".join(
-                        f"{k[:10]}={v:.2f}" for k, v in dims.items()
-                    )
+                    dim_str = "  ".join(f"{k[:10]}={v:.2f}" for k, v in dims.items())
                     print(f"       {dim_str}")
                 print()
         else:
-            print(f"\n  No results.")
+            print("\n  No results.")
 
     elif args.gaps:
-        print(f"\n  Feature Gap Identification")
+        print("\n  Feature Gap Identification")
         print(f"    Gaps identified:  {result.get('gaps_identified', 0)}")
         print(f"    Total gaps in DB: {result.get('total_gaps', 0)}")
         print(f"    Threshold used:   {result.get('threshold_used', 0):.2f}")
@@ -932,7 +917,7 @@ def _print_human(args, result):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Creative Engine Gap Scorer -- CUI // SP-CTI",
+        description="ICDEV™ Creative Engine Gap Scorer -- CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -945,30 +930,16 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--score", action="store_true", help="Score a single pain point"
-    )
-    group.add_argument(
-        "--score-all", action="store_true", help="Score all new (unscored) pain points"
-    )
-    group.add_argument(
-        "--top", action="store_true", help="Get top-scored pain points"
-    )
-    group.add_argument(
-        "--gaps", action="store_true", help="Identify feature gaps from scored pain points"
-    )
+    group.add_argument("--score", action="store_true", help="Score a single pain point")
+    group.add_argument("--score-all", action="store_true", help="Score all new (unscored) pain points")
+    group.add_argument("--top", action="store_true", help="Get top-scored pain points")
+    group.add_argument("--gaps", action="store_true", help="Identify feature gaps from scored pain points")
 
-    parser.add_argument(
-        "--pain-point-id", type=str, help="Pain point ID to score (with --score)"
-    )
-    parser.add_argument(
-        "--limit", type=int, default=20, help="Max pain points to return (with --top)"
-    )
+    parser.add_argument("--pain-point-id", type=str, help="Pain point ID to score (with --score)")
+    parser.add_argument("--limit", type=int, default=20, help="Max pain points to return (with --top)")
     parser.add_argument(
         "--min-score",
         type=float,
@@ -986,9 +957,7 @@ def main():
         elif args.score_all:
             result = score_all_new(db_path=args.db_path)
         elif args.top:
-            result = get_top_scored(
-                limit=args.limit, min_score=args.min_score, db_path=args.db_path
-            )
+            result = get_top_scored(limit=args.limit, min_score=args.min_score, db_path=args.db_path)
         elif args.gaps:
             result = identify_feature_gaps(db_path=args.db_path)
         else:

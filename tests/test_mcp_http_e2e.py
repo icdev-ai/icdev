@@ -34,9 +34,7 @@ def main():
     # Create tenant
     from icdev.tools.saas.tenant_manager import create_tenant, provision_tenant
 
-    result = create_tenant(
-        "ACME Defense", "IL4", "professional", admin_email="admin@acme.gov"
-    )
+    result = create_tenant("ACME Defense", "IL4", "professional", admin_email="admin@acme.gov")
     tenant_id = result["tenant"]["id"]
     # For IL2-IL4 + professional, auto-provision happens in create_tenant
     # but call provision_tenant if status is still pending/provisioning
@@ -50,9 +48,7 @@ def main():
     key_raw = "icdev_test_e2e_key_1234567890"
     key_hash = hashlib.sha256(key_raw.encode()).hexdigest()
     key_id = str(uuid.uuid4())
-    user_row = conn.execute(
-        "SELECT id FROM users WHERE tenant_id = ?", (tenant_id,)
-    ).fetchone()
+    user_row = conn.execute("SELECT id FROM users WHERE tenant_id = ?", (tenant_id,)).fetchone()
     user_id = user_row["id"]
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -267,9 +263,7 @@ def main():
     )
 
     # T14: DELETE session
-    r = client.delete(
-        "/mcp/v1/", headers={**HEADERS, "Mcp-Session-Id": session_id}
-    )
+    r = client.delete("/mcp/v1/", headers={**HEADERS, "Mcp-Session-Id": session_id})
     test("DELETE returns 204", r.status_code == 204, "got %d" % r.status_code)
 
     # T15: POST with destroyed session => 400
@@ -285,9 +279,7 @@ def main():
     )
 
     # T16: DELETE already-destroyed session => 204 (idempotent)
-    r = client.delete(
-        "/mcp/v1/", headers={**HEADERS, "Mcp-Session-Id": session_id}
-    )
+    r = client.delete("/mcp/v1/", headers={**HEADERS, "Mcp-Session-Id": session_id})
     test(
         "Delete idempotent returns 204",
         r.status_code == 204,

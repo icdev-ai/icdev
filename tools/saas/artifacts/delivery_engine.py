@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV SaaS Phase 5 -- Artifact Delivery Engine.
+"""ICDEV™ SaaS Phase 5 -- Artifact Delivery Engine.
 
 CUI // SP-CTI
 
@@ -65,6 +65,7 @@ logger = logging.getLogger("saas.artifacts.delivery")
 try:
     import boto3  # noqa: F401
     from botocore.exceptions import ClientError  # noqa: F401
+
     HAS_BOTO3 = True
 except ImportError:
     HAS_BOTO3 = False
@@ -72,6 +73,7 @@ except ImportError:
 
 try:
     import paramiko  # noqa: F401
+
     HAS_PARAMIKO = True
 except ImportError:
     HAS_PARAMIKO = False
@@ -102,28 +104,26 @@ def _load_tenant_artifact_config(tenant_id: str) -> dict:
             (tenant_id,),
         ).fetchone()
         if not row:
-            raise ValueError(
-                "Tenant not found: {}".format(tenant_id))
+            raise ValueError("Tenant not found: {}".format(tenant_id))
 
         raw = row[0] if isinstance(row, (list, tuple)) else row["artifact_config"]
         if not raw or raw in ("{}", "null", ""):
             raise ValueError(
-                "Tenant {} has no artifact_config configured. "
-                "Set via tenant_manager --update.".format(tenant_id))
+                "Tenant {} has no artifact_config configured. Set via tenant_manager --update.".format(tenant_id)
+            )
 
         config = json.loads(raw) if isinstance(raw, str) else raw
         if not isinstance(config, dict) or "type" not in config:
             raise ValueError(
-                "artifact_config for tenant {} is missing 'type' field. "
-                "Expected s3, git, or sftp.".format(tenant_id))
+                "artifact_config for tenant {} is missing 'type' field. Expected s3, git, or sftp.".format(tenant_id)
+            )
 
         return config
     finally:
         conn.close()
 
 
-def _record_delivery(tenant_id: str, artifact_type: str, destination: str,
-                     status: str, details: dict = None):
+def _record_delivery(tenant_id: str, artifact_type: str, destination: str, status: str, details: dict = None):
     """Record a delivery event in the platform audit trail."""
     try:
         log_platform_audit(
@@ -146,8 +146,8 @@ def _record_delivery(tenant_id: str, artifact_type: str, destination: str,
 # S3 Delivery
 # ============================================================================
 
-def _deliver_s3(config: dict, artifact_path: str,
-                artifact_type: str) -> dict:
+
+def _deliver_s3(config: dict, artifact_path: str, artifact_type: str) -> dict:
     """Upload an artifact to an S3 bucket using STS assume-role.
 
     Config keys:
@@ -161,9 +161,7 @@ def _deliver_s3(config: dict, artifact_path: str,
         dict with s3_key, bucket, etag, uploaded_at.
     """
     if not HAS_BOTO3:
-        raise RuntimeError(
-            "boto3 is required for S3 delivery. "
-            "Install with: pip install boto3")
+        raise RuntimeError("boto3 is required for S3 delivery. Install with: pip install boto3")
 
     bucket = config.get("bucket")
     if not bucket:
@@ -179,8 +177,7 @@ def _deliver_s3(config: dict, artifact_path: str,
         sts = boto3.client("sts", region_name=region)
         assumed = sts.assume_role(
             RoleArn=role_arn,
-            RoleSessionName="icdev-artifact-delivery-{}".format(
-                uuid.uuid4().hex[:8]),
+            RoleSessionName="icdev-artifact-delivery-{}".format(uuid.uuid4().hex[:8]),
             DurationSeconds=900,
         )
         creds = assumed["Credentials"]
@@ -204,8 +201,7 @@ def _deliver_s3(config: dict, artifact_path: str,
         extra_args["SSEKMSKeyId"] = kms_key_id
 
     logger.info("Uploading %s -> s3://%s/%s", artifact_path, bucket, s3_key)
-    s3_client.upload_file(
-        str(artifact_path), bucket, s3_key, ExtraArgs=extra_args or None)
+    s3_client.upload_file(str(artifact_path), bucket, s3_key, ExtraArgs=extra_args or None)
 
     # upload_file returns None on success; head the object for ETag
     head = s3_client.head_object(Bucket=bucket, Key=s3_key)
@@ -225,8 +221,8 @@ def _deliver_s3(config: dict, artifact_path: str,
 # Git Delivery
 # ============================================================================
 
-def _deliver_git(config: dict, artifact_path: str,
-                 artifact_type: str) -> dict:
+
+def _deliver_git(config: dict, artifact_path: str, artifact_type: str) -> dict:
     """Commit and push an artifact to a Git repository.
 
     Config keys:
@@ -241,12 +237,11 @@ def _deliver_git(config: dict, artifact_path: str,
     """
     repo_url = config.get("repo_url")
     if not repo_url:
-        raise ValueError(
-            "artifact_config.repo_url is required for Git delivery")
+        raise ValueError("artifact_config.repo_url is required for Git delivery")
 
     branch = config.get("branch", "main")
     path_prefix = config.get("path_prefix", "artifacts").strip("/")
-    commit_user = config.get("commit_user", "ICDEV Bot")
+    commit_user = config.get("commit_user", "ICDEV™ Bot")
     commit_email = config.get("commit_email", "icdev-bot@icdev.local")
 
     filename = Path(artifact_path).name
@@ -257,9 +252,11 @@ def _deliver_git(config: dict, artifact_path: str,
         # Clone (shallow, single branch)
         logger.info("Cloning %s (branch=%s)", repo_url, branch)
         subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", branch,
-             repo_url, tmpdir],
-            check=True, capture_output=True, text=True, timeout=120,
+            ["git", "clone", "--depth", "1", "--branch", branch, repo_url, tmpdir],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
 
         # Copy artifact into repo
@@ -271,31 +268,40 @@ def _deliver_git(config: dict, artifact_path: str,
         # Configure git user
         subprocess.run(
             ["git", "-C", tmpdir, "config", "user.name", commit_user],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         subprocess.run(
             ["git", "-C", tmpdir, "config", "user.email", commit_email],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
         # Stage and commit
         rel_path = str(dest_file.relative_to(tmpdir))
         subprocess.run(
             ["git", "-C", tmpdir, "add", rel_path],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
-        commit_msg = "[ICDEV] Deliver {} artifact: {}".format(
-            artifact_type, filename)
+        commit_msg = "[ICDEV™] Deliver {} artifact: {}".format(artifact_type, filename)
         subprocess.run(
             ["git", "-C", tmpdir, "commit", "-m", commit_msg],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
         # Get commit SHA
         result = subprocess.run(
             ["git", "-C", tmpdir, "rev-parse", "HEAD"],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         commit_sha = result.stdout.strip()
 
@@ -303,7 +309,10 @@ def _deliver_git(config: dict, artifact_path: str,
         logger.info("Pushing commit %s to %s/%s", commit_sha[:8], repo_url, branch)
         subprocess.run(
             ["git", "-C", tmpdir, "push", "origin", branch],
-            check=True, capture_output=True, text=True, timeout=120,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
 
         return {
@@ -322,8 +331,8 @@ def _deliver_git(config: dict, artifact_path: str,
 # SFTP Delivery
 # ============================================================================
 
-def _deliver_sftp(config: dict, artifact_path: str,
-                  artifact_type: str) -> dict:
+
+def _deliver_sftp(config: dict, artifact_path: str, artifact_type: str) -> dict:
     """Upload an artifact via SFTP.
 
     Config keys:
@@ -338,8 +347,7 @@ def _deliver_sftp(config: dict, artifact_path: str,
     """
     sftp_host = config.get("sftp_host")
     if not sftp_host:
-        raise ValueError(
-            "artifact_config.sftp_host is required for SFTP delivery")
+        raise ValueError("artifact_config.sftp_host is required for SFTP delivery")
 
     sftp_port = int(config.get("sftp_port", 22))
     sftp_user = config.get("sftp_user", "icdev")
@@ -352,17 +360,12 @@ def _deliver_sftp(config: dict, artifact_path: str,
     remote_path = "{}/{}-{}".format(remote_dir, timestamp, filename)
 
     if HAS_PARAMIKO:
-        return _sftp_paramiko(
-            sftp_host, sftp_port, sftp_user, sftp_key_path,
-            artifact_path, remote_dir, remote_path)
+        return _sftp_paramiko(sftp_host, sftp_port, sftp_user, sftp_key_path, artifact_path, remote_dir, remote_path)
     else:
-        return _sftp_subprocess(
-            sftp_host, sftp_port, sftp_user, sftp_key_path,
-            artifact_path, remote_path)
+        return _sftp_subprocess(sftp_host, sftp_port, sftp_user, sftp_key_path, artifact_path, remote_path)
 
 
-def _sftp_paramiko(host, port, user, key_path, local_path,
-                   remote_dir, remote_path):
+def _sftp_paramiko(host, port, user, key_path, local_path, remote_dir, remote_path):
     """SFTP upload using paramiko library."""
     ssh = paramiko.SSHClient()
     ssh.load_system_host_keys()
@@ -425,17 +428,17 @@ def _sftp_subprocess(host, port, user, key_path, local_path, remote_path):
 
     sftp_commands = "put {} {}\nquit\n".format(local_path, remote_path)
 
-    logger.info("Uploading %s -> %s:%s via subprocess sftp",
-                local_path, host, remote_path)
+    logger.info("Uploading %s -> %s:%s via subprocess sftp", local_path, host, remote_path)
     result = subprocess.run(
-        cmd, input=sftp_commands, capture_output=True,
-        text=True, timeout=120,
+        cmd,
+        input=sftp_commands,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
     if result.returncode != 0:
-        raise RuntimeError(
-            "SFTP upload failed (rc={}): {}".format(
-                result.returncode, result.stderr.strip()))
+        raise RuntimeError("SFTP upload failed (rc={}): {}".format(result.returncode, result.stderr.strip()))
 
     return {
         "method": "sftp",
@@ -449,8 +452,8 @@ def _sftp_subprocess(host, port, user, key_path, local_path, remote_path):
 # Public API
 # ============================================================================
 
-def deliver_artifact(tenant_id: str, artifact_path: str,
-                     artifact_type: str, metadata: dict = None) -> dict:
+
+def deliver_artifact(tenant_id: str, artifact_path: str, artifact_type: str, metadata: dict = None) -> dict:
     """Deliver a compliance artifact to the tenant's configured storage.
 
     Args:
@@ -469,8 +472,7 @@ def deliver_artifact(tenant_id: str, artifact_path: str,
     """
     artifact_file = Path(artifact_path)
     if not artifact_file.exists():
-        raise FileNotFoundError(
-            "Artifact file not found: {}".format(artifact_path))
+        raise FileNotFoundError("Artifact file not found: {}".format(artifact_path))
 
     config = _load_tenant_artifact_config(tenant_id)
     delivery_type = config["type"].lower()
@@ -486,25 +488,26 @@ def deliver_artifact(tenant_id: str, artifact_path: str,
         elif delivery_type == "sftp":
             result = _deliver_sftp(config, str(artifact_file), artifact_type)
         else:
-            raise ValueError(
-                "Unsupported delivery type '{}'. "
-                "Supported: s3, git, sftp.".format(delivery_type))
+            raise ValueError("Unsupported delivery type '{}'. Supported: s3, git, sftp.".format(delivery_type))
 
-        result.update({
-            "delivery_id": delivery_id,
-            "tenant_id": tenant_id,
-            "artifact_type": artifact_type,
-            "artifact_file": str(artifact_file.name),
-            "artifact_size_bytes": artifact_file.stat().st_size,
-            "status": "delivered",
-            "started_at": started_at,
-            "completed_at": _utcnow(),
-        })
+        result.update(
+            {
+                "delivery_id": delivery_id,
+                "tenant_id": tenant_id,
+                "artifact_type": artifact_type,
+                "artifact_file": str(artifact_file.name),
+                "artifact_size_bytes": artifact_file.stat().st_size,
+                "status": "delivered",
+                "started_at": started_at,
+                "completed_at": _utcnow(),
+            }
+        )
         if metadata:
             result["metadata"] = metadata
 
         _record_delivery(
-            tenant_id, artifact_type,
+            tenant_id,
+            artifact_type,
             destination=delivery_type,
             status="delivered",
             details={
@@ -513,14 +516,15 @@ def deliver_artifact(tenant_id: str, artifact_path: str,
             },
         )
 
-        logger.info("Delivery %s complete: %s -> %s (%s)",
-                     delivery_id, artifact_type, delivery_type,
-                     result.get("completed_at"))
+        logger.info(
+            "Delivery %s complete: %s -> %s (%s)", delivery_id, artifact_type, delivery_type, result.get("completed_at")
+        )
         return result
 
     except Exception as exc:
         _record_delivery(
-            tenant_id, artifact_type,
+            tenant_id,
+            artifact_type,
             destination=delivery_type,
             status="failed",
             details={
@@ -584,23 +588,18 @@ def get_delivery_history(tenant_id: str, limit: int = 50) -> list:
 # CLI
 # ============================================================================
 
+
 def main():
     """CLI entry point for artifact delivery."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV Artifact Delivery Engine",
+        description="CUI // SP-CTI -- ICDEV™ Artifact Delivery Engine",
     )
-    parser.add_argument("--tenant-id", required=True,
-                        help="Target tenant ID")
-    parser.add_argument("--artifact", type=str,
-                        help="Path to artifact file to deliver")
-    parser.add_argument("--type", type=str, dest="artifact_type",
-                        help="Artifact type (ssp, poam, stig, sbom, oscal)")
-    parser.add_argument("--history", action="store_true",
-                        help="Show delivery history instead of delivering")
-    parser.add_argument("--limit", type=int, default=50,
-                        help="Max history records to return (default 50)")
-    parser.add_argument("--json", action="store_true", dest="as_json",
-                        help="Output as JSON")
+    parser.add_argument("--tenant-id", required=True, help="Target tenant ID")
+    parser.add_argument("--artifact", type=str, help="Path to artifact file to deliver")
+    parser.add_argument("--type", type=str, dest="artifact_type", help="Artifact type (ssp, poam, stig, sbom, oscal)")
+    parser.add_argument("--history", action="store_true", help="Show delivery history instead of delivering")
+    parser.add_argument("--limit", type=int, default=50, help="Max history records to return (default 50)")
+    parser.add_argument("--json", action="store_true", dest="as_json", help="Output as JSON")
 
     args = parser.parse_args()
 
@@ -611,8 +610,7 @@ def main():
                 print(json.dumps(records, indent=2, default=str))
             else:
                 if not records:
-                    print("No delivery history for tenant {}.".format(
-                        args.tenant_id))
+                    print("No delivery history for tenant {}.".format(args.tenant_id))
                 else:
                     for rec in records:
                         print("-" * 60)
@@ -626,8 +624,7 @@ def main():
                     print("\nTotal: {}".format(len(records)))
         else:
             if not args.artifact or not args.artifact_type:
-                parser.error(
-                    "--artifact and --type are required for delivery")
+                parser.error("--artifact and --type are required for delivery")
             result = deliver_artifact(
                 tenant_id=args.tenant_id,
                 artifact_path=args.artifact,
@@ -636,8 +633,7 @@ def main():
             if args.as_json:
                 print(json.dumps(result, indent=2, default=str))
             else:
-                print("[{}] {}".format(
-                    result["status"].upper(), result.get("delivery_id")))
+                print("[{}] {}".format(result["status"].upper(), result.get("delivery_id")))
                 for k, v in result.items():
                     if k not in ("status", "delivery_id"):
                         print("  {}: {}".format(k, v))

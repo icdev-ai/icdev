@@ -1,0 +1,438 @@
+{% extends "network/base.html" %}
+{% block title %}NetBox IPAM — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title" style="color:#9b59b6;">&#x2B21; NetBox IPAM</h1>
+    <p class="page-subtitle">Network source of truth — pull device inventories, IP allocations, rack layouts, VLANs, and circuits</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-secondary" onclick="testConnection()" id="btn-test">Test Connection</button>
+    <button class="btn btn-primary" style="background:#9b59b6;border-color:#8e44ad;" onclick="pullAll()">&#x2B07; Pull All from NetBox</button>
+  </div>
+</div>
+
+<!-- Air-gap notice (shown when NETWORK_AIRGAP=true) -->
+{% if airgap_mode %}
+<div class="panel" style="padding:10px 16px;margin-bottom:12px;background:rgba(241,196,15,0.1);border:1px solid rgba(241,196,15,0.4);font-size:12px;color:#f1c40f;">
+  <strong>Air-Gap Mode:</strong> NetBox integration requires network access to an external NetBox instance and is unavailable in disconnected environments.
+  Topology data can be imported/exported via JSON, draw.io, or Visio files instead.
+</div>
+{% endif %}
+
+<!-- Status Banner -->
+<div id="nb-banner" class="panel" style="padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;
+  {% if cfg.configured %}background:rgba(155,89,182,0.08);border:1px solid rgba(155,89,182,0.3);{% else %}background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.3);{% endif %}">
+  <span id="nb-status-dot" style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:{% if cfg.configured %}#9b59b6{% else %}#e74c3c{% endif %};"></span>
+  <span id="nb-status-text" style="font-size:13px;color:{% if cfg.configured %}#9b59b6{% else %}#e74c3c{% endif %};">
+    {% if cfg.configured %}
+      Connected to <strong>{{ cfg.url }}</strong>{% if cfg.site_filter %} &nbsp;&bull;&nbsp; Site filter: <code>{{ cfg.site_filter }}</code>{% endif %}{% if cfg.last_tested %} &nbsp;&bull;&nbsp; Last tested: {{ cfg.last_tested[:19] }}{% endif %}
+    {% else %}
+      Not configured — enter your NetBox URL and API token below to begin.
+    {% endif %}
+  </span>
+</div>
+
+<div style="display:grid;grid-template-columns:340px 1fr;gap:20px;align-items:start;">
+
+  <!-- Left: Config + Stats -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- Connection Settings -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title" style="color:#9b59b6;">&#x2699; Connection</h2></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <label class="form-label">NetBox URL</label>
+          <input type="text" id="nb-url" class="form-control" value="{{ cfg.url or '' }}" placeholder="http://netbox:8000"/>
+        </div>
+        <div>
+          <label class="form-label">API Token</label>
+          <input type="password" id="nb-token" class="form-control" placeholder="Token abc123…"/>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Leave blank to keep existing token.</div>
+        </div>
+        <div>
+          <label class="form-label">Site Filter <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <input type="text" id="nb-site" class="form-control" value="{{ cfg.site_filter or '' }}" placeholder="site-slug"/>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button class="btn btn-primary" style="flex:1;background:#9b59b6;border-color:#8e44ad;" onclick="saveConfig()">Save</button>
+          <button class="btn btn-secondary" style="flex:1;" onclick="testConnection()">Test</button>
+        </div>
+        <div id="cfg-msg" style="font-size:12px;min-height:16px;"></div>
+      </div>
+    </section>
+
+    <!-- Cache Counts -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Cached Objects</h2></div>
+      <div style="padding:16px;">
+        <table class="data-table" style="font-size:12px;">
+          <thead><tr><th>Resource</th><th style="text-align:right;">Count</th></tr></thead>
+          <tbody>
+            {% set resources = [('device','Devices'),('ip_address','IP Addresses'),('vlan','VLANs'),('prefix','Prefixes'),('rack','Racks'),('circuit','Circuits')] %}
+            {% for key, label in resources %}
+            <tr>
+              <td>{{ label }}</td>
+              <td style="text-align:right;font-variant-numeric:tabular-nums;">{{ cached_counts.get(key, 0) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Import to Canvas -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Import to Canvas</h2></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+        <div>
+          <label class="form-label">Target Topology</label>
+          <select id="nb-topo-sel" class="form-control">
+            <option value="">— Select topology —</option>
+            {% for t in topologies %}
+            <option value="{{ t.id }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Resource</label>
+          <select id="nb-res-sel" class="form-control">
+            <option value="all">All (devices + circuits + prefixes)</option>
+            <option value="devices">Devices only</option>
+            <option value="circuits">Circuits only</option>
+            <option value="prefixes">Prefixes / IPAM only</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer;">
+          <input type="checkbox" id="nb-merge-chk" checked style="accent-color:#9b59b6;"/>
+          Merge (keep existing canvas nodes)
+        </label>
+        <button class="btn btn-primary" style="background:#9b59b6;border-color:#8e44ad;" onclick="importToCanvas()">&#x2B07; Import into Canvas</button>
+        <div id="import-msg" style="font-size:12px;min-height:16px;"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Right: Pull Tabs -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- Pull Resources -->
+    <section class="panel">
+      <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <h2 class="panel-title">Pull from NetBox</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="pullResource('devices')">Devices</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="pullResource('ips')">IPs</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="pullResource('vlans')">VLANs</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="pullResource('prefixes')">Prefixes</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="pullResource('racks')">Racks</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="pullResource('circuits')">Circuits</button>
+        </div>
+      </div>
+
+      <!-- Tab buttons -->
+      <div style="padding:0 16px;display:flex;gap:4px;border-bottom:1px solid var(--border-color);overflow-x:auto;">
+        {% for tab in ['devices','ips','vlans','prefixes','racks','circuits'] %}
+        <button class="tab-btn {% if loop.first %}active{% endif %}" data-tab="{{ tab }}" onclick="switchTab('{{ tab }}')">
+          {{ {'devices':'Devices','ips':'IP Addresses','vlans':'VLANs','prefixes':'Prefixes','racks':'Racks','circuits':'Circuits'}[tab] }}
+          <span id="tab-count-{{ tab }}" class="badge" style="background:#9b59b6;font-size:10px;margin-left:4px;padding:1px 5px;border-radius:8px;color:#fff;"></span>
+        </button>
+        {% endfor %}
+      </div>
+
+      <!-- Tab content panes -->
+      <div style="padding:16px;">
+        <div id="pull-loading" style="display:none;color:var(--text-muted);font-size:13px;padding:8px 0;">Pulling from NetBox…</div>
+        <div id="pull-error" style="display:none;color:#e74c3c;font-size:13px;padding:8px 0;"></div>
+
+        <!-- Devices -->
+        <div id="tab-devices" class="tab-pane">
+          <div id="tbl-devices-wrap"></div>
+        </div>
+        <!-- IPs -->
+        <div id="tab-ips" class="tab-pane" style="display:none;">
+          <div id="tbl-ips-wrap"></div>
+        </div>
+        <!-- VLANs -->
+        <div id="tab-vlans" class="tab-pane" style="display:none;">
+          <div id="tbl-vlans-wrap"></div>
+        </div>
+        <!-- Prefixes -->
+        <div id="tab-prefixes" class="tab-pane" style="display:none;">
+          <div id="tbl-prefixes-wrap"></div>
+        </div>
+        <!-- Racks -->
+        <div id="tab-racks" class="tab-pane" style="display:none;">
+          <div id="tbl-racks-wrap"></div>
+        </div>
+        <!-- Circuits -->
+        <div id="tab-circuits" class="tab-pane" style="display:none;">
+          <div id="tbl-circuits-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sync Log -->
+    <section class="panel">
+      <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+        <h2 class="panel-title">Sync Log</h2>
+        <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="loadSyncLog()">&#x21BA; Refresh</button>
+      </div>
+      <div id="sync-log-wrap" style="padding:0 16px 16px;">
+        {% if sync_log %}
+        <table class="data-table" style="font-size:12px;">
+          <thead><tr><th>Time</th><th>Direction</th><th>Resource</th><th>Status</th><th>In</th><th>Out</th><th>Topology</th><th>Error</th></tr></thead>
+          <tbody id="sync-log-body">
+            {% for row in sync_log %}
+            <tr>
+              <td style="white-space:nowrap;">{{ (row.ran_at or '')[:19] }}</td>
+              <td>
+                {% if row.direction == 'pull' %}<span style="color:#3498db;">&#x2B07; pull</span>
+                {% else %}<span style="color:#e67e22;">&#x2B06; push</span>{% endif %}
+              </td>
+              <td>{{ row.resource or '—' }}</td>
+              <td>
+                {% if row.status == 'ok' %}<span style="color:#2ecc71;">&#x2713; ok</span>
+                {% else %}<span style="color:#e74c3c;">&#x26a0; {{ row.status }}</span>{% endif %}
+              </td>
+              <td style="text-align:right;">{{ row.records_in or 0 }}</td>
+              <td style="text-align:right;">{{ row.records_out or 0 }}</td>
+              <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.topology_id or '—' }}</td>
+              <td style="color:#e74c3c;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ row.error_msg or '' }}">{{ row.error_msg or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p style="color:var(--text-muted);font-size:13px;padding:8px 0;">No sync activity yet. Pull resources from NetBox to populate the log.</p>
+        {% endif %}
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<style>
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.tab-btn.active {
+  color: #9b59b6;
+  border-bottom-color: #9b59b6;
+}
+.tab-btn:hover:not(.active) {
+  color: var(--text-color);
+}
+</style>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const NB = NC_BASE + '/api/netbox';
+
+function setStatus(text, color) {
+  document.getElementById('nb-status-text').innerHTML = text;
+  document.getElementById('nb-status-text').style.color = color;
+  document.getElementById('nb-status-dot').style.background = color;
+}
+
+function saveConfig() {
+  const url = document.getElementById('nb-url').value.trim();
+  const token = document.getElementById('nb-token').value.trim();
+  const site = document.getElementById('nb-site').value.trim();
+  if (!url) { showMsg('cfg-msg', 'URL is required.', '#e74c3c'); return; }
+  const body = {url};
+  if (token) body.token = token;
+  if (site) body.site_filter = site;
+  fetch(NB + '/configure', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+    .then(r => r.json()).then(d => {
+      if (d.ok) {
+        showMsg('cfg-msg', 'Saved: ' + d.url, '#2ecc71');
+        setStatus('Connected to <strong>' + d.url + '</strong>', '#9b59b6');
+        document.getElementById('nb-banner').style.background = 'rgba(155,89,182,0.08)';
+        document.getElementById('nb-banner').style.border = '1px solid rgba(155,89,182,0.3)';
+      } else {
+        showMsg('cfg-msg', d.error || 'Save failed.', '#e74c3c');
+      }
+    }).catch(err => showMsg('cfg-msg', 'Request error: ' + err, '#e74c3c'));
+}
+
+function testConnection() {
+  showMsg('cfg-msg', 'Testing…', '#f39c12');
+  fetch(NB + '/status').then(r => r.json()).then(d => {
+    if (d.ok) {
+      showMsg('cfg-msg', 'Connected — NetBox ' + (d.netbox_version || 'ok'), '#2ecc71');
+      setStatus('Connected to <strong>' + (d.url || '') + '</strong> — NetBox ' + (d.netbox_version || ''), '#2ecc71');
+    } else {
+      showMsg('cfg-msg', 'Failed: ' + (d.error || 'unknown error'), '#e74c3c');
+      setStatus('Connection failed: ' + (d.error || ''), '#e74c3c');
+    }
+  }).catch(err => showMsg('cfg-msg', 'Error: ' + err, '#e74c3c'));
+}
+
+function pullAll() {
+  ['devices','ips','vlans','prefixes','racks','circuits'].forEach(r => pullResource(r, true));
+  switchTab('devices');
+}
+
+function pullResource(resource, silent) {
+  const endpointMap = {
+    devices: NB + '/pull/devices',
+    ips: NB + '/pull/ips',
+    vlans: NB + '/pull/vlans',
+    prefixes: NB + '/pull/prefixes',
+    racks: NB + '/pull/racks',
+    circuits: NB + '/pull/circuits',
+  };
+  if (!endpointMap[resource]) return;
+  document.getElementById('pull-loading').style.display = 'block';
+  document.getElementById('pull-error').style.display = 'none';
+  fetch(endpointMap[resource]).then(r => r.json()).then(d => {
+    document.getElementById('pull-loading').style.display = 'none';
+    if (d.error) {
+      document.getElementById('pull-error').style.display = 'block';
+      document.getElementById('pull-error').textContent = 'Error: ' + d.error;
+      return;
+    }
+    const dataKey = {
+      devices: 'devices', ips: 'ip_addresses', vlans: 'vlans',
+      prefixes: 'prefixes', racks: 'racks', circuits: 'circuits',
+    }[resource];
+    const rows = d[dataKey] || [];
+    renderTable(resource, rows);
+    const countEl = document.getElementById('tab-count-' + resource);
+    if (countEl) countEl.textContent = rows.length;
+    if (!silent) switchTab(resource);
+  }).catch(err => {
+    document.getElementById('pull-loading').style.display = 'none';
+    document.getElementById('pull-error').style.display = 'block';
+    document.getElementById('pull-error').textContent = 'Request error: ' + err;
+  });
+}
+
+const _colDefs = {
+  devices:  ['label','type','ip','site','rack','platform','status','serial'],
+  ips:      ['address','status','role','vrf','device','description'],
+  vlans:    ['vid','name','status','site','group','description','prefix_count'],
+  prefixes: ['prefix','status','role','vrf','site','vlan_id','description','utilization'],
+  racks:    ['name','site','location','u_height','u_count','device_count','status','serial'],
+  circuits: ['circuit_id','provider','circuit_type','status','site_a','site_z','description'],
+};
+const _colLabels = {
+  label:'Name', type:'Type', ip:'Primary IP', site:'Site', rack:'Rack',
+  platform:'Platform', status:'Status', serial:'Serial', tags:'Tags',
+  address:'Address', role:'Role', vrf:'VRF', device:'Device', description:'Description',
+  vid:'VID', name:'Name', group:'Group', prefix_count:'Prefixes',
+  prefix:'Prefix', vlan_id:'VLAN', utilization:'Util%', is_pool:'Pool',
+  u_height:'U-Height', u_count:'Units', device_count:'Devices', location:'Location',
+  circuit_id:'Circuit ID', provider:'Provider', circuit_type:'Type',
+  site_a:'Site A', site_z:'Site Z',
+};
+
+function renderTable(resource, rows) {
+  const wrap = document.getElementById('tbl-' + resource + '-wrap');
+  if (!wrap) return;
+  if (!rows.length) {
+    wrap.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:8px 0;">No ' + resource + ' returned from NetBox.</p>';
+    return;
+  }
+  const cols = _colDefs[resource] || Object.keys(rows[0]);
+  let html = '<div style="overflow-x:auto;"><table class="data-table" style="font-size:12px;"><thead><tr>';
+  cols.forEach(c => { html += '<th>' + (_colLabels[c] || c) + '</th>'; });
+  html += '</tr></thead><tbody>';
+  rows.forEach(row => {
+    html += '<tr>';
+    cols.forEach(c => {
+      let val = row[c];
+      if (val === null || val === undefined || val === '') val = '—';
+      if (c === 'status') {
+        const color = val === 'active' ? '#2ecc71' : val === 'planned' ? '#f39c12' : '#95a5a6';
+        val = '<span style="color:' + color + ';">' + val + '</span>';
+      } else if (c === 'utilization' && typeof row[c] === 'number') {
+        const pct = row[c];
+        const fill = pct > 80 ? '#e74c3c' : pct > 60 ? '#f39c12' : '#2ecc71';
+        val = '<div style="display:flex;align-items:center;gap:6px;"><div style="width:60px;height:6px;background:#1a1a2e;border-radius:3px;"><div style="width:' + pct + '%;height:100%;background:' + fill + ';border-radius:3px;"></div></div>' + pct + '%</div>';
+      } else if (typeof val === 'boolean') {
+        val = val ? '<span style="color:#2ecc71;">&#x2713;</span>' : '<span style="color:#95a5a6;">&#x2715;</span>';
+      }
+      html += '<td>' + val + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  wrap.innerHTML = html;
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+  const btn = document.querySelector('[data-tab="' + tab + '"]');
+  if (btn) btn.classList.add('active');
+  const pane = document.getElementById('tab-' + tab);
+  if (pane) pane.style.display = 'block';
+}
+
+function importToCanvas() {
+  const topoId = document.getElementById('nb-topo-sel').value;
+  const resource = document.getElementById('nb-res-sel').value;
+  const merge = document.getElementById('nb-merge-chk').checked;
+  if (!topoId) { showMsg('import-msg', 'Select a target topology first.', '#e74c3c'); return; }
+  showMsg('import-msg', 'Importing ' + resource + '…', '#f39c12');
+  fetch(NB + '/import/' + topoId, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({resource, merge}),
+  }).then(r => r.json()).then(d => {
+    if (d.error) {
+      showMsg('import-msg', 'Error: ' + d.error, '#e74c3c');
+    } else {
+      const msg = 'Imported ' + (d.nodes_added || 0) + ' nodes, ' + (d.circuits_added || 0) + ' circuits, ' + (d.ipam_blocks_added || 0) + ' IPAM blocks.';
+      showMsg('import-msg', msg + ' <a href="/network/canvas/' + topoId + '" style="color:#9b59b6;">Open canvas &#x2192;</a>', '#2ecc71');
+      loadSyncLog();
+    }
+  }).catch(err => showMsg('import-msg', 'Error: ' + err, '#e74c3c'));
+}
+
+function loadSyncLog() {
+  fetch(NB + '/sync-log?limit=50').then(r => r.json()).then(d => {
+    const log = d.log || [];
+    if (!log.length) return;
+    const dirIcon = dir => dir === 'pull' ? '<span style="color:#3498db;">&#x2B07; pull</span>' : '<span style="color:#e67e22;">&#x2B06; push</span>';
+    const stIcon = s => s === 'ok' ? '<span style="color:#2ecc71;">&#x2713; ok</span>' : '<span style="color:#e74c3c;">&#x26a0; ' + s + '</span>';
+    let html = '';
+    log.forEach(r => {
+      html += '<tr><td style="white-space:nowrap;">' + (r.ran_at||'').substring(0,19) + '</td>';
+      html += '<td>' + dirIcon(r.direction) + '</td>';
+      html += '<td>' + (r.resource||'—') + '</td>';
+      html += '<td>' + stIcon(r.status) + '</td>';
+      html += '<td style="text-align:right;">' + (r.records_in||0) + '</td>';
+      html += '<td style="text-align:right;">' + (r.records_out||0) + '</td>';
+      html += '<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.topology_id||'—') + '</td>';
+      html += '<td style="color:#e74c3c;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (r.error_msg||'') + '">' + (r.error_msg||'') + '</td></tr>';
+    });
+    const tbody = document.getElementById('sync-log-body');
+    if (tbody) tbody.innerHTML = html;
+    const wrap = document.getElementById('sync-log-wrap');
+    if (wrap && !tbody) {
+      wrap.innerHTML = '<table class="data-table" style="font-size:12px;"><thead><tr><th>Time</th><th>Direction</th><th>Resource</th><th>Status</th><th>In</th><th>Out</th><th>Topology</th><th>Error</th></tr></thead><tbody>' + html + '</tbody></table>';
+    }
+  }).catch(() => {});
+}
+
+function showMsg(id, html, color) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = html;
+  el.style.color = color;
+}
+</script>
+{% endblock %}

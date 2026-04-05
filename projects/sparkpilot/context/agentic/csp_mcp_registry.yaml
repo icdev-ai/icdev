@@ -3,7 +3,7 @@
 # Used by: tools/builder/app_blueprint.py (resolve_csp_mcp_servers function)
 # Purpose: When generating cloud-native child apps, select relevant CSP MCP servers
 #          based on the app's capabilities and target cloud provider.
-# Phase: ICDEV Phase 19
+# Phase: ICDEV™ Phase 19
 
 providers:
   aws:

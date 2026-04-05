@@ -18,7 +18,7 @@ import pytest
 def test_icdev_callback_client_imports():
     """Verify module can be imported without errors."""
     try:
-        import tools.a2a.icdev_callback_client
+        import tools.a2a.icdev_callback_client  # noqa: F401
     except ImportError as e:
         pytest.skip(f"Import dependency missing: {e}")
 

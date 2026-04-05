@@ -1,11 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import json
-
-import pytest
 
 from icdev.tools.agent.skill_selector import (
     load_config,
@@ -20,6 +18,7 @@ from icdev.tools.agent.skill_selector import (
 # ---------------------------------------------------------------------------
 # Config loading
 # ---------------------------------------------------------------------------
+
 
 class TestLoadConfig:
     def test_returns_dict(self):
@@ -42,8 +41,7 @@ class TestLoadConfig:
         config = load_config()
         for name, data in config["categories"].items():
             assert "keywords" in data, f"{name} missing keywords"
-            assert "commands" in data or "goals" in data, \
-                f"{name} missing commands/goals"
+            assert "commands" in data or "goals" in data, f"{name} missing commands/goals"
 
     def test_has_always_include(self):
         config = load_config()
@@ -66,6 +64,7 @@ class TestLoadConfig:
 # Keyword matching
 # ---------------------------------------------------------------------------
 
+
 class TestMatchKeywords:
     def test_build_keywords(self):
         config = load_config()
@@ -74,26 +73,22 @@ class TestMatchKeywords:
 
     def test_compliance_keywords(self):
         config = load_config()
-        scores = match_keywords("generate ATO NIST STIG artifacts",
-                                config["categories"])
+        scores = match_keywords("generate ATO NIST STIG artifacts", config["categories"])
         assert scores.get("compliance", 0.0) > 0.0
 
     def test_infrastructure_keywords(self):
         config = load_config()
-        scores = match_keywords("deploy to kubernetes using terraform",
-                                config["categories"])
+        scores = match_keywords("deploy to kubernetes using terraform", config["categories"])
         assert scores.get("infrastructure", 0.0) > 0.0
 
     def test_requirements_keywords(self):
         config = load_config()
-        scores = match_keywords("start requirements intake session",
-                                config["categories"])
+        scores = match_keywords("start requirements intake session", config["categories"])
         assert scores.get("requirements", 0.0) > 0.0
 
     def test_maintenance_keywords(self):
         config = load_config()
-        scores = match_keywords("scan for vulnerability CVE updates",
-                                config["categories"])
+        scores = match_keywords("scan for vulnerability CVE updates", config["categories"])
         assert scores.get("maintenance", 0.0) > 0.0
 
     def test_no_match_returns_zeros(self):
@@ -109,20 +104,19 @@ class TestMatchKeywords:
 
     def test_multi_word_keywords(self):
         config = load_config()
-        scores = match_keywords("check the supply chain vendors",
-                                config["categories"])
+        scores = match_keywords("check the supply chain vendors", config["categories"])
         assert scores.get("maintenance", 0.0) > 0.0
 
     def test_dashboard_keywords(self):
         config = load_config()
-        scores = match_keywords("update the dashboard kanban board",
-                                config["categories"])
+        scores = match_keywords("update the dashboard kanban board", config["categories"])
         assert scores.get("dashboard", 0.0) > 0.0
 
 
 # ---------------------------------------------------------------------------
 # File detection
 # ---------------------------------------------------------------------------
+
 
 class TestDetectFromFiles:
     def test_python_files(self, tmp_path):
@@ -139,8 +133,7 @@ class TestDetectFromFiles:
         assert scores.get("infrastructure", 0.0) > 0.0
 
     def test_feature_files(self, tmp_path):
-        (tmp_path / "login.feature").write_text("Feature: Login",
-                                                encoding="utf-8")
+        (tmp_path / "login.feature").write_text("Feature: Login", encoding="utf-8")
         config = load_config()
         scores = detect_from_files(str(tmp_path), config)
         # .feature maps to both build and requirements
@@ -161,18 +154,17 @@ class TestDetectFromFiles:
 # Main selection
 # ---------------------------------------------------------------------------
 
+
 class TestSelectSkills:
     def test_build_query_returns_build(self):
         result = select_skills(query="fix the python tests")
         assert result["status"] == "ok"
-        cats = [c["name"] for c in result["matched_categories"]
-                if c["score"] > 0]
+        cats = [c["name"] for c in result["matched_categories"] if c["score"] > 0]
         assert "build" in cats
 
     def test_compliance_query_returns_compliance(self):
         result = select_skills(query="generate NIST compliance SSP report")
-        cats = [c["name"] for c in result["matched_categories"]
-                if c["score"] > 0]
+        cats = [c["name"] for c in result["matched_categories"] if c["score"] > 0]
         assert "compliance" in cats
 
     def test_unknown_query_falls_back(self):
@@ -190,8 +182,7 @@ class TestSelectSkills:
 
     def test_returns_expected_keys(self):
         result = select_skills(query="build code")
-        expected_keys = ["status", "matched_categories", "commands",
-                         "goals", "context_dirs", "confidence"]
+        expected_keys = ["status", "matched_categories", "commands", "goals", "context_dirs", "confidence"]
         for key in expected_keys:
             assert key in result, f"Missing key: {key}"
 
@@ -205,16 +196,15 @@ class TestSelectSkills:
         assert len(result["goals"]) > 0
 
     def test_multiple_categories_matched(self):
-        result = select_skills(
-            query="deploy the compliance scanner to kubernetes")
-        cats = [c["name"] for c in result["matched_categories"]
-                if c["score"] > 0]
+        result = select_skills(query="deploy the compliance scanner to kubernetes")
+        cats = [c["name"] for c in result["matched_categories"] if c["score"] > 0]
         assert len(cats) >= 2
 
 
 # ---------------------------------------------------------------------------
 # Path resolution
 # ---------------------------------------------------------------------------
+
 
 class TestResolvePaths:
     def test_resolves_existing_commands(self):
@@ -238,6 +228,7 @@ class TestResolvePaths:
 # ---------------------------------------------------------------------------
 # Context formatting
 # ---------------------------------------------------------------------------
+
 
 class TestFormatInjectionContext:
     def test_returns_markdown(self):

@@ -2,7 +2,7 @@
 
 ## Overview
 
-ICDEV operates as a multi-tenant SaaS platform. The SaaS layer wraps existing deterministic tools (D58) without rewriting them. Each API request resolves the tenant, routes to their isolated database, invokes the existing Python tool, and returns the result.
+ICDEV™ operates as a multi-tenant SaaS platform. The SaaS layer wraps existing deterministic tools (D58) without rewriting them. Each API request resolves the tenant, routes to their isolated database, invokes the existing Python tool, and returns the result.
 
 **Key design principles:**
 - Existing tools remain unchanged; SaaS is additive
@@ -46,7 +46,7 @@ python tools/saas/tenant_manager.py --provision --tenant-id "tenant-uuid"
 ```
 
 Provisioning performs:
-1. Creates a dedicated tenant database (`data/tenants/{slug}.db`) with the full ICDEV schema
+1. Creates a dedicated tenant database (`data/tenants/{slug}.db`) with the full ICDEV™ schema
 2. Creates a K8s namespace (if K8s is available)
 3. Sets tenant status to `active`
 
@@ -384,7 +384,7 @@ Configure your Prometheus instance to scrape this endpoint at the desired interv
 | Tenant DB Adapter | `tools/saas/tenant_db_adapter.py` | Route DB calls to tenant database |
 | Rate Limiter | `tools/saas/rate_limiter.py` | Per-tenant rate limiting by tier |
 | DB Compat | `tools/saas/db/db_compat.py` | SQLite and PostgreSQL compatibility |
-| PG Schema | `tools/saas/db/pg_schema.py` | Full ICDEV schema in PostgreSQL DDL |
+| PG Schema | `tools/saas/db/pg_schema.py` | Full ICDEV™ schema in PostgreSQL DDL |
 | Artifact Delivery | `tools/saas/artifacts/delivery_engine.py` | Push artifacts to tenant S3/Git/SFTP |
 | Bedrock Proxy | `tools/saas/bedrock/bedrock_proxy.py` | Route LLM calls to BYOK or shared pool |
 | License Generator | `tools/saas/licensing/license_generator.py` | RSA-SHA256 offline license generation |
@@ -419,7 +419,7 @@ Rate limits are per-tenant based on subscription tier. Upgrade the tier or reduc
 
 ### Database migration for new tenants
 
-When ICDEV is upgraded with new schema, existing tenant databases need migration:
+When ICDEV™ is upgraded with new schema, existing tenant databases need migration:
 
 ```bash
 # Apply migrations to all tenant databases

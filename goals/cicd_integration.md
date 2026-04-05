@@ -2,7 +2,7 @@
 # Goal: CI/CD Integration (GitHub + GitLab)
 
 ## Purpose
-Enable ICDEV to receive webhook events and poll issues from both GitHub and GitLab,
+Enable ICDEV™ to receive webhook events and poll issues from both GitHub and GitLab,
 classify workflow requests, and execute the full SDLC pipeline autonomously.
 
 ## Architecture
@@ -37,7 +37,7 @@ Two trigger mechanisms (choose one or both):
 | Command | File | Purpose |
 |---------|------|---------|
 | `/classify_issue` | `.claude/commands/classify_issue.md` | Classify issue as /chore, /bug, /feature, /patch |
-| `/classify_workflow` | `.claude/commands/classify_workflow.md` | Extract ICDEV workflow command from text |
+| `/classify_workflow` | `.claude/commands/classify_workflow.md` | Extract ICDEV™ workflow command from text |
 | `/generate_branch_name` | `.claude/commands/generate_branch_name.md` | Generate standardized branch names |
 | `/implement` | `.claude/commands/implement.md` | Implement a plan with CUI markings |
 | `/commit` | `.claude/commands/commit.md` | Generate git commit messages |
@@ -57,7 +57,7 @@ The poll trigger automatically processes:
 - Issues where the latest comment is `icdev`
 
 ### Bot Loop Prevention
-All bot comments include `[ICDEV-BOT]` identifier. Webhooks ignore comments containing
+All bot comments include `[ICDEV™-BOT]` identifier. Webhooks ignore comments containing
 this identifier to prevent infinite loops.
 
 ## Platform Detection

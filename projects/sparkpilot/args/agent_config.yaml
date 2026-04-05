@@ -13,7 +13,7 @@ agents:
       model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
   architect:
     port: 9444
-    role: ATLAS A/T phases, system design
+    role: ANVIL A/T phases, system design
     health_endpoint: https://localhost:9444/health
     tls:
       enabled: true

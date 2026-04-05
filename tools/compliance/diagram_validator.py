@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance diagram validator using vision LLMs.
 
 Validates SSP architecture diagrams, network zone diagrams, data flow
@@ -233,7 +233,7 @@ def validate_diagram(
         image_path: Path to the diagram image file (PNG, JPEG, etc.).
         diagram_type: One of ``network_zone``, ``architecture``,
             ``data_flow``, or ``ato_boundary``.
-        project_id: Optional ICDEV project identifier for audit logging.
+        project_id: Optional ICDEV™ project identifier for audit logging.
         expected_components: Optional list of component names that should
             appear in the diagram.
 
@@ -246,44 +246,44 @@ def validate_diagram(
 
     # --- Validate diagram_type ---
     if diagram_type not in DIAGRAM_VALIDATIONS:
-        raise ValueError(
-            f"Unknown diagram_type '{diagram_type}'. "
-            f"Valid types: {VALID_DIAGRAM_TYPES}"
-        )
+        raise ValueError(f"Unknown diagram_type '{diagram_type}'. Valid types: {VALID_DIAGRAM_TYPES}")
 
     # --- Check required dependencies ---
     if encode_image is None:
         return _build_no_vision_result(
-            image_path, diagram_type,
+            image_path,
+            diagram_type,
             "Vision model not available: encode_image dependency missing",
         )
 
     if get_router is None or LLMRequest is None:
         return _build_no_vision_result(
-            image_path, diagram_type,
+            image_path,
+            diagram_type,
             "Vision model not available: tools.llm dependency missing",
         )
 
     # --- Check vision model availability ---
     try:
         router = get_router()
-        provider, model_id, model_cfg = router.get_provider_for_function(
-            "compliance_diagram"
-        )
+        provider, model_id, model_cfg = router.get_provider_for_function("compliance_diagram")
         if provider is None:
             return _build_no_vision_result(
-                image_path, diagram_type,
+                image_path,
+                diagram_type,
                 "Vision model not available: no provider for compliance_diagram function",
             )
         supports_vision = model_cfg.get("supports_vision", False)
         if not supports_vision:
             return _build_no_vision_result(
-                image_path, diagram_type,
+                image_path,
+                diagram_type,
                 f"Vision model not available: model {model_id} does not support vision",
             )
     except Exception as exc:
         return _build_no_vision_result(
-            image_path, diagram_type,
+            image_path,
+            diagram_type,
             f"Vision model not available: {exc}",
         )
 
@@ -292,16 +292,16 @@ def validate_diagram(
         b64_data, media_type = encode_image(image_path)
     except (FileNotFoundError, ValueError) as exc:
         return _build_no_vision_result(
-            image_path, diagram_type, f"Image encoding failed: {exc}",
+            image_path,
+            diagram_type,
+            f"Image encoding failed: {exc}",
         )
 
     # --- Build checks list ---
     checks = list(DIAGRAM_VALIDATIONS[diagram_type])
     if expected_components:
         components_str = ", ".join(expected_components)
-        checks.append(
-            f"The following components should be present: {components_str}"
-        )
+        checks.append(f"The following components should be present: {components_str}")
 
     checks_text = "\n".join(f"- {c}" for c in checks)
 
@@ -319,10 +319,7 @@ def validate_diagram(
         },
         {
             "type": "text",
-            "text": (
-                f"Validate this {diagram_type} diagram against these "
-                f"compliance checks:\n{checks_text}"
-            ),
+            "text": (f"Validate this {diagram_type} diagram against these compliance checks:\n{checks_text}"),
         },
     ]
 
@@ -340,7 +337,8 @@ def validate_diagram(
         duration_ms = int((time.time() - start_time) * 1000)
         logger.error("Vision model invocation failed: %s", exc)
         result = _build_no_vision_result(
-            image_path, diagram_type,
+            image_path,
+            diagram_type,
             f"Vision model invocation failed: {exc}",
         )
         result["duration_ms"] = duration_ms
@@ -357,9 +355,7 @@ def validate_diagram(
 
     # Compute overall_passed: True only if ALL validations passed
     if validations:
-        overall_passed = all(
-            v.get("passed") is True for v in validations
-        )
+        overall_passed = all(v.get("passed") is True for v in validations)
     else:
         overall_passed = None
 
@@ -381,7 +377,10 @@ def validate_diagram(
 
     logger.info(
         "Diagram validation complete: type=%s passed=%s model=%s duration=%dms",
-        diagram_type, overall_passed, actual_model, duration_ms,
+        diagram_type,
+        overall_passed,
+        actual_model,
+        duration_ms,
     )
 
     return result
@@ -428,7 +427,7 @@ def check_boundary_diagram(
 
     Args:
         image_path: Path to the ATO boundary diagram image.
-        project_id: Optional ICDEV project identifier.
+        project_id: Optional ICDEV™ project identifier.
 
     Returns:
         Validation result dict.
@@ -473,20 +472,23 @@ def check_data_flow(
 def main():
     """Command-line interface for compliance diagram validation."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Compliance Diagram Validator (Vision LLM)",
+        description="ICDEV™ Compliance Diagram Validator (Vision LLM)",
     )
     parser.add_argument(
-        "--image", required=True,
+        "--image",
+        required=True,
         help="Path to the diagram image to validate",
     )
     parser.add_argument(
-        "--type", required=True, dest="diagram_type",
+        "--type",
+        required=True,
+        dest="diagram_type",
         choices=VALID_DIAGRAM_TYPES,
         help="Type of compliance diagram",
     )
     parser.add_argument(
         "--project-id",
-        help="ICDEV project identifier (for audit logging)",
+        help="ICDEV™ project identifier (for audit logging)",
     )
     parser.add_argument(
         "--expected-components",
@@ -497,11 +499,14 @@ def main():
         help="Comma-separated list of expected network zones (network_zone type only)",
     )
     parser.add_argument(
-        "--classification", default="CUI",
+        "--classification",
+        default="CUI",
         help="Classification level for data flow diagrams (default: CUI)",
     )
     parser.add_argument(
-        "--json", action="store_true", dest="json_output",
+        "--json",
+        action="store_true",
+        dest="json_output",
         help="Output results as JSON",
     )
 

@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for the ICDEV Narrative Generator (tools/compliance/narrative_generator.py).
+"""Tests for the ICDEV™ Narrative Generator (tools/compliance/narrative_generator.py).
 
 Validates template rendering with evidence data, evidence gathering from DB,
 DB storage of narratives, and generate_for_project batch generation.
@@ -20,13 +20,14 @@ try:
         ControlEvidence,
         NarrativeGenerator,
         NarrativeResult,
-        DEFAULT_TEMPLATE,
+        DEFAULT_TEMPLATE,  # noqa: F401
     )
 except ImportError:
     pytestmark = pytest.mark.skip("tools.compliance.narrative_generator not available")
 
 try:
-    from jinja2 import Template as Jinja2Template
+    from jinja2 import Template as Jinja2Template  # noqa: F401
+
     HAS_JINJA2 = True
 except ImportError:
     HAS_JINJA2 = False
@@ -121,8 +122,7 @@ def narrative_db(tmp_path):
 
     # Seed project
     conn.execute(
-        "INSERT INTO projects (id, name, type, status, directory_path) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO projects (id, name, type, status, directory_path) VALUES (?, ?, ?, ?, ?)",
         ("proj-narr-1", "Narrative Test Project", "webapp", "active", "/tmp/narr"),
     )
 
@@ -143,7 +143,9 @@ def narrative_db(tmp_path):
         "implementation_description, responsible_role, evidence_path, last_assessed) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
-            "proj-narr-1", "AC-2", "implemented",
+            "proj-narr-1",
+            "AC-2",
+            "implemented",
             "IdP integration for account provisioning",
             "System Administrator",
             "/evidence/ac-2/audit_logs.pdf",
@@ -151,16 +153,13 @@ def narrative_db(tmp_path):
         ),
     )
     conn.execute(
-        "INSERT INTO project_controls "
-        "(project_id, control_id, implementation_status) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO project_controls (project_id, control_id, implementation_status) VALUES (?, ?, ?)",
         ("proj-narr-1", "AU-3", "planned"),
     )
 
     # Seed audit trail
     conn.execute(
-        "INSERT INTO audit_trail (event_type, actor, details, project_id) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO audit_trail (event_type, actor, details, project_id) VALUES (?, ?, ?, ?)",
         ("compliance_check", "icdev-compliance", "AC-2 assessed", "proj-narr-1"),
     )
 
@@ -172,6 +171,7 @@ def narrative_db(tmp_path):
 # ---------------------------------------------------------------------------
 # Template Rendering Tests
 # ---------------------------------------------------------------------------
+
 
 class TestTemplateRendering:
     """Verify Jinja2 template rendering with evidence data."""
@@ -205,6 +205,7 @@ class TestTemplateRendering:
 # ---------------------------------------------------------------------------
 # Evidence Gathering Tests
 # ---------------------------------------------------------------------------
+
 
 class TestEvidenceGathering:
     """Verify gather_evidence queries multiple tables."""
@@ -242,6 +243,7 @@ class TestEvidenceGathering:
 # Storage Tests
 # ---------------------------------------------------------------------------
 
+
 class TestNarrativeStorage:
     """Verify narratives are stored in the control_narratives table."""
 
@@ -278,6 +280,7 @@ class TestNarrativeStorage:
 # Batch Generation Tests
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateForProject:
     """Verify generate_for_project processes all controls."""
 
@@ -306,8 +309,7 @@ class TestGenerateForProject:
         """Project with no controls should return empty list."""
         conn = sqlite3.connect(str(narrative_db))
         conn.execute(
-            "INSERT INTO projects (id, name, type, status, directory_path) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO projects (id, name, type, status, directory_path) VALUES (?, ?, ?, ?, ?)",
             ("proj-empty", "Empty Project", "webapp", "active", "/tmp/empty"),
         )
         conn.commit()

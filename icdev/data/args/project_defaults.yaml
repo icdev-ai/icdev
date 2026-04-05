@@ -1,4 +1,4 @@
-# ICDEV Project Defaults
+# ICDEV™ Project Defaults
 # Change behavior without editing goals or tools
 
 project:
@@ -138,7 +138,7 @@ sbd:
 ivv:
   framework: "IEEE 1012-2016"
   auto_assess: true
-  independence_authority: "ICDEV IV&V Engine"
+  independence_authority: "ICDEV™ IV&V Engine"
   min_test_coverage: 80
   rtm_required: true
   process_areas_tracked: 9

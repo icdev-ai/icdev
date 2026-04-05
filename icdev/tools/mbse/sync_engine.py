@@ -81,7 +81,7 @@ def _new_id(prefix: str = "sysml") -> str:
 
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
         raise FileNotFoundError(
@@ -1602,11 +1602,11 @@ def generate_sync_report(project_id: str,
 def main() -> None:
     """Command-line interface for MBSE bidirectional sync engine."""
     parser = argparse.ArgumentParser(
-        description="ICDEV MBSE Bidirectional Sync Engine"
+        description="ICDEV™ MBSE Bidirectional Sync Engine"
     )
     parser.add_argument(
         "--project-id", required=True,
-        help="ICDEV project identifier (e.g. proj-123)",
+        help="ICDEV™ project identifier (e.g. proj-123)",
     )
 
     sub = parser.add_subparsers(dest="command")

@@ -1,6 +1,6 @@
 # E2E Test: Agents and Monitoring Pages
 
-Verify the ICDEV dashboard agents page displays the agent grid with status indicators, and the monitoring page displays health checks, status icons, and metric areas.
+Verify the ICDEV™ dashboard agents page displays the agent grid with status indicators, and the monitoring page displays health checks, status icons, and metric areas.
 
 ## Prerequisites
 - Flask dashboard running on http://localhost:5000

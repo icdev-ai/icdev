@@ -1,7 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.resilience.correlation."""
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import logging
@@ -48,6 +50,7 @@ def flask_app():
     @app.route("/echo-header")
     def echo_header():
         from flask import request
+
         return {"incoming": request.headers.get(CORRELATION_HEADER, "none")}
 
     return app

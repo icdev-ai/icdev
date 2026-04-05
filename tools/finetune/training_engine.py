@@ -16,11 +16,12 @@ import argparse
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.finetune.provider import FineTuneRequest, FineTuneStatus
+from tools.finetune.provider import FineTuneRequest
 from tools.finetune.provider_factory import get_provider
 from tools.finetune.dataset_manager import export_jsonl, get_dataset
 
@@ -29,27 +30,21 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _record_event(
-    conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}"
-) -> None:
+def _record_event(conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}") -> None:
     """Record a training job event (append-only, D6)."""
     conn.execute(
         "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (?, ?, ?, ?)",
-        (job_id, event_type, details, _now()),
+        (job_id, event_type, details, now_iso()),
     )
 
 
 # ── Job Lifecycle ────────────────────────────────────────────────────
+
 
 def create_training_job(
     dataset_id: str,
@@ -85,15 +80,17 @@ def create_training_job(
 
         # Create job record
         job_id = f"ft-{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = now_iso()
 
-        hyperparams = json.dumps({
-            "lora_rank": lora_rank,
-            "learning_rate": learning_rate,
-            "epochs": epochs,
-            "batch_size": batch_size,
-            "max_seq_length": max_seq_length,
-        })
+        hyperparams = json.dumps(
+            {
+                "lora_rank": lora_rank,
+                "learning_rate": learning_rate,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "max_seq_length": max_seq_length,
+            }
+        )
 
         output_dir = str(BASE_DIR / "data" / "finetune" / "jobs" / job_id)
 
@@ -104,13 +101,28 @@ def create_training_job(
                 gpu_count, distributed, output_dir, classification,
                 tenant_id, project_id, created_by, created_at)
                VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (job_id, dataset_id, provider_name or "unsloth_local", base_model,
-             hyperparams, lora_rank, learning_rate, epochs, batch_size,
-             max_seq_length, gpu_count, 1 if distributed else 0,
-             output_dir, classification, tenant_id, project_id, created_by, now),
+            (
+                job_id,
+                dataset_id,
+                provider_name or "unsloth_local",
+                base_model,
+                hyperparams,
+                lora_rank,
+                learning_rate,
+                epochs,
+                batch_size,
+                max_seq_length,
+                gpu_count,
+                1 if distributed else 0,
+                output_dir,
+                classification,
+                tenant_id,
+                project_id,
+                created_by,
+                now,
+            ),
         )
-        _record_event(conn, job_id, "created",
-                       json.dumps({"dataset_id": dataset_id, "base_model": base_model}))
+        _record_event(conn, job_id, "created", json.dumps({"dataset_id": dataset_id, "base_model": base_model}))
         conn.commit()
 
         # Export dataset to JSONL
@@ -122,8 +134,7 @@ def create_training_job(
                 "UPDATE ft_training_jobs SET status = 'failed', error_message = ? WHERE id = ?",
                 (f"Dataset export failed: {export_result.get('error', '')}", job_id),
             )
-            _record_event(conn, job_id, "failed",
-                           json.dumps({"reason": "dataset_export_failed"}))
+            _record_event(conn, job_id, "failed", json.dumps({"reason": "dataset_export_failed"}))
             conn.commit()
             return {"success": False, "error": f"Dataset export failed: {export_result.get('error', '')}"}
 
@@ -250,7 +261,7 @@ def cancel_job(
 
         conn.execute(
             "UPDATE ft_training_jobs SET status = 'canceled', completed_at = ? WHERE id = ?",
-            (_now(), job_id),
+            (now_iso(), job_id),
         )
         _record_event(conn, job_id, "canceled")
         conn.commit()
@@ -295,6 +306,7 @@ def list_jobs(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tuning training engine")

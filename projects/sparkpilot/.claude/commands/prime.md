@@ -10,7 +10,7 @@ git ls-files | head -80
 
 ## Read
 
-1. `CLAUDE.md` — Full system reference (GOTCHA framework, ATLAS workflow, all tools/commands)
+1. `CLAUDE.md` — Full system reference (FORGE framework, ANVIL workflow, all tools/commands)
 2. `goals/manifest.md` — Index of all goal workflows
 3. `tools/manifest.md` — Master list of all tools
 4. `memory/MEMORY.md` — Long-term facts and preferences (if exists)
@@ -25,7 +25,7 @@ python tools/project/session_context_builder.py --format markdown 2>/dev/null ||
 ## Summarize
 
 After reading the above, provide a concise summary of:
-- The GOTCHA framework layers and how they interact
+- The FORGE framework layers and how they interact
 - Active goals and their current state
 - Available tools and MCP servers
 - Any memory/preferences from previous sessions

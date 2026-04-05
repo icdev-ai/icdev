@@ -36,7 +36,9 @@ class OWASPAgenticAssessor(BaseAssessor):
     CATALOG_FILENAME = "owasp_agentic_threats.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """Run automated checks for all 17 OWASP Agentic threats.
 
@@ -73,8 +75,8 @@ class OWASPAgenticAssessor(BaseAssessor):
 
         # --- Gap 6: MCP RBAC (T06, T14) ---
         rbac_check = self._check_mcp_rbac()
-        checks["T06"] = rbac_check   # Intent breaking / prompt injection
-        checks["T14"] = rbac_check   # Human attacks on MAS
+        checks["T06"] = rbac_check  # Intent breaking / prompt injection
+        checks["T14"] = rbac_check  # Human attacks on MAS
 
         # --- Gap 7: Behavioral Red Teaming (T10) ---
         checks["T10"] = self._check_behavioral_red_team()  # HITL overwhelming
@@ -197,6 +199,7 @@ class OWASPAgenticAssessor(BaseAssessor):
             return "not_satisfied"
 
         import json
+
         try:
             with open(catalog_path) as f:
                 data = json.load(f)
@@ -205,8 +208,7 @@ class OWASPAgenticAssessor(BaseAssessor):
                 return "not_satisfied"
             # Check that at least 80% have crosswalk entries
             with_crosswalk = sum(
-                1 for r in reqs
-                if r.get("nist_800_53_crosswalk") and len(r["nist_800_53_crosswalk"]) > 0
+                1 for r in reqs if r.get("nist_800_53_crosswalk") and len(r["nist_800_53_crosswalk"]) > 0
             )
             coverage = with_crosswalk / len(reqs) if reqs else 0
             if coverage >= 0.8:

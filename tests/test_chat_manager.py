@@ -7,10 +7,9 @@ close lifecycle, intervention atomic set/check, checkpoint preservation.
 """
 
 import sys
-import time
 import threading
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -35,6 +34,7 @@ def manager():
 # ---------------------------------------------------------------------------
 # ChatContext dataclass
 # ---------------------------------------------------------------------------
+
 
 class TestChatContext:
     def test_create(self):
@@ -95,6 +95,7 @@ class TestChatContext:
 # Context CRUD
 # ---------------------------------------------------------------------------
 
+
 class TestContextCRUD:
     def test_create_context(self, manager):
         result = manager.create_context("user-1", title="My Chat")
@@ -146,6 +147,7 @@ class TestContextCRUD:
 # Concurrent limit
 # ---------------------------------------------------------------------------
 
+
 class TestConcurrentLimit:
     def test_max_concurrent_per_user(self, manager):
         for i in range(MAX_CONCURRENT_PER_USER):
@@ -169,6 +171,7 @@ class TestConcurrentLimit:
 # ---------------------------------------------------------------------------
 # Messaging
 # ---------------------------------------------------------------------------
+
 
 class TestMessaging:
     def test_send_message(self, manager):
@@ -201,6 +204,7 @@ class TestMessaging:
 # Intervention
 # ---------------------------------------------------------------------------
 
+
 class TestIntervention:
     def test_intervene(self, manager):
         ctx = manager.create_context("user-1")
@@ -216,6 +220,7 @@ class TestIntervention:
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
+
 
 class TestDiagnostics:
     def test_diagnostics(self, manager):

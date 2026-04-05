@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Reassessment Scheduler — Phase 49.
 
 Tracks periodic reassessment schedules for AI systems as required by
 OMB M-25-21 (M25-INV-3) and GAO-21-519SP (GAO-MON-4).
 
 Usage:
-    python tools/compliance/ai_reassessment_scheduler.py --project-id proj-123 --create --ai-system "Classifier" --frequency annual --json
+    python tools/compliance/ai_reassessment_scheduler.py --project-id proj-123 --create --ai-system "Classifier" --frequency annual --json  # noqa: E501
     python tools/compliance/ai_reassessment_scheduler.py --project-id proj-123 --overdue --json
     python tools/compliance/ai_reassessment_scheduler.py --project-id proj-123 --complete --schedule-id 1 --json
     python tools/compliance/ai_reassessment_scheduler.py --project-id proj-123 --summary --json
@@ -20,9 +20,10 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -32,8 +33,7 @@ FREQUENCY_DAYS = {"quarterly": 90, "semi_annual": 182, "annual": 365, "biennial"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -106,15 +106,19 @@ def check_overdue(project_id: str, db_path: Path = DB_PATH) -> Dict:
 
         overdue = []
         for r in rows:
-            days_overdue = (datetime.now(timezone.utc) - datetime.strptime(r["next_due"], "%Y-%m-%d").replace(tzinfo=timezone.utc)).days
-            overdue.append({
-                "id": r["id"],
-                "ai_system": r["ai_system"],
-                "frequency": r["frequency"],
-                "next_due": r["next_due"],
-                "days_overdue": days_overdue,
-                "last_completed": r["last_completed"],
-            })
+            days_overdue = (
+                datetime.now(timezone.utc) - datetime.strptime(r["next_due"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            ).days
+            overdue.append(
+                {
+                    "id": r["id"],
+                    "ai_system": r["ai_system"],
+                    "frequency": r["frequency"],
+                    "next_due": r["next_due"],
+                    "days_overdue": days_overdue,
+                    "last_completed": r["last_completed"],
+                }
+            )
 
         return {
             "project_id": project_id,
@@ -126,7 +130,8 @@ def check_overdue(project_id: str, db_path: Path = DB_PATH) -> Dict:
 
 
 def complete_reassessment(
-    schedule_id: int, db_path: Path = DB_PATH,
+    schedule_id: int,
+    db_path: Path = DB_PATH,
 ) -> Dict:
     """Mark a reassessment as completed and set next due date."""
     conn = _get_connection(db_path)
@@ -141,7 +146,9 @@ def complete_reassessment(
 
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         frequency = row["frequency"]
-        next_due = (datetime.now(timezone.utc) + timedelta(days=FREQUENCY_DAYS.get(frequency, 365))).strftime("%Y-%m-%d")
+        next_due = (datetime.now(timezone.utc) + timedelta(days=FREQUENCY_DAYS.get(frequency, 365))).strftime(
+            "%Y-%m-%d"
+        )
 
         conn.execute(
             """UPDATE ai_reassessment_schedule
@@ -180,14 +187,16 @@ def get_schedule_summary(project_id: str, db_path: Path = DB_PATH) -> Dict:
             is_overdue = r["next_due"] and r["next_due"] < now
             if is_overdue:
                 overdue_count += 1
-            schedules.append({
-                "id": r["id"],
-                "ai_system": r["ai_system"],
-                "frequency": r["frequency"],
-                "next_due": r["next_due"],
-                "last_completed": r["last_completed"],
-                "overdue": is_overdue,
-            })
+            schedules.append(
+                {
+                    "id": r["id"],
+                    "ai_system": r["ai_system"],
+                    "frequency": r["frequency"],
+                    "next_due": r["next_due"],
+                    "last_completed": r["last_completed"],
+                    "overdue": is_overdue,
+                }
+            )
 
         return {
             "project_id": project_id,
@@ -223,8 +232,7 @@ def main():
             if not args.ai_system:
                 print("ERROR: --ai-system required", file=sys.stderr)
                 sys.exit(1)
-            result = create_schedule(args.project_id, args.ai_system,
-                                     args.frequency, args.next_due, db)
+            result = create_schedule(args.project_id, args.ai_system, args.frequency, args.next_due, db)
         elif args.overdue:
             result = check_overdue(args.project_id, db)
         elif args.complete:

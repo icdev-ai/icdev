@@ -26,7 +26,7 @@ nist_catalog:
   # Priority order for catalog resolution (first found wins)
   catalog_sources:
     - "context/oscal/NIST_SP-800-53_rev5_catalog.json"     # Official NIST OSCAL
-    - "context/compliance/nist_800_53.json"                  # ICDEV custom (fallback)
+    - "context/compliance/nist_800_53.json"                  # ICDEV™ custom (fallback)
   # Baseline profile paths (official NIST OSCAL profiles)
   baseline_profiles:
     low: "context/oscal/NIST_SP-800-53_rev5_LOW-baseline_profile.json"

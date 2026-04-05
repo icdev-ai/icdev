@@ -9,7 +9,6 @@ Existing store_event() passive hooks are preserved as the observational tier.
 
 Usage:
     from icdev.tools.extensions.extension_manager import extension_manager, ExtensionPoint
-from icdev._paths import get_project_root
 
     # Register an extension programmatically
     extension_manager.register(
@@ -23,7 +22,9 @@ from icdev._paths import get_project_root
     context = {"tool_name": "ssp_generator", "args": {...}}
     modified_ctx = extension_manager.dispatch(ExtensionPoint.TOOL_EXECUTE_BEFORE, context)
 """
+from __future__ import annotations
 
+from icdev._paths import get_project_root
 import importlib.util
 import logging
 import os
@@ -43,7 +44,7 @@ BASE_DIR = get_project_root()
 # ---------------------------------------------------------------------------
 
 class ExtensionPoint(str, Enum):
-    """Available hook points in the ICDEV lifecycle."""
+    """Available hook points in the ICDEV™ lifecycle."""
 
     TOOL_EXECUTE_BEFORE = "tool_execute_before"
     TOOL_EXECUTE_AFTER = "tool_execute_after"

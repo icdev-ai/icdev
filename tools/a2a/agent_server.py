@@ -20,6 +20,7 @@ import os
 import sqlite3
 import ssl
 import uuid
+from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -46,7 +47,7 @@ class A2AAgentServer:
         agent_id: str,
         name: str,
         description: str,
-        host: str = "0.0.0.0",
+        host: str = "0.0.0.0",  # nosec B104 -- intentional bind-all for containerized/dev deployment
         port: int = 8443,
         version: str = "1.0.0",
         db_path: Optional[Path] = None,
@@ -144,13 +145,15 @@ class A2AAgentServer:
         """Build the Agent Card JSON for /.well-known/agent.json."""
         skills = []
         for sid, info in self._skills.items():
-            skills.append({
-                "id": info["id"],
-                "name": info["name"],
-                "description": info["description"],
-                "inputModes": info["inputModes"],
-                "outputModes": info["outputModes"],
-            })
+            skills.append(
+                {
+                    "id": info["id"],
+                    "name": info["name"],
+                    "description": info["description"],
+                    "inputModes": info["inputModes"],
+                    "outputModes": info["outputModes"],
+                }
+            )
 
         card = {
             "name": self.name,
@@ -195,6 +198,7 @@ class A2AAgentServer:
         # Extract correlation ID from incoming A2A request (D149)
         try:
             from tools.resilience.correlation import set_correlation_id
+
             cid = metadata.get("correlation_id")
             if cid:
                 set_correlation_id(cid)
@@ -203,6 +207,7 @@ class A2AAgentServer:
         # D285: Extract W3C traceparent and restore trace context
         try:
             from tools.observability.trace_context import parse_traceparent, set_current_context
+
             tp = metadata.get("traceparent")
             if tp:
                 ctx = parse_traceparent(tp)
@@ -241,11 +246,13 @@ class A2AAgentServer:
             self._persist_task(task)
             self._executor.submit(self._execute_task_async, task.id, skill_id)
 
-        return jsonify({
-            "jsonrpc": "2.0",
-            "id": rpc_id,
-            "result": task.to_dict(),
-        })
+        return jsonify(
+            {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "result": task.to_dict(),
+            }
+        )
 
     def _execute_task_sync(self, task: Task, skill_id: str) -> None:
         """Execute a task synchronously in the request thread."""
@@ -332,6 +339,7 @@ class A2AAgentServer:
 
         try:
             from tools.agent.mailbox import send
+
             msg_id = send(
                 from_agent_id=body.get("from_agent_id", "unknown"),
                 to_agent_id=self.agent_id,
@@ -352,6 +360,7 @@ class A2AAgentServer:
         """Handle GET /messages/inbox — retrieve messages for this agent."""
         try:
             from tools.agent.mailbox import receive
+
             unread_only = request.args.get("unread_only", "true").lower() == "true"
             message_type = request.args.get("message_type")
             limit = int(request.args.get("limit", 50))
@@ -373,8 +382,7 @@ class A2AAgentServer:
 
     def _get_db(self) -> sqlite3.Connection:
         """Get a database connection."""
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _persist_task(self, task: Task) -> None:
@@ -454,8 +462,7 @@ class A2AAgentServer:
                 (task_id,),
             )
             history = [
-                {"status": r["status"], "message": r["message"], "timestamp": r["timestamp"]}
-                for r in c.fetchall()
+                {"status": r["status"], "message": r["message"], "timestamp": r["timestamp"]} for r in c.fetchall()
             ]
 
             # Load artifacts
@@ -493,11 +500,13 @@ class A2AAgentServer:
     @staticmethod
     def _jsonrpc_error(rpc_id, code: int, message: str):
         """Return a JSON-RPC 2.0 error response."""
-        return jsonify({
-            "jsonrpc": "2.0",
-            "id": rpc_id,
-            "error": {"code": code, "message": message},
-        }), 400 if code != -32700 else 422
+        return jsonify(
+            {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "error": {"code": code, "message": message},
+            }
+        ), 400 if code != -32700 else 422
 
     # ── Server Control ──────────────────────────────────────────────
 
@@ -519,10 +528,7 @@ class A2AAgentServer:
                 else:
                     logger.info("TLS enabled (server-side only)")
             else:
-                logger.warning(
-                    f"TLS cert/key not found ({self.tls_cert}, {self.tls_key}). "
-                    "Starting without TLS."
-                )
+                logger.warning(f"TLS cert/key not found ({self.tls_cert}, {self.tls_key}). Starting without TLS.")
 
         logger.info(f"Starting {self.name} on {self.host}:{self.port}")
         self.app.run(
@@ -538,7 +544,7 @@ def main():
     parser.add_argument("--agent-id", default="test-agent", help="Agent ID")
     parser.add_argument("--name", default="Test Agent", help="Agent name")
     parser.add_argument("--description", default="A test A2A agent", help="Agent description")
-    parser.add_argument("--host", default="0.0.0.0", help="Bind host")
+    parser.add_argument("--host", default="0.0.0.0", help="Bind host")  # nosec B104 -- intentional bind-all for containerized/dev deployment
     parser.add_argument("--port", type=int, default=8443, help="Bind port")
     parser.add_argument("--tls-cert", help="TLS certificate path")
     parser.add_argument("--tls-key", help="TLS private key path")

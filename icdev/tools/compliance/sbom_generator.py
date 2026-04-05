@@ -739,7 +739,7 @@ def _build_cyclonedx_sbom(project, components, serial_number=None,
             "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "tools": [
                 {
-                    "vendor": "ICDEV",
+                    "vendor": "ICDEV™",
                     "name": "icdev-sbom-generator",
                     "version": "1.0.0",
                 }

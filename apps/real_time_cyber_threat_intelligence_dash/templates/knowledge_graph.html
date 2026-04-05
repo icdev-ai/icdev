@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% set active = "knowledge_graph" %}
+{% block content %}
+<div class="page-header"><h1>Knowledge Graph</h1></div>
+<div class="card"><div class="card__body"><svg id="kg-svg" width="100%" height="600"></svg></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+fetch('/api/graph').then(r=>r.json()).then(data => {
+    const svg = d3.select('#kg-svg');
+    const w = svg.node().parentElement.clientWidth, h = 600;
+    svg.attr('width', w).attr('height', h);
+    const sim = d3.forceSimulation(data.nodes)
+        .force('link', d3.forceLink(data.links).id(d=>d.id).distance(80))
+        .force('charge', d3.forceManyBody().strength(-100))
+        .force('center', d3.forceCenter(w/2, h/2));
+    const g = svg.append('g');
+    svg.call(d3.zoom().on('zoom', e => g.attr('transform', e.transform)));
+    const link = g.append('g').selectAll('line').data(data.links).join('line')
+        .attr('stroke', '#444').attr('stroke-width', d => d.weight * 2);
+    const node = g.append('g').selectAll('circle').data(data.nodes).join('circle')
+        .attr('r', 6).attr('fill', '#6366f1')
+        .call(d3.drag().on('start',(e,d)=>{sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y})
+            .on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y}).on('end',(e,d)=>{sim.alphaTarget(0);d.fx=null;d.fy=null}));
+    node.append('title').text(d => d.type + ': ' + d.label);
+    sim.on('tick', () => {
+        link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+        node.attr('cx',d=>d.x).attr('cy',d=>d.y);
+    });
+});
+</script>
+{% endblock %}

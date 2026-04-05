@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV CI/CD integration BDD scenarios."""
+"""Step definitions for ICDEV™ CI/CD integration BDD scenarios."""
 
 import json
 import os
@@ -144,9 +144,9 @@ def step_poll_trigger_configured(context):
     context.poll_interval = int(os.getenv("POLL_INTERVAL", "20"))
 
 
-@when('a new issue is created with ICDEV workflow command')
+@when('a new issue is created with ICDEV™ workflow command')
 def step_new_issue_with_workflow_cmd(context):
-    """Simulate a polled issue containing an ICDEV workflow command."""
+    """Simulate a polled issue containing an ICDEV™ workflow command."""
     issue_data = {
         "number": 55,
         "title": "Deploy the dashboard",
@@ -360,10 +360,10 @@ def step_pipeline_generated(context):
 # Scenario: Bot loop prevention
 # ---------------------------------------------------------------------------
 
-@given('a webhook event from an ICDEV bot comment')
+@given('a webhook event from an ICDEV™ bot comment')
 def step_bot_comment_event(context):
-    """Create a webhook event that originates from the ICDEV bot."""
-    bot_body = f"{BOT_IDENTIFIER} ICDEV Webhook: Detected `icdev_plan` workflow"
+    """Create a webhook event that originates from the ICDEV™ bot."""
+    bot_body = f"{BOT_IDENTIFIER} ICDEV™ Webhook: Detected `icdev_plan` workflow"
     payload = _make_github_comment_payload(
         body=bot_body,
         issue_number=42,

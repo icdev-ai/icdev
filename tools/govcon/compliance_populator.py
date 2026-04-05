@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Compliance Populator — Phase 59 (D365)
+# ICDEV™ GovCon Compliance Populator — Phase 59 (D365)
 # Auto-populate L/M/N compliance matrix from capability coverage scores.
 
 """
@@ -21,9 +21,8 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
-import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,9 +32,9 @@ _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -47,7 +46,7 @@ def _now():
 def _audit(conn, action, details="", actor="compliance_populator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )
@@ -56,6 +55,7 @@ def _audit(conn, action, details="", actor="compliance_populator"):
 
 
 # ── compliance matrix population ──────────────────────────────────────
+
 
 def populate_compliance_matrix(opportunity_id):
     """Auto-populate L/M/N compliance matrix for an opportunity.
@@ -106,15 +106,19 @@ def populate_compliance_matrix(opportunity_id):
                             item["grade"],
                             f"Auto-populated: {item['best_capability']} (score={item['coverage_score']:.2f})",
                             item.get("evidence", "")[:500],
-                            _now(), _now(),
+                            _now(),
+                            _now(),
                         ),
                     )
                     populated += 1
             except Exception:
                 pass
 
-    _audit(conn, "populate_matrix",
-           f"Opportunity {opportunity_id}: L={matrix_result['L_compliant']} M={matrix_result['M_partial']} N={matrix_result['N_gap']}")
+    _audit(
+        conn,
+        "populate_matrix",
+        f"Opportunity {opportunity_id}: L={matrix_result['L_compliant']} M={matrix_result['M_partial']} N={matrix_result['N_gap']}",
+    )
     conn.commit()
     conn.close()
 
@@ -200,16 +204,18 @@ def export_matrix(opportunity_id):
     # Format as exportable table
     rows = []
     for i, item in enumerate(matrix_result.get("matrix", []), 1):
-        rows.append({
-            "row": i,
-            "requirement": item["statement"],
-            "domain": item["domain"],
-            "type": item["statement_type"],
-            "grade": item["grade"],
-            "capability": item["best_capability"],
-            "score": item["coverage_score"],
-            "evidence": item["evidence"],
-        })
+        rows.append(
+            {
+                "row": i,
+                "requirement": item["statement"],
+                "domain": item["domain"],
+                "type": item["statement_type"],
+                "grade": item["grade"],
+                "capability": item["best_capability"],
+                "score": item["coverage_score"],
+                "evidence": item["evidence"],
+            }
+        )
 
     return {
         "status": "ok",
@@ -227,8 +233,9 @@ def export_matrix(opportunity_id):
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Compliance Populator (D365)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Compliance Populator (D365)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--populate", action="store_true", help="Auto-populate compliance matrix")
     group.add_argument("--summary", action="store_true", help="Compliance summary with bid recommendation")

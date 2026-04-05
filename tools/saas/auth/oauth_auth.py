@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — OAuth 2.0 / OIDC Authentication.
+"""ICDEV™ SaaS — OAuth 2.0 / OIDC Authentication.
 CUI // SP-CTI
 """
+
 import json
 import logging
 import os
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
@@ -25,8 +26,7 @@ _JWKS_CACHE_TTL = 3600  # 1 hour
 
 
 def _get_platform_conn():
-    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -34,6 +34,7 @@ def _decode_jwt_unverified(token: str) -> Optional[dict]:
     """Decode JWT header without verification to extract kid and issuer."""
     try:
         import base64
+
         parts = token.split(".")
         if len(parts) != 3:
             return None
@@ -59,6 +60,7 @@ def _fetch_jwks(jwks_uri: str) -> Optional[dict]:
 
     try:
         import requests
+
         resp = requests.get(jwks_uri, timeout=10)
         resp.raise_for_status()
         keys = resp.json()
@@ -98,11 +100,14 @@ def _find_user_by_oauth_sub(tenant_id: str, sub: str) -> Optional[dict]:
     """Find user by OAuth subject claim."""
     try:
         conn = _get_platform_conn()
-        row = conn.execute("""
+        row = conn.execute(
+            """
             SELECT id, tenant_id, email, role, status, display_name
             FROM users
             WHERE tenant_id = ? AND oauth_sub = ? AND status = 'active'
-        """, (tenant_id, sub)).fetchone()
+        """,
+            (tenant_id, sub),
+        ).fetchone()
         conn.close()
         return dict(row) if row else None
     except Exception as e:
@@ -147,10 +152,12 @@ def validate_oauth_token(token: str) -> Optional[dict]:
     if jwks_uri:
         try:
             import jwt as pyjwt
+
             jwks = _fetch_jwks(jwks_uri)
             if jwks:
                 # Use PyJWT with JWKS
                 from jwt import PyJWKClient
+
                 jwks_client = PyJWKClient(jwks_uri)
                 signing_key = jwks_client.get_signing_key_from_jwt(token)
                 verified_payload = pyjwt.decode(

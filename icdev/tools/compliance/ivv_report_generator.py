@@ -168,7 +168,7 @@ def _builtin_template():
         "{{evidence_index}}\n\n"
         "---\n\n"
         "## 9. Assessment Methodology\n\n"
-        "This assessment was conducted using the ICDEV IV&V Assessor tool against "
+        "This assessment was conducted using the ICDEV™ IV&V Assessor tool against "
         "the IEEE 1012 requirements catalog (30 requirements across 9 process areas).\n\n"
         "**Scoring Formula:**\n"
         "- Verification Score = average of process area pass rates\n"
@@ -1317,7 +1317,7 @@ def generate_ivv_report(project_id, output_path=None, db_path=None):
             "generation_timestamp": now.strftime("%Y-%m-%d %H:%M UTC"),
             "icdev_version": "1.0",
             "ivv_authority": certification.get(
-                "ivv_authority", "ICDEV IV&V Engine"
+                "ivv_authority", "ICDEV™ IV&V Engine"
             ),
 
             # Scores
@@ -1492,7 +1492,7 @@ def generate_ivv_report(project_id, output_path=None, db_path=None):
                     validation_score,
                     overall_score,
                     certification.get(
-                        "ivv_authority", "ICDEV IV&V Engine"
+                        "ivv_authority", "ICDEV™ IV&V Engine"
                     ),
                     "IEEE 1012 Independent Assessment",
                     conditions if recommendation == "CONDITIONAL" else None,

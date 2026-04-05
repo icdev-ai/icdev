@@ -1,6 +1,6 @@
 {
-  "name": "ICDEV Knowledge",
-  "description": "Learning knowledge base for the ICDEV platform. Detects patterns from failures and successes, generates recommendations via AWS Bedrock, and triggers automated self-healing.",
+  "name": "ICDEV™ Knowledge",
+  "description": "Learning knowledge base for the ICDEV™ platform. Detects patterns from failures and successes, generates recommendations via AWS Bedrock, and triggers automated self-healing.",
   "url": "https://localhost:8449",
   "version": "1.0.0",
   "capabilities": {

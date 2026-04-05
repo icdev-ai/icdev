@@ -26,11 +26,12 @@ import logging
 import sqlite3
 import threading
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.observability.tracer import NullSpan, Span, Tracer
+from tools.observability.tracer import Span, Tracer
 
 logger = logging.getLogger("icdev.observability.sqlite_tracer")
 
@@ -120,11 +121,13 @@ class SQLiteSpan(Span):
 
     def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> None:
         if not self._ended:
-            self._events.append({
-                "name": name,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "attributes": attributes or {},
-            })
+            self._events.append(
+                {
+                    "name": name,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "attributes": attributes or {},
+                }
+            )
 
     def set_status(self, code: str, message: str = "") -> None:
         if not self._ended:
@@ -327,10 +330,9 @@ class SQLiteTracer(Tracer):
         params.append(limit)
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
-                f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT ?",
+                f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchall()
             conn.close()

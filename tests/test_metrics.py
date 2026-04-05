@@ -7,7 +7,6 @@ registration, and Prometheus text exposition output.
 """
 
 import sys
-import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,6 +27,7 @@ from icdev.tools.saas.metrics import (
 # _FallbackCounter tests
 # ============================================================================
 
+
 class TestFallbackCounter:
     """Tests for the stdlib-only counter implementation."""
 
@@ -42,15 +42,13 @@ class TestFallbackCounter:
 
     def test_labels_returns_counter_instance(self):
         """labels() must return a _FallbackCounter for chaining."""
-        counter = _FallbackCounter("test_counter", "A test counter",
-                                   labelnames=("method",))
+        counter = _FallbackCounter("test_counter", "A test counter", labelnames=("method",))
         child = counter.labels(method="GET")
         assert isinstance(child, _FallbackCounter)
 
     def test_labeled_inc(self):
         """inc() on a labeled counter must track per-label values."""
-        counter = _FallbackCounter("req_total", "Requests",
-                                   labelnames=("method",))
+        counter = _FallbackCounter("req_total", "Requests", labelnames=("method",))
         counter.labels(method="GET").inc(2)
         counter.labels(method="POST").inc(1)
         rendered = counter.render()
@@ -61,6 +59,7 @@ class TestFallbackCounter:
 # ============================================================================
 # _FallbackGauge tests
 # ============================================================================
+
 
 class TestFallbackGauge:
     """Tests for the stdlib-only gauge implementation."""
@@ -90,8 +89,7 @@ class TestFallbackGauge:
 
     def test_labels_returns_gauge_instance(self):
         """labels() must return a _FallbackGauge for chaining."""
-        gauge = _FallbackGauge("test_gauge", "A test gauge",
-                               labelnames=("status",))
+        gauge = _FallbackGauge("test_gauge", "A test gauge", labelnames=("status",))
         child = gauge.labels(status="active")
         assert isinstance(child, _FallbackGauge)
 
@@ -99,6 +97,7 @@ class TestFallbackGauge:
 # ============================================================================
 # _FallbackHistogram tests
 # ============================================================================
+
 
 class TestFallbackHistogram:
     """Tests for the stdlib-only histogram implementation."""
@@ -117,6 +116,7 @@ class TestFallbackHistogram:
 # ============================================================================
 # MetricsCollector tests
 # ============================================================================
+
 
 class TestMetricsCollector:
     """Tests for the MetricsCollector dual-backend class."""
@@ -141,6 +141,7 @@ class TestMetricsCollector:
 # ============================================================================
 # format_metrics tests
 # ============================================================================
+
 
 class TestFormatMetrics:
     """Tests for format_metrics() Prometheus text exposition output."""
@@ -168,7 +169,7 @@ class TestFormatMetrics:
         assert "# TYPE" in result
 
     def test_format_contains_metric_names(self):
-        """Output must reference known ICDEV metric names."""
+        """Output must reference known ICDEV™ metric names."""
         result = self.collector.format_metrics()
         assert "icdev_http_requests_total" in result
         assert "icdev_gateway_uptime_seconds" in result
@@ -189,6 +190,7 @@ class TestFormatMetrics:
 # get_collector singleton tests
 # ============================================================================
 
+
 class TestGetCollector:
     """Tests for the get_collector() global singleton."""
 
@@ -196,6 +198,7 @@ class TestGetCollector:
         """get_collector() must return a MetricsCollector instance."""
         # Reset the global singleton for isolation
         import icdev.tools.saas.metrics as metrics_module
+
         original = metrics_module._collector
         metrics_module._collector = None
         try:
@@ -207,6 +210,7 @@ class TestGetCollector:
     def test_returns_same_instance(self):
         """get_collector() must return the same instance on second call."""
         import icdev.tools.saas.metrics as metrics_module
+
         original = metrics_module._collector
         metrics_module._collector = None
         try:
@@ -220,6 +224,7 @@ class TestGetCollector:
 # ============================================================================
 # Flask middleware tests
 # ============================================================================
+
 
 class TestMetricsMiddleware:
     """Tests for register_metrics_middleware() Flask integration."""
@@ -235,6 +240,7 @@ class TestMetricsMiddleware:
         @app.route("/ping")
         def ping():
             from flask import jsonify
+
             return jsonify({"pong": True})
 
         return app
@@ -278,6 +284,7 @@ class TestMetricsMiddleware:
 # ============================================================================
 # Best-effort update methods
 # ============================================================================
+
 
 class TestBestEffortUpdates:
     """Tests for update_circuit_breaker_metrics and update_tenant_metrics."""

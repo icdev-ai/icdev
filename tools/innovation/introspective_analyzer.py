@@ -3,16 +3,16 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Introspective Analyzer — Internal Telemetry Mining for ICDEV self-improvement.
+# POC: ICDEV™ System Administrator
+"""Introspective Analyzer — Internal Telemetry Mining for ICDEV™ self-improvement.
 
-Mines ICDEV's own internal telemetry (audit trail, self-healing history, NLQ queries,
+Mines ICDEV™'s own internal telemetry (audit trail, self-healing history, NLQ queries,
 knowledge base, pipeline events) to discover self-improvement opportunities. Looks
 INWARD rather than outward — produces innovation signals with source='introspective'
 that flow through the same scoring -> triage -> solution pipeline as web signals.
 
 7 Introspective analyses:
-    1. Failed Self-Heals    — Problems ICDEV can't solve yet (confidence < 0.3)
+    1. Failed Self-Heals    — Problems ICDEV™ can't solve yet (confidence < 0.3)
     2. Gate Failure Frequency — Gates that fail >= N times in last 30 days
     3. Unused Tools          — Tools with 0 invocations in last 90 days
     4. Slow Pipeline Stages  — Build/test/deploy stages exceeding time threshold
@@ -37,6 +37,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -50,22 +51,31 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # ---- GRACEFUL IMPORTS ----
 try:
     import yaml  # noqa: F401
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
 
+
 # ---- CONSTANTS ----
 ANALYSIS_TYPES = [
-    "failed_self_heals", "gate_failures", "unused_tools",
-    "slow_pipelines", "nlq_gaps", "knowledge_gaps", "cli_harmonization",
+    "failed_self_heals",
+    "gate_failures",
+    "unused_tools",
+    "slow_pipelines",
+    "nlq_gaps",
+    "knowledge_gaps",
+    "cli_harmonization",
     "code_quality",
 ]
 DEFAULT_GATE_FAILURE_MIN = 3
@@ -76,15 +86,36 @@ DEFAULT_NLQ_MIN_OCCURRENCES = 2
 DEFAULT_CONFIDENCE_CEILING = 0.3
 
 TOOL_EVENT_TYPES = [
-    "code_generated", "code_reviewed", "test_written", "test_executed",
-    "security_scan", "compliance_check", "ssp_generated", "poam_generated",
-    "stig_checked", "sbom_generated", "deployment_initiated",
-    "cssp_assessed", "fedramp_assessed", "cmmc_assessed", "oscal_generated",
-    "emass_sync", "des_assessed", "legacy_analyzed", "migration_assessed",
-    "intake_session_created", "boundary_assessed", "scrm_assessed",
-    "cve_triaged", "simulation_created", "monte_carlo_completed",
-    "coa_generated", "nlq_query_executed", "marketplace_asset_published",
-    "multi_regime_assessed", "spec_quality_check",
+    "code_generated",
+    "code_reviewed",
+    "test_written",
+    "test_executed",
+    "security_scan",
+    "compliance_check",
+    "ssp_generated",
+    "poam_generated",
+    "stig_checked",
+    "sbom_generated",
+    "deployment_initiated",
+    "cssp_assessed",
+    "fedramp_assessed",
+    "cmmc_assessed",
+    "oscal_generated",
+    "emass_sync",
+    "des_assessed",
+    "legacy_analyzed",
+    "migration_assessed",
+    "intake_session_created",
+    "boundary_assessed",
+    "scrm_assessed",
+    "cve_triaged",
+    "simulation_created",
+    "monte_carlo_completed",
+    "coa_generated",
+    "nlq_query_executed",
+    "marketplace_asset_published",
+    "multi_regime_assessed",
+    "spec_quality_check",
 ]
 
 STAGE_EVENTS = {
@@ -102,8 +133,7 @@ def _get_db(db_path=None):
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -114,17 +144,19 @@ def _now():
 def _audit(event_type, actor, action, details=None, project_id=None):
     if _HAS_AUDIT:
         try:
-            audit_log_event(event_type=event_type, actor=actor, action=action,
-                            details=json.dumps(details) if details else None,
-                            project_id=project_id or "innovation-engine")
+            audit_log_event(
+                event_type=event_type,
+                actor=actor,
+                action=action,
+                details=json.dumps(details) if details else None,
+                project_id=project_id or "innovation-engine",
+            )
         except Exception:
             pass
 
 
 def _table_exists(conn, name):
-    return conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone()[0] > 0
+    return conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()[0] > 0
 
 
 def _sig_id():
@@ -136,8 +168,7 @@ def _chash(content):
 
 
 def _make_result(atype, **extra):
-    return {"analysis_type": atype, "findings": [], "signal_count": 0,
-            "recommendations": [], "skipped": False, **extra}
+    return {"analysis_type": atype, "findings": [], "signal_count": 0, "recommendations": [], "skipped": False, **extra}
 
 
 def _skip(result, reason):
@@ -167,28 +198,49 @@ def analyze_failed_self_heals(db_path=None):
                WHERE she.outcome IN ('escalated','failure')
                   OR (kp.confidence IS NOT NULL AND kp.confidence < ?)
                ORDER BY she.created_at DESC LIMIT 100""",
-            (DEFAULT_CONFIDENCE_CEILING,)).fetchall()
+            (DEFAULT_CONFIDENCE_CEILING,),
+        ).fetchall()
         groups = {}
         for row in rows:
             key = row["pid"] or f"u_{row['eid']}"
-            g = groups.setdefault(key, {"pattern_id": row["pid"], "pattern_type": row["pattern_type"],
-                "description": row["pdesc"] or "No pattern matched", "root_cause": row["root_cause"],
-                "confidence": row["confidence"] or 0.0, "occurrences": 0,
-                "projects": set(), "sources": set(), "last_seen": row["created_at"]})
+            g = groups.setdefault(
+                key,
+                {
+                    "pattern_id": row["pid"],
+                    "pattern_type": row["pattern_type"],
+                    "description": row["pdesc"] or "No pattern matched",
+                    "root_cause": row["root_cause"],
+                    "confidence": row["confidence"] or 0.0,
+                    "occurrences": 0,
+                    "projects": set(),
+                    "sources": set(),
+                    "last_seen": row["created_at"],
+                },
+            )
             g["occurrences"] += 1
-            if row["project_id"]: g["projects"].add(row["project_id"])
-            if row["trigger_source"]: g["sources"].add(row["trigger_source"])
+            if row["project_id"]:
+                g["projects"].add(row["project_id"])
+            if row["trigger_source"]:
+                g["sources"].add(row["trigger_source"])
         for g in sorted(groups.values(), key=lambda x: x["occurrences"], reverse=True):
-            r["findings"].append({
-                "pattern_id": g["pattern_id"], "pattern_type": g["pattern_type"],
-                "description": g["description"], "root_cause": g["root_cause"],
-                "confidence": g["confidence"], "failure_count": g["occurrences"],
-                "projects_affected": list(g["projects"]),
-                "trigger_sources": list(g["sources"]), "last_seen": g["last_seen"]})
+            r["findings"].append(
+                {
+                    "pattern_id": g["pattern_id"],
+                    "pattern_type": g["pattern_type"],
+                    "description": g["description"],
+                    "root_cause": g["root_cause"],
+                    "confidence": g["confidence"],
+                    "failure_count": g["occurrences"],
+                    "projects_affected": list(g["projects"]),
+                    "trigger_sources": list(g["sources"]),
+                    "last_seen": g["last_seen"],
+                }
+            )
         if r["findings"]:
             top = r["findings"][0]
             r["recommendations"].append(
-                f"Top unsolved: '{top['description']}' ({top['failure_count']}x). Build dedicated fix.")
+                f"Top unsolved: '{top['description']}' ({top['failure_count']}x). Build dedicated fix."
+            )
             no_rc = [f for f in r["findings"] if not f["root_cause"]]
             if no_rc:
                 r["recommendations"].append(f"{len(no_rc)} patterns lack root cause. Invest in classification.")
@@ -213,25 +265,39 @@ def analyze_gate_failures(db_path=None, min_failures=None, days=None):
         if not _table_exists(conn, "audit_trail"):
             return _skip(r, "audit_trail table not found")
         cutoff = (datetime.now(timezone.utc) - timedelta(days=d)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        gate_evts = ["test_failed", "security_scan", "vulnerability_found",
-                     "code_rejected", "deployment_failed", "approval_denied"]
+        gate_evts = [
+            "test_failed",
+            "security_scan",
+            "vulnerability_found",
+            "code_rejected",
+            "deployment_failed",
+            "approval_denied",
+        ]
         ph = ",".join("?" * len(gate_evts))
         rows = conn.execute(
             f"""SELECT event_type, project_id, COUNT(*) AS cnt,
                        MIN(created_at) AS first_f, MAX(created_at) AS last_f
                 FROM audit_trail WHERE event_type IN ({ph}) AND created_at >= ?
                 GROUP BY event_type, project_id HAVING COUNT(*) >= ?
-                ORDER BY cnt DESC LIMIT 50""",
-            (*gate_evts, cutoff, mf)).fetchall()
+                ORDER BY cnt DESC LIMIT 50""",  # nosec B608 -- table/column names are internal constants, not user input
+            (*gate_evts, cutoff, mf),
+        ).fetchall()
         for row in rows:
-            r["findings"].append({"gate_event_type": row["event_type"],
-                "project_id": row["project_id"], "failure_count": row["cnt"],
-                "first_failure": row["first_f"], "last_failure": row["last_f"]})
+            r["findings"].append(
+                {
+                    "gate_event_type": row["event_type"],
+                    "project_id": row["project_id"],
+                    "failure_count": row["cnt"],
+                    "first_failure": row["first_f"],
+                    "last_failure": row["last_f"],
+                }
+            )
         if r["findings"]:
             top = r["findings"][0]
             r["recommendations"].append(
                 f"Most frequent: '{top['gate_event_type']}' ({top['failure_count']}x/{d}d "
-                f"in '{top['project_id']}'). Build pre-check tool or improve docs.")
+                f"in '{top['project_id']}'). Build pre-check tool or improve docs."
+            )
             evts = {f["gate_event_type"] for f in r["findings"]}
             if "test_failed" in evts:
                 r["recommendations"].append("Recurring test failures. Add scaffolding guidance.")
@@ -257,24 +323,36 @@ def analyze_unused_tools(db_path=None, days=None):
         if not _table_exists(conn, "audit_trail"):
             return _skip(r, "audit_trail table not found")
         cutoff = (datetime.now(timezone.utc) - timedelta(days=d)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        used = {row["event_type"] for row in conn.execute(
-            "SELECT DISTINCT event_type FROM audit_trail WHERE created_at >= ?", (cutoff,)).fetchall()}
+        used = {
+            row["event_type"]
+            for row in conn.execute(
+                "SELECT DISTINCT event_type FROM audit_trail WHERE created_at >= ?", (cutoff,)
+            ).fetchall()
+        }
         for evt in TOOL_EVENT_TYPES:
             if evt not in used:
                 row = conn.execute(
-                    "SELECT COUNT(*) AS c, MAX(created_at) AS lu FROM audit_trail WHERE event_type=?",
-                    (evt,)).fetchone()
-                r["findings"].append({"event_type": evt, "ever_used": row["c"] > 0,
-                    "last_used": row["lu"], "total_historical_uses": row["c"]})
+                    "SELECT COUNT(*) AS c, MAX(created_at) AS lu FROM audit_trail WHERE event_type=?", (evt,)
+                ).fetchone()
+                r["findings"].append(
+                    {
+                        "event_type": evt,
+                        "ever_used": row["c"] > 0,
+                        "last_used": row["lu"],
+                        "total_historical_uses": row["c"],
+                    }
+                )
         never = [f for f in r["findings"] if not f["ever_used"]]
         dormant = [f for f in r["findings"] if f["ever_used"]]
         if never:
             r["recommendations"].append(
                 f"{len(never)} tools NEVER used: {', '.join(f['event_type'] for f in never[:5])}. "
-                f"Improve discoverability or deprecate.")
+                f"Improve discoverability or deprecate."
+            )
         if dormant:
             r["recommendations"].append(
-                f"{len(dormant)} tools dormant {d}+d: {', '.join(f['event_type'] for f in dormant[:5])}.")
+                f"{len(dormant)} tools dormant {d}+d: {', '.join(f['event_type'] for f in dormant[:5])}."
+            )
     except sqlite3.OperationalError as e:
         _skip(r, f"SQL: {e}")
     finally:
@@ -307,20 +385,28 @@ def analyze_slow_pipelines(db_path=None, threshold_seconds=None):
                              AND e.event_type IN ({eph})
                         WHERE s.event_type IN ({sph})
                           AND CAST((julianday(e.created_at)-julianday(s.created_at))*86400 AS INTEGER) > ?
-                        ORDER BY dur DESC LIMIT 20""",
-                    (*ends, *starts, th)).fetchall()
+                        ORDER BY dur DESC LIMIT 20""",  # nosec B608 -- table/column names are internal constants, not user input
+                    (*ends, *starts, th),
+                ).fetchall()
             except sqlite3.OperationalError:
                 continue
             for row in rows:
-                r["findings"].append({"stage": stage, "project_id": row["project_id"],
-                    "start_event": row["se"], "end_event": row["ee"],
-                    "duration_seconds": row["dur"]})
+                r["findings"].append(
+                    {
+                        "stage": stage,
+                        "project_id": row["project_id"],
+                        "start_event": row["se"],
+                        "end_event": row["ee"],
+                        "duration_seconds": row["dur"],
+                    }
+                )
         r["findings"].sort(key=lambda f: f.get("duration_seconds", 0), reverse=True)
         if r["findings"]:
             s = r["findings"][0]
             r["recommendations"].append(
                 f"Slowest: '{s['stage']}' {s['duration_seconds']}s in '{s['project_id']}'. "
-                f"Investigate parallelization/caching.")
+                f"Investigate parallelization/caching."
+            )
     except sqlite3.OperationalError as e:
         _skip(r, f"SQL: {e}")
     finally:
@@ -348,16 +434,26 @@ def analyze_nlq_gaps(db_path=None, min_occurrences=None):
                       GROUP_CONCAT(DISTINCT actor) AS actors
                FROM nlq_queries WHERE result_count=0 OR status='error'
                GROUP BY nq HAVING COUNT(*) >= ? ORDER BY cnt DESC LIMIT 50""",
-            (mo,)).fetchall()
+            (mo,),
+        ).fetchall()
         for row in rows:
-            r["findings"].append({"query": row["nq"], "occurrence_count": row["cnt"],
-                "zero_result_count": row["zr"], "error_count": row["ec"],
-                "first_asked": row["fa"], "last_asked": row["la"], "actors": row["actors"]})
+            r["findings"].append(
+                {
+                    "query": row["nq"],
+                    "occurrence_count": row["cnt"],
+                    "zero_result_count": row["zr"],
+                    "error_count": row["ec"],
+                    "first_asked": row["fa"],
+                    "last_asked": row["la"],
+                    "actors": row["actors"],
+                }
+            )
         if r["findings"]:
             top = r["findings"][0]
             r["recommendations"].append(
                 f"{len(r['findings'])} queries return 0 results. Top: '{top['query']}' "
-                f"({top['occurrence_count']}x). Add data or improve SQL generation.")
+                f"({top['occurrence_count']}x). Add data or improve SQL generation."
+            )
         else:
             r["recommendations"].append("No recurring NLQ gaps detected.")
     except sqlite3.OperationalError as e:
@@ -385,20 +481,29 @@ def analyze_knowledge_gaps(db_path=None):
                WHERE remediation IS NULL OR remediation='' OR remediation='{}'
                   OR confidence < ?
                ORDER BY occurrence_count DESC LIMIT 50""",
-            (DEFAULT_CONFIDENCE_CEILING,)).fetchall()
+            (DEFAULT_CONFIDENCE_CEILING,),
+        ).fetchall()
         for row in rows:
             has_fix = bool(row["remediation"] and row["remediation"] not in ("", "{}", "null"))
-            r["findings"].append({"pattern_id": row["id"], "pattern_type": row["pattern_type"],
-                "description": row["description"], "root_cause": row["root_cause"],
-                "has_remediation": has_fix, "confidence": row["confidence"],
-                "occurrence_count": row["occurrence_count"],
-                "auto_healable": bool(row["auto_healable"]),
-                "gap_type": "no_remediation" if not has_fix else "low_confidence"})
+            r["findings"].append(
+                {
+                    "pattern_id": row["id"],
+                    "pattern_type": row["pattern_type"],
+                    "description": row["description"],
+                    "root_cause": row["root_cause"],
+                    "has_remediation": has_fix,
+                    "confidence": row["confidence"],
+                    "occurrence_count": row["occurrence_count"],
+                    "auto_healable": bool(row["auto_healable"]),
+                    "gap_type": "no_remediation" if not has_fix else "low_confidence",
+                }
+            )
         no_fix = [f for f in r["findings"] if not f["has_remediation"]]
         if no_fix:
             r["recommendations"].append(
                 f"{len(no_fix)} patterns lack remediation. Top: '{no_fix[0]['description']}' "
-                f"({no_fix[0]['occurrence_count']}x).")
+                f"({no_fix[0]['occurrence_count']}x)."
+            )
         hi = [f for f in r["findings"] if f["occurrence_count"] >= 5]
         if hi:
             r["recommendations"].append(f"{len(hi)} gap patterns have 5+ occurrences — high-impact.")
@@ -423,7 +528,9 @@ def analyze_cli_harmonization(db_path=None):
     r = _make_result("cli_harmonization")
     try:
         from tools.testing.claude_dir_validator import (
-            check_cli_json_flag, check_cli_project_naming, check_db_path_centralization,
+            check_cli_json_flag,
+            check_cli_project_naming,
+            check_db_path_centralization,
         )
     except ImportError:
         return _skip(r, "claude_dir_validator not importable")
@@ -438,12 +545,14 @@ def analyze_cli_harmonization(db_path=None):
             result = check_fn()
             if result.missing:
                 for item in result.missing:
-                    r["findings"].append({
-                        "check": check_name,
-                        "file": item,
-                        "message": result.message,
-                        "status": result.status,
-                    })
+                    r["findings"].append(
+                        {
+                            "check": check_name,
+                            "file": item,
+                            "message": result.message,
+                            "status": result.status,
+                        }
+                    )
         except Exception as e:
             r["findings"].append({"check": check_name, "error": str(e)})
 
@@ -466,13 +575,19 @@ def analyze_cli_harmonization(db_path=None):
 def _signal_title(atype, f):
     """Build human-readable signal title."""
     titles = {
-        "failed_self_heals": lambda: f"[Self-Heal Gap] {f.get('description','?')[:70]} ({f.get('failure_count',0)} failures)",
-        "gate_failures": lambda: f"[Gate Failure] {f.get('gate_event_type','?')} failed {f.get('failure_count',0)}x in {f.get('project_id','?')}",
-        "unused_tools": lambda: f"[Unused Tool] {f.get('event_type','?')} — {'never used' if not f.get('ever_used') else 'dormant'}",
-        "slow_pipelines": lambda: f"[Slow Pipeline] {f.get('stage','?')} stage took {f.get('duration_seconds',0)}s",
-        "nlq_gaps": lambda: f"[NLQ Gap] '{f.get('query','?')[:50]}' — {f.get('occurrence_count',0)} unanswered",
-        "knowledge_gaps": lambda: f"[Knowledge Gap] {f.get('description','?')[:50]} ({f.get('gap_type','?')})",
-        "cli_harmonization": lambda: f"[CLI Drift] {f.get('check','?')}: {f.get('file','?')}",
+        "failed_self_heals": lambda: (
+            f"[Self-Heal Gap] {f.get('description', '?')[:70]} ({f.get('failure_count', 0)} failures)"
+        ),
+        "gate_failures": lambda: (
+            f"[Gate Failure] {f.get('gate_event_type', '?')} failed {f.get('failure_count', 0)}x in {f.get('project_id', '?')}"
+        ),
+        "unused_tools": lambda: (
+            f"[Unused Tool] {f.get('event_type', '?')} — {'never used' if not f.get('ever_used') else 'dormant'}"
+        ),
+        "slow_pipelines": lambda: f"[Slow Pipeline] {f.get('stage', '?')} stage took {f.get('duration_seconds', 0)}s",
+        "nlq_gaps": lambda: f"[NLQ Gap] '{f.get('query', '?')[:50]}' — {f.get('occurrence_count', 0)} unanswered",
+        "knowledge_gaps": lambda: f"[Knowledge Gap] {f.get('description', '?')[:50]} ({f.get('gap_type', '?')})",
+        "cli_harmonization": lambda: f"[CLI Drift] {f.get('check', '?')}: {f.get('file', '?')}",
     }
     return titles.get(atype, lambda: f"[Introspective] {atype}")()
 
@@ -526,11 +641,20 @@ def generate_introspective_signals(analysis_results, db_path=None):
             desc_parts = [f"Analysis: {atype}", json.dumps(finding, indent=2, default=str)]
             if recs:
                 desc_parts.append(f"Recommendation: {recs[0]}")
-            signals.append({"id": _sig_id(), "source": "introspective", "source_type": atype,
-                "title": _signal_title(atype, finding), "description": "\n".join(desc_parts),
-                "url": "", "metadata": json.dumps(finding, default=str),
-                "community_score": _signal_score(atype, finding),
-                "content_hash": _chash(ckey), "discovered_at": _now()})
+            signals.append(
+                {
+                    "id": _sig_id(),
+                    "source": "introspective",
+                    "source_type": atype,
+                    "title": _signal_title(atype, finding),
+                    "description": "\n".join(desc_parts),
+                    "url": "",
+                    "metadata": json.dumps(finding, default=str),
+                    "community_score": _signal_score(atype, finding),
+                    "content_hash": _chash(ckey),
+                    "discovered_at": _now(),
+                }
+            )
 
     stored = duplicates = errors = 0
     if not signals:
@@ -538,16 +662,28 @@ def generate_introspective_signals(analysis_results, db_path=None):
     try:
         conn = _get_db(db_path)
     except FileNotFoundError:
-        return {"signals_generated": len(signals), "signals_stored": 0, "duplicates": 0,
-                "errors": 1, "error_detail": "Database not found"}
+        return {
+            "signals_generated": len(signals),
+            "signals_stored": 0,
+            "duplicates": 0,
+            "errors": 1,
+            "error_detail": "Database not found",
+        }
     try:
         if not _table_exists(conn, "innovation_signals"):
-            return {"signals_generated": len(signals), "signals_stored": 0, "duplicates": 0,
-                    "errors": 0, "skipped": True, "skip_reason": "innovation_signals table not found"}
+            return {
+                "signals_generated": len(signals),
+                "signals_stored": 0,
+                "duplicates": 0,
+                "errors": 0,
+                "skipped": True,
+                "skip_reason": "innovation_signals table not found",
+            }
         for sig in signals:
             try:
-                if conn.execute("SELECT id FROM innovation_signals WHERE content_hash=?",
-                                (sig["content_hash"],)).fetchone():
+                if conn.execute(
+                    "SELECT id FROM innovation_signals WHERE content_hash=?", (sig["content_hash"],)
+                ).fetchone():
                     duplicates += 1
                     continue
                 conn.execute(
@@ -555,20 +691,32 @@ def generate_introspective_signals(analysis_results, db_path=None):
                        (id, source, source_type, title, description, url,
                         metadata, community_score, content_hash, discovered_at, status, category)
                        VALUES (?,?,?,?,?,?,?,?,?,?,'new',NULL)""",
-                    (sig["id"], sig["source"], sig["source_type"], sig["title"],
-                     sig["description"], sig["url"], sig["metadata"],
-                     sig["community_score"], sig["content_hash"], sig["discovered_at"]))
+                    (
+                        sig["id"],
+                        sig["source"],
+                        sig["source_type"],
+                        sig["title"],
+                        sig["description"],
+                        sig["url"],
+                        sig["metadata"],
+                        sig["community_score"],
+                        sig["content_hash"],
+                        sig["discovered_at"],
+                    ),
+                )
                 stored += 1
             except sqlite3.Error:
                 errors += 1
         conn.commit()
     finally:
         conn.close()
-    _audit("innovation.scan", "introspective-analyzer",
-           f"Generated {stored} introspective signals ({duplicates} dup, {errors} err)",
-           {"stored": stored, "duplicates": duplicates, "errors": errors})
-    return {"signals_generated": len(signals), "signals_stored": stored,
-            "duplicates": duplicates, "errors": errors}
+    _audit(
+        "innovation.scan",
+        "introspective-analyzer",
+        f"Generated {stored} introspective signals ({duplicates} dup, {errors} err)",
+        {"stored": stored, "duplicates": duplicates, "errors": errors},
+    )
+    return {"signals_generated": len(signals), "signals_stored": stored, "duplicates": duplicates, "errors": errors}
 
 
 # ---- ANALYSIS #8: Code Quality (Phase 52 — D335) ----
@@ -610,32 +758,35 @@ def analyze_code_quality(db_path=None):
             pass_rate = passed / max(total, 1)
             # Flag if complexity is high AND (no tests OR failing tests)
             if total == 0 or pass_rate < 0.8:
-                r["findings"].append({
-                    "function_name": row["function_name"],
-                    "file_path": row["file_path"],
-                    "cyclomatic_complexity": row["cyclomatic_complexity"],
-                    "cognitive_complexity": row["cognitive_complexity"],
-                    "nesting_depth": row["nesting_depth"],
-                    "smell_count": row["smell_count"],
-                    "maintainability_score": row["maintainability_score"],
-                    "test_total": total,
-                    "test_passed": passed,
-                    "test_pass_rate": round(pass_rate, 4),
-                    "avg_test_duration_ms": round(row["avg_duration"] or 0, 2),
-                    "reason": "no_tests" if total == 0 else "low_pass_rate",
-                })
+                r["findings"].append(
+                    {
+                        "function_name": row["function_name"],
+                        "file_path": row["file_path"],
+                        "cyclomatic_complexity": row["cyclomatic_complexity"],
+                        "cognitive_complexity": row["cognitive_complexity"],
+                        "nesting_depth": row["nesting_depth"],
+                        "smell_count": row["smell_count"],
+                        "maintainability_score": row["maintainability_score"],
+                        "test_total": total,
+                        "test_passed": passed,
+                        "test_pass_rate": round(pass_rate, 4),
+                        "avg_test_duration_ms": round(row["avg_duration"] or 0, 2),
+                        "reason": "no_tests" if total == 0 else "low_pass_rate",
+                    }
+                )
 
         if r["findings"]:
             no_tests = [f for f in r["findings"] if f["reason"] == "no_tests"]
             failing = [f for f in r["findings"] if f["reason"] == "low_pass_rate"]
             if no_tests:
                 r["recommendations"].append(
-                    f"{len(no_tests)} complex functions have NO tests. Prioritize test coverage.")
+                    f"{len(no_tests)} complex functions have NO tests. Prioritize test coverage."
+                )
             if failing:
                 r["recommendations"].append(
-                    f"{len(failing)} complex functions have failing tests. Consider refactoring.")
-            r["recommendations"].append(
-                "Run: python tools/analysis/code_analyzer.py --project-dir tools/ --json")
+                    f"{len(failing)} complex functions have failing tests. Consider refactoring."
+                )
+            r["recommendations"].append("Run: python tools/analysis/code_analyzer.py --project-dir tools/ --json")
     except sqlite3.OperationalError as e:
         _skip(r, f"SQL: {e}")
     finally:
@@ -669,17 +820,25 @@ def analyze_all(db_path=None, **kw):
         a["signal_count"] = len(a.get("findings", []))
     total_f = sum(len(a.get("findings", [])) for a in analyses.values())
     skipped = sum(1 for a in analyses.values() if a.get("skipped"))
-    return {"analysis_time": _now(), "analyses": analyses, "signal_generation": sig_result,
-            "totals": {"analyses_run": len(analyses) - skipped, "analyses_skipped": skipped,
-                       "total_findings": total_f,
-                       "signals_generated": sig_result.get("signals_generated", 0),
-                       "signals_stored": sig_result.get("signals_stored", 0)}}
+    return {
+        "analysis_time": _now(),
+        "analyses": analyses,
+        "signal_generation": sig_result,
+        "totals": {
+            "analyses_run": len(analyses) - skipped,
+            "analyses_skipped": skipped,
+            "total_findings": total_f,
+            "signals_generated": sig_result.get("signals_generated", 0),
+            "signals_stored": sig_result.get("signals_stored", 0),
+        },
+    }
 
 
 # ---- CLI ----
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Introspective Analyzer — internal telemetry mining for self-improvement")
+        description="ICDEV™ Introspective Analyzer — internal telemetry mining for self-improvement"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
@@ -697,9 +856,13 @@ def main():
     try:
         if args.analyze:
             if args.all or not args.type:
-                result = analyze_all(db_path=args.db_path, min_failures=args.min_failures,
-                    days=args.days, threshold_seconds=args.threshold_seconds,
-                    min_occurrences=args.min_occurrences)
+                result = analyze_all(
+                    db_path=args.db_path,
+                    min_failures=args.min_failures,
+                    days=args.days,
+                    threshold_seconds=args.threshold_seconds,
+                    min_occurrences=args.min_occurrences,
+                )
             else:
                 dispatch = {
                     "failed_self_heals": lambda: analyze_failed_self_heals(args.db_path),
@@ -712,8 +875,7 @@ def main():
                     "code_quality": lambda: analyze_code_quality(args.db_path),
                 }
                 result = dispatch[args.type]()
-                result["signal_generation"] = generate_introspective_signals(
-                    {args.type: result}, args.db_path)
+                result["signal_generation"] = generate_introspective_signals({args.type: result}, args.db_path)
         else:
             result = {"error": "No action specified. Use --analyze."}
 
@@ -735,7 +897,7 @@ def _print_human(result):
     if "analyses" in result:
         totals = result.get("totals", {})
         print("=" * 60)
-        print("  ICDEV Introspective Analysis")
+        print("  ICDEV™ Introspective Analysis")
         print(f"  Time: {result.get('analysis_time', '')}")
         print(f"  Run: {totals.get('analyses_run', 0)}  Skipped: {totals.get('analyses_skipped', 0)}")
         print(f"  Findings: {totals.get('total_findings', 0)}  Signals: {totals.get('signals_stored', 0)}")
@@ -746,8 +908,7 @@ def _print_human(result):
         _print_one(result["analysis_type"], result)
         sig = result.get("signal_generation", {})
         if sig:
-            print(f"\n  Signals: {sig.get('signals_generated', 0)} generated, "
-                  f"{sig.get('signals_stored', 0)} stored")
+            print(f"\n  Signals: {sig.get('signals_generated', 0)} generated, {sig.get('signals_stored', 0)} stored")
     else:
         print(json.dumps(result, indent=2, default=str))
 
@@ -762,7 +923,7 @@ def _print_one(atype, a):
     print(f"  Findings: {len(findings)}")
     for i, f in enumerate(findings[:5]):
         label = _signal_title(atype, f)
-        print(f"    {i+1}. {label[:100]}")
+        print(f"    {i + 1}. {label[:100]}")
     if len(findings) > 5:
         print(f"    ... +{len(findings) - 5} more")
     for rec in a.get("recommendations", [])[:2]:

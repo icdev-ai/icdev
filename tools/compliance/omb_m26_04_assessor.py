@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """OMB M-26-04 Unbiased AI Assessor.
 
 Assesses compliance with OMB Memorandum M-26-04 — Advancing Unbiased
@@ -20,9 +20,8 @@ Usage:
     python tools/compliance/omb_m26_04_assessor.py --project-id proj-123 --json
 """
 
-import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -40,7 +39,9 @@ class OMBM2604Assessor(BaseAssessor):
     CATALOG_FILENAME = "omb_m26_04_unbiased_ai.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OMB M-26-04 automated checks.
 
@@ -60,8 +61,7 @@ class OMBM2604Assessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = sqlite3.connect(str(self.db_path))
-                conn.row_factory = sqlite3.Row
+                conn = get_connection(db_path=str(self._db_path))
                 project_id = project.get("id", "")
 
                 # M26-DOC-1: Model cards
@@ -105,7 +105,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:

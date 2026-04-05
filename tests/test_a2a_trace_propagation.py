@@ -12,14 +12,12 @@ Verifies:
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.observability.trace_context import (
-    TraceContext,
     clear_current_context,
     generate_traceparent,
     get_current_context,
@@ -41,6 +39,7 @@ class TestA2AClientTraceparent:
         # Simulate the client's traceparent injection
         try:
             from icdev.tools.observability.trace_context import get_current_context
+
             retrieved = get_current_context()
             if retrieved:
                 meta["traceparent"] = retrieved.to_traceparent()
@@ -166,6 +165,7 @@ class TestCorrelationTraceparentIntegration:
         @app.route("/test")
         def test_route():
             from flask import g
+
             return {
                 "correlation_id": getattr(g, "correlation_id", None),
                 "traceparent": getattr(g, "traceparent", None),
@@ -197,6 +197,7 @@ class TestCorrelationTraceparentIntegration:
         @app.route("/test")
         def test_route():
             from flask import g
+
             return {"traceparent": getattr(g, "traceparent", None)}
 
         register_correlation_middleware(app)

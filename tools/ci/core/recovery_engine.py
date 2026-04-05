@@ -1,5 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Recovery Engine — self-recovery from test/lint failures (D134)
+from __future__ import annotations
+
+# ICDEV™ Recovery Engine — self-recovery from test/lint failures (D134)
 
 """
 Self-recovery pipeline for CI/CD phase failures.
@@ -39,6 +41,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 @dataclass
 class RecoveryResult:
     """Result of a recovery attempt."""
+
     recovered: bool
     attempts: int
     max_attempts: int
@@ -63,6 +66,7 @@ def _load_recovery_config() -> dict:
     """Load recovery configuration from cicd_config.yaml."""
     try:
         import yaml
+
         config_path = PROJECT_ROOT / "args" / "cicd_config.yaml"
         if config_path.exists():
             with open(config_path) as f:
@@ -77,6 +81,7 @@ def _load_security_gates() -> dict:
     """Load non-recoverable failure patterns from security_gates.yaml."""
     try:
         import yaml
+
         gates_path = PROJECT_ROOT / "args" / "security_gates.yaml"
         if gates_path.exists():
             with open(gates_path) as f:
@@ -137,8 +142,12 @@ class RecoveryEngine:
         if not failure.recoverable:
             reason = "security_blocked" if failure.security_blocked else "non_recoverable"
             self._log_audit(
-                run_id, phase_name, 0, "skipped",
-                f"Not recoverable: {reason}", failure,
+                run_id,
+                phase_name,
+                0,
+                "skipped",
+                f"Not recoverable: {reason}",
+                failure,
             )
             return RecoveryResult(
                 recovered=False,
@@ -157,8 +166,12 @@ class RecoveryEngine:
 
             # 1. Log attempt
             self._log_audit(
-                run_id, phase_name, attempt, "started",
-                failure.summary, failure,
+                run_id,
+                phase_name,
+                attempt,
+                "started",
+                failure.summary,
+                failure,
             )
 
             # 2. Generate fix via builder agent
@@ -166,8 +179,12 @@ class RecoveryEngine:
 
             if not fixed_files:
                 self._log_audit(
-                    run_id, phase_name, attempt, "fix_failed",
-                    "Agent could not generate a fix", failure,
+                    run_id,
+                    phase_name,
+                    attempt,
+                    "fix_failed",
+                    "Agent could not generate a fix",
+                    failure,
                 )
                 # Use same failure for next attempt
                 continue
@@ -180,12 +197,20 @@ class RecoveryEngine:
             if retest_output is None:
                 # Retest mechanism not available — assume fix might work
                 self._log_audit(
-                    run_id, phase_name, attempt, "retest_skipped",
-                    "Retest not available", failure,
+                    run_id,
+                    phase_name,
+                    attempt,
+                    "retest_skipped",
+                    "Retest not available",
+                    failure,
                 )
                 # Commit the fix anyway — developer reviews in PR
                 self._commit_fix(
-                    fixed_files, run_id, issue_number, phase_name, attempt,
+                    fixed_files,
+                    run_id,
+                    issue_number,
+                    phase_name,
+                    attempt,
                 )
                 return RecoveryResult(
                     recovered=True,
@@ -201,11 +226,19 @@ class RecoveryEngine:
             if not retest_failure.failed_tests and not retest_failure.failed_checks:
                 # All tests/checks pass now
                 self._log_audit(
-                    run_id, phase_name, attempt, "recovered",
-                    f"Fix successful after {attempt} attempt(s)", failure,
+                    run_id,
+                    phase_name,
+                    attempt,
+                    "recovered",
+                    f"Fix successful after {attempt} attempt(s)",
+                    failure,
                 )
                 self._commit_fix(
-                    all_fixed_files, run_id, issue_number, phase_name, attempt,
+                    all_fixed_files,
+                    run_id,
+                    issue_number,
+                    phase_name,
+                    attempt,
                 )
                 return RecoveryResult(
                     recovered=True,
@@ -218,14 +251,22 @@ class RecoveryEngine:
             # 5. Update failure for next attempt
             failure = retest_failure
             self._log_audit(
-                run_id, phase_name, attempt, "still_failing",
-                failure.summary, failure,
+                run_id,
+                phase_name,
+                attempt,
+                "still_failing",
+                failure.summary,
+                failure,
             )
 
         # All attempts exhausted
         self._log_audit(
-            run_id, phase_name, self.max_attempts, "exhausted",
-            f"All {self.max_attempts} attempts exhausted", failure,
+            run_id,
+            phase_name,
+            self.max_attempts,
+            "exhausted",
+            f"All {self.max_attempts} attempts exhausted",
+            failure,
         )
 
         return RecoveryResult(
@@ -255,11 +296,15 @@ class RecoveryEngine:
         try:
             from tools.ci.modules.agent import prompt_claude_code
 
-            request = type("Req", (), {
-                "slash_command": "/implement",
-                "prompt": prompt,
-                "run_id": run_id,
-            })()
+            request = type(
+                "Req",
+                (),
+                {
+                    "slash_command": "/implement",
+                    "prompt": prompt,
+                    "run_id": run_id,
+                },
+            )()
 
             response = prompt_claude_code(request)
 
@@ -302,14 +347,16 @@ class RecoveryEngine:
                 lines.append(f"- {f}")
             lines.append("")
 
-        lines.extend([
-            "## Instructions",
-            f"- Fix the {failure.error_category or 'errors'} in the relevant files",
-            "- Make minimal changes — fix only what's broken",
-            "- Do NOT change test expectations unless the test itself is wrong",
-            "- Preserve all CUI // SP-CTI markings",
-            "- Do NOT introduce new dependencies",
-        ])
+        lines.extend(
+            [
+                "## Instructions",
+                f"- Fix the {failure.error_category or 'errors'} in the relevant files",
+                "- Make minimal changes — fix only what's broken",
+                "- Do NOT change test expectations unless the test itself is wrong",
+                "- Preserve all CUI // SP-CTI markings",
+                "- Do NOT introduce new dependencies",
+            ]
+        )
 
         if attempt > 1:
             lines.append(f"- Previous {attempt - 1} fix attempt(s) did not resolve the issue")
@@ -322,7 +369,9 @@ class RecoveryEngine:
         try:
             result = subprocess.run(
                 ["git", "diff", "--name-only"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
                 cwd=str(PROJECT_ROOT),
             )
             if result.returncode == 0 and result.stdout.strip():
@@ -332,6 +381,7 @@ class RecoveryEngine:
 
         # Fallback: try to parse file paths from agent output
         import re
+
         file_pattern = re.compile(r"(?:tools|tests|features)/[\w/.-]+\.(?:py|feature|yaml|json)")
         matches = file_pattern.findall(agent_output or "")
         return list(set(matches))
@@ -355,12 +405,15 @@ class RecoveryEngine:
         """Re-run only the failed pytest tests."""
         if self.retest_scope == "failed_only" and failure.failed_test_names:
             # Run only specific failed tests using -k filter
-            test_filter = " or ".join(
-                name.split("::")[-1] for name in failure.failed_test_names
-            )
+            test_filter = " or ".join(name.split("::")[-1] for name in failure.failed_test_names)
             cmd = [
-                sys.executable, "-m", "pytest",
-                "-x", "--tb=short", "-k", test_filter,
+                sys.executable,
+                "-m",
+                "pytest",
+                "-x",
+                "--tb=short",
+                "-k",
+                test_filter,
             ]
         else:
             # Full suite retest
@@ -368,7 +421,10 @@ class RecoveryEngine:
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
                 cwd=str(PROJECT_ROOT),
             )
             return result.stdout + result.stderr
@@ -381,7 +437,10 @@ class RecoveryEngine:
         cmd = [sys.executable, "-m", "ruff", "check"] + files
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
                 cwd=str(PROJECT_ROOT),
             )
             return result.stdout + result.stderr
@@ -396,7 +455,10 @@ class RecoveryEngine:
             cmd.extend(failure.relevant_files)
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
                 cwd=str(PROJECT_ROOT),
             )
             return result.stdout + result.stderr
@@ -411,7 +473,9 @@ class RecoveryEngine:
                 try:
                     result = subprocess.run(
                         [sys.executable, "-m", "py_compile", check.file],
-                        capture_output=True, text=True, timeout=30,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
                         cwd=str(PROJECT_ROOT),
                     )
                     outputs.append(result.stdout + result.stderr)
@@ -469,14 +533,16 @@ class RecoveryEngine:
                 actor="recovery_engine",
                 action=f"recovery_{status}",
                 project_id=run_id,
-                details=json.dumps({
-                    "phase": phase,
-                    "attempt": attempt,
-                    "status": status,
-                    "message": message,
-                    "failure_summary": failure.summary if failure else "",
-                    "files": failure.relevant_files if failure else [],
-                }),
+                details=json.dumps(
+                    {
+                        "phase": phase,
+                        "attempt": attempt,
+                        "status": status,
+                        "message": message,
+                        "failure_summary": failure.summary if failure else "",
+                        "files": failure.relevant_files if failure else [],
+                    }
+                ),
             )
         except Exception:
             # Audit logging is best-effort; don't block recovery

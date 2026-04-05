@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "TaskDecomposition",
-  "description": "Schema for ICDEV multi-agent task decomposition DAG. Defines a workflow composed of subtasks assigned to specialized agents with explicit dependency edges for parallel execution.",
+  "description": "Schema for ICDEV™ multi-agent task decomposition DAG. Defines a workflow composed of subtasks assigned to specialized agents with explicit dependency edges for parallel execution.",
   "type": "object",
   "required": ["workflow_name", "subtasks"],
   "additionalProperties": false,

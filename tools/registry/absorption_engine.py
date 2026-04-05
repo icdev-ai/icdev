@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Absorption Engine -- validates learned capabilities over a stability window before genome absorption.
 
 72-hour stability window (D212): capabilities must demonstrate consistent performance
@@ -27,12 +27,11 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -51,6 +50,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -58,8 +58,10 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
     from tools.registry.genome_manager import GenomeManager
+
     _HAS_GENOME = True
 except ImportError:
     _HAS_GENOME = False
@@ -68,7 +70,38 @@ except ImportError:
 # =========================================================================
 # CONSTANTS
 # =========================================================================
-STABILITY_WINDOW_HOURS = 72  # D212
+# D212: 72-hour stability window
+# Overridden by args/evolution_config.yaml absorption.stability_window_hours
+STABILITY_WINDOW_HOURS = 72
+_ERROR_RATE_TOLERANCE = 0.01
+_COMPLIANCE_DEGRADATION_TOLERANCE = 0.02
+_MIN_TELEMETRY_POINTS = 6
+
+
+def _load_absorption_config() -> dict:
+    """Load absorption config from args/evolution_config.yaml."""
+    config_path = BASE_DIR / "args" / "evolution_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("absorption", {})
+    except Exception:
+        return {}
+
+
+_abs_cfg = _load_absorption_config()
+if _abs_cfg.get("stability_window_hours"):
+    STABILITY_WINDOW_HOURS = int(_abs_cfg["stability_window_hours"])
+if _abs_cfg.get("error_rate_trend_tolerance"):
+    _ERROR_RATE_TOLERANCE = float(_abs_cfg["error_rate_trend_tolerance"])
+if _abs_cfg.get("compliance_degradation_tolerance"):
+    _COMPLIANCE_DEGRADATION_TOLERANCE = float(_abs_cfg["compliance_degradation_tolerance"])
+if _abs_cfg.get("min_telemetry_points"):
+    _MIN_TELEMETRY_POINTS = int(_abs_cfg["min_telemetry_points"])
 
 
 # =========================================================================
@@ -128,8 +161,7 @@ class AbsorptionEngine:
 
     def _get_conn(self):
         """Get a database connection with row factory."""
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -155,7 +187,7 @@ class AbsorptionEngine:
             confidence REAL DEFAULT 0.0 CHECK(confidence >= 0.0 AND confidence <= 1.0),
             evaluated INTEGER DEFAULT 0,
             absorbed INTEGER DEFAULT 0,
-            discovered_at TEXT DEFAULT (datetime('now')),
+            created_at TEXT DEFAULT (datetime('now')),
             evaluated_at TEXT,
             absorbed_at TEXT,
             classification TEXT DEFAULT 'CUI'
@@ -271,15 +303,13 @@ class AbsorptionEngine:
 
             behavior = dict(row)
             child_id = behavior["child_id"]
-            discovered_at = behavior.get("discovered_at", "")
+            created_at = behavior.get("created_at", "")
 
             # Calculate hours since discovery
             hours_observed = 0.0
-            if discovered_at:
+            if created_at:
                 try:
-                    disc_dt = datetime.fromisoformat(
-                        discovered_at.replace("Z", "+00:00")
-                    )
+                    disc_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                     now_dt = datetime.now(timezone.utc)
                     delta = now_dt - disc_dt
                     hours_observed = round(delta.total_seconds() / 3600.0, 2)
@@ -345,8 +375,7 @@ class AbsorptionEngine:
 
             _audit(
                 "absorption.stability_check",
-                f"Stability check for capability {capability_id}: "
-                f"{'stable' if stable else 'not stable'}",
+                f"Stability check for capability {capability_id}: {'stable' if stable else 'not stable'}",
                 result,
             )
 
@@ -365,9 +394,9 @@ class AbsorptionEngine:
         Returns:
             One of 'decreasing', 'flat', 'increasing', or 'insufficient_data'.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
         rows = conn.execute(
             """SELECT error_rate, collected_at
@@ -382,13 +411,31 @@ class AbsorptionEngine:
 
         rates = [r["error_rate"] or 0.0 for r in rows]
 
-        # Compare first half average to second half average
-        mid = len(rates) // 2
-        first_half_avg = sum(rates[:mid]) / max(mid, 1)
-        second_half_avg = sum(rates[mid:]) / max(len(rates) - mid, 1)
+        # Use linear regression slope for more accurate trend detection (D-EVO-3)
+        n = len(rates)
+        if n >= _MIN_TELEMETRY_POINTS:
+            # Least squares slope: slope = (n*sum(x*y) - sum(x)*sum(y)) / (n*sum(x^2) - sum(x)^2)
+            x_vals = list(range(n))
+            sum_x = sum(x_vals)
+            sum_y = sum(rates)
+            sum_xy = sum(x * y for x, y in zip(x_vals, rates))
+            sum_x2 = sum(x * x for x in x_vals)
+            denom = n * sum_x2 - sum_x * sum_x
+            if denom != 0:
+                slope = (n * sum_xy - sum_x * sum_y) / denom
+                if slope > _ERROR_RATE_TOLERANCE:
+                    return "increasing"
+                elif slope < -_ERROR_RATE_TOLERANCE:
+                    return "decreasing"
+                else:
+                    return "flat"
 
-        # Allow a small tolerance (0.01) for noise
-        tolerance = 0.01
+        # Fallback: first-half vs second-half average comparison
+        mid = n // 2
+        first_half_avg = sum(rates[:mid]) / max(mid, 1)
+        second_half_avg = sum(rates[mid:]) / max(n - mid, 1)
+
+        tolerance = _ERROR_RATE_TOLERANCE
         if second_half_avg > first_half_avg + tolerance:
             return "increasing"
         elif second_half_avg < first_half_avg - tolerance:
@@ -406,9 +453,9 @@ class AbsorptionEngine:
         Returns:
             One of 'positive', 'neutral', or 'negative'.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
         rows = conn.execute(
             """SELECT compliance_scores_json, collected_at
@@ -435,13 +482,83 @@ class AbsorptionEngine:
         first_avg = _avg_score(rows[0]["compliance_scores_json"])
         last_avg = _avg_score(rows[-1]["compliance_scores_json"])
 
-        tolerance = 0.02
+        tolerance = _COMPLIANCE_DEGRADATION_TOLERANCE
         if last_avg > first_avg + tolerance:
             return "positive"
         elif last_avg < first_avg - tolerance:
             return "negative"
+
+        # D-EVO-3: Also check per-framework degradation
+        try:
+            first_scores = json.loads(rows[0]["compliance_scores_json"] or "{}")
+            last_scores = json.loads(rows[-1]["compliance_scores_json"] or "{}")
+            for framework, first_val in first_scores.items():
+                last_val = last_scores.get(framework, first_val)
+                if isinstance(first_val, (int, float)) and isinstance(last_val, (int, float)):
+                    if float(last_val) < float(first_val) - tolerance:
+                        return "negative"
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+        return "neutral"
+
+    def monitor_all_candidates(self) -> dict:
+        """Monitor all absorption candidates — called by daemon verify reflex (D-EVO-3).
+
+        Returns:
+            Dict with verified/stable/unstable counts and per-candidate details.
+        """
+        candidates = self.get_absorption_candidates()
+        if isinstance(candidates, dict):
+            candidate_list = candidates.get("candidates", [])
+        elif isinstance(candidates, list):
+            candidate_list = candidates
         else:
-            return "neutral"
+            candidate_list = []
+
+        results = {
+            "verified": 0,
+            "stable": 0,
+            "unstable": 0,
+            "candidates": [],
+        }
+
+        for candidate in candidate_list:
+            cid = candidate.get("id") or candidate.get("capability_id")
+            if not cid:
+                continue
+            try:
+                stability = self.check_stability(str(cid))
+                results["verified"] += 1
+                if stability.get("stable"):
+                    results["stable"] += 1
+                else:
+                    results["unstable"] += 1
+                results["candidates"].append(
+                    {
+                        "capability_id": str(cid),
+                        "stable": stability.get("stable", False),
+                        "hours_observed": stability.get("hours_observed", 0),
+                        "error_rate_trend": stability.get("error_rate_trend", "unknown"),
+                        "compliance_impact": stability.get("compliance_impact", "unknown"),
+                        "reason": stability.get("reason", ""),
+                    }
+                )
+            except Exception as e:
+                results["candidates"].append(
+                    {
+                        "capability_id": str(cid),
+                        "error": str(e),
+                    }
+                )
+
+        _audit(
+            "absorption.monitor_all",
+            f"Monitored {results['verified']} candidates: {results['stable']} stable, {results['unstable']} unstable",
+            {"verified": results["verified"], "stable": results["stable"], "unstable": results["unstable"]},
+        )
+
+        return results
 
     def absorb(self, capability_id: str, absorbed_by: str = "system") -> Optional[dict]:
         """Absorb a stable capability into the parent genome.
@@ -502,11 +619,7 @@ class AbsorptionEngine:
 
                     # Add the absorbed capability to the genome data
                     capabilities = current_data.get("capabilities", {})
-                    cap_key = (
-                        behavior.get("behavior_type", "other")
-                        + "_"
-                        + str(capability_id)
-                    )
+                    cap_key = behavior.get("behavior_type", "other") + "_" + str(capability_id)
                     capabilities[cap_key] = {
                         "description": behavior.get("description", ""),
                         "source_child": behavior.get("child_id", ""),
@@ -577,8 +690,7 @@ class AbsorptionEngine:
 
             _audit(
                 "absorption.completed",
-                f"Absorbed capability {capability_id} into genome "
-                f"(version: {new_genome_version or 'unversioned'})",
+                f"Absorbed capability {capability_id} into genome (version: {new_genome_version or 'unversioned'})",
                 result,
             )
 
@@ -604,20 +716,20 @@ class AbsorptionEngine:
         Returns:
             List of candidate dicts with stability metrics.
         """
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=self.STABILITY_WINDOW_HOURS)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
         conn = self._get_conn()
         try:
             rows = conn.execute(
                 """SELECT id, child_id, behavior_type, description,
-                          evidence_json, confidence, discovered_at
+                          evidence_json, confidence, created_at
                    FROM child_learned_behaviors
                    WHERE evaluated = 1
                      AND absorbed = 0
-                     AND discovered_at <= ?
-                   ORDER BY confidence DESC, discovered_at ASC""",
+                     AND created_at <= ?
+                   ORDER BY confidence DESC, created_at ASC""",
                 (cutoff,),
             ).fetchall()
 
@@ -626,12 +738,10 @@ class AbsorptionEngine:
                 record = dict(row)
                 # Calculate hours observed
                 hours_observed = 0.0
-                disc = record.get("discovered_at", "")
+                disc = record.get("created_at", "")
                 if disc:
                     try:
-                        disc_dt = datetime.fromisoformat(
-                            disc.replace("Z", "+00:00")
-                        )
+                        disc_dt = datetime.fromisoformat(disc.replace("Z", "+00:00"))
                         delta = datetime.now(timezone.utc) - disc_dt
                         hours_observed = round(delta.total_seconds() / 3600.0, 2)
                     except (ValueError, TypeError):
@@ -690,44 +800,40 @@ class AbsorptionEngine:
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "ICDEV Absorption Engine -- 72-hour stability window (D212) "
-            "before genome absorption"
-        )
+        description=("ICDEV™ Absorption Engine -- 72-hour stability window (D212) before genome absorption")
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--check", action="store_true",
+        "--check",
+        action="store_true",
         help="Check stability of a capability",
     )
     group.add_argument(
-        "--absorb", action="store_true",
+        "--absorb",
+        action="store_true",
         help="Absorb a stable capability into the parent genome",
     )
     group.add_argument(
-        "--candidates", action="store_true",
+        "--candidates",
+        action="store_true",
         help="List capabilities ready for absorption",
     )
     group.add_argument(
-        "--history", action="store_true",
+        "--history",
+        action="store_true",
         help="Show absorption history",
     )
 
+    parser.add_argument("--capability-id", help="Capability ID (row ID in child_learned_behaviors)")
     parser.add_argument(
-        "--capability-id", help="Capability ID (row ID in child_learned_behaviors)"
-    )
-    parser.add_argument(
-        "--absorbed-by", default="system",
+        "--absorbed-by",
+        default="system",
         help="Identity of the person/system performing absorption",
     )
-    parser.add_argument(
-        "--limit", type=int, default=20, help="History limit (default: 20)"
-    )
+    parser.add_argument("--limit", type=int, default=20, help="History limit (default: 20)")
 
     args = parser.parse_args()
 

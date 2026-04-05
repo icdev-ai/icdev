@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV Agent Execution Framework — subprocess-based Claude Code CLI invocation."""
+"""ICDEV™ Agent Execution Framework — subprocess-based Claude Code CLI invocation."""

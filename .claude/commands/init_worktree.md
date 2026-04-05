@@ -2,7 +2,7 @@
 # Initialize Git Worktree for Task Isolation
 
 Create an isolated git worktree with sparse checkout for parallel task execution.
-This enables multiple ICDEV workflows to run simultaneously without conflicts.
+This enables multiple ICDEV™ workflows to run simultaneously without conflicts.
 
 ## Parameters
 - **task-id**: The task or issue identifier (e.g., issue number, ticket ID)

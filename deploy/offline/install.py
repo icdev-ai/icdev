@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV On-Premises Air-Gapped Installer.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ On-Premises Air-Gapped Installer.
 
-Installs ICDEV into an air-gapped Kubernetes cluster.
+Installs ICDEV™ into an air-gapped Kubernetes cluster.
 No internet access required -- all images loaded from local tarball.
 
 Usage:
@@ -142,7 +142,7 @@ def banner():
     print()
     print(_cyan("================================================================"))
     print(_cyan("  CUI // SP-CTI"))
-    print(_cyan("  ICDEV On-Premises Installer v{}".format(VERSION)))
+    print(_cyan("  ICDEV™ On-Premises Installer v{}".format(VERSION)))
     print(_cyan("  Intelligent Certified Development Platform"))
     print(_cyan("================================================================"))
     print()
@@ -319,7 +319,7 @@ def configure_tls(namespace, tls_cert, tls_key):
                     "openssl", "req", "-x509", "-nodes",
                     "-days", "365", "-newkey", "rsa:2048",
                     "-keyout", key_path, "-out", crt_path,
-                    "-subj", "/CN=icdev.local/O=ICDEV",
+                    "-subj", "/CN=icdev.local/O=ICDEV™",
                 ], capture=True)
 
                 result = run(
@@ -350,7 +350,7 @@ def configure_tls(namespace, tls_cert, tls_key):
                     public_exponent=65537, key_size=2048)
                 subject = issuer = x509.Name([
                     x509.NameAttribute(NameOID.COMMON_NAME, "icdev.local"),
-                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "ICDEV"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "ICDEV™"),
                 ])
                 cert = (
                     x509.CertificateBuilder()
@@ -433,8 +433,8 @@ def create_db_credentials(namespace, db_password):
 # Step 7: Helm install / upgrade
 # ---------------------------------------------------------------------------
 def helm_install(namespace, values_file, timeout):
-    """Install or upgrade ICDEV via Helm."""
-    step("Step 7/9: Installing ICDEV via Helm")
+    """Install or upgrade ICDEV™ via Helm."""
+    step("Step 7/9: Installing ICDEV™ via Helm")
 
     # Check if already installed
     already_installed = run_quiet([
@@ -466,7 +466,7 @@ def helm_install(namespace, values_file, timeout):
 # Step 8: Wait for pods
 # ---------------------------------------------------------------------------
 def wait_for_pods(namespace, timeout):
-    """Wait for all ICDEV pods to become ready."""
+    """Wait for all ICDEV™ pods to become ready."""
     step("Step 8/9: Waiting for pods to be ready")
 
     try:
@@ -531,7 +531,7 @@ def health_check_and_summary(namespace):
     # Summary
     print()
     print(_cyan("================================================================"))
-    print(_green("  ICDEV installation complete!"))
+    print(_green("  ICDEV™ installation complete!"))
     print(_cyan("================================================================"))
     print()
     print("  Namespace    : {}".format(namespace))
@@ -556,7 +556,7 @@ def health_check_and_summary(namespace):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV On-Premises Air-Gapped Installer",
+        description="ICDEV™ On-Premises Air-Gapped Installer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"

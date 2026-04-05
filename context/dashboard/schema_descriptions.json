@@ -1,5 +1,5 @@
 {
-    "projects": "Core project registry — tracks all ICDEV-managed software projects with classification, impact level, and ATO status",
+    "projects": "Core project registry — tracks all ICDEV™-managed software projects with classification, impact level, and ATO status",
     "agents": "Multi-agent system registry — 10 agents (orchestrator, architect, builder, compliance, security, infrastructure, MBSE, modernization, knowledge, monitor)",
     "audit_trail": "Append-only immutable audit log (NIST 800-53 AU) — every significant action is recorded here",
     "hook_events": "Claude Code hook event log — captures tool usage, notifications, session lifecycle for observability",

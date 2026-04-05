@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import json
@@ -19,6 +20,7 @@ from icdev.tools.requirements.readiness_scorer import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_test_db(db_path):
     """Create minimal schema required by readiness_scorer in a temp DB."""
@@ -99,8 +101,7 @@ def _init_test_db(db_path):
     conn.close()
 
 
-def _create_session(db_path, session_id, context_summary=None, ambiguity_count=0,
-                    gap_count=0):
+def _create_session(db_path, session_id, context_summary=None, ambiguity_count=0, gap_count=0):
     """Insert a minimal intake_sessions row."""
     conn = sqlite3.connect(str(db_path))
     conn.execute(
@@ -112,8 +113,7 @@ def _create_session(db_path, session_id, context_summary=None, ambiguity_count=0
     conn.close()
 
 
-def _add_requirement(db_path, session_id, req_type="functional", raw_text="Some requirement",
-                     acceptance_criteria=None):
+def _add_requirement(db_path, session_id, req_type="functional", raw_text="Some requirement", acceptance_criteria=None):
     """Insert a requirement row for a session."""
     req_id = f"req-{uuid.uuid4().hex[:8]}"
     conn = sqlite3.connect(str(db_path))
@@ -127,13 +127,11 @@ def _add_requirement(db_path, session_id, req_type="functional", raw_text="Some 
     return req_id
 
 
-def _add_conversation_turn(db_path, session_id, turn_number, role="customer",
-                           content="Some input"):
+def _add_conversation_turn(db_path, session_id, turn_number, role="customer", content="Some input"):
     """Insert a conversation turn."""
     conn = sqlite3.connect(str(db_path))
     conn.execute(
-        "INSERT INTO intake_conversation (session_id, turn_number, role, content) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO intake_conversation (session_id, turn_number, role, content) VALUES (?, ?, ?, ?)",
         (session_id, turn_number, role, content),
     )
     conn.commit()
@@ -143,6 +141,7 @@ def _add_conversation_turn(db_path, session_id, turn_number, role="customer",
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestScoreReadinessCallable:
     """Verify the main scoring function exists and is callable."""
@@ -180,9 +179,15 @@ class TestScoreReadinessMinimal:
         result = score_readiness(sid, db_path=db_path)
 
         expected_keys = {
-            "status", "session_id", "overall_score", "dimensions",
-            "requirement_count", "types_present", "types_missing",
-            "recommendation", "threshold",
+            "status",
+            "session_id",
+            "overall_score",
+            "dimensions",
+            "requirement_count",
+            "types_present",
+            "types_missing",
+            "recommendation",
+            "threshold",
         }
         assert expected_keys.issubset(set(result.keys()))
 
@@ -198,8 +203,7 @@ class TestScoreReadinessMinimal:
         # Core 5 dimensions always present; additional dimensions
         # (devsecops_readiness, ai_governance_readiness) added by later phases
         core_dims = {"completeness", "clarity", "feasibility", "compliance", "testability"}
-        assert core_dims.issubset(set(dims.keys())), \
-            f"Missing core dimensions: {core_dims - set(dims.keys())}"
+        assert core_dims.issubset(set(dims.keys())), f"Missing core dimensions: {core_dims - set(dims.keys())}"
         for dim_data in dims.values():
             assert "score" in dim_data
             assert "weight" in dim_data
@@ -224,7 +228,9 @@ class TestScoreReadinessComparison:
         _create_session(db_path, sid_high, context_summary=ctx)
         for rtype in ("functional", "security", "interface", "data", "performance", "compliance"):
             _add_requirement(
-                db_path, sid_high, req_type=rtype,
+                db_path,
+                sid_high,
+                req_type=rtype,
                 raw_text=f"{rtype} with timeline budget team",
                 acceptance_criteria="Given X, When Y, Then Z",
             )

@@ -7,8 +7,8 @@ Pipeline: adapter → Unsloth save_pretrained_gguf() → Q4_K_M GGUF → ollama 
 Naming convention: {app}-{purpose}-v{version}
 
 Usage:
-    python tools/finetune/gguf_exporter.py --adapter-path data/finetune/adapters/xxx --model-name "govproposal-draft-v1" --json
-    python tools/finetune/gguf_exporter.py --register --model-name "govproposal-draft-v1" --gguf-path data/finetune/gguf/xxx.gguf --json
+    python tools/finetune/gguf_exporter.py --adapter-path data/finetune/adapters/xxx --model-name "govproposal-draft-v1" --json  # noqa: E501
+    python tools/finetune/gguf_exporter.py --register --model-name "govproposal-draft-v1" --gguf-path data/finetune/gguf/xxx.gguf --json  # noqa: E501
 """
 
 from __future__ import annotations
@@ -16,12 +16,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -31,8 +30,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -69,22 +67,29 @@ def export_to_gguf(
 
     script = str(BASE_DIR / "tools" / "finetune" / "_export_worker.py")
     cmd = [
-        sys.executable, script,
-        "--adapter-path", adapter_path,
-        "--output-path", gguf_path,
-        "--quantization", quantization,
+        sys.executable,
+        script,
+        "--adapter-path",
+        adapter_path,
+        "--output-path",
+        gguf_path,
+        "--quantization",
+        quantization,
     ]
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
             cwd=str(BASE_DIR),
         )
         if proc.returncode == 0:
             try:
-                result = json.loads(proc.stdout.strip())
+                json.loads(proc.stdout.strip())
             except json.JSONDecodeError:
-                result = {"gguf_path": gguf_path}
+                pass
 
             file_size = Path(gguf_path).stat().st_size if Path(gguf_path).exists() else 0
             return {
@@ -124,7 +129,9 @@ def register_with_ollama(
 
         proc = subprocess.run(
             ["ollama", "create", model_name, "-f", str(modelfile_path)],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
         if proc.returncode == 0:
             return {
@@ -174,9 +181,22 @@ def register_model_version(
                 gguf_path, ollama_model_name, adapter_hash, file_size_bytes,
                 status, classification, tenant_id, project_id, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', ?, ?, ?, ?)""",
-            (mv_id, job_id, model_name, version, base_model, adapter_path,
-             gguf_path, ollama_model_name, adapter_hash, file_size,
-             classification, tenant_id, project_id, _now()),
+            (
+                mv_id,
+                job_id,
+                model_name,
+                version,
+                base_model,
+                adapter_path,
+                gguf_path,
+                ollama_model_name,
+                adapter_hash,
+                file_size,
+                classification,
+                tenant_id,
+                project_id,
+                _now(),
+            ),
         )
         conn.commit()
 
@@ -194,6 +214,7 @@ def register_model_version(
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="GGUF exporter and Ollama registrar")

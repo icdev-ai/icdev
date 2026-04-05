@@ -23,6 +23,7 @@ from icdev.tools.schemas.validation import validate_output, wrap_mcp_response, S
 # ProjectStatus
 # ---------------------------------------------------------------------------
 
+
 class TestProjectStatus:
     def test_create_minimal(self):
         ps = ProjectStatus(project_id="p-1", name="Test", type="microservice")
@@ -49,16 +50,22 @@ class TestProjectStatus:
         assert ps.project_id == "p-1"
 
     def test_from_dict_with_extra_data(self):
-        ps = ProjectStatus.from_dict({
-            "project_id": "p-2", "name": "X", "type": "app",
-            "compliance": {"nist": "pass"}, "security": {"sast": "clean"},
-        })
+        ps = ProjectStatus.from_dict(
+            {
+                "project_id": "p-2",
+                "name": "X",
+                "type": "app",
+                "compliance": {"nist": "pass"},
+                "security": {"sast": "clean"},
+            }
+        )
         assert ps.compliance == {"nist": "pass"}
 
 
 # ---------------------------------------------------------------------------
 # AgentHealth
 # ---------------------------------------------------------------------------
+
 
 class TestAgentHealth:
     def test_create_and_dict(self):
@@ -82,6 +89,7 @@ class TestAgentHealth:
 # AuditEvent
 # ---------------------------------------------------------------------------
 
+
 class TestAuditEvent:
     def test_create(self):
         ae = AuditEvent(event_type="code.commit", actor="builder-agent", action="Committed module")
@@ -90,9 +98,12 @@ class TestAuditEvent:
 
     def test_round_trip(self):
         ae = AuditEvent(
-            event_type="compliance.check", actor="compliance-agent",
-            action="Ran STIG check", project_id="p-1",
-            details={"controls": 50}, affected_files=["ssp.md"],
+            event_type="compliance.check",
+            actor="compliance-agent",
+            action="Ran STIG check",
+            project_id="p-1",
+            details={"controls": 50},
+            affected_files=["ssp.md"],
         )
         ae2 = AuditEvent.from_dict(ae.to_dict())
         assert ae2.project_id == "p-1"
@@ -103,6 +114,7 @@ class TestAuditEvent:
 # ComplianceResult
 # ---------------------------------------------------------------------------
 
+
 class TestComplianceResult:
     def test_create(self):
         cr = ComplianceResult(framework="fedramp", assessment_date="2026-01-01", overall_status="pass")
@@ -110,9 +122,13 @@ class TestComplianceResult:
 
     def test_round_trip(self):
         cr = ComplianceResult(
-            framework="cmmc", assessment_date="2026-02-01",
-            overall_status="fail", controls_assessed=100, controls_satisfied=80,
-            blocking_issues=["AC-2 not met"], coverage_pct=80.0,
+            framework="cmmc",
+            assessment_date="2026-02-01",
+            overall_status="fail",
+            controls_assessed=100,
+            controls_satisfied=80,
+            blocking_issues=["AC-2 not met"],
+            coverage_pct=80.0,
         )
         cr2 = ComplianceResult.from_dict(cr.to_dict())
         assert cr2.framework == "cmmc"
@@ -123,6 +139,7 @@ class TestComplianceResult:
 # SecurityScanResult
 # ---------------------------------------------------------------------------
 
+
 class TestSecurityScanResult:
     def test_create(self):
         sr = SecurityScanResult(scan_type="sast", status="pass")
@@ -131,8 +148,11 @@ class TestSecurityScanResult:
 
     def test_with_findings(self):
         sr = SecurityScanResult(
-            scan_type="code_pattern", status="fail",
-            findings_count=3, critical=1, high=2,
+            scan_type="code_pattern",
+            status="fail",
+            findings_count=3,
+            critical=1,
+            high=2,
             findings=[{"name": "eval", "severity": "critical"}],
         )
         d = sr.to_dict()
@@ -143,6 +163,7 @@ class TestSecurityScanResult:
 # ---------------------------------------------------------------------------
 # ChatMessage / ChatContext
 # ---------------------------------------------------------------------------
+
 
 class TestChatSchemas:
     def test_chat_message(self):
@@ -169,17 +190,22 @@ class TestChatSchemas:
 # InnovationSignal
 # ---------------------------------------------------------------------------
 
+
 class TestInnovationSignal:
     def test_create(self):
-        sig = InnovationSignal(signal_id="sig-1", source="agent-zero",
-                               source_type="external_framework_analysis", title="Test")
+        sig = InnovationSignal(
+            signal_id="sig-1", source="agent-zero", source_type="external_framework_analysis", title="Test"
+        )
         assert sig.status == "new"
 
     def test_round_trip(self):
         sig = InnovationSignal(
-            signal_id="sig-2", source="insforge",
-            source_type="external_framework_analysis", title="Schema",
-            innovation_score=0.85, category="architecture",
+            signal_id="sig-2",
+            source="insforge",
+            source_type="external_framework_analysis",
+            title="Schema",
+            innovation_score=0.85,
+            category="architecture",
         )
         sig2 = InnovationSignal.from_dict(sig.to_dict())
         assert sig2.innovation_score == 0.85
@@ -189,6 +215,7 @@ class TestInnovationSignal:
 # ---------------------------------------------------------------------------
 # validate_output
 # ---------------------------------------------------------------------------
+
 
 class TestValidateOutput:
     def test_non_strict_passes_valid(self):
@@ -225,6 +252,7 @@ class TestValidateOutput:
 # ---------------------------------------------------------------------------
 # wrap_mcp_response
 # ---------------------------------------------------------------------------
+
 
 class TestWrapMcpResponse:
     def test_wraps_dict(self):

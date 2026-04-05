@@ -1,17 +1,15 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.mosa.mosa_code_enforcer -- MOSA code violation detection."""
 
-import pytest
 
 from icdev.tools.mosa.mosa_code_enforcer import (
-    _build_module_map,
     _check_direct_coupling,
     _check_missing_openapi,
-    _extract_imports,
     scan_project,
 )
 
@@ -19,6 +17,7 @@ from icdev.tools.mosa.mosa_code_enforcer import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_py(path: Path, content: str):
     """Write a Python file, creating parent dirs and __init__.py as needed."""
@@ -32,6 +31,7 @@ def _write_py(path: Path, content: str):
 # ---------------------------------------------------------------------------
 # TestDirectCouplingDetection
 # ---------------------------------------------------------------------------
+
 
 class TestDirectCouplingDetection:
     """_check_direct_coupling (MOSA-V001): internal module imports."""
@@ -69,6 +69,7 @@ class TestDirectCouplingDetection:
 # TestInterfaceCoverage
 # ---------------------------------------------------------------------------
 
+
 class TestInterfaceCoverage:
     """_check_missing_openapi (MOSA-V002): API files without OpenAPI spec."""
 
@@ -98,6 +99,7 @@ class TestInterfaceCoverage:
 # TestFixSuggestions
 # ---------------------------------------------------------------------------
 
+
 class TestFixSuggestions:
     """Fix suggestions included when fix_suggestions=True."""
 
@@ -114,6 +116,7 @@ class TestFixSuggestions:
 # TestProjectScan
 # ---------------------------------------------------------------------------
 
+
 class TestProjectScan:
     """scan_project: full project scan orchestration."""
 
@@ -126,9 +129,7 @@ class TestProjectScan:
         assert result["total_violations"] == 0
 
     def test_scan_detects_violations(self, tmp_path):
-        _write_py(tmp_path / "alpha" / "svc.py",
-                   "from beta._internal import secret\n"
-                   '@app.route("/x")\ndef x(): pass\n')
+        _write_py(tmp_path / "alpha" / "svc.py", 'from beta._internal import secret\n@app.route("/x")\ndef x(): pass\n')
         _write_py(tmp_path / "beta" / "pub.py", "val = 1\n")
         (tmp_path / "beta" / "_internal").mkdir(parents=True, exist_ok=True)
         (tmp_path / "beta" / "_internal" / "__init__.py").write_text("secret = 1\n", encoding="utf-8")

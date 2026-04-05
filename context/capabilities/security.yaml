@@ -1,0 +1,68 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: Security Scanning & Threat Defense
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: security
+description: "Comprehensive security scanning, threat modeling, and vulnerability management"
+capabilities:
+  - slug: security-scanning
+    name: "Comprehensive Security Scanning"
+    description: "SAST (Bandit/language-specific), dependency vulnerability auditing, secret detection, container image scanning with Iron Bank hardening"
+    cli_examples:
+      - "python tools/security/sast_runner.py --project-dir /path"
+      - "python tools/security/dependency_auditor.py --project-dir /path"
+      - "python tools/security/secret_detector.py --project-dir /path"
+      - "python tools/security/container_scanner.py --image sparkpilot:latest"
+    related_controls: ["RA-5", "SA-11", "SI-2", "SI-7", "CM-6"]
+    article_hooks:
+      - "Four-layer security scanning: SAST, dependency audit, secret detection, and container scanning in a single pipeline"
+      - "Iron Bank hardening manifest generation for Platform One Big Bang deployment"
+    frameworks: ["NIST 800-53", "DISA STIG", "Platform One"]
+    keywords: ["SAST", "vulnerability", "secret detection", "container scanning", "Iron Bank", "dependency audit"]
+    source_catalog_id: "cap-security-scanning"
+
+  - slug: threat-modeler
+    name: "STRIDE Threat Modeling"
+    description: "Deterministic STRIDE threat analysis per component type with NIST 800-53 control mapping and auto-POAM generation"
+    cli_examples:
+      - "python tools/security/threat_modeler.py --project-id sparkpilot --list --json"
+      - "python tools/security/threat_modeler.py --project-id sparkpilot --create --name Model --components '[{\"id\":\"web\",\"type\":\"web_application\"}]' --json"
+    related_controls: ["RA-3", "RA-5", "SA-11", "SI-4"]
+    article_hooks:
+      - "STRIDE-to-NIST mapping: Spoofing->AC/IA, Tampering->SC/SI, Repudiation->AU, InfoDisc->SC, DoS->SC/CP, EoP->AC"
+      - "Deterministic rule-based threat analysis per component type -- no LLM in the critical path"
+    frameworks: ["STRIDE", "NIST 800-53"]
+    keywords: ["threat modeling", "STRIDE", "threat analysis", "POAM", "risk assessment"]
+    source_catalog_id: "cap-threat-modeler"
+
+  - slug: zero-trust
+    name: "Zero Trust Architecture"
+    description: "7-pillar ZTA maturity scoring (DoD ZTA Strategy), NIST 800-207 compliance assessment, service mesh generation (Istio/Linkerd), PDP/PEP configuration"
+    cli_examples:
+      - "python tools/devsecops/zta_maturity_scorer.py --project-id sparkpilot --all --json"
+      - "python tools/compliance/nist_800_207_assessor.py --project-id sparkpilot --json"
+      - "python tools/devsecops/service_mesh_generator.py --project-id sparkpilot --mesh istio --json"
+    related_controls: ["AC-2", "AC-3", "AC-4", "SC-7", "SC-8", "IA-2"]
+    article_hooks:
+      - "7-pillar ZTA maturity scoring aligned with DoD Zero Trust Strategy: Traditional -> Advanced -> Optimal"
+      - "Never trust, always verify -- service mesh generation with mTLS enforcement for Istio and Linkerd"
+      - "ZTA gates block deployment when maturity < Advanced for IL4+ environments"
+    frameworks: ["NIST 800-207", "DoD ZTA Strategy"]
+    keywords: ["zero trust", "ZTA", "NIST 800-207", "service mesh", "Istio", "mTLS", "microsegmentation", "least privilege"]
+    source_catalog_id: "cap-zero-trust"
+
+  - slug: supply-chain
+    name: "Supply Chain Risk Management"
+    description: "Dependency graph analysis, SBOM aggregation, ISA lifecycle management, NIST 800-161 SCRM vendor assessment, CVE triage with SLA enforcement"
+    cli_examples:
+      - "python tools/supply_chain/dependency_graph.py --project-id sparkpilot --build-graph --json"
+      - "python tools/supply_chain/scrm_assessor.py --project-id sparkpilot --aggregate --json"
+      - "python tools/supply_chain/cve_triager.py --project-id sparkpilot --sla-check --json"
+    related_controls: ["SR-1", "SR-2", "SR-3", "SR-5", "SA-12", "RA-5"]
+    article_hooks:
+      - "SQL adjacency list for dependency graphs -- no graph DB required, yet full impact propagation analysis"
+      - "CVE triage with SLA enforcement ensures vulnerabilities are addressed within policy windows"
+    frameworks: ["NIST 800-161", "NIST 800-53"]
+    keywords: ["supply chain", "SBOM", "CVE", "vulnerability", "SCRM", "ISA", "dependency", "NIST 800-161"]
+    source_catalog_id: "cap-supply-chain"

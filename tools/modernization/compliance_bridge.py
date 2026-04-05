@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""ATO-Aware Compliance Bridge for ICDEV DoD Modernization.
+"""ATO-Aware Compliance Bridge for ICDEV™ DoD Modernization.
 
 Maintains NIST 800-53 control coverage during monolith-to-microservice migration.
 Provides control inheritance, distribution across extracted services, gap analysis,
@@ -46,6 +46,7 @@ import collections
 import json
 import sqlite3
 import textwrap
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -94,36 +95,46 @@ CONTROL_FAMILY_DESCRIPTIONS = {
 }
 
 # Control families that apply universally to ALL microservices
-UNIVERSAL_FAMILIES = {"AC", "AU", "CM", "IR", "PL", "PM", "PS", "AT", "MA",
-                      "MP", "PE", "RA", "SR", "CP"}
+UNIVERSAL_FAMILIES = {"AC", "AU", "CM", "IR", "PL", "PM", "PS", "AT", "MA", "MP", "PE", "RA", "SR", "CP"}
 
 # Control families with component-type-specific applicability
 TARGETED_FAMILY_RULES = {
-    "SC": {"applies_to_types": ["controller", "api_endpoint", "service",
-                                "interface", "servlet"]},
-    "IA": {"applies_to_types": ["controller", "api_endpoint", "service",
-                                "servlet", "module"]},
-    "SI": {"applies_to_types": ["service", "repository", "model", "entity",
-                                "stored_procedure", "function", "module"]},
+    "SC": {"applies_to_types": ["controller", "api_endpoint", "service", "interface", "servlet"]},
+    "IA": {"applies_to_types": ["controller", "api_endpoint", "service", "servlet", "module"]},
+    "SI": {"applies_to_types": ["service", "repository", "model", "entity", "stored_procedure", "function", "module"]},
     "SA": {"applies_to_types": ["class", "module", "service", "package"]},
-    "PT": {"applies_to_types": ["model", "entity", "repository",
-                                "stored_procedure"]},
+    "PT": {"applies_to_types": ["model", "entity", "repository", "stored_procedure"]},
 }
 
 # Risk weights for gap severity scoring by control family
 FAMILY_RISK_WEIGHTS = {
-    "AC": 9, "AU": 8, "IA": 9, "SC": 9, "SI": 8,
-    "CM": 7, "SA": 7, "RA": 7, "IR": 6, "CP": 6,
-    "SR": 5, "MA": 4, "MP": 4, "PE": 3, "PS": 3,
-    "PL": 3, "PM": 3, "AT": 2, "PT": 5,
+    "AC": 9,
+    "AU": 8,
+    "IA": 9,
+    "SC": 9,
+    "SI": 8,
+    "CM": 7,
+    "SA": 7,
+    "RA": 7,
+    "IR": 6,
+    "CP": 6,
+    "SR": 5,
+    "MA": 4,
+    "MP": 4,
+    "PE": 3,
+    "PS": 3,
+    "PL": 3,
+    "PM": 3,
+    "AT": 2,
+    "PT": 5,
 }
 
 # Estimated remediation weeks per gap by family criticality
 REMEDIATION_WEEKS = {
-    "critical": 6,   # AC, IA, SC
-    "high": 4,       # AU, SI, CM, SA, RA
-    "medium": 2,     # IR, CP, SR, PT
-    "low": 1,        # MA, MP, PE, PS, PL, PM, AT
+    "critical": 6,  # AC, IA, SC
+    "high": 4,  # AU, SI, CM, SA, RA
+    "medium": 2,  # IR, CP, SR, PT
+    "low": 1,  # MA, MP, PE, PS, PL, PM, AT
 }
 
 
@@ -131,19 +142,18 @@ REMEDIATION_WEEKS = {
 # Database helper
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
-    """Return a sqlite3 connection to the ICDEV operational database.
+    """Return a sqlite3 connection to the ICDEV™ operational database.
 
     The database file must already exist (created by tools/db/init_icdev_db.py).
     Uses row_factory = sqlite3.Row for dict-like access.
     """
     if not DB_PATH.exists():
         raise FileNotFoundError(
-            f"ICDEV database not found at {DB_PATH}. "
-            "Run 'python tools/db/init_icdev_db.py' first."
+            f"ICDEV™ database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first."
         )
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -151,9 +161,7 @@ def _get_db():
 
 def _get_plan_info(conn, plan_id):
     """Fetch migration plan record and validate it exists."""
-    row = conn.execute(
-        "SELECT * FROM migration_plans WHERE id = ?", (plan_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM migration_plans WHERE id = ?", (plan_id,)).fetchone()
     if not row:
         raise ValueError(f"Migration plan '{plan_id}' not found in database.")
     return dict(row)
@@ -161,14 +169,9 @@ def _get_plan_info(conn, plan_id):
 
 def _get_legacy_app_project_id(conn, legacy_app_id):
     """Get the project_id for a legacy application."""
-    row = conn.execute(
-        "SELECT project_id FROM legacy_applications WHERE id = ?",
-        (legacy_app_id,)
-    ).fetchone()
+    row = conn.execute("SELECT project_id FROM legacy_applications WHERE id = ?", (legacy_app_id,)).fetchone()
     if not row:
-        raise ValueError(
-            f"Legacy application '{legacy_app_id}' not found in database."
-        )
+        raise ValueError(f"Legacy application '{legacy_app_id}' not found in database.")
     return row["project_id"]
 
 
@@ -211,6 +214,7 @@ def _get_family_criticality(family):
 # ---------------------------------------------------------------------------
 # 1. Inherit controls from monolith to migration plan
 # ---------------------------------------------------------------------------
+
 
 def inherit_controls(legacy_app_id, plan_id):
     """Copy NIST control mappings from the legacy monolith to a migration plan.
@@ -272,12 +276,14 @@ def inherit_controls(legacy_app_id, plan_id):
                         control_id,
                         plan_id,
                         1.0 if row["implementation_status"] == "implemented" else 0.7,
-                        json.dumps({
-                            "source": "control_inheritance",
-                            "legacy_app_id": legacy_app_id,
-                            "original_status": row["implementation_status"],
-                            "description": row["implementation_description"],
-                        }),
+                        json.dumps(
+                            {
+                                "source": "control_inheritance",
+                                "legacy_app_id": legacy_app_id,
+                                "original_status": row["implementation_status"],
+                                "description": row["implementation_description"],
+                            }
+                        ),
                         datetime.now(timezone.utc).isoformat(),
                     ),
                 )
@@ -289,9 +295,13 @@ def inherit_controls(legacy_app_id, plan_id):
                 by_family[family] += 1
 
         # Audit trail
-        _log_audit(conn, project_id, "compliance_check",
-                   f"Inherited {inherited_count} controls from {legacy_app_id} to plan {plan_id}",
-                   {"controls_inherited": inherited_count, "by_family": dict(by_family)})
+        _log_audit(
+            conn,
+            project_id,
+            "compliance_check",
+            f"Inherited {inherited_count} controls from {legacy_app_id} to plan {plan_id}",
+            {"controls_inherited": inherited_count, "by_family": dict(by_family)},
+        )
 
         conn.commit()
 
@@ -311,6 +321,7 @@ def inherit_controls(legacy_app_id, plan_id):
 # ---------------------------------------------------------------------------
 # 2. Distribute controls across extracted services
 # ---------------------------------------------------------------------------
+
 
 def distribute_controls(plan_id, service_map):
     """Distribute inherited NIST controls across extracted microservices.
@@ -413,12 +424,14 @@ def distribute_controls(plan_id, service_map):
                             control_id,
                             f"{plan_id}::{svc_name}",
                             0.9,
-                            json.dumps({
-                                "source": "control_distribution",
-                                "service": svc_name,
-                                "family": family,
-                                "distribution_rule": "universal" if family in UNIVERSAL_FAMILIES else "targeted",
-                            }),
+                            json.dumps(
+                                {
+                                    "source": "control_distribution",
+                                    "service": svc_name,
+                                    "family": family,
+                                    "distribution_rule": "universal" if family in UNIVERSAL_FAMILIES else "targeted",
+                                }
+                            ),
                             datetime.now(timezone.utc).isoformat(),
                         ),
                     )
@@ -431,9 +444,13 @@ def distribute_controls(plan_id, service_map):
         for svc_name, families in distribution.items():
             result[svc_name] = {fam: ctrls for fam, ctrls in families.items()}
 
-        _log_audit(conn, project_id, "compliance_check",
-                   f"Distributed controls across {len(service_map)} services for plan {plan_id}",
-                   {"services": list(service_map.keys()), "links_created": links_created})
+        _log_audit(
+            conn,
+            project_id,
+            "compliance_check",
+            f"Distributed controls across {len(service_map)} services for plan {plan_id}",
+            {"services": list(service_map.keys()), "links_created": links_created},
+        )
 
         conn.commit()
 
@@ -452,6 +469,7 @@ def distribute_controls(plan_id, service_map):
 # ---------------------------------------------------------------------------
 # 3. Identify ATO gaps
 # ---------------------------------------------------------------------------
+
 
 def identify_ato_gaps(plan_id):
     """Find NIST controls that lose coverage during service decomposition.
@@ -505,9 +523,15 @@ def identify_ato_gaps(plan_id):
 
         # Monolith-specific keywords that indicate architecture coupling
         monolith_keywords = [
-            "monolith", "single deployment", "shared database",
-            "in-process", "same server", "single instance",
-            "tightly coupled", "single codebase", "co-located",
+            "monolith",
+            "single deployment",
+            "shared database",
+            "in-process",
+            "same server",
+            "single instance",
+            "tightly coupled",
+            "single codebase",
+            "co-located",
         ]
 
         gaps = []
@@ -524,12 +548,14 @@ def identify_ato_gaps(plan_id):
 
             # Gap type 1: no distribution target at all
             if control_id not in distributed_set:
-                gaps.append({
-                    "control_id": control_id,
-                    "family": family,
-                    "title": title,
-                    "reason": "No microservice assigned to this control",
-                })
+                gaps.append(
+                    {
+                        "control_id": control_id,
+                        "family": family,
+                        "title": title,
+                        "reason": "No microservice assigned to this control",
+                    }
+                )
                 continue
 
             # Gap type 2: implementation references monolith architecture
@@ -544,20 +570,19 @@ def identify_ato_gaps(plan_id):
                 desc_lower = impl_row["implementation_description"].lower()
                 for keyword in monolith_keywords:
                     if keyword in desc_lower:
-                        gaps.append({
-                            "control_id": control_id,
-                            "family": family,
-                            "title": title,
-                            "reason": f"Implementation references monolith architecture: '{keyword}'",
-                        })
+                        gaps.append(
+                            {
+                                "control_id": control_id,
+                                "family": family,
+                                "title": title,
+                                "reason": f"Implementation references monolith architecture: '{keyword}'",
+                            }
+                        )
                         break
 
         total_controls = len(inherited_set)
         gap_count = len(gaps)
-        coverage_pct = round(
-            ((total_controls - gap_count) / total_controls * 100)
-            if total_controls > 0 else 0.0, 2
-        )
+        coverage_pct = round(((total_controls - gap_count) / total_controls * 100) if total_controls > 0 else 0.0, 2)
 
         result = {
             "gaps": gaps,
@@ -584,6 +609,7 @@ def identify_ato_gaps(plan_id):
 # ---------------------------------------------------------------------------
 # 4. Generate ATO impact report
 # ---------------------------------------------------------------------------
+
 
 def generate_ato_impact_report(plan_id, output_dir=None):
     """Generate a comprehensive ATO impact analysis report in CUI-marked markdown.
@@ -673,14 +699,16 @@ def generate_ato_impact_report(plan_id, output_dir=None):
         criticality = _get_family_criticality(family)
         weeks = REMEDIATION_WEEKS.get(criticality, 1) * count
         total_remediation_weeks += weeks
-        family_risk_details.append({
-            "family": family,
-            "gap_count": count,
-            "risk_weight": weight,
-            "risk_score": risk,
-            "criticality": criticality,
-            "remediation_weeks": weeks,
-        })
+        family_risk_details.append(
+            {
+                "family": family,
+                "gap_count": count,
+                "risk_weight": weight,
+                "risk_score": risk,
+                "criticality": criticality,
+                "remediation_weeks": weeks,
+            }
+        )
 
     # Determine overall risk level
     if total_risk_score == 0:
@@ -731,20 +759,20 @@ def generate_ato_impact_report(plan_id, output_dir=None):
     lines.append("")
 
     # Per-family breakdown
-    lines.extend([
-        "---",
-        "",
-        "## Per-Family Breakdown",
-        "",
-        "| Family | Description | Inherited | Distributed | Gaps | Coverage |",
-        "|--------|-------------|-----------|-------------|------|----------|",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## Per-Family Breakdown",
+            "",
+            "| Family | Description | Inherited | Distributed | Gaps | Coverage |",
+            "|--------|-------------|-----------|-------------|------|----------|",
+        ]
+    )
 
-    all_families = sorted(set(
-        list(inherited_by_family.keys()) +
-        list(distributed_by_family.keys()) +
-        list(gap_by_family.keys())
-    ))
+    all_families = sorted(
+        set(list(inherited_by_family.keys()) + list(distributed_by_family.keys()) + list(gap_by_family.keys()))
+    )
 
     for fam in all_families:
         desc = CONTROL_FAMILY_DESCRIPTIONS.get(fam, "Unknown")
@@ -757,21 +785,27 @@ def generate_ato_impact_report(plan_id, output_dir=None):
     lines.append("")
 
     # Gap analysis
-    lines.extend([
-        "---",
-        "",
-        "## Gap Analysis",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## Gap Analysis",
+            "",
+        ]
+    )
 
     if not gaps:
-        lines.append("**No ATO gaps identified.** All controls have been distributed "
-                      "to target microservices with adequate coverage.")
+        lines.append(
+            "**No ATO gaps identified.** All controls have been distributed "
+            "to target microservices with adequate coverage."
+        )
     else:
-        lines.extend([
-            "| # | Control | Family | Title | Reason | Recommended Action |",
-            "|---|---------|--------|-------|--------|--------------------|",
-        ])
+        lines.extend(
+            [
+                "| # | Control | Family | Title | Reason | Recommended Action |",
+                "|---|---------|--------|-------|--------|--------------------|",
+            ]
+        )
         for i, g in enumerate(gaps, 1):
             family = g["family"]
             # Generate remediation recommendation based on gap reason
@@ -779,52 +813,57 @@ def generate_ato_impact_report(plan_id, output_dir=None):
                 rec = f"Assign {g['control_id']} to appropriate service(s) or create a shared security service"
             else:
                 rec = f"Update implementation to reflect distributed architecture for {g['control_id']}"
-            lines.append(
-                f"| {i} | {g['control_id']} | {family} | {g['title']} | "
-                f"{g['reason']} | {rec} |"
-            )
+            lines.append(f"| {i} | {g['control_id']} | {family} | {g['title']} | {g['reason']} | {rec} |")
         lines.append("")
 
     # Risk assessment
-    lines.extend([
-        "---",
-        "",
-        "## Risk Assessment",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## Risk Assessment",
+            "",
+        ]
+    )
 
     if family_risk_details:
-        lines.extend([
-            "| Family | Gaps | Risk Weight | Risk Score | Criticality | Remediation (weeks) |",
-            "|--------|------|-------------|------------|-------------|---------------------|",
-        ])
+        lines.extend(
+            [
+                "| Family | Gaps | Risk Weight | Risk Score | Criticality | Remediation (weeks) |",
+                "|--------|------|-------------|------------|-------------|---------------------|",
+            ]
+        )
         for frd in sorted(family_risk_details, key=lambda x: x["risk_score"], reverse=True):
             lines.append(
                 f"| {frd['family']} | {frd['gap_count']} | {frd['risk_weight']} | "
                 f"{frd['risk_score']} | {frd['criticality'].upper()} | {frd['remediation_weeks']} |"
             )
-        lines.extend([
-            "",
-            f"**Total Risk Score:** {total_risk_score}",
-            f"**Overall Risk Level:** {overall_risk}",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                f"**Total Risk Score:** {total_risk_score}",
+                f"**Overall Risk Level:** {overall_risk}",
+                "",
+            ]
+        )
     else:
         lines.append("No risks identified -- all controls have adequate coverage.")
         lines.append("")
 
     # Timeline impact
-    lines.extend([
-        "---",
-        "",
-        "## Timeline Impact",
-        "",
-        f"Based on gap analysis, an estimated **{total_remediation_weeks} additional weeks** "
-        "may be required for compliance remediation before the migrated system can achieve ATO.",
-        "",
-        "Breakdown by criticality tier:",
-        "",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "## Timeline Impact",
+            "",
+            f"Based on gap analysis, an estimated **{total_remediation_weeks} additional weeks** "
+            "may be required for compliance remediation before the migrated system can achieve ATO.",
+            "",
+            "Breakdown by criticality tier:",
+            "",
+        ]
+    )
 
     tier_weeks = collections.Counter()
     for frd in family_risk_details:
@@ -837,23 +876,25 @@ def generate_ato_impact_report(plan_id, output_dir=None):
     if total_remediation_weeks == 0:
         lines.append("- No additional time required -- compliance posture is maintained.")
 
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## Recommendations",
-        "",
-        "1. Address all CRITICAL and HIGH risk gaps before proceeding with production cutover.",
-        "2. Create a shared security service to host cross-cutting controls (AC, AU, IA).",
-        "3. Implement centralized audit logging to maintain AU family coverage across all services.",
-        "4. Update System Security Plan (SSP) to reflect the new distributed architecture.",
-        "5. Schedule an incremental ATO assessment for each migrated service boundary.",
-        "",
-        "---",
-        "",
-        CUI_FOOTER,
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## Recommendations",
+            "",
+            "1. Address all CRITICAL and HIGH risk gaps before proceeding with production cutover.",
+            "2. Create a shared security service to host cross-cutting controls (AC, AU, IA).",
+            "3. Implement centralized audit logging to maintain AU family coverage across all services.",
+            "4. Update System Security Plan (SSP) to reflect the new distributed architecture.",
+            "5. Schedule an incremental ATO assessment for each migrated service boundary.",
+            "",
+            "---",
+            "",
+            CUI_FOOTER,
+            "",
+        ]
+    )
 
     content = "\n".join(lines)
 
@@ -873,6 +914,7 @@ def generate_ato_impact_report(plan_id, output_dir=None):
 # ---------------------------------------------------------------------------
 # 5. Create compliance digital thread
 # ---------------------------------------------------------------------------
+
 
 def create_compliance_thread(plan_id):
     """Create a full digital thread linking legacy components through migration
@@ -922,9 +964,10 @@ def create_compliance_thread(plan_id):
                                    'migration_task', ?, 'migrates_to',
                                    1.0, ?, 'compliance-bridge', ?)""",
                         (
-                            project_id, comp_id, task_id,
-                            json.dumps({"task_type": task["task_type"],
-                                        "title": task["title"]}),
+                            project_id,
+                            comp_id,
+                            task_id,
+                            json.dumps({"task_type": task["task_type"], "title": task["title"]}),
                             now,
                         ),
                     )
@@ -946,7 +989,9 @@ def create_compliance_thread(plan_id):
                                    'code_module', ?, 'implements',
                                    0.9, ?, 'compliance-bridge', ?)""",
                         (
-                            project_id, task_id, code_module_id,
+                            project_id,
+                            task_id,
+                            code_module_id,
                             json.dumps({"output_path": output_path}),
                             now,
                         ),
@@ -979,7 +1024,8 @@ def create_compliance_thread(plan_id):
                                        'nist_control', ?, 'satisfies',
                                        0.8, ?, 'compliance-bridge', ?)""",
                             (
-                                project_id, code_module_id,
+                                project_id,
+                                code_module_id,
                                 d_row["control_id"],
                                 json.dumps({"source_task": task_id}),
                                 now,
@@ -1014,14 +1060,15 @@ def create_compliance_thread(plan_id):
         satisfied_set = {r["control_id"] for r in satisfied_rows}
 
         covered = inherited_set & satisfied_set
-        coverage_pct = round(
-            (len(covered) / len(inherited_set) * 100)
-            if inherited_set else 0.0, 2
-        )
+        coverage_pct = round((len(covered) / len(inherited_set) * 100) if inherited_set else 0.0, 2)
 
-        _log_audit(conn, project_id, "digital_thread_linked",
-                   f"Created compliance thread for plan {plan_id}",
-                   {"links_created": links_created, "coverage_pct": coverage_pct})
+        _log_audit(
+            conn,
+            project_id,
+            "digital_thread_linked",
+            f"Created compliance thread for plan {plan_id}",
+            {"links_created": links_created, "coverage_pct": coverage_pct},
+        )
 
         conn.commit()
 
@@ -1041,6 +1088,7 @@ def create_compliance_thread(plan_id):
 # ---------------------------------------------------------------------------
 # 6. Validate ATO coverage
 # ---------------------------------------------------------------------------
+
 
 def validate_ato_coverage(plan_id):
     """Verify that no NIST control coverage is lost after migration.
@@ -1103,22 +1151,28 @@ def validate_ato_coverage(plan_id):
 
         for control_id in sorted(pre_controls):
             if control_id not in post_controls:
-                failures.append({
-                    "control_id": control_id,
-                    "reason": "Control not found in post-migration digital thread",
-                })
+                failures.append(
+                    {
+                        "control_id": control_id,
+                        "reason": "Control not found in post-migration digital thread",
+                    }
+                )
 
         # Check family-level coverage
         for family, pre_count in sorted(pre_by_family.items()):
             post_count = post_by_family.get(family, 0)
             if post_count < pre_count:
                 delta = pre_count - post_count
-                failures.append({
-                    "control_id": f"{family}-*",
-                    "reason": (f"Family {family} lost coverage: "
-                               f"{pre_count} pre-migration vs {post_count} post-migration "
-                               f"({delta} controls lost)"),
-                })
+                failures.append(
+                    {
+                        "control_id": f"{family}-*",
+                        "reason": (
+                            f"Family {family} lost coverage: "
+                            f"{pre_count} pre-migration vs {post_count} post-migration "
+                            f"({delta} controls lost)"
+                        ),
+                    }
+                )
 
         valid = len(failures) == 0
         pre_total = len(pre_controls)
@@ -1133,9 +1187,13 @@ def validate_ato_coverage(plan_id):
             "failures": failures,
         }
 
-        _log_audit(conn, project_id, "compliance_check",
-                   f"ATO coverage validation: {'PASS' if valid else 'FAIL'} for plan {plan_id}",
-                   result)
+        _log_audit(
+            conn,
+            project_id,
+            "compliance_check",
+            f"ATO coverage validation: {'PASS' if valid else 'FAIL'} for plan {plan_id}",
+            result,
+        )
 
         conn.commit()
 
@@ -1158,6 +1216,7 @@ def validate_ato_coverage(plan_id):
 # ---------------------------------------------------------------------------
 # 7. Compliance dashboard
 # ---------------------------------------------------------------------------
+
 
 def get_compliance_dashboard(plan_id):
     """Generate a summary compliance dashboard for the migration plan.
@@ -1218,9 +1277,7 @@ def get_compliance_dashboard(plan_id):
     covered_set = inherited_set - gap_controls
     covered_count = len(covered_set)
     at_risk_count = len(gap_controls)
-    coverage_pct = round(
-        (covered_count / total_in_scope * 100) if total_in_scope > 0 else 0.0, 2
-    )
+    coverage_pct = round((covered_count / total_in_scope * 100) if total_in_scope > 0 else 0.0, 2)
 
     # Per-family status
     family_status = {}
@@ -1248,10 +1305,7 @@ def get_compliance_dashboard(plan_id):
         "controls_with_coverage_pct": coverage_pct,
         "controls_at_risk": at_risk_count,
         "controls_at_risk_list": sorted(gap_controls),
-        "per_family_status": {
-            fam: family_status[fam]
-            for fam in sorted(family_status.keys())
-        },
+        "per_family_status": {fam: family_status[fam] for fam in sorted(family_status.keys())},
         "migration_compliance_gate": gate,
         "gate_threshold_pct": 95.0,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1278,8 +1332,7 @@ def _format_dashboard(dashboard):
         "  CONTROL COVERAGE",
         "-" * 65,
         f"  Total in scope:       {dashboard['total_controls_in_scope']}",
-        f"  With coverage:        {dashboard['controls_with_coverage']} "
-        f"({dashboard['controls_with_coverage_pct']}%)",
+        f"  With coverage:        {dashboard['controls_with_coverage']} ({dashboard['controls_with_coverage_pct']}%)",
         f"  At risk:              {dashboard['controls_at_risk']}",
         "",
     ]
@@ -1290,29 +1343,30 @@ def _format_dashboard(dashboard):
             lines.append(f"    - {ctrl}")
         lines.append("")
 
-    lines.extend([
-        "-" * 65,
-        "  PER-FAMILY STATUS",
-        "-" * 65,
-        f"  {'Family':<8} {'Total':>6} {'Covered':>8} {'At Risk':>8}  Status",
-        f"  {'-'*8} {'-'*6} {'-'*8} {'-'*8}  {'-'*8}",
-    ])
+    lines.extend(
+        [
+            "-" * 65,
+            "  PER-FAMILY STATUS",
+            "-" * 65,
+            f"  {'Family':<8} {'Total':>6} {'Covered':>8} {'At Risk':>8}  Status",
+            f"  {'-' * 8} {'-' * 6} {'-' * 8} {'-' * 8}  {'-' * 8}",
+        ]
+    )
 
     for fam, info in sorted(dashboard["per_family_status"].items()):
         status = "OK" if info["at_risk"] == 0 else "AT RISK"
-        lines.append(
-            f"  {fam:<8} {info['total']:>6} {info['covered']:>8} "
-            f"{info['at_risk']:>8}  {status}"
-        )
+        lines.append(f"  {fam:<8} {info['total']:>6} {info['covered']:>8} {info['at_risk']:>8}  {status}")
 
-    lines.extend([
-        "",
-        "-" * 65,
-        f"  MIGRATION COMPLIANCE GATE: {dashboard['migration_compliance_gate']}",
-        f"  (Threshold: >= {dashboard['gate_threshold_pct']}% coverage)",
-        "=" * 65,
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "-" * 65,
+            f"  MIGRATION COMPLIANCE GATE: {dashboard['migration_compliance_gate']}",
+            f"  (Threshold: >= {dashboard['gate_threshold_pct']}% coverage)",
+            "=" * 65,
+            "",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -1320,6 +1374,7 @@ def _format_dashboard(dashboard):
 # ---------------------------------------------------------------------------
 # CLI interface
 # ---------------------------------------------------------------------------
+
 
 def main():
     """Command-line entry point for the ATO-aware compliance bridge."""
@@ -1351,30 +1406,34 @@ def main():
     )
 
     parser.add_argument(
-        "--plan-id", required=True,
+        "--plan-id",
+        required=True,
         help="Migration plan ID (required for all operations)",
     )
 
     # Action flags
     parser.add_argument(
-        "--inherit", action="store_true",
+        "--inherit",
+        action="store_true",
         help="Inherit NIST control mappings from legacy monolith to plan",
     )
     parser.add_argument(
-        "--distribute", action="store_true",
+        "--distribute",
+        action="store_true",
         help="Distribute inherited controls across extracted services",
     )
     parser.add_argument(
         "--service-map",
-        help="Path to JSON file mapping service names to component IDs "
-             "(required with --distribute)",
+        help="Path to JSON file mapping service names to component IDs (required with --distribute)",
     )
     parser.add_argument(
-        "--gaps", action="store_true",
+        "--gaps",
+        action="store_true",
         help="Identify ATO coverage gaps in the migration",
     )
     parser.add_argument(
-        "--report", action="store_true",
+        "--report",
+        action="store_true",
         help="Generate ATO impact analysis report",
     )
     parser.add_argument(
@@ -1382,31 +1441,37 @@ def main():
         help="Output directory for report file (used with --report)",
     )
     parser.add_argument(
-        "--thread", action="store_true",
+        "--thread",
+        action="store_true",
         help="Create full compliance digital thread",
     )
     parser.add_argument(
-        "--validate", action="store_true",
+        "--validate",
+        action="store_true",
         help="Validate that ATO coverage is maintained post-migration",
     )
     parser.add_argument(
-        "--dashboard", action="store_true",
+        "--dashboard",
+        action="store_true",
         help="Show compliance migration dashboard",
     )
     parser.add_argument(
-        "--json", action="store_true", dest="json_output",
+        "--json",
+        action="store_true",
+        dest="json_output",
         help="Output results as JSON",
     )
 
     args = parser.parse_args()
 
     # Validate at least one action was requested
-    actions = [args.inherit, args.distribute, args.gaps, args.report,
-               args.thread, args.validate, args.dashboard]
+    actions = [args.inherit, args.distribute, args.gaps, args.report, args.thread, args.validate, args.dashboard]
     if not any(actions):
-        parser.error("At least one action flag is required: "
-                     "--inherit, --distribute, --gaps, --report, --thread, "
-                     "--validate, or --dashboard")
+        parser.error(
+            "At least one action flag is required: "
+            "--inherit, --distribute, --gaps, --report, --thread, "
+            "--validate, or --dashboard"
+        )
 
     try:
         # --- Inherit ---
@@ -1428,9 +1493,7 @@ def main():
                 parser.error("--service-map is required with --distribute")
             smap_path = Path(args.service_map)
             if not smap_path.exists():
-                raise FileNotFoundError(
-                    f"Service map file not found: {smap_path}"
-                )
+                raise FileNotFoundError(f"Service map file not found: {smap_path}")
             with open(str(smap_path), "r", encoding="utf-8") as f:
                 service_map = json.load(f)
 

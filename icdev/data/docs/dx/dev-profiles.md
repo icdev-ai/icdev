@@ -1,6 +1,6 @@
 # Dev Profiles & Personalization
 
-Dev profiles let each tenant organization define their coding standards, technology preferences, and compliance requirements once. These standards then automatically flow into every ICDEV operation — code generation, scaffolding, security scanning, and LLM prompt injection — without the developer needing to specify them each time.
+Dev profiles let each tenant organization define their coding standards, technology preferences, and compliance requirements once. These standards then automatically flow into every ICDEV™ operation — code generation, scaffolding, security scanning, and LLM prompt injection — without the developer needing to specify them each time.
 
 ---
 
@@ -42,9 +42,9 @@ Or just tell Claude:
 
 > Create a dev profile for our tenant using the DoD baseline template. Override the primary language to Go and set line length to 120.
 
-### 2. ICDEV Auto-Applies It
+### 2. ICDEV™ Auto-Applies It
 
-Once a profile exists, every ICDEV operation respects it automatically:
+Once a profile exists, every ICDEV™ operation respects it automatically:
 
 | Operation | What the Profile Affects |
 |-----------|--------------------------|
@@ -71,14 +71,14 @@ Claude generates Go code (not Python) with 120-char lines, snake_case naming, tr
 Profiles are scoped hierarchically. Each layer can override or extend the layer above:
 
 ```
-Platform (ICDEV defaults)
+Platform (ICDEV™ defaults)
     └── Tenant (organization standards)
         └── Program (program-specific overrides)
             └── Project (project-specific overrides)
                 └── User (personal preferences)
 ```
 
-When resolving a profile for a project, ICDEV walks up the tree and merges each layer. The merge behavior depends on the dimension:
+When resolving a profile for a project, ICDEV™ walks up the tree and merges each layer. The merge behavior depends on the dimension:
 
 | Behavior | Description | Example |
 |----------|-------------|---------|
@@ -160,7 +160,7 @@ python tools/builder/dev_profile_manager.py \
 
 ## Auto-Detection
 
-Point ICDEV at an existing codebase and it will detect coding standards automatically:
+Point ICDEV™ at an existing codebase and it will detect coding standards automatically:
 
 ```bash
 # Scan a repository
@@ -181,7 +181,7 @@ Detection is **advisory only** (ADR D185) — detected values must be explicitly
 
 ## PROFILE.md
 
-ICDEV generates a human-readable `PROFILE.md` document from the resolved profile. This is a narrative summary of all active standards, their provenance, and enforcement status.
+ICDEV™ generates a human-readable `PROFILE.md` document from the resolved profile. This is a narrative summary of all active standards, their provenance, and enforcement status.
 
 ```bash
 python tools/builder/profile_md_generator.py \
@@ -254,7 +254,7 @@ profile:
       min_coverage: 90
 ```
 
-ICDEV loads this on initialization and creates the profile automatically. The developer never needs to run `dev_profile_manager.py` directly.
+ICDEV™ loads this on initialization and creates the profile automatically. The developer never needs to run `dev_profile_manager.py` directly.
 
 ---
 
@@ -279,7 +279,7 @@ Each profile covers 10 dimension categories with configurable fields:
 
 ## Common Workflows
 
-### "Our org just adopted ICDEV — set up standards for everyone"
+### "Our org just adopted ICDEV™ — set up standards for everyone"
 
 1. Create tenant-level profile from template:
    > Create a dev profile for our tenant using the FedRAMP baseline
@@ -306,4 +306,4 @@ This shows the effective profile with provenance (which layer set each value) an
 
 > Scan the repository at /path/to/repo and create a dev profile from what you find
 
-ICDEV detects language, style, testing, and git conventions from the existing codebase. You review the detection results and accept them to create the profile.
+ICDEV™ detects language, style, testing, and git conventions from the existing codebase. You review the detection results and accept them to create the profile.

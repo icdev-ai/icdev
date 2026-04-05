@@ -19,7 +19,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from tools.observability.tracer import NullSpan, NullTracer, Span, Tracer
+from tools.observability.tracer import Span, Tracer
 
 logger = logging.getLogger("icdev.observability.otel_tracer")
 
@@ -101,19 +101,18 @@ class OTelTracer(Tracer):
     ):
         if not HAS_OTEL:
             raise ImportError(
-                "opentelemetry-sdk not installed. Install with: "
-                "pip install opentelemetry-api opentelemetry-sdk"
+                "opentelemetry-sdk not installed. Install with: pip install opentelemetry-api opentelemetry-sdk"
             )
 
-        self._endpoint = endpoint or os.environ.get(
-            "ICDEV_OTEL_ENDPOINT", "http://localhost:4317"
-        )
+        self._endpoint = endpoint or os.environ.get("ICDEV_OTEL_ENDPOINT", "http://localhost:4317")
 
-        resource = Resource.create({
-            "service.name": service_name,
-            "service.version": "phase-46",
-            "deployment.environment": os.environ.get("ICDEV_ENVIRONMENT", "development"),
-        })
+        resource = Resource.create(
+            {
+                "service.name": service_name,
+                "service.version": "phase-46",
+                "deployment.environment": os.environ.get("ICDEV_ENVIRONMENT", "development"),
+            }
+        )
 
         provider = TracerProvider(resource=resource)
 

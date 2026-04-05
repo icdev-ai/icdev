@@ -15,8 +15,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -62,7 +60,9 @@ class UnslothLocalProvider(FineTuneProvider):
         try:
             proc = subprocess.run(
                 [sys.executable, "-c", "import unsloth; print(unsloth.__version__)"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             return proc.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -79,9 +79,7 @@ class UnslothLocalProvider(FineTuneProvider):
             )
 
         # Prepare output directory
-        output_dir = request.output_dir or str(
-            BASE_DIR / "data" / "finetune" / "jobs" / request.job_id
-        )
+        output_dir = request.output_dir or str(BASE_DIR / "data" / "finetune" / "jobs" / request.job_id)
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         # Write training config
@@ -102,12 +100,8 @@ class UnslothLocalProvider(FineTuneProvider):
             "output_dir": output_dir,
             "gpu_count": request.gpu_count,
             "distributed": request.distributed,
-            "gradient_checkpointing": self._config.get("local", {}).get(
-                "gradient_checkpointing", True
-            ),
-            "use_flash_attention": self._config.get("local", {}).get(
-                "use_flash_attention", True
-            ),
+            "gradient_checkpointing": self._config.get("local", {}).get("gradient_checkpointing", True),
+            "use_flash_attention": self._config.get("local", {}).get("use_flash_attention", True),
         }
 
         config_path = Path(output_dir) / "train_config.json"
@@ -146,9 +140,7 @@ class UnslothLocalProvider(FineTuneProvider):
                 error=f"Failed to start training: {e}",
             )
 
-    def _build_training_command(
-        self, config: Dict[str, Any], config_path: Path
-    ) -> List[str]:
+    def _build_training_command(self, config: Dict[str, Any], config_path: Path) -> List[str]:
         """Build the training subprocess command."""
         script = str(BASE_DIR / "tools" / "finetune" / "_train_worker.py")
         cmd = [sys.executable, script, "--config", str(config_path)]
@@ -156,9 +148,15 @@ class UnslothLocalProvider(FineTuneProvider):
         # Multi-GPU via accelerate (D-FT-21)
         if config.get("distributed") and config.get("gpu_count", 1) > 1:
             cmd = [
-                sys.executable, "-m", "accelerate", "launch",
-                "--num_processes", str(config["gpu_count"]),
-                script, "--config", str(config_path),
+                sys.executable,
+                "-m",
+                "accelerate",
+                "launch",
+                "--num_processes",
+                str(config["gpu_count"]),
+                script,
+                "--config",
+                str(config_path),
             ]
 
         return cmd
@@ -216,7 +214,8 @@ class UnslothLocalProvider(FineTuneProvider):
             except (OSError, ValueError):
                 # Process finished without result file = likely crashed
                 return FineTuneStatus(
-                    job_id=job_id, status="failed",
+                    job_id=job_id,
+                    status="failed",
                     error="Training process terminated unexpectedly. Check training.log",
                 )
 
@@ -246,15 +245,22 @@ class UnslothLocalProvider(FineTuneProvider):
         """Export LoRA adapter to GGUF via Unsloth (D-FT-5)."""
         script = str(BASE_DIR / "tools" / "finetune" / "_export_worker.py")
         cmd = [
-            sys.executable, script,
-            "--adapter-path", adapter_path,
-            "--output-path", output_path,
-            "--quantization", quantization,
+            sys.executable,
+            script,
+            "--adapter-path",
+            adapter_path,
+            "--output-path",
+            output_path,
+            "--quantization",
+            quantization,
         ]
 
         try:
             proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=600,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600,
                 cwd=str(BASE_DIR),
             )
             if proc.returncode == 0:

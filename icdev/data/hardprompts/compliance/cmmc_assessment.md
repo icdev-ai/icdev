@@ -4,7 +4,7 @@ You are running a CMMC (Cybersecurity Maturity Model Certification) assessment. 
 
 ## Context
 
-CMMC v2.0 has three levels. ICDEV supports Level 2 (110 practices from NIST 800-171) and Level 3 (134 practices). Most DoD contracts require Level 2 minimum.
+CMMC v2.0 has three levels. ICDEV™ supports Level 2 (110 practices from NIST 800-171) and Level 3 (134 practices). Most DoD contracts require Level 2 minimum.
 
 ## Steps
 

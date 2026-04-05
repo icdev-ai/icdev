@@ -4,7 +4,7 @@ CUI // SP-CTI
 
 ## Purpose
 
-The Industry Research Engine enables ICDEV to perform deep, structured research into target industry verticals before generating child applications. Instead of building blind, ICDEV:
+The Industry Research Engine enables ICDEV™ to perform deep, structured research into target industry verticals before generating child applications. Instead of building blind, ICDEV™:
 1. Scopes a target vertical (e.g., trading, healthcare, defense, fintech, cybersecurity, logistics)
 2. Scans 8 data streams for challenges, regulations, community pain points, and competitive landscape
 3. Scores and ranks industry challenges through a 6-dimension weighted model
@@ -25,7 +25,7 @@ The Industry Research Engine enables ICDEV to perform deep, structured research 
 - **D-RES-9:** Dossier generation is template-based (not LLM-generated) — deterministic, reproducible, auditable (D208 pattern)
 - **D-RES-10:** HITL review mandatory before child app fitness assessment — dossier must be in `reviewed` state before triggering `/icdev-agentic` pipeline
 - **D-RES-11:** High-scoring challenges cross-register to `innovation_signals` and `creative_signals` tables — enables trend detection across all three engines (D360 pattern)
-- **D-RES-12:** Build-vs-buy analysis uses deterministic weighted matrix — compares open-source maturity, commercial cost, ICDEV capability gap, compliance risk, integration effort
+- **D-RES-12:** Build-vs-buy analysis uses deterministic weighted matrix — compares open-source maturity, commercial cost, ICDEV™ capability gap, compliance risk, integration effort
 - **D-RES-13:** Regulatory scan results cached with TTL — regulatory bodies change slowly; 7-day cache prevents redundant requests (rate-limit safe)
 
 ## Pipeline Overview
@@ -134,10 +134,10 @@ Sources: GitHub repos, Product Hunt, G2/Capterra (public pages), Crunchbase (pub
 
 Scan regulatory requirements specific to vertical:
 1. **Primary regulations** — Federal/state laws, industry standards (from vertical config)
-2. **Compliance frameworks** — Map to ICDEV-supported frameworks via crosswalk engine
+2. **Compliance frameworks** — Map to ICDEV™-supported frameworks via crosswalk engine
 3. **Enforcement actions** — Recent penalties, consent decrees, audit findings (public record)
 4. **Upcoming changes** — Proposed rules, comment periods, effective dates
-5. **Gap analysis** — Which regulations ICDEV already covers vs. gaps requiring new framework catalogs
+5. **Gap analysis** — Which regulations ICDEV™ already covers vs. gaps requiring new framework catalogs
 
 Sources: Federal Register, regulatory body websites, compliance news sites.
 
@@ -159,14 +159,14 @@ Scan academic and patent literature:
 3. **Standards bodies** — IEEE, ISO, NIST publications relevant to vertical
 4. **Emerging tech** — Novel approaches, architectures, algorithms gaining traction
 
-Output: Annotated bibliography with relevance scores and ICDEV applicability notes.
+Output: Annotated bibliography with relevance scores and ICDEV™ applicability notes.
 
 ## Stage 6: BUILD_BUY
 
 Analyze build-vs-buy for top challenges:
 1. **Open-source options** — GitHub repos with matching functionality, license check (D202 — block GPL/AGPL/SSPL)
 2. **Commercial options** — SaaS products, pricing, integration effort
-3. **ICDEV capability gap** — What ICDEV can already do vs. what needs building
+3. **ICDEV™ capability gap** — What ICDEV™ can already do vs. what needs building
 4. **Build cost estimate** — T-shirt sizing (S/M/L/XL) based on complexity
 5. **Compliance risk** — Build maintains compliance control; buy may introduce supply chain risk
 
@@ -175,7 +175,7 @@ Build-vs-buy matrix (deterministic weighted average):
 | Dimension | Weight | Build Favored When | Buy Favored When |
 |-----------|--------|--------------------|------------------|
 | Compliance Control | 0.30 | High compliance requirements | Low compliance sensitivity |
-| Integration Effort | 0.25 | Deep ICDEV integration needed | Standalone usage acceptable |
+| Integration Effort | 0.25 | Deep ICDEV™ integration needed | Standalone usage acceptable |
 | Cost (3-year TCO) | 0.20 | Open-source alternative exists | Custom build cost exceeds SaaS |
 | Time to Market | 0.15 | No deadline pressure | Urgent market need |
 | Competitive Advantage | 0.10 | Core differentiator | Commodity feature |
@@ -192,8 +192,8 @@ Score and rank industry challenges:
 | Regulatory Pressure | 0.20 | Enforcement actions, upcoming deadlines, penalty severity |
 | Technical Complexity | 0.15 | Inversely scored — simpler challenges rank higher for feasibility |
 | Competitive Saturation | 0.15 | Inversely scored — less competition = more opportunity |
-| ICDEV Readiness | 0.15 | Existing tool/framework coverage, build effort estimate |
-| Compliance Alignment | 0.10 | Strengthens ICDEV compliance posture, crosswalk coverage |
+| ICDEV™ Readiness | 0.15 | Existing tool/framework coverage, build effort estimate |
+| Compliance Alignment | 0.10 | Strengthens ICDEV™ compliance posture, crosswalk coverage |
 
 ### Thresholds
 - **>= 0.75** — High-priority challenge, recommend for child app feature set
@@ -207,12 +207,12 @@ Generate structured research dossier (template-based, D-RES-9):
 ### Dossier Sections
 1. **Executive Summary** — Vertical overview, top 5 challenges, recommended approach
 2. **Market Landscape** — Competitors, market size, buyer personas
-3. **Regulatory Environment** — Primary regulations, ICDEV coverage, gaps
+3. **Regulatory Environment** — Primary regulations, ICDEV™ coverage, gaps
 4. **Community Pain Points** — Top pain points by frequency, severity, category
 5. **Academic & Patent Landscape** — Emerging tech, relevant research, patent activity
 6. **Build-vs-Buy Analysis** — Per-challenge recommendation with justification
 7. **Challenge Ranking** — Full scored list with 6-dimension breakdown
-8. **ICDEV Capability Map** — What ICDEV already covers, what needs building
+8. **ICDEV™ Capability Map** — What ICDEV™ already covers, what needs building
 9. **Recommended Child App Scope** — Features, compliance frameworks, agents needed
 10. **Risk Assessment** — Technical, regulatory, market, compliance risks
 11. **Appendix** — Source citations, raw data references, methodology notes
@@ -249,7 +249,7 @@ Before triggering child app fitness assessment:
 
 - **Web scanner failures:** Log error, continue with other data streams. Dossier notes which streams were unavailable.
 - **Database missing:** Return error with migration instructions (`python tools/db/init_icdev_db.py`).
-- **Air-gapped mode:** Skip web-dependent streams (landscape, community, academic, regulatory web sources). Run with ICDEV internal data only. Dossier notes reduced coverage.
+- **Air-gapped mode:** Skip web-dependent streams (landscape, community, academic, regulatory web sources). Run with ICDEV™ internal data only. Dossier notes reduced coverage.
 - **Rate limiting:** Per-source configurable backoff. Semantic Scholar: 100/5min, arXiv: 3/sec, USPTO: 60/min.
 - **Session resume:** Scanning stage is resumable — completed streams are cached, failed streams retried.
 - **Empty results:** If a data stream returns zero results, log warning and continue. Dossier notes the gap.
@@ -263,5 +263,5 @@ Before triggering child app fitness assessment:
 4. **All build-vs-buy results favor "buy"** — Valid outcome; dossier recommends integration strategy instead of child app
 5. **Dossier rejected multiple times** — Session stays in `dossier_ready`, rejection history in session log, no auto-escalation
 6. **Cross-engine registration fails** — Non-blocking; log error, dossier still valid. Retry on next pipeline run
-7. **Vertical overlaps multiple ICDEV compliance frameworks** — Feature, not bug; crosswalk engine handles multi-framework mapping
+7. **Vertical overlaps multiple ICDEV™ compliance frameworks** — Feature, not bug; crosswalk engine handles multi-framework mapping
 8. **Research session abandoned** — Sessions older than 30 days in non-terminal state auto-archive with `reason='timeout'`

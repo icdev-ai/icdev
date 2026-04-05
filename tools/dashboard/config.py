@@ -11,14 +11,32 @@ from pathlib import Path
 # Base directory: project root (3 levels up from this file)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# Load .env early so all os.environ reads below pick up .env values
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    _env_file = BASE_DIR / ".env"
+    if _env_file.exists():
+        for _line in _env_file.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+                if _k and _k not in os.environ:
+                    os.environ[_k] = _v
+
 # ---------------------------------------------------------------------------
 # YAML loading (pure-Python fallback if PyYAML is not installed)
 # ---------------------------------------------------------------------------
+
 
 def _load_yaml(filepath: Path) -> dict:
     """Load a YAML file. Uses PyYAML if available, otherwise a minimal parser."""
     try:
         import yaml
+
         with open(filepath, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -76,17 +94,17 @@ DB_PATH = os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db"))
 # CUI banner text
 CUI_BANNER_TOP = os.environ.get(
     "ICDEV_CUI_BANNER_TOP",
-    CUI_CONFIG.get("banner_top", "CUI // SP-CTI"),
+    CUI_CONFIG.get("banner_top", ""),
 )
 CUI_BANNER_BOTTOM = os.environ.get(
     "ICDEV_CUI_BANNER_BOTTOM",
-    CUI_CONFIG.get("banner_bottom", "CUI // SP-CTI"),
+    CUI_CONFIG.get("banner_bottom", ""),
 )
 CUI_DESIGNATION = CUI_CONFIG.get("designation_indicator", {})
 CUI_PORTION_MARKING = CUI_CONFIG.get("portion_marking", "(CUI)")
 
 # Server
-PORT = int(os.environ.get("ICDEV_DASHBOARD_PORT", "5000"))
+PORT = int(os.environ.get("ICDEV_DASHBOARD_PORT", "5050"))
 DEBUG = os.environ.get("ICDEV_DASHBOARD_DEBUG", "false").lower() in ("1", "true", "yes")
 
 # Monitoring thresholds (from monitoring_config.yaml)
@@ -95,9 +113,7 @@ HEALTH_CHECK = MONITORING_CONFIG.get("health_check", {})
 SLA = MONITORING_CONFIG.get("sla", {})
 
 # CUI banner toggle (D173)
-CUI_BANNER_ENABLED = os.environ.get(
-    "ICDEV_CUI_BANNER_ENABLED", "true"
-).lower() in ("1", "true", "yes")
+CUI_BANNER_ENABLED = os.environ.get("ICDEV_CUI_BANNER_ENABLED", "false").lower() in ("1", "true", "yes")
 
 # Dashboard auth (D169-D172)
 DASHBOARD_SECRET = os.environ.get(
@@ -106,11 +122,9 @@ DASHBOARD_SECRET = os.environ.get(
 )
 
 # BYOK — Bring Your Own Key (D175-D178)
-BYOK_ENABLED = os.environ.get(
-    "ICDEV_BYOK_ENABLED", "false"
-).lower() in ("1", "true", "yes")
+BYOK_ENABLED = os.environ.get("ICDEV_BYOK_ENABLED", "false").lower() in ("1", "true", "yes")
 
 BYOK_ENCRYPTION_KEY = os.environ.get("ICDEV_BYOK_ENCRYPTION_KEY", "")
 
 # Classification
-DEFAULT_CLASSIFICATION = os.environ.get("ICDEV_CLASSIFICATION", "CUI")
+DEFAULT_CLASSIFICATION = os.environ.get("ICDEV_CLASSIFICATION", "")

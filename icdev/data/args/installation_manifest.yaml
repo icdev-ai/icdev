@@ -1,5 +1,5 @@
-# ICDEV Installation Manifest — Module Dependency Graph
-# Master definition of all ICDEV modules, their packages, configs, and database table groups.
+# ICDEV™ Installation Manifest — Module Dependency Graph
+# Master definition of all ICDEV™ modules, their packages, configs, and database table groups.
 # Used by installers, tenant provisioners, and the Helm chart to determine what to deploy.
 #
 # ADR References:
@@ -22,7 +22,7 @@ modules:
   # ── Required Modules (always installed) ────────────────────
 
   core:
-    name: "ICDEV Core"
+    name: "ICDEV™ Core"
     description: "Project management, audit trail, memory system, database initialization, platform compatibility, CLI output, and resilience primitives (circuit breaker, retry, correlation, errors)."
     required: true
     packages:
@@ -682,7 +682,7 @@ modules:
       - llm
 
   marketplace:
-    name: "Federated GOTCHA Marketplace"
+    name: "Federated FORGE Marketplace"
     description: "Publish, install, search, review, and sync skills/goals/hardprompts/context/args/compliance extensions across tenant orgs with 7-gate security pipeline, IL compatibility checks, and federation sync."
     required: false
     packages:
@@ -706,7 +706,7 @@ modules:
 
   agentic_generation:
     name: "Agentic Child App Generation"
-    description: "Generate mini-ICDEV clone child applications with GOTCHA/ATLAS. Fitness assessment, blueprint generation, 12-step scaffold, and dynamic CLAUDE.md."
+    description: "Generate mini-ICDEV™ clone child applications with FORGE/ANVIL. Fitness assessment, blueprint generation, 12-step scaffold, and dynamic CLAUDE.md."
     required: false
     packages:
       - tools/builder/agentic_fitness.py
@@ -726,7 +726,7 @@ modules:
 
   mcp_servers:
     name: "MCP Stdio Servers"
-    description: "14 Model Context Protocol stdio servers exposing ICDEV tools to Claude Code. Each server publishes an Agent Card at /.well-known/agent.json."
+    description: "14 Model Context Protocol stdio servers exposing ICDEV™ tools to Claude Code. Each server publishes an Agent Card at /.well-known/agent.json."
     required: false
     packages:
       - tools/mcp/core_server.py
@@ -1051,7 +1051,7 @@ db_table_groups:
       - child_app_registry
 
   marketplace:
-    description: "Federated GOTCHA marketplace: assets, versions, reviews, installations, scans, ratings, embeddings, dependencies"
+    description: "Federated FORGE marketplace: assets, versions, reviews, installations, scans, ratings, embeddings, dependencies"
     tables:
       - marketplace_assets
       - marketplace_versions

@@ -1,22 +1,17 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.simulation.simulation_engine -- 6-dimension what-if simulation."""
 
-import json
 import sqlite3
-from unittest.mock import patch
 
 import pytest
 
 from icdev.tools.simulation.simulation_engine import (
     ALL_DIMENSIONS,
-    DEFAULT_HOURLY_RATE,
-    INFRA_COST_PER_COMPONENT,
-    STORIES_PER_SPRINT,
-    SPRINTS_PER_PI,
     TSHIRT_HOURS,
     _impact_score,
     _pct,
@@ -85,6 +80,7 @@ def sim_db(icdev_db):
 # TestCreateScenario
 # ---------------------------------------------------------------------------
 
+
 class TestCreateScenario:
     """create_scenario: persist a new simulation scenario to the DB."""
 
@@ -132,12 +128,16 @@ class TestCreateScenario:
 # TestGetScenario
 # ---------------------------------------------------------------------------
 
+
 class TestGetScenario:
     """get_scenario: retrieve scenario metadata and results."""
 
     def test_get_existing_scenario(self, sim_db):
         created = create_scenario(
-            "proj-test-001", "Get test", "what_if", {"add_requirements": 1},
+            "proj-test-001",
+            "Get test",
+            "what_if",
+            {"add_requirements": 1},
             db_path=sim_db,
         )
         fetched = get_scenario(created["scenario_id"], db_path=sim_db)
@@ -151,8 +151,11 @@ class TestGetScenario:
 
     def test_get_includes_results_after_run(self, sim_db):
         created = create_scenario(
-            "proj-test-001", "Run then get", "what_if",
-            {"add_requirements": 2}, db_path=sim_db,
+            "proj-test-001",
+            "Run then get",
+            "what_if",
+            {"add_requirements": 2},
+            db_path=sim_db,
         )
         run_simulation(created["scenario_id"], dimensions=["cost"], db_path=sim_db)
         fetched = get_scenario(created["scenario_id"], db_path=sim_db)
@@ -163,6 +166,7 @@ class TestGetScenario:
 # ---------------------------------------------------------------------------
 # TestListScenarios
 # ---------------------------------------------------------------------------
+
 
 class TestListScenarios:
     """list_scenarios: list all scenarios for a project."""
@@ -193,13 +197,17 @@ class TestListScenarios:
 # TestRunSimulation
 # ---------------------------------------------------------------------------
 
+
 class TestRunSimulation:
     """run_simulation: execute dimension simulators and persist results."""
 
     def test_run_all_dimensions(self, sim_db):
         created = create_scenario(
-            "proj-test-001", "All dims", "what_if",
-            {"add_requirements": 5}, db_path=sim_db,
+            "proj-test-001",
+            "All dims",
+            "what_if",
+            {"add_requirements": 5},
+            db_path=sim_db,
         )
         result = run_simulation(created["scenario_id"], db_path=sim_db)
         assert set(result["dimensions"].keys()) == set(ALL_DIMENSIONS)
@@ -208,11 +216,16 @@ class TestRunSimulation:
 
     def test_run_single_dimension(self, sim_db):
         created = create_scenario(
-            "proj-test-001", "Cost only", "what_if",
-            {"add_requirements": 2}, db_path=sim_db,
+            "proj-test-001",
+            "Cost only",
+            "what_if",
+            {"add_requirements": 2},
+            db_path=sim_db,
         )
         result = run_simulation(
-            created["scenario_id"], dimensions=["cost"], db_path=sim_db,
+            created["scenario_id"],
+            dimensions=["cost"],
+            db_path=sim_db,
         )
         assert list(result["dimensions"].keys()) == ["cost"]
         cost = result["dimensions"]["cost"]
@@ -224,7 +237,11 @@ class TestRunSimulation:
 
     def test_run_marks_completed(self, sim_db):
         created = create_scenario(
-            "proj-test-001", "Complete me", "what_if", {}, db_path=sim_db,
+            "proj-test-001",
+            "Complete me",
+            "what_if",
+            {},
+            db_path=sim_db,
         )
         run_simulation(created["scenario_id"], db_path=sim_db)
         fetched = get_scenario(created["scenario_id"], db_path=sim_db)
@@ -236,11 +253,16 @@ class TestRunSimulation:
 
     def test_run_cost_adds_hours_for_new_requirements(self, sim_db):
         created = create_scenario(
-            "proj-test-001", "Cost check", "what_if",
-            {"add_requirements": 3}, db_path=sim_db,
+            "proj-test-001",
+            "Cost check",
+            "what_if",
+            {"add_requirements": 3},
+            db_path=sim_db,
         )
         result = run_simulation(
-            created["scenario_id"], dimensions=["cost"], db_path=sim_db,
+            created["scenario_id"],
+            dimensions=["cost"],
+            db_path=sim_db,
         )
         cost = result["dimensions"]["cost"]
         # 3 new reqs * 80 hours each = 240 hours added
@@ -248,11 +270,16 @@ class TestRunSimulation:
 
     def test_run_schedule_adds_stories(self, sim_db):
         created = create_scenario(
-            "proj-test-001", "Schedule check", "what_if",
-            {"add_requirements": 10}, db_path=sim_db,
+            "proj-test-001",
+            "Schedule check",
+            "what_if",
+            {"add_requirements": 10},
+            db_path=sim_db,
         )
         result = run_simulation(
-            created["scenario_id"], dimensions=["schedule"], db_path=sim_db,
+            created["scenario_id"],
+            dimensions=["schedule"],
+            db_path=sim_db,
         )
         sched = result["dimensions"]["schedule"]
         assert sched["simulated"]["story_count"] >= 10
@@ -261,6 +288,7 @@ class TestRunSimulation:
 # ---------------------------------------------------------------------------
 # TestImpactScoring
 # ---------------------------------------------------------------------------
+
 
 class TestImpactScoring:
     """_impact_score and _generate_recommendations: overall analysis."""
@@ -301,6 +329,7 @@ class TestImpactScoring:
 # ---------------------------------------------------------------------------
 # TestHelpers
 # ---------------------------------------------------------------------------
+
 
 class TestHelpers:
     """_pct and constants: utility functions and module-level values."""

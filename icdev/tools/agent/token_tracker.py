@@ -244,7 +244,7 @@ def estimate_cost(model_id: str, input_tokens: int, output_tokens: int) -> float
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Token usage and cost tracking for ICDEV agents"
+        description="Token usage and cost tracking for ICDEV™ agents"
     )
     parser.add_argument(
         "--action",

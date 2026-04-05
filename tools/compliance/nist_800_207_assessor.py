@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """NIST SP 800-207 (Zero Trust Architecture) Assessment Engine.
 
 Assesses projects against NIST SP 800-207 ZTA requirements organized by
@@ -38,7 +38,9 @@ class NIST800207Assessor(BaseAssessor):
     CATALOG_FILENAME = "nist_800_207_zta.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """ZTA-specific automated checks.
 

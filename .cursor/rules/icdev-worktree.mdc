@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: "
+description: "ICDEV™ workflow: "
 globs:
   - "**/*.py"
   - "**/*.yaml"

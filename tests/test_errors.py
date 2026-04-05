@@ -130,15 +130,18 @@ class TestConfigurationError:
 class TestCatchAllAsICDevError:
     """Tests that all error types can be caught as ICDevError."""
 
-    @pytest.mark.parametrize("error_class,kwargs", [
-        (ICDevTransientError, {"message": "transient"}),
-        (ICDevPermanentError, {"message": "permanent"}),
-        (ServiceUnavailableError, {"message": "unavailable", "service": "x"}),
-        (RateLimitedError, {"message": "limited"}),
-        (ConfigurationError, {"message": "config"}),
-    ])
+    @pytest.mark.parametrize(
+        "error_class,kwargs",
+        [
+            (ICDevTransientError, {"message": "transient"}),
+            (ICDevPermanentError, {"message": "permanent"}),
+            (ServiceUnavailableError, {"message": "unavailable", "service": "x"}),
+            (RateLimitedError, {"message": "limited"}),
+            (ConfigurationError, {"message": "config"}),
+        ],
+    )
     def test_all_catchable_as_icdev_error(self, error_class, kwargs):
-        """All ICDEV errors must be catchable via except ICDevError."""
+        """All ICDEV™ errors must be catchable via except ICDevError."""
         err = error_class(**kwargs)
         with pytest.raises(ICDevError):
             raise err

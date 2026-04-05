@@ -82,11 +82,20 @@ class EventEnvelope:
 
     @staticmethod
     def _check_bot(text: str, author: str = "") -> bool:
-        """Check if the message is from a bot."""
+        """Check if the message is from a bot.
+
+        Handles Unicode variance in trademark/special symbols so bot
+        detection works regardless of encoding artifacts.
+        """
+        import re
         if BOT_IDENTIFIER in text:
             return True
-        if author and author.lower() in ("sparkpilot-bot", "sparkpilot"):
+        if "[SPARKPILOT-BOT]" in text.upper():
             return True
+        if author:
+            clean = re.sub(r"[^a-zA-Z0-9-]", "", author).lower()
+            if clean in ("sparkpilot-bot", "sparkpilot"):
+                return True
         return False
 
     @staticmethod

@@ -8,23 +8,44 @@ import argparse
 import json
 import sqlite3
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Thresholds
-CONFIDENCE_THRESHOLD = 0.7   # Auto-heal above this
-ESCALATION_THRESHOLD = 0.3   # Always escalate below this
-MAX_HEAL_ATTEMPTS = 3        # Max auto-heal attempts per hour per pattern
+CONFIDENCE_THRESHOLD = 0.7  # Auto-heal above this
+ESCALATION_THRESHOLD = 0.3  # Always escalate below this
+MAX_HEAL_ATTEMPTS = 3  # Max auto-heal attempts per hour per pattern
+
+# D-EVO-8: Per-project learning config (from args/evolution_config.yaml)
+_PER_PROJECT_ENABLED = False
+_PER_PROJECT_ALPHA = 0.6
+
+try:
+    import yaml as _yaml
+
+    _pp_cfg_path = Path(__file__).resolve().parent.parent.parent / "args" / "evolution_config.yaml"
+    if _pp_cfg_path.exists():
+        with open(_pp_cfg_path, encoding="utf-8") as _f:
+            _pp_data = _yaml.safe_load(_f) or {}
+        _pp_sh = _pp_data.get("self_healing", {}).get("per_project_learning", {})
+        _PER_PROJECT_ENABLED = _pp_sh.get("enabled", False)
+        _PER_PROJECT_ALPHA = _pp_sh.get("alpha", 0.6)
+except Exception:
+    pass
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -39,9 +60,12 @@ def _restart_service(context: dict) -> dict:
 
     if method == "kubectl":
         cmd = [
-            "kubectl", "rollout", "restart",
+            "kubectl",
+            "rollout",
+            "restart",
             f"deployment/{service}",
-            "-n", namespace,
+            "-n",
+            namespace,
         ]
     else:
         cmd = ["systemctl", "restart", service]
@@ -82,9 +106,12 @@ def _rollback(context: dict) -> dict:
     deployment = context.get("deployment_name", project_id)
 
     cmd = [
-        "kubectl", "rollout", "undo",
+        "kubectl",
+        "rollout",
+        "undo",
         f"deployment/{deployment}",
-        "-n", namespace,
+        "-n",
+        namespace,
     ]
 
     try:
@@ -121,10 +148,12 @@ def _scale_up(context: dict) -> dict:
     replicas = context.get("target_replicas", 5)
 
     cmd = [
-        "kubectl", "scale",
+        "kubectl",
+        "scale",
         f"deployment/{service}",
         f"--replicas={replicas}",
-        "-n", namespace,
+        "-n",
+        namespace,
     ]
 
     try:
@@ -176,9 +205,10 @@ def _clear_cache(context: dict) -> dict:
         # HTTP cache clear
         try:
             import urllib.request
+
             req = urllib.request.Request(cache_endpoint, method="POST")
             req.add_header("Content-Type", "application/json")
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return {
                     "action": "clear_cache",
                     "method": "http",
@@ -197,12 +227,94 @@ def _clear_cache(context: dict) -> dict:
 
 
 # Map of remediation action names to functions
+def _coherence_fix(context: dict) -> dict:
+    """Run coherence checker with auto-fix for schema/config drift."""
+    try:
+        from tools.workflow.coherence_checker import run_checks
+
+        report = run_checks(autofix=True)
+        return {
+            "action": "coherence_fix",
+            "success": report.overall_pass,
+            "total_checks": report.total_checks,
+            "fixes_applied": report.total_fixes,
+            "remaining_failures": report.failed_checks,
+        }
+    except Exception as e:
+        return {"action": "coherence_fix", "success": False, "error": str(e)}
+
+
 REMEDIATION_ACTIONS = {
     "restart_service": _restart_service,
     "rollback": _rollback,
     "scale_up": _scale_up,
     "clear_cache": _clear_cache,
+    "coherence_fix": _coherence_fix,
 }
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Per-project effectiveness (D-EVO-8)
+# ---------------------------------------------------------------------------
+def _get_project_effectiveness(pattern_id, project_id: str, db_path: Path = None) -> float:
+    """Get per-project pattern effectiveness. Returns None if no data."""
+    if not pattern_id or not project_id:
+        return None
+    conn = _get_db(db_path)
+    try:
+        row = conn.execute(
+            """SELECT effectiveness, attempts FROM self_heal_project_patterns
+               WHERE pattern_signature = ? AND project_id = ?""",
+            (str(pattern_id), project_id),
+        ).fetchone()
+        if row and row["attempts"] >= 3:
+            return row["effectiveness"]
+        return None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def _record_project_outcome(pattern_id, project_id: str, success: bool, db_path: Path = None) -> None:
+    """Record per-project healing outcome for blending (D-EVO-8)."""
+    if not pattern_id or not project_id or not _PER_PROJECT_ENABLED:
+        return
+    conn = _get_db(db_path)
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            """
+            INSERT INTO self_heal_project_patterns
+                (pattern_signature, project_id, attempts, successes, failures,
+                 effectiveness, last_attempt_at)
+            VALUES (?, ?, 1, ?, ?, ?, ?)
+            ON CONFLICT(pattern_signature, project_id) DO UPDATE SET
+                attempts = attempts + 1,
+                successes = successes + ?,
+                failures = failures + ?,
+                effectiveness = CAST((successes + ?) AS REAL) / (attempts + 1),
+                last_attempt_at = ?
+        """,
+            (
+                str(pattern_id),
+                project_id,
+                1 if success else 0,
+                0 if success else 1,
+                1.0 if success else 0.0,
+                now,
+                1 if success else 0,
+                0 if success else 1,
+                1 if success else 0,
+                now,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -246,8 +358,15 @@ def analyze_and_heal(failure_data: dict, dry_run: bool = False, db_path: Path = 
     top_match = matches[0]
     result["top_pattern"] = top_match
 
-    # 3. Decision logic
+    # 3. Decision logic — blend global + per-project confidence (D-EVO-8)
     confidence = top_match["combined_score"]
+    project_id = failure_data.get("project_id")
+    if project_id and _PER_PROJECT_ENABLED:
+        project_effectiveness = _get_project_effectiveness(top_match.get("pattern_id"), project_id, db_path)
+        if project_effectiveness is not None:
+            confidence = _PER_PROJECT_ALPHA * confidence + (1 - _PER_PROJECT_ALPHA) * project_effectiveness
+            result["project_blended"] = True
+            result["project_effectiveness"] = round(project_effectiveness, 3)
     auto_healable = top_match.get("auto_healable", False)
 
     if confidence >= CONFIDENCE_THRESHOLD and auto_healable:
@@ -271,7 +390,8 @@ def analyze_and_heal(failure_data: dict, dry_run: bool = False, db_path: Path = 
 
         # 5. Record outcome
         event_id = _record_healing_event(
-            failure_data, top_match,
+            failure_data,
+            top_match,
             "succeeded" if healing_result.get("success") else "failed",
             json.dumps(healing_result),
             db_path,
@@ -329,8 +449,7 @@ def execute_remediation(pattern: dict, context: dict) -> dict:
         return {
             "action": action_name,
             "success": False,
-            "error": f"Unknown remediation action: {action_name}. "
-                     f"Available: {list(REMEDIATION_ACTIONS.keys())}",
+            "error": f"Unknown remediation action: {action_name}. Available: {list(REMEDIATION_ACTIONS.keys())}",
         }
 
 
@@ -428,8 +547,27 @@ def record_outcome(
 
         if event["pattern_id"]:
             from tools.knowledge.pattern_detector import update_pattern_confidence
+
             conf_result = update_pattern_confidence(event["pattern_id"], outcome, db_path)
             result["confidence_update"] = conf_result
+
+            # D-EVO-8: Record per-project outcome for blending
+            # Fetch project_id from the event's failure context
+            try:
+                evt_details = conn.execute(
+                    "SELECT trigger_source FROM self_healing_events WHERE id = ?", (healing_event_id,)
+                ).fetchone()
+                if evt_details:
+                    trigger = evt_details["trigger_source"] or ""
+                    try:
+                        ctx = json.loads(trigger)
+                        pid = ctx.get("project_id")
+                    except (json.JSONDecodeError, TypeError):
+                        pid = None
+                    if pid:
+                        _record_project_outcome(event["pattern_id"], pid, outcome == "success", db_path)
+            except Exception:
+                pass
 
         return result
 

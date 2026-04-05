@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Agentic Fitness Assessor - evaluates component fitness for agentic architecture.
 
 Scores components across 6 dimensions to determine whether they should use:
@@ -21,8 +21,8 @@ import argparse
 import json
 import logging
 import re
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -40,6 +40,7 @@ except ImportError:
 
 try:
     from tools.agent.bedrock_client import BedrockClient, BedrockRequest
+
     _BEDROCK_AVAILABLE = True
 except ImportError:
     _BEDROCK_AVAILABLE = False
@@ -49,6 +50,7 @@ except ImportError:
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable")
 
@@ -59,70 +61,176 @@ except ImportError:
 
 KEYWORD_BANKS: Dict[str, Dict[str, float]] = {
     "data_complexity": {
-        "crud": 1.0, "key-value": 1.0, "flat": 1.0, "single table": 1.5,
-        "relational": 2.0, "join": 2.0, "foreign key": 2.0, "index": 1.5,
-        "versioning": 2.5, "search": 1.5, "schema": 1.5,
-        "graph": 3.0, "event-sourcing": 3.5, "cqrs": 3.5, "event sourcing": 3.5,
-        "unstructured": 3.0, "multi-tenant": 3.0, "sharding": 3.5,
-        "time-series": 3.0, "geospatial": 3.0, "document store": 2.5,
-        "polyglot": 3.0, "data lake": 3.0, "streaming": 3.0,
+        "crud": 1.0,
+        "key-value": 1.0,
+        "flat": 1.0,
+        "single table": 1.5,
+        "relational": 2.0,
+        "join": 2.0,
+        "foreign key": 2.0,
+        "index": 1.5,
+        "versioning": 2.5,
+        "search": 1.5,
+        "schema": 1.5,
+        "graph": 3.0,
+        "event-sourcing": 3.5,
+        "cqrs": 3.5,
+        "event sourcing": 3.5,
+        "unstructured": 3.0,
+        "multi-tenant": 3.0,
+        "sharding": 3.5,
+        "time-series": 3.0,
+        "geospatial": 3.0,
+        "document store": 2.5,
+        "polyglot": 3.0,
+        "data lake": 3.0,
+        "streaming": 3.0,
         # Cross-dimension: compliance implies audit data, queries imply data access
-        "compliance": 2.0, "queries": 2.0, "monitoring": 2.0,
-        "knowledge base": 2.5, "audit trail": 2.5,
+        "compliance": 2.0,
+        "queries": 2.0,
+        "monitoring": 2.0,
+        "knowledge base": 2.5,
+        "audit trail": 2.5,
     },
     "decision_complexity": {
-        "lookup": 1.0, "validation": 1.0, "deterministic": 1.0, "static": 0.5,
-        "workflow": 2.5, "state machine": 2.5, "branching": 2.0,
-        "rule-based": 2.0, "scoring": 2.0, "approval": 2.0, "routing": 2.5,
-        "classification": 3.5, "classify": 3.5, "intent": 3.0,
-        "nlp": 3.5, "prediction": 3.5, "anomaly detection": 3.5,
-        "inference": 3.0, "adaptive": 3.0, "machine learning": 3.5,
-        "recommendation": 3.0, "sentiment": 3.0, "extraction": 2.5,
-        "summarization": 3.0, "intelligent": 2.5, "agent": 3.0,
+        "lookup": 1.0,
+        "validation": 1.0,
+        "deterministic": 1.0,
+        "static": 0.5,
+        "workflow": 2.5,
+        "state machine": 2.5,
+        "branching": 2.0,
+        "rule-based": 2.0,
+        "scoring": 2.0,
+        "approval": 2.0,
+        "routing": 2.5,
+        "classification": 3.5,
+        "classify": 3.5,
+        "intent": 3.0,
+        "nlp": 3.5,
+        "prediction": 3.5,
+        "anomaly detection": 3.5,
+        "inference": 3.0,
+        "adaptive": 3.0,
+        "machine learning": 3.5,
+        "recommendation": 3.0,
+        "sentiment": 3.0,
+        "extraction": 2.5,
+        "summarization": 3.0,
+        "intelligent": 2.5,
+        "agent": 3.0,
         # Cross-dimension: orchestration + multi-agent imply decision routing
-        "orchestration": 2.5, "multi-agent": 2.5, "compliance": 2.0,
+        "orchestration": 2.5,
+        "multi-agent": 2.5,
+        "compliance": 2.0,
     },
     "user_interaction": {
-        "api": 1.0, "headless": 1.0, "batch": 1.0, "cli": 1.0, "cron": 0.5,
-        "dashboard": 2.5, "form": 2.0, "wizard": 2.5, "report": 2.0,
-        "search": 2.0, "filter": 1.5, "portal": 2.0,
-        "natural language": 4.0, "nlq": 4.0, "conversational": 4.0,
-        "chatbot": 4.0, "voice": 3.5, "exploratory": 3.0,
-        "interactive": 2.5, "chat": 3.5, "dialogue": 3.5,
-        "question answering": 3.5, "query interface": 3.0,
+        "api": 1.0,
+        "headless": 1.0,
+        "batch": 1.0,
+        "cli": 1.0,
+        "cron": 0.5,
+        "dashboard": 2.5,
+        "form": 2.0,
+        "wizard": 2.5,
+        "report": 2.0,
+        "search": 2.0,
+        "filter": 1.5,
+        "portal": 2.0,
+        "natural language": 4.0,
+        "nlq": 4.0,
+        "conversational": 4.0,
+        "chatbot": 4.0,
+        "voice": 3.5,
+        "exploratory": 3.0,
+        "interactive": 2.5,
+        "chat": 3.5,
+        "dialogue": 3.5,
+        "question answering": 3.5,
+        "query interface": 3.0,
         # Cross-dimension: queries imply user-facing data access
         "queries": 2.0,
     },
     "integration_density": {
-        "standalone": 1.0, "self-contained": 1.0, "isolated": 0.5,
-        "api integration": 2.5, "webhook": 2.5, "sso": 2.0, "oauth": 2.0,
-        "rest": 1.5, "database connection": 2.0, "external": 2.0,
-        "multi-agent": 4.0, "a2a": 4.0, "orchestration": 3.5,
-        "event-driven": 3.5, "federated": 3.5, "mesh": 3.5,
-        "cross-system": 3.0, "sync": 2.5, "real-time": 3.0,
-        "message queue": 3.0, "pub/sub": 3.0, "saga": 3.5,
+        "standalone": 1.0,
+        "self-contained": 1.0,
+        "isolated": 0.5,
+        "api integration": 2.5,
+        "webhook": 2.5,
+        "sso": 2.0,
+        "oauth": 2.0,
+        "rest": 1.5,
+        "database connection": 2.0,
+        "external": 2.0,
+        "multi-agent": 4.0,
+        "a2a": 4.0,
+        "orchestration": 3.5,
+        "event-driven": 3.5,
+        "federated": 3.5,
+        "mesh": 3.5,
+        "cross-system": 3.0,
+        "sync": 2.5,
+        "real-time": 3.0,
+        "message queue": 3.0,
+        "pub/sub": 3.0,
+        "saga": 3.5,
     },
     "compliance_sensitivity": {
-        "public": 0.5, "prototype": 0.5, "demo": 0.5, "internal": 1.0,
-        "gdpr": 2.5, "hipaa": 2.5, "rbac": 2.0, "logging": 1.5,
-        "audit": 2.0, "privacy": 2.0, "pii": 2.5,
-        "cui": 4.0, "secret": 4.0, "fedramp": 4.0, "cmmc": 4.0,
-        "nist": 3.5, "fips": 3.5, "stig": 3.5, "ato": 3.5,
-        "il4": 3.0, "il5": 3.5, "il6": 4.0, "govcloud": 3.0,
-        "compliance": 2.5, "classified": 4.0, "controlled": 3.0,
-        "non-repudiation": 3.5, "accreditation": 3.5,
+        "public": 0.5,
+        "prototype": 0.5,
+        "demo": 0.5,
+        "internal": 1.0,
+        "gdpr": 2.5,
+        "hipaa": 2.5,
+        "rbac": 2.0,
+        "logging": 1.5,
+        "audit": 2.0,
+        "privacy": 2.0,
+        "pii": 2.5,
+        "cui": 4.0,
+        "secret": 4.0,
+        "fedramp": 4.0,
+        "cmmc": 4.0,
+        "nist": 3.5,
+        "fips": 3.5,
+        "stig": 3.5,
+        "ato": 3.5,
+        "il4": 3.0,
+        "il5": 3.5,
+        "il6": 4.0,
+        "govcloud": 3.0,
+        "compliance": 2.5,
+        "classified": 4.0,
+        "controlled": 3.0,
+        "non-repudiation": 3.5,
+        "accreditation": 3.5,
     },
     "scale_variability": {
-        "fixed": 0.5, "single instance": 0.5, "low traffic": 0.5,
-        "small team": 0.5, "internal tool": 1.0,
-        "load balanced": 2.5, "moderate": 1.5, "predictable": 1.5,
-        "horizontal": 2.5, "replicas": 2.0, "cluster": 2.5,
-        "burst": 3.5, "auto-scaling": 3.5, "autoscale": 3.5,
-        "real-time streaming": 4.0, "millions": 4.0,
-        "elastic": 3.5, "serverless": 3.0, "high availability": 3.0,
-        "concurrent": 3.0, "spike": 3.5, "global": 3.0,
+        "fixed": 0.5,
+        "single instance": 0.5,
+        "low traffic": 0.5,
+        "small team": 0.5,
+        "internal tool": 1.0,
+        "load balanced": 2.5,
+        "moderate": 1.5,
+        "predictable": 1.5,
+        "horizontal": 2.5,
+        "replicas": 2.0,
+        "cluster": 2.5,
+        "burst": 3.5,
+        "auto-scaling": 3.5,
+        "autoscale": 3.5,
+        "real-time streaming": 4.0,
+        "millions": 4.0,
+        "elastic": 3.5,
+        "serverless": 3.0,
+        "high availability": 3.0,
+        "concurrent": 3.0,
+        "spike": 3.5,
+        "global": 3.0,
         # Cross-dimension: multi-agent + orchestration imply distributed scale
-        "multi-agent": 2.0, "orchestration": 2.0,
+        "multi-agent": 2.0,
+        "orchestration": 2.0,
     },
 }
 
@@ -220,8 +328,7 @@ def score_spec(spec: str, config: dict) -> Dict[str, int]:
 
         scores[dimension] = final
         if matched_keywords:
-            logger.debug("%s: raw=%.1f final=%d keywords=%s",
-                        dimension, raw_score, final, matched_keywords)
+            logger.debug("%s: raw=%.1f final=%d keywords=%s", dimension, raw_score, final, matched_keywords)
 
     return scores
 
@@ -263,8 +370,18 @@ def map_recommendations(
         if not nlq_interfaces:
             nlq_interfaces.append("nlq-query-interface")
 
-    agent_kw = ["classify", "route", "decision", "inference", "orchestrat",
-                "detect", "recommend", "predict", "analyze", "intelligent"]
+    agent_kw = [
+        "classify",
+        "route",
+        "decision",
+        "inference",
+        "orchestrat",
+        "detect",
+        "recommend",
+        "predict",
+        "analyze",
+        "intelligent",
+    ]
     for kw in agent_kw:
         if kw in spec_lower:
             agent_components.append(f"{kw}-agent")
@@ -316,7 +433,7 @@ def llm_override(
         response = client.invoke(request)
 
         text = response.content if hasattr(response, "content") else str(response)
-        json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
+        json_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
         if json_match:
             text = json_match.group(1)
         return json.loads(text)
@@ -337,7 +454,7 @@ def persist_assessment(
 
     if path.exists():
         try:
-            conn = sqlite3.connect(str(path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO agentic_fitness_assessments
                    (id, project_id, component_name, spec_text, scores,
@@ -367,13 +484,15 @@ def persist_assessment(
             event_type="agentic_fitness_assessed",
             actor="builder/agentic_fitness",
             action=f"Fitness assessed: {scorecard.get('component', 'unknown')} -> "
-                   f"{scorecard.get('recommendations', {}).get('architecture', '?')}",
+            f"{scorecard.get('recommendations', {}).get('architecture', '?')}",
             project_id=project_id or "",
-            details=json.dumps({
-                "assessment_id": assessment_id,
-                "overall_score": scorecard.get("overall_score"),
-                "architecture": scorecard.get("recommendations", {}).get("architecture"),
-            }),
+            details=json.dumps(
+                {
+                    "assessment_id": assessment_id,
+                    "overall_score": scorecard.get("overall_score"),
+                    "architecture": scorecard.get("recommendations", {}).get("architecture"),
+                }
+            ),
         )
     except Exception as e:
         logger.debug("Audit log failed: %s", e)
@@ -412,7 +531,7 @@ def assess_fitness(
             recommendations[key] = True
 
     # Step 4: Extract component name from spec
-    component = re.sub(r'[^a-z0-9]+', '-', spec.lower().strip())[:60].strip('-')
+    component = re.sub(r"[^a-z0-9]+", "-", spec.lower().strip())[:60].strip("-")
     if not component:
         component = "unnamed-component"
 
@@ -421,8 +540,7 @@ def assess_fitness(
         "scores": scores,
         "overall_score": overall,
         "recommendations": recommendations,
-        "rationale": f"Rule-based assessment: overall {overall:.2f} "
-                     f"-> {recommendations['architecture']}",
+        "rationale": f"Rule-based assessment: overall {overall:.2f} -> {recommendations['architecture']}",
         "classification": "CUI",
         "spec_text": spec,
     }
@@ -433,9 +551,7 @@ def assess_fitness(
         if llm_result and isinstance(llm_result, dict):
             if "scores" in llm_result:
                 scorecard["scores"] = llm_result["scores"]
-                scorecard["overall_score"] = compute_overall(
-                    llm_result["scores"], weights
-                )
+                scorecard["overall_score"] = compute_overall(llm_result["scores"], weights)
             if "recommendations" in llm_result:
                 for k, v in llm_result["recommendations"].items():
                     scorecard["recommendations"][k] = v
@@ -464,30 +580,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Agentic Fitness Assessor - evaluate component fitness for agentic architecture"
     )
+    parser.add_argument("--spec", required=True, help="Component specification text to evaluate")
+    parser.add_argument("--project-id", default=None, help="Project ID for DB persistence")
     parser.add_argument(
-        "--spec", required=True,
-        help="Component specification text to evaluate"
+        "--json", action="store_true", dest="json_output", help="Output as JSON (for piping to other tools)"
     )
-    parser.add_argument(
-        "--project-id", default=None,
-        help="Project ID for DB persistence"
-    )
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output",
-        help="Output as JSON (for piping to other tools)"
-    )
-    parser.add_argument(
-        "--llm-override", action="store_true",
-        help="Use Bedrock LLM to refine rule-based scores"
-    )
-    parser.add_argument(
-        "--db-path", type=Path, default=None,
-        help="Override database path"
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true",
-        help="Enable debug logging"
-    )
+    parser.add_argument("--llm-override", action="store_true", help="Use Bedrock LLM to refine rule-based scores")
+    parser.add_argument("--db-path", type=Path, default=None, help="Override database path")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
     if args.verbose:
@@ -505,13 +605,13 @@ def main():
         output = {k: v for k, v in scorecard.items() if k != "spec_text"}
         print(json.dumps(output, indent=2))
     else:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("  AGENTIC FITNESS ASSESSMENT")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"  Component: {scorecard['component']}")
         print(f"  Overall Score: {scorecard['overall_score']:.2f} / 10.0")
         print(f"  Architecture: {scorecard['recommendations']['architecture'].upper()}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print("\n  Dimension Scores:")
         for dim, score in scorecard["scores"].items():
             bar = "#" * score + "." * (10 - score)
@@ -526,7 +626,7 @@ def main():
             print(f"    Traditional:      {', '.join(recs['traditional_components'])}")
         print("\n  Always-On: self_healing, a2a_interop, aiops, gotcha, governance, feedback")
         print(f"\n  Rationale: {scorecard['rationale']}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":

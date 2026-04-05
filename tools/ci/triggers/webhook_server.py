@@ -1,9 +1,11 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
+from __future__ import annotations
+
+# ICDEV™ Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
 # Refactored to use EventEnvelope + EventRouter (D132, D133)
 
 """
-Webhook server for ICDEV CI/CD — receives events from GitHub, GitLab,
+Webhook server for ICDEV™ CI/CD — receives events from GitHub, GitLab,
 Slack, and Mattermost.
 
 All incoming webhooks are normalized into EventEnvelope objects and routed
@@ -42,9 +44,9 @@ from flask import Flask, request, jsonify
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
-from tools.ci.core.event_router import EventRouter
-from tools.ci.modules.vcs import VCS
+from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER  # noqa: E402
+from tools.ci.core.event_router import EventRouter  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
 
 # Configuration
 PORT = int(os.getenv("PORT", "8001"))
@@ -73,9 +75,7 @@ def _verify_github_signature(payload_body: bytes, signature: str) -> bool:
         return True  # Skip verification if no secret configured
     if not signature:
         return False
-    expected = "sha256=" + hmac.new(
-        WEBHOOK_SECRET.encode(), payload_body, hashlib.sha256
-    ).hexdigest()
+    expected = "sha256=" + hmac.new(WEBHOOK_SECRET.encode(), payload_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -96,10 +96,10 @@ def _post_ack_comment(envelope: EventEnvelope, result: dict):
         vcs = VCS(platform=envelope.platform)
         vcs.comment_on_issue(
             int(envelope.session_key) if envelope.session_key.isdigit() else envelope.session_key,
-            f"{BOT_IDENTIFIER} ICDEV Webhook: Detected `{workflow}` workflow\n\n"
+            f"{BOT_IDENTIFIER} ICDEV™ Webhook: Detected `{workflow}` workflow\n\n"
             f"Run ID: `{run_id}`\n"
             f"Source: {envelope.source}\n"
-            f"Logs: `agents/{run_id}/{workflow}/`"
+            f"Logs: `agents/{run_id}/{workflow}/`",
         )
     except Exception as e:
         print(f"Warning: Failed to post ack comment: {e}")
@@ -122,10 +122,12 @@ def github_webhook():
         # Normalize into EventEnvelope
         envelope = EventEnvelope.from_github_webhook(payload, event_type)
         if envelope is None:
-            return jsonify({
-                "status": "ignored",
-                "reason": f"Unsupported event: {event_type}/{payload.get('action', '')}",
-            })
+            return jsonify(
+                {
+                    "status": "ignored",
+                    "reason": f"Unsupported event: {event_type}/{payload.get('action', '')}",
+                }
+            )
 
         # Route through central router
         result = router.route(envelope)
@@ -158,10 +160,12 @@ def gitlab_webhook():
         # Normalize into EventEnvelope
         envelope = EventEnvelope.from_gitlab_webhook(payload)
         if envelope is None:
-            return jsonify({
-                "status": "ignored",
-                "reason": f"Unsupported event: {event_type}",
-            })
+            return jsonify(
+                {
+                    "status": "ignored",
+                    "reason": f"Unsupported event: {event_type}",
+                }
+            )
 
         # Route through central router
         result = router.route(envelope)
@@ -177,6 +181,7 @@ def gitlab_webhook():
 
 
 # ── Slack Webhook (conditionally registered) ─────────────────────────────
+
 
 def _register_slack_route():
     """Register Slack Events API webhook if enabled in config."""
@@ -214,6 +219,7 @@ def _register_slack_route():
 
 
 # ── Mattermost Webhook (conditionally registered) ────────────────────────
+
 
 def _register_mattermost_route():
     """Register Mattermost outgoing webhook if enabled in config."""
@@ -260,26 +266,34 @@ def health():
 
         result = subprocess.run(
             [sys.executable, str(health_script)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(PROJECT_ROOT),
         )
 
-        return jsonify({
-            "status": "healthy" if result.returncode == 0 else "unhealthy",
-            "service": "icdev-webhook-server",
-            "platform_support": enabled_channels,
-        })
+        return jsonify(
+            {
+                "status": "healthy" if result.returncode == 0 else "unhealthy",
+                "service": "icdev-webhook-server",
+                "platform_support": enabled_channels,
+            }
+        )
 
     except subprocess.TimeoutExpired:
-        return jsonify({
-            "status": "unhealthy",
-            "error": "Health check timed out",
-        })
+        return jsonify(
+            {
+                "status": "unhealthy",
+                "error": "Health check timed out",
+            }
+        )
     except Exception as e:
-        return jsonify({
-            "status": "unhealthy",
-            "error": str(e),
-        })
+        return jsonify(
+            {
+                "status": "unhealthy",
+                "error": str(e),
+            }
+        )
 
 
 # Register conditional channel routes
@@ -290,6 +304,7 @@ _register_mattermost_route()
 # ---------------------------------------------------------------------------
 # Phase 29: Alert webhook for auto-resolution (D143)
 # ---------------------------------------------------------------------------
+
 
 @app.route("/alert-webhook", methods=["POST"])
 def alert_webhook():
@@ -304,10 +319,9 @@ def alert_webhook():
     if signature and WEBHOOK_SECRET:
         import hmac as _hmac
         import hashlib as _hashlib
+
         body = request.get_data()
-        expected = "sha256=" + _hmac.new(
-            WEBHOOK_SECRET.encode(), body, _hashlib.sha256
-        ).hexdigest()
+        expected = "sha256=" + _hmac.new(WEBHOOK_SECRET.encode(), body, _hashlib.sha256).hexdigest()
         if not _hmac.compare_digest(signature, expected):
             return jsonify({"status": "error", "message": "Invalid signature"}), 403
 
@@ -327,10 +341,12 @@ def alert_webhook():
 
         return jsonify(result), 200
     except ImportError:
-        return jsonify({
-            "status": "error",
-            "message": "auto_resolver module not available",
-        }), 500
+        return jsonify(
+            {
+                "status": "error",
+                "message": "auto_resolver module not available",
+            }
+        ), 500
     except Exception as e:
         print(f"Error processing alert webhook: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -338,7 +354,7 @@ def alert_webhook():
 
 if __name__ == "__main__":
     print("CUI // SP-CTI")
-    print(f"Starting ICDEV Webhook Server on port {PORT}")
+    print(f"Starting ICDEV™ Webhook Server on port {PORT}")
     print("  GitHub endpoint:      POST /gh-webhook")
     print("  GitLab endpoint:      POST /gl-webhook")
     slack_cfg = _CHANNEL_CONFIG.get("slack", {})
@@ -353,4 +369,4 @@ if __name__ == "__main__":
         print("  Mattermost:           disabled")
     print("  Alert webhook:        POST /alert-webhook")
     print("  Health check:         GET  /health")
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False)  # nosec B104 -- intentional bind-all for containerized/dev deployment

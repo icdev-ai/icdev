@@ -3,7 +3,7 @@
 """SparkPilot database initialization.
 
 Creates all tables for the SparkPilot embedded AI co-pilot:
-- Core ICDEV tables (projects, audit_trail, agents, compliance, etc.)
+- Core ICDEV™ tables (projects, audit_trail, agents, compliance, etc.)
 - Embedded-specific tables (devices, firmware, missions, simulator, fleet, edge AI)
 """
 
@@ -36,7 +36,7 @@ def init_db(db_path=None):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
 
-    # ── Core ICDEV Tables ──────────────────────────────────────────────
+    # ── Core ICDEV™ Tables ──────────────────────────────────────────────
     conn.execute(
         "CREATE TABLE IF NOT EXISTS projects "
         "(id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, "

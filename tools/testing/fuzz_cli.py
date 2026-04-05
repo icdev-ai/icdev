@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV CLI Argument Fuzzer — feed malformed inputs to CLI tools
+# ICDEV™ CLI Argument Fuzzer — feed malformed inputs to CLI tools
 # Ensures tools fail gracefully (clean argparse errors, no crashes/tracebacks)
 
 """
-ICDEV CLI Argument Fuzzer — lightweight fuzzer for CLI tool robustness.
+ICDEV™ CLI Argument Fuzzer — lightweight fuzzer for CLI tool robustness.
 
 Usage:
     python tools/testing/fuzz_cli.py --discover            # Fuzz all discovered CLI tools
@@ -60,6 +60,7 @@ CRASH_SIGNALS = {-11, -6}  # SIGSEGV, SIGABRT
 # Fuzz payloads
 # ---------------------------------------------------------------------------
 
+
 def _random_string(length: int = 64) -> str:
     """Generate a random ASCII string."""
     return "".join(random.choices(string.ascii_letters + string.digits + string.punctuation, k=length))
@@ -89,6 +90,7 @@ FUZZ_STRATEGIES = {
 # Discovery (shared logic with smoke_test.py)
 # ---------------------------------------------------------------------------
 
+
 def discover_cli_tools(tools_dir: Path) -> list:
     """Find all Python CLI tools in tools/ directory."""
     discovered = []
@@ -114,6 +116,7 @@ def discover_cli_tools(tools_dir: Path) -> list:
 # ---------------------------------------------------------------------------
 # Crash detection
 # ---------------------------------------------------------------------------
+
 
 def is_crash(exit_code: int, stderr: str) -> bool:
     """Determine if a tool invocation was a crash (not a clean failure)."""
@@ -148,6 +151,7 @@ def crash_reason(exit_code: int, stderr: str) -> str:
 # ---------------------------------------------------------------------------
 # Fuzz execution
 # ---------------------------------------------------------------------------
+
 
 def fuzz_tool(filepath: Path, strategy_name: str, args_fn) -> dict:
     """Run one fuzz strategy against one tool. Returns result dict."""
@@ -206,6 +210,7 @@ def fuzz_tool(filepath: Path, strategy_name: str, args_fn) -> dict:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def run_fuzz(tools: list, verbose: bool = False) -> dict:
     """Execute fuzz suite against all tools. Returns summary dict."""
     results = []
@@ -245,17 +250,11 @@ def run_fuzz(tools: list, verbose: bool = False) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV CLI Argument Fuzzer — test tools handle bad input gracefully"
-    )
-    parser.add_argument("--discover", action="store_true",
-                        help="Auto-discover all CLI tools in tools/")
-    parser.add_argument("--tools", nargs="+", metavar="PATH",
-                        help="Specific tool paths to fuzz")
-    parser.add_argument("--json", action="store_true",
-                        help="Machine-readable JSON output")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Detailed per-tool output")
+    parser = argparse.ArgumentParser(description="ICDEV™ CLI Argument Fuzzer — test tools handle bad input gracefully")
+    parser.add_argument("--discover", action="store_true", help="Auto-discover all CLI tools in tools/")
+    parser.add_argument("--tools", nargs="+", metavar="PATH", help="Specific tool paths to fuzz")
+    parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    parser.add_argument("--verbose", action="store_true", help="Detailed per-tool output")
     args = parser.parse_args()
 
     if not args.discover and not args.tools:
@@ -272,7 +271,7 @@ def main():
             parser.error(f"Tool files not found: {', '.join(str(m) for m in missing)}")
 
     if not args.json:
-        print(f"ICDEV CLI Fuzzer — {len(tools)} tools x {len(FUZZ_STRATEGIES)} strategies")
+        print(f"ICDEV™ CLI Fuzzer — {len(tools)} tools x {len(FUZZ_STRATEGIES)} strategies")
         print("=" * 60)
 
     summary = run_fuzz(tools, verbose=args.verbose)

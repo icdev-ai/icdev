@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D -- Authorized DoD Personnel Only
-# POC: ICDEV System Administrator
-"""Source Extractor — ICDEV Cross-Language Translation (Phase 43, D243)
+# POC: ICDEV™ System Administrator
+"""Source Extractor — ICDEV™ Cross-Language Translation (Phase 43, D243)
 
 Phase 1 of the 5-phase hybrid translation pipeline.
 Parses source code into a language-agnostic Intermediate Representation (IR)
@@ -519,7 +521,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             f"{CUI_BANNER}\n"
-            "ICDEV Source Extractor — Phase 1: AST/Regex -> IR JSON (D243)"
+            "ICDEV™ Source Extractor — Phase 1: AST/Regex -> IR JSON (D243)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\

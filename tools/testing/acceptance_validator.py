@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Acceptance Criteria Validator (V&V)
+# ICDEV™ Acceptance Criteria Validator (V&V)
 # Deterministic validation: plan criteria → test evidence + DOM content checks
 
 """
@@ -40,12 +40,12 @@ from typing import List, Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import (
+from tools.testing.data_types import (  # noqa: E402
     AcceptanceCriterionResult,
     UIPageCheckResult,
     AcceptanceReport,
 )
-from tools.testing.utils import timestamp_iso
+from tools.testing.utils import timestamp_iso  # noqa: E402
 
 # --- DOM Error Patterns (deterministic, no LLM) ---
 # These patterns indicate a page is rendering with errors.
@@ -180,7 +180,7 @@ def check_page(base_url: str, page_path: str, timeout: int = 10) -> UIPageCheckR
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-AcceptanceValidator/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             result.status_code = resp.status
             html = resp.read().decode("utf-8", errors="replace")
             result.content_length = len(html)
@@ -280,10 +280,7 @@ def validate_acceptance(
         blocking.append(f"acceptance_criteria_failed: {report.criteria_failed} failed")
 
     if report.pages_with_errors > 0:
-        blocking.append(
-            f"ui_page_renders_with_error: {report.pages_with_errors} page(s) "
-            f"with errors"
-        )
+        blocking.append(f"ui_page_renders_with_error: {report.pages_with_errors} page(s) with errors")
 
     if report.criteria_unverified > 0:
         warnings.append(
@@ -301,9 +298,7 @@ def validate_acceptance(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Acceptance Criteria Validator (V&V)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Acceptance Criteria Validator (V&V)")
     parser.add_argument(
         "--plan",
         help="Path to plan file with ## Acceptance Criteria section",
@@ -400,7 +395,9 @@ def main():
             print()
 
         print("Summary:")
-        print(f"  Criteria: {report.criteria_verified} verified, {report.criteria_failed} failed, {report.criteria_unverified} unverified")
+        print(
+            f"  Criteria: {report.criteria_verified} verified, {report.criteria_failed} failed, {report.criteria_unverified} unverified"
+        )
         print(f"  Pages: {report.pages_checked} checked, {report.pages_with_errors} with errors")
         print(f"  Gate: {'PASS' if report.overall_pass else 'FAIL'}")
 

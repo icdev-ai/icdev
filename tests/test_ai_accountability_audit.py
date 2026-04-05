@@ -29,6 +29,7 @@ from icdev.tools.compliance.ai_accountability_audit import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def db_path(tmp_path):
     """Create a temp DB with all tables referenced by ACCOUNTABILITY_CHECKS."""
@@ -97,7 +98,7 @@ def _populate_all(db_path, project_id="proj-123"):
     )
     # ACC-2: approved plan
     conn.execute(
-        "INSERT INTO ai_oversight_plans (project_id, plan_name, approval_status) VALUES (?, 'Approved Plan', 'approved')",
+        "INSERT INTO ai_oversight_plans (project_id, plan_name, approval_status) VALUES (?, 'Approved Plan', 'approved')",  # noqa: E501
         (project_id,),
     )
     # ACC-3: appeal
@@ -112,7 +113,7 @@ def _populate_all(db_path, project_id="proj-123"):
     )
     # ACC-5: inventory with responsible_official
     conn.execute(
-        "INSERT INTO ai_use_case_inventory (project_id, name, responsible_official) VALUES (?, 'AI System', 'John Doe')",
+        "INSERT INTO ai_use_case_inventory (project_id, name, responsible_official) VALUES (?, 'AI System', 'John Doe')",  # noqa: E501
         (project_id,),
     )
     # ACC-6: reassessment schedule (future date)
@@ -132,7 +133,7 @@ def _populate_all(db_path, project_id="proj-123"):
     )
     # ACC-11: legal compliance
     conn.execute(
-        "INSERT INTO ai_ethics_reviews (project_id, review_type, legal_compliance_matrix) VALUES (?, 'legal_compliance', 1)",
+        "INSERT INTO ai_ethics_reviews (project_id, review_type, legal_compliance_matrix) VALUES (?, 'legal_compliance', 1)",  # noqa: E501
         (project_id,),
     )
     # ACC-12: opt-out policy
@@ -152,6 +153,7 @@ def _populate_all(db_path, project_id="proj-123"):
 # ============================================================
 # run_accountability_audit
 # ============================================================
+
 
 def test_audit_empty_project(db_path):
     """All checks fail on an empty DB, score is 0 (or near 0 if inverts pass)."""
@@ -176,9 +178,7 @@ def test_audit_all_checks_pass(db_path):
 def test_audit_partial_pass(db_path):
     """Only some tables populated gives partial pass."""
     conn = sqlite3.connect(str(db_path))
-    conn.execute(
-        "INSERT INTO ai_oversight_plans (project_id, plan_name) VALUES ('proj-partial', 'Plan')"
-    )
+    conn.execute("INSERT INTO ai_oversight_plans (project_id, plan_name) VALUES ('proj-partial', 'Plan')")
     conn.commit()
     conn.close()
 
@@ -229,7 +229,7 @@ def test_audit_inverted_checks_fail(db_path):
     conn = sqlite3.connect(str(db_path))
     # ACC-7: overdue reassessment (next_due in the past)
     conn.execute(
-        "INSERT INTO ai_reassessment_schedule (project_id, ai_system, next_due) VALUES ('proj-inv', 'System', '2020-01-01')"
+        "INSERT INTO ai_reassessment_schedule (project_id, ai_system, next_due) VALUES ('proj-inv', 'System', '2020-01-01')"  # noqa: E501
     )
     # ACC-9: unresolved critical incident
     conn.execute(
@@ -260,6 +260,7 @@ def test_audit_inverted_checks_pass(db_path):
 # get_accountability_gaps
 # ============================================================
 
+
 def test_get_accountability_gaps_empty(db_path):
     """Gaps endpoint returns gaps for empty project."""
     result = get_accountability_gaps("proj-empty", db_path=db_path)
@@ -279,6 +280,7 @@ def test_get_accountability_gaps_populated(db_path):
 # ============================================================
 # ACCOUNTABILITY_CHECKS structure
 # ============================================================
+
 
 def test_audit_frameworks_mapping():
     """Every check has at least one framework reference."""
@@ -305,9 +307,19 @@ def test_audit_result_structure(db_path):
     """Audit result has all expected top-level keys."""
     result = run_accountability_audit("proj-struct", db_path=db_path)
     required_keys = {
-        "audit_type", "classification", "project_id", "audit_date",
-        "accountability_score", "total_checks", "passed", "failed",
-        "results", "gaps", "gap_count", "high_priority_gaps", "recommendation",
+        "audit_type",
+        "classification",
+        "project_id",
+        "audit_date",
+        "accountability_score",
+        "total_checks",
+        "passed",
+        "failed",
+        "results",
+        "gaps",
+        "gap_count",
+        "high_priority_gaps",
+        "recommendation",
     }
     assert required_keys.issubset(set(result.keys()))
 
@@ -323,9 +335,7 @@ def test_audit_score_calculation(db_path):
 def test_audit_with_only_oversight_plan(db_path):
     """Only ACC-1 (and inverted ACC-7/ACC-9) should pass with a single plan."""
     conn = sqlite3.connect(str(db_path))
-    conn.execute(
-        "INSERT INTO ai_oversight_plans (project_id, plan_name) VALUES ('proj-single', 'Minimal Plan')"
-    )
+    conn.execute("INSERT INTO ai_oversight_plans (project_id, plan_name) VALUES ('proj-single', 'Minimal Plan')")
     conn.commit()
     conn.close()
 

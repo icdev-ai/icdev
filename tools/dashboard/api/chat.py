@@ -24,6 +24,7 @@ if str(BASE_DIR) not in sys.path:
 
 try:
     from tools.dashboard.chat_manager import chat_manager
+
     _HAS_CHAT = True
 except ImportError:
     _HAS_CHAT = False
@@ -46,6 +47,7 @@ def _require_chat():
 # ---------------------------------------------------------------------------
 # Context endpoints
 # ---------------------------------------------------------------------------
+
 
 @chat_api.route("/contexts", methods=["POST"])
 def create_context():
@@ -119,6 +121,7 @@ def get_context(context_id):
 # Message endpoints
 # ---------------------------------------------------------------------------
 
+
 @chat_api.route("/<context_id>/send", methods=["POST"])
 def send_message(context_id):
     """Send a message to a context.
@@ -185,6 +188,7 @@ def get_messages(context_id):
 # State endpoints
 # ---------------------------------------------------------------------------
 
+
 @chat_api.route("/<context_id>/state", methods=["GET"])
 def get_state(context_id):
     """Get context state with dirty-tracking (Feature 4).
@@ -204,6 +208,7 @@ def get_state(context_id):
     # Get incremental updates from state tracker if available
     try:
         from tools.dashboard.state_tracker import state_tracker
+
         client_id = request.args.get("client_id", request.remote_addr or "unknown")
         updates = state_tracker.get_updates(client_id, context_id, since_version)
         ctx["state_updates"] = updates
@@ -229,6 +234,7 @@ def close_context(context_id):
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
+
 
 @chat_api.route("/diagnostics", methods=["GET"])
 def diagnostics():

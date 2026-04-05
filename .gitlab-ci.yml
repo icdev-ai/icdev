@@ -1,11 +1,12 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Platform CI/CD Pipeline
+# ICDEV™ Platform CI/CD Pipeline
 # Classification: CUI // SP-CTI
 
 stages:
   - lint
   - test
   - security
+  - sandbox
   - bdd
   - docker
   - helm
@@ -42,6 +43,80 @@ security:bandit:
       - bandit-report.json
   allow_failure: true
 
+security:openclaw-gate:
+  stage: security
+  script:
+    - |
+      if [ "${ICDEV_OPENCLAW_ENABLED}" = "true" ]; then
+        echo "Running OpenClaw bridge gate check..."
+        python tools/marketplace/openclaw_bridge.py --gate --json | tee openclaw-gate.json
+        PASSED=$(python -c "import json,sys; r=json.load(open('openclaw-gate.json')); sys.exit(0 if r.get('passed') else 1)" 2>&1 && echo true || echo false)
+        if [ "$PASSED" = "false" ]; then
+          echo "OpenClaw gate FAILED — blocking failures detected"
+          cat openclaw-gate.json
+          exit 1
+        fi
+        echo "OpenClaw gate PASSED"
+      else
+        echo "OpenClaw bridge disabled (ICDEV_OPENCLAW_ENABLED not set) — skipping"
+      fi
+  artifacts:
+    when: always
+    paths:
+      - openclaw-gate.json
+  allow_failure: false
+  rules:
+    - if: '$ICDEV_OPENCLAW_ENABLED == "true"'
+
+security:sandbox:
+  stage: sandbox
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - apk add --no-cache python3 py3-pip
+    - pip install --quiet llm-sandbox docker pyyaml --break-system-packages
+  script:
+    - |
+      echo "=== LLM Sandbox Isolation Check (D-SEC-10) ==="
+      # Health check
+      python3 tools/security/sandbox_executor.py --health --json | tee sandbox-health.json
+      # Get changed Python files relative to main branch
+      CHANGED_FILES=$(git diff --name-only origin/main...HEAD -- '*.py' 2>/dev/null || find tools/ -name '*.py' -newer .git/HEAD | head -20)
+      if [ -z "$CHANGED_FILES" ]; then
+        echo "No changed Python files — sandbox check passed (nothing to verify)"
+        exit 0
+      fi
+      FAILED=0
+      for FILE in $CHANGED_FILES; do
+        if [ -f "$FILE" ]; then
+          echo "  Sandbox: $FILE"
+          python3 tools/security/sandbox_executor.py \
+            --execute-file --path "$FILE" --language python \
+            --actor ci-pipeline --project-id "$CI_PROJECT_ID" \
+            --json > /tmp/sandbox-result.json 2>&1 || true
+          STATUS=$(python3 -c "import json; r=json.load(open('/tmp/sandbox-result.json')); print(r.get('status','failed'))" 2>/dev/null || echo "failed")
+          if [ "$STATUS" != "completed" ]; then
+            echo "    FAIL: $FILE (status=$STATUS)"
+            cat /tmp/sandbox-result.json
+            FAILED=$((FAILED + 1))
+          fi
+        fi
+      done
+      if [ $FAILED -gt 0 ]; then
+        echo "Sandbox isolation FAILED: $FAILED file(s) failed container execution"
+        exit 1
+      fi
+      echo "Sandbox isolation PASSED: all changed files verified"
+  artifacts:
+    when: always
+    paths:
+      - sandbox-health.json
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+
 bdd:
   stage: bdd
   script:
@@ -76,4 +151,172 @@ helm:lint:
   script:
     - helm lint deploy/helm/
     - helm template icdev deploy/helm/ > /dev/null
+
+# ---------------------------------------------------------------------------
+# Kanban Pipeline Job Templates
+# Jobs are triggered by the GitLabPipelineExecutor via pipeline trigger API.
+# All jobs require KANBAN_TASK_ID to be set; skipped otherwise.
+# KANBAN_PROMPT is base64-encoded to survive CI variable transport.
+# ---------------------------------------------------------------------------
+
+# Shared base: decode prompt, set up worktree, install deps
+.kanban-base:
+  image: python:3.11-slim
+  before_script:
+    - pip install --quiet -r requirements.txt
+    - |
+      # Decode base64 prompt into a plain text file
+      if [ -n "$KANBAN_PROMPT" ]; then
+        echo "$KANBAN_PROMPT" | base64 -d > /tmp/kanban_prompt.txt
+        echo "Kanban task: $KANBAN_TASK_ID (type=$KANBAN_TASK_TYPE, llm=$KANBAN_LLM_MODE)"
+      fi
+    - |
+      # Create isolated worktree for this task
+      if [ -n "$KANBAN_TASK_ID" ]; then
+        git config --global --add safe.directory "$CI_PROJECT_DIR"
+        export TASK_WORKTREE=".tmp/worktrees/$KANBAN_TASK_ID"
+        mkdir -p ".tmp/worktrees"
+        git worktree add "$TASK_WORKTREE" HEAD 2>/dev/null || true
+      fi
+  rules:
+    - if: '$KANBAN_TASK_ID != ""'
+
+# Plan tasks: Claude CLI on the runner (claude|research|architect)
+kanban-plan:
+  extends: .kanban-base
+  stage: test
+  variables:
+    GIT_STRATEGY: clone
+  script:
+    - |
+      echo "=== Kanban Plan Job: $KANBAN_TASK_ID ==="
+      PROMPT=$(cat /tmp/kanban_prompt.txt)
+      claude --dangerously-skip-permissions -p "$PROMPT" \
+        --output-format text 2>&1 | tee /tmp/kanban_output.txt
+      echo "Plan complete."
+  artifacts:
+    when: always
+    paths:
+      - .tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && ($KANBAN_TASK_TYPE == "plan" || $KANBAN_TASK_TYPE == "research" || $KANBAN_TASK_TYPE == "architect")'
+
+# Build tasks: Ollama via LLM router (build|fix)
+kanban-build:
+  extends: .kanban-base
+  stage: test
+  variables:
+    GIT_STRATEGY: clone
+    OLLAMA_HOST: "${OLLAMA_HOST}"
+  script:
+    - |
+      echo "=== Kanban Build Job: $KANBAN_TASK_ID ==="
+      PROMPT=$(cat /tmp/kanban_prompt.txt)
+      python tools/llm/router.py \
+        --function code_generation \
+        --prompt "$PROMPT" \
+        --model qwen3.5 \
+        --json 2>&1 | tee /tmp/kanban_output.txt
+      echo "Build complete."
+  artifacts:
+    when: always
+    paths:
+      - .tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && ($KANBAN_TASK_TYPE == "build" || $KANBAN_TASK_TYPE == "fix")'
+
+# Test tasks: Python only — pytest, ruff, bandit, behave (no LLM)
+kanban-test:
+  extends: .kanban-base
+  stage: test
+  script:
+    - |
+      echo "=== Kanban Test Job: $KANBAN_TASK_ID ==="
+      pip install --quiet ruff bandit behave
+      echo "--- ruff ---"
+      ruff check tools/ tests/ --select E,F,W || true
+      echo "--- pytest ---"
+      pytest tests/ -q --tb=line --ignore=tests/e2e \
+        --junitxml=/tmp/kanban_test_report.xml 2>&1 | tee /tmp/kanban_output.txt
+      echo "--- bandit ---"
+      bandit -r tools/ -ll -f json -o /tmp/kanban_bandit.json || true
+      echo "Test suite complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_test_report.xml
+      - /tmp/kanban_bandit.json
+      - /tmp/kanban_output.txt
+    reports:
+      junit: /tmp/kanban_test_report.xml
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "test"'
+
+# Deploy tasks: IaC generation + terraform plan (no LLM)
+kanban-deploy:
+  extends: .kanban-base
+  stage: test
+  script:
+    - |
+      echo "=== Kanban Deploy Job: $KANBAN_TASK_ID ==="
+      python tools/ci/pipeline_config_generator.py \
+        --task-id "$KANBAN_TASK_ID" \
+        --json 2>&1 | tee /tmp/kanban_output.txt || true
+      echo "Deploy job complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "deploy"'
+
+# Chore tasks: Ollama-assisted refactor/cleanup (qwen3.5, zero Claude cost)
+kanban-chore:
+  extends: .kanban-base
+  stage: test
+  variables:
+    OLLAMA_HOST: "${OLLAMA_HOST}"
+  script:
+    - |
+      echo "=== Kanban Chore Job: $KANBAN_TASK_ID ==="
+      PROMPT=$(cat /tmp/kanban_prompt.txt)
+      python tools/llm/router.py \
+        --function code_generation \
+        --prompt "$PROMPT" \
+        --model qwen3.5 \
+        --json 2>&1 | tee /tmp/kanban_output.txt
+      echo "Chore complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "chore"'
+
+# Scan tasks: compliance + security canvas (no LLM)
+kanban-scan:
+  extends: .kanban-base
+  stage: security
+  script:
+    - |
+      echo "=== Kanban Scan Job: $KANBAN_TASK_ID ==="
+      pip install --quiet bandit
+      bandit -r tools/ -ll -f json -o /tmp/kanban_bandit.json || true
+      python tools/compliance/export.py \
+        --task-id "$KANBAN_TASK_ID" \
+        --json 2>&1 | tee /tmp/kanban_output.txt || true
+      echo "Scan complete."
+  artifacts:
+    when: always
+    paths:
+      - /tmp/kanban_bandit.json
+      - /tmp/kanban_output.txt
+    expire_in: 7 days
+  rules:
+    - if: '$KANBAN_TASK_ID != "" && ($KANBAN_TASK_TYPE == "scan" || $KANBAN_TASK_TYPE == "compliance")'
 # [TEMPLATE: CUI // SP-CTI]

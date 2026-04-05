@@ -2,10 +2,7 @@
 # CUI // SP-CTI
 """Tests for ToolChainValidator (Phase 45, Gap 2, D258)."""
 
-import json
 import sqlite3
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest

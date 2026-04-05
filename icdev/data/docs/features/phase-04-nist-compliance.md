@@ -8,8 +8,8 @@
 | Title | NIST 800-53 Compliance & ATO Artifact Generation |
 | Status | Implemented |
 | Priority | P0 |
-| Dependencies | Phase 1 (GOTCHA Framework Foundation), Phase 3 (TDD/BDD Testing Framework) |
-| Author | ICDEV Architect Agent |
+| Dependencies | Phase 1 (FORGE Framework Foundation), Phase 3 (TDD/BDD Testing Framework) |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ No Authority to Operate (ATO) means no deployment. Government and DoD systems ca
 
 Manually assembling ATO packages is a 3-6 month endeavor that delays every project. Artifacts become stale within days of creation. Control mappings drift from implementation. Evidence links break. Assessors find gaps that could have been caught programmatically. The compliance burden is the single largest schedule risk for government software programs.
 
-ICDEV automates the entire ATO artifact generation pipeline: from FIPS 199 security categorization through SSP generation, POAM creation from security findings, STIG evaluation, SBOM generation in CycloneDX format, CUI marking application, and NIST 800-53 control mapping with implementation evidence. Every artifact is generated from live project data, every finding is traceable to its source, and every document carries classification markings applied at generation time (not post-processing).
+ICDEV™ automates the entire ATO artifact generation pipeline: from FIPS 199 security categorization through SSP generation, POAM creation from security findings, STIG evaluation, SBOM generation in CycloneDX format, CUI marking application, and NIST 800-53 control mapping with implementation evidence. Every artifact is generated from live project data, every finding is traceable to its source, and every document carries classification markings applied at generation time (not post-processing).
 
 ---
 

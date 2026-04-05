@@ -72,18 +72,73 @@ def rerank_results(
             result = results[idx]
             result.rerank_score = raw_score / max_rerank
             # Weighted blend (D-RAG-20): configurable instead of naive average
-            result.final_score = (
-                (1.0 - rerank_weight) * result.final_score
-                + rerank_weight * result.rerank_score
-            )
+            result.final_score = (1.0 - rerank_weight) * result.final_score + rerank_weight * result.rerank_score
             reranked.append(result)
 
+        # D-BT-6: Teaching-dimension diversity boost
+        # Penalise redundant chunks that don't eliminate alternative interpretations
+        teaching_boost = cfg.get("teaching_boost_weight", 0.0)
+        if teaching_boost > 0 and len(reranked) > 1:
+            reranked = _apply_teaching_diversity(reranked, teaching_boost)
+
         logger.debug(
-            "Re-ranked %d→%d results via %s (weight=%.2f)",
-            len(results), len(reranked), provider.provider_name, rerank_weight,
+            "Re-ranked %d→%d results via %s (weight=%.2f, bt=%.2f)",
+            len(results),
+            len(reranked),
+            provider.provider_name,
+            rerank_weight,
+            teaching_boost,
         )
         return reranked
 
     except Exception as exc:
         logger.debug("Reranker failed, returning top-k by score: %s", exc)
         return results[:top_k]
+
+
+def _apply_teaching_diversity(
+    results: List[SearchResult],
+    boost_weight: float = 0.15,
+) -> List[SearchResult]:
+    """Apply Bayesian Teaching diversity boost (D-BT-6).
+
+    Penalises chunks that are highly similar to already-ranked chunks,
+    following the teaching-dimension principle: each example should
+    eliminate at least one alternative interpretation.
+
+    Uses word-overlap as a lightweight similarity proxy (air-gap safe).
+    """
+    if not results or boost_weight <= 0:
+        return results
+
+    def _word_set(text: str) -> set:
+        return {w.lower().strip(".,;:!?()[]{}\"'") for w in (text or "").split() if len(w) > 3}
+
+    selected_words: list = []
+    for result in results:
+        words = _word_set(result.content)
+        if not selected_words:
+            # First item — no penalty
+            selected_words.append(words)
+            continue
+
+        # Compute max similarity to any already-selected result
+        max_overlap = 0.0
+        for prev_words in selected_words:
+            if not words or not prev_words:
+                continue
+            intersection = len(words & prev_words)
+            union = len(words | prev_words)
+            if union > 0:
+                jaccard = intersection / union
+                max_overlap = max(max_overlap, jaccard)
+
+        # Diversity score: 1.0 = unique, 0.0 = identical to existing
+        diversity = 1.0 - max_overlap
+        # Blend: reduce score of redundant chunks
+        result.final_score = (1.0 - boost_weight) * result.final_score + boost_weight * diversity
+        selected_words.append(words)
+
+    # Re-sort after diversity adjustment
+    results.sort(key=lambda r: r.final_score, reverse=True)
+    return results

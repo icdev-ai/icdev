@@ -1,0 +1,49 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: DocHub Living Documentation
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: dochub
+description: "Living documentation engine with 8 audience profiles, 8 export formats, and health scoring"
+capabilities:
+  - slug: doc-generator
+    name: "Document Generation Engine"
+    description: "Scanner-tier deterministic document generation for SSP, POAM, SAR, architecture docs. 8 audience profiles (3PAO, ISSM, developer, executive, etc.). Version-controlled with SHA-256 integrity."
+    cli_examples:
+      - "python tools/dochub/doc_generator.py --project-id sparkpilot --doc-type ssp --profile 3pao --impact-level IL4 --json"
+      - "python tools/dochub/doc_generator.py --project-id sparkpilot --generate-all --profile compliance --json"
+    related_controls: ["PL-2", "CA-2", "CA-6"]
+    article_hooks:
+      - "8 audience profiles tailor the same data for different stakeholders -- 3PAO sees evidence depth, executives see risk posture"
+      - "Document versioning with SHA-256 content hash ensures integrity and detects unauthorized changes"
+    frameworks: ["NIST 800-53", "FedRAMP"]
+    keywords: ["documentation", "doc generation", "SSP", "audience profiles", "living documents", "health scoring"]
+    source_catalog_id: "cap-dochub"
+
+  - slug: export-engine
+    name: "8-Format Export Engine"
+    description: "Export to Markdown, HTML, PDF-ready, OSCAL JSON, Xacta CSV, FedRAMP ZIP, DoD Package, and eMASS import format"
+    cli_examples:
+      - "python tools/dochub/export_engine.py --project-id sparkpilot --format fedramp_zip --output ./exports --json"
+      - "python tools/dochub/export_engine.py --project-id sparkpilot --format dod_pkg --impact-level IL4 --output ./exports --json"
+    related_controls: ["PL-2", "CA-6"]
+    article_hooks:
+      - "One document, 8 export formats -- from Markdown for developers to FedRAMP ZIP for assessors"
+      - "eMASS import format auto-generates the package structure expected by the DoD's enterprise ATO system"
+    frameworks: ["OSCAL", "FedRAMP", "eMASS"]
+    keywords: ["export", "OSCAL", "FedRAMP ZIP", "eMASS", "PDF", "Xacta", "DoD package"]
+    source_catalog_id: "cap-dochub"
+
+  - slug: health-scorer
+    name: "Documentation Health Scoring"
+    description: "Weighted composite health score: freshness=0.35, completeness=0.40, gaps=0.25. Module-level scores roll up to portfolio aggregate."
+    cli_examples:
+      - "python tools/dochub/health_scorer.py --project-id sparkpilot --compute --json"
+      - "python tools/dochub/health_scorer.py --portfolio --json"
+    related_controls: ["CA-7", "PM-4"]
+    article_hooks:
+      - "Documentation health scoring ensures compliance artifacts stay current -- freshness, completeness, and gap detection in one score"
+      - "Portfolio-level aggregate weighted by application criticality gives leadership a single number for documentation posture"
+    frameworks: ["NIST 800-53"]
+    keywords: ["health scoring", "documentation quality", "freshness", "completeness", "gap detection", "portfolio"]
+    source_catalog_id: "cap-dochub"

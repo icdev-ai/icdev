@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV Requirements Intake (RICOAS) BDD scenarios."""
+"""Step definitions for ICDEV™ Requirements Intake (RICOAS) BDD scenarios."""
 
 import json
 import os
@@ -17,7 +17,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _ensure_db():
-    """Ensure the ICDEV database exists; initialize if missing."""
+    """Ensure the ICDEV™ database exists; initialize if missing."""
     if not DB_PATH.exists():
         result = subprocess.run(
             [sys.executable, "tools/db/init_icdev_db.py"],
@@ -70,7 +70,7 @@ def _create_test_project(db_path=None):
 # Scenario 1: Create a new intake session
 # ---------------------------------------------------------------------------
 
-# NOTE: 'the ICDEV database is initialized' is already defined in
+# NOTE: 'the ICDEV™ database is initialized' is already defined in
 # project_steps.py.  If behave complains about duplicate steps, this
 # @given can be removed.  We guard with a try/import so both files can
 # coexist safely — behave loads all step files into a single namespace.

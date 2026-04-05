@@ -1,14 +1,13 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.marketplace.search_engine — hybrid BM25 + semantic marketplace search."""
 
 import json
-import math
 import sqlite3
-import struct
 from unittest.mock import patch
 
 import pytest
@@ -16,7 +15,6 @@ import pytest
 from icdev.tools.marketplace.search_engine import (
     _bm25_score,
     _bm25_score_corpus,
-    _blob_to_embedding,
     _cosine_similarity,
     _embedding_to_blob,
     _generate_embedding_fallback,
@@ -84,26 +82,76 @@ def marketplace_db(tmp_path):
     conn.executescript(MARKETPLACE_SCHEMA)
 
     assets = [
-        ("asset-001", "acme/stig-checker", "STIG Checker", "skill",
-         "Automated STIG compliance checker for RHEL and Ubuntu",
-         "1.0.0", "IL4", "tenant-acme", "ACME Corp", "tenant_local", "published",
-         '["stig", "compliance", "linux"]'),
-        ("asset-002", "acme/bdd-generator", "BDD Test Generator", "goal",
-         "Generates Gherkin BDD scenarios from requirements",
-         "2.1.0", "IL5", "tenant-acme", "ACME Corp", "central_vetted", "published",
-         '["bdd", "testing", "gherkin"]'),
-        ("asset-003", "delta/oracle-stig", "Oracle STIG Scanner", "compliance",
-         "Oracle database STIG scanning and remediation tool",
-         "1.2.0", "IL5", "tenant-delta", "Delta Inc", "tenant_local", "published",
-         '["oracle", "stig", "database"]'),
-        ("asset-004", "acme/draft-tool", "Draft Tool", "skill",
-         "A tool still in draft status",
-         "0.1.0", "IL2", "tenant-acme", "ACME Corp", "tenant_local", "draft",
-         '["draft"]'),
-        ("asset-005", "echo/sbom-gen", "SBOM Generator", "skill",
-         "Generate CycloneDX SBOMs for Python projects",
-         "3.0.0", "IL4", "tenant-echo", "Echo LLC", "tenant_local", "published",
-         '["sbom", "cyclonedx", "python"]'),
+        (
+            "asset-001",
+            "acme/stig-checker",
+            "STIG Checker",
+            "skill",
+            "Automated STIG compliance checker for RHEL and Ubuntu",
+            "1.0.0",
+            "IL4",
+            "tenant-acme",
+            "ACME Corp",
+            "tenant_local",
+            "published",
+            '["stig", "compliance", "linux"]',
+        ),
+        (
+            "asset-002",
+            "acme/bdd-generator",
+            "BDD Test Generator",
+            "goal",
+            "Generates Gherkin BDD scenarios from requirements",
+            "2.1.0",
+            "IL5",
+            "tenant-acme",
+            "ACME Corp",
+            "central_vetted",
+            "published",
+            '["bdd", "testing", "gherkin"]',
+        ),
+        (
+            "asset-003",
+            "delta/oracle-stig",
+            "Oracle STIG Scanner",
+            "compliance",
+            "Oracle database STIG scanning and remediation tool",
+            "1.2.0",
+            "IL5",
+            "tenant-delta",
+            "Delta Inc",
+            "tenant_local",
+            "published",
+            '["oracle", "stig", "database"]',
+        ),
+        (
+            "asset-004",
+            "acme/draft-tool",
+            "Draft Tool",
+            "skill",
+            "A tool still in draft status",
+            "0.1.0",
+            "IL2",
+            "tenant-acme",
+            "ACME Corp",
+            "tenant_local",
+            "draft",
+            '["draft"]',
+        ),
+        (
+            "asset-005",
+            "echo/sbom-gen",
+            "SBOM Generator",
+            "skill",
+            "Generate CycloneDX SBOMs for Python projects",
+            "3.0.0",
+            "IL4",
+            "tenant-echo",
+            "Echo LLC",
+            "tenant_local",
+            "published",
+            '["sbom", "cyclonedx", "python"]',
+        ),
     ]
     for a in assets:
         conn.execute(
@@ -141,6 +189,7 @@ def marketplace_db_with_embeddings(marketplace_db):
                 pass
         text = " ".join(parts)
         import hashlib
+
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
         embedding = _generate_embedding_fallback(text)
         blob = _embedding_to_blob(embedding)
@@ -285,7 +334,15 @@ class TestCombinedSearch:
         assert result["results"] == []
 
     def test_hybrid_search_with_embeddings(self, marketplace_db_with_embeddings):
-        result = search_assets("stig", db_path=marketplace_db_with_embeddings)
+        # The fixture stores 256-dim fallback embeddings.  Force the query
+        # embedding to use the same fallback so dimensions match even when
+        # Ollama is running locally (which would return 768-dim vectors).
+        def _fallback_generate(text, db_path=None):
+            emb = _generate_embedding_fallback(text)
+            return emb, "hashlib-fallback", 256
+
+        with patch("icdev.tools.marketplace.search_engine.generate_embedding", side_effect=_fallback_generate):
+            result = search_assets("stig", db_path=marketplace_db_with_embeddings)
         assert result["search_method"] == "hybrid"
         assert result["total"] > 0
         # Results should have both bm25 and semantic scores

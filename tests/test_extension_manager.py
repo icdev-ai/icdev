@@ -9,9 +9,7 @@ unregister, introspection.
 
 import sys
 import tempfile
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -32,6 +30,7 @@ def manager():
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
+
 
 class TestRegistration:
     def test_register_handler(self, manager):
@@ -65,18 +64,19 @@ class TestRegistration:
 # Priority ordering
 # ---------------------------------------------------------------------------
 
+
 class TestPriorityOrdering:
     def test_handlers_sorted_by_priority(self, manager):
         order = []
-        manager.register(ExtensionPoint.TOOL_EXECUTE_BEFORE,
-                         handler=lambda c: order.append("high") or c,
-                         name="high", priority=100)
-        manager.register(ExtensionPoint.TOOL_EXECUTE_BEFORE,
-                         handler=lambda c: order.append("low") or c,
-                         name="low", priority=900)
-        manager.register(ExtensionPoint.TOOL_EXECUTE_BEFORE,
-                         handler=lambda c: order.append("mid") or c,
-                         name="mid", priority=500)
+        manager.register(
+            ExtensionPoint.TOOL_EXECUTE_BEFORE, handler=lambda c: order.append("high") or c, name="high", priority=100
+        )
+        manager.register(
+            ExtensionPoint.TOOL_EXECUTE_BEFORE, handler=lambda c: order.append("low") or c, name="low", priority=900
+        )
+        manager.register(
+            ExtensionPoint.TOOL_EXECUTE_BEFORE, handler=lambda c: order.append("mid") or c, name="mid", priority=500
+        )
 
         manager.dispatch(ExtensionPoint.TOOL_EXECUTE_BEFORE, {})
         assert order == ["high", "mid", "low"]
@@ -85,6 +85,7 @@ class TestPriorityOrdering:
 # ---------------------------------------------------------------------------
 # Dispatch — behavioral vs observational
 # ---------------------------------------------------------------------------
+
 
 class TestDispatch:
     def test_behavioral_modifies_context(self, manager):
@@ -125,6 +126,7 @@ class TestDispatch:
 # Exception isolation
 # ---------------------------------------------------------------------------
 
+
 class TestExceptionIsolation:
     def test_handler_exception_caught(self, manager):
         def bad_handler(ctx):
@@ -159,6 +161,7 @@ class TestExceptionIsolation:
 # Disabled extensions
 # ---------------------------------------------------------------------------
 
+
 class TestDisabledExtensions:
     def test_disabled_handler_skipped(self, manager):
         called = []
@@ -177,6 +180,7 @@ class TestDisabledExtensions:
 # ---------------------------------------------------------------------------
 # File-based loading
 # ---------------------------------------------------------------------------
+
 
 class TestFileLoading:
     def test_load_from_directory(self, manager):
@@ -203,7 +207,7 @@ class TestFileLoading:
             hook_dir = Path(tmpdir) / "tool_execute_before"
             hook_dir.mkdir()
             ext_file = hook_dir / "test.py"
-            ext_file.write_text('def handle(ctx): return ctx\n')
+            ext_file.write_text("def handle(ctx): return ctx\n")
 
             loaded1 = manager.load_extensions_from_directory(Path(tmpdir))
             loaded2 = manager.load_extensions_from_directory(Path(tmpdir))
@@ -214,6 +218,7 @@ class TestFileLoading:
 # ---------------------------------------------------------------------------
 # Introspection
 # ---------------------------------------------------------------------------
+
 
 class TestIntrospection:
     def test_list_handlers(self, manager):
@@ -239,6 +244,7 @@ class TestIntrospection:
 # ---------------------------------------------------------------------------
 # Extension points enum
 # ---------------------------------------------------------------------------
+
 
 class TestExtensionPoint:
     def test_all_10_points(self):

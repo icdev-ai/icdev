@@ -41,8 +41,7 @@ class BaseChannelAdapter(ABC):
         """
 
     @abstractmethod
-    def parse_webhook(self, request_data: Dict[str, Any],
-                      headers: Dict[str, str]) -> Optional[CommandEnvelope]:
+    def parse_webhook(self, request_data: Dict[str, Any], headers: Dict[str, str]) -> Optional[CommandEnvelope]:
         """Parse an inbound webhook payload into a CommandEnvelope.
 
         Args:
@@ -56,8 +55,7 @@ class BaseChannelAdapter(ABC):
         """
 
     @abstractmethod
-    def send_message(self, channel_user_id: str, text: str,
-                     thread_id: str = "") -> bool:
+    def send_message(self, channel_user_id: str, text: str, thread_id: str = "") -> bool:
         """Send a reply message back to the user via the channel.
 
         Args:
@@ -69,8 +67,7 @@ class BaseChannelAdapter(ABC):
             True if the message was sent successfully.
         """
 
-    def send_confirmation(self, channel_user_id: str, command: str,
-                          thread_id: str = "") -> bool:
+    def send_confirmation(self, channel_user_id: str, command: str, thread_id: str = "") -> bool:
         """Ask the user to confirm a command before execution.
 
         Default implementation sends a text prompt.  Channels that support
@@ -84,10 +81,7 @@ class BaseChannelAdapter(ABC):
         Returns:
             True if the confirmation prompt was sent.
         """
-        text = (
-            f"Confirm execution of `{command}`?\n"
-            "Reply `yes` or `confirm` to proceed, `no` to cancel."
-        )
+        text = f"Confirm execution of `{command}`?\nReply `yes` or `confirm` to proceed, `no` to cancel."
         return self.send_message(channel_user_id, text, thread_id)
 
     def is_available(self, environment_mode: str) -> bool:

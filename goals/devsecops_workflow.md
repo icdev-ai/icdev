@@ -264,7 +264,7 @@ Attestation configuration generated:
 
 **Tool:** `python tools/devsecops/profile_manager.py --project-id <id> --configure-gates --json`
 
-Configure DevSecOps security gates that integrate with existing ICDEV security gates (`args/security_gates.yaml`). These are additive — they do not replace existing gates.
+Configure DevSecOps security gates that integrate with existing ICDEV™ security gates (`args/security_gates.yaml`). These are additive — they do not replace existing gates.
 
 **DevSecOps-specific gates:**
 
@@ -376,9 +376,9 @@ ISSO: <pending confirmation>
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Signal detection | Orchestration | AI detects DevSecOps signals during intake |
 | Profile creation | Tools | profile_manager.py |

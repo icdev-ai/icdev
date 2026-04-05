@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Testing Framework
+# ICDEV™ Testing Framework

@@ -49,8 +49,9 @@ IMPORTANT: Execute every step in order, top to bottom.
 
 ## Validation
 - `python -m py_compile <file>` - Syntax check
+- `python -m ruff check . --fix --select F401,F811,F841` - Auto-fix dead code
+- `python -m ruff check .` - Lint check
 - `python -m pytest` - Run tests
-- `ruff check .` - Lint check
 
 ## Patch Scope
 **Lines of code to change:** <estimate>

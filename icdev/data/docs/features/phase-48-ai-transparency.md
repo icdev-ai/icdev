@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 37 (MITRE ATLAS Integration), Phase 46 (Observability, Traceability & XAI), Phase 23 (Universal Compliance Platform) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -18,7 +18,7 @@
 
 Federal agencies deploying AI systems face an expanding set of transparency mandates. OMB Memorandum M-25-21 requires agencies to maintain AI use case inventories and publish model cards for rights-impacting and safety-impacting AI. OMB M-26-04 strengthens these requirements with ongoing monitoring and public reporting obligations. NIST AI 600-1 (the Generative AI Profile) extends the AI RMF with generative-AI-specific risks including confabulation, bias amplification, and provenance gaps. GAO-21-519SP establishes an AI Accountability Framework demanding documented governance structures, performance monitoring, and transparency reporting.
 
-ICDEV's 15-agent multi-agent system makes autonomous decisions across code generation, compliance assessment, security scanning, and deployment. Without structured model cards, system cards, AI inventories, confabulation detection, and fairness assessment, operators cannot demonstrate compliance with these mandates during ATO submissions. Phase 46 delivers traceability and explainability at the span level, but lacks the higher-level artifact inventory and risk documentation that auditors and oversight bodies require.
+ICDEV™'s 15-agent multi-agent system makes autonomous decisions across code generation, compliance assessment, security scanning, and deployment. Without structured model cards, system cards, AI inventories, confabulation detection, and fairness assessment, operators cannot demonstrate compliance with these mandates during ATO submissions. Phase 46 delivers traceability and explainability at the span level, but lacks the higher-level artifact inventory and risk documentation that auditors and oversight bodies require.
 
 Phase 48 delivers seven interconnected capabilities: model cards documenting each AI model's intended use, limitations, and evaluation metrics; system cards documenting composite multi-model systems; an AI use case inventory aligned with OMB reporting requirements; confabulation detection for LLM outputs; fairness assessment for bias evaluation; four framework-specific assessors (OMB M-25-21, OMB M-26-04, NIST AI 600-1, GAO-21-519SP); and a transparency audit that consolidates findings across all assessors. These are exposed through dashboard and portal pages, REST API endpoints, MCP tools, and a security gate.
 
@@ -26,7 +26,7 @@ Phase 48 delivers seven interconnected capabilities: model cards documenting eac
 
 ## 2. Goals
 
-1. Generate and maintain model cards for every AI model used by ICDEV agents, stored in `ai_model_cards` with versioned metadata
+1. Generate and maintain model cards for every AI model used by ICDEV™ agents, stored in `ai_model_cards` with versioned metadata
 2. Generate system cards documenting composite multi-agent workflows where multiple models interact
 3. Maintain an AI use case inventory aligned with OMB M-25-21 and M-26-04 reporting categories (rights-impacting, safety-impacting, presumed-risk)
 4. Detect confabulation in LLM outputs using reference-grounded verification and confidence scoring

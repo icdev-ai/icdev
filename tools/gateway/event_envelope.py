@@ -24,30 +24,28 @@ class CommandEnvelope:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     # Source channel
-    channel: str = ""              # telegram, slack, teams, mattermost, internal_chat
-    channel_user_id: str = ""      # platform-specific user identifier
-    channel_user_name: str = ""    # display name (for logging only, never used for auth)
-    channel_message_id: str = ""   # platform message ID (for replies)
-    channel_thread_id: str = ""    # thread/conversation ID if applicable
+    channel: str = ""  # telegram, slack, teams, mattermost, internal_chat
+    channel_user_id: str = ""  # platform-specific user identifier
+    channel_user_name: str = ""  # display name (for logging only, never used for auth)
+    channel_message_id: str = ""  # platform message ID (for replies)
+    channel_thread_id: str = ""  # thread/conversation ID if applicable
 
     # Command content
-    raw_text: str = ""             # original message text
-    command: str = ""              # parsed ICDEV command (e.g. "icdev-status")
+    raw_text: str = ""  # original message text
+    command: str = ""  # parsed ICDEV™ command (e.g. "icdev-status")
     args: Dict[str, Any] = field(default_factory=dict)  # parsed arguments
-    project_id: str = ""           # target project (if specified)
+    project_id: str = ""  # target project (if specified)
 
     # Security context (populated by security chain gates)
-    binding_id: Optional[str] = None      # remote_user_bindings.id
-    icdev_user_id: Optional[str] = None   # resolved ICDEV user
-    tenant_id: Optional[str] = None       # resolved SaaS tenant
-    user_role: Optional[str] = None       # RBAC role
+    binding_id: Optional[str] = None  # remote_user_bindings.id
+    icdev_user_id: Optional[str] = None  # resolved ICDEV™ user
+    tenant_id: Optional[str] = None  # resolved SaaS tenant
+    user_role: Optional[str] = None  # RBAC role
 
     # Metadata
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-    signature: str = ""            # webhook signature from channel
-    is_bot: bool = False           # whether sender is a bot
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    signature: str = ""  # webhook signature from channel
+    is_bot: bool = False  # whether sender is a bot
 
     # Gate results (populated as envelope passes through security chain)
     gate_results: Dict[str, bool] = field(default_factory=dict)

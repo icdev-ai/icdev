@@ -1,0 +1,148 @@
+{
+  "id": "vert-aiops",
+  "name": "AIOps",
+  "slug": "aiops",
+  "description": "AI-driven IT operations: intelligent monitoring, anomaly detection, automated incident response, observability, root cause analysis, capacity planning, and self-healing infrastructure.",
+  "keywords": [
+    "AIOps",
+    "intelligent monitoring",
+    "anomaly detection",
+    "automated remediation",
+    "observability",
+    "root cause analysis",
+    "capacity planning",
+    "self-healing infrastructure",
+    "log analytics",
+    "metric correlation",
+    "event management",
+    "noise reduction",
+    "alert fatigue",
+    "service topology",
+    "change risk prediction",
+    "SRE",
+    "SLO management",
+    "chaos engineering",
+    "OpenTelemetry",
+    "distributed tracing"
+  ],
+  "regulatory_bodies": [
+    "NIST",
+    "CISA",
+    "FedRAMP",
+    "DISA"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.AI",
+      "cs.SE",
+      "cs.DC",
+      "cs.NI"
+    ],
+    "ieee": [
+      "AIOps",
+      "IT operations",
+      "intelligent monitoring",
+      "anomaly detection"
+    ],
+    "acm": [
+      "software engineering",
+      "distributed systems",
+      "cloud computing"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/sre",
+      "r/devops",
+      "r/kubernetes",
+      "r/observability",
+      "r/grafana",
+      "r/prometheus",
+      "r/sysadmin",
+      "r/dataengineering"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/aiops",
+      "devops.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": []
+  },
+  "review_sites": {
+    "g2": [
+      "aiops-platforms",
+      "it-infrastructure-monitoring",
+      "application-performance-monitoring",
+      "log-management"
+    ],
+    "capterra": [
+      "it-management-software",
+      "network-monitoring-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "aiops",
+      "observability",
+      "monitoring",
+      "anomaly-detection",
+      "opentelemetry",
+      "distributed-tracing",
+      "log-analysis"
+    ],
+    "awesome_lists": [
+      "awesome-sre",
+      "awesome-observability",
+      "awesome-monitoring"
+    ],
+    "package_registries": {
+      "pypi": [
+        "opentelemetry-api",
+        "prometheus-client",
+        "grafana-client"
+      ],
+      "npm": [],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "AIOps market",
+      "AI operations",
+      "intelligent observability",
+      "automated incident response",
+      "SRE automation"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06N20",
+      "G06F11",
+      "H04L41"
+    ],
+    "keywords": [
+      "automated root cause analysis",
+      "predictive IT operations",
+      "anomaly detection system"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53",
+    "FedRAMP",
+    "ISO_27001",
+    "SOC_2",
+    "ITIL_4"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "AIOps platform",
+      "AI IT operations",
+      "observability platform",
+      "SRE automation"
+    ],
+    "manual_urls": []
+  }
+}

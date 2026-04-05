@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Unified MCP Gateway Server — single entry point for all ICDEV tools.
+"""Unified MCP Gateway Server — single entry point for all ICDEV™ tools.
 
 Aggregates all 18 domain servers plus ~55 new tool wrappers into one
 MCP server process.  Uses lazy module loading: tool handlers are only

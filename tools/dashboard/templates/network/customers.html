@@ -1,0 +1,130 @@
+{% extends "network/base.html" %}
+{% block title %}Customers & Sites — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Customers & Sites</h1>
+    <p class="page-subtitle">Manage customers, partners, and their site locations</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="showAdd('cust')">+ Customer</button>
+    <button class="btn btn-secondary" onclick="showAdd('site')">+ Site</button>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <section class="panel">
+    <div class="panel-header"><h2 class="panel-title">Customers ({{ customers|length }})</h2></div>
+    {% if customers %}
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Type</th><th>Contact</th><th>Email</th><th>Contract</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for c in customers %}
+        <tr>
+          <td><strong>{{ c.name }}</strong></td>
+          <td><span class="badge">{{ c.customer_type }}</span></td>
+          <td>{{ c.contact_name }}</td>
+          <td>{{ c.contact_email }}</td>
+          <td>{{ c.contract_ref }}</td>
+          <td class="actions">
+            <button class="action-btn" onclick="editCustomer('{{ c.id }}','{{ c.name }}','{{ c.customer_type }}','{{ c.contact_name }}','{{ c.contact_email }}')" title="Edit">✏</button>
+            <button class="action-btn danger" onclick="delCustomer('{{ c.id }}')" title="Delete">✕</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p style="padding:1rem;color:var(--text-muted);">No customers yet.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-header"><h2 class="panel-title">Sites ({{ sites|length }})</h2></div>
+    {% if sites %}
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Customer</th><th>Type</th><th>City</th><th>State</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for s in sites %}
+        <tr>
+          <td><strong>{{ s.name }}</strong></td>
+          <td>{{ s.customer_name }}</td>
+          <td><span class="badge">{{ s.site_type }}</span></td>
+          <td>{{ s.city }}</td>
+          <td>{{ s.state }}</td>
+          <td class="actions">
+            <button class="action-btn" onclick="editSite('{{ s.id }}','{{ s.name }}','{{ s.site_type }}','{{ s.city }}')" title="Edit">✏</button>
+            <button class="action-btn danger" onclick="delSite('{{ s.id }}')" title="Delete">✕</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p style="padding:1rem;color:var(--text-muted);">No sites yet.</p>{% endif %}
+  </section>
+</div>
+
+<!-- Add Customer Modal -->
+<div id="cust-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Add Customer</h3>
+    <form onsubmit="return submitCust(event)">
+      <div class="form-grid">
+        <label>Name <input name="name" required></label>
+        <label>Type <select name="customer_type"><option>customer</option><option>partner</option><option>internal</option></select></label>
+        <label>Contact Name <input name="contact_name"></label>
+        <label>Contact Email <input name="contact_email" type="email"></label>
+        <label>Contract Ref <input name="contract_ref"></label>
+        <label>Notes <input name="notes"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Site Modal -->
+<div id="site-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Add Site</h3>
+    <form onsubmit="return submitSite(event)">
+      <div class="form-grid">
+        <label>Name <input name="name" required></label>
+        <label>Customer <select name="customer_id">
+          <option value="">— None —</option>
+          {% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select></label>
+        <label>Type <select name="site_type"><option>office</option><option>datacenter</option><option>colo</option><option>pop</option><option>hq</option><option>branch</option><option>remote</option></select></label>
+        <label>Address <input name="address"></label>
+        <label>City <input name="city"></label>
+        <label>State <input name="state"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function showAdd(t){document.getElementById(t+'-modal').style.display='flex';}
+function submitCust(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  fetch(NC_BASE+'/api/customers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>{if(r.ok)location.reload();});return false;}
+function submitSite(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  fetch(NC_BASE+'/api/sites',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>{if(r.ok)location.reload();});return false;}
+function editCustomer(id,name,type,contact,email){
+  const n=prompt('Name:',name);if(n===null)return;
+  const t=prompt('Type (customer/partner/internal):',type);if(t===null)return;
+  fetch(NC_BASE+'/api/customers/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,customer_type:t})}).then(()=>location.reload());
+}
+function delCustomer(id){if(!confirm('Delete customer and all sites?'))return;fetch(NC_BASE+'/api/customers/'+id,{method:'DELETE'}).then(()=>location.reload());}
+function editSite(id,name,type,city){
+  const n=prompt('Name:',name);if(n===null)return;
+  const t=prompt('Type (office/datacenter/colo/pop/hq/branch/remote):',type);if(t===null)return;
+  fetch(NC_BASE+'/api/sites/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,site_type:t})}).then(()=>location.reload());
+}
+function delSite(id){if(!confirm('Delete this site?'))return;fetch(NC_BASE+'/api/sites/'+id,{method:'DELETE'}).then(()=>location.reload());}
+</script>
+{% endblock %}

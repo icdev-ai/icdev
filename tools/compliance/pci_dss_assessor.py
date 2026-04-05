@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """PCI DSS v4.0 Assessment Engine.
 
 Assesses projects against PCI Data Security Standard v4.0 across
@@ -30,7 +30,9 @@ class PCIDSSAssessor(BaseAssessor):
     CATALOG_FILENAME = "pci_dss_v4.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """PCI DSS-specific automated checks.
 

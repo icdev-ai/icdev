@@ -14,7 +14,6 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -24,7 +23,7 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 FEEDBACK_DIR = BASE_DIR / "data" / "genesis" / "feedback"
 
@@ -55,7 +54,7 @@ def collect_runtime_failures(lookback_hours: int = 24) -> List[Dict]:
     return _safe_query(
         "SELECT id, event_type, details, created_at FROM audit_trail "
         "WHERE event_type LIKE 'error.%' AND created_at > ? ORDER BY created_at DESC LIMIT 100",
-        (since,)
+        (since,),
     )
 
 
@@ -66,7 +65,7 @@ def collect_quality_trends(lookback_hours: int = 168) -> List[Dict]:
         "SELECT file_path, language, avg_cyclomatic, avg_cognitive, "
         "maintainability_score, smells, created_at FROM code_quality_metrics "
         "WHERE created_at > ? ORDER BY maintainability_score ASC LIMIT 50",
-        (since,)
+        (since,),
     )
 
 
@@ -86,7 +85,7 @@ def collect_heal_outcomes(lookback_hours: int = 168) -> List[Dict]:
         "SELECT id, pattern_id, event_type, action_taken, outcome, "
         "created_at FROM self_healing_events "
         "WHERE created_at > ? ORDER BY created_at DESC LIMIT 50",
-        (since,)
+        (since,),
     )
 
 
@@ -139,16 +138,19 @@ def collect_all() -> Dict[str, Any]:
     # Log to genesis audit
     try:
         conn = get_connection()
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO genesis_audit
                 (id, event_type, details, created_at)
             VALUES (?, ?, ?, ?)
-        """, (
-            f"aud-{uuid.uuid4().hex[:10]}",
-            "genesis.feedback.collected",
-            json.dumps(feedback["summary"]),
-            _utcnow_iso(),
-        ))
+        """,
+            (
+                f"aud-{uuid.uuid4().hex[:10]}",
+                "genesis.feedback.collected",
+                json.dumps(feedback["summary"]),
+                _utcnow_iso(),
+            ),
+        )
         conn.commit()
         conn.close()
     except Exception:
@@ -237,8 +239,20 @@ def prioritize_reflexes() -> Dict[str, Any]:
         priorities["learn"] = {"priority": "boost", "reason": "Harness recommendations available for learning"}
 
     # Default: all others normal
-    all_reflexes = ["research", "scout", "audit", "report", "comply", "ingest",
-                    "market", "publish", "test", "learn", "heal", "evolve"]
+    all_reflexes = [
+        "research",
+        "scout",
+        "audit",
+        "report",
+        "comply",
+        "ingest",
+        "market",
+        "publish",
+        "test",
+        "learn",
+        "heal",
+        "evolve",
+    ]
     for r in all_reflexes:
         if r not in priorities:
             priorities[r] = {"priority": "normal", "reason": "No feedback signals"}
@@ -252,8 +266,7 @@ def prioritize_reflexes() -> Dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Genesis Feedback Collector — v1.x telemetry for v2.0")
+    parser = argparse.ArgumentParser(description="Genesis Feedback Collector — v1.x telemetry for v2.0")
     parser.add_argument("--collect", action="store_true", help="Collect all feedback now")
     parser.add_argument("--latest", action="store_true", help="Show latest feedback")
     parser.add_argument("--summary", action="store_true", help="Show 7-day summary")
@@ -285,11 +298,14 @@ def main() -> None:
 
     if args.summary:
         result = get_summary()
-        print(json.dumps(result, indent=2) if args.json else
-              f"7-day summary ({result.get('files_analyzed', 0)} files):\n"
-              f"  Failures: {result.get('week_summary', {}).get('runtime_failures', 0)}\n"
-              f"  Gaps: {result.get('week_summary', {}).get('coverage_gaps', 0)}\n"
-              f"  Heals: {result.get('week_summary', {}).get('heal_events', 0)}")
+        print(
+            json.dumps(result, indent=2)
+            if args.json
+            else f"7-day summary ({result.get('files_analyzed', 0)} files):\n"
+            f"  Failures: {result.get('week_summary', {}).get('runtime_failures', 0)}\n"
+            f"  Gaps: {result.get('week_summary', {}).get('coverage_gaps', 0)}\n"
+            f"  Heals: {result.get('week_summary', {}).get('heal_events', 0)}"
+        )
         return
 
     if args.priorities:
@@ -300,7 +316,7 @@ def main() -> None:
             print(f"Reflex priorities (boosted: {result.get('boost_count', 0)}):")
             for name, info in result.get("priorities", {}).items():
                 marker = ">>>" if info["priority"] == "boost" else "   "
-                print(f"  {marker} {name}: {info['priority']} — {info['reason']}")
+                print(f"  {marker} {name}: {info['priority']} -- {info['reason']}")
         return
 
     parser.print_help()

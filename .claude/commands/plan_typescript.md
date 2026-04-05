@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Plan TypeScript Application — ICDEV Framework-Specific Build Command
+# Plan TypeScript Application — ICDEV™ Framework-Specific Build Command
 
-Generate a comprehensive build plan for a TypeScript application with ICDEV compliance scaffolding.
+Generate a comprehensive build plan for a TypeScript application with ICDEV™ compliance scaffolding.
 
 ## Application Name: $ARGUMENTS
 

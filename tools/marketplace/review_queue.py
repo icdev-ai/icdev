@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Review Queue — Human review workflows for cross-tenant asset sharing.
 
 Manages the review lifecycle for marketplace assets that require ISSO or
@@ -58,9 +58,10 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.common.helpers import now_iso
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -76,6 +77,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful import of catalog_manager for status updates and promotion
 try:
     from tools.marketplace.catalog_manager import update_status, promote_to_central
+
     _HAS_CATALOG = True
 except ImportError:
     _HAS_CATALOG = False
@@ -83,7 +85,7 @@ except ImportError:
     def update_status(asset_id, status, db_path=None):
         """Fallback: direct DB update when catalog_manager unavailable."""
         path = db_path or DB_PATH
-        conn = sqlite3.connect(str(path))
+        conn = get_connection(db_path=str(path))
         try:
             conn.execute(
                 "UPDATE marketplace_assets SET status = ?, updated_at = ? WHERE id = ?",
@@ -97,7 +99,7 @@ except ImportError:
     def promote_to_central(asset_id, db_path=None):
         """Fallback: direct DB update when catalog_manager unavailable."""
         path = db_path or DB_PATH
-        conn = sqlite3.connect(str(path))
+        conn = get_connection(db_path=str(path))
         try:
             conn.execute(
                 "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = ? WHERE id = ?",
@@ -108,12 +110,15 @@ except ImportError:
             conn.close()
         return {"asset_id": asset_id, "catalog_tier": "central_vetted"}
 
+
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
 
@@ -132,22 +137,14 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _gen_id(prefix="rev"):
     """Generate a unique ID with prefix."""
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
-
-
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, project_id=None, details=None):
@@ -169,6 +166,7 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 # ---------------------------------------------------------------------------
 # submit_review
 # ---------------------------------------------------------------------------
+
 
 def submit_review(asset_id, version_id, db_path=None):
     """Submit an asset version for human review.
@@ -203,7 +201,7 @@ def submit_review(asset_id, version_id, db_path=None):
             return {"error": f"Version not found: {version_id} for asset {asset_id}"}
 
         review_id = _gen_id("rev")
-        now = _now()
+        now = now_iso()
 
         conn.execute(
             """INSERT INTO marketplace_reviews
@@ -243,6 +241,7 @@ def submit_review(asset_id, version_id, db_path=None):
 # assign_reviewer
 # ---------------------------------------------------------------------------
 
+
 def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
     """Assign an ISSO or security officer to review an asset.
 
@@ -258,7 +257,7 @@ def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
     if reviewer_role not in VALID_REVIEWER_ROLES:
         return {
             "error": f"Invalid reviewer_role '{reviewer_role}'. "
-                     f"Must be one of: {', '.join(sorted(VALID_REVIEWER_ROLES))}",
+            f"Must be one of: {', '.join(sorted(VALID_REVIEWER_ROLES))}",
         }
 
     conn = _get_db(db_path)
@@ -273,7 +272,7 @@ def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
         if row["decision"] != "pending":
             return {"error": f"Review {review_id} is already {row['decision']}"}
 
-        _now()
+        now_iso()
         conn.execute(
             """UPDATE marketplace_reviews
                SET reviewer_id = ?, reviewer_role = ?
@@ -307,10 +306,18 @@ def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
 # complete_review
 # ---------------------------------------------------------------------------
 
-def complete_review(review_id, reviewer_id, decision, rationale,
-                    conditions=None, scan_results_reviewed=True,
-                    code_reviewed=True, compliance_reviewed=True,
-                    db_path=None):
+
+def complete_review(
+    review_id,
+    reviewer_id,
+    decision,
+    rationale,
+    conditions=None,
+    scan_results_reviewed=True,
+    code_reviewed=True,
+    compliance_reviewed=True,
+    db_path=None,
+):
     """Complete a review with a decision.
 
     - approved: asset status -> 'published', promoted to central_vetted
@@ -333,8 +340,7 @@ def complete_review(review_id, reviewer_id, decision, rationale,
     """
     if decision not in VALID_DECISIONS:
         return {
-            "error": f"Invalid decision '{decision}'. "
-                     f"Must be one of: {', '.join(sorted(VALID_DECISIONS))}",
+            "error": f"Invalid decision '{decision}'. Must be one of: {', '.join(sorted(VALID_DECISIONS))}",
         }
 
     conn = _get_db(db_path)
@@ -351,7 +357,7 @@ def complete_review(review_id, reviewer_id, decision, rationale,
 
         asset_id = row["asset_id"]
         version_id = row["version_id"]
-        now = _now()
+        now = now_iso()
 
         # Update review record
         conn.execute(
@@ -362,12 +368,15 @@ def complete_review(review_id, reviewer_id, decision, rationale,
                    reviewed_at = ?
                WHERE id = ?""",
             (
-                reviewer_id, decision, rationale,
+                reviewer_id,
+                decision,
+                rationale,
                 json.dumps(conditions) if conditions else None,
                 1 if scan_results_reviewed else 0,
                 1 if code_reviewed else 0,
                 1 if compliance_reviewed else 0,
-                now, review_id,
+                now,
+                review_id,
             ),
         )
         conn.commit()
@@ -425,6 +434,7 @@ def complete_review(review_id, reviewer_id, decision, rationale,
 # list_pending
 # ---------------------------------------------------------------------------
 
+
 def list_pending(reviewer_id=None, db_path=None):
     """List pending reviews with full asset and version context.
 
@@ -476,25 +486,27 @@ def list_pending(reviewer_id=None, db_path=None):
 
         pending = []
         for r in rows:
-            pending.append({
-                "review_id": r["review_id"],
-                "asset_id": r["asset_id"],
-                "version_id": r["version_id"],
-                "reviewer_id": r["reviewer_id"],
-                "reviewer_role": r["reviewer_role"],
-                "decision": r["decision"],
-                "submitted_at": r["submitted_at"],
-                "asset_name": r["asset_name"],
-                "asset_type": r["asset_type"],
-                "slug": r["slug"],
-                "impact_level": r["impact_level"],
-                "classification": r["classification"],
-                "publisher_tenant_id": r["publisher_tenant_id"],
-                "publisher_user": r["publisher_user"],
-                "version": r["version"],
-                "changelog": r["changelog"],
-                "sha256_hash": r["sha256_hash"],
-            })
+            pending.append(
+                {
+                    "review_id": r["review_id"],
+                    "asset_id": r["asset_id"],
+                    "version_id": r["version_id"],
+                    "reviewer_id": r["reviewer_id"],
+                    "reviewer_role": r["reviewer_role"],
+                    "decision": r["decision"],
+                    "submitted_at": r["submitted_at"],
+                    "asset_name": r["asset_name"],
+                    "asset_type": r["asset_type"],
+                    "slug": r["slug"],
+                    "impact_level": r["impact_level"],
+                    "classification": r["classification"],
+                    "publisher_tenant_id": r["publisher_tenant_id"],
+                    "publisher_user": r["publisher_user"],
+                    "version": r["version"],
+                    "changelog": r["changelog"],
+                    "sha256_hash": r["sha256_hash"],
+                }
+            )
 
         return {
             "total_pending": len(pending),
@@ -508,6 +520,7 @@ def list_pending(reviewer_id=None, db_path=None):
 # ---------------------------------------------------------------------------
 # get_review
 # ---------------------------------------------------------------------------
+
 
 def get_review(review_id, db_path=None):
     """Get full review details including scan results.
@@ -604,6 +617,7 @@ def get_review(review_id, db_path=None):
 # escalate_review
 # ---------------------------------------------------------------------------
 
+
 def escalate_review(review_id, escalation_reason, db_path=None):
     """Escalate a stale or blocked review.
 
@@ -632,7 +646,7 @@ def escalate_review(review_id, escalation_reason, db_path=None):
         if row["decision"] != "pending":
             return {"error": f"Review {review_id} is already {row['decision']}, cannot escalate"}
 
-        now = _now()
+        now = now_iso()
 
         # Calculate days pending
         submitted_at = row["submitted_at"]
@@ -678,9 +692,10 @@ def escalate_review(review_id, escalation_reason, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Marketplace Review Queue — human review for cross-tenant asset sharing"
+        description="ICDEV™ Marketplace Review Queue — human review for cross-tenant asset sharing"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", type=Path, default=None, help="Override database path")
@@ -700,22 +715,15 @@ def main():
     parser.add_argument("--reviewer-id", help="Reviewer identity (email or user ID)")
 
     # Assign args
-    parser.add_argument("--reviewer-role",
-                        choices=sorted(VALID_REVIEWER_ROLES),
-                        help="Reviewer role")
+    parser.add_argument("--reviewer-role", choices=sorted(VALID_REVIEWER_ROLES), help="Reviewer role")
 
     # Review (complete) args
-    parser.add_argument("--decision",
-                        choices=sorted(VALID_DECISIONS),
-                        help="Review decision")
+    parser.add_argument("--decision", choices=sorted(VALID_DECISIONS), help="Review decision")
     parser.add_argument("--rationale", help="Decision rationale")
     parser.add_argument("--conditions", help="Conditions JSON (for conditional approval)")
-    parser.add_argument("--no-scan-review", action="store_true",
-                        help="Mark scan results as not reviewed")
-    parser.add_argument("--no-code-review", action="store_true",
-                        help="Mark code as not reviewed")
-    parser.add_argument("--no-compliance-review", action="store_true",
-                        help="Mark compliance as not reviewed")
+    parser.add_argument("--no-scan-review", action="store_true", help="Mark scan results as not reviewed")
+    parser.add_argument("--no-code-review", action="store_true", help="Mark code as not reviewed")
+    parser.add_argument("--no-compliance-review", action="store_true", help="Mark compliance as not reviewed")
 
     # Escalate args
     parser.add_argument("--escalation-reason", help="Reason for escalation")

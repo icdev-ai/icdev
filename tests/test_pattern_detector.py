@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.knowledge.pattern_detector — failure pattern detection,
@@ -8,8 +9,7 @@ feature extraction, similarity scoring, frequency anomaly detection, and
 full project analysis."""
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import datetime, timezone
 
 import pytest
 
@@ -106,6 +106,7 @@ def _seed_failures(db_path, failures):
 # TestExtractFeatures
 # ---------------------------------------------------------------------------
 
+
 class TestExtractFeatures:
     """extract_features: pure dict-to-dict feature extraction."""
 
@@ -122,24 +123,30 @@ class TestExtractFeatures:
 
     def test_timestamp_extracts_time_features(self):
         # Wednesday 2025-06-11 at 14:30 is business hours
-        features = extract_features({
-            "timestamp": "2025-06-11T14:30:00",
-        })
+        features = extract_features(
+            {
+                "timestamp": "2025-06-11T14:30:00",
+            }
+        )
         assert features["time_of_day"] == 14
         assert features["day_of_week"] == 2  # Wednesday
         assert features["is_business_hours"] == 1
 
     def test_weekend_timestamp_not_business_hours(self):
         # Saturday 2025-06-14 at 10:00
-        features = extract_features({
-            "timestamp": "2025-06-14T10:00:00",
-        })
+        features = extract_features(
+            {
+                "timestamp": "2025-06-14T10:00:00",
+            }
+        )
         assert features["is_business_hours"] == 0
 
     def test_message_keyword_flags(self):
-        features = extract_features({
-            "error_message": "Connection timed out to database pool",
-        })
+        features = extract_features(
+            {
+                "error_message": "Connection timed out to database pool",
+            }
+        )
         assert features["has_timeout"] == 1
         assert features["has_connection"] == 1
         assert features["has_database"] == 1
@@ -153,18 +160,22 @@ class TestExtractFeatures:
         assert features["stack_depth"] == 3
 
     def test_context_as_json_string(self):
-        features = extract_features({
-            "context": '{"environment": "staging", "recent_deployment": true}',
-        })
+        features = extract_features(
+            {
+                "context": '{"environment": "staging", "recent_deployment": true}',
+            }
+        )
         assert features["environment"] == "staging"
         assert features["recent_deployment"] == 1
 
     def test_signature_built_from_features(self):
-        features = extract_features({
-            "error_type": "TimeoutError",
-            "service_name": "api-gw",
-            "error_message": "connection timeout to postgres database",
-        })
+        features = extract_features(
+            {
+                "error_type": "TimeoutError",
+                "service_name": "api-gw",
+                "error_message": "connection timeout to postgres database",
+            }
+        )
         sig = features["signature"]
         assert "TimeoutError" in sig
         assert "api-gw" in sig
@@ -176,6 +187,7 @@ class TestExtractFeatures:
 # ---------------------------------------------------------------------------
 # TestSimilarity
 # ---------------------------------------------------------------------------
+
 
 class TestSimilarity:
     """_similarity: Jaccard character-trigram similarity."""
@@ -200,6 +212,7 @@ class TestSimilarity:
 # TestMatchKnownPattern
 # ---------------------------------------------------------------------------
 
+
 class TestMatchKnownPattern:
     """match_known_pattern: match features against knowledge_patterns table."""
 
@@ -209,17 +222,27 @@ class TestMatchKnownPattern:
         assert matches == []
 
     def test_matching_pattern_returned(self, pattern_db):
-        _seed_patterns(pattern_db, [
-            ("timeout", "TimeoutError|api-gw|timeout",
-             "API gateway timeout on upstream service",
-             "Upstream service overloaded", "Scale upstream replicas",
-             0.9, 1),
-        ])
-        features = extract_features({
-            "error_type": "TimeoutError",
-            "service_name": "api-gw",
-            "error_message": "Request timed out after 30s",
-        })
+        _seed_patterns(
+            pattern_db,
+            [
+                (
+                    "timeout",
+                    "TimeoutError|api-gw|timeout",
+                    "API gateway timeout on upstream service",
+                    "Upstream service overloaded",
+                    "Scale upstream replicas",
+                    0.9,
+                    1,
+                ),
+            ],
+        )
+        features = extract_features(
+            {
+                "error_type": "TimeoutError",
+                "service_name": "api-gw",
+                "error_message": "Request timed out after 30s",
+            }
+        )
         matches = match_known_pattern(features, db_path=pattern_db)
         assert len(matches) >= 1
         top = matches[0]
@@ -228,18 +251,28 @@ class TestMatchKnownPattern:
         assert top["combined_score"] > 0.1
 
     def test_low_similarity_filtered_out(self, pattern_db):
-        _seed_patterns(pattern_db, [
-            ("disk", "DiskError|storage|disk",
-             "Disk space exhaustion on node",
-             "Log rotation disabled", "Enable log rotation",
-             0.3, 0),
-        ])
+        _seed_patterns(
+            pattern_db,
+            [
+                (
+                    "disk",
+                    "DiskError|storage|disk",
+                    "Disk space exhaustion on node",
+                    "Log rotation disabled",
+                    "Enable log rotation",
+                    0.3,
+                    0,
+                ),
+            ],
+        )
         # Features that are completely unrelated to disk errors
-        features = extract_features({
-            "error_type": "ImportError",
-            "service_name": "auth-svc",
-            "error_message": "No module named foo",
-        })
+        features = extract_features(
+            {
+                "error_type": "ImportError",
+                "service_name": "auth-svc",
+                "error_message": "No module named foo",
+            }
+        )
         matches = match_known_pattern(features, db_path=pattern_db)
         # Either empty or all scores below threshold
         for m in matches:
@@ -250,35 +283,45 @@ class TestMatchKnownPattern:
 # TestDetectFrequencyAnomaly
 # ---------------------------------------------------------------------------
 
+
 class TestDetectFrequencyAnomaly:
     """detect_frequency_anomaly: find repeated error types in a time window."""
 
     def test_no_failures_returns_empty(self, pattern_db):
         anomalies = detect_frequency_anomaly(
-            "proj-test-001", window_hours=1, threshold=3, db_path=pattern_db,
+            "proj-test-001",
+            window_hours=1,
+            threshold=3,
+            db_path=pattern_db,
         )
         assert anomalies == []
 
     def test_below_threshold_returns_empty(self, pattern_db):
         now = datetime.now(timezone.utc).isoformat()
-        _seed_failures(pattern_db, [
-            ("proj-test-001", "ValueError", "bad value", "svc", "", "{}", 0, now),
-            ("proj-test-001", "ValueError", "bad value", "svc", "", "{}", 0, now),
-        ])
+        _seed_failures(
+            pattern_db,
+            [
+                ("proj-test-001", "ValueError", "bad value", "svc", "", "{}", 0, now),
+                ("proj-test-001", "ValueError", "bad value", "svc", "", "{}", 0, now),
+            ],
+        )
         anomalies = detect_frequency_anomaly(
-            "proj-test-001", window_hours=1, threshold=3, db_path=pattern_db,
+            "proj-test-001",
+            window_hours=1,
+            threshold=3,
+            db_path=pattern_db,
         )
         assert anomalies == []
 
     def test_above_threshold_detected(self, pattern_db):
         now = datetime.now(timezone.utc).isoformat()
-        failures = [
-            ("proj-test-001", "TimeoutError", "timed out", "api", "", "{}", 0, now)
-            for _ in range(5)
-        ]
+        failures = [("proj-test-001", "TimeoutError", "timed out", "api", "", "{}", 0, now) for _ in range(5)]
         _seed_failures(pattern_db, failures)
         anomalies = detect_frequency_anomaly(
-            "proj-test-001", window_hours=1, threshold=3, db_path=pattern_db,
+            "proj-test-001",
+            window_hours=1,
+            threshold=3,
+            db_path=pattern_db,
         )
         assert len(anomalies) == 1
         assert anomalies[0]["error_type"] == "TimeoutError"
@@ -288,13 +331,13 @@ class TestDetectFrequencyAnomaly:
     def test_severity_critical_for_high_count(self, pattern_db):
         now = datetime.now(timezone.utc).isoformat()
         # threshold=3, critical when count > threshold * 3 = 9
-        failures = [
-            ("proj-test-001", "OOMError", "out of memory", "worker", "", "{}", 0, now)
-            for _ in range(12)
-        ]
+        failures = [("proj-test-001", "OOMError", "out of memory", "worker", "", "{}", 0, now) for _ in range(12)]
         _seed_failures(pattern_db, failures)
         anomalies = detect_frequency_anomaly(
-            "proj-test-001", window_hours=1, threshold=3, db_path=pattern_db,
+            "proj-test-001",
+            window_hours=1,
+            threshold=3,
+            db_path=pattern_db,
         )
         assert len(anomalies) == 1
         assert anomalies[0]["severity"] == "critical"
@@ -303,6 +346,7 @@ class TestDetectFrequencyAnomaly:
 # ---------------------------------------------------------------------------
 # TestAnalyzeProject
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeProject:
     """analyze_project: full pattern analysis pipeline."""
@@ -317,17 +361,27 @@ class TestAnalyzeProject:
         assert result["summary"]["auto_healable"] == 0
 
     def test_unresolved_failures_matched_against_patterns(self, pattern_db):
-        _seed_patterns(pattern_db, [
-            ("timeout", "TimeoutError|api-gw|timeout",
-             "API gateway timeout",
-             "Upstream overload", "Scale replicas",
-             0.9, 1),
-        ])
+        _seed_patterns(
+            pattern_db,
+            [
+                (
+                    "timeout",
+                    "TimeoutError|api-gw|timeout",
+                    "API gateway timeout",
+                    "Upstream overload",
+                    "Scale replicas",
+                    0.9,
+                    1,
+                ),
+            ],
+        )
         now = datetime.now(timezone.utc).isoformat()
-        _seed_failures(pattern_db, [
-            ("proj-test-001", "TimeoutError", "Request timed out",
-             "api-gw", "", "{}", 0, now),
-        ])
+        _seed_failures(
+            pattern_db,
+            [
+                ("proj-test-001", "TimeoutError", "Request timed out", "api-gw", "", "{}", 0, now),
+            ],
+        )
         result = analyze_project("proj-test-001", db_path=pattern_db)
         assert result["summary"]["pattern_matches_found"] >= 1
         match = result["pattern_matches"][0]

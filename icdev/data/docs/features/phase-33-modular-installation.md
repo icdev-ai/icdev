@@ -9,24 +9,24 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 21 (SaaS Multi-Tenancy), Phase 23 (Universal Compliance) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV has grown to encompass 15 agents, 15 MCP servers, 20+ compliance frameworks, 6 programming languages, and 183 database tables. Deploying the full system requires significant infrastructure, configuration, and operational expertise. However, not every customer needs every module. An ISV startup building a SaaS product needs a builder, basic security scanning, and a dashboard -- not MBSE integration, supply chain intelligence, or DoD MOSA assessment. A healthcare organization needs HIPAA, HITRUST, and SOC 2 compliance -- not FedRAMP High, CMMC, or CJIS. A DoD program office needs everything including IL6 air-gapped support, but even they may not need the marketplace or innovation engine on day one.
+ICDEV™ has grown to encompass 15 agents, 15 MCP servers, 20+ compliance frameworks, 6 programming languages, and 183 database tables. Deploying the full system requires significant infrastructure, configuration, and operational expertise. However, not every customer needs every module. An ISV startup building a SaaS product needs a builder, basic security scanning, and a dashboard -- not MBSE integration, supply chain intelligence, or DoD MOSA assessment. A healthcare organization needs HIPAA, HITRUST, and SOC 2 compliance -- not FedRAMP High, CMMC, or CJIS. A DoD program office needs everything including IL6 air-gapped support, but even they may not need the marketplace or innovation engine on day one.
 
 The monolithic deployment model forces customers into an all-or-nothing choice: deploy everything (complex, expensive, more attack surface) or nothing (no value). There is no middle ground. Customers cannot start small and grow, cannot add compliance frameworks as their posture matures, and cannot remove modules they do not need. This creates adoption friction, increases operational cost, and expands the attack surface unnecessarily.
 
-Modular installation solves this by decomposing ICDEV into independently deployable modules with explicit dependency resolution. Customers choose a deployment profile (or build a custom one) that matches their organizational role, compliance posture, target platform, and team size. The installer resolves dependencies, generates platform-specific artifacts (Docker Compose, K8s manifests, Helm values, .env files), and creates only the database tables required by the selected modules. Existing installations can be upgraded incrementally by adding modules or compliance frameworks without disrupting running workloads.
+Modular installation solves this by decomposing ICDEV™ into independently deployable modules with explicit dependency resolution. Customers choose a deployment profile (or build a custom one) that matches their organizational role, compliance posture, target platform, and team size. The installer resolves dependencies, generates platform-specific artifacts (Docker Compose, K8s manifests, Helm values, .env files), and creates only the database tables required by the selected modules. Existing installations can be upgraded incrementally by adding modules or compliance frameworks without disrupting running workloads.
 
 ---
 
 ## 2. Goals
 
-1. Decompose ICDEV into independently deployable modules with explicit dependency declarations, enabling customers to install only what they need
+1. Decompose ICDEV™ into independently deployable modules with explicit dependency declarations, enabling customers to install only what they need
 2. Provide 10 pre-built deployment profiles (ISV Startup, ISV Enterprise, SI Consulting, SI Enterprise, DoD Team, Healthcare, Financial, Law Enforcement, GovCloud Full, Custom) covering the most common organizational patterns
 3. Implement an interactive wizard that guides new users through platform selection, compliance posture, and module choices with dependency auto-resolution
 4. Generate platform-specific deployment artifacts (Docker Compose, K8s manifests, K8s RBAC, Helm values, .env templates) based on selected modules
@@ -92,7 +92,7 @@ Modular installation solves this by decomposing ICDEV into independently deploya
 ### 4.1 Module System
 
 #### REQ-33-001: Module Definitions
-The system SHALL define all ICDEV modules in `args/installation_manifest.yaml`, each with a unique identifier, description, list of dependencies, list of database table groups, list of required configuration files, and list of provided agents/services.
+The system SHALL define all ICDEV™ modules in `args/installation_manifest.yaml`, each with a unique identifier, description, list of dependencies, list of database table groups, list of required configuration files, and list of provided agents/services.
 
 #### REQ-33-002: Dependency Resolution
 The installer SHALL automatically resolve module dependencies using topological sorting, adding required dependency modules when a module is selected.

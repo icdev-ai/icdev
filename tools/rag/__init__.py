@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Universal RAG Subsystem — Phase 64.
 
-Provides vector-indexed retrieval-augmented generation across all ICDEV data.
+Provides vector-indexed retrieval-augmented generation across all ICDEV™ data.
 Indexes Innovation, Creative, Research engine outputs plus compliance artifacts,
 memory entries, and audit data for context-aware LLM invocations.
 
@@ -29,6 +29,7 @@ def get_vector_store(tenant_id: str | None = None):
         VectorStoreProvider instance.
     """
     from tools.rag.vector_store_factory import VectorStoreFactory
+
     return VectorStoreFactory.create(tenant_id=tenant_id)
 
 
@@ -42,4 +43,5 @@ def get_retriever(tenant_id: str | None = None):
         RAGRetriever instance.
     """
     from tools.rag.retriever import RAGRetriever
+
     return RAGRetriever(tenant_id=tenant_id)

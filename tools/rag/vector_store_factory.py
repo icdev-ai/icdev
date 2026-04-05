@@ -22,6 +22,7 @@ def _load_rag_config() -> dict:
         return {}
     try:
         import yaml
+
         with open(config_path, "r") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -55,6 +56,8 @@ class VectorStoreFactory:
 
         if selected == "auto":
             return VectorStoreFactory._auto_detect(vs_cfg, tenant_id)
+        elif selected == "pgvector":
+            return VectorStoreFactory._create_pgvector(vs_cfg, tenant_id)
         elif selected == "chromadb":
             return VectorStoreFactory._create_chromadb(vs_cfg, tenant_id)
         elif selected == "faiss":
@@ -64,10 +67,20 @@ class VectorStoreFactory:
 
     @staticmethod
     def _auto_detect(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
-        """Auto-detect best available backend: ChromaDB → FAISS → SQLite."""
+        """Auto-detect best available backend: pgvector → ChromaDB → FAISS → SQLite."""
+        # Try pgvector (highest priority when PG is the storage backend)
+        try:
+            from tools.db.storage import get_backend
+
+            if get_backend() == "postgresql":
+                return VectorStoreFactory._create_pgvector(vs_cfg, tenant_id)
+        except ImportError:
+            pass
+
         # Try ChromaDB
         try:
             import chromadb  # noqa: F401
+
             return VectorStoreFactory._create_chromadb(vs_cfg, tenant_id)
         except ImportError:
             pass
@@ -75,6 +88,7 @@ class VectorStoreFactory:
         # Try FAISS
         try:
             import faiss  # noqa: F401
+
             return VectorStoreFactory._create_faiss(vs_cfg, tenant_id)
         except ImportError:
             pass
@@ -83,8 +97,16 @@ class VectorStoreFactory:
         return VectorStoreFactory._create_sqlite(vs_cfg, tenant_id)
 
     @staticmethod
+    def _create_pgvector(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
+        """Create pgvector store (PostgreSQL with vector extension)."""
+        from tools.rag.pg_vector_store import PgVectorStore
+
+        return PgVectorStore()
+
+    @staticmethod
     def _create_sqlite(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
         from tools.rag.sqlite_vector_store import SQLiteVectorStore
+
         sqlite_cfg = vs_cfg.get("sqlite", {})
         db_path = sqlite_cfg.get("db_path", "")
         if db_path:
@@ -95,6 +117,7 @@ class VectorStoreFactory:
     def _create_chromadb(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
         try:
             from tools.rag.chroma_vector_store import ChromaVectorStore
+
             chroma_cfg = vs_cfg.get("chromadb", {})
             persist_dir = chroma_cfg.get("persist_dir", "data/rag/chromadb/")
             return ChromaVectorStore(
@@ -109,6 +132,7 @@ class VectorStoreFactory:
     def _create_faiss(vs_cfg: dict, tenant_id: Optional[str]) -> VectorStoreProvider:
         try:
             from tools.rag.faiss_vector_store import FAISSVectorStore
+
             faiss_cfg = vs_cfg.get("faiss", {})
             index_dir = faiss_cfg.get("index_dir", "data/rag/faiss/")
             return FAISSVectorStore(
@@ -125,11 +149,13 @@ class VectorStoreFactory:
         available = ["sqlite"]  # Always available
         try:
             import chromadb  # noqa: F401
+
             available.append("chromadb")
         except ImportError:
             pass
         try:
             import faiss  # noqa: F401
+
             available.append("faiss")
         except ImportError:
             pass

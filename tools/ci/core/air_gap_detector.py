@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Air-Gap Detector — network connectivity probe for webhook vs poll mode
+# ICDEV™ Air-Gap Detector — network connectivity probe for webhook vs poll mode
 
 """
 Detect network connectivity to determine webhook vs polling mode.

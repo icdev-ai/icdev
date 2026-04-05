@@ -5,6 +5,7 @@
 Loads IV&V requirements from ivv_requirements.json, performs automated checks
 where possible, stores results in ivv_assessments table, generates findings in
 ivv_findings table, evaluates IV&V gates, applies CUI markings, and logs audit events."""
+from __future__ import annotations
 
 import argparse
 import json
@@ -1956,7 +1957,7 @@ def run_ivv_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessor:** ICDEV IV&V Engine (automated)",
+            "**Assessor:** ICDEV™ IV&V Engine (automated)",
             f"**Process Area Scope:** {process_area}",
             "**IEEE 1012 Version:** IEEE 1012-2016",
             (

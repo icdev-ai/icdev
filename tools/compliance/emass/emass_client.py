@@ -17,8 +17,8 @@ Usage:
 
 import json
 import logging
-import sqlite3
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -91,8 +91,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -101,7 +100,7 @@ def _log_audit(conn, project_id, action, details=None):
 
     Args:
         conn: Active database connection.
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         action: Short action description (e.g., ``push_controls``).
         details: Optional dict of additional context.
     """
@@ -162,18 +161,17 @@ class EMASSClient:
             return self._session
 
         if requests is None:
-            raise ImportError(
-                "requests library required for eMASS API. "
-                "Install with: pip install requests"
-            )
+            raise ImportError("requests library required for eMASS API. Install with: pip install requests")
 
         self._session = requests.Session()
-        self._session.headers.update({
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-Classification": "CUI",
-            "User-Agent": "ICDEV-Compliance-Engine/1.0",
-        })
+        self._session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Classification": "CUI",
+                "User-Agent": "ICDEV-Compliance-Engine/1.0",
+            }
+        )
 
         # eMASS API key header (required in addition to PKI).
         api_key = self.config.get("api_key")
@@ -201,9 +199,7 @@ class EMASSClient:
         """
         now = time.time()
         # Prune timestamps older than 60 seconds.
-        self._request_timestamps = [
-            ts for ts in self._request_timestamps if now - ts < 60
-        ]
+        self._request_timestamps = [ts for ts in self._request_timestamps if now - ts < 60]
         if len(self._request_timestamps) >= self.rate_limit_per_minute:
             wait = 60 - (now - self._request_timestamps[0])
             if wait > 0:
@@ -252,7 +248,9 @@ class EMASSClient:
                     retry_after = int(response.headers.get("Retry-After", self.retry_backoff ** (attempt + 1)))
                     logger.warning(
                         "eMASS API rate limited (429), retrying after %d seconds (attempt %d/%d)",
-                        retry_after, attempt + 1, max_attempts,
+                        retry_after,
+                        attempt + 1,
+                        max_attempts,
                     )
                     time.sleep(retry_after)
                     continue
@@ -272,10 +270,12 @@ class EMASSClient:
                     last_error = f"Server error {response.status_code}: {response.text[:500]}"
                     logger.warning(
                         "eMASS API server error (attempt %d/%d): %s",
-                        attempt + 1, max_attempts, last_error,
+                        attempt + 1,
+                        max_attempts,
+                        last_error,
                     )
                     if attempt < max_attempts - 1:
-                        wait = self.retry_backoff ** attempt
+                        wait = self.retry_backoff**attempt
                         time.sleep(wait)
                     continue
 
@@ -299,30 +299,36 @@ class EMASSClient:
                 last_error = f"Connection error: {exc}"
                 logger.warning(
                     "eMASS API connection error (attempt %d/%d): %s",
-                    attempt + 1, max_attempts, last_error,
+                    attempt + 1,
+                    max_attempts,
+                    last_error,
                 )
                 if attempt < max_attempts - 1:
-                    wait = self.retry_backoff ** attempt
+                    wait = self.retry_backoff**attempt
                     time.sleep(wait)
 
             except requests.exceptions.Timeout as exc:
                 last_error = f"Timeout: {exc}"
                 logger.warning(
                     "eMASS API timeout (attempt %d/%d): %s",
-                    attempt + 1, max_attempts, last_error,
+                    attempt + 1,
+                    max_attempts,
+                    last_error,
                 )
                 if attempt < max_attempts - 1:
-                    wait = self.retry_backoff ** attempt
+                    wait = self.retry_backoff**attempt
                     time.sleep(wait)
 
             except Exception as exc:
                 last_error = str(exc)
                 logger.warning(
                     "eMASS API unexpected error (attempt %d/%d): %s",
-                    attempt + 1, max_attempts, last_error,
+                    attempt + 1,
+                    max_attempts,
+                    last_error,
                 )
                 if attempt < max_attempts - 1:
-                    wait = self.retry_backoff ** attempt
+                    wait = self.retry_backoff**attempt
                     time.sleep(wait)
 
         logger.error("eMASS API request failed after %d attempts: %s", max_attempts, last_error)
@@ -389,10 +395,15 @@ class EMASSClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, system_data.get("id", "unknown"), "register_system", {
-                "system_name": payload["systemName"],
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                system_data.get("id", "unknown"),
+                "register_system",
+                {
+                    "system_name": payload["systemName"],
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -457,10 +468,15 @@ class EMASSClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, str(system_id), "push_controls", {
-                "control_count": len(controls),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                str(system_id),
+                "push_controls",
+                {
+                    "control_count": len(controls),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -507,20 +523,19 @@ class EMASSClient:
         payload = [
             {
                 "status": _map_poam_status_to_emass(p.get("status", "Ongoing")),
-                "vulnerabilityDescription": p.get(
-                    "weakness_description", p.get("vulnerabilityDescription", "")
-                ),
+                "vulnerabilityDescription": p.get("weakness_description", p.get("vulnerabilityDescription", "")),
                 "sourceIdentVuln": p.get("source", p.get("sourceIdentVuln", "")),
                 "severity": _map_severity_to_emass(p.get("severity", "Moderate")),
-                "scheduledCompletionDate": p.get(
-                    "milestone_date", p.get("scheduledCompletionDate", "")
+                "scheduledCompletionDate": p.get("milestone_date", p.get("scheduledCompletionDate", "")),
+                "milestones": p.get(
+                    "milestones",
+                    [
+                        {
+                            "description": p.get("corrective_action", "Remediation planned"),
+                            "scheduledCompletionDate": p.get("milestone_date", ""),
+                        }
+                    ],
                 ),
-                "milestones": p.get("milestones", [
-                    {
-                        "description": p.get("corrective_action", "Remediation planned"),
-                        "scheduledCompletionDate": p.get("milestone_date", ""),
-                    }
-                ]),
                 "pocOrganization": p.get("responsible_party", p.get("pocOrganization", "")),
                 "resources": p.get("resources_required", p.get("resources", "")),
                 "controlAcronym": p.get("control_id", p.get("controlAcronym", "")),
@@ -532,10 +547,15 @@ class EMASSClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, str(system_id), "push_poam", {
-                "poam_count": len(poam_items),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                str(system_id),
+                "push_poam",
+                {
+                    "poam_count": len(poam_items),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -583,10 +603,15 @@ class EMASSClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, str(system_id), "push_artifacts", {
-                "artifact_count": len(artifacts),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                str(system_id),
+                "push_artifacts",
+                {
+                    "artifact_count": len(artifacts),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -616,7 +641,7 @@ class EMASSClient:
         payload = [
             {
                 "cci": t.get("cci", t.get("control_id", "")),
-                "testedBy": t.get("testedBy", t.get("tested_by", "ICDEV Compliance Engine")),
+                "testedBy": t.get("testedBy", t.get("tested_by", "ICDEV™ Compliance Engine")),
                 "testDate": t.get(
                     "testDate",
                     t.get("test_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
@@ -632,10 +657,15 @@ class EMASSClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, str(system_id), "push_test_results", {
-                "test_result_count": len(test_results),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                str(system_id),
+                "push_test_results",
+                {
+                    "test_result_count": len(test_results),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -729,14 +759,15 @@ class EMASSClient:
 # Mapping helpers
 # ======================================================================
 
+
 def _map_impl_status_to_emass(status):
-    """Map ICDEV implementation status to eMASS-accepted values.
+    """Map ICDEV™ implementation status to eMASS-accepted values.
 
     eMASS accepts: Planned, Implemented, Inherited, Not Applicable,
     Manually Inherited.
 
     Args:
-        status: ICDEV-internal status string.
+        status: ICDEV™-internal status string.
 
     Returns:
         eMASS-compatible implementation status string.
@@ -754,12 +785,12 @@ def _map_impl_status_to_emass(status):
 
 
 def _map_poam_status_to_emass(status):
-    """Map ICDEV POA&M status to eMASS-accepted values.
+    """Map ICDEV™ POA&M status to eMASS-accepted values.
 
     eMASS accepts: Ongoing, Completed, Risk Accepted, Delayed, Cancelled.
 
     Args:
-        status: ICDEV-internal POA&M status string.
+        status: ICDEV™-internal POA&M status string.
 
     Returns:
         eMASS-compatible POA&M status string.
@@ -779,12 +810,12 @@ def _map_poam_status_to_emass(status):
 
 
 def _map_severity_to_emass(severity):
-    """Map ICDEV severity to eMASS-accepted severity values.
+    """Map ICDEV™ severity to eMASS-accepted severity values.
 
     eMASS accepts: Very High, High, Moderate, Low, Very Low.
 
     Args:
-        severity: ICDEV-internal severity string.
+        severity: ICDEV™-internal severity string.
 
     Returns:
         eMASS-compatible severity string.
@@ -809,12 +840,12 @@ def _map_severity_to_emass(severity):
 
 
 def _map_compliance_status_to_emass(status):
-    """Map ICDEV test compliance status to eMASS-accepted values.
+    """Map ICDEV™ test compliance status to eMASS-accepted values.
 
     eMASS accepts: Compliant, Non-Compliant, Not Applicable.
 
     Args:
-        status: ICDEV-internal compliance/test status string.
+        status: ICDEV™-internal compliance/test status string.
 
     Returns:
         eMASS-compatible compliance status string.

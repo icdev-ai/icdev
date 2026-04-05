@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Creative Engine — customer-centric feature opportunity discovery orchestrator.
 
 Coordinates the full creative pipeline:
@@ -22,7 +22,7 @@ Architecture:
       effort_to_impact(0.25) (D355)
     - Feature specs are template-based (D356)
     - All tables append-only except creative_competitors (D357)
-    - Reuses _safe_get(), _get_db(), _now(), _audit() helpers (D358)
+    - Reuses _safe_get(), _get_db(), now_iso(), _audit() helpers (D358)
     - Daemon mode respects quiet hours from config (D359)
     - High-scoring signals cross-register to innovation_signals (D360)
 
@@ -56,6 +56,8 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -74,12 +76,14 @@ CONFIG_PATH = BASE_DIR / "args" / "creative_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -92,6 +96,7 @@ def _try_import(module_path, func_name):
     """Dynamically import a function with graceful fallback."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -101,9 +106,6 @@ def _try_import(module_path, func_name):
 # =========================================================================
 # HELPERS
 # =========================================================================
-def _now():
-    """ISO-8601 timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _load_config():
@@ -117,8 +119,7 @@ def _load_config():
 def _get_db(db_path=None):
     """Get SQLite connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -173,7 +174,7 @@ def stage_discover(domain=None, db_path=None):
     Returns:
         Dict with discovery results.
     """
-    result = {"stage": "discover", "started_at": _now()}
+    result = {"stage": "discover", "started_at": now_iso()}
 
     run_discovery = _try_import("tools.creative.competitor_discoverer", "run_discovery")
     if run_discovery:
@@ -184,7 +185,7 @@ def stage_discover(domain=None, db_path=None):
     else:
         result["discovery"] = {"error": "competitor_discoverer not available"}
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("creative.discover", f"Discovery complete for domain={domain}", result)
     return result
 
@@ -202,7 +203,7 @@ def stage_scan(source=None, db_path=None):
     Returns:
         Dict with scan results.
     """
-    result = {"stage": "scan", "started_at": _now()}
+    result = {"stage": "scan", "started_at": now_iso()}
 
     run_scan = _try_import("tools.creative.source_scanner", "run_scan")
     if run_scan:
@@ -213,7 +214,7 @@ def stage_scan(source=None, db_path=None):
     else:
         result["scan"] = {"error": "source_scanner not available"}
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("creative.scan", f"Scan complete source={source or 'all'}", result)
     return result
 
@@ -230,7 +231,7 @@ def stage_extract(db_path=None):
     Returns:
         Dict with extraction results.
     """
-    result = {"stage": "extract", "started_at": _now()}
+    result = {"stage": "extract", "started_at": now_iso()}
 
     extract_all = _try_import("tools.creative.pain_extractor", "extract_all_new")
     if extract_all:
@@ -241,7 +242,7 @@ def stage_extract(db_path=None):
     else:
         result["extraction"] = {"error": "pain_extractor not available"}
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("creative.extract", "Pain point extraction complete", result)
     return result
 
@@ -260,7 +261,7 @@ def stage_score(db_path=None):
     Returns:
         Dict with scoring results.
     """
-    result = {"stage": "score", "started_at": _now(), "sub_results": {}}
+    result = {"stage": "score", "started_at": now_iso(), "sub_results": {}}
 
     # Score all unscored pain points
     score_all = _try_import("tools.creative.gap_scorer", "score_all_new")
@@ -282,7 +283,7 @@ def stage_score(db_path=None):
     else:
         result["sub_results"]["gaps"] = {"error": "gap_scorer.identify_feature_gaps not available"}
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("creative.score", "Scoring and gap identification complete", result)
     return result
 
@@ -300,15 +301,13 @@ def stage_rank(top_k=20, db_path=None):
     Returns:
         Dict with ranked results and trends.
     """
-    result = {"stage": "rank", "started_at": _now(), "sub_results": {}}
+    result = {"stage": "rank", "started_at": now_iso(), "sub_results": {}}
 
     # Get top scored pain points
     get_top = _try_import("tools.creative.gap_scorer", "get_top_scored")
     if get_top:
         try:
-            result["sub_results"]["top_pain_points"] = get_top(
-                limit=top_k, min_score=0.0, db_path=db_path
-            )
+            result["sub_results"]["top_pain_points"] = get_top(limit=top_k, min_score=0.0, db_path=db_path)
         except Exception as e:
             result["sub_results"]["top_pain_points"] = {"error": str(e)}
     else:
@@ -324,7 +323,7 @@ def stage_rank(top_k=20, db_path=None):
     else:
         result["sub_results"]["trends"] = {"error": "trend_tracker not available"}
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("creative.rank", f"Ranking complete (top_k={top_k})", result)
     return result
 
@@ -341,7 +340,7 @@ def stage_generate(db_path=None):
     Returns:
         Dict with generation results.
     """
-    result = {"stage": "generate", "started_at": _now()}
+    result = {"stage": "generate", "started_at": now_iso()}
 
     generate_all = _try_import("tools.creative.spec_generator", "generate_all_eligible")
     if generate_all:
@@ -355,7 +354,7 @@ def stage_generate(db_path=None):
     # Cross-register high-scoring signals to Innovation Engine (D360)
     _cross_register_to_innovation(db_path=db_path)
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("creative.generate", "Spec generation complete", result)
     return result
 
@@ -435,7 +434,7 @@ def _cross_register_to_innovation(db_path=None):
                         content_hash,
                         row["composite_score"],
                         json.dumps(metadata),
-                        _now(),
+                        now_iso(),
                     ),
                 )
                 registered += 1
@@ -476,7 +475,7 @@ def run_full_pipeline(domain=None, db_path=None):
 
     result = {
         "pipeline_id": pipeline_id,
-        "started_at": _now(),
+        "started_at": now_iso(),
         "stages": {},
         "quiet_hours": False,
     }
@@ -507,7 +506,7 @@ def run_full_pipeline(domain=None, db_path=None):
     else:
         result["stages"]["generate"] = stage_generate(db_path=db_path)
 
-    result["completed_at"] = _now()
+    result["completed_at"] = now_iso()
     _audit("creative.pipeline.complete", f"Pipeline {pipeline_id} completed", result)
 
     return result
@@ -528,7 +527,7 @@ def get_status(db_path=None):
 
     conn = _get_db(db_path)
     try:
-        status = {"healthy": True, "timestamp": _now()}
+        status = {"healthy": True, "timestamp": now_iso()}
 
         # Table counts
         tables = {
@@ -542,7 +541,7 @@ def get_status(db_path=None):
 
         for key, table in tables.items():
             try:
-                row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                 status[f"total_{key}"] = row["cnt"] if row else 0
             except sqlite3.OperationalError:
                 status[f"total_{key}"] = 0
@@ -551,45 +550,35 @@ def get_status(db_path=None):
 
         # Competitors by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_competitors GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_competitors GROUP BY status").fetchall()
             status["competitors_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["competitors_by_status"] = {}
 
         # Pain points by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_pain_points GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_pain_points GROUP BY status").fetchall()
             status["pain_points_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["pain_points_by_status"] = {}
 
         # Specs by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_specs GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_specs GROUP BY status").fetchall()
             status["specs_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["specs_by_status"] = {}
 
         # Trends by status
         try:
-            rows = conn.execute(
-                "SELECT status, COUNT(*) as cnt FROM creative_trends GROUP BY status"
-            ).fetchall()
+            rows = conn.execute("SELECT status, COUNT(*) as cnt FROM creative_trends GROUP BY status").fetchall()
             status["trends_by_status"] = {r["status"]: r["cnt"] for r in rows}
         except sqlite3.OperationalError:
             status["trends_by_status"] = {}
 
         # Signals last 24h
         try:
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
             row = conn.execute(
                 "SELECT COUNT(*) as cnt FROM creative_signals WHERE discovered_at >= ?",
                 (cutoff,),
@@ -696,7 +685,7 @@ def get_pipeline_report(db_path=None):
     total_pp = status.get("total_pain_points", 0)
 
     report = {
-        "timestamp": _now(),
+        "timestamp": now_iso(),
         "pipeline_health": status.get("healthy", False),
         "total_signals": status.get("total_signals", 0),
         "total_pain_points": total_pp,
@@ -722,29 +711,17 @@ def get_pipeline_report(db_path=None):
     scored_pp = pp_by_status.get("scored", 0)
 
     if status.get("total_competitors", 0) == 0:
-        report["recommendations"].append(
-            "No competitors tracked — run: --discover --domain '<your domain>'"
-        )
+        report["recommendations"].append("No competitors tracked — run: --discover --domain '<your domain>'")
     elif status.get("competitors_by_status", {}).get("confirmed", 0) == 0:
-        report["recommendations"].append(
-            "No confirmed competitors — run competitor_discoverer.py --confirm <id>"
-        )
+        report["recommendations"].append("No confirmed competitors — run competitor_discoverer.py --confirm <id>")
     if status.get("total_signals", 0) == 0:
-        report["recommendations"].append(
-            "No signals collected — run: --scan --all"
-        )
+        report["recommendations"].append("No signals collected — run: --scan --all")
     if new_pp > 50:
-        report["recommendations"].append(
-            f"{new_pp} unscored pain points — run: --score"
-        )
+        report["recommendations"].append(f"{new_pp} unscored pain points — run: --score")
     if scored_pp > 20:
-        report["recommendations"].append(
-            f"{scored_pp} scored pain points pending spec generation — run: --generate"
-        )
+        report["recommendations"].append(f"{scored_pp} scored pain points pending spec generation — run: --generate")
     if not status.get("healthy"):
-        report["recommendations"].append(
-            "Database tables missing — run: python tools/db/init_icdev_db.py"
-        )
+        report["recommendations"].append("Database tables missing — run: python tools/db/init_icdev_db.py")
 
     return report
 
@@ -774,24 +751,24 @@ def run_daemon(db_path=None):
     try:
         while True:
             if _in_quiet_hours(config):
-                print(f"[{_now()}] In quiet hours — skipping pipeline run")
+                print(f"[{now_iso()}] In quiet hours — skipping pipeline run")
                 time.sleep(600)  # Re-check every 10 minutes during quiet hours
                 continue
 
-            print(f"\n[{_now()}] Running pipeline...")
+            print(f"\n[{now_iso()}] Running pipeline...")
             try:
                 result = run_full_pipeline(domain=domain, db_path=db_path)
                 stage_count = len(result.get("stages", {}))
-                print(f"[{_now()}] Pipeline complete. Stages: {stage_count}")
+                print(f"[{now_iso()}] Pipeline complete. Stages: {stage_count}")
             except Exception as e:
-                print(f"[{_now()}] Pipeline error: {e}", file=sys.stderr)
+                print(f"[{now_iso()}] Pipeline error: {e}", file=sys.stderr)
                 _audit("creative.daemon.error", f"Pipeline error: {e}")
 
-            print(f"[{_now()}] Next run in {default_interval} hours...")
+            print(f"[{now_iso()}] Next run in {default_interval} hours...")
             time.sleep(interval_seconds)
 
     except KeyboardInterrupt:
-        print(f"\n[{_now()}] Daemon stopped by user")
+        print(f"\n[{now_iso()}] Daemon stopped by user")
         _audit("creative.daemon.stop", "Daemon stopped by user")
 
 
@@ -800,7 +777,7 @@ def run_daemon(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Creative Engine — customer-centric feature opportunity discovery"
+        description="ICDEV™ Creative Engine — customer-centric feature opportunity discovery"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
@@ -822,16 +799,11 @@ def main():
     group.add_argument("--daemon", action="store_true", help="Run as continuous daemon")
 
     # Optional flags
-    parser.add_argument("--domain", type=str, default=None,
-                        help="Product domain for competitor discovery")
-    parser.add_argument("--source", type=str, default=None,
-                        help="Specific source to scan (g2, capterra, reddit, etc.)")
-    parser.add_argument("--all", action="store_true", dest="scan_all",
-                        help="Scan all configured sources")
-    parser.add_argument("--top-k", type=int, default=20,
-                        help="Number of top items to return (default: 20)")
-    parser.add_argument("--spec-status", type=str, default=None,
-                        help="Filter specs by status")
+    parser.add_argument("--domain", type=str, default=None, help="Product domain for competitor discovery")
+    parser.add_argument("--source", type=str, default=None, help="Specific source to scan (g2, capterra, reddit, etc.)")
+    parser.add_argument("--all", action="store_true", dest="scan_all", help="Scan all configured sources")
+    parser.add_argument("--top-k", type=int, default=20, help="Number of top items to return (default: 20)")
+    parser.add_argument("--spec-status", type=str, default=None, help="Filter specs by status")
 
     args = parser.parse_args()
 
@@ -943,14 +915,14 @@ def _print_human(args, result):
         print(f"  Avg Score:       {result.get('avg_composite_score', 0.0):.3f}")
 
         tp = result.get("pipeline_throughput", {})
-        print(f"\n  Pipeline Backlog:")
+        print("\n  Pipeline Backlog:")
         print(f"    Pending extraction:  {tp.get('pending_extraction', 0)}")
         print(f"    Pending scoring:     {tp.get('pending_scoring', 0)}")
         print(f"    Pending generation:  {tp.get('pending_generation', 0)}")
 
         recs = result.get("recommendations", [])
         if recs:
-            print(f"\n  Recommendations:")
+            print("\n  Recommendations:")
             for r in recs:
                 print(f"    - {r}")
 

@@ -2,8 +2,8 @@
 # CUI // SP-CTI
 """Innovation signal schema model (Phase 44 — D275)."""
 
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, asdict
+from typing import Dict, Optional
 
 
 @dataclass

@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 """
-ICDEV SaaS Prometheus Metrics Collector (ADR D154).
+ICDEV™ SaaS Prometheus Metrics Collector (ADR D154).
 
 Dual-backend metrics: uses prometheus_client when available,
 falls back to stdlib text formatter for air-gapped environments.
@@ -10,6 +10,7 @@ Follows D66 provider pattern (ABC + implementations).
 
 import threading
 import time
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -23,34 +24,28 @@ class MetricBase(ABC):
     """Abstract base for a single metric."""
 
     @abstractmethod
-    def labels(self, **kwargs: str) -> "MetricBase":
-        ...
+    def labels(self, **kwargs: str) -> "MetricBase": ...
 
 
 class CounterBase(MetricBase):
     @abstractmethod
-    def inc(self, amount: float = 1) -> None:
-        ...
+    def inc(self, amount: float = 1) -> None: ...
 
 
 class GaugeBase(MetricBase):
     @abstractmethod
-    def set(self, value: float) -> None:
-        ...
+    def set(self, value: float) -> None: ...
 
     @abstractmethod
-    def inc(self, amount: float = 1) -> None:
-        ...
+    def inc(self, amount: float = 1) -> None: ...
 
     @abstractmethod
-    def dec(self, amount: float = 1) -> None:
-        ...
+    def dec(self, amount: float = 1) -> None: ...
 
 
 class HistogramBase(MetricBase):
     @abstractmethod
-    def observe(self, value: float) -> None:
-        ...
+    def observe(self, value: float) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -216,14 +211,8 @@ class _FallbackHistogram(HistogramBase):
                 count = len(obs)
                 for bucket in self._buckets:
                     bucket_count = sum(1 for v in obs if v <= bucket)
-                    lines.append(
-                        f"{self._name}_bucket{{{label_str_with_comma}"
-                        f'le="{bucket}"}} {bucket_count}'
-                    )
-                lines.append(
-                    f"{self._name}_bucket{{{label_str_with_comma}"
-                    f'le="+Inf"}} {count}'
-                )
+                    lines.append(f'{self._name}_bucket{{{label_str_with_comma}le="{bucket}"}} {bucket_count}')
+                lines.append(f'{self._name}_bucket{{{label_str_with_comma}le="+Inf"}} {count}')
                 lines.append(f"{self._name}_sum{label_str} {total}")
                 lines.append(f"{self._name}_count{label_str} {count}")
         return "\n".join(lines)
@@ -249,7 +238,7 @@ class _FallbackHistogram(HistogramBase):
 
 
 class MetricsCollector:
-    """Collects ICDEV SaaS platform metrics.
+    """Collects ICDEV™ SaaS platform metrics.
 
     Uses prometheus_client library when available; otherwise falls back
     to stdlib-only text formatting (air-gap safe).
@@ -402,9 +391,9 @@ class MetricsCollector:
             start = getattr(g, "_metrics_start", None)
             if start is not None:
                 duration = time.time() - start
-                collector.http_request_duration.labels(
-                    method=method, endpoint=endpoint, tenant_id=tenant_id
-                ).observe(duration)
+                collector.http_request_duration.labels(method=method, endpoint=endpoint, tenant_id=tenant_id).observe(
+                    duration
+                )
 
             # Request count
             collector.http_requests_total.labels(
@@ -454,9 +443,7 @@ class MetricsCollector:
             for name, breaker in breakers.items():
                 state = getattr(breaker, "state", "closed")
                 state_value = {"closed": 0, "open": 1, "half_open": 2}.get(state, 0)
-                self.circuit_breaker_state.labels(
-                    service_name=name, state=state
-                ).set(state_value)
+                self.circuit_breaker_state.labels(service_name=name, state=state).set(state_value)
         except (ImportError, AttributeError, Exception):
             pass
 
@@ -468,16 +455,12 @@ class MetricsCollector:
         Best-effort: silently ignores if platform DB is unavailable.
         """
         try:
-            import sqlite3
-
             db_path = Path(__file__).resolve().parent.parent.parent / "data" / "platform.db"
             if not db_path.exists():
                 return
-            conn = sqlite3.connect(str(db_path))
+            conn = get_connection()
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT status, COUNT(*) FROM tenants GROUP BY status"
-            )
+            cursor.execute("SELECT status, COUNT(*) FROM tenants GROUP BY status")
             rows = cursor.fetchall()
             conn.close()
             for status, count in rows:

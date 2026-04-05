@@ -3,9 +3,9 @@
 """Generate a System Security Plan (SSP) from template and project data.
 Fills {{variables}} from project data in icdev.db, pulls control implementations
 from project_controls table, applies CUI markings, saves to project compliance
-from icdev._paths import get_project_root
 directory, records in ssp_documents table, and logs an audit event."""
 
+from icdev._paths import get_project_root
 import argparse
 import json
 import re
@@ -227,11 +227,11 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
         # Section 14
         "date_prepared": now.strftime("%Y-%m-%d"),
         "document_version": "1.0",
-        "plan_prepared_by": "ICDEV Compliance Engine",
+        "plan_prepared_by": "ICDEV™ Compliance Engine",
         "next_review_date": f"{now.year + 1}-{now.strftime('%m-%d')}",
         "version_1": "1.0",
         "version_1_date": now.strftime("%Y-%m-%d"),
-        "version_1_author": "ICDEV Compliance Engine",
+        "version_1_author": "ICDEV™ Compliance Engine",
         "version_1_changes": "Initial SSP generation",
 
         # Classification

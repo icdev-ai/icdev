@@ -4,7 +4,7 @@
 
 ## Overview
 
-This runbook covers diagnostic tools, common issues, and resolution procedures for the ICDEV platform. Start with the diagnostic tools section to assess system health, then consult the common issues section for specific problems.
+This runbook covers diagnostic tools, common issues, and resolution procedures for the ICDEV™ platform. Start with the diagnostic tools section to assess system health, then consult the common issues section for specific problems.
 
 ---
 
@@ -134,7 +134,7 @@ python tools/testing/platform_check.py --json
 
 **Resolution**:
 - Set `ICDEV_DB_PATH` to the absolute path of `data/icdev.db`.
-- Set `ICDEV_PROJECT_ROOT` to the ICDEV root directory.
+- Set `ICDEV_PROJECT_ROOT` to the ICDEV™ root directory.
 - Initialize the database if missing: `python tools/db/init_icdev_db.py`.
 - Check `.mcp.json` for correct Python path and server configuration.
 
@@ -185,7 +185,7 @@ python tools/testing/platform_check.py --json
    ```
 
 **Resolution**:
-- ICDEV databases use WAL (Write-Ahead Logging) mode for concurrent read access.
+- ICDEV™ databases use WAL (Write-Ahead Logging) mode for concurrent read access.
 - If locked, wait and retry. The `busy_timeout` pragma is set by default.
 - Kill stale processes holding the lock.
 - If WAL files (`-wal`, `-shm`) are corrupt, checkpoint and recover:
@@ -316,7 +316,7 @@ python tools/testing/platform_check.py --json
 
 ## Circuit Breakers
 
-ICDEV uses application-level circuit breakers (D146) with a 3-state machine.
+ICDEV™ uses application-level circuit breakers (D146) with a 3-state machine.
 
 ### States
 
@@ -364,7 +364,7 @@ Check the Prometheus `/metrics` endpoint for `icdev_circuit_breaker_state`:
 
 ## Retry Configuration
 
-ICDEV uses exponential backoff with full jitter (D147).
+ICDEV™ uses exponential backoff with full jitter (D147).
 
 ### Default Settings (args/resilience_config.yaml)
 

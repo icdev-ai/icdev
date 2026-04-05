@@ -2,9 +2,8 @@
 # CUI // SP-CTI
 """Dashboard API: Evidence Collection (Phase 56, D347)."""
 
-import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -19,8 +18,7 @@ evidence_api = Blueprint("evidence_api", __name__, url_prefix="/api/evidence")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -40,14 +38,16 @@ def evidence_stats():
         total = 0
         for table_name in fw_config["tables"]:
             if _table_exists(conn, table_name):
-                row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                 total += row[0]
-        stats["frameworks"].append({
-            "id": fw_id,
-            "description": fw_config["description"],
-            "required": fw_config["required"],
-            "total_records": total,
-        })
+        stats["frameworks"].append(
+            {
+                "id": fw_id,
+                "description": fw_config["description"],
+                "required": fw_config["required"],
+                "total_records": total,
+            }
+        )
 
     conn.close()
     return jsonify(stats)

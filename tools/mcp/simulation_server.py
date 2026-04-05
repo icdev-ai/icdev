@@ -32,10 +32,12 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -45,6 +47,7 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_create_scenario(args: dict) -> dict:
     """Create a what-if scenario for simulation."""
@@ -292,6 +295,7 @@ def handle_manage_scenarios(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     """Create and configure the Simulation MCP server."""
     server = MCPServer(name="icdev-simulation", version="1.0.0")
@@ -302,7 +306,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "scenario_name": {"type": "string", "description": "Human-readable scenario name"},
                 "scenario_type": {
                     "type": "string",
@@ -312,7 +316,7 @@ def create_server() -> MCPServer:
                 },
                 "modifications": {
                     "type": "string",
-                    "description": "JSON string describing modifications (add/remove requirements, architecture changes)",
+                    "description": "JSON string describing modifications (add/remove requirements, architecture changes)",  # noqa: E501
                 },
                 "base_session_id": {
                     "type": "string",
@@ -334,7 +338,7 @@ def create_server() -> MCPServer:
                 "dimensions": {
                     "type": "string",
                     "default": "all",
-                    "description": "Comma-separated dimensions or 'all' (architecture,compliance,supply_chain,schedule,cost,risk)",
+                    "description": "Comma-separated dimensions or 'all' (architecture,compliance,supply_chain,schedule,cost,risk)",  # noqa: E501
                 },
             },
             "required": ["scenario_id"],
@@ -377,7 +381,7 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "RICOAS session ID"},
-                "project_id": {"type": "string", "description": "ICDEV project ID (optional)"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID (optional)"},
                 "simulate": {
                     "type": "boolean",
                     "default": False,
@@ -397,7 +401,7 @@ def create_server() -> MCPServer:
             "properties": {
                 "session_id": {"type": "string", "description": "RICOAS session ID"},
                 "requirement_id": {"type": "string", "description": "ID of the RED requirement"},
-                "project_id": {"type": "string", "description": "ICDEV project ID (optional)"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID (optional)"},
             },
             "required": ["session_id", "requirement_id"],
         },
@@ -438,7 +442,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID (for list action)"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID (for list action)"},
                 "scenario_id": {"type": "string", "description": "Scenario ID (for fork/archive/export/summary)"},
                 "action": {
                     "type": "string",

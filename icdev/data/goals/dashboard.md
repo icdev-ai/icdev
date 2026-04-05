@@ -9,7 +9,7 @@ Provide a web-based dashboard for business users and operators to view project s
 - Automated status report generation
 
 ## Inputs
-- ICDEV database (`data/icdev.db`)
+- ICDEV™ database (`data/icdev.db`)
 - Args configuration files
 - CUI marking templates (`args/cui_markings.yaml`)
 

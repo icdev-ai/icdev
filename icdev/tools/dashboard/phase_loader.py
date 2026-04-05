@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 """
-ICDEV Phase Registry Loader
+ICDEV™ Phase Registry Loader
 ============================
 Loads phase definitions from args/phase_registry.yaml and provides
 filtering, summary statistics, and category metadata for the Dashboard
@@ -11,11 +11,11 @@ Uses PyYAML if available, falls back to a minimal YAML parser (air-gap safe).
 
 Usage:
     from icdev.tools.dashboard.phase_loader import load_phases, get_phase_summary
-from icdev._paths import get_project_root
     phases = load_phases()
     summary = get_phase_summary(phases)
 """
 
+from icdev._paths import get_project_root
 from pathlib import Path
 
 BASE_DIR = get_project_root()

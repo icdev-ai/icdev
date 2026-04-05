@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Research Engine Source Scanner -- 8-stream discovery for industry vertical research.
 
 Scans 8 configurable data streams (community forums, review sites, academic papers,
@@ -38,7 +38,8 @@ import sys
 import time
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone, timedelta
+from tools.db.storage import get_connection
+from datetime import datetime, timezone
 from pathlib import Path
 
 # =========================================================================
@@ -56,26 +57,30 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     import requests
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
-    from tools.resilience.circuit_breaker import InMemoryCircuitBreaker
     _HAS_CB = True
 except ImportError:
     _HAS_CB = False
@@ -108,8 +113,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -252,17 +256,13 @@ def _get_session_vertical_config(session_id, db_path=None):
     except FileNotFoundError:
         return None, None
     try:
-        session_row = conn.execute(
-            "SELECT * FROM research_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session_row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session_row:
             return None, None
 
         session = dict(session_row)
         vertical_id = session.get("vertical_id", "")
-        vert_row = conn.execute(
-            "SELECT * FROM research_verticals WHERE id = ?", (vertical_id,)
-        ).fetchone()
+        vert_row = conn.execute("SELECT * FROM research_verticals WHERE id = ?", (vertical_id,)).fetchone()
         if not vert_row:
             return session, None
 
@@ -280,6 +280,7 @@ def _get_session_vertical_config(session_id, db_path=None):
 # =========================================================================
 # SOURCE ADAPTERS — 8 data streams (D-RES-3)
 # =========================================================================
+
 
 def scan_community_forums(config, session_config=None):
     """Scan community forums: Reddit, Stack Exchange, and domain-specific forums.
@@ -372,29 +373,33 @@ def scan_community_forums(config, session_config=None):
                 post_url = f"https://www.reddit.com{permalink}" if permalink else ""
 
                 hash_input = f"reddit_{subreddit}_{post_id}"
-                signals.append({
-                    "id": _signal_id(),
-                    "session_id": None,
-                    "source": "community_forum",
-                    "source_type": "reddit",
-                    "title": title[:500],
-                    "body": selftext[:MAX_BODY_LENGTH],
-                    "url": post_url,
-                    "author": post.get("author"),
-                    "upvotes": score,
-                    "citations": 0,
-                    "sentiment": None,
-                    "content_hash": _content_hash(hash_input),
-                    "keywords": json.dumps(keyword_filter[:20]),
-                    "metadata": json.dumps({
-                        "subreddit": subreddit,
-                        "score": score,
-                        "num_comments": post.get("num_comments", 0),
-                        "created_utc": post.get("created_utc", 0),
-                        "platform": "reddit",
-                    }),
-                    "discovered_at": _now(),
-                })
+                signals.append(
+                    {
+                        "id": _signal_id(),
+                        "session_id": None,
+                        "source": "community_forum",
+                        "source_type": "reddit",
+                        "title": title[:500],
+                        "body": selftext[:MAX_BODY_LENGTH],
+                        "url": post_url,
+                        "author": post.get("author"),
+                        "upvotes": score,
+                        "citations": 0,
+                        "sentiment": None,
+                        "content_hash": _content_hash(hash_input),
+                        "keywords": json.dumps(keyword_filter[:20]),
+                        "metadata": json.dumps(
+                            {
+                                "subreddit": subreddit,
+                                "score": score,
+                                "num_comments": post.get("num_comments", 0),
+                                "created_utc": post.get("created_utc", 0),
+                                "platform": "reddit",
+                            }
+                        ),
+                        "discovered_at": _now(),
+                    }
+                )
 
             time.sleep(delay)
 
@@ -452,30 +457,34 @@ def scan_community_forums(config, session_config=None):
                 q_id = item.get("question_id", 0)
 
                 hash_input = f"stackexchange_{site_key}_{q_id}"
-                signals.append({
-                    "id": _signal_id(),
-                    "session_id": None,
-                    "source": "community_forum",
-                    "source_type": "stackexchange",
-                    "title": q_title[:500],
-                    "body": q_body,
-                    "url": q_url,
-                    "author": (item.get("owner", {}) or {}).get("display_name"),
-                    "upvotes": q_score,
-                    "citations": item.get("answer_count", 0),
-                    "sentiment": None,
-                    "content_hash": _content_hash(hash_input),
-                    "keywords": json.dumps([t for t in item.get("tags", [])]),
-                    "metadata": json.dumps({
-                        "site": site_key,
-                        "question_id": q_id,
-                        "answer_count": item.get("answer_count", 0),
-                        "view_count": item.get("view_count", 0),
-                        "tags": item.get("tags", []),
-                        "platform": "stackexchange",
-                    }),
-                    "discovered_at": _now(),
-                })
+                signals.append(
+                    {
+                        "id": _signal_id(),
+                        "session_id": None,
+                        "source": "community_forum",
+                        "source_type": "stackexchange",
+                        "title": q_title[:500],
+                        "body": q_body,
+                        "url": q_url,
+                        "author": (item.get("owner", {}) or {}).get("display_name"),
+                        "upvotes": q_score,
+                        "citations": item.get("answer_count", 0),
+                        "sentiment": None,
+                        "content_hash": _content_hash(hash_input),
+                        "keywords": json.dumps([t for t in item.get("tags", [])]),
+                        "metadata": json.dumps(
+                            {
+                                "site": site_key,
+                                "question_id": q_id,
+                                "answer_count": item.get("answer_count", 0),
+                                "view_count": item.get("view_count", 0),
+                                "tags": item.get("tags", []),
+                                "platform": "stackexchange",
+                            }
+                        ),
+                        "discovered_at": _now(),
+                    }
+                )
 
             time.sleep(delay)
 
@@ -536,51 +545,59 @@ def scan_review_sites(config, session_config=None):
                         if isinstance(items, list):
                             for item in items[:max_per_cat]:
                                 hash_input = f"g2_{category}_{item.get('name', item.get('id', ''))}"
-                                signals.append({
-                                    "id": _signal_id(),
-                                    "session_id": None,
-                                    "source": "review_site",
-                                    "source_type": "g2",
-                                    "title": item.get("name", f"G2: {category}"),
-                                    "body": (item.get("description", item.get("tagline", "")) or "")[:MAX_BODY_LENGTH],
-                                    "url": item.get("url", url),
-                                    "author": None,
-                                    "upvotes": item.get("review_count", 0),
-                                    "citations": 0,
-                                    "sentiment": None,
-                                    "content_hash": _content_hash(hash_input),
-                                    "keywords": json.dumps([category]),
-                                    "metadata": json.dumps({
-                                        "site": "g2",
-                                        "category": category,
-                                        "rating": item.get("rating"),
-                                        "review_count": item.get("review_count", 0),
-                                    }),
-                                    "discovered_at": _now(),
-                                })
+                                signals.append(
+                                    {
+                                        "id": _signal_id(),
+                                        "session_id": None,
+                                        "source": "review_site",
+                                        "source_type": "g2",
+                                        "title": item.get("name", f"G2: {category}"),
+                                        "body": (item.get("description", item.get("tagline", "")) or "")[
+                                            :MAX_BODY_LENGTH
+                                        ],
+                                        "url": item.get("url", url),
+                                        "author": None,
+                                        "upvotes": item.get("review_count", 0),
+                                        "citations": 0,
+                                        "sentiment": None,
+                                        "content_hash": _content_hash(hash_input),
+                                        "keywords": json.dumps([category]),
+                                        "metadata": json.dumps(
+                                            {
+                                                "site": "g2",
+                                                "category": category,
+                                                "rating": item.get("rating"),
+                                                "review_count": item.get("review_count", 0),
+                                            }
+                                        ),
+                                        "discovered_at": _now(),
+                                    }
+                                )
                             time.sleep(delay)
                             continue
 
                 # Fallback single signal for page
                 if body:
                     hash_input = f"g2_{category}_page"
-                    signals.append({
-                        "id": _signal_id(),
-                        "session_id": None,
-                        "source": "review_site",
-                        "source_type": "g2",
-                        "title": f"G2 category: {category}",
-                        "body": body,
-                        "url": url,
-                        "author": None,
-                        "upvotes": 0,
-                        "citations": 0,
-                        "sentiment": None,
-                        "content_hash": _content_hash(hash_input),
-                        "keywords": json.dumps([category]),
-                        "metadata": json.dumps({"site": "g2", "category": category}),
-                        "discovered_at": _now(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "review_site",
+                            "source_type": "g2",
+                            "title": f"G2 category: {category}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([category]),
+                            "metadata": json.dumps({"site": "g2", "category": category}),
+                            "discovered_at": _now(),
+                        }
+                    )
 
                 time.sleep(delay)
 
@@ -600,23 +617,25 @@ def scan_review_sites(config, session_config=None):
 
                 if body:
                     hash_input = f"capterra_{category}_page"
-                    signals.append({
-                        "id": _signal_id(),
-                        "session_id": None,
-                        "source": "review_site",
-                        "source_type": "capterra",
-                        "title": f"Capterra category: {category}",
-                        "body": body,
-                        "url": url,
-                        "author": None,
-                        "upvotes": 0,
-                        "citations": 0,
-                        "sentiment": None,
-                        "content_hash": _content_hash(hash_input),
-                        "keywords": json.dumps([category]),
-                        "metadata": json.dumps({"site": "capterra", "category": category}),
-                        "discovered_at": _now(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "review_site",
+                            "source_type": "capterra",
+                            "title": f"Capterra category: {category}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([category]),
+                            "metadata": json.dumps({"site": "capterra", "category": category}),
+                            "discovered_at": _now(),
+                        }
+                    )
                 time.sleep(delay)
 
         elif site_name == "trustpilot":
@@ -635,23 +654,25 @@ def scan_review_sites(config, session_config=None):
 
                 if body:
                     hash_input = f"trustpilot_{category}_page"
-                    signals.append({
-                        "id": _signal_id(),
-                        "session_id": None,
-                        "source": "review_site",
-                        "source_type": "domain_review",
-                        "title": f"Trustpilot category: {category}",
-                        "body": body,
-                        "url": url,
-                        "author": None,
-                        "upvotes": 0,
-                        "citations": 0,
-                        "sentiment": None,
-                        "content_hash": _content_hash(hash_input),
-                        "keywords": json.dumps([category]),
-                        "metadata": json.dumps({"site": "trustpilot", "category": category}),
-                        "discovered_at": _now(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "review_site",
+                            "source_type": "domain_review",
+                            "title": f"Trustpilot category: {category}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([category]),
+                            "metadata": json.dumps({"site": "trustpilot", "category": category}),
+                            "discovered_at": _now(),
+                        }
+                    )
                 time.sleep(delay)
 
     return signals
@@ -725,7 +746,7 @@ def scan_academic_papers(config, session_config=None):
                 continue
 
             try:
-                root = ET.fromstring(raw_text)
+                root = ET.fromstring(raw_text)  # nosec B314 -- parsing trusted internal MBSE/config XML
             except ET.ParseError as e:
                 signals.append(_error_signal("academic_paper", f"arxiv {category} XML parse: {e}"))
                 time.sleep(delay)
@@ -764,30 +785,34 @@ def scan_academic_papers(config, session_config=None):
                 arxiv_id = paper_url.split("/abs/")[-1] if "/abs/" in paper_url else paper_url
 
                 hash_input = f"arxiv_{arxiv_id}"
-                signals.append({
-                    "id": _signal_id(),
-                    "session_id": None,
-                    "source": "academic_paper",
-                    "source_type": "arxiv",
-                    "title": title[:500],
-                    "body": summary[:MAX_BODY_LENGTH],
-                    "url": paper_url,
-                    "author": ", ".join(authors[:5]),
-                    "upvotes": 0,
-                    "citations": 0,
-                    "sentiment": None,
-                    "content_hash": _content_hash(hash_input),
-                    "keywords": json.dumps([category]),
-                    "metadata": json.dumps({
-                        "arxiv_id": arxiv_id,
-                        "category": category,
-                        "authors": authors[:10],
-                        "published": published,
-                        "pdf_url": pdf_url,
-                        "platform": "arxiv",
-                    }),
-                    "discovered_at": _now(),
-                })
+                signals.append(
+                    {
+                        "id": _signal_id(),
+                        "session_id": None,
+                        "source": "academic_paper",
+                        "source_type": "arxiv",
+                        "title": title[:500],
+                        "body": summary[:MAX_BODY_LENGTH],
+                        "url": paper_url,
+                        "author": ", ".join(authors[:5]),
+                        "upvotes": 0,
+                        "citations": 0,
+                        "sentiment": None,
+                        "content_hash": _content_hash(hash_input),
+                        "keywords": json.dumps([category]),
+                        "metadata": json.dumps(
+                            {
+                                "arxiv_id": arxiv_id,
+                                "category": category,
+                                "authors": authors[:10],
+                                "published": published,
+                                "pdf_url": pdf_url,
+                                "platform": "arxiv",
+                            }
+                        ),
+                        "discovered_at": _now(),
+                    }
+                )
 
             time.sleep(delay)
 
@@ -872,30 +897,34 @@ def scan_regulatory_bodies(config, session_config=None):
                 publication_date = doc.get("publication_date", "")
 
                 hash_input = f"federal_register_{doc_number}"
-                signals.append({
-                    "id": _signal_id(),
-                    "session_id": None,
-                    "source": "regulatory_body",
-                    "source_type": "federal_register",
-                    "title": doc_title[:500],
-                    "body": doc_abstract,
-                    "url": doc_url,
-                    "author": ", ".join(agency_names[:3]),
-                    "upvotes": 0,
-                    "citations": 0,
-                    "sentiment": None,
-                    "content_hash": _content_hash(hash_input),
-                    "keywords": json.dumps([term]),
-                    "metadata": json.dumps({
-                        "document_number": doc_number,
-                        "document_type": doc_type,
-                        "agencies": agency_names,
-                        "publication_date": publication_date,
-                        "search_term": term,
-                        "platform": "federal_register",
-                    }),
-                    "discovered_at": _now(),
-                })
+                signals.append(
+                    {
+                        "id": _signal_id(),
+                        "session_id": None,
+                        "source": "regulatory_body",
+                        "source_type": "federal_register",
+                        "title": doc_title[:500],
+                        "body": doc_abstract,
+                        "url": doc_url,
+                        "author": ", ".join(agency_names[:3]),
+                        "upvotes": 0,
+                        "citations": 0,
+                        "sentiment": None,
+                        "content_hash": _content_hash(hash_input),
+                        "keywords": json.dumps([term]),
+                        "metadata": json.dumps(
+                            {
+                                "document_number": doc_number,
+                                "document_type": doc_type,
+                                "agencies": agency_names,
+                                "publication_date": publication_date,
+                                "search_term": term,
+                                "platform": "federal_register",
+                            }
+                        ),
+                        "discovered_at": _now(),
+                    }
+                )
 
             time.sleep(delay)
 
@@ -981,31 +1010,35 @@ def scan_open_source(config, session_config=None):
                 updated_at = repo.get("updated_at", "")
 
                 hash_input = f"github_{repo_name}"
-                signals.append({
-                    "id": _signal_id(),
-                    "session_id": None,
-                    "source": "open_source",
-                    "source_type": "github",
-                    "title": repo_name,
-                    "body": description,
-                    "url": repo_url,
-                    "author": (repo.get("owner", {}) or {}).get("login"),
-                    "upvotes": stars,
-                    "citations": forks,
-                    "sentiment": None,
-                    "content_hash": _content_hash(hash_input),
-                    "keywords": json.dumps(topics[:10]),
-                    "metadata": json.dumps({
-                        "query": query,
-                        "stars": stars,
-                        "forks": forks,
-                        "language": language,
-                        "topics": topics,
-                        "updated_at": updated_at,
-                        "platform": "github",
-                    }),
-                    "discovered_at": _now(),
-                })
+                signals.append(
+                    {
+                        "id": _signal_id(),
+                        "session_id": None,
+                        "source": "open_source",
+                        "source_type": "github",
+                        "title": repo_name,
+                        "body": description,
+                        "url": repo_url,
+                        "author": (repo.get("owner", {}) or {}).get("login"),
+                        "upvotes": stars,
+                        "citations": forks,
+                        "sentiment": None,
+                        "content_hash": _content_hash(hash_input),
+                        "keywords": json.dumps(topics[:10]),
+                        "metadata": json.dumps(
+                            {
+                                "query": query,
+                                "stars": stars,
+                                "forks": forks,
+                                "language": language,
+                                "topics": topics,
+                                "updated_at": updated_at,
+                                "platform": "github",
+                            }
+                        ),
+                        "discovered_at": _now(),
+                    }
+                )
 
             time.sleep(delay)
 
@@ -1061,23 +1094,25 @@ def scan_saas_commercial(config, session_config=None):
 
                 if body:
                     hash_input = f"g2_product_{category}"
-                    signals.append({
-                        "id": _signal_id(),
-                        "session_id": None,
-                        "source": "saas_commercial",
-                        "source_type": "product_page",
-                        "title": f"G2 product: {category}",
-                        "body": body,
-                        "url": url,
-                        "author": None,
-                        "upvotes": 0,
-                        "citations": 0,
-                        "sentiment": None,
-                        "content_hash": _content_hash(hash_input),
-                        "keywords": json.dumps([category]),
-                        "metadata": json.dumps({"site": "g2", "category": category}),
-                        "discovered_at": _now(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "saas_commercial",
+                            "source_type": "product_page",
+                            "title": f"G2 product: {category}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([category]),
+                            "metadata": json.dumps({"site": "g2", "category": category}),
+                            "discovered_at": _now(),
+                        }
+                    )
                 time.sleep(delay)
 
         elif platform_name == "producthunt":
@@ -1108,49 +1143,55 @@ def scan_saas_commercial(config, session_config=None):
                                 votes = item.get("votes_count", item.get("upvotes", 0))
 
                                 hash_input = f"producthunt_{topic_slug}_{item_title}"
-                                signals.append({
-                                    "id": _signal_id(),
-                                    "session_id": None,
-                                    "source": "saas_commercial",
-                                    "source_type": "producthunt",
-                                    "title": item_title[:500],
-                                    "body": item_body,
-                                    "url": item_url,
-                                    "author": None,
-                                    "upvotes": votes,
-                                    "citations": 0,
-                                    "sentiment": None,
-                                    "content_hash": _content_hash(f"producthunt_{topic_slug}_{item_title}"),
-                                    "keywords": json.dumps([topic]),
-                                    "metadata": json.dumps({
-                                        "site": "producthunt",
-                                        "topic": topic,
-                                        "votes": votes,
-                                    }),
-                                    "discovered_at": _now(),
-                                })
+                                signals.append(
+                                    {
+                                        "id": _signal_id(),
+                                        "session_id": None,
+                                        "source": "saas_commercial",
+                                        "source_type": "producthunt",
+                                        "title": item_title[:500],
+                                        "body": item_body,
+                                        "url": item_url,
+                                        "author": None,
+                                        "upvotes": votes,
+                                        "citations": 0,
+                                        "sentiment": None,
+                                        "content_hash": _content_hash(f"producthunt_{topic_slug}_{item_title}"),
+                                        "keywords": json.dumps([topic]),
+                                        "metadata": json.dumps(
+                                            {
+                                                "site": "producthunt",
+                                                "topic": topic,
+                                                "votes": votes,
+                                            }
+                                        ),
+                                        "discovered_at": _now(),
+                                    }
+                                )
                             time.sleep(delay)
                             continue
 
                 if body:
                     hash_input = f"producthunt_{topic_slug}_page"
-                    signals.append({
-                        "id": _signal_id(),
-                        "session_id": None,
-                        "source": "saas_commercial",
-                        "source_type": "producthunt",
-                        "title": f"ProductHunt topic: {topic}",
-                        "body": body,
-                        "url": url,
-                        "author": None,
-                        "upvotes": 0,
-                        "citations": 0,
-                        "sentiment": None,
-                        "content_hash": _content_hash(hash_input),
-                        "keywords": json.dumps([topic]),
-                        "metadata": json.dumps({"site": "producthunt", "topic": topic}),
-                        "discovered_at": _now(),
-                    })
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "saas_commercial",
+                            "source_type": "producthunt",
+                            "title": f"ProductHunt topic: {topic}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([topic]),
+                            "metadata": json.dumps({"site": "producthunt", "topic": topic}),
+                            "discovered_at": _now(),
+                        }
+                    )
                 time.sleep(delay)
 
     return signals
@@ -1207,7 +1248,7 @@ def scan_news_blogs(config, session_config=None):
 
         # Parse RSS/Atom XML
         try:
-            root = ET.fromstring(raw_text)
+            root = ET.fromstring(raw_text)  # nosec B314 -- parsing trusted internal MBSE/config XML
         except ET.ParseError:
             signals.append(_error_signal("news_blog", f"rss XML parse error: {feed_url}"))
             time.sleep(delay)
@@ -1248,27 +1289,31 @@ def scan_news_blogs(config, session_config=None):
             pub_date = (pub_date_el.text or "").strip() if pub_date_el is not None else ""
 
             hash_input = f"news_{feed_url}_{title}"
-            signals.append({
-                "id": _signal_id(),
-                "session_id": None,
-                "source": "news_blog",
-                "source_type": "news_article",
-                "title": title[:500],
-                "body": description[:MAX_BODY_LENGTH],
-                "url": link,
-                "author": author,
-                "upvotes": 0,
-                "citations": 0,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "keywords": json.dumps(news_keywords[:10]),
-                "metadata": json.dumps({
-                    "feed_url": feed_url,
-                    "published": pub_date,
-                    "platform": "rss",
-                }),
-                "discovered_at": _now(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "session_id": None,
+                    "source": "news_blog",
+                    "source_type": "news_article",
+                    "title": title[:500],
+                    "body": description[:MAX_BODY_LENGTH],
+                    "url": link,
+                    "author": author,
+                    "upvotes": 0,
+                    "citations": 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "keywords": json.dumps(news_keywords[:10]),
+                    "metadata": json.dumps(
+                        {
+                            "feed_url": feed_url,
+                            "published": pub_date,
+                            "platform": "rss",
+                        }
+                    ),
+                    "discovered_at": _now(),
+                }
+            )
             collected += 1
 
         time.sleep(delay)
@@ -1277,23 +1322,25 @@ def scan_news_blogs(config, session_config=None):
     if not rss_feeds and news_keywords:
         for keyword in news_keywords[:5]:
             hash_input = f"news_keyword_{keyword}_{_now()[:10]}"
-            signals.append({
-                "id": _signal_id(),
-                "session_id": None,
-                "source": "news_blog",
-                "source_type": "blog",
-                "title": f"News keyword: {keyword}",
-                "body": f"Keyword-based news monitoring for: {keyword}",
-                "url": "",
-                "author": None,
-                "upvotes": 0,
-                "citations": 0,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "keywords": json.dumps([keyword]),
-                "metadata": json.dumps({"keyword": keyword, "platform": "keyword_monitor"}),
-                "discovered_at": _now(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "session_id": None,
+                    "source": "news_blog",
+                    "source_type": "blog",
+                    "title": f"News keyword: {keyword}",
+                    "body": f"Keyword-based news monitoring for: {keyword}",
+                    "url": "",
+                    "author": None,
+                    "upvotes": 0,
+                    "citations": 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "keywords": json.dumps([keyword]),
+                    "metadata": json.dumps({"keyword": keyword, "platform": "keyword_monitor"}),
+                    "discovered_at": _now(),
+                }
+            )
 
     return signals
 
@@ -1326,10 +1373,9 @@ def scan_patents(config, session_config=None):
     cpc_classes = patent_config.get("cpc_classes", [])
     patent_keywords = patent_config.get("keywords", [])
 
-    max_results = 30
     for platform in source_cfg.get("platforms", []):
         if platform.get("name") == "google_patents":
-            max_results = platform.get("max_results", 30)
+            platform.get("max_results", 30)
             break
 
     # Build search queries from CPC classes and keywords
@@ -1358,27 +1404,31 @@ def scan_patents(config, session_config=None):
 
         if body:
             hash_input = f"google_patent_{query}_{_now()[:10]}"
-            signals.append({
-                "id": _signal_id(),
-                "session_id": None,
-                "source": "patent",
-                "source_type": "google_patent",
-                "title": f"Patent search: {query}",
-                "body": body,
-                "url": f"{GOOGLE_PATENTS_URL}/?q={query}",
-                "author": None,
-                "upvotes": 0,
-                "citations": 0,
-                "sentiment": None,
-                "content_hash": _content_hash(hash_input),
-                "keywords": json.dumps([query]),
-                "metadata": json.dumps({
-                    "query": query,
-                    "cpc_classes": cpc_classes,
-                    "platform": "google_patents",
-                }),
-                "discovered_at": _now(),
-            })
+            signals.append(
+                {
+                    "id": _signal_id(),
+                    "session_id": None,
+                    "source": "patent",
+                    "source_type": "google_patent",
+                    "title": f"Patent search: {query}",
+                    "body": body,
+                    "url": f"{GOOGLE_PATENTS_URL}/?q={query}",
+                    "author": None,
+                    "upvotes": 0,
+                    "citations": 0,
+                    "sentiment": None,
+                    "content_hash": _content_hash(hash_input),
+                    "keywords": json.dumps([query]),
+                    "metadata": json.dumps(
+                        {
+                            "query": query,
+                            "cpc_classes": cpc_classes,
+                            "platform": "google_patents",
+                        }
+                    ),
+                    "discovered_at": _now(),
+                }
+            )
 
         time.sleep(delay)
 
@@ -1392,21 +1442,22 @@ def _lazy_scan_videos(config, session_config=None):
     """Lazy import of youtube_scanner.scan_videos (D-RES-14)."""
     try:
         from tools.research.youtube_scanner import scan_videos
+
         return scan_videos(config, session_config)
     except ImportError:
         return [_error_signal("video", "youtube_scanner not available")]
 
 
 SOURCE_SCANNERS = {
-    "community_forum":  scan_community_forums,
-    "review_site":      scan_review_sites,
-    "academic_paper":   scan_academic_papers,
-    "regulatory_body":  scan_regulatory_bodies,
-    "open_source":      scan_open_source,
-    "saas_commercial":  scan_saas_commercial,
-    "news_blog":        scan_news_blogs,
-    "patent":           scan_patents,
-    "video":            _lazy_scan_videos,
+    "community_forum": scan_community_forums,
+    "review_site": scan_review_sites,
+    "academic_paper": scan_academic_papers,
+    "regulatory_body": scan_regulatory_bodies,
+    "open_source": scan_open_source,
+    "saas_commercial": scan_saas_commercial,
+    "news_blog": scan_news_blogs,
+    "patent": scan_patents,
+    "video": _lazy_scan_videos,
 }
 
 
@@ -1570,11 +1621,7 @@ def run_scan(session_id, source=None, session_config=None, db_path=None):
 
         # D-RES-13: 7-day cache TTL for regulatory body scans
         if src == "regulatory_body":
-            cache_ttl_days = (
-                config.get("sources", {})
-                .get("regulatory_body", {})
-                .get("cache_ttl_days", 7)
-            )
+            cache_ttl_days = config.get("sources", {}).get("regulatory_body", {}).get("cache_ttl_days", 7)
             try:
                 conn_cache = _get_db(db_path)
                 cache_row = conn_cache.execute(
@@ -1587,10 +1634,9 @@ def run_scan(session_id, source=None, session_config=None, db_path=None):
                 conn_cache.close()
                 if cache_row and cache_row["latest"]:
                     from datetime import datetime, timezone, timedelta
+
                     try:
-                        latest = datetime.fromisoformat(
-                            cache_row["latest"].replace("Z", "+00:00")
-                        )
+                        latest = datetime.fromisoformat(cache_row["latest"].replace("Z", "+00:00"))
                         age = datetime.now(timezone.utc) - latest
                         if age < timedelta(days=cache_ttl_days):
                             results[src] = {
@@ -1656,14 +1702,16 @@ def list_sources():
         platforms = source_cfg.get("platforms", source_cfg.get("sites", []))
         platform_count = len(platforms) if isinstance(platforms, list) else 0
 
-        sources.append({
-            "name": source_name,
-            "enabled": enabled,
-            "scan_interval_hours": scan_interval,
-            "platform_count": platform_count,
-            "has_scanner": True,
-            "scanner_function": scanner_fn.__name__,
-        })
+        sources.append(
+            {
+                "name": source_name,
+                "enabled": enabled,
+                "scan_interval_hours": scan_interval,
+                "platform_count": platform_count,
+                "has_scanner": True,
+                "scanner_function": scanner_fn.__name__,
+            }
+        )
 
     return {
         "sources": sources,
@@ -1736,7 +1784,7 @@ def get_scan_status(session_id, db_path=None):
 def _print_human(action, result):
     """Print human-readable output."""
     print("=" * 70)
-    print("  ICDEV Research Engine -- Source Scanner -- CUI // SP-CTI")
+    print("  ICDEV™ Research Engine -- Source Scanner -- CUI // SP-CTI")
     print("=" * 70)
 
     if isinstance(result, dict) and "error" in result:
@@ -1752,7 +1800,7 @@ def _print_human(action, result):
         print(f"  Signals Stored: {result.get('signals_stored', 0)}")
         print("")
         print(f"  {'Source':22s} {'Found':>6s} {'Stored':>7s} {'Dupes':>6s} {'Status':>10s}")
-        print(f"  {'-'*22} {'-'*6} {'-'*7} {'-'*6} {'-'*10}")
+        print(f"  {'-' * 22} {'-' * 6} {'-' * 7} {'-' * 6} {'-' * 10}")
         for src, res in result.get("results", {}).items():
             if "error" in res:
                 status = "ERROR"
@@ -1772,7 +1820,7 @@ def _print_human(action, result):
         print(f"  yaml library: {'available' if result.get('yaml_available') else 'MISSING'}")
         print("")
         print(f"  {'Source':22s} {'Enabled':>8s} {'Interval':>10s} {'Platforms':>10s} {'Function'}")
-        print(f"  {'-'*22} {'-'*8} {'-'*10} {'-'*10} {'-'*30}")
+        print(f"  {'-' * 22} {'-' * 8} {'-' * 10} {'-' * 10} {'-' * 30}")
         for src in result.get("sources", []):
             status = "Yes" if src["enabled"] else "No"
             interval = f"{src.get('scan_interval_hours', '?')}h"
@@ -1789,7 +1837,7 @@ def _print_human(action, result):
         by_source = result.get("by_source", {})
         if by_source:
             print(f"  {'Source':22s} {'Total':>7s}  Types")
-            print(f"  {'-'*22} {'-'*7}  {'-'*30}")
+            print(f"  {'-' * 22} {'-' * 7}  {'-' * 30}")
             for src, info in by_source.items():
                 types_str = ", ".join(f"{t}:{c}" for t, c in info.get("types", {}).items())
                 print(f"  {src:22s} {info['total']:7d}  {types_str}")
@@ -1800,7 +1848,7 @@ def _print_human(action, result):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Engine Source Scanner -- 8-stream industry research (CUI // SP-CTI)"
+        description="ICDEV™ Research Engine Source Scanner -- 8-stream industry research (CUI // SP-CTI)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

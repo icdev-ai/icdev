@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """OMB M-25-21 High-Impact AI Assessor.
 
 Assesses compliance with OMB Memorandum M-25-21 — Advancing the

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — Role-Based Access Control (RBAC).
+"""ICDEV™ SaaS — Role-Based Access Control (RBAC).
 CUI // SP-CTI
 """
+
 import logging
 from typing import Optional
 
@@ -121,9 +122,13 @@ def get_endpoint_category(path: str) -> str:
     return "projects"  # default
 
 
-def check_permission(role: str, category: str, method: str = "GET",
-                     user_id: Optional[str] = None,
-                     resource_owner_id: Optional[str] = None) -> bool:
+def check_permission(
+    role: str,
+    category: str,
+    method: str = "GET",
+    user_id: Optional[str] = None,
+    resource_owner_id: Optional[str] = None,
+) -> bool:
     """Check if a role has permission for the given category and HTTP method.
 
     Args:
@@ -161,9 +166,9 @@ def check_permission(role: str, category: str, method: str = "GET",
     return False
 
 
-def require_permission(role: str, path: str, method: str = "GET",
-                       user_id: Optional[str] = None,
-                       resource_owner_id: Optional[str] = None) -> bool:
+def require_permission(
+    role: str, path: str, method: str = "GET", user_id: Optional[str] = None, resource_owner_id: Optional[str] = None
+) -> bool:
     """Convenience: resolve category from path, then check permission."""
     category = get_endpoint_category(path)
     return check_permission(role, category, method, user_id, resource_owner_id)

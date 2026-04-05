@@ -9,9 +9,9 @@ import argparse
 import hashlib
 import json
 import re
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,20 +35,14 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Load project data."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -145,10 +139,7 @@ def _parse_requirements_txt(file_path):
 
             # Parse package specification
             # Patterns: package==1.0, package>=1.0, package~=1.0, package
-            match = re.match(
-                r'^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?',
-                line
-            )
+            match = re.match(r"^([a-zA-Z0-9._-]+)\s*(?:([<>=!~]+)\s*([a-zA-Z0-9.*_-]+))?", line)
             if match:
                 name = match.group(1).lower().replace("_", "-")
                 version = match.group(3) or "unspecified"
@@ -157,15 +148,17 @@ def _parse_requirements_txt(file_path):
                 if version != "unspecified":
                     purl += f"@{version}"
 
-                components.append({
-                    "type": "library",
-                    "name": name,
-                    "version": version,
-                    "purl": purl,
-                    "scope": "required",
-                    "group": "",
-                    "source": str(file_path),
-                })
+                components.append(
+                    {
+                        "type": "library",
+                        "name": name,
+                        "version": version,
+                        "purl": purl,
+                        "scope": "required",
+                        "group": "",
+                        "source": str(file_path),
+                    }
+                )
 
     return components
 
@@ -184,12 +177,12 @@ def _parse_pyproject_toml(file_path):
             pass
         if "dependencies" in stripped and "=" in stripped:
             # Handle inline list: dependencies = ["pkg1>=1.0", "pkg2"]
-            match = re.search(r'dependencies\s*=\s*\[(.*?)\]', content, re.DOTALL)
+            match = re.search(r"dependencies\s*=\s*\[(.*?)\]", content, re.DOTALL)
             if match:
                 deps_str = match.group(1)
                 for dep in re.findall(r'"([^"]+)"|\'([^\']+)\'', deps_str):
                     dep_str = dep[0] or dep[1]
-                    dep_match = re.match(r'([a-zA-Z0-9._-]+)(?:\[.*?\])?\s*(?:([<>=!~]+)\s*(.+))?', dep_str)
+                    dep_match = re.match(r"([a-zA-Z0-9._-]+)(?:\[.*?\])?\s*(?:([<>=!~]+)\s*(.+))?", dep_str)
                     if dep_match:
                         name = dep_match.group(1).lower().replace("_", "-")
                         version = dep_match.group(3) or "unspecified"
@@ -200,15 +193,17 @@ def _parse_pyproject_toml(file_path):
                         if version != "unspecified":
                             purl += f"@{version}"
 
-                        components.append({
-                            "type": "library",
-                            "name": name,
-                            "version": version,
-                            "purl": purl,
-                            "scope": "required",
-                            "group": "",
-                            "source": str(file_path),
-                        })
+                        components.append(
+                            {
+                                "type": "library",
+                                "name": name,
+                                "version": version,
+                                "purl": purl,
+                                "scope": "required",
+                                "group": "",
+                                "source": str(file_path),
+                            }
+                        )
             break
 
     return components
@@ -246,15 +241,17 @@ def _parse_package_json(file_path):
                     group = parts[0]
                     pkg_name = parts[1]
 
-            components.append({
-                "type": "library",
-                "name": pkg_name,
-                "version": version,
-                "purl": purl,
-                "scope": scope,
-                "group": group,
-                "source": str(file_path),
-            })
+            components.append(
+                {
+                    "type": "library",
+                    "name": pkg_name,
+                    "version": version,
+                    "purl": purl,
+                    "scope": scope,
+                    "group": group,
+                    "source": str(file_path),
+                }
+            )
 
     return components
 
@@ -288,15 +285,17 @@ def _parse_package_lock_json(file_path):
                     group = parts[0]
                     pkg_name = parts[1]
 
-            components.append({
-                "type": "library",
-                "name": pkg_name,
-                "version": version,
-                "purl": purl,
-                "scope": "required" if not pkg_info.get("dev") else "optional",
-                "group": group,
-                "source": str(file_path),
-            })
+            components.append(
+                {
+                    "type": "library",
+                    "name": pkg_name,
+                    "version": version,
+                    "purl": purl,
+                    "scope": "required" if not pkg_info.get("dev") else "optional",
+                    "group": group,
+                    "source": str(file_path),
+                }
+            )
     else:
         # Fallback: package-lock.json v1 format
         deps = data.get("dependencies", {})
@@ -313,15 +312,17 @@ def _parse_package_lock_json(file_path):
                     group = parts[0]
                     pkg_name = parts[1]
 
-            components.append({
-                "type": "library",
-                "name": pkg_name,
-                "version": version,
-                "purl": purl,
-                "scope": "required" if not dep_info.get("dev") else "optional",
-                "group": group,
-                "source": str(file_path),
-            })
+            components.append(
+                {
+                    "type": "library",
+                    "name": pkg_name,
+                    "version": version,
+                    "purl": purl,
+                    "scope": "required" if not dep_info.get("dev") else "optional",
+                    "group": group,
+                    "source": str(file_path),
+                }
+            )
 
     return components
 
@@ -336,14 +337,14 @@ def _parse_go_mod(file_path):
         return components
 
     # Parse parenthesized require blocks: require ( ... )
-    require_blocks = re.findall(r'require\s*\((.*?)\)', content, re.DOTALL)
+    require_blocks = re.findall(r"require\s*\((.*?)\)", content, re.DOTALL)
     for block in require_blocks:
         for line in block.strip().split("\n"):
             line = line.strip()
             if not line or line.startswith("//"):
                 continue
             # Remove inline comments (// indirect, etc.)
-            line = re.sub(r'\s*//.*$', '', line).strip()
+            line = re.sub(r"\s*//.*$", "", line).strip()
             if not line:
                 continue
             parts = line.split()
@@ -351,35 +352,37 @@ def _parse_go_mod(file_path):
                 module = parts[0]
                 version = parts[1]
                 purl = f"pkg:golang/{module}@{version}"
-                components.append({
-                    "type": "library",
-                    "name": module,
-                    "version": version,
-                    "purl": purl,
-                    "scope": "required",
-                    "group": "",
-                    "source": str(file_path),
-                })
+                components.append(
+                    {
+                        "type": "library",
+                        "name": module,
+                        "version": version,
+                        "purl": purl,
+                        "scope": "required",
+                        "group": "",
+                        "source": str(file_path),
+                    }
+                )
 
     # Parse single-line require statements: require github.com/foo/bar v1.2.3
-    single_requires = re.findall(
-        r'^require\s+(\S+)\s+(\S+)', content, re.MULTILINE
-    )
+    single_requires = re.findall(r"^require\s+(\S+)\s+(\S+)", content, re.MULTILINE)
     for module, version in single_requires:
         # Skip if this is the start of a parenthesized block
         if version == "(":
             continue
-        version = re.sub(r'\s*//.*$', '', version).strip()
+        version = re.sub(r"\s*//.*$", "", version).strip()
         purl = f"pkg:golang/{module}@{version}"
-        components.append({
-            "type": "library",
-            "name": module,
-            "version": version,
-            "purl": purl,
-            "scope": "required",
-            "group": "",
-            "source": str(file_path),
-        })
+        components.append(
+            {
+                "type": "library",
+                "name": module,
+                "version": version,
+                "purl": purl,
+                "scope": "required",
+                "group": "",
+                "source": str(file_path),
+            }
+        )
 
     return components
 
@@ -398,7 +401,7 @@ def _parse_cargo_toml(file_path):
         stripped = line.strip()
 
         # Detect section headers
-        section_match = re.match(r'^\[(.+)\]$', stripped)
+        section_match = re.match(r"^\[(.+)\]$", stripped)
         if section_match:
             current_section = section_match.group(1).strip()
             continue
@@ -419,36 +422,38 @@ def _parse_cargo_toml(file_path):
             name = simple_match.group(1)
             version = simple_match.group(2) or "unspecified"
             purl = f"pkg:cargo/{name}@{version}"
-            components.append({
-                "type": "library",
-                "name": name,
-                "version": version,
-                "purl": purl,
-                "scope": scope,
-                "group": "",
-                "source": str(file_path),
-            })
+            components.append(
+                {
+                    "type": "library",
+                    "name": name,
+                    "version": version,
+                    "purl": purl,
+                    "scope": scope,
+                    "group": "",
+                    "source": str(file_path),
+                }
+            )
             continue
 
         # Match: crate_name = { version = "x.y", ... }
-        table_match = re.match(
-            r'^([a-zA-Z0-9_-]+)\s*=\s*\{(.*)\}', stripped
-        )
+        table_match = re.match(r"^([a-zA-Z0-9_-]+)\s*=\s*\{(.*)\}", stripped)
         if table_match:
             name = table_match.group(1)
             inner = table_match.group(2)
             version_match = re.search(r'version\s*=\s*"([^"]*)"', inner)
             version = version_match.group(1) if version_match else "unspecified"
             purl = f"pkg:cargo/{name}@{version}"
-            components.append({
-                "type": "library",
-                "name": name,
-                "version": version,
-                "purl": purl,
-                "scope": scope,
-                "group": "",
-                "source": str(file_path),
-            })
+            components.append(
+                {
+                    "type": "library",
+                    "name": name,
+                    "version": version,
+                    "purl": purl,
+                    "scope": scope,
+                    "group": "",
+                    "source": str(file_path),
+                }
+            )
             continue
 
     return components
@@ -465,13 +470,11 @@ def _parse_pom_xml(file_path):
         return components
 
     # Find all <dependency>...</dependency> blocks
-    dep_blocks = re.findall(
-        r'<dependency>(.*?)</dependency>', content, re.DOTALL
-    )
+    dep_blocks = re.findall(r"<dependency>(.*?)</dependency>", content, re.DOTALL)
     for block in dep_blocks:
         try:
-            group_match = re.search(r'<groupId>\s*(.*?)\s*</groupId>', block)
-            artifact_match = re.search(r'<artifactId>\s*(.*?)\s*</artifactId>', block)
+            group_match = re.search(r"<groupId>\s*(.*?)\s*</groupId>", block)
+            artifact_match = re.search(r"<artifactId>\s*(.*?)\s*</artifactId>", block)
 
             if not group_match or not artifact_match:
                 continue
@@ -479,10 +482,10 @@ def _parse_pom_xml(file_path):
             group_id = group_match.group(1).strip()
             artifact_id = artifact_match.group(1).strip()
 
-            version_match = re.search(r'<version>\s*(.*?)\s*</version>', block)
+            version_match = re.search(r"<version>\s*(.*?)\s*</version>", block)
             version = version_match.group(1).strip() if version_match else "managed"
 
-            scope_match = re.search(r'<scope>\s*(.*?)\s*</scope>', block)
+            scope_match = re.search(r"<scope>\s*(.*?)\s*</scope>", block)
             maven_scope = scope_match.group(1).strip() if scope_match else "compile"
 
             # Map Maven scopes to CycloneDX scopes
@@ -493,15 +496,17 @@ def _parse_pom_xml(file_path):
 
             purl = f"pkg:maven/{group_id}/{artifact_id}@{version}"
 
-            components.append({
-                "type": "library",
-                "name": artifact_id,
-                "version": version,
-                "purl": purl,
-                "scope": cdx_scope,
-                "group": group_id,
-                "source": str(file_path),
-            })
+            components.append(
+                {
+                    "type": "library",
+                    "name": artifact_id,
+                    "version": version,
+                    "purl": purl,
+                    "scope": cdx_scope,
+                    "group": group_id,
+                    "source": str(file_path),
+                }
+            )
         except Exception:
             continue
 
@@ -527,8 +532,8 @@ def _parse_build_gradle(file_path):
     #   implementation "group:artifact:version"
     #   testImplementation 'group:artifact:version'
     dep_pattern = re.compile(
-        r'(implementation|api|compileOnly|runtimeOnly|testImplementation'
-        r'|testCompileOnly|testRuntimeOnly)\s*'
+        r"(implementation|api|compileOnly|runtimeOnly|testImplementation"
+        r"|testCompileOnly|testRuntimeOnly)\s*"
         r"""[('"]([^'"]+)['")]""",
         re.MULTILINE,
     )
@@ -557,15 +562,17 @@ def _parse_build_gradle(file_path):
 
         purl = f"pkg:maven/{group}/{artifact}@{version}"
 
-        components.append({
-            "type": "library",
-            "name": artifact,
-            "version": version,
-            "purl": purl,
-            "scope": cdx_scope,
-            "group": group,
-            "source": str(file_path),
-        })
+        components.append(
+            {
+                "type": "library",
+                "name": artifact,
+                "version": version,
+                "purl": purl,
+                "scope": cdx_scope,
+                "group": group,
+                "source": str(file_path),
+            }
+        )
 
     return components
 
@@ -585,13 +592,9 @@ def _parse_csproj(file_path):
     # Also handle multi-line with Version on separate line
     patterns = [
         # Self-closing or single-line with both attributes
-        re.compile(
-            r'<PackageReference\s+Include="([^"]+)"\s+Version="([^"]+)"\s*/?>'
-        ),
+        re.compile(r'<PackageReference\s+Include="([^"]+)"\s+Version="([^"]+)"\s*/?>'),
         # Version before Include (some projects order differently)
-        re.compile(
-            r'<PackageReference\s+Version="([^"]+)"\s+Include="([^"]+)"\s*/?>'
-        ),
+        re.compile(r'<PackageReference\s+Version="([^"]+)"\s+Include="([^"]+)"\s*/?>'),
     ]
 
     seen = set()
@@ -610,15 +613,17 @@ def _parse_csproj(file_path):
             seen.add(name)
 
             purl = f"pkg:nuget/{name}@{version}"
-            components.append({
-                "type": "library",
-                "name": name,
-                "version": version,
-                "purl": purl,
-                "scope": "required",
-                "group": "",
-                "source": str(file_path),
-            })
+            components.append(
+                {
+                    "type": "library",
+                    "name": name,
+                    "version": version,
+                    "purl": purl,
+                    "scope": "required",
+                    "group": "",
+                    "source": str(file_path),
+                }
+            )
 
     # Handle multi-line PackageReference with Version as child element
     # <PackageReference Include="Name">
@@ -626,7 +631,7 @@ def _parse_csproj(file_path):
     # </PackageReference>
     multiline_pattern = re.compile(
         r'<PackageReference\s+Include="([^"]+)"[^/]*?>'
-        r'.*?<Version>([^<]+)</Version>.*?</PackageReference>',
+        r".*?<Version>([^<]+)</Version>.*?</PackageReference>",
         re.DOTALL,
     )
     for match in multiline_pattern.finditer(content):
@@ -638,15 +643,17 @@ def _parse_csproj(file_path):
         seen.add(name)
 
         purl = f"pkg:nuget/{name}@{version}"
-        components.append({
-            "type": "library",
-            "name": name,
-            "version": version,
-            "purl": purl,
-            "scope": "required",
-            "group": "",
-            "source": str(file_path),
-        })
+        components.append(
+            {
+                "type": "library",
+                "name": name,
+                "version": version,
+                "purl": purl,
+                "scope": "required",
+                "group": "",
+                "source": str(file_path),
+            }
+        )
 
     return components
 
@@ -671,15 +678,17 @@ def _parse_packages_config(file_path):
         version = match.group(2)
 
         purl = f"pkg:nuget/{name}@{version}"
-        components.append({
-            "type": "library",
-            "name": name,
-            "version": version,
-            "purl": purl,
-            "scope": "required",
-            "group": "",
-            "source": str(file_path),
-        })
+        components.append(
+            {
+                "type": "library",
+                "name": name,
+                "version": version,
+                "purl": purl,
+                "scope": "required",
+                "group": "",
+                "source": str(file_path),
+            }
+        )
 
     return components
 
@@ -690,13 +699,13 @@ def _generate_bom_ref(component):
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-def _build_cyclonedx_sbom(project, components, serial_number=None,
-                          spec_version=None, schema=None):
+def _build_cyclonedx_sbom(project, components, serial_number=None, spec_version=None, schema=None):
     """Build a CycloneDX JSON SBOM document."""
     now = datetime.now(timezone.utc)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
     active_schema = schema or CYCLONEDX_SUPPORTED_VERSIONS.get(
-        active_spec_version, CYCLONEDX_SUPPORTED_VERSIONS[CYCLONEDX_SPEC_VERSION])
+        active_spec_version, CYCLONEDX_SUPPORTED_VERSIONS[CYCLONEDX_SPEC_VERSION]
+    )
 
     if serial_number is None:
         serial_number = f"urn:uuid:{uuid.uuid4()}"
@@ -738,7 +747,7 @@ def _build_cyclonedx_sbom(project, components, serial_number=None,
             "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "tools": [
                 {
-                    "vendor": "ICDEV",
+                    "vendor": "ICDEV™",
                     "name": "icdev-sbom-generator",
                     "version": "1.0.0",
                 }
@@ -798,7 +807,9 @@ def generate_sbom(
     # Apply spec version override (D342 — backward-compatible)
     active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
     if active_spec_version not in CYCLONEDX_SUPPORTED_VERSIONS:
-        raise ValueError(f"Unsupported CycloneDX spec version: {active_spec_version}. Supported: {list(CYCLONEDX_SUPPORTED_VERSIONS.keys())}")
+        raise ValueError(
+            f"Unsupported CycloneDX spec version: {active_spec_version}. Supported: {list(CYCLONEDX_SUPPORTED_VERSIONS.keys())}"
+        )
     active_schema = CYCLONEDX_SUPPORTED_VERSIONS[active_spec_version]
 
     conn = _get_connection(db_path)
@@ -824,30 +835,22 @@ def generate_sbom(
             for ptype in detected_types:
                 try:
                     if ptype == "python-requirements":
-                        comps = _parse_requirements_txt(
-                            project_dir_path / "requirements.txt"
-                        )
+                        comps = _parse_requirements_txt(project_dir_path / "requirements.txt")
                         all_components.extend(comps)
                         print(f"  Parsed requirements.txt: {len(comps)} dependencies")
 
                     elif ptype == "python-pyproject":
-                        comps = _parse_pyproject_toml(
-                            project_dir_path / "pyproject.toml"
-                        )
+                        comps = _parse_pyproject_toml(project_dir_path / "pyproject.toml")
                         all_components.extend(comps)
                         print(f"  Parsed pyproject.toml: {len(comps)} dependencies")
 
                     elif ptype == "javascript-package":
-                        comps = _parse_package_json(
-                            project_dir_path / "package.json"
-                        )
+                        comps = _parse_package_json(project_dir_path / "package.json")
                         all_components.extend(comps)
                         print(f"  Parsed package.json: {len(comps)} dependencies")
 
                     elif ptype == "javascript-package-lock":
-                        comps = _parse_package_lock_json(
-                            project_dir_path / "package-lock.json"
-                        )
+                        comps = _parse_package_lock_json(project_dir_path / "package-lock.json")
                         all_components.extend(comps)
                         print(f"  Parsed package-lock.json: {len(comps)} dependencies")
 
@@ -899,8 +902,8 @@ def generate_sbom(
 
         # Build CycloneDX SBOM
         sbom, component_count = _build_cyclonedx_sbom(
-            project, all_components,
-            spec_version=active_spec_version, schema=active_schema)
+            project, all_components, spec_version=active_spec_version, schema=active_schema
+        )
 
         # Determine output path
         if output_path:
@@ -948,13 +951,19 @@ def generate_sbom(
         conn.commit()
 
         # Log audit event
-        _log_audit_event(conn, project_id, f"SBOM v{new_version} generated", {
-            "version": new_version,
-            "format": sbom_format,
-            "component_count": component_count,
-            "output_file": str(out_file),
-            "serial_number": sbom["serialNumber"],
-        }, out_file)
+        _log_audit_event(
+            conn,
+            project_id,
+            f"SBOM v{new_version} generated",
+            {
+                "version": new_version,
+                "format": sbom_format,
+                "component_count": component_count,
+                "output_file": str(out_file),
+                "serial_number": sbom["serialNumber"],
+            },
+            out_file,
+        )
 
         print("\nSBOM generated successfully:")
         print(f"  File: {out_file}")
@@ -970,21 +979,23 @@ def generate_sbom(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate CycloneDX Software Bill of Materials (SBOM)"
-    )
+    parser = argparse.ArgumentParser(description="Generate CycloneDX Software Bill of Materials (SBOM)")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument(
-        "--format", dest="sbom_format", default="cyclonedx",
+        "--format",
+        dest="sbom_format",
+        default="cyclonedx",
         choices=["cyclonedx"],
-        help="SBOM output format (default: cyclonedx)"
+        help="SBOM output format (default: cyclonedx)",
     )
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
     parser.add_argument(
-        "--spec-version", dest="spec_version", default=None,
+        "--spec-version",
+        dest="spec_version",
+        default=None,
         choices=["1.4", "1.5", "1.6", "1.7"],
-        help="CycloneDX spec version (default: 1.4, D342)"
+        help="CycloneDX spec version (default: 1.4, D342)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()

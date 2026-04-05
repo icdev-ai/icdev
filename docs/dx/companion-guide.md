@@ -1,6 +1,6 @@
-# ICDEV AI Companion Guide
+# ICDEV™ AI Companion Guide
 
-ICDEV works with **10 AI coding tools** — not just Claude Code. One command generates instruction files, MCP configurations, and skill translations for every tool your team uses.
+ICDEV™ works with **10 AI coding tools** — not just Claude Code. One command generates instruction files, MCP configurations, and skill translations for every tool your team uses.
 
 ---
 
@@ -54,12 +54,12 @@ Each AI tool gets a project-aware instruction file in its native format:
 - **Project context**: name, type, language, impact level, classification
 - **MCP server awareness**: which servers are available and what they do
 - **Compliance rules**: CUI markings, security gates, STIG thresholds
-- **Workflow guidance**: how to use ICDEV tools via the AI coding tool
+- **Workflow guidance**: how to use ICDEV™ tools via the AI coding tool
 - **Dev profile**: coding standards, testing requirements, style rules
 
 ### 2. MCP Configurations
 
-Tools with MCP support get config files pointing to ICDEV's **unified MCP server** (`icdev-unified`) — a single server exposing all 225 tools. See the [Unified MCP Setup Guide](unified-mcp-setup.md) for IDE-specific instructions.
+Tools with MCP support get config files pointing to ICDEV™'s **unified MCP server** (`icdev-unified`) — a single server exposing all 225 tools. See the [Unified MCP Setup Guide](unified-mcp-setup.md) for IDE-specific instructions.
 
 | Tool | Config Format | Output Path |
 |------|--------------|-------------|
@@ -124,7 +124,7 @@ ICDev/
 
 - **No cross-tool interference** — Claude Code never reads `.cursor/`, Codex never reads `.claude/`, Gemini ignores both
 - **Single source of truth** — `CLAUDE.md` is maintained manually; all other files are generated from it
-- **Team flexibility** — Any developer can open the repo with their preferred tool and get full ICDEV context
+- **Team flexibility** — Any developer can open the repo with their preferred tool and get full ICDEV™ context
 - **Git-friendly** — All files commit to the repo, so teammates get configs automatically on `git pull`
 
 ### Keeping Files in Sync
@@ -208,7 +208,7 @@ python tools/dx/skill_translator.py --platform codex --skills icdev-build,icdev-
 
 ## Architecture
 
-The companion system follows ICDEV's existing patterns:
+The companion system follows ICDEV™'s existing patterns:
 
 - **D194**: Companion registry is declarative YAML — add new tools without code changes
 - **D195**: Instruction files generated from Jinja2 templates (D186 pattern)

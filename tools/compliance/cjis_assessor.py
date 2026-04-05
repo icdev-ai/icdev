@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """FBI CJIS Security Policy v5.9.4 Assessment Engine.
 
 Assesses projects against the FBI CJIS Security Policy requirements.
@@ -31,7 +31,9 @@ class CJISAssessor(BaseAssessor):
     CATALOG_FILENAME = "cjis_security_policy.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """CJIS-specific automated checks.
 

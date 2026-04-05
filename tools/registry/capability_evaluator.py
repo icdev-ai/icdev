@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Capability Evaluator -- 7-dimension scoring for capability genome absorption.
 
 REQ-36-020: Evaluate newly discovered capabilities (from Innovation Engine or
@@ -40,15 +40,13 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 # =========================================================================
 # PATH SETUP
@@ -64,6 +62,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # =========================================================================
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -124,32 +123,35 @@ def _audit(event_type, action, details=None):
 # CAPABILITY EVALUATOR
 # =========================================================================
 class CapabilityEvaluator:
-    """7-dimension scoring engine for capability evaluation (REQ-36-020).
+    """8-dimension scoring engine for capability evaluation (REQ-36-020, D-NC-4).
 
-    Dimensions and weights per specification (Phase 37 integrated):
-        universality       (0.22) - How broadly applicable across children
-        compliance_safety  (0.22) - Maintains or improves compliance posture
-        risk               (0.18) - Risk of adoption (inverted: lower risk = higher score)
-        evidence           (0.14) - Strength of evidence from field testing
-        novelty            (0.09) - Fills a gap vs duplicates existing capability
+    Dimensions and weights per specification (Phase 37 + NemoClaw integrated):
+        universality       (0.20) - How broadly applicable across children
+        compliance_safety  (0.20) - Maintains or improves compliance posture
+        risk               (0.15) - Risk of adoption (inverted: lower risk = higher score)
+        evidence           (0.10) - Strength of evidence from field testing
+        novelty            (0.08) - Fills a gap vs duplicates existing capability
         cost               (0.05) - Cost efficiency (inverted: lower cost = higher score)
         security_assessment(0.10) - Security posture: trust level, injection scan, ATLAS alignment
+        sandbox_security   (0.12) - Sandbox isolation posture (D-NC-4, NemoClaw-adapted)
     """
 
-    DIMENSIONS = {
-        "universality": 0.22,
-        "compliance_safety": 0.22,
-        "risk": 0.18,
-        "evidence": 0.14,
-        "novelty": 0.09,
+    # Defaults (overridden by args/evolution_config.yaml if present)
+    # D-NC-4: 8th dimension (sandbox_security) added for NemoClaw integration
+    _DEFAULT_DIMENSIONS = {
+        "universality": 0.20,
+        "compliance_safety": 0.20,
+        "risk": 0.15,
+        "evidence": 0.10,
+        "novelty": 0.08,
         "cost": 0.05,
         "security_assessment": 0.10,
+        "sandbox_security": 0.12,
     }
 
-    # Outcome thresholds (REQ-36-021)
-    THRESHOLD_AUTO_QUEUE = 0.85
-    THRESHOLD_RECOMMEND = 0.65
-    THRESHOLD_LOG = 0.40
+    _DEFAULT_THRESHOLD_AUTO_QUEUE = 0.85
+    _DEFAULT_THRESHOLD_RECOMMEND = 0.65
+    _DEFAULT_THRESHOLD_LOG = 0.40
 
     def __init__(self, db_path=None):
         """Initialize CapabilityEvaluator.
@@ -158,12 +160,32 @@ class CapabilityEvaluator:
             db_path: Path to SQLite database. Defaults to data/icdev.db.
         """
         self.db_path = Path(db_path) if db_path else DB_PATH
+        cfg = self._load_config()
+        self.DIMENSIONS = cfg.get("weights", self._DEFAULT_DIMENSIONS)
+        thresholds = cfg.get("thresholds", {})
+        self.THRESHOLD_AUTO_QUEUE = thresholds.get("auto_queue", self._DEFAULT_THRESHOLD_AUTO_QUEUE)
+        self.THRESHOLD_RECOMMEND = thresholds.get("recommend", self._DEFAULT_THRESHOLD_RECOMMEND)
+        self.THRESHOLD_LOG = thresholds.get("log", self._DEFAULT_THRESHOLD_LOG)
         self._ensure_tables()
+
+    @staticmethod
+    def _load_config() -> dict:
+        """Load evaluation config from args/evolution_config.yaml."""
+        config_path = BASE_DIR / "args" / "evolution_config.yaml"
+        if not config_path.exists():
+            return {}
+        try:
+            import yaml
+
+            with open(config_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return data.get("evaluation", {})
+        except Exception:
+            return {}
 
     def _get_conn(self):
         """Get a database connection with row factory."""
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -215,13 +237,11 @@ class CapabilityEvaluator:
             "novelty": self._score_novelty(capability_data),
             "cost": self._score_cost(capability_data),
             "security_assessment": self._score_security_assessment(capability_data),
+            "sandbox_security": self._score_sandbox_security(capability_data),
         }
 
         # Weighted average
-        weighted_score = sum(
-            dim_scores[dim] * weight
-            for dim, weight in self.DIMENSIONS.items()
-        )
+        weighted_score = sum(dim_scores[dim] * weight for dim, weight in self.DIMENSIONS.items())
         weighted_score = round(weighted_score, 4)
 
         # Determine outcome (REQ-36-021)
@@ -335,11 +355,23 @@ class CapabilityEvaluator:
 
         # Broadly applicable categories
         broad_keywords = [
-            "security", "compliance", "testing", "monitoring", "logging",
-            "audit", "performance", "error", "retry", "resilience",
+            "security",
+            "compliance",
+            "testing",
+            "monitoring",
+            "logging",
+            "audit",
+            "performance",
+            "error",
+            "retry",
+            "resilience",
         ]
         narrow_keywords = [
-            "specific", "custom", "niche", "experimental", "prototype",
+            "specific",
+            "custom",
+            "niche",
+            "experimental",
+            "prototype",
         ]
 
         score = 0.5  # Base
@@ -384,11 +416,23 @@ class CapabilityEvaluator:
         # Heuristic: check for compliance-related keywords
         name = data.get("name", "").lower()
         positive_kw = [
-            "stig", "nist", "fedramp", "cmmc", "compliance", "security",
-            "audit", "encryption", "fips", "cui",
+            "stig",
+            "nist",
+            "fedramp",
+            "cmmc",
+            "compliance",
+            "security",
+            "audit",
+            "encryption",
+            "fips",
+            "cui",
         ]
         negative_kw = [
-            "bypass", "disable", "skip", "ignore", "override",
+            "bypass",
+            "disable",
+            "skip",
+            "ignore",
+            "override",
         ]
 
         score = 0.60
@@ -556,7 +600,7 @@ class CapabilityEvaluator:
         score = 0.7  # Default baseline
 
         description = str(data.get("description", "")).lower()
-        source_type = data.get("source", "")
+        data.get("source", "")
         trust_level = data.get("trust_level", "child")
         injection_scan = data.get("injection_scan_result")
 
@@ -574,8 +618,16 @@ class CapabilityEvaluator:
                 pass
 
         # Boost for security-enhancing capabilities
-        security_keywords = ["security", "encrypt", "authentication", "authorization",
-                           "compliance", "audit", "monitoring", "detection"]
+        security_keywords = [
+            "security",
+            "encrypt",
+            "authentication",
+            "authorization",
+            "compliance",
+            "audit",
+            "monitoring",
+            "detection",
+        ]
         matches = sum(1 for kw in security_keywords if kw in description)
         score += min(matches * 0.05, 0.15)
 
@@ -586,22 +638,46 @@ class CapabilityEvaluator:
 
         return max(0.0, min(1.0, score))
 
+    def _score_sandbox_security(self, data: dict) -> float:
+        """Score sandbox isolation posture of capability source (D-NC-4).
+
+        Delegates to tools.registry.sandbox_scorer for full 6-factor
+        evaluation.  Falls back to heuristic if scorer unavailable.
+
+        Args:
+            data: Capability data dict.
+
+        Returns:
+            Score between 0.0 and 1.0.
+        """
+        try:
+            from tools.registry.sandbox_scorer import score_sandbox
+
+            result = score_sandbox(
+                capability_data=data,
+                db_path=self.db_path,
+            )
+            return result.get("score", 0.5)
+        except Exception:
+            # Fallback: heuristic based on source type
+            source = data.get("source", "")
+            if source in ("child_report", "child", "marketplace"):
+                return 0.7  # Containerized sources
+            if source in ("innovation", "introspective"):
+                return 0.5  # Parent process
+            return 0.3  # Unknown source
+
 
 # =========================================================================
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Capability Evaluator -- 7-dimension scoring (REQ-36-020)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Capability Evaluator -- 7-dimension scoring (REQ-36-020)")
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--evaluate", action="store_true",
-                       help="Evaluate a capability")
+    group.add_argument("--evaluate", action="store_true", help="Evaluate a capability")
 
     parser.add_argument("--capability-data", help="JSON string of capability data")
 
@@ -644,15 +720,11 @@ def main():
                 print("  Dimensions:")
                 dims = result.get("dimensions", {})
                 weights = result.get("weights", {})
-                for dim_name, dim_score in sorted(dims.items(),
-                                                   key=lambda x: x[1],
-                                                   reverse=True):
+                for dim_name, dim_score in sorted(dims.items(), key=lambda x: x[1], reverse=True):
                     weight = weights.get(dim_name, 0)
                     weighted = dim_score * weight
                     bar = "#" * int(dim_score * 20)
-                    print(f"    {dim_name:22s}  {dim_score:.4f}  "
-                          f"(w={weight:.2f}, contrib={weighted:.4f})  "
-                          f"|{bar}|")
+                    print(f"    {dim_name:22s}  {dim_score:.4f}  (w={weight:.2f}, contrib={weighted:.4f})  |{bar}|")
 
     except Exception as e:
         error = {"error": str(e)}

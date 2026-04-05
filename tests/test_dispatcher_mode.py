@@ -15,12 +15,10 @@ Covers:
 """
 
 import json
-import os
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -93,14 +91,27 @@ def enabled_config():
     return {
         "enabled": True,
         "dispatch_only_tools": [
-            "task_dispatch", "agent_status", "agent_mailbox",
-            "workflow_status", "prompt_chain_execute",
+            "task_dispatch",
+            "agent_status",
+            "agent_mailbox",
+            "workflow_status",
+            "prompt_chain_execute",
         ],
         "blocked_when_dispatching": [
-            "scaffold", "generate_code", "write_tests", "run_tests",
-            "lint", "format", "ssp_generate", "poam_generate",
-            "stig_check", "sbom_generate", "terraform_plan",
-            "terraform_apply", "ansible_run", "k8s_deploy",
+            "scaffold",
+            "generate_code",
+            "write_tests",
+            "run_tests",
+            "lint",
+            "format",
+            "ssp_generate",
+            "poam_generate",
+            "stig_check",
+            "sbom_generate",
+            "terraform_plan",
+            "terraform_apply",
+            "ansible_run",
+            "k8s_deploy",
         ],
     }
 
@@ -111,14 +122,27 @@ def disabled_config():
     return {
         "enabled": False,
         "dispatch_only_tools": [
-            "task_dispatch", "agent_status", "agent_mailbox",
-            "workflow_status", "prompt_chain_execute",
+            "task_dispatch",
+            "agent_status",
+            "agent_mailbox",
+            "workflow_status",
+            "prompt_chain_execute",
         ],
         "blocked_when_dispatching": [
-            "scaffold", "generate_code", "write_tests", "run_tests",
-            "lint", "format", "ssp_generate", "poam_generate",
-            "stig_check", "sbom_generate", "terraform_plan",
-            "terraform_apply", "ansible_run", "k8s_deploy",
+            "scaffold",
+            "generate_code",
+            "write_tests",
+            "run_tests",
+            "lint",
+            "format",
+            "ssp_generate",
+            "poam_generate",
+            "stig_check",
+            "sbom_generate",
+            "terraform_plan",
+            "terraform_apply",
+            "ansible_run",
+            "k8s_deploy",
         ],
     }
 
@@ -139,16 +163,27 @@ def yaml_config_file(tmp_path):
                 "dispatcher_mode": {
                     "enabled": True,
                     "dispatch_only_tools": [
-                        "task_dispatch", "agent_status", "agent_mailbox",
-                        "workflow_status", "prompt_chain_execute",
+                        "task_dispatch",
+                        "agent_status",
+                        "agent_mailbox",
+                        "workflow_status",
+                        "prompt_chain_execute",
                     ],
                     "blocked_when_dispatching": [
-                        "scaffold", "generate_code", "write_tests",
-                        "run_tests", "lint", "format",
-                        "ssp_generate", "poam_generate",
-                        "stig_check", "sbom_generate",
-                        "terraform_plan", "terraform_apply",
-                        "ansible_run", "k8s_deploy",
+                        "scaffold",
+                        "generate_code",
+                        "write_tests",
+                        "run_tests",
+                        "lint",
+                        "format",
+                        "ssp_generate",
+                        "poam_generate",
+                        "stig_check",
+                        "sbom_generate",
+                        "terraform_plan",
+                        "terraform_apply",
+                        "ansible_run",
+                        "k8s_deploy",
                     ],
                 },
             },
@@ -374,7 +409,9 @@ class TestProjectOverrides:
     def test_enable_creates_override(self, dispatcher_db):
         """Enable creates a new override record."""
         result = enable_for_project(
-            "proj-abc", created_by="admin", db_path=dispatcher_db,
+            "proj-abc",
+            created_by="admin",
+            db_path=dispatcher_db,
         )
         assert result["project_id"] == "proj-abc"
         assert result["enabled"] is True
@@ -407,7 +444,8 @@ class TestProjectOverrides:
         """Enabling twice for the same project upserts (no duplicate)."""
         enable_for_project("proj-upsert", created_by="admin", db_path=dispatcher_db)
         enable_for_project(
-            "proj-upsert", created_by="isso",
+            "proj-upsert",
+            created_by="isso",
             custom_dispatch_tools=["new_tool"],
             db_path=dispatcher_db,
         )
@@ -542,9 +580,9 @@ class TestCLI:
     def test_status_json_output(self, dispatcher_db, capsys):
         """--status --json produces valid JSON."""
         with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
-            with patch("sys.argv", ["dispatcher_mode.py", "--status", "--json",
-                                     "--db-path", str(dispatcher_db)]):
+            with patch("sys.argv", ["dispatcher_mode.py", "--status", "--json", "--db-path", str(dispatcher_db)]):
                 from icdev.tools.agent.dispatcher_mode import main
+
                 main()
 
         captured = capsys.readouterr()
@@ -555,9 +593,12 @@ class TestCLI:
     def test_check_tool_json_output(self, dispatcher_db, capsys):
         """--check-tool --json produces valid JSON."""
         with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
-            with patch("sys.argv", ["dispatcher_mode.py", "--check-tool", "scaffold",
-                                     "--json", "--db-path", str(dispatcher_db)]):
+            with patch(
+                "sys.argv",
+                ["dispatcher_mode.py", "--check-tool", "scaffold", "--json", "--db-path", str(dispatcher_db)],
+            ):
                 from icdev.tools.agent.dispatcher_mode import main
+
                 main()
 
         captured = capsys.readouterr()
@@ -567,9 +608,9 @@ class TestCLI:
 
     def test_enable_requires_project_id(self, dispatcher_db, capsys):
         """--enable without --project-id fails with error."""
-        with patch("sys.argv", ["dispatcher_mode.py", "--enable",
-                                 "--db-path", str(dispatcher_db)]):
+        with patch("sys.argv", ["dispatcher_mode.py", "--enable", "--db-path", str(dispatcher_db)]):
             from icdev.tools.agent.dispatcher_mode import main
+
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -577,9 +618,9 @@ class TestCLI:
     def test_status_human_output(self, dispatcher_db, capsys):
         """--status without --json produces human-readable text."""
         with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
-            with patch("sys.argv", ["dispatcher_mode.py", "--status",
-                                     "--db-path", str(dispatcher_db)]):
+            with patch("sys.argv", ["dispatcher_mode.py", "--status", "--db-path", str(dispatcher_db)]):
                 from icdev.tools.agent.dispatcher_mode import main
+
                 main()
 
         captured = capsys.readouterr()
@@ -650,10 +691,20 @@ class TestEdgeCases:
     def test_all_14_blocked_tools_covered_by_redirect(self):
         """Every tool in the default blocked list has a redirect agent."""
         blocked = [
-            "scaffold", "generate_code", "write_tests", "run_tests",
-            "lint", "format", "ssp_generate", "poam_generate",
-            "stig_check", "sbom_generate", "terraform_plan",
-            "terraform_apply", "ansible_run", "k8s_deploy",
+            "scaffold",
+            "generate_code",
+            "write_tests",
+            "run_tests",
+            "lint",
+            "format",
+            "ssp_generate",
+            "poam_generate",
+            "stig_check",
+            "sbom_generate",
+            "terraform_plan",
+            "terraform_apply",
+            "ansible_run",
+            "k8s_deploy",
         ]
         for tool in blocked:
             redirect = get_redirect_agent(tool)

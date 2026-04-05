@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Per-feature spec directory organizer with parallel task markers.
 
 Organizes flat spec files into structured directories:
@@ -79,7 +79,7 @@ _CUI_HEADER = "# CUI // SP-CTI"
 
 
 def _get_connection(db_path=None):
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(
@@ -900,7 +900,7 @@ def update_constitution_check(spec_dir: Path, validation_results: dict) -> Path:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Per-Feature Spec Directory Organizer"
+        description="ICDEV™ Per-Feature Spec Directory Organizer"
     )
 
     group = parser.add_mutually_exclusive_group(required=True)

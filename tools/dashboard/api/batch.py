@@ -20,17 +20,21 @@ Enhancements:
   - rate limiting: max 3 concurrent + 10/hour per project
 """
 
-import sqlite3
+from __future__ import annotations
+
 import subprocess
 import sys
 import threading
 import time
 import uuid
+from tools.db.storage import get_connection
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
+
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -48,9 +52,9 @@ RATE_MAX_PER_HOUR = 10
 # DB persistence (batch_runs + batch_run_steps tables)
 # ---------------------------------------------------------------------------
 
+
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -104,10 +108,14 @@ def _persist_run(run: dict) -> None:
             " stop_on_failure, start_time, end_time) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                run["run_id"], run["batch_id"], run["batch_name"],
-                run["project_id"], run["status"],
+                run["run_id"],
+                run["batch_id"],
+                run["batch_name"],
+                run["project_id"],
+                run["status"],
                 1 if run.get("stop_on_failure") else 0,
-                run.get("start_time"), run.get("end_time"),
+                run.get("start_time"),
+                run.get("end_time"),
             ),
         )
         # Delete any old step rows for this run (in case of re-persist)
@@ -122,11 +130,15 @@ def _persist_run(run: dict) -> None:
                 " return_code, output_summary, start_time, end_time) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    run["run_id"], idx, step["name"],
+                    run["run_id"],
+                    idx,
+                    step["name"],
                     step.get("tool_path", ""),
-                    step["status"], step.get("return_code"),
+                    step["status"],
+                    step.get("return_code"),
                     step.get("output_summary", ""),
-                    step.get("start_time"), step.get("end_time"),
+                    step.get("start_time"),
+                    step.get("end_time"),
                 ),
             )
         conn.commit()
@@ -141,8 +153,8 @@ def _persist_run(run: dict) -> None:
 # ---------------------------------------------------------------------------
 
 _rate_lock = threading.Lock()
-_rate_running: dict[str, int] = {}           # project_id -> count of running batches
-_rate_history: dict[str, list[float]] = {}   # project_id -> list of start timestamps
+_rate_running: dict[str, int] = {}  # project_id -> count of running batches
+_rate_history: dict[str, list[float]] = {}  # project_id -> list of start timestamps
 
 
 def _rate_check(project_id: str) -> str | None:
@@ -151,8 +163,7 @@ def _rate_check(project_id: str) -> str | None:
         # Check concurrent
         running = _rate_running.get(project_id, 0)
         if running >= RATE_MAX_CONCURRENT:
-            return (f"Rate limit: {running} batches already running for "
-                    f"project {project_id} (max {RATE_MAX_CONCURRENT})")
+            return f"Rate limit: {running} batches already running for project {project_id} (max {RATE_MAX_CONCURRENT})"
         # Check hourly
         now = time.time()
         cutoff = now - 3600
@@ -160,8 +171,9 @@ def _rate_check(project_id: str) -> str | None:
         history = [t for t in history if t > cutoff]
         _rate_history[project_id] = history
         if len(history) >= RATE_MAX_PER_HOUR:
-            return (f"Rate limit: {len(history)} batches in last hour for "
-                    f"project {project_id} (max {RATE_MAX_PER_HOUR}/hr)")
+            return (
+                f"Rate limit: {len(history)} batches in last hour for project {project_id} (max {RATE_MAX_PER_HOUR}/hr)"
+            )
     return None
 
 
@@ -176,6 +188,7 @@ def _rate_release(project_id: str) -> None:
     """Mark a batch as finished for rate limiting."""
     with _rate_lock:
         _rate_running[project_id] = max(0, _rate_running.get(project_id, 1) - 1)
+
 
 # ---------------------------------------------------------------------------
 # Batch catalog — 4 built-in operations
@@ -255,8 +268,7 @@ BATCH_CATALOG = {
     "compliance_check": {
         "name": "Multi-Framework Check",
         "description": (
-            "Assess compliance across NIST crosswalk, FedRAMP, CMMC, "
-            "and generate OSCAL machine-readable output"
+            "Assess compliance across NIST crosswalk, FedRAMP, CMMC, and generate OSCAL machine-readable output"
         ),
         "icon": "clipboard",
         "steps": [
@@ -284,10 +296,7 @@ BATCH_CATALOG = {
     },
     "build_validate": {
         "name": "Build & Validate",
-        "description": (
-            "Lint, format, run the full test suite, and regenerate "
-            "the SBOM for a clean build validation"
-        ),
+        "description": ("Lint, format, run the full test suite, and regenerate the SBOM for a clean build validation"),
         "icon": "hammer",
         "steps": [
             {
@@ -347,8 +356,7 @@ def _get_run(run_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def _execute_batch(run_id: str, batch_id: str, project_id: str,
-                   stop_on_failure: bool = False) -> None:
+def _execute_batch(run_id: str, batch_id: str, project_id: str, stop_on_failure: bool = False) -> None:
     """Run each step of a batch sequentially in a background thread.
 
     Args:
@@ -376,7 +384,7 @@ def _execute_batch(run_id: str, batch_id: str, project_id: str,
             step_record["status"] = "cancelled"
             step_record["output_summary"] = "Cancelled by user"
             # Mark all remaining steps as cancelled
-            for remaining in run["steps"][idx + 1:]:
+            for remaining in run["steps"][idx + 1 :]:
                 remaining["status"] = "cancelled"
                 remaining["output_summary"] = "Cancelled by user"
             run["status"] = "cancelled"
@@ -426,9 +434,7 @@ def _execute_batch(run_id: str, batch_id: str, project_id: str,
         except subprocess.TimeoutExpired:
             step_record["status"] = "failed"
             step_record["return_code"] = -1
-            step_record["output_summary"] = (
-                f"Step timed out after {STEP_TIMEOUT}s"
-            )
+            step_record["output_summary"] = f"Step timed out after {STEP_TIMEOUT}s"
             had_failure = True
         except FileNotFoundError:
             step_record["status"] = "failed"
@@ -477,14 +483,16 @@ def catalog():
     """List available batch operations."""
     items = []
     for batch_id, entry in BATCH_CATALOG.items():
-        items.append({
-            "batch_id": batch_id,
-            "name": entry["name"],
-            "description": entry["description"],
-            "icon": entry["icon"],
-            "step_count": len(entry["steps"]),
-            "steps": [s["name"] for s in entry["steps"]],
-        })
+        items.append(
+            {
+                "batch_id": batch_id,
+                "name": entry["name"],
+                "description": entry["description"],
+                "icon": entry["icon"],
+                "step_count": len(entry["steps"]),
+                "steps": [s["name"] for s in entry["steps"]],
+            }
+        )
     return jsonify({"catalog": items})
 
 
@@ -505,10 +513,12 @@ def execute():
     stop_on_failure = bool(body.get("stop_on_failure", False))
 
     if not batch_id or batch_id not in BATCH_CATALOG:
-        return jsonify({
-            "error": "Invalid batch_id",
-            "valid_ids": list(BATCH_CATALOG.keys()),
-        }), 400
+        return jsonify(
+            {
+                "error": "Invalid batch_id",
+                "valid_ids": list(BATCH_CATALOG.keys()),
+            }
+        ), 400
 
     if not project_id:
         return jsonify({"error": "project_id is required"}), 400
@@ -524,15 +534,17 @@ def execute():
     # Build step records
     steps = []
     for step_def in catalog_entry["steps"]:
-        steps.append({
-            "name": step_def["name"],
-            "tool_path": step_def["tool"],
-            "status": "pending",
-            "start_time": None,
-            "end_time": None,
-            "output_summary": None,
-            "return_code": None,
-        })
+        steps.append(
+            {
+                "name": step_def["name"],
+                "tool_path": step_def["tool"],
+                "status": "pending",
+                "start_time": None,
+                "end_time": None,
+                "output_summary": None,
+                "return_code": None,
+            }
+        )
 
     run_data = {
         "run_id": run_id,
@@ -561,11 +573,13 @@ def execute():
     )
     thread.start()
 
-    return jsonify({
-        "run_id": run_id,
-        "status": "running",
-        "stop_on_failure": stop_on_failure,
-    }), 202
+    return jsonify(
+        {
+            "run_id": run_id,
+            "status": "running",
+            "stop_on_failure": stop_on_failure,
+        }
+    ), 202
 
 
 @batch_api.route("/cancel/<run_id>", methods=["POST"])
@@ -582,10 +596,12 @@ def cancel(run_id):
         return jsonify({"error": "Run not found", "run_id": run_id}), 404
 
     if run["status"] != "running":
-        return jsonify({
-            "error": "Cannot cancel — batch is not running",
-            "current_status": run["status"],
-        }), 409
+        return jsonify(
+            {
+                "error": "Cannot cancel — batch is not running",
+                "current_status": run["status"],
+            }
+        ), 409
 
     cancel_event = _cancel_events.get(run_id)
     if cancel_event:
@@ -626,8 +642,7 @@ def history():
     try:
         if project_id:
             runs = conn.execute(
-                "SELECT * FROM batch_runs WHERE project_id = ? "
-                "ORDER BY start_time DESC LIMIT ? OFFSET ?",
+                "SELECT * FROM batch_runs WHERE project_id = ? ORDER BY start_time DESC LIMIT ? OFFSET ?",
                 (project_id, limit, offset),
             ).fetchall()
             total = conn.execute(
@@ -654,12 +669,14 @@ def history():
             run_dict["steps"] = [dict(s) for s in steps]
             result.append(run_dict)
 
-        return jsonify({
-            "runs": result,
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "classification": "CUI",
-        })
+        return jsonify(
+            {
+                "runs": result,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "classification": DEFAULT_CLASSIFICATION,
+            }
+        )
     finally:
         conn.close()

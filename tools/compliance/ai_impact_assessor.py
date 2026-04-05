@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Algorithmic Impact Assessor — Phase 49.
 
 Conducts algorithmic impact assessments for AI systems as required by
@@ -21,6 +21,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -32,7 +33,7 @@ IMPACT_DIMENSIONS = [
     {
         "id": "IMP-RIGHTS",
         "title": "Rights-Impacting Classification",
-        "description": "Does this AI system make or materially support decisions affecting individual rights, benefits, or access to services?",
+        "description": "Does this AI system make or materially support decisions affecting individual rights, benefits, or access to services?",  # noqa: E501
         "weight": 0.25,
     },
     {
@@ -69,8 +70,7 @@ IMPACT_DIMENSIONS = [
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -129,13 +129,15 @@ def assess_impact(
             score_sum += weighted
             weight_sum += dim["weight"]
 
-            results.append({
-                "id": dim_id,
-                "title": dim["title"],
-                "response": response or "not_assessed",
-                "severity_score": round(severity_score, 2),
-                "weighted_score": round(weighted, 3),
-            })
+            results.append(
+                {
+                    "id": dim_id,
+                    "title": dim["title"],
+                    "response": response or "not_assessed",
+                    "severity_score": round(severity_score, 2),
+                    "weighted_score": round(weighted, 3),
+                }
+            )
 
         overall_risk = round(score_sum / weight_sum * 100, 1) if weight_sum > 0 else 0
         risk_level = "high" if overall_risk >= 70 else "medium" if overall_risk >= 40 else "low"
@@ -165,7 +167,10 @@ def assess_impact(
 
 
 def _auto_assess_dimension(
-    conn: sqlite3.Connection, project_id: str, ai_system: str, dim_id: str,
+    conn: sqlite3.Connection,
+    project_id: str,
+    ai_system: str,
+    dim_id: str,
 ) -> str:
     """Infer dimension response from existing DB data."""
     try:
@@ -176,8 +181,7 @@ def _auto_assess_dimension(
                 (project_id, ai_system),
             ).fetchone()
             if row:
-                return {"high_impact": "high", "safety_impacting": "high"}.get(
-                    row["risk_level"], "low")
+                return {"high_impact": "high", "safety_impacting": "high"}.get(row["risk_level"], "low")
 
         elif dim_id == "IMP-HUMAN":
             row = conn.execute(
@@ -219,12 +223,14 @@ def get_impact_summary(project_id: str, db_path: Path = DB_PATH) -> Dict:
                 findings = json.loads(r["findings"]) if r["findings"] else {}
             except (json.JSONDecodeError, TypeError):
                 pass
-            assessments.append({
-                "ai_system": r["ai_system"],
-                "risk_level": findings.get("risk_level", "unknown"),
-                "overall_risk_score": findings.get("overall_risk_score", 0),
-                "created_at": r["created_at"],
-            })
+            assessments.append(
+                {
+                    "ai_system": r["ai_system"],
+                    "risk_level": findings.get("risk_level", "unknown"),
+                    "overall_risk_score": findings.get("overall_risk_score", 0),
+                    "created_at": r["created_at"],
+                }
+            )
 
         return {
             "project_id": project_id,
@@ -253,8 +259,7 @@ def main():
             if not args.ai_system:
                 print("ERROR: --ai-system required for assessment", file=sys.stderr)
                 sys.exit(1)
-            result = assess_impact(args.project_id, args.ai_system,
-                                   reviewer=args.reviewer, db_path=db)
+            result = assess_impact(args.project_id, args.ai_system, reviewer=args.reviewer, db_path=db)
 
         if args.json:
             print(json.dumps(result, indent=2))
@@ -262,7 +267,9 @@ def main():
             if args.summary:
                 print(f"Impact Assessments for {args.project_id}: {result['total_assessments']}")
             else:
-                print(f"Impact Assessment: {result['ai_system']} — Risk: {result['risk_level']} ({result['overall_risk_score']}%)")
+                print(
+                    f"Impact Assessment: {result['ai_system']} — Risk: {result['risk_level']} ({result['overall_risk_score']}%)"  # noqa: E501
+                )
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)

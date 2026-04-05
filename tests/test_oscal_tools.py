@@ -13,12 +13,10 @@ Covers:
 """
 
 import json
-import os
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -97,7 +95,7 @@ SAMPLE_OSCAL_CATALOG = {
     }
 }
 
-# Sample ICDEV catalog snippet
+# Sample ICDEV™ catalog snippet
 SAMPLE_ICDEV_CATALOG = {
     "metadata": {"version": "1.0", "framework": "NIST 800-53 Rev 5"},
     "controls": [
@@ -203,7 +201,7 @@ class TestOscalCatalogAdapterOscalFormat:
 
 
 class TestOscalCatalogAdapterIcdevFormat:
-    """Test adapter with ICDEV custom catalog format."""
+    """Test adapter with ICDEV™ custom catalog format."""
 
     @pytest.fixture
     def icdev_catalog_file(self, tmp_path):
@@ -256,9 +254,7 @@ class TestCatalogAdapterFallback:
         existing = tmp_path / "fallback.json"
         existing.write_text(json.dumps(SAMPLE_ICDEV_CATALOG), encoding="utf-8")
 
-        adapter = OscalCatalogAdapter(
-            catalog_sources=[str(nonexistent), str(existing)]
-        )
+        adapter = OscalCatalogAdapter(catalog_sources=[str(nonexistent), str(existing)])
         assert adapter.is_loaded()
         assert adapter._source_format == "icdev_custom"
 
@@ -266,9 +262,7 @@ class TestCatalogAdapterFallback:
         from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
 
         _CATALOG_CACHE.clear()
-        adapter = OscalCatalogAdapter(
-            catalog_sources=[str(tmp_path / "nope1.json"), str(tmp_path / "nope2.json")]
-        )
+        adapter = OscalCatalogAdapter(catalog_sources=[str(tmp_path / "nope1.json"), str(tmp_path / "nope2.json")])
         assert not adapter.is_loaded()
 
     def test_invalid_json_skipped(self, tmp_path):
@@ -343,8 +337,10 @@ class TestOscalToolDetection:
         ot._JAVA_INFO = None
         ot._OSCAL_CLI_INFO = None
         try:
-            with patch("icdev.tools.compliance.oscal_tools._detect_java",
-                       return_value={"available": False, "version": None, "path": None, "error": "not found"}):
+            with patch(
+                "icdev.tools.compliance.oscal_tools._detect_java",
+                return_value={"available": False, "version": None, "path": None, "error": "not found"},
+            ):
                 result = detect_oscal_tools()
                 assert result["oscal_cli"]["available"] is False
         finally:
@@ -434,27 +430,29 @@ class TestDeepValidation:
         from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         result = validate_oscal_deep(sample_ssp_path)
-        pydantic_entries = [v for v in result["validators"]
-                           if v["validator"] == "oscal_pydantic"]
+        pydantic_entries = [v for v in result["validators"] if v["validator"] == "oscal_pydantic"]
         assert len(pydantic_entries) == 1
         pydantic_layer = pydantic_entries[0]
         # Either passes, skipped, or valid (graceful on incompatible pydantic version)
-        assert pydantic_layer.get("valid") is True or pydantic_layer.get("skipped") is True \
-            or "errors" in pydantic_layer  # errors key present means it ran but handled gracefully
+        assert (
+            pydantic_layer.get("valid") is True or pydantic_layer.get("skipped") is True or "errors" in pydantic_layer
+        )  # errors key present means it ran but handled gracefully
 
     def test_metaschema_layer_graceful_when_no_java(self, sample_ssp_path):
         from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
-        with patch("icdev.tools.compliance.oscal_tools._detect_java",
-                   return_value={"available": False, "version": None, "path": None, "error": "no java"}):
+        with patch(
+            "icdev.tools.compliance.oscal_tools._detect_java",
+            return_value={"available": False, "version": None, "path": None, "error": "no java"},
+        ):
             # Reset cached detection results
             import icdev.tools.compliance.oscal_tools as ot
+
             ot._JAVA_INFO = None
             ot._OSCAL_CLI_INFO = None
             try:
                 result = validate_oscal_deep(sample_ssp_path)
-                meta_entries = [v for v in result["validators"]
-                               if v["validator"] == "oscal_cli_metaschema"]
+                meta_entries = [v for v in result["validators"] if v["validator"] == "oscal_cli_metaschema"]
                 assert len(meta_entries) == 1
                 meta_layer = meta_entries[0]
                 assert meta_layer.get("valid") is True or meta_layer.get("skipped") is True
@@ -493,7 +491,7 @@ class TestDeepValidation:
         conn.commit()
         conn.close()
 
-        result = validate_oscal_deep(
+        validate_oscal_deep(
             sample_ssp_path,
             project_id="test-proj",
             db_path=str(db_path),
@@ -520,11 +518,14 @@ class TestFormatConversion:
         dummy.write_text("{}", encoding="utf-8")
 
         import icdev.tools.compliance.oscal_tools as ot
+
         ot._JAVA_INFO = None
         ot._OSCAL_CLI_INFO = None
         try:
-            with patch("icdev.tools.compliance.oscal_tools._detect_java",
-                       return_value={"available": False, "version": None, "path": None, "error": "no java"}):
+            with patch(
+                "icdev.tools.compliance.oscal_tools._detect_java",
+                return_value={"available": False, "version": None, "path": None, "error": "no java"},
+            ):
                 result = convert_oscal_format(str(dummy), "xml")
                 assert result.get("success") is False or result.get("error") is not None
         finally:
@@ -551,11 +552,14 @@ class TestProfileResolution:
         dummy.write_text("{}", encoding="utf-8")
 
         import icdev.tools.compliance.oscal_tools as ot
+
         ot._JAVA_INFO = None
         ot._OSCAL_CLI_INFO = None
         try:
-            with patch("icdev.tools.compliance.oscal_tools._detect_java",
-                       return_value={"available": False, "version": None, "path": None, "error": "no java"}):
+            with patch(
+                "icdev.tools.compliance.oscal_tools._detect_java",
+                return_value={"available": False, "version": None, "path": None, "error": "no java"},
+            ):
                 result = resolve_oscal_profile(str(dummy))
                 assert result.get("success") is False or result.get("error") is not None
         finally:
@@ -572,6 +576,7 @@ class TestCatalogOperations:
     @pytest.fixture
     def catalog_env(self, tmp_path):
         from icdev.tools.compliance.oscal_catalog_adapter import _CATALOG_CACHE
+
         _CATALOG_CACHE.clear()
         cat_path = tmp_path / "catalog.json"
         cat_path.write_text(json.dumps(SAMPLE_OSCAL_CATALOG), encoding="utf-8")
@@ -618,9 +623,10 @@ class TestCLIEntrypoint:
         import subprocess
 
         result = subprocess.run(
-            [sys.executable, str(BASE_DIR / "tools" / "compliance" / "oscal_tools.py"),
-             "--detect", "--json"],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, str(BASE_DIR / "tools" / "compliance" / "oscal_tools.py"), "--detect", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
             stdin=subprocess.DEVNULL,
         )
         assert result.returncode == 0
@@ -634,9 +640,10 @@ class TestCLIEntrypoint:
         import subprocess
 
         result = subprocess.run(
-            [sys.executable, str(BASE_DIR / "tools" / "compliance" / "oscal_catalog_adapter.py"),
-             "--stats", "--json"],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, str(BASE_DIR / "tools" / "compliance" / "oscal_catalog_adapter.py"), "--stats", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
             stdin=subprocess.DEVNULL,
         )
         # May exit 0 even with no catalog (returns empty stats)
@@ -647,9 +654,16 @@ class TestCLIEntrypoint:
         import subprocess
 
         result = subprocess.run(
-            [sys.executable, str(BASE_DIR / "tools" / "compliance" / "oscal_tools.py"),
-             "--catalog-lookup", "AC-2", "--json"],
-            capture_output=True, text=True, timeout=30,
+            [
+                sys.executable,
+                str(BASE_DIR / "tools" / "compliance" / "oscal_tools.py"),
+                "--catalog-lookup",
+                "AC-2",
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
             stdin=subprocess.DEVNULL,
         )
         # Returns 0 if catalog found, 1 if not — both are acceptable
@@ -660,9 +674,10 @@ class TestCLIEntrypoint:
         import subprocess
 
         result = subprocess.run(
-            [sys.executable, str(BASE_DIR / "tools" / "compliance" / "oscal_tools.py"),
-             "--help"],
-            capture_output=True, text=True, timeout=30,
+            [sys.executable, str(BASE_DIR / "tools" / "compliance" / "oscal_tools.py"), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
             stdin=subprocess.DEVNULL,
         )
         assert result.returncode == 0
@@ -754,8 +769,7 @@ class TestPydanticV2Support:
         ot._OSCAL_MODEL_CACHE.clear()
         try:
             result = validate_oscal_deep(sample_ssp_path)
-            pydantic_layer = [v for v in result["validators"]
-                              if v["validator"] == "oscal_pydantic"][0]
+            pydantic_layer = [v for v in result["validators"] if v["validator"] == "oscal_pydantic"][0]
             assert pydantic_layer["valid"] is True
             assert "compat_mode" in pydantic_layer
             assert pydantic_layer["compat_mode"] in ("native", "v1_compat", "builtin_v2")

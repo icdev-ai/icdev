@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from tools.finetune.gpu_detector import (
     GPUDetectionResult,
@@ -19,6 +18,7 @@ from tools.finetune.gpu_detector import (
 
 
 # ---- GPUInfo tests ----
+
 
 class TestGPUInfo:
     def test_default_values(self):
@@ -39,6 +39,7 @@ class TestGPUInfo:
 
 
 # ---- GPUDetectionResult tests ----
+
 
 class TestGPUDetectionResult:
     def test_cpu_fallback_defaults(self):
@@ -74,6 +75,7 @@ class TestGPUDetectionResult:
 
 
 # ---- Recommendations tests ----
+
 
 class TestRecommendations:
     def test_48gb_recommendations(self):
@@ -111,6 +113,7 @@ class TestRecommendations:
 
 
 # ---- Detection method tests ----
+
 
 class TestDetectViaTorch:
     @patch("tools.finetune.gpu_detector.torch", create=True)
@@ -169,6 +172,7 @@ class TestDetectViaNvidiaSmi:
 
 # ---- Main detect_gpu tests ----
 
+
 class TestDetectGpu:
     @patch("tools.finetune.gpu_detector._detect_via_torch", return_value=None)
     @patch("tools.finetune.gpu_detector._detect_via_nvidia_smi", return_value=None)
@@ -181,10 +185,14 @@ class TestDetectGpu:
     @patch("tools.finetune.gpu_detector._detect_via_torch")
     def test_torch_preferred(self, mock_torch):
         gpu_result = GPUDetectionResult(
-            has_cuda=True, has_gpu=True, gpu_count=1,
+            has_cuda=True,
+            has_gpu=True,
+            gpu_count=1,
             gpus=[GPUInfo(index=0, name="RTX 4090", vram_total_mb=24576)],
-            total_vram_mb=24576, max_single_gpu_vram_mb=24576,
-            detection_method="torch", can_train=True,
+            total_vram_mb=24576,
+            max_single_gpu_vram_mb=24576,
+            detection_method="torch",
+            can_train=True,
         )
         mock_torch.return_value = gpu_result
         result = detect_gpu()

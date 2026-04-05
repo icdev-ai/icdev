@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# Security Hardening Workflow — SAST → Deps → Secrets → OWASP → ATLAS
+# Security Hardening Workflow — SAST → Deps → Secrets → OWASP → ANVIL
 description: "Security hardening: multi-layer scanning, AI threat assessment, supply chain verification"
 category: security
 steps:

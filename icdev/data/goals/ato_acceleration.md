@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Guide a project from zero compliance to ATO-ready across FedRAMP, CMMC, and DoD IL requirements using the ICDEV multi-framework compliance engine.
+Guide a project from zero compliance to ATO-ready across FedRAMP, CMMC, and DoD IL requirements using the ICDEV™ multi-framework compliance engine.
 
 ## Prerequisites
 

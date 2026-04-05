@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Asset Scanner — 7-gate security scanning pipeline.
 
 Orchestrates security scanning for marketplace assets before publishing.
@@ -38,10 +38,10 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import subprocess
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,27 +57,40 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful imports
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 ALL_GATES = [
-    "sast_scan", "secret_detection", "dependency_audit",
-    "cui_marking_validation", "sbom_generation",
-    "supply_chain_provenance", "digital_signature",
-    "prompt_injection_scan", "behavioral_sandbox",
+    "sast_scan",
+    "secret_detection",
+    "dependency_audit",
+    "cui_marking_validation",
+    "sbom_generation",
+    "supply_chain_provenance",
+    "digital_signature",
+    "prompt_injection_scan",
+    "behavioral_sandbox",
     "training_data_provenance",
 ]
 
 BLOCKING_GATES = {
-    "sast_scan", "secret_detection", "dependency_audit",
-    "cui_marking_validation", "sbom_generation", "digital_signature",
-    "prompt_injection_scan", "training_data_provenance",
+    "sast_scan",
+    "secret_detection",
+    "dependency_audit",
+    "cui_marking_validation",
+    "sbom_generation",
+    "digital_signature",
+    "prompt_injection_scan",
+    "training_data_provenance",
 }
 
 # Secret patterns to scan for (air-gapped, no external tools required)
@@ -85,19 +98,19 @@ SECRET_PATTERNS = [
     (r'(?i)(api[_-]?key|apikey)\s*[:=]\s*["\']?[A-Za-z0-9/+=]{20,}', "API key"),
     (r'(?i)(secret|password|passwd|pwd)\s*[:=]\s*["\'][^"\']{8,}', "Password/secret"),
     (r'(?i)(aws_access_key_id|aws_secret_access_key)\s*[:=]\s*["\']?[A-Za-z0-9/+=]{16,}', "AWS credential"),
-    (r'(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*', "Bearer token"),
-    (r'-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----', "Private key"),
-    (r'(?i)(ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{36,}', "GitHub token"),
-    (r'sk-[A-Za-z0-9]{32,}', "OpenAI API key"),
+    (r"(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*", "Bearer token"),
+    (r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "Private key"),
+    (r"(?i)(ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{36,}", "GitHub token"),
+    (r"sk-[A-Za-z0-9]{32,}", "OpenAI API key"),
 ]
 
 # CUI marking patterns
 CUI_PATTERNS = [
-    r'CUI\s*//',
-    r'CONTROLLED UNCLASSIFIED INFORMATION',
-    r'# CUI //',
-    r'// CUI //',
-    r'-- CUI //',
+    r"CUI\s*//",
+    r"CONTROLLED UNCLASSIFIED INFORMATION",
+    r"# CUI //",
+    r"// CUI //",
+    r"-- CUI //",
 ]
 
 
@@ -106,8 +119,7 @@ CUI_PATTERNS = [
 # ---------------------------------------------------------------------------
 def _get_db(db_path=None):
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -119,8 +131,19 @@ def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _record_scan(asset_id, version_id, gate_name, status, findings_count=0,
-                 critical=0, high=0, medium=0, low=0, details=None, db_path=None):
+def _record_scan(
+    asset_id,
+    version_id,
+    gate_name,
+    status,
+    findings_count=0,
+    critical=0,
+    high=0,
+    medium=0,
+    low=0,
+    details=None,
+    db_path=None,
+):
     """Record a scan result in the database."""
     scan_id = _gen_id("scan")
     conn = _get_db(db_path)
@@ -131,9 +154,19 @@ def _record_scan(asset_id, version_id, gate_name, status, findings_count=0,
                 findings_count, critical_count, high_count,
                 medium_count, low_count, details)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (scan_id, asset_id, version_id, gate_name, status,
-             findings_count, critical, high, medium, low,
-             json.dumps(details) if details else None),
+            (
+                scan_id,
+                asset_id,
+                version_id,
+                gate_name,
+                status,
+                findings_count,
+                critical,
+                high,
+                medium,
+                low,
+                json.dumps(details) if details else None,
+            ),
         )
         conn.commit()
     finally:
@@ -145,8 +178,11 @@ def _audit(event_type, actor, action, details=None):
     if _HAS_AUDIT:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor,
-                action=action, details=details, db_path=DB_PATH,
+                event_type=event_type,
+                actor=actor,
+                action=action,
+                details=details,
+                db_path=DB_PATH,
             )
         except Exception:
             pass
@@ -155,6 +191,7 @@ def _audit(event_type, actor, action, details=None):
 # ---------------------------------------------------------------------------
 # Individual gate scanners
 # ---------------------------------------------------------------------------
+
 
 def scan_sast(asset_path, asset_id, version_id, db_path=None):
     """Gate 1: Static Application Security Testing.
@@ -166,8 +203,12 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
 
     if not py_files:
         return _record_scan(
-            asset_id, version_id, "sast_scan", "skipped",
-            details={"reason": "No Python files found"}, db_path=db_path,
+            asset_id,
+            version_id,
+            "sast_scan",
+            "skipped",
+            details={"reason": "No Python files found"},
+            db_path=db_path,
         ), {"status": "skipped", "reason": "No Python files"}
 
     findings = {"critical": 0, "high": 0, "medium": 0, "low": 0, "issues": []}
@@ -175,9 +216,10 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
     # Try bandit first
     try:
         result = subprocess.run(
-            ["python", "-m", "bandit", "-r", str(asset_path), "-f", "json",
-             "--severity-level", "low", "-q"],
-            capture_output=True, text=True, timeout=120,
+            ["python", "-m", "bandit", "-r", str(asset_path), "-f", "json", "--severity-level", "low", "-q"],
+            capture_output=True,
+            text=True,
+            timeout=120,
             stdin=subprocess.DEVNULL,
         )
         if result.stdout:
@@ -190,16 +232,19 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
                     findings["high"] += 1
                 else:
                     findings["low"] += 1
-                findings["issues"].append({
-                    "file": issue.get("filename", ""),
-                    "line": issue.get("line_number", 0),
-                    "severity": sev,
-                    "text": issue.get("issue_text", ""),
-                    "test_id": issue.get("test_id", ""),
-                })
+                findings["issues"].append(
+                    {
+                        "file": issue.get("filename", ""),
+                        "line": issue.get("line_number", 0),
+                        "severity": sev,
+                        "text": issue.get("issue_text", ""),
+                        "test_id": issue.get("test_id", ""),
+                    }
+                )
     except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
         # Bandit not available — use basic AST-based checks
         import ast
+
         for py_file in py_files:
             try:
                 source = py_file.read_text(encoding="utf-8", errors="ignore")
@@ -214,20 +259,24 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
                             func_name = node.func.attr
                         if func_name in ("eval", "exec"):
                             findings["critical"] += 1
-                            findings["issues"].append({
-                                "file": str(py_file.relative_to(asset_path)),
-                                "line": node.lineno,
-                                "severity": "critical",
-                                "text": f"Use of {func_name}() — potential code injection",
-                            })
+                            findings["issues"].append(
+                                {
+                                    "file": str(py_file.relative_to(asset_path)),
+                                    "line": node.lineno,
+                                    "severity": "critical",
+                                    "text": f"Use of {func_name}() — potential code injection",
+                                }
+                            )
                         elif func_name in ("system", "popen"):
                             findings["high"] += 1
-                            findings["issues"].append({
-                                "file": str(py_file.relative_to(asset_path)),
-                                "line": node.lineno,
-                                "severity": "high",
-                                "text": f"Use of os.{func_name}() — potential command injection",
-                            })
+                            findings["issues"].append(
+                                {
+                                    "file": str(py_file.relative_to(asset_path)),
+                                    "line": node.lineno,
+                                    "severity": "high",
+                                    "text": f"Use of os.{func_name}() — potential command injection",
+                                }
+                            )
             except (SyntaxError, UnicodeDecodeError):
                 pass
 
@@ -235,10 +284,15 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
     status = "pass" if findings["critical"] == 0 and findings["high"] == 0 else "fail"
 
     scan_id = _record_scan(
-        asset_id, version_id, "sast_scan", status,
+        asset_id,
+        version_id,
+        "sast_scan",
+        status,
         findings_count=total,
-        critical=findings["critical"], high=findings["high"],
-        medium=findings["medium"], low=findings["low"],
+        critical=findings["critical"],
+        high=findings["high"],
+        medium=findings["medium"],
+        low=findings["low"],
         details={"issues": findings["issues"][:20]},
         db_path=db_path,
     )
@@ -253,9 +307,26 @@ def scan_secrets(asset_path, asset_id, version_id, db_path=None):
     asset_path = Path(asset_path)
     findings = []
 
-    text_extensions = {".py", ".js", ".ts", ".go", ".rs", ".java", ".cs",
-                       ".yaml", ".yml", ".json", ".toml", ".ini", ".cfg",
-                       ".env", ".md", ".txt", ".sh", ".bat"}
+    text_extensions = {
+        ".py",
+        ".js",
+        ".ts",
+        ".go",
+        ".rs",
+        ".java",
+        ".cs",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".env",
+        ".md",
+        ".txt",
+        ".sh",
+        ".bat",
+    }
 
     for fpath in asset_path.rglob("*"):
         if not fpath.is_file():
@@ -270,17 +341,22 @@ def scan_secrets(asset_path, asset_id, version_id, db_path=None):
 
         for pattern, secret_type in SECRET_PATTERNS:
             for match in re.finditer(pattern, content):
-                line_no = content[:match.start()].count("\n") + 1
-                findings.append({
-                    "file": str(fpath.relative_to(asset_path)),
-                    "line": line_no,
-                    "type": secret_type,
-                    "match_preview": match.group()[:30] + "..." if len(match.group()) > 30 else match.group(),
-                })
+                line_no = content[: match.start()].count("\n") + 1
+                findings.append(
+                    {
+                        "file": str(fpath.relative_to(asset_path)),
+                        "line": line_no,
+                        "type": secret_type,
+                        "match_preview": match.group()[:30] + "..." if len(match.group()) > 30 else match.group(),
+                    }
+                )
 
     status = "pass" if len(findings) == 0 else "fail"
     scan_id = _record_scan(
-        asset_id, version_id, "secret_detection", status,
+        asset_id,
+        version_id,
+        "secret_detection",
+        status,
         findings_count=len(findings),
         critical=len(findings),
         details={"secrets_found": findings[:10]},
@@ -307,8 +383,12 @@ def scan_dependencies(asset_path, asset_id, version_id, db_path=None):
 
     if not req_file.exists():
         return _record_scan(
-            asset_id, version_id, "dependency_audit", "skipped",
-            details={"reason": "No dependency file found"}, db_path=db_path,
+            asset_id,
+            version_id,
+            "dependency_audit",
+            "skipped",
+            details={"reason": "No dependency file found"},
+            db_path=db_path,
         ), {"status": "skipped", "reason": "No dependency file"}
 
     # Try pip-audit for Python
@@ -316,7 +396,9 @@ def scan_dependencies(asset_path, asset_id, version_id, db_path=None):
         try:
             result = subprocess.run(
                 ["python", "-m", "pip_audit", "-r", str(req_file), "--format", "json"],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
                 stdin=subprocess.DEVNULL,
             )
             if result.stdout:
@@ -324,12 +406,14 @@ def scan_dependencies(asset_path, asset_id, version_id, db_path=None):
                 for dep in audit_data.get("dependencies", []):
                     for vuln in dep.get("vulns", []):
                         vuln.get("fix_versions", "unknown")
-                        findings["dependencies"].append({
-                            "package": dep.get("name"),
-                            "version": dep.get("version"),
-                            "vuln_id": vuln.get("id"),
-                            "description": vuln.get("description", "")[:200],
-                        })
+                        findings["dependencies"].append(
+                            {
+                                "package": dep.get("name"),
+                                "version": dep.get("version"),
+                                "vuln_id": vuln.get("id"),
+                                "description": vuln.get("description", "")[:200],
+                            }
+                        )
                         findings["high"] += 1
         except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
             # pip-audit not available — basic dependency listing
@@ -337,7 +421,8 @@ def scan_dependencies(asset_path, asset_id, version_id, db_path=None):
                 deps = req_file.read_text().strip().split("\n")
                 findings["dependencies"] = [
                     {"package": d.split("==")[0].split(">=")[0].strip(), "status": "unaudited"}
-                    for d in deps if d.strip() and not d.startswith("#")
+                    for d in deps
+                    if d.strip() and not d.startswith("#")
                 ]
             except Exception:
                 pass
@@ -346,9 +431,13 @@ def scan_dependencies(asset_path, asset_id, version_id, db_path=None):
     status = "pass" if total == 0 else "fail"
 
     scan_id = _record_scan(
-        asset_id, version_id, "dependency_audit", status,
+        asset_id,
+        version_id,
+        "dependency_audit",
+        status,
         findings_count=total,
-        critical=findings["critical"], high=findings["high"],
+        critical=findings["critical"],
+        high=findings["high"],
         details={"dependencies": findings["dependencies"][:20]},
         db_path=db_path,
     )
@@ -400,9 +489,13 @@ def scan_cui_markings(asset_path, asset_id, version_id, expected_classification=
         status = "fail"
 
     scan_id = _record_scan(
-        asset_id, version_id, "cui_marking_validation", status,
+        asset_id,
+        version_id,
+        "cui_marking_validation",
+        status,
         findings_count=missing + mismatched,
-        high=mismatched, medium=missing,
+        high=mismatched,
+        medium=missing,
         details={
             "files_checked": results["files_checked"],
             "files_marked": results["files_marked"],
@@ -420,14 +513,18 @@ def scan_sbom(asset_path, asset_id, version_id, db_path=None):
     Generates a CycloneDX SBOM for the asset. Required for assets with scripts.
     """
     asset_path = Path(asset_path)
-    has_scripts = bool(list(asset_path.rglob("*.py")) or
-                       list(asset_path.rglob("*.js")) or
-                       list(asset_path.rglob("*.sh")))
+    has_scripts = bool(
+        list(asset_path.rglob("*.py")) or list(asset_path.rglob("*.js")) or list(asset_path.rglob("*.sh"))
+    )
 
     if not has_scripts:
         return _record_scan(
-            asset_id, version_id, "sbom_generation", "skipped",
-            details={"reason": "No executable scripts"}, db_path=db_path,
+            asset_id,
+            version_id,
+            "sbom_generation",
+            "skipped",
+            details={"reason": "No executable scripts"},
+            db_path=db_path,
         ), {"status": "skipped"}
 
     sbom_data = {
@@ -445,26 +542,33 @@ def scan_sbom(asset_path, asset_id, version_id, db_path=None):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                parts = re.split(r'[><=!~]', line, maxsplit=1)
+                parts = re.split(r"[><=!~]", line, maxsplit=1)
                 pkg_name = parts[0].strip()
                 pkg_version = parts[1].strip("= ") if len(parts) > 1 else "unknown"
-                sbom_data["components"].append({
-                    "type": "library",
-                    "name": pkg_name,
-                    "version": pkg_version,
-                    "purl": f"pkg:pypi/{pkg_name}@{pkg_version}",
-                })
+                sbom_data["components"].append(
+                    {
+                        "type": "library",
+                        "name": pkg_name,
+                        "version": pkg_version,
+                        "purl": f"pkg:pypi/{pkg_name}@{pkg_version}",
+                    }
+                )
         except Exception:
             pass
 
     status = "pass"
     scan_id = _record_scan(
-        asset_id, version_id, "sbom_generation", status,
+        asset_id,
+        version_id,
+        "sbom_generation",
+        status,
         findings_count=len(sbom_data["components"]),
-        details={"sbom_summary": {
-            "format": "CycloneDX",
-            "component_count": len(sbom_data["components"]),
-        }},
+        details={
+            "sbom_summary": {
+                "format": "CycloneDX",
+                "component_count": len(sbom_data["components"]),
+            }
+        },
         db_path=db_path,
     )
     return scan_id, {"status": status, "components": len(sbom_data["components"])}
@@ -487,17 +591,22 @@ def scan_provenance(asset_path, asset_id, version_id, db_path=None):
                     continue
                 # Check if dependency is pinned (has ==)
                 if "==" not in line:
-                    parts = re.split(r'[><=!~]', line, maxsplit=1)
-                    unknown_deps.append({
-                        "package": parts[0].strip(),
-                        "issue": "Not pinned to exact version",
-                    })
+                    parts = re.split(r"[><=!~]", line, maxsplit=1)
+                    unknown_deps.append(
+                        {
+                            "package": parts[0].strip(),
+                            "issue": "Not pinned to exact version",
+                        }
+                    )
         except Exception:
             pass
 
     status = "pass" if not unknown_deps else "warning"
     scan_id = _record_scan(
-        asset_id, version_id, "supply_chain_provenance", status,
+        asset_id,
+        version_id,
+        "supply_chain_provenance",
+        status,
         findings_count=len(unknown_deps),
         medium=len(unknown_deps),
         details={"unpinned_dependencies": unknown_deps[:20]},
@@ -515,6 +624,7 @@ def scan_signature(asset_path, asset_id, version_id, db_path=None):
 
     # Check that we can compute a hash of the asset
     import hashlib
+
     h = hashlib.sha256()
     file_count = 0
     for fpath in sorted(asset_path.rglob("*")):
@@ -529,7 +639,10 @@ def scan_signature(asset_path, asset_id, version_id, db_path=None):
     status = "pass" if file_count > 0 else "fail"
 
     scan_id = _record_scan(
-        asset_id, version_id, "digital_signature", status,
+        asset_id,
+        version_id,
+        "digital_signature",
+        status,
         details={"content_hash": content_hash, "file_count": file_count},
         db_path=db_path,
     )
@@ -539,6 +652,7 @@ def scan_signature(asset_path, asset_id, version_id, db_path=None):
 # ---------------------------------------------------------------------------
 # Gate 8: Prompt Injection Scan (P3-2 — Phase 37)
 # ---------------------------------------------------------------------------
+
 
 def scan_prompt_injection(asset_path, asset_id, version_id, db_path=None):
     """Gate 8: Prompt injection scanning.
@@ -551,10 +665,14 @@ def scan_prompt_injection(asset_path, asset_id, version_id, db_path=None):
 
     try:
         from tools.security.prompt_injection_detector import PromptInjectionDetector
+
         detector = PromptInjectionDetector()
     except ImportError:
         return _record_scan(
-            asset_id, version_id, "prompt_injection_scan", "skipped",
+            asset_id,
+            version_id,
+            "prompt_injection_scan",
+            "skipped",
             details={"reason": "prompt_injection_detector not available"},
             db_path=db_path,
         ), {"status": "skipped", "reason": "Detector not available"}
@@ -597,9 +715,14 @@ def scan_prompt_injection(asset_path, asset_id, version_id, db_path=None):
     status = "fail" if critical > 0 else ("warning" if high > 0 else "pass")
 
     scan_id = _record_scan(
-        asset_id, version_id, "prompt_injection_scan", status,
+        asset_id,
+        version_id,
+        "prompt_injection_scan",
+        status,
         findings_count=critical + high + medium,
-        critical=critical, high=high, medium=medium,
+        critical=critical,
+        high=high,
+        medium=medium,
         details={
             "files_scanned": files_scanned,
             "blocked": findings["block"][:10],
@@ -621,6 +744,7 @@ def scan_prompt_injection(asset_path, asset_id, version_id, db_path=None):
 # Gate 9: Behavioral Sandbox (P3-2 — Phase 37)
 # ---------------------------------------------------------------------------
 
+
 def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
     """Gate 9: Behavioral sandbox analysis.
 
@@ -634,26 +758,36 @@ def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
 
     BEHAVIOR_PATTERNS = [
         # (pattern_regex, category, severity, description)
-        (r'(?i)requests\.(get|post|put|delete|patch)\s*\(', "network_access", "high",
-         "HTTP request to external service"),
-        (r'(?i)urllib\.request\.(urlopen|urlretrieve)', "network_access", "high",
-         "URL access via urllib"),
-        (r'(?i)socket\.(socket|connect|bind|listen)', "network_access", "critical",
-         "Raw socket operation"),
-        (r'(?i)subprocess\.(run|call|Popen|check_output)', "tool_abuse", "medium",
-         "Subprocess execution"),
-        (r'(?i)os\.(system|popen|exec[lv]p?e?)', "tool_abuse", "high",
-         "OS command execution"),
-        (r'(?i)shutil\.(rmtree|move|copytree)', "filesystem_abuse", "medium",
-         "Filesystem bulk operation"),
-        (r'(?i)open\s*\([^)]*["\']/(etc|var|tmp|proc|sys)', "filesystem_abuse", "high",
-         "Access to system directories"),
-        (r'(?i)(ICDEV_|AWS_|AZURE_|GCP_).*(KEY|SECRET|TOKEN|PASSWORD)', "config_manipulation", "high",
-         "Access to sensitive environment variables"),
-        (r'(?i)sqlite3\.connect\s*\([^)]*icdev\.db', "config_manipulation", "critical",
-         "Direct access to ICDEV database"),
-        (r'(?i)(base64\.(b64encode|b64decode)|codecs\.(encode|decode))', "obfuscation", "medium",
-         "Encoding/decoding that may hide payloads"),
+        (
+            r"(?i)requests\.(get|post|put|delete|patch)\s*\(",
+            "network_access",
+            "high",
+            "HTTP request to external service",
+        ),
+        (r"(?i)urllib\.request\.(urlopen|urlretrieve)", "network_access", "high", "URL access via urllib"),
+        (r"(?i)socket\.(socket|connect|bind|listen)", "network_access", "critical", "Raw socket operation"),
+        (r"(?i)subprocess\.(run|call|Popen|check_output)", "tool_abuse", "medium", "Subprocess execution"),
+        (r"(?i)os\.(system|popen|exec[lv]p?e?)", "tool_abuse", "high", "OS command execution"),
+        (r"(?i)shutil\.(rmtree|move|copytree)", "filesystem_abuse", "medium", "Filesystem bulk operation"),
+        (r'(?i)open\s*\([^)]*["\']/(etc|var|tmp|proc|sys)', "filesystem_abuse", "high", "Access to system directories"),
+        (
+            r"(?i)(ICDEV_|AWS_|AZURE_|GCP_).*(KEY|SECRET|TOKEN|PASSWORD)",
+            "config_manipulation",
+            "high",
+            "Access to sensitive environment variables",
+        ),
+        (
+            r"(?i)sqlite3\.connect\s*\([^)]*icdev\.db",
+            "config_manipulation",
+            "critical",
+            "Direct access to ICDEV™ database",
+        ),
+        (
+            r"(?i)(base64\.(b64encode|b64decode)|codecs\.(encode|decode))",
+            "obfuscation",
+            "medium",
+            "Encoding/decoding that may hide payloads",
+        ),
     ]
 
     findings = {"critical": [], "high": [], "medium": [], "low": []}
@@ -674,7 +808,7 @@ def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
         # Regex-based behavioral pattern detection
         for pattern, category, severity, description in BEHAVIOR_PATTERNS:
             for match in re.finditer(pattern, content):
-                line_no = content[:match.start()].count("\n") + 1
+                line_no = content[: match.start()].count("\n") + 1
                 entry = {
                     "file": rel_path,
                     "line": line_no,
@@ -693,25 +827,29 @@ def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
                     if isinstance(node, ast.Import):
                         for alias in node.names:
                             if alias.name in ("ctypes", "multiprocessing", "signal"):
-                                findings["medium"].append({
-                                    "file": rel_path,
-                                    "line": node.lineno,
-                                    "category": "tool_abuse",
-                                    "severity": "medium",
-                                    "description": f"Import of sensitive module: {alias.name}",
-                                })
+                                findings["medium"].append(
+                                    {
+                                        "file": rel_path,
+                                        "line": node.lineno,
+                                        "category": "tool_abuse",
+                                        "severity": "medium",
+                                        "description": f"Import of sensitive module: {alias.name}",
+                                    }
+                                )
                     elif isinstance(node, ast.Call):
                         func_name = ""
                         if isinstance(node.func, ast.Name):
                             func_name = node.func.id
                         if func_name in ("eval", "exec", "compile", "__import__"):
-                            findings["critical"].append({
-                                "file": rel_path,
-                                "line": node.lineno,
-                                "category": "tool_abuse",
-                                "severity": "critical",
-                                "description": f"Dynamic code execution: {func_name}()",
-                            })
+                            findings["critical"].append(
+                                {
+                                    "file": rel_path,
+                                    "line": node.lineno,
+                                    "category": "tool_abuse",
+                                    "severity": "critical",
+                                    "description": f"Dynamic code execution: {func_name}()",
+                                }
+                            )
             except SyntaxError:
                 pass
 
@@ -725,10 +863,15 @@ def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
     status = "warning" if total > 0 else "pass"
 
     scan_id = _record_scan(
-        asset_id, version_id, "behavioral_sandbox", status,
+        asset_id,
+        version_id,
+        "behavioral_sandbox",
+        status,
         findings_count=total,
-        critical=total_critical, high=total_high,
-        medium=total_medium, low=total_low,
+        critical=total_critical,
+        high=total_high,
+        medium=total_medium,
+        low=total_low,
         details={
             "files_scanned": files_scanned,
             "critical_behaviors": findings["critical"][:10],
@@ -751,6 +894,7 @@ def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
 # ---------------------------------------------------------------------------
 # Gate 10: Training Data Provenance (D-FT-18 — Phase 64 Extension)
 # ---------------------------------------------------------------------------
+
 
 def scan_training_data_provenance(asset_path, asset_id, version_id, db_path=None):
     """Gate 10: Training data provenance verification for lora_adapter assets.
@@ -778,10 +922,12 @@ def scan_training_data_provenance(asset_path, asset_id, version_id, db_path=None
 
     # Check adapter_config.json
     if not required_files["adapter_config.json"]:
-        findings.append({
-            "severity": "critical",
-            "description": "Missing adapter_config.json — required for LoRA adapter provenance",
-        })
+        findings.append(
+            {
+                "severity": "critical",
+                "description": "Missing adapter_config.json — required for LoRA adapter provenance",
+            }
+        )
     else:
         # Validate adapter_config.json has required fields
         config_path = list(asset_path.rglob("adapter_config.json"))[0]
@@ -789,22 +935,28 @@ def scan_training_data_provenance(asset_path, asset_id, version_id, db_path=None
             config_data = json.loads(config_path.read_text(encoding="utf-8"))
             for field in ("base_model_name_or_path", "r", "lora_alpha", "target_modules"):
                 if field not in config_data:
-                    findings.append({
-                        "severity": "high",
-                        "description": f"adapter_config.json missing required field: {field}",
-                    })
+                    findings.append(
+                        {
+                            "severity": "high",
+                            "description": f"adapter_config.json missing required field: {field}",
+                        }
+                    )
         except (json.JSONDecodeError, Exception) as exc:
-            findings.append({
-                "severity": "critical",
-                "description": f"adapter_config.json is not valid JSON: {exc}",
-            })
+            findings.append(
+                {
+                    "severity": "critical",
+                    "description": f"adapter_config.json is not valid JSON: {exc}",
+                }
+            )
 
     # Check training_metadata.json
     if not required_files["training_metadata.json"]:
-        findings.append({
-            "severity": "critical",
-            "description": "Missing training_metadata.json — required for training data provenance chain",
-        })
+        findings.append(
+            {
+                "severity": "critical",
+                "description": "Missing training_metadata.json — required for training data provenance chain",
+            }
+        )
     else:
         meta_path = list(asset_path.rglob("training_metadata.json"))[0]
         try:
@@ -812,35 +964,45 @@ def scan_training_data_provenance(asset_path, asset_id, version_id, db_path=None
             # Verify provenance chain fields (D-FT-22)
             for field in ("dataset_id", "training_job_id", "base_model"):
                 if field not in meta_data:
-                    findings.append({
-                        "severity": "high",
-                        "description": f"training_metadata.json missing provenance field: {field}",
-                    })
+                    findings.append(
+                        {
+                            "severity": "high",
+                            "description": f"training_metadata.json missing provenance field: {field}",
+                        }
+                    )
             # Verify dataset lineage
             if "dataset_lineage" not in meta_data and "provenance" not in meta_data:
-                findings.append({
-                    "severity": "high",
-                    "description": "training_metadata.json missing dataset_lineage or provenance section",
-                })
+                findings.append(
+                    {
+                        "severity": "high",
+                        "description": "training_metadata.json missing dataset_lineage or provenance section",
+                    }
+                )
             # Verify classification marking
             if "classification" not in meta_data:
-                findings.append({
-                    "severity": "high",
-                    "description": "training_metadata.json missing classification marking",
-                })
+                findings.append(
+                    {
+                        "severity": "high",
+                        "description": "training_metadata.json missing classification marking",
+                    }
+                )
         except (json.JSONDecodeError, Exception) as exc:
-            findings.append({
-                "severity": "critical",
-                "description": f"training_metadata.json is not valid JSON: {exc}",
-            })
+            findings.append(
+                {
+                    "severity": "critical",
+                    "description": f"training_metadata.json is not valid JSON: {exc}",
+                }
+            )
 
     # Check for model card (recommended but not blocking)
     model_card_found = bool(list(asset_path.rglob("model_card.md")))
     if not model_card_found:
-        findings.append({
-            "severity": "low",
-            "description": "No model_card.md found — recommended for LoRA adapter assets",
-        })
+        findings.append(
+            {
+                "severity": "low",
+                "description": "No model_card.md found — recommended for LoRA adapter assets",
+            }
+        )
 
     critical = sum(1 for f in findings if f["severity"] == "critical")
     high = sum(1 for f in findings if f["severity"] == "high")
@@ -851,9 +1013,15 @@ def scan_training_data_provenance(asset_path, asset_id, version_id, db_path=None
     status = "fail" if critical > 0 or high > 0 else ("warning" if total > 0 else "pass")
 
     scan_id = _record_scan(
-        asset_id, version_id, "training_data_provenance", status,
+        asset_id,
+        version_id,
+        "training_data_provenance",
+        status,
         findings_count=total,
-        critical=critical, high=high, medium=medium, low=low,
+        critical=critical,
+        high=high,
+        medium=medium,
+        low=low,
         details={
             "required_files": required_files,
             "findings": findings[:15],
@@ -875,8 +1043,8 @@ def scan_training_data_provenance(asset_path, asset_id, version_id, db_path=None
 # Full scan orchestrator
 # ---------------------------------------------------------------------------
 
-def run_full_scan(asset_id, version_id, asset_path, gates=None,
-                  expected_classification=None, db_path=None):
+
+def run_full_scan(asset_id, version_id, asset_path, gates=None, expected_classification=None, db_path=None):
     """Run all (or specified) security gates on an asset.
 
     Returns overall result with per-gate details.
@@ -891,7 +1059,8 @@ def run_full_scan(asset_id, version_id, asset_path, gates=None,
         "secret_detection": lambda: scan_secrets(asset_path, asset_id, version_id, db_path),
         "dependency_audit": lambda: scan_dependencies(asset_path, asset_id, version_id, db_path),
         "cui_marking_validation": lambda: scan_cui_markings(
-            asset_path, asset_id, version_id, expected_classification, db_path),
+            asset_path, asset_id, version_id, expected_classification, db_path
+        ),
         "sbom_generation": lambda: scan_sbom(asset_path, asset_id, version_id, db_path),
         "supply_chain_provenance": lambda: scan_provenance(asset_path, asset_id, version_id, db_path),
         "digital_signature": lambda: scan_signature(asset_path, asset_id, version_id, db_path),
@@ -961,10 +1130,7 @@ def get_scan_summary(version_id, db_path=None):
             if gate not in gates:  # Only latest scan per gate
                 gates[gate] = dict(row)
 
-        blocking_pass = all(
-            gates.get(g, {}).get("status") in ("pass", "skipped")
-            for g in BLOCKING_GATES if g in gates
-        )
+        blocking_pass = all(gates.get(g, {}).get("status") in ("pass", "skipped") for g in BLOCKING_GATES if g in gates)
 
         return {
             "version_id": version_id,
@@ -980,7 +1146,7 @@ def get_scan_summary(version_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Asset Scanner")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Asset Scanner")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 
@@ -1004,8 +1170,10 @@ def main():
                 parser.error("Requires --asset-id, --version-id, --asset-path")
             gates = args.gates.split(",") if args.gates else None
             result = run_full_scan(
-                asset_id=args.asset_id, version_id=args.version_id,
-                asset_path=args.asset_path, gates=gates,
+                asset_id=args.asset_id,
+                version_id=args.version_id,
+                asset_path=args.asset_path,
+                gates=gates,
                 expected_classification=args.classification,
                 db_path=db_path,
             )

@@ -9,19 +9,18 @@ Consolidation log is append-only (D6).
 
 Usage:
     from icdev.tools.memory.memory_consolidation import MemoryConsolidator
-from icdev._paths import get_project_root
 
     consolidator = MemoryConsolidator()
     result = consolidator.check_for_consolidation("new content", "fact", "user-1")
 """
 
+from icdev._paths import get_project_root
 import json
 import logging
 import re
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger("icdev.memory_consolidation")
 
@@ -190,12 +189,14 @@ Choose ONE action:
 
 Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_content": "<text_or_null>", "reasoning": "<brief_explanation>", "confidence": <0.0-1.0>}}"""
 
-            response = router.generate(
-                function_name="memory_consolidation",
+            from icdev.tools.llm.provider import LLMRequest
+
+            request = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
             )
+            response = router.invoke("memory_consolidation", request)
 
-            text = response.get("content", str(response)) if isinstance(response, dict) else str(response)
+            text = response.content if response.content else str(response)
 
             # Parse JSON from response
             import re as _re

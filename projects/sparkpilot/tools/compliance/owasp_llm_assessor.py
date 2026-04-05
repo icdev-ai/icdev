@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """OWASP LLM Top 10 v2025 Assessment Engine.
 
 Assesses projects against the OWASP Top 10 for Large Language Model

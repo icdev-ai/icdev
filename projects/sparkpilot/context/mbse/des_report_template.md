@@ -132,7 +132,7 @@ The following requirements have not achieved full compliance and require remedia
 
 ## 8. Appendix: Assessment Methodology
 
-This assessment was conducted using the ICDEV DES Assessment Engine against the DoD Digital Engineering Strategy requirements catalog. Requirements span six categories: model_authority, data_management, infrastructure, workforce, policy, and lifecycle. Each requirement was evaluated for implementation status and supporting evidence.
+This assessment was conducted using the ICDEV™ DES Assessment Engine against the DoD Digital Engineering Strategy requirements catalog. Requirements span six categories: model_authority, data_management, infrastructure, workforce, policy, and lifecycle. Each requirement was evaluated for implementation status and supporting evidence.
 
 **Categories:**
 - **model_authority** -- Authoritative models, single source of truth, model governance

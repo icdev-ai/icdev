@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Helm Values — AWS GovCloud Override
+# ICDEV™ Helm Values — AWS GovCloud Override
 # Usage: helm install icdev ./helm -f values.yaml -f values-aws.yaml
 
 global:
@@ -75,5 +75,5 @@ kubernetes:
 monitoring:
   provider: cloudwatch
   logGroupPrefix: "/icdev/"
-  metricsNamespace: "ICDEV"
+  metricsNamespace: "ICDEV™"
   retentionDays: 365

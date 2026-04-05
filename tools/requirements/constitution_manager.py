@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Project constitution manager -- immutable principles that gate specs and plans.
 
 Constitutions are per-project principles (security, compliance, architecture, quality,
@@ -24,21 +24,29 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-VALID_CATEGORIES = frozenset({
-    "security", "compliance", "architecture", "quality", "operations", "general",
-})
+VALID_CATEGORIES = frozenset(
+    {
+        "security",
+        "compliance",
+        "architecture",
+        "quality",
+        "operations",
+        "general",
+    }
+)
 
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -51,15 +59,13 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -90,6 +96,7 @@ def _load_config() -> dict:
     if config_path.exists():
         try:
             import yaml  # optional -- air-gap safe fallback below
+
             with open(config_path, "r", encoding="utf-8") as fh:
                 cfg = yaml.safe_load(fh)
             return cfg.get("constitution", {})
@@ -127,6 +134,7 @@ def _parse_spec_sections(spec_path: Path) -> dict:
 # Core API
 # ---------------------------------------------------------------------------
 
+
 def add_principle(
     project_id: str,
     principle_text: str,
@@ -149,9 +157,7 @@ def add_principle(
         Dict describing the created principle.
     """
     if category not in VALID_CATEGORIES:
-        raise ValueError(
-            f"Invalid category '{category}'. Must be one of: {sorted(VALID_CATEGORIES)}"
-        )
+        raise ValueError(f"Invalid category '{category}'. Must be one of: {sorted(VALID_CATEGORIES)}")
     if priority not in (1, 2, 3):
         raise ValueError("Priority must be 1 (critical), 2 (important), or 3 (advisory).")
 
@@ -216,9 +222,7 @@ def list_principles(
     if category:
         if category not in VALID_CATEGORIES:
             conn.close()
-            raise ValueError(
-                f"Invalid category '{category}'. Must be one of: {sorted(VALID_CATEGORIES)}"
-            )
+            raise ValueError(f"Invalid category '{category}'. Must be one of: {sorted(VALID_CATEGORIES)}")
         query += " AND category = ?"
         params.append(category)
 
@@ -242,9 +246,7 @@ def remove_principle(principle_id: str, db_path=None) -> dict:
         Confirmation dict.
     """
     conn = _get_connection(db_path)
-    row = conn.execute(
-        "SELECT * FROM project_constitutions WHERE id = ?", (principle_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM project_constitutions WHERE id = ?", (principle_id,)).fetchone()
 
     if not row:
         conn.close()
@@ -430,11 +432,7 @@ def validate_spec(spec_path: Path, project_id: str, db_path=None) -> dict:
         if not keywords:
             # Extract non-trivial words from principle text as fallback
             words = p_text.split()
-            keywords = [
-                w.strip(".,;:!?()\"'").lower()
-                for w in words
-                if len(w.strip(".,;:!?()\"'")) > 3
-            ]
+            keywords = [w.strip(".,;:!?()\"'").lower() for w in words if len(w.strip(".,;:!?()\"'")) > 3]
 
         # Check coverage
         matched_keywords = [kw for kw in keywords if kw in full_text]
@@ -457,16 +455,18 @@ def validate_spec(spec_path: Path, project_id: str, db_path=None) -> dict:
             level = "info"
             passed += 1  # priority-3 info does not block
 
-        results.append({
-            "principle_id": p["id"],
-            "principle_text": p_text,
-            "category": p.get("category", "general"),
-            "priority": priority,
-            "level": level,
-            "keyword_coverage": round(coverage, 4),
-            "matched_keywords": matched_keywords,
-            "total_keywords": len(keywords),
-        })
+        results.append(
+            {
+                "principle_id": p["id"],
+                "principle_text": p_text,
+                "category": p.get("category", "general"),
+                "priority": priority,
+                "level": level,
+                "keyword_coverage": round(coverage, 4),
+                "matched_keywords": matched_keywords,
+                "total_keywords": len(keywords),
+            }
+        )
 
     overall = "fail" if failed > 0 else ("warn" if warnings > 0 else "pass")
 
@@ -487,10 +487,9 @@ def validate_spec(spec_path: Path, project_id: str, db_path=None) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Constitution Manager (ADR D158)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Constitution Manager (ADR D158)")
     parser.add_argument("--project-id", help="Target project ID")
     parser.add_argument("--add", action="store_true", help="Add a new principle")
     parser.add_argument("--principle", help="Principle text (for --add)")
@@ -520,8 +519,9 @@ def main():
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
-                print(f"Added principle {result['principle_id']} [{result['category']}] "
-                      f"(priority {result['priority']})")
+                print(
+                    f"Added principle {result['principle_id']} [{result['category']}] (priority {result['priority']})"
+                )
                 print(f"  {result['principle_text']}")
 
         elif args.list_cmd:
@@ -533,9 +533,18 @@ def main():
                 category=cat_filter,
             )
             if args.json:
-                print(json.dumps({"status": "ok", "project_id": args.project_id,
-                                  "count": len(principles), "principles": principles},
-                                 indent=2, default=str))
+                print(
+                    json.dumps(
+                        {
+                            "status": "ok",
+                            "project_id": args.project_id,
+                            "count": len(principles),
+                            "principles": principles,
+                        },
+                        indent=2,
+                        default=str,
+                    )
+                )
             else:
                 print(f"Constitution for project {args.project_id} ({len(principles)} principles):")
                 for p in principles:
@@ -559,9 +568,11 @@ def main():
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
-                print(f"Loaded {result['loaded']} default principles "
-                      f"(skipped {result['skipped']} duplicates) "
-                      f"for project {args.project_id}")
+                print(
+                    f"Loaded {result['loaded']} default principles "
+                    f"(skipped {result['skipped']} duplicates) "
+                    f"for project {args.project_id}"
+                )
 
         elif args.validate:
             if not args.project_id:
@@ -576,18 +587,17 @@ def main():
                 print(json.dumps(result, indent=2, default=str))
             else:
                 print(f"Constitution validation: {result['overall'].upper()}")
-                print(f"  Principles: {result['total_principles']}  "
-                      f"Passed: {result['passed']}  "
-                      f"Failed: {result['failed']}  "
-                      f"Warnings: {result['warnings']}")
+                print(
+                    f"  Principles: {result['total_principles']}  "
+                    f"Passed: {result['passed']}  "
+                    f"Failed: {result['failed']}  "
+                    f"Warnings: {result['warnings']}"
+                )
                 for r in result["results"]:
-                    icon = {"pass": "OK", "fail": "FAIL", "warn": "WARN", "info": "INFO"}.get(
-                        r["level"], "??"
-                    )
+                    icon = {"pass": "OK", "fail": "FAIL", "warn": "WARN", "info": "INFO"}.get(r["level"], "??")
                     print(f"  [{icon}] [{r['category']}] {r['principle_text']}")
                     if r["level"] in ("fail", "warn"):
-                        print(f"         coverage={r['keyword_coverage']:.0%}  "
-                              f"matched={r['matched_keywords']}")
+                        print(f"         coverage={r['keyword_coverage']:.0%}  matched={r['matched_keywords']}")
 
         else:
             parser.print_help()

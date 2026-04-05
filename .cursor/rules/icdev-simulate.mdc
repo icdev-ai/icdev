@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: "Run Digital Program Twin simulations and generate COAs for requirements""
+description: "ICDEV™ workflow: "Run Digital Program Twin simulations and generate COAs for requirements""
 globs:
   - "**/*.py"
   - "**/*.yaml"

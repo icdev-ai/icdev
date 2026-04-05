@@ -39,7 +39,7 @@ except ImportError:
 def _convert_messages_to_gemini(
     messages: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Convert ICDEV universal messages to Gemini content format.
+    """Convert ICDEV™ universal messages to Gemini content format.
 
     Handles three content shapes:
     1. Plain string: {"role": "user", "content": "hello"}
@@ -122,7 +122,7 @@ def _convert_messages_to_gemini(
 
 
 def _convert_tools_to_gemini(tools: List[Dict]) -> List[Any]:
-    """Convert ICDEV/OpenAI tool format to Gemini function declarations.
+    """Convert ICDEV™/OpenAI tool format to Gemini function declarations.
 
     Input (OpenAI): {"type": "function", "function": {"name": ..., "parameters": ...}}
     Input (Anthropic): {"name": ..., "description": ..., "input_schema": ...}

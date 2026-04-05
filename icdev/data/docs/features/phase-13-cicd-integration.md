@@ -9,18 +9,18 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 12 (Integration Testing), Phase 5 (TDD Workflow) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV's power as an agentic development system is limited if it can only be triggered manually via CLI commands. Gov/DoD development teams use issue trackers (GitHub Issues, GitLab Issues) as their primary work management interface. Developers create issues, write requirements in issue bodies, and expect automated pipelines to plan, build, test, and review code based on those issues. Without CI/CD integration, ICDEV sits outside the team's natural workflow.
+ICDEV™'s power as an agentic development system is limited if it can only be triggered manually via CLI commands. Gov/DoD development teams use issue trackers (GitHub Issues, GitLab Issues) as their primary work management interface. Developers create issues, write requirements in issue bodies, and expect automated pipelines to plan, build, test, and review code based on those issues. Without CI/CD integration, ICDEV™ sits outside the team's natural workflow.
 
-Furthermore, Gov/DoD programs often mandate either GitHub (via GitHub Enterprise) or GitLab (via GitLab Ultimate on-prem or GitLab.com SaaS) as their VCS platform. ICDEV must support both equally without requiring teams to switch platforms. A unified VCS abstraction layer allows the same workflow commands (`/icdev_plan`, `/icdev_sdlc`) to work identically on either platform, with platform-specific details (PR vs MR, `gh` vs `glab` CLI) handled transparently.
+Furthermore, Gov/DoD programs often mandate either GitHub (via GitHub Enterprise) or GitLab (via GitLab Ultimate on-prem or GitLab.com SaaS) as their VCS platform. ICDEV™ must support both equally without requiring teams to switch platforms. A unified VCS abstraction layer allows the same workflow commands (`/icdev_plan`, `/icdev_sdlc`) to work identically on either platform, with platform-specific details (PR vs MR, `gh` vs `glab` CLI) handled transparently.
 
-Bot loop prevention is critical in webhook-driven systems. Without explicit guards, an ICDEV bot comment could trigger another webhook event, which triggers another bot action, creating an infinite loop that consumes CI/CD minutes and floods the issue with duplicate comments. The `[ICDEV-BOT]` identifier in all bot comments provides a simple, reliable mechanism to break this cycle.
+Bot loop prevention is critical in webhook-driven systems. Without explicit guards, an ICDEV™ bot comment could trigger another webhook event, which triggers another bot action, creating an infinite loop that consumes CI/CD minutes and floods the issue with duplicate comments. The `[ICDEV™-BOT]` identifier in all bot comments provides a simple, reliable mechanism to break this cycle.
 
 ---
 
@@ -31,7 +31,7 @@ Bot loop prevention is critical in webhook-driven systems. Without explicit guar
 3. Classify workflow requests from issue body or comments (`/icdev_plan`, `/icdev_build`, `/icdev_sdlc`, etc.) and route to appropriate workflow orchestrators
 4. Execute the full SDLC pipeline autonomously: Plan (classify, branch, plan, commit, push), Build (load state, implement, commit, push), Test (suite, gates, commit, push), Review (vs spec, patches, commit, push)
 5. Auto-detect GitHub vs GitLab from `git remote get-url origin` and use the appropriate CLI (`gh` or `glab`) transparently through a unified VCS abstraction
-6. Prevent bot loops by including `[ICDEV-BOT]` in all bot comments and ignoring comments containing this identifier in webhook handlers
+6. Prevent bot loops by including `[ICDEV™-BOT]` in all bot comments and ignoring comments containing this identifier in webhook handlers
 7. Manage persistent state across workflow phases via `agents/{run_id}/icdev_state.json`, supporting piping between scripts for chaining
 8. Generate standardized branch names (`<type>-issue-<num>-icdev-<id>-<name>`) and commit messages (`<agent>: <type>: <message>`) via Claude Code slash commands
 
@@ -99,13 +99,13 @@ git remote get-url origin
 ### Bot Loop Prevention
 
 ```
-Bot posts comment with [ICDEV-BOT] marker
+Bot posts comment with [ICDEV™-BOT] marker
     |
     v
 Webhook receives event for new comment
     |
     v
-Check: does comment contain [ICDEV-BOT]?
+Check: does comment contain [ICDEV™-BOT]?
     |
     +-- Yes --> Ignore (break loop)
     +-- No  --> Process normally
@@ -127,7 +127,7 @@ GitHub webhooks SHALL be validated via HMAC-SHA256 using `WEBHOOK_SECRET` enviro
 The system SHALL provide a polling trigger that checks for new issues or issues with `icdev` comments every 20 seconds, with graceful shutdown via SIGINT/SIGTERM.
 
 #### REQ-13-004: Bot Loop Prevention
-All bot-generated comments SHALL include the `[ICDEV-BOT]` identifier. Webhook handlers SHALL ignore events where the triggering comment contains this identifier.
+All bot-generated comments SHALL include the `[ICDEV™-BOT]` identifier. Webhook handlers SHALL ignore events where the triggering comment contains this identifier.
 
 ### 4.2 VCS Abstraction
 
@@ -217,7 +217,7 @@ The system SHALL always return HTTP 200 to webhook endpoints to prevent retry st
 
 **CI/CD Integration Gate:**
 - Webhook authentication required (HMAC-SHA256 for GitHub, secret token for GitLab)
-- Bot loop prevention active (all bot comments include `[ICDEV-BOT]`)
+- Bot loop prevention active (all bot comments include `[ICDEV™-BOT]`)
 - Safe subprocess environment filters sensitive env vars before Claude Code CLI invocation
 - `stdin=subprocess.DEVNULL` prevents Claude Code CLI from hanging
 - Webhook endpoints always return HTTP 200 to prevent retry storms

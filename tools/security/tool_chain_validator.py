@@ -17,7 +17,6 @@ CLI:
 
 import argparse
 import json
-import sqlite3
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
@@ -26,6 +25,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -72,14 +72,16 @@ class ToolChainValidator:
         key = f"{agent_id}:{session_id}"
         now = datetime.now(timezone.utc)
 
-        self._windows[key].append({
-            "tool_name": tool_name,
-            "timestamp": now.isoformat(),
-        })
+        self._windows[key].append(
+            {
+                "tool_name": tool_name,
+                "timestamp": now.isoformat(),
+            }
+        )
 
         # Trim to window size
         if len(self._windows[key]) > self._window_size:
-            self._windows[key] = self._windows[key][-self._window_size:]
+            self._windows[key] = self._windows[key][-self._window_size :]
 
         violations = []
 
@@ -97,7 +99,11 @@ class ToolChainValidator:
         return violations
 
     def _check_sequence(
-        self, key: str, rule: Dict, agent_id: str, session_id: str,
+        self,
+        key: str,
+        rule: Dict,
+        agent_id: str,
+        session_id: str,
         project_id: Optional[str],
     ) -> Optional[Dict]:
         """Check if the sliding window matches a sequence rule."""
@@ -130,7 +136,7 @@ class ToolChainValidator:
                             agent_id=agent_id,
                             session_id=session_id,
                             tool_name=tool_names[j],
-                            tool_sequence=tool_names[max(0, i):j + 1],
+                            tool_sequence=tool_names[max(0, i) : j + 1],
                             rule_matched=rule.get("id"),
                             severity=rule.get("severity", "medium"),
                             action=rule.get("action", "flag"),
@@ -140,7 +146,11 @@ class ToolChainValidator:
         return None
 
     def _check_burst(
-        self, key: str, rule: Dict, agent_id: str, session_id: str,
+        self,
+        key: str,
+        rule: Dict,
+        agent_id: str,
+        session_id: str,
         project_id: Optional[str],
     ) -> Optional[Dict]:
         """Check if tool call rate exceeds burst threshold."""
@@ -212,7 +222,7 @@ class ToolChainValidator:
 
         entry_id = str(uuid.uuid4())
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO tool_chain_events
                    (id, project_id, agent_id, session_id, tool_name,
@@ -220,8 +230,15 @@ class ToolChainValidator:
                     context_json, classification, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
                 (
-                    entry_id, project_id, agent_id, session_id, tool_name,
-                    json.dumps(tool_sequence), rule_matched, severity, action,
+                    entry_id,
+                    project_id,
+                    agent_id,
+                    session_id,
+                    tool_name,
+                    json.dumps(tool_sequence),
+                    rule_matched,
+                    severity,
+                    action,
                     json.dumps(context) if context else None,
                     datetime.now(timezone.utc).isoformat(),
                 ),
@@ -262,7 +279,7 @@ class ToolChainValidator:
             return result
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
 
             where = "1=1"
             params: list = []
@@ -274,7 +291,7 @@ class ToolChainValidator:
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             for severity in ("critical", "high", "medium"):
                 row = conn.execute(
-                    f"SELECT COUNT(*) FROM tool_chain_events "
+                    f"SELECT COUNT(*) FROM tool_chain_events "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE {where} AND severity = ? AND created_at >= ?",
                     params + [severity, cutoff],
                 ).fetchone()
@@ -285,15 +302,11 @@ class ToolChainValidator:
                     result["critical_violations"] = count
                     if count > 0:
                         result["passed"] = False
-                        result["blocking"].append(
-                            f"{count} critical tool chain violation(s) in last 24h"
-                        )
+                        result["blocking"].append(f"{count} critical tool chain violation(s) in last 24h")
                 elif severity == "high":
                     result["high_violations"] = count
                     if count > 3:
-                        result["warnings"].append(
-                            f"{count} high-severity tool chain violations in last 24h"
-                        )
+                        result["warnings"].append(f"{count} high-severity tool chain violations in last 24h")
 
             conn.close()
         except Exception as e:
@@ -303,9 +316,7 @@ class ToolChainValidator:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Tool Chain Validator — detect suspicious tool call sequences (D258)"
-    )
+    parser = argparse.ArgumentParser(description="Tool Chain Validator — detect suspicious tool call sequences (D258)")
     parser.add_argument("--check", action="store_true", help="Check current session state")
     parser.add_argument("--rules", action="store_true", help="List configured rules")
     parser.add_argument("--gate", action="store_true", help="Evaluate security gate")
@@ -337,7 +348,9 @@ def main():
             rules = result.get("rules", [])
             print(f"Tool Chain Rules ({len(rules)} configured, window={result.get('window_size', 10)})")
             for r in rules:
-                print(f"  [{r.get('severity', '?')}] {r.get('id', '?')}: {r.get('name', '?')} — {r.get('description', '')}")
+                print(
+                    f"  [{r.get('severity', '?')}] {r.get('id', '?')}: {r.get('name', '?')} — {r.get('description', '')}"
+                )
         elif args.gate:
             status = "PASS" if result["passed"] else "FAIL"
             print(f"Tool Chain Gate: {status}")

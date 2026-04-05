@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Competitor Profiler — Phase 59 (D367)
+# ICDEV™ GovCon Competitor Profiler — Phase 59 (D367)
 # Aggregate competitor intelligence from award data.
 
 """
@@ -21,10 +21,8 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
-import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -33,14 +31,15 @@ _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
 # ── profiling ─────────────────────────────────────────────────────────
+
 
 def profile_vendor(vendor_name):
     """Build comprehensive profile for a vendor."""
@@ -134,17 +133,19 @@ def get_leaderboard(naics=None, agency=None, limit=20):
 
     leaderboard = []
     for i, row in enumerate(rows, 1):
-        leaderboard.append({
-            "rank": i,
-            "vendor": row["awardee_name"],
-            "awards": row["award_count"],
-            "total_value": row["total_value"],
-            "avg_value": row["total_value"] / row["award_count"] if row["award_count"] > 0 else 0,
-            "naics_diversity": row["naics_diversity"],
-            "agency_diversity": row["agency_diversity"],
-            "first_award": row["first_award"],
-            "latest_award": row["latest_award"],
-        })
+        leaderboard.append(
+            {
+                "rank": i,
+                "vendor": row["awardee_name"],
+                "awards": row["award_count"],
+                "total_value": row["total_value"],
+                "avg_value": row["total_value"] / row["award_count"] if row["award_count"] > 0 else 0,
+                "naics_diversity": row["naics_diversity"],
+                "agency_diversity": row["agency_diversity"],
+                "first_award": row["first_award"],
+                "latest_award": row["latest_award"],
+            }
+        )
 
     return {
         "status": "ok",
@@ -169,8 +170,9 @@ def compare_vendors(vendor_names):
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Competitor Profiler (D367)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Competitor Profiler (D367)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--profile", action="store_true", help="Profile a vendor")
     group.add_argument("--leaderboard", action="store_true", help="Vendor leaderboard")

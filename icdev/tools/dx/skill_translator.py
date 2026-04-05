@@ -243,7 +243,7 @@ def _translate_to_cursor_rule(skill_data):
 
     lines = [
         "---",
-        f"description: \"ICDEV workflow: {desc}\"",
+        f"description: \"ICDEV™ workflow: {desc}\"",
         "globs:",
         '  - "**/*.py"',
         '  - "**/*.yaml"',

@@ -4,13 +4,13 @@
 
 ## Purpose
 
-This document defines the mandatory governance requirements that every ICDEV-generated child application must satisfy. These requirements are non-negotiable and are enforced during generation (Step 5) and verified during post-generation checks (Step 6) of the agentic generation workflow.
+This document defines the mandatory governance requirements that every ICDEV™-generated child application must satisfy. These requirements are non-negotiable and are enforced during generation (Step 5) and verified during post-generation checks (Step 6) of the agentic generation workflow.
 
 ---
 
 ## Classification
 
-All generated applications inherit classification from the parent ICDEV instance. The impact level determines markings, encryption, and network constraints.
+All generated applications inherit classification from the parent ICDEV™ instance. The impact level determines markings, encryption, and network constraints.
 
 | Impact Level | Classification Marking | Network | Encryption | Cloud Region |
 |-------------|----------------------|---------|------------|--------------|
@@ -45,9 +45,9 @@ Child applications with the compliance capability enabled inherit support for al
 | 8 | IEEE 1012 IV&V | `ivv_requirements.json` | `ivv_assessor.py` |
 | 9 | DoDI 5000.87 DES | `des_requirements.json` | `des_assessor.py` |
 
-**Crosswalk inheritance:** When the child app implements a NIST 800-53 control (e.g., AC-2), the crosswalk engine automatically maps it to the corresponding controls in FedRAMP, CMMC, and NIST 800-171. This is inherited behavior from ICDEV's `crosswalk_engine.py`.
+**Crosswalk inheritance:** When the child app implements a NIST 800-53 control (e.g., AC-2), the crosswalk engine automatically maps it to the corresponding controls in FedRAMP, CMMC, and NIST 800-171. This is inherited behavior from ICDEV™'s `crosswalk_engine.py`.
 
-**Compliance catalogs:** JSON catalog files are copied into the child app's `context/compliance/` directory during generation. The child app uses its own local copies, not references back to ICDEV.
+**Compliance catalogs:** JSON catalog files are copied into the child app's `context/compliance/` directory during generation. The child app uses its own local copies, not references back to ICDEV™.
 
 ---
 
@@ -101,7 +101,7 @@ The audit trail is immutable. No UPDATE or DELETE operations are permitted on au
 - Every compliance assessment and gate check result
 - Every security scan finding
 - All user decisions and approvals
-- Generation events (when the child app was created, by which ICDEV instance)
+- Generation events (when the child app was created, by which ICDEV™ instance)
 
 ### Audit Schema
 ```sql
@@ -135,7 +135,7 @@ agentic_generation:
 The scaffolder checks this flag at startup and refuses to run with `--agentic` if `enabled: false`.
 
 ### Level 2: Tool Exclusion
-The following ICDEV tools are excluded from the child app's file manifest and are never copied:
+The following ICDEV™ tools are excluded from the child app's file manifest and are never copied:
 - `tools/builder/agentic_fitness.py`
 - `tools/builder/app_blueprint.py`
 - Any templates in `context/agentic/` related to generation (fitness rubric, architecture patterns, governance baseline are retained as reference)
@@ -145,7 +145,7 @@ The child app's CLAUDE.md contains the following statement in a prominent sectio
 ```
 ## Limitations
 This application CANNOT generate child applications. Agentic generation
-is only available in the parent ICDEV system. This restriction is enforced
+is only available in the parent ICDEV™ system. This restriction is enforced
 by configuration, tool exclusion, and this documentation.
 ```
 
@@ -176,7 +176,7 @@ Every child application includes a memory system with dual storage:
 | `data/memory.db` | SQLite | Searchable database with embeddings support |
 | `memory/logs/YYYY-MM-DD.md` | Markdown | Daily session logs |
 
-**Session protocol:** The child app's AI orchestrator must read `MEMORY.md` and the current day's log at the start of every session, exactly as ICDEV does.
+**Session protocol:** The child app's AI orchestrator must read `MEMORY.md` and the current day's log at the start of every session, exactly as ICDEV™ does.
 
 ---
 

@@ -19,6 +19,7 @@ Enhancements:
   - DB persistence: completed runs written to icdev.db
   - rate limiting: max 3 concurrent + 10/hour per project
 """
+from __future__ import annotations
 
 import sqlite3
 import subprocess

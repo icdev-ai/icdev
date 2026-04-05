@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Resilience — Circuit Breaker.
+"""ICDEV™ Resilience — Circuit Breaker.
 
 D146: Application-level circuit breaker using ABC + in-memory state (stdlib only).
 Three-state machine: CLOSED -> OPEN -> HALF_OPEN.
@@ -9,7 +9,6 @@ Follows the D66 provider pattern (ABC + implementations) used by rate_limiter.py
 
 Usage:
     from icdev.tools.resilience.circuit_breaker import get_circuit_breaker
-from icdev._paths import get_project_root
 
     cb = get_circuit_breaker("bedrock")
 
@@ -30,6 +29,7 @@ from icdev._paths import get_project_root
         ...
 """
 
+from icdev._paths import get_project_root
 import abc
 import functools
 import logging

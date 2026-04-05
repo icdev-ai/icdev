@@ -9,16 +9,16 @@
 | Status | Requirements |
 | Priority | P2 |
 | Dependencies | Phase 19 (Agentic Generation), Phase 22 (Marketplace), Phase 35 (Innovation Engine) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-21 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV currently births child applications via Phase 19 (Agentic Generation) and walks away. There is no ongoing parent-child relationship, no feedback loop, no capability propagation, and no mechanism for children to report learned behaviors back to the parent. Each child is a snapshot frozen at birth — it cannot benefit from innovations discovered after its creation, and the parent cannot learn from the child's field experience.
+ICDEV™ currently births child applications via Phase 19 (Agentic Generation) and walks away. There is no ongoing parent-child relationship, no feedback loop, no capability propagation, and no mechanism for children to report learned behaviors back to the parent. Each child is a snapshot frozen at birth — it cannot benefit from innovations discovered after its creation, and the parent cannot learn from the child's field experience.
 
-ICDEV and its child applications are living organisms. They must **learn, adapt, improve, innovate, and grow intellectually**. In some cases, they reproduce (via Phase 19) to advance their cause and function. This phase establishes the biological evolution metaphor as an architectural reality.
+ICDEV™ and its child applications are living organisms. They must **learn, adapt, improve, innovate, and grow intellectually**. In some cases, they reproduce (via Phase 19) to advance their cause and function. This phase establishes the biological evolution metaphor as an architectural reality.
 
 ---
 
@@ -35,7 +35,7 @@ ICDEV and its child applications are living organisms. They must **learn, adapt,
 
 ## 3. Biological Metaphor Mapping
 
-| Biological Concept | ICDEV Equivalent | Implementation |
+| Biological Concept | ICDEV™ Equivalent | Implementation |
 |--------------------|------------------|----------------|
 | DNA/Genome | Capability Genome | Versioned set of capabilities, patterns, and knowledge |
 | Birth | Agentic Generation (Phase 19) | Child inherits current genome snapshot at creation |
@@ -55,7 +55,7 @@ ICDEV and its child applications are living organisms. They must **learn, adapt,
 
 ```
 +-----------------------------------------------------+
-|                 ICDEV PARENT (Brain)                  |
+|                 ICDEV™ PARENT (Brain)                  |
 |                                                       |
 |  +----------+  +----------+  +-------------------+   |
 |  | Innovate |->| Evaluate |->| Capability Genome |   |

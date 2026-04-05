@@ -2,7 +2,7 @@
 
 ## Overview
 
-ICDEV implements defense-in-depth security across the full SDLC. Security is enforced through deterministic scanning tools, compliance assessors, blocking security gates, AI-specific threat defense, Zero Trust Architecture, and self-healing remediation. All security events are recorded in an append-only audit trail (NIST AU compliance).
+ICDEV™ implements defense-in-depth security across the full SDLC. Security is enforced through deterministic scanning tools, compliance assessors, blocking security gates, AI-specific threat defense, Zero Trust Architecture, and self-healing remediation. All security events are recorded in an append-only audit trail (NIST AU compliance).
 
 ---
 
@@ -42,7 +42,7 @@ Scans dependencies for known vulnerabilities:
 python tools/security/secret_detector.py --project-dir "/path/to/project"
 ```
 
-Detects hardcoded secrets, API keys, tokens, and credentials in source code. Uses detect-secrets with custom ICDEV plugins.
+Detects hardcoded secrets, API keys, tokens, and credentials in source code. Uses detect-secrets with custom ICDEV™ plugins.
 
 ### Container Scanning
 
@@ -503,7 +503,7 @@ python tools/devsecops/network_segmentation_generator.py \
 
 ### PDP/PEP Configuration
 
-ICDEV generates PEP (Policy Enforcement Point) configurations but does not implement PDP (Policy Decision Point) itself (D124). Supported PDP references:
+ICDEV™ generates PEP (Policy Enforcement Point) configurations but does not implement PDP (Policy Decision Point) itself (D124). Supported PDP references:
 
 ```bash
 # DISA ICAM PDP config

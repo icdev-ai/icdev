@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Marketplace MCP server exposing GOTCHA asset registry tools.
+"""Marketplace MCP server exposing FORGE asset registry tools.
 
 Tools:
     publish_asset    - Publish an asset through the 7-gate pipeline
@@ -14,6 +14,12 @@ Tools:
     check_compat     - Check IL/version/dependency compatibility
     sync_status      - Get federation sync status
     asset_scan       - Run security scanning on an asset
+    openclaw_import  - Import an OpenClaw skill into quarantine
+    openclaw_promote - Promote a quarantined import to marketplace
+    openclaw_reject  - Reject a quarantined import
+    openclaw_export  - Export an ICDEV™ skill to OpenClaw format
+    openclaw_list_quarantine - List quarantined imports
+    openclaw_list_exports    - List export records
 
 Resources:
     marketplace://catalog         - Full asset catalog
@@ -48,11 +54,13 @@ try:
     )
     from tools.marketplace.search_engine import search_assets as _search_assets
     from tools.marketplace.review_queue import (
-        complete_review, list_pending as _list_pending,
+        complete_review,
+        list_pending as _list_pending,
     )
     from tools.marketplace.compatibility_checker import full_compatibility_check
     from tools.marketplace.asset_scanner import run_full_scan
     from tools.marketplace.federation_sync import get_sync_status
+
     _MODULES_LOADED = True
 except ImportError as e:
     _MODULES_LOADED = False
@@ -69,8 +77,12 @@ def _audit(event_type, actor, action, project_id=None, details=None):
     if audit_log_event:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor, action=action,
-                project_id=project_id, details=details, db_path=DB_PATH,
+                event_type=event_type,
+                actor=actor,
+                action=action,
+                project_id=project_id,
+                details=details,
+                db_path=DB_PATH,
             )
         except Exception:
             pass
@@ -80,8 +92,9 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_publish_asset(args: dict) -> dict:
-    """Publish a GOTCHA asset through the 7-gate security pipeline."""
+    """Publish a FORGE asset through the 7-gate security pipeline."""
     if not _MODULES_LOADED:
         raise RuntimeError(f"Marketplace modules not loaded: {_IMPORT_ERROR}")
 
@@ -274,8 +287,84 @@ def handle_asset_scan(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# OpenClaw Bridge handlers
+# ---------------------------------------------------------------------------
+
+
+def handle_openclaw_import(args: dict) -> dict:
+    """Import an OpenClaw skill into quarantine with 10-gate scanning."""
+    try:
+        from tools.marketplace.openclaw_bridge import import_skill
+
+        return import_skill(
+            source_path=args["source_path"],
+            tenant_id=args["tenant_id"],
+            imported_by=args["imported_by"],
+            clawhub_url=args.get("clawhub_url"),
+        )
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_promote(args: dict) -> dict:
+    """Promote a quarantined OpenClaw import to the marketplace."""
+    try:
+        from tools.marketplace.openclaw_bridge import promote_import
+
+        return promote_import(args["import_id"], args["promoted_by"])
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_reject(args: dict) -> dict:
+    """Reject a quarantined OpenClaw import."""
+    try:
+        from tools.marketplace.openclaw_bridge import reject_import
+
+        return reject_import(args["import_id"], args["rejected_by"], args["reason"])
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_export(args: dict) -> dict:
+    """Export an ICDEV™ skill to OpenClaw format."""
+    try:
+        from tools.marketplace.openclaw_bridge import export_skill
+
+        return export_skill(
+            asset_id=args["asset_id"],
+            version_id=args["version_id"],
+            output_path=args["output_path"],
+            exported_by=args["exported_by"],
+        )
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_list_quarantine(args: dict) -> dict:
+    """List quarantined OpenClaw imports."""
+    try:
+        from tools.marketplace.openclaw_bridge import list_quarantine
+
+        return list_quarantine(status_filter=args.get("status"))
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+def handle_openclaw_list_exports(args: dict) -> dict:
+    """List OpenClaw export records."""
+    try:
+        from tools.marketplace.openclaw_bridge import list_exports
+
+        return list_exports(status_filter=args.get("status"))
+    except ImportError as exc:
+        return {"error": f"OpenClaw bridge not available: {exc}"}
+
+
+# ---------------------------------------------------------------------------
 # Resource handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_catalog_resource(uri: str) -> dict:
     """Return the full marketplace catalog."""
@@ -295,22 +384,30 @@ def handle_pending_resource(uri: str) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-marketplace", version="1.0.0")
 
     # --- Tools ---
     server.register_tool(
         "publish_asset",
-        "Publish a GOTCHA asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
+        "Publish a FORGE asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
         {
             "type": "object",
             "properties": {
                 "asset_path": {"type": "string", "description": "Path to asset directory"},
-                "asset_type": {"type": "string", "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"]},
+                "asset_type": {
+                    "type": "string",
+                    "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"],
+                },
                 "tenant_id": {"type": "string", "description": "Publisher tenant ID"},
                 "publisher_user": {"type": "string", "description": "Publisher identity"},
                 "publisher_org": {"type": "string", "description": "Publisher organization"},
-                "target_tier": {"type": "string", "enum": ["tenant_local", "central_vetted"], "default": "tenant_local"},
+                "target_tier": {
+                    "type": "string",
+                    "enum": ["tenant_local", "central_vetted"],
+                    "default": "tenant_local",
+                },
                 "asset_id": {"type": "string", "description": "Existing asset ID (for new version)"},
                 "new_version": {"type": "string", "description": "Version for update"},
                 "changelog": {"type": "string"},
@@ -360,7 +457,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
-                "asset_type": {"type": "string", "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"]},
+                "asset_type": {
+                    "type": "string",
+                    "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"],
+                },
                 "impact_level": {"type": "string", "enum": ["IL2", "IL4", "IL5", "IL6"]},
                 "catalog_tier": {"type": "string", "enum": ["tenant_local", "central_vetted"]},
                 "tenant_id": {"type": "string"},

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Accountability Audit — cross-framework accountability assessment.
 
 Checks all accountability evidence across OMB M-25-21, M-26-04, GAO-21-519SP,
@@ -22,9 +22,10 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -38,7 +39,7 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_oversight_plans",
         "query": "SELECT COUNT(*) as cnt FROM ai_oversight_plans WHERE project_id = ?",
         "severity": "high",
-        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --register-oversight --plan-name 'Human Oversight Plan'",
+        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --register-oversight --plan-name 'Human Oversight Plan'",  # noqa: E501
     },
     {
         "id": "ACC-2",
@@ -56,7 +57,7 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_accountability_appeals",
         "query": "SELECT COUNT(*) as cnt FROM ai_accountability_appeals WHERE project_id = ?",
         "severity": "high",
-        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --file-appeal --appellant 'Test' --ai-system 'System'",
+        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --file-appeal --appellant 'Test' --ai-system 'System'",  # noqa: E501
     },
     {
         "id": "ACC-4",
@@ -65,14 +66,14 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_caio_registry",
         "query": "SELECT COUNT(*) as cnt FROM ai_caio_registry WHERE project_id = ?",
         "severity": "high",
-        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --designate-caio --name 'Name' --role CAIO",
+        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --designate-caio --name 'Name' --role CAIO",  # noqa: E501
     },
     {
         "id": "ACC-5",
         "title": "Responsible Official on Inventory Items",
         "frameworks": ["M25-INV-2"],
         "table": "ai_use_case_inventory",
-        "query": "SELECT COUNT(*) as cnt FROM ai_use_case_inventory WHERE project_id = ? AND responsible_official IS NOT NULL AND responsible_official != ''",
+        "query": "SELECT COUNT(*) as cnt FROM ai_use_case_inventory WHERE project_id = ? AND responsible_official IS NOT NULL AND responsible_official != ''",  # noqa: E501
         "severity": "medium",
         "action": "Update AI inventory items with responsible_official field",
     },
@@ -83,7 +84,7 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_reassessment_schedule",
         "query": "SELECT COUNT(*) as cnt FROM ai_reassessment_schedule WHERE project_id = ?",
         "severity": "medium",
-        "action": "python tools/compliance/ai_reassessment_scheduler.py --project-id {pid} --create --ai-system 'System' --frequency annual",
+        "action": "python tools/compliance/ai_reassessment_scheduler.py --project-id {pid} --create --ai-system 'System' --frequency annual",  # noqa: E501
     },
     {
         "id": "ACC-7",
@@ -102,14 +103,14 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_incident_log",
         "query": "SELECT COUNT(*) as cnt FROM ai_incident_log WHERE project_id = ?",
         "severity": "medium",
-        "action": "python tools/compliance/ai_incident_response.py --project-id {pid} --log --type other --description 'Incident response process test'",
+        "action": "python tools/compliance/ai_incident_response.py --project-id {pid} --log --type other --description 'Incident response process test'",  # noqa: E501
     },
     {
         "id": "ACC-9",
         "title": "No Unresolved Critical Incidents",
         "frameworks": ["M25-RISK-4", "GAO-MON-3"],
         "table": "ai_incident_log",
-        "query": "SELECT COUNT(*) as cnt FROM ai_incident_log WHERE project_id = ? AND severity = 'critical' AND status NOT IN ('resolved', 'closed')",
+        "query": "SELECT COUNT(*) as cnt FROM ai_incident_log WHERE project_id = ? AND severity = 'critical' AND status NOT IN ('resolved', 'closed')",  # noqa: E501
         "severity": "high",
         "invert": True,
         "action": "Resolve critical AI incidents",
@@ -121,7 +122,7 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_ethics_reviews",
         "query": "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = ?",
         "severity": "medium",
-        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --submit-ethics-review --review-type ethics_framework",
+        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --submit-ethics-review --review-type ethics_framework",  # noqa: E501
     },
     {
         "id": "ACC-11",
@@ -130,7 +131,7 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_ethics_reviews",
         "query": "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = ? AND legal_compliance_matrix = 1",
         "severity": "medium",
-        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --submit-ethics-review --review-type legal_compliance --legal-compliance-matrix",
+        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --submit-ethics-review --review-type legal_compliance --legal-compliance-matrix",  # noqa: E501
     },
     {
         "id": "ACC-12",
@@ -139,14 +140,14 @@ ACCOUNTABILITY_CHECKS = [
         "table": "ai_ethics_reviews",
         "query": "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = ? AND opt_out_policy = 1",
         "severity": "medium",
-        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --submit-ethics-review --review-type other --opt-out-policy",
+        "action": "python tools/compliance/accountability_manager.py --project-id {pid} --submit-ethics-review --review-type other --opt-out-policy",  # noqa: E501
     },
     {
         "id": "ACC-13",
         "title": "Impact Assessment Conducted",
         "frameworks": ["M26-IMP-1"],
         "table": "ai_ethics_reviews",
-        "query": "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = ? AND review_type = 'impact_assessment'",
+        "query": "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = ? AND review_type = 'impact_assessment'",  # noqa: E501
         "severity": "high",
         "action": "python tools/compliance/ai_impact_assessor.py --project-id {pid} --ai-system 'System'",
     },
@@ -154,13 +155,13 @@ ACCOUNTABILITY_CHECKS = [
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
 def run_accountability_audit(
-    project_id: str, db_path: Path = DB_PATH,
+    project_id: str,
+    db_path: Path = DB_PATH,
 ) -> Dict:
     """Run comprehensive AI accountability audit."""
     now = datetime.now(timezone.utc).isoformat()
@@ -190,22 +191,26 @@ def run_accountability_audit(
                 passed += 1
             else:
                 failed += 1
-                gaps.append({
+                gaps.append(
+                    {
+                        "check_id": check["id"],
+                        "title": check["title"],
+                        "severity": check["severity"],
+                        "frameworks": check["frameworks"],
+                        "action": check.get("action", "").format(pid=project_id),
+                    }
+                )
+
+            results.append(
+                {
                     "check_id": check["id"],
                     "title": check["title"],
-                    "severity": check["severity"],
+                    "status": status,
                     "frameworks": check["frameworks"],
-                    "action": check.get("action", "").format(pid=project_id),
-                })
-
-            results.append({
-                "check_id": check["id"],
-                "title": check["title"],
-                "status": status,
-                "frameworks": check["frameworks"],
-                "severity": check["severity"],
-                "count": count,
-            })
+                    "severity": check["severity"],
+                    "count": count,
+                }
+            )
     finally:
         conn.close()
 
@@ -235,7 +240,8 @@ def run_accountability_audit(
 
 
 def get_accountability_gaps(
-    project_id: str, db_path: Path = DB_PATH,
+    project_id: str,
+    db_path: Path = DB_PATH,
 ) -> Dict:
     """Get accountability gaps only."""
     audit = run_accountability_audit(project_id, db_path)

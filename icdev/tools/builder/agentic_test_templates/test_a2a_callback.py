@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Pytest: A2A callback to parent ICDEV verification.
+"""Pytest: A2A callback to parent ICDEV™ verification.
 
 Tests the callback client's JSON-RPC 2.0 payload construction and
-error handling when communicating with parent ICDEV.
+error handling when communicating with parent ICDEV™.
 """
 
 import json

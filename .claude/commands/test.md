@@ -1,6 +1,6 @@
-# ICDEV Application Validation Test Suite
+# ICDEV™ Application Validation Test Suite
 
-Execute comprehensive validation tests for ICDEV-built projects, returning results in standardized JSON format for automated processing.
+Execute comprehensive validation tests for ICDEV™-built projects, returning results in standardized JSON format for automated processing.
 
 ## Purpose
 
@@ -41,31 +41,36 @@ PROJECT_DIR: The project directory under test (auto-detected from cwd)
    - test_name: "python_syntax_check"
    - test_purpose: "Validates Python syntax by compiling source files to bytecode, catching syntax errors like missing colons, invalid indentation, or malformed statements"
 
-2. **Code Quality Check (Ruff)**
+2. **Code Quality Auto-Fix (Ruff)**
+   - Command: `python -m ruff check src/ --fix --select F401,F811,F841` (auto-remove unused imports, redefined names, unused variables)
+   - test_name: "code_quality_ruff_autofix"
+   - test_purpose: "Auto-cleans dead code — unused imports (F401), redefined-while-unused (F811), unused variables (F841). Runs BEFORE the quality check so subsequent steps see clean code"
+
+3. **Code Quality Check (Ruff)**
    - Command: `ruff check src/` (or `python -m ruff check src/` if installed via pip)
    - test_name: "code_quality_ruff"
-   - test_purpose: "Validates Python code quality using Ruff — identifies unused imports, style violations, security issues, and potential bugs (replaces flake8+isort+black)"
+   - test_purpose: "Validates Python code quality using Ruff — identifies remaining style violations, security issues, and potential bugs (replaces flake8+isort+black)"
 
 ### Backend Tests
 
-3. **Unit Tests (pytest)**
+4. **Unit Tests (pytest)**
    - Command: `python -m pytest tests/ -v --tb=short`
    - test_name: "unit_tests_pytest"
    - test_purpose: "Validates all backend functionality including business logic, API endpoints, data processing, and error handling"
 
-4. **BDD Tests (behave)**
+5. **BDD Tests (behave)**
    - Command: `python -m behave features/ --format json --no-capture` (skip if no features/ dir)
    - test_name: "bdd_tests_behave"
    - test_purpose: "Validates business requirements through Gherkin scenarios, ensuring user stories are correctly implemented"
 
 ### Security
 
-5. **SAST Security Scan (Bandit)**
+6. **SAST Security Scan (Bandit)**
    - Command: `python -m bandit -r src/ -f json --severity-level medium`
    - test_name: "security_sast_bandit"
    - test_purpose: "Static application security testing — identifies common vulnerabilities like SQL injection, XSS, hardcoded secrets, and insecure function calls"
 
-6. **Secret Detection**
+7. **Secret Detection**
    - Command: `python tools/security/secret_detector.py --project-dir .`
    - test_name: "secret_detection"
    - test_purpose: "Scans all files for leaked secrets, API keys, passwords, and tokens using regex patterns and detect-secrets"

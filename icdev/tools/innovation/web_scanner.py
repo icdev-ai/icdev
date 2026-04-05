@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Web Intelligence Scanner — discover developer pain points, CVEs, and innovation signals.
 
 Scans configurable web sources (GitHub, Stack Overflow, NVD, NIST, community forums,
@@ -656,7 +656,7 @@ def scan_sam_gov_for_innovation(config):
     """Scan SAM.gov opportunities as innovation signals (D361 cross-registration).
 
     Converts SAM.gov RFP requirement patterns into innovation signals,
-    enabling ICDEV to detect trends in government demand for specific capabilities.
+    enabling ICDEV™ to detect trends in government demand for specific capabilities.
     """
     signals = []
     try:
@@ -826,7 +826,7 @@ def get_scan_history(days=7, db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Web Intelligence Scanner — discover innovation signals"
+        description="ICDEV™ Web Intelligence Scanner — discover innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")

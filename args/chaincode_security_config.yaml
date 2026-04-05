@@ -1,0 +1,104 @@
+# CUI // SP-CTI
+# GovChain — Chaincode Security Audit Configuration (D-GC-4)
+# Regex-based vulnerability patterns per language, air-gap safe
+
+vulnerability_patterns:
+  go:
+    critical:
+      - pattern: "unsafe\\."
+        id: CC-GO-001
+        title: "Unsafe package usage"
+        description: "Go unsafe package bypasses type safety and memory protections"
+        nist_controls: ["SI-16", "SC-3"]
+      - pattern: "exec\\.Command\\("
+        id: CC-GO-002
+        title: "OS command execution in chaincode"
+        description: "Chaincode should never execute OS commands"
+        nist_controls: ["SI-3", "SC-39"]
+      - pattern: "crypto/md5|crypto/sha1"
+        id: CC-GO-003
+        title: "Weak cryptographic algorithm"
+        description: "MD5 and SHA-1 are not FIPS-approved for new implementations"
+        nist_controls: ["SC-13", "IA-7"]
+    high:
+      - pattern: "os\\.(Open|Create|Remove|Rename)"
+        id: CC-GO-004
+        title: "Filesystem access in chaincode"
+        description: "Chaincode should not access the host filesystem"
+        nist_controls: ["AC-3", "SC-4"]
+      - pattern: "net\\.(Dial|Listen)"
+        id: CC-GO-005
+        title: "Network access in chaincode"
+        description: "Chaincode should not make network calls"
+        nist_controls: ["SC-7", "AC-4"]
+      - pattern: "fmt\\.Print"
+        id: CC-GO-006
+        title: "Unstructured logging"
+        description: "Use structured logging for audit trail compliance"
+        nist_controls: ["AU-3", "AU-12"]
+    medium:
+      - pattern: "var\\s+\\w+\\s+string\\s*=\\s*\""
+        id: CC-GO-007
+        title: "Hardcoded string constant"
+        description: "May contain hardcoded credentials or configuration"
+        nist_controls: ["IA-5", "SC-28"]
+
+  java:
+    critical:
+      - pattern: "Runtime\\.getRuntime\\(\\)\\.exec"
+        id: CC-JAVA-001
+        title: "OS command execution"
+        description: "Java chaincode should never execute OS commands"
+        nist_controls: ["SI-3", "SC-39"]
+      - pattern: "javax\\.crypto\\.Cipher\\.getInstance\\(\"DES"
+        id: CC-JAVA-002
+        title: "Weak cryptographic algorithm (DES)"
+        description: "DES is not FIPS-approved"
+        nist_controls: ["SC-13", "IA-7"]
+    high:
+      - pattern: "java\\.io\\.File"
+        id: CC-JAVA-003
+        title: "Filesystem access in chaincode"
+        description: "Chaincode should not access the host filesystem"
+        nist_controls: ["AC-3", "SC-4"]
+      - pattern: "java\\.net\\.(URL|Socket|HttpURLConnection)"
+        id: CC-JAVA-004
+        title: "Network access in chaincode"
+        description: "Chaincode should not make network calls"
+        nist_controls: ["SC-7", "AC-4"]
+
+  node:
+    critical:
+      - pattern: "eval\\(|Function\\("
+        id: CC-NODE-001
+        title: "Dynamic code execution"
+        description: "eval() and Function() allow arbitrary code execution"
+        nist_controls: ["SI-3", "SC-39"]
+      - pattern: "child_process|exec\\(|spawn\\("
+        id: CC-NODE-002
+        title: "OS command execution"
+        description: "Node chaincode should never execute OS commands"
+        nist_controls: ["SI-3", "SC-39"]
+    high:
+      - pattern: "require\\(['\"]fs['\"]\\)|require\\(['\"]path['\"]\\)"
+        id: CC-NODE-003
+        title: "Filesystem access in chaincode"
+        description: "Chaincode should not access the host filesystem"
+        nist_controls: ["AC-3", "SC-4"]
+      - pattern: "require\\(['\"]http['\"]\\)|require\\(['\"]https['\"]\\)"
+        id: CC-NODE-004
+        title: "Network access in chaincode"
+        description: "Chaincode should not make network calls"
+        nist_controls: ["SC-7", "AC-4"]
+
+severity_weights:
+  critical: 10.0
+  high: 5.0
+  medium: 2.0
+  low: 1.0
+
+gate:
+  max_critical: 0
+  max_high: 0
+  max_medium: 10
+  max_low: 50

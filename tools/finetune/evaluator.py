@@ -18,18 +18,18 @@ import json
 import math
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -43,7 +43,7 @@ def _now() -> str:
 
 def _get_ngrams(tokens: List[str], n: int) -> Counter:
     """Extract n-grams from token list."""
-    return Counter(tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1))
+    return Counter(tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1))
 
 
 def compute_bleu(
@@ -245,10 +245,7 @@ def evaluate_model(
 
     # Load thresholds
     thresholds = _load_thresholds()
-    passes = (
-        avg_bleu >= thresholds.get("min_bleu", 0.30)
-        and avg_rouge >= thresholds.get("min_rouge_l", 0.40)
-    )
+    passes = avg_bleu >= thresholds.get("min_bleu", 0.30) and avg_rouge >= thresholds.get("min_rouge_l", 0.40)
 
     # Store evaluation (append-only)
     eval_id = f"eval-{uuid.uuid4().hex[:12]}"
@@ -260,9 +257,19 @@ def evaluate_model(
                 bleu_score, rouge_l_score, perplexity,
                 pass_threshold, classification, tenant_id, project_id, evaluated_at)
                VALUES (?, ?, 'automated', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (eval_id, model_version_id, len(test_pairs),
-             avg_bleu, avg_rouge, perplexity,
-             1 if passes else 0, classification, tenant_id, project_id, _now()),
+            (
+                eval_id,
+                model_version_id,
+                len(test_pairs),
+                avg_bleu,
+                avg_rouge,
+                perplexity,
+                1 if passes else 0,
+                classification,
+                tenant_id,
+                project_id,
+                _now(),
+            ),
         )
         conn.commit()
     except Exception as e:
@@ -272,9 +279,12 @@ def evaluate_model(
 
     # Update model version with eval scores
     from tools.finetune.model_registry import update_eval_scores
+
     update_eval_scores(
-        model_version_id, eval_bleu=avg_bleu,
-        eval_rouge_l=avg_rouge, eval_perplexity=perplexity,
+        model_version_id,
+        eval_bleu=avg_bleu,
+        eval_rouge_l=avg_rouge,
+        eval_perplexity=perplexity,
         db_path=db_path,
     )
 
@@ -362,6 +372,7 @@ def _load_thresholds() -> Dict[str, float]:
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path) as f:
                 cfg = yaml.safe_load(f) or {}
             promo = cfg.get("promotion", {})

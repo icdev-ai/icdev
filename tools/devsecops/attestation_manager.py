@@ -18,7 +18,7 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +41,7 @@ except ImportError:
 # Config & DB
 # ---------------------------------------------------------------------------
 
+
 def _load_config() -> dict:
     config_path = BASE_DIR / "args" / "devsecops_config.yaml"
     if yaml and config_path.exists():
@@ -50,8 +51,7 @@ def _load_config() -> dict:
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -59,10 +59,7 @@ def _get_db():
 def _get_profile(project_id: str) -> dict:
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT * FROM devsecops_profiles WHERE project_id = ?",
-            (project_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
         if not row:
             return {}
         return {
@@ -77,6 +74,7 @@ def _get_profile(project_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Signing configuration generation
 # ---------------------------------------------------------------------------
+
 
 def generate_signing_config(project_id: str, profile: dict = None) -> dict:
     """Generate cosign/notation signing configuration.
@@ -136,11 +134,13 @@ def generate_signing_config(project_id: str, profile: dict = None) -> dict:
         },
         "spec": {
             "images": [{"glob": "**"}],
-            "authorities": [{
-                "key": {
-                    "kms": f"awskms:///alias/icdev-{project_id}-signing",
-                },
-            }],
+            "authorities": [
+                {
+                    "key": {
+                        "kms": f"awskms:///alias/icdev-{project_id}-signing",
+                    },
+                }
+            ],
         },
     }
 
@@ -158,6 +158,7 @@ def generate_signing_config(project_id: str, profile: dict = None) -> dict:
 # ---------------------------------------------------------------------------
 # Attestation pipeline generation
 # ---------------------------------------------------------------------------
+
 
 def generate_attestation_pipeline(project_id: str, profile: dict = None) -> dict:
     """Generate SLSA Level 3 attestation pipeline jobs.
@@ -213,7 +214,7 @@ attestation:sbom:
     - pip install cyclonedx-bom
     - echo "Generating CycloneDX SBOM..."
     - cyclonedx-py environment --output sbom-cyclonedx.json --format json
-    - echo "SBOM generated with $(python3 -c 'import json; print(len(json.load(open(\"sbom-cyclonedx.json\")).get(\"components\",[])))'  ) components"
+    - echo "SBOM generated with $(python3 -c 'import json; print(len(json.load(open(\"sbom-cyclonedx.json\")).get(\"components\",[])))'  ) components"  # noqa: E501
   artifacts:
     when: always
     paths:
@@ -231,7 +232,7 @@ attestation:attest-sbom:
   image: gcr.io/projectsigstore/cosign:latest
   script:
     - echo "Attesting SBOM to container image..."
-    - cosign attest --key awskms:///alias/${COSIGN_KMS_KEY} --predicate sbom-cyclonedx.json --type cyclonedx ${IMAGE_NAME}:${IMAGE_TAG}
+    - cosign attest --key awskms:///alias/${COSIGN_KMS_KEY} --predicate sbom-cyclonedx.json --type cyclonedx ${IMAGE_NAME}:${IMAGE_TAG}  # noqa: E501
     - echo "SBOM attestation attached to image"
   needs:
     - job: attestation:sbom
@@ -275,7 +276,7 @@ attestation:provenance:
         }
       }
       PROV
-    - cosign attest --key awskms:///alias/${COSIGN_KMS_KEY} --predicate provenance.json --type slsaprovenance ${IMAGE_NAME}:${IMAGE_TAG}
+    - cosign attest --key awskms:///alias/${COSIGN_KMS_KEY} --predicate provenance.json --type slsaprovenance ${IMAGE_NAME}:${IMAGE_TAG}  # noqa: E501
     - echo "SLSA provenance attestation attached"
   artifacts:
     when: always
@@ -306,8 +307,8 @@ attestation:provenance:
 # Attestation verification
 # ---------------------------------------------------------------------------
 
-def verify_attestation(project_id: str, image_ref: str,
-                       expected_policies: list = None) -> dict:
+
+def verify_attestation(project_id: str, image_ref: str, expected_policies: list = None) -> dict:
     """Verify image attestation (dry-run check — actual verification requires cosign CLI).
 
     Args:
@@ -331,9 +332,7 @@ def verify_attestation(project_id: str, image_ref: str,
     verification_commands = []
     for policy in expected_policies:
         if policy == "image_signature":
-            verification_commands.append(
-                f"cosign verify --key awskms:///alias/icdev-{project_id}-signing {image_ref}"
-            )
+            verification_commands.append(f"cosign verify --key awskms:///alias/icdev-{project_id}-signing {image_ref}")
         elif policy == "sbom_cyclonedx":
             verification_commands.append(
                 f"cosign verify-attestation --key awskms:///alias/icdev-{project_id}-signing "
@@ -358,6 +357,7 @@ def verify_attestation(project_id: str, image_ref: str,
 # Attestation status
 # ---------------------------------------------------------------------------
 
+
 def get_attestation_status(project_id: str) -> dict:
     """Get attestation status for a project from pipeline audit trail.
 
@@ -371,7 +371,7 @@ def get_attestation_status(project_id: str) -> dict:
                FROM devsecops_pipeline_audit
                WHERE project_id = ? AND stage IN ('image_signing', 'sbom_attestation')
                ORDER BY created_at DESC LIMIT 10""",
-            (project_id,)
+            (project_id,),
         ).fetchall()
 
         events = [dict(r) for r in rows]
@@ -394,18 +394,15 @@ def get_attestation_status(project_id: str) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="Attestation Manager")
     parser.add_argument("--project-id", required=True, help="Project identifier")
-    parser.add_argument("--generate", action="store_true",
-                        help="Generate signing configuration")
-    parser.add_argument("--pipeline", action="store_true",
-                        help="Generate attestation pipeline jobs")
-    parser.add_argument("--verify", action="store_true",
-                        help="Verify image attestation")
+    parser.add_argument("--generate", action="store_true", help="Generate signing configuration")
+    parser.add_argument("--pipeline", action="store_true", help="Generate attestation pipeline jobs")
+    parser.add_argument("--verify", action="store_true", help="Verify image attestation")
     parser.add_argument("--image", help="Image reference for --verify")
-    parser.add_argument("--status", action="store_true",
-                        help="Get attestation status")
+    parser.add_argument("--status", action="store_true", help="Get attestation status")
     parser.add_argument("--output", help="Write output to file")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

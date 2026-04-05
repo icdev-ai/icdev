@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Remote Command Gateway (Phase 28) allows authorized users to send ICDEV commands from external messaging channels into the ICDEV platform. Commands are received via channel adapters, processed through an 8-gate security chain, and dispatched to the appropriate ICDEV agent for execution. The gateway runs on port 8458 as a standalone agent.
+The Remote Command Gateway (Phase 28) allows authorized users to send ICDEV™ commands from external messaging channels into the ICDEV™ platform. Commands are received via channel adapters, processed through an 8-gate security chain, and dispatched to the appropriate ICDEV™ agent for execution. The gateway runs on port 8458 as a standalone agent.
 
 ### Supported Channels
 
@@ -67,7 +67,7 @@ python tools/gateway/user_binder.py --revoke <binding-id>
 
 ### Binding Lifecycle
 
-1. **Provision** -- Administrator creates a binding linking a channel user ID to an ICDEV user ID.
+1. **Provision** -- Administrator creates a binding linking a channel user ID to an ICDEV™ user ID.
 2. **Active** -- User can send commands through the bound channel.
 3. **Expired** -- Binding TTL exceeded (configurable in `args/remote_gateway_config.yaml`).
 4. **Revoked** -- Administrator explicitly revokes the binding.
@@ -233,7 +233,7 @@ The gateway never upgrades classification. Responses are filtered to ensure cont
 
 ## Dashboard Integration
 
-The gateway administration page is available at `/gateway` on the ICDEV dashboard.
+The gateway administration page is available at `/gateway` on the ICDEV™ dashboard.
 
 ### Dashboard Features
 
@@ -255,7 +255,7 @@ http://localhost:5000/gateway
 
 ### Adding a New User
 
-1. Create the ICDEV user account (dashboard or `auth.py`).
+1. Create the ICDEV™ user account (dashboard or `auth.py`).
 2. Provision a binding for the user's messaging channel:
    ```bash
    python tools/gateway/user_binder.py \

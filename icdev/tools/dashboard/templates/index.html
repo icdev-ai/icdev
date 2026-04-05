@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Dashboard Home - ICDEV{% endblock %}
+{% block title %}Dashboard Home - ICDEV™{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1>ICDEV Dashboard</h1>
+    <h1>ICDEV™ Dashboard</h1>
     <p class="subtitle">Integrated Continuous Development Environment &mdash; Operations Overview
-        <span class="help-icon" data-glossary="ICDEV" title="Intelligent Certified Development Environment — AI-powered platform for building secure government applications">?</span>
+        <span class="help-icon" data-glossary="ICDEV™" title="Intelligent Certified Development Environment — AI-powered platform for building secure government applications">?</span>
     </p>
 </div>
 
@@ -174,13 +174,13 @@
     var firingCount = {{ firing_alerts }};
     var openPoam = {{ open_poam }};
     if (firingCount > 0) {
-        window.ICDEV && ICDEV.showNotification(
+        window.ICDEV™ && ICDEV™.showNotification(
             firingCount + ' alert' + (firingCount > 1 ? 's' : '') + ' currently firing \u2014 <a href="/monitoring" style="color:inherit;text-decoration:underline;">view monitoring</a>',
             'error'
         );
     }
     if (openPoam > 5) {
-        window.ICDEV && ICDEV.showNotification(
+        window.ICDEV™ && ICDEV™.showNotification(
             openPoam + ' open POA&M items need attention \u2014 <a href="/projects" style="color:inherit;text-decoration:underline;">review projects</a>',
             'warning'
         );
@@ -189,13 +189,13 @@
 
 // Load charts from API
 (function() {
-    if (!window.ICDEV || !ICDEV.barChart) return;
+    if (!window.ICDEV™ || !ICDEV™.barChart) return;
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
             // Compliance posture bar chart
             if (d.compliance) {
-                ICDEV.barChart('chart-compliance', {
+                ICDEV™.barChart('chart-compliance', {
                     labels: ['POA&M', 'STIG'],
                     series: [
                         { name: 'Open', data: [d.compliance.poam.open, d.compliance.stig.open], color: '#dc3545' },
@@ -206,7 +206,7 @@
             }
             // Alert trend line chart
             if (d.alert_trend && d.alert_trend.length > 0) {
-                ICDEV.lineChart('chart-alerts', {
+                ICDEV™.lineChart('chart-alerts', {
                     labels: d.alert_trend.map(function(r) { return r.day.slice(5); }),
                     series: [{ name: 'Alerts', data: d.alert_trend.map(function(r) { return r.cnt; }), color: '#dc3545' }],
                     height: 180, showLegend: false,
@@ -218,7 +218,7 @@
             if (d.project_statuses && d.project_statuses.length > 0) {
                 var colors = { active: '#28a745', completed: '#4a90d9', inactive: '#6c6c80', planning: '#ffc107' };
                 var total = d.project_statuses.reduce(function(s, r) { return s + r.cnt; }, 0);
-                ICDEV.donutChart('chart-projects', {
+                ICDEV™.donutChart('chart-projects', {
                     segments: d.project_statuses.map(function(r) {
                         return { label: r.status, value: r.cnt, color: colors[r.status] || '#6c6c80' };
                     }),
@@ -232,7 +232,7 @@
             }
             // Agent health gauge
             if (d.agent_health) {
-                ICDEV.gaugeChart('chart-agent-health', {
+                ICDEV™.gaugeChart('chart-agent-health', {
                     value: d.agent_health.ratio,
                     thresholds: { good: 0.8, warning: 0.5 },
                     label: d.agent_health.active + ' of ' + d.agent_health.total + ' agents active',

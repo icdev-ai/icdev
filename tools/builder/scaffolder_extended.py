@@ -16,7 +16,7 @@ CUI // SP-CTI
 Controlled by: Department of Defense
 CUI Category: CTI
 Distribution: D
-POC: ICDEV System Administrator
+POC: ICDEV™ System Administrator
 """
 
 from pathlib import Path
@@ -47,7 +47,7 @@ CUI_HEADER_PYTHON = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_C_STYLE = """\
@@ -55,7 +55,7 @@ CUI_HEADER_C_STYLE = """\
 // Controlled by: Department of Defense
 // CUI Category: CTI
 // Distribution: D
-// POC: ICDEV System Administrator
+// POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_XML = """\
@@ -63,7 +63,7 @@ CUI_HEADER_XML = """\
 <!-- Controlled by: Department of Defense -->
 <!-- CUI Category: CTI -->
 <!-- Distribution: D -->
-<!-- POC: ICDEV System Administrator -->
+<!-- POC: ICDEV™ System Administrator -->
 """
 
 CUI_HEADER_HASH = """\
@@ -71,7 +71,7 @@ CUI_HEADER_HASH = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_YAML = CUI_HEADER_HASH
@@ -81,7 +81,7 @@ CUI_HEADER_TOML = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 CUI_HEADER_RUST = CUI_HEADER_C_STYLE
@@ -90,6 +90,7 @@ CUI_HEADER_RUST = CUI_HEADER_C_STYLE
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_file(path: Path, content: str) -> None:
     """Write content to a file, creating parent dirs as needed."""
@@ -113,7 +114,7 @@ def _create_compliance_dirs(root: Path, files: List[str]) -> None:
 
 def _readme_content(name: str, project_type: str, description: str = "") -> str:
     """Generate a README with CUI banners."""
-    desc = description or f"A {project_type} project scaffolded by ICDEV Builder."
+    desc = description or f"A {project_type} project scaffolded by ICDEV™ Builder."
     return f"""{CUI_BANNER}
 
 # {name}
@@ -168,6 +169,7 @@ All artifacts in this directory are classified as CUI // SP-CTI.
 # 1. Java Backend (Spring Boot / Maven)
 # ===================================================================
 
+
 def scaffold_java_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Spring Boot / Maven Java backend project.
 
@@ -207,7 +209,7 @@ def scaffold_java_backend(project_path: str, name: str) -> List[str]:
     <artifactId>{name}</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <name>{name}</name>
-    <description>ICDEV scaffolded Spring Boot project — CUI // SP-CTI</description>
+    <description>ICDEV™ scaffolded Spring Boot project — CUI // SP-CTI</description>
 
     <properties>
         <java.version>17</java.version>
@@ -494,6 +496,7 @@ tmp/
 # 2. Go Backend
 # ===================================================================
 
+
 def scaffold_go_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Go module backend project.
 
@@ -760,6 +763,7 @@ tmp/
 # 3. Rust Backend (Actix-web / Cargo)
 # ===================================================================
 
+
 def scaffold_rust_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Rust Actix-web backend project.
 
@@ -786,7 +790,7 @@ def scaffold_rust_backend(project_path: str, name: str) -> List[str]:
 name = "{crate_name}"
 version = "0.1.0"
 edition = "2021"
-description = "ICDEV scaffolded Rust backend — CUI // SP-CTI"
+description = "ICDEV™ scaffolded Rust backend — CUI // SP-CTI"
 
 [dependencies]
 actix-web = "4"
@@ -958,7 +962,7 @@ ENTRYPOINT ["./app"]
 
 # Read-only root filesystem — enforce via container runtime:
 #   docker run --read-only --tmpfs /tmp:rw,noexec,nosuid ...
-"""
+"""  # nosec B608 -- template content, not user input
     p = root / "Dockerfile"
     _write_file(p, dockerfile)
     files.append(str(p))
@@ -1015,6 +1019,7 @@ tmp/
 # 4. C# Backend (.NET 8 ASP.NET)
 # ===================================================================
 
+
 def scaffold_csharp_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a .NET 8 ASP.NET backend project.
 
@@ -1045,7 +1050,7 @@ def scaffold_csharp_backend(project_path: str, name: str) -> List[str]:
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>{ns_name}</RootNamespace>
     <AssemblyName>{name}</AssemblyName>
-    <Description>ICDEV scaffolded .NET 8 project — CUI // SP-CTI</Description>
+    <Description>ICDEV™ scaffolded .NET 8 project — CUI // SP-CTI</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -1302,6 +1307,7 @@ tmp/
 # 5. TypeScript Backend (Node.js + Express)
 # ===================================================================
 
+
 def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
     """Scaffold a Node.js + TypeScript + Express backend project.
 
@@ -1324,10 +1330,13 @@ def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
     # Note: CUI_HEADER_C_STYLE at top of JSON is non-standard but signals classification.
     # In practice a .cui-header file or banner comment in the actual source is preferred.
     # We strip the header for valid JSON by writing the JSON portion only.
-    package_json_content = """{
-  "name": """ + f'"{name}"' + """,
+    package_json_content = (
+        """{
+  "name": """
+        + f'"{name}"'
+        + """,
   "version": "0.1.0",
-  "description": "ICDEV scaffolded TypeScript backend — CUI // SP-CTI",
+  "description": "ICDEV™ scaffolded TypeScript backend — CUI // SP-CTI",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -1358,6 +1367,7 @@ def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
   "private": true
 }
 """
+    )
     p = root / "package.json"
     _write_file(p, package_json_content)
     files.append(str(p))
@@ -1624,7 +1634,7 @@ def generate_agentic_sidecar(project_root: Path, app_name: str, language: str) -
     """Generate Python agentic sidecar for non-Python language projects.
 
     Non-Python child apps get a Python sidecar in `sidecar/agentic/` that
-    provides GOTCHA framework, agents, and memory system alongside the main
+    provides FORGE framework, agents, and memory system alongside the main
     language project. Connected via docker-compose.yaml.
 
     Args:
@@ -1641,8 +1651,11 @@ def generate_agentic_sidecar(project_root: Path, app_name: str, language: str) -
 
     # sidecar/agentic/requirements.txt
     reqs = [
-        "pyyaml>=6.0", "jinja2>=3.1", "flask>=3.0",
-        "requests>=2.31", "boto3>=1.34",
+        "pyyaml>=6.0",
+        "jinja2>=3.1",
+        "flask>=3.0",
+        "requests>=2.31",
+        "boto3>=1.34",
     ]
     req_path = sidecar_dir / "requirements.txt"
     _write_file(req_path, "\n".join(reqs) + "\n")
@@ -1674,7 +1687,7 @@ CMD ["python", "orchestrator.py"]
 # CUI // SP-CTI
 \"\"\"Agentic sidecar orchestrator for {app_name} ({language}).
 
-This sidecar provides GOTCHA framework, ATLAS workflow, agent communication,
+This sidecar provides FORGE framework, ANVIL workflow, agent communication,
 and memory system alongside the main {language} application.
 \"\"\"
 

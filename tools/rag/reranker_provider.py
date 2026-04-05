@@ -17,7 +17,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger("icdev.rag.reranker")
 
@@ -64,9 +64,11 @@ class BGERerankerProvider(RerankerProvider):
 
     def __init__(self, model: str = "bge-reranker-v2-m3", base_url: str = ""):
         import os
+
         self._model = model
         self._base_url = base_url or os.environ.get(
-            "OLLAMA_BASE_URL", "http://localhost:11434",
+            "OLLAMA_BASE_URL",
+            "http://localhost:11434",
         )
         # SEC/PERF: Reuse HTTP session across rerank calls (connection pooling)
         self._session = None
@@ -79,6 +81,7 @@ class BGERerankerProvider(RerankerProvider):
         """Get or create HTTP session for connection reuse."""
         if self._session is None:
             import requests
+
             self._session = requests.Session()
         return self._session
 
@@ -131,6 +134,7 @@ class BGERerankerProvider(RerankerProvider):
         """Check if Ollama has the BGE reranker model."""
         try:
             import requests
+
             resp = requests.get(f"{self._base_url}/api/tags", timeout=5)
             if resp.status_code != 200:
                 return False
@@ -141,7 +145,7 @@ class BGERerankerProvider(RerankerProvider):
 
 
 class LLMRerankerProvider(RerankerProvider):
-    """qwen3 LLM-based re-ranking via ICDEV LLM router (D-RAG-3 original).
+    """qwen3 LLM-based re-ranking via ICDEV™ LLM router (D-RAG-3 original).
 
     Uses structured prompt to ask qwen3 to rank chunks by relevance.
     Slower (2-5s) but works without specialized reranker model.
@@ -177,14 +181,14 @@ class LLMRerankerProvider(RerankerProvider):
         # Build chunk previews
         previews = []
         for i, doc in enumerate(documents):
-            preview = doc[:self._max_preview_chars].strip()
+            preview = doc[: self._max_preview_chars].strip()
             previews.append(f"[{i}] {preview}")
         chunks_text = "\n\n".join(previews)
         rerank_prompt = self._load_rerank_prompt()
 
         user_message = (
             f"Query: {query}\n\nChunks to rank:\n{chunks_text}\n\n"
-            f"Return a JSON object with \"ranked_indices\" containing the indices of the "
+            f'Return a JSON object with "ranked_indices" containing the indices of the '
             f"most relevant chunks, sorted by relevance (most relevant first). "
             f"Return at most {top_k} indices."
         )
@@ -201,21 +205,23 @@ class LLMRerankerProvider(RerankerProvider):
                 temperature=0.1,
                 classification="CUI",
             )
-            response = router.invoke(request, function="rag_rerank")
+            response = router.invoke("rag_rerank", request)
 
             # Parse response
             content = response.content.strip()
             if "{" in content:
-                json_str = content[content.index("{"):content.rindex("}") + 1]
+                json_str = content[content.index("{") : content.rindex("}") + 1]
                 parsed = json.loads(json_str)
                 ranked_indices = parsed.get("ranked_indices", [])
             else:
                 ranked_indices = json.loads(content)
 
             # Validate and build results
-            valid = [(idx, 1.0 - rank / max(len(ranked_indices), 1))
-                     for rank, idx in enumerate(ranked_indices)
-                     if isinstance(idx, int) and 0 <= idx < len(documents)]
+            valid = [
+                (idx, 1.0 - rank / max(len(ranked_indices), 1))
+                for rank, idx in enumerate(ranked_indices)
+                if isinstance(idx, int) and 0 <= idx < len(documents)
+            ]
             return valid[:top_k]
 
         except Exception as exc:
@@ -226,7 +232,8 @@ class LLMRerankerProvider(RerankerProvider):
     def check_availability(self) -> bool:
         """LLM reranker is available if LLM router works."""
         try:
-            from tools.llm.router import LLMRouter
+            from tools.llm.router import LLMRouter  # noqa: F401
+
             return True
         except ImportError:
             return False

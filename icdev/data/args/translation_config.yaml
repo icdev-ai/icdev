@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Cross-Language Translation Configuration (Phase 43)
+# ICDEV™ Cross-Language Translation Configuration (Phase 43)
 # Controls translation pipeline behavior, thresholds, and per-language settings.
 
 # -----------------------------------------------------------------------
@@ -83,7 +83,7 @@ type_checking:
 translation:
   max_chunk_lines: 500    # Max lines per translation chunk (D244)
   temperature: 0.2        # Low temperature for deterministic output
-  provenance_comments: true  # Add "// Translated from {source_lang} by ICDEV" comments
+  provenance_comments: true  # Add "// Translated from {source_lang} by ICDEV™" comments
   candidates: 3           # pass@k candidates (D254, Google research). Set 1 for air-gapped
   mock_on_failure: true   # Mock-and-continue strategy (D256, Amazon Oxidizer)
   max_mock_pct: 20        # Max % of units that can be mocked before pipeline fails

@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 48 (AI Transparency), Phase 49 (AI Accountability), Phase 44 (Innovation Adaptation — chat and extension hooks) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -146,7 +146,7 @@ Advisory messages are non-blocking -- they inform the operator but do not preven
 |----|----------|-----------|
 | D322 | Six governance pillars (transparency, accountability, fairness, safety, explainability, privacy) defined in ai_governance_config.yaml with per-pillar keywords | Declarative keyword patterns enable intake detection without LLM; add/remove pillars without code changes (D26 pattern) |
 | D323 | Readiness scoring extended to 7 dimensions; devsecops_readiness now implemented (was stubbed) | Both dimensions share the weighted-average pattern from D21; weights kept low (0.05 each) to avoid disrupting existing readiness thresholds |
-| D324 | Extension hooks use built-in handlers (not external plugin files) for governance | Governance is a core ICDEV capability, not a tenant extension; built-in handlers avoid file I/O overhead and cannot be accidentally deleted |
+| D324 | Extension hooks use built-in handlers (not external plugin files) for governance | Governance is a core ICDEV™ capability, not a tenant extension; built-in handlers avoid file I/O overhead and cannot be accidentally deleted |
 | D325 | Handlers activated via config flag (integration.enabled) not code change | Consistent with D44 flag-based backward compatibility; omitting the flag produces identical behavior to pre-Phase 50 |
 | D326 | Governance sidebar in chat renders from cached posture (refreshed by post_tool_call hook) | Avoids per-message DB queries; posture changes infrequently (only after compliance tool runs), so cache invalidation on tool completion is sufficient |
 | D327 | Advisory messages injected as system-role messages (not user-role) | System messages are non-interruptive in the chat flow; they inform the LLM context without appearing as user commands |

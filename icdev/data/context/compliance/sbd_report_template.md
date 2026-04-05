@@ -63,7 +63,7 @@ The following requirements require manual verification:
 
 ## 10. Assessment Methodology
 
-This assessment was conducted using the ICDEV SbD Assessor tool against the CISA Secure by Design requirements catalog (35 requirements across 14 domains). Automated checks were performed where possible; requirements marked as "semi" or "manual" are flagged for human review.
+This assessment was conducted using the ICDEV™ SbD Assessor tool against the CISA Secure by Design requirements catalog (35 requirements across 14 domains). Automated checks were performed where possible; requirements marked as "semi" or "manual" are flagged for human review.
 
 **Scoring Formula:** Score = 100 x (satisfied + partially_satisfied x 0.5 + risk_accepted x 0.75) / assessable_count
 

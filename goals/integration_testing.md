@@ -1,11 +1,11 @@
 # Goal: Integration Testing (Phase 13)
 
 ## Purpose
-Validate the complete ICDEV system through multi-layer testing: unit tests (pytest), BDD tests (behave/Gherkin), E2E browser tests (Playwright MCP), security gate evaluation, and compliance gate evaluation — with automatic retry and failure resolution.
+Validate the complete ICDEV™ system through multi-layer testing: unit tests (pytest), BDD tests (behave/Gherkin), E2E browser tests (Playwright MCP), security gate evaluation, and compliance gate evaluation — with automatic retry and failure resolution.
 
 ## Trigger
 - `/icdev-test` skill invoked
-- Post-build validation in ATLAS workflow
+- Post-build validation in ANVIL workflow
 - Pre-merge gate check
 - Pre-deployment validation
 
@@ -25,8 +25,8 @@ Validate the complete ICDEV system through multi-layer testing: unit tests (pyte
 | BDD | behave (Gherkin) | features/ | Business requirement validation |
 | E2E (native) | Playwright CLI | tests/e2e/*.spec.ts | Browser-based UI validation (preferred) |
 | E2E (MCP) | Playwright MCP | .claude/commands/e2e/*.md | Browser-based UI validation (fallback) |
-| Security | ICDEV security tools | security_gates.yaml | Vulnerability assessment |
-| Compliance | ICDEV compliance tools | project_defaults.yaml | NIST 800-53 gate evaluation |
+| Security | ICDEV™ security tools | security_gates.yaml | Vulnerability assessment |
+| Compliance | ICDEV™ compliance tools | project_defaults.yaml | NIST 800-53 gate evaluation |
 
 ### Key ADW Patterns Adopted
 1. **Pydantic data types** — TestResult, E2ETestResult, CheckResult (structured, validated)

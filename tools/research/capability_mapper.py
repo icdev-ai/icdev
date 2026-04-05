@@ -3,18 +3,18 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
-Capability Mapper — maps research challenges to ICDEV capability catalog (D-RES-7).
+Capability Mapper — maps research challenges to ICDEV™ capability catalog (D-RES-7).
 
 Uses a keyword-overlap algorithm (adapted from govcon/capability_mapper.py) to match
-research challenges against the ICDEV capability catalog. For each challenge, extracts
+research challenges against the ICDEV™ capability catalog. For each challenge, extracts
 keywords from title + description, computes overlap against each capability's keyword
 set, and stores mappings in research_capability_map (append-only, D6/D-RES-5).
 
 Architecture:
     - Reads from research_challenges table (populated by challenge_scorer)
-    - Loads ICDEV capability catalog from context/agentic/icdev_capability_catalog.json
+    - Loads ICDEV™ capability catalog from context/agentic/icdev_capability_catalog.json
       with a built-in DEFAULT_CATALOG fallback (D-RES-7)
     - Keyword overlap: overlap = len(challenge_kw & cap_kw) / max(1, len(cap_kw))
     - Mapping threshold: min_overlap_score (default 0.3 from research_config.yaml)
@@ -42,9 +42,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -64,12 +64,14 @@ CATALOG_PATH = BASE_DIR / "context" / "agentic" / "icdev_capability_catalog.json
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -77,19 +79,40 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 # =========================================================================
 # DEFAULT CATALOG (fallback when catalog JSON file does not exist)
 # =========================================================================
 DEFAULT_CATALOG = [
     {"id": "cap-tdd", "name": "TDD/BDD Testing", "keywords": ["testing", "tdd", "bdd", "pytest", "behave"]},
-    {"id": "cap-compliance", "name": "Compliance Framework", "keywords": ["compliance", "nist", "fedramp", "cmmc", "stig"]},
-    {"id": "cap-security", "name": "Security Scanning", "keywords": ["security", "sast", "vulnerability", "secret", "container"]},
-    {"id": "cap-infra", "name": "Infrastructure as Code", "keywords": ["terraform", "ansible", "kubernetes", "docker", "deployment"]},
-    {"id": "cap-monitoring", "name": "Monitoring & Observability", "keywords": ["monitoring", "logging", "metrics", "tracing", "alerting"]},
+    {
+        "id": "cap-compliance",
+        "name": "Compliance Framework",
+        "keywords": ["compliance", "nist", "fedramp", "cmmc", "stig"],
+    },
+    {
+        "id": "cap-security",
+        "name": "Security Scanning",
+        "keywords": ["security", "sast", "vulnerability", "secret", "container"],
+    },
+    {
+        "id": "cap-infra",
+        "name": "Infrastructure as Code",
+        "keywords": ["terraform", "ansible", "kubernetes", "docker", "deployment"],
+    },
+    {
+        "id": "cap-monitoring",
+        "name": "Monitoring & Observability",
+        "keywords": ["monitoring", "logging", "metrics", "tracing", "alerting"],
+    },
     {"id": "cap-ai", "name": "AI/ML Integration", "keywords": ["ai", "ml", "model", "llm", "embedding", "inference"]},
     {"id": "cap-data", "name": "Data Pipeline", "keywords": ["data", "pipeline", "etl", "streaming", "database"]},
     {"id": "cap-api", "name": "API Development", "keywords": ["api", "rest", "graphql", "endpoint", "gateway"]},
-    {"id": "cap-auth", "name": "Authentication & Authorization", "keywords": ["auth", "identity", "rbac", "oauth", "cac"]},
+    {
+        "id": "cap-auth",
+        "name": "Authentication & Authorization",
+        "keywords": ["auth", "identity", "rbac", "oauth", "cac"],
+    },
     {"id": "cap-audit", "name": "Audit Trail", "keywords": ["audit", "logging", "trail", "immutable", "append"]},
 ]
 
@@ -101,11 +124,8 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -162,7 +182,7 @@ def _get_mapping_config(config=None):
 # CATALOG LOADING
 # =========================================================================
 def load_capability_catalog():
-    """Load the ICDEV capability catalog from JSON file.
+    """Load the ICDEV™ capability catalog from JSON file.
 
     Falls back to DEFAULT_CATALOG if the file does not exist or is invalid.
 
@@ -187,18 +207,96 @@ def load_capability_catalog():
 # KEYWORD EXTRACTION
 # =========================================================================
 # Hardcoded English stopwords -- no NLTK dependency needed
-_STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "been", "by", "but",
-    "can", "could", "did", "do", "does", "for", "from", "had", "has",
-    "have", "he", "her", "him", "his", "how", "i", "if", "in", "into",
-    "is", "it", "its", "just", "may", "me", "might", "more", "most",
-    "must", "my", "no", "nor", "not", "of", "on", "or", "our", "out",
-    "own", "shall", "she", "should", "so", "some", "such", "than",
-    "that", "the", "their", "them", "then", "there", "these", "they",
-    "this", "those", "through", "to", "too", "up", "us", "very", "was",
-    "we", "were", "what", "when", "where", "which", "while", "who",
-    "will", "with", "would", "you", "your",
-})
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "by",
+        "but",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "just",
+        "may",
+        "me",
+        "might",
+        "more",
+        "most",
+        "must",
+        "my",
+        "no",
+        "nor",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "out",
+        "own",
+        "shall",
+        "she",
+        "should",
+        "so",
+        "some",
+        "such",
+        "than",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "up",
+        "us",
+        "very",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
+    }
+)
 
 
 def _extract_keywords(text):
@@ -213,6 +311,7 @@ def _extract_keywords(text):
     if not text:
         return set()
     import re
+
     tokens = re.split(r"[^a-zA-Z0-9]+", text.lower())
     return {t for t in tokens if t and len(t) >= 3 and t not in _STOPWORDS}
 
@@ -241,7 +340,7 @@ def compute_coverage_score(challenge_keywords, capability_keywords):
 
 
 def map_challenge_capabilities(challenge_id, session_id, db_path=None):
-    """Map a single challenge to ICDEV capabilities via keyword overlap.
+    """Map a single challenge to ICDEV™ capabilities via keyword overlap.
 
     Loads the challenge from DB, extracts keywords from title + description,
     computes overlap against each catalog capability, and INSERTs matches
@@ -263,9 +362,7 @@ def map_challenge_capabilities(challenge_id, session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         # Load the challenge
-        row = conn.execute(
-            "SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)).fetchone()
 
         if not row:
             return {"status": "error", "message": f"Challenge not found: {challenge_id}"}
@@ -319,20 +416,24 @@ def map_challenge_capabilities(challenge_id, session_id, db_path=None):
                         json.dumps(overlap_kw),
                         gap_desc,
                         enhancement_needed,
-                        json.dumps({"catalog_keywords": list(cap_keywords), "challenge_keywords": sorted(challenge_keywords)}),
+                        json.dumps(
+                            {"catalog_keywords": list(cap_keywords), "challenge_keywords": sorted(challenge_keywords)}
+                        ),
                         now,
                     ),
                 )
 
-                mappings.append({
-                    "id": mapping_id,
-                    "capability_id": cap["id"],
-                    "capability_name": cap["name"],
-                    "coverage_score": score,
-                    "keyword_overlap": overlap_kw,
-                    "enhancement_needed": bool(enhancement_needed),
-                    "gap_description": gap_desc,
-                })
+                mappings.append(
+                    {
+                        "id": mapping_id,
+                        "capability_id": cap["id"],
+                        "capability_name": cap["name"],
+                        "coverage_score": score,
+                        "keyword_overlap": overlap_kw,
+                        "enhancement_needed": bool(enhancement_needed),
+                        "gap_description": gap_desc,
+                    }
+                )
 
         # Update challenge status to 'mapped' if it was 'scored' or 'new'
         if challenge.get("status") in ("new", "scored"):
@@ -361,7 +462,7 @@ def map_challenge_capabilities(challenge_id, session_id, db_path=None):
 
 
 def map_all_challenges(session_id, db_path=None):
-    """Map all challenges in a session to ICDEV capabilities.
+    """Map all challenges in a session to ICDEV™ capabilities.
 
     Iterates over all challenges in the given session and calls
     map_challenge_capabilities for each.
@@ -451,7 +552,7 @@ def get_session_coverage(session_id, db_path=None):
 
         # Aggregate by capability
         cap_scores = {}  # capability_id -> list of scores
-        cap_names = {}   # capability_id -> name
+        cap_names = {}  # capability_id -> name
         challenge_ids = set()
         enhancement_count = 0
 
@@ -474,12 +575,14 @@ def get_session_coverage(session_id, db_path=None):
         cap_averages = []
         for cap_id, scores in cap_scores.items():
             avg = sum(scores) / len(scores) if scores else 0.0
-            cap_averages.append({
-                "capability_id": cap_id,
-                "capability_name": cap_names[cap_id],
-                "average_coverage": round(avg, 4),
-                "mapping_count": len(scores),
-            })
+            cap_averages.append(
+                {
+                    "capability_id": cap_id,
+                    "capability_name": cap_names[cap_id],
+                    "average_coverage": round(avg, 4),
+                    "mapping_count": len(scores),
+                }
+            )
 
         cap_averages.sort(key=lambda x: x["average_coverage"], reverse=True)
 
@@ -491,9 +594,7 @@ def get_session_coverage(session_id, db_path=None):
         catalog = load_capability_catalog()
         mapped_cap_ids = set(cap_scores.keys())
         gap_capabilities = [
-            {"capability_id": c["id"], "capability_name": c["name"]}
-            for c in catalog
-            if c["id"] not in mapped_cap_ids
+            {"capability_id": c["id"], "capability_name": c["name"]} for c in catalog if c["id"] not in mapped_cap_ids
         ]
 
         return {
@@ -503,7 +604,9 @@ def get_session_coverage(session_id, db_path=None):
             "total_mappings": len(mappings),
             "average_coverage": round(overall_avg, 4),
             "capabilities_highest": cap_averages[:5],
-            "capabilities_lowest": list(reversed(cap_averages[-5:])) if len(cap_averages) > 5 else list(reversed(cap_averages)),
+            "capabilities_lowest": list(reversed(cap_averages[-5:]))
+            if len(cap_averages) > 5
+            else list(reversed(cap_averages)),
             "enhancement_needed_count": enhancement_count,
             "gap_capabilities": gap_capabilities,
             "gap_capability_count": len(gap_capabilities),
@@ -550,16 +653,18 @@ def get_challenge_capabilities(challenge_id, db_path=None):
             except (json.JSONDecodeError, TypeError):
                 kw_overlap = []
 
-            mapping_list.append({
-                "id": m_dict["id"],
-                "capability_id": m_dict["capability_id"],
-                "capability_name": m_dict["capability_name"],
-                "coverage_score": m_dict["coverage_score"],
-                "keyword_overlap": kw_overlap,
-                "enhancement_needed": bool(m_dict.get("enhancement_needed")),
-                "gap_description": m_dict.get("gap_description"),
-                "mapped_at": m_dict.get("mapped_at"),
-            })
+            mapping_list.append(
+                {
+                    "id": m_dict["id"],
+                    "capability_id": m_dict["capability_id"],
+                    "capability_name": m_dict["capability_name"],
+                    "coverage_score": m_dict["coverage_score"],
+                    "keyword_overlap": kw_overlap,
+                    "enhancement_needed": bool(m_dict.get("enhancement_needed")),
+                    "gap_description": m_dict.get("gap_description"),
+                    "mapped_at": m_dict.get("mapped_at"),
+                }
+            )
 
         return {
             "status": "ok",
@@ -582,7 +687,7 @@ def _print_human(result, action):
     """Human-readable output."""
     status = result.get("status", "unknown")
     print(f"\n{'=' * 70}")
-    print(f"  ICDEV Research Capability Mapper -- {status.upper()} -- CUI // SP-CTI")
+    print(f"  ICDEV™ Research Capability Mapper -- {status.upper()} -- CUI // SP-CTI")
     print(f"{'=' * 70}")
 
     if status == "error":
@@ -596,7 +701,7 @@ def _print_human(result, action):
         print(f"  Total mappings: {result.get('total_mappings', 0)}")
         for r in result.get("results", []):
             title = r.get("challenge_title", "")[:45]
-            count = r.get("mappings_count", 0)
+            r.get("mappings_count", 0)
             print(f"\n    [{r.get('challenge_id', '')[:20]}] {title}")
             for m in r.get("mappings", []):
                 enh = " (enhancement needed)" if m.get("enhancement_needed") else ""
@@ -623,19 +728,23 @@ def _print_human(result, action):
 
         highest = result.get("capabilities_highest", [])
         if highest:
-            print(f"\n  Highest Coverage:")
+            print("\n  Highest Coverage:")
             for c in highest:
-                print(f"    {c['capability_name']:35s} avg={c['average_coverage']:.2f}  ({c['mapping_count']} mappings)")
+                print(
+                    f"    {c['capability_name']:35s} avg={c['average_coverage']:.2f}  ({c['mapping_count']} mappings)"
+                )
 
         lowest = result.get("capabilities_lowest", [])
         if lowest:
-            print(f"\n  Lowest Coverage:")
+            print("\n  Lowest Coverage:")
             for c in lowest:
-                print(f"    {c['capability_name']:35s} avg={c['average_coverage']:.2f}  ({c['mapping_count']} mappings)")
+                print(
+                    f"    {c['capability_name']:35s} avg={c['average_coverage']:.2f}  ({c['mapping_count']} mappings)"
+                )
 
         gaps = result.get("gap_capabilities", [])
         if gaps:
-            print(f"\n  Gap Capabilities (no coverage):")
+            print("\n  Gap Capabilities (no coverage):")
             for g in gaps:
                 print(f"    - {g['capability_name']}")
 
@@ -663,7 +772,7 @@ def _print_human(result, action):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Capability Mapper (D-RES-7) -- CUI // SP-CTI",
+        description="ICDEV™ Research Capability Mapper (D-RES-7) -- CUI // SP-CTI",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

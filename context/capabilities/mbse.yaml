@@ -1,0 +1,38 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: Model-Based Systems Engineering
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: mbse
+description: "SysML/UML model import, digital thread traceability, model-to-code generation, and DES compliance"
+capabilities:
+  - slug: mbse-integration
+    name: "MBSE Model Import & Digital Thread"
+    description: "SysML XMI import, DOORS NG ReqIF import, N:M digital thread traceability, model-to-code generation across 6 languages, drift detection, DoDI 5000.87 DES compliance"
+    cli_examples:
+      - "python tools/mbse/xmi_parser.py --project-id sparkpilot --file /path/model.xmi --json"
+      - "python tools/mbse/reqif_parser.py --project-id sparkpilot --file /path/reqs.reqif --json"
+      - "python tools/mbse/digital_thread.py --project-id sparkpilot auto-link --json"
+      - "python tools/mbse/digital_thread.py --project-id sparkpilot coverage --json"
+    related_controls: ["SA-3", "SA-8", "PL-2", "CM-2", "CM-3"]
+    article_hooks:
+      - "N:M digital thread links -- one model block can map to many code modules, one control to many requirements"
+      - "Model-to-code generation across 6 languages ensures the architecture model stays synchronized with implementation"
+      - "DoDI 5000.87 Digital Engineering Strategy compliance assessment built in"
+    frameworks: ["DoDI 5000.87", "SysML", "DOORS NG"]
+    keywords: ["MBSE", "SysML", "DOORS NG", "ReqIF", "XMI", "digital thread", "traceability", "model-code sync", "DES"]
+    source_catalog_id: "cap-mbse"
+
+  - slug: thread-heatmap
+    name: "Digital Thread Heatmap"
+    description: "N x M artifact-type cross-reference heatmap for detecting digital thread coverage gaps and orphaned artifacts"
+    cli_examples:
+      - "python tools/mbse/thread_heatmap.py --project-id sparkpilot --generate --json"
+      - "python tools/mbse/thread_heatmap.py --project-id sparkpilot --orphans --json"
+    related_controls: ["SA-3", "CM-2"]
+    article_hooks:
+      - "Thread heatmap visualizes coverage gaps between requirements, design, code, tests, and compliance artifacts"
+      - "Orphan detection finds artifacts that exist but aren't connected to the digital thread"
+    frameworks: ["DoDI 5000.87"]
+    keywords: ["digital thread", "heatmap", "coverage gap", "traceability", "orphan detection"]
+    source_catalog_id: "cap-mbse"

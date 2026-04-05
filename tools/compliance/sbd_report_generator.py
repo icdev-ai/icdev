@@ -9,8 +9,8 @@ CUI markings."""
 import argparse
 import json
 import re
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -56,16 +56,13 @@ PRIORITY_ORDER = ["critical", "high", "medium", "low"]
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -125,14 +122,14 @@ def _builtin_template():
         "## 9. NIST 800-53 Control Mapping\n\n"
         "{{nist_control_mapping}}\n\n"
         "## 10. Assessment Methodology\n\n"
-        "This assessment was conducted using the ICDEV SbD Assessor tool against the "
+        "This assessment was conducted using the ICDEV™ SbD Assessor tool against the "
         "CISA Secure by Design requirements catalog (35 requirements across 14 domains). "
-        "Automated checks were performed where possible; requirements marked as \"semi\" "
-        "or \"manual\" are flagged for human review.\n\n"
+        'Automated checks were performed where possible; requirements marked as "semi" '
+        'or "manual" are flagged for human review.\n\n'
         "**Scoring Formula:** Score = 100 x (satisfied + partially_satisfied x 0.5 + "
         "risk_accepted x 0.75) / assessable_count\n\n"
         "**Gate Logic:** PASS if 0 critical-priority requirements have status "
-        "\"not_satisfied\"\n\n"
+        '"not_satisfied"\n\n'
         "---\n\n"
         "**Prepared by:** {{assessor}}\n"
         "**Date:** {{assessment_date}}\n\n"
@@ -142,9 +139,7 @@ def _builtin_template():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -158,6 +153,7 @@ def _load_cui_config():
     """
     try:
         from tools.compliance.cui_marker import load_cui_config as _load
+
         return _load()
     except Exception:
         pass
@@ -167,6 +163,7 @@ def _load_cui_config():
         cui_marker_path = Path(__file__).resolve().parent / "cui_marker.py"
         if cui_marker_path.exists():
             import importlib.util
+
             spec = importlib.util.spec_from_file_location("cui_marker", cui_marker_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
@@ -218,6 +215,7 @@ def _load_sbd_requirements():
 # Data retrieval
 # ---------------------------------------------------------------------------
 
+
 def _get_sbd_assessments(conn, project_id):
     """Retrieve all SbD assessment results for a project."""
     rows = conn.execute(
@@ -254,6 +252,7 @@ def _get_sbom_records(conn, project_id):
 # ---------------------------------------------------------------------------
 # Score calculation
 # ---------------------------------------------------------------------------
+
 
 def _calculate_domain_scores(assessments):
     """Calculate a compliance score for each SbD domain.
@@ -299,9 +298,7 @@ def _calculate_domain_scores(assessments):
         # Denominator excludes not_applicable
         scoreable = total - not_applicable
         if scoreable > 0:
-            score = 100.0 * (
-                satisfied + partially * 0.5 + risk_accepted * 0.75
-            ) / scoreable
+            score = 100.0 * (satisfied + partially * 0.5 + risk_accepted * 0.75) / scoreable
         else:
             score = 100.0  # All N/A means fully compliant for this domain
 
@@ -355,13 +352,15 @@ def _calculate_cisa_commitment_status(assessments, requirements):
         count = len(req_ids)
 
         if count == 0:
-            results.append({
-                "commitment_num": num,
-                "title": title,
-                "status": "Not Assessed",
-                "count": 0,
-                "satisfied_count": 0,
-            })
+            results.append(
+                {
+                    "commitment_num": num,
+                    "title": title,
+                    "status": "Not Assessed",
+                    "count": 0,
+                    "satisfied_count": 0,
+                }
+            )
             continue
 
         # Gather statuses for this commitment's requirements
@@ -391,13 +390,15 @@ def _calculate_cisa_commitment_status(assessments, requirements):
         else:
             status = "Partially Compliant"
 
-        results.append({
-            "commitment_num": num,
-            "title": title,
-            "status": status,
-            "count": count,
-            "satisfied_count": satisfied_count,
-        })
+        results.append(
+            {
+                "commitment_num": num,
+                "title": title,
+                "status": status,
+                "count": count,
+                "satisfied_count": satisfied_count,
+            }
+        )
 
     return results
 
@@ -428,6 +429,7 @@ def _calculate_overall_status(domain_scores):
 # ---------------------------------------------------------------------------
 # Section builder functions
 # ---------------------------------------------------------------------------
+
 
 def _build_domain_scores_table(domain_scores):
     """Build a markdown table summarising per-domain scores."""
@@ -464,9 +466,7 @@ def _build_cisa_commitment_table(cisa_status):
         status = c["status"]
         count = c["count"]
         satisfied = c["satisfied_count"]
-        lines.append(
-            f"| {num} | {title} | {status} | {count} | {satisfied} |"
-        )
+        lines.append(f"| {num} | {title} | {status} | {count} | {satisfied} |")
 
     return "\n".join(lines)
 
@@ -501,12 +501,8 @@ def _build_domain_details(assessments, domain_scores):
             sections.append("")
             continue
 
-        sections.append(
-            "| Requirement ID | Status | Automation | Evidence | Notes |"
-        )
-        sections.append(
-            "|----------------|--------|------------|----------|-------|"
-        )
+        sections.append("| Requirement ID | Status | Automation | Evidence | Notes |")
+        sections.append("|----------------|--------|------------|----------|-------|")
         for item in sorted(items, key=lambda x: x.get("requirement_id", "")):
             req_id = item.get("requirement_id", "N/A")
             status = item.get("status", "not_assessed")
@@ -520,9 +516,7 @@ def _build_domain_details(assessments, domain_scores):
                 notes = notes[:77] + "..."
             if len(automation) > 30:
                 automation = automation[:27] + "..."
-            sections.append(
-                f"| {req_id} | {status} | {automation} | {evidence} | {notes} |"
-            )
+            sections.append(f"| {req_id} | {status} | {automation} | {evidence} | {notes} |")
         sections.append("")
 
     return "\n".join(sections)
@@ -534,9 +528,7 @@ def _build_findings_table(assessments):
     Lists all findings that are not satisfied, ordered by domain then
     requirement ID.
     """
-    findings = [
-        a for a in assessments if a.get("status") == "not_satisfied"
-    ]
+    findings = [a for a in assessments if a.get("status") == "not_satisfied"]
     if not findings:
         return "*No findings requiring remediation.*"
 
@@ -553,10 +545,7 @@ def _build_findings_table(assessments):
                 evidence = evidence[:57] + "..."
             if len(notes) > 60:
                 notes = notes[:57] + "..."
-            lines.append(
-                f"| {domain} | {f.get('requirement_id', 'N/A')} "
-                f"| {evidence} | {notes} |"
-            )
+            lines.append(f"| {domain} | {f.get('requirement_id', 'N/A')} | {evidence} | {notes} |")
 
     return "\n".join(lines)
 
@@ -578,10 +567,7 @@ def _build_remediation_table(assessments):
     # Load requirements for priority data
     requirements = _load_sbd_requirements()
 
-    needing_remediation = [
-        a for a in assessments
-        if a.get("status") in ("not_satisfied", "partially_satisfied")
-    ]
+    needing_remediation = [a for a in assessments if a.get("status") in ("not_satisfied", "partially_satisfied")]
     if not needing_remediation:
         return "*No items require remediation at this time.*"
 
@@ -591,14 +577,16 @@ def _build_remediation_table(assessments):
         "|----------------|--------|----------------|----------|-------------|-------------|",
     ]
 
-    for item in sorted(needing_remediation,
-                       key=lambda x: (
-                           PRIORITY_ORDER.index(
-                               requirements.get(x.get("requirement_id", ""), {}).get("priority", "low")
-                           ) if requirements.get(x.get("requirement_id", ""), {}).get("priority", "low") in PRIORITY_ORDER else 99,
-                           x.get("domain", ""),
-                           x.get("requirement_id", ""),
-                       )):
+    for item in sorted(
+        needing_remediation,
+        key=lambda x: (
+            PRIORITY_ORDER.index(requirements.get(x.get("requirement_id", ""), {}).get("priority", "low"))
+            if requirements.get(x.get("requirement_id", ""), {}).get("priority", "low") in PRIORITY_ORDER
+            else 99,
+            x.get("domain", ""),
+            x.get("requirement_id", ""),
+        ),
+    ):
         req_id = item.get("requirement_id", "N/A")
         domain = item.get("domain", "N/A")
         status = item.get("status", "N/A")
@@ -621,17 +609,14 @@ def _build_remediation_table(assessments):
         if len(remediation) > 50:
             remediation = remediation[:47] + "..."
 
-        lines.append(
-            f"| {req_id} | {domain} | {status} | {priority} | {target} | {remediation} |"
-        )
+        lines.append(f"| {req_id} | {domain} | {status} | {priority} | {target} | {remediation} |")
 
     return "\n".join(lines)
 
 
 def _build_evidence_summary(assessments):
     """Count evidence artifacts by domain."""
-    domain_counts = {domain: {"with_evidence": 0, "without_evidence": 0, "total": 0}
-                     for domain in SBD_DOMAINS}
+    domain_counts = {domain: {"with_evidence": 0, "without_evidence": 0, "total": 0} for domain in SBD_DOMAINS}
 
     for a in assessments:
         dom = a.get("domain")
@@ -651,23 +636,14 @@ def _build_evidence_summary(assessments):
         c = domain_counts[domain]
         if c["total"] == 0:
             continue
-        coverage = (
-            f"{100.0 * c['with_evidence'] / c['total']:.0f}%"
-            if c["total"] > 0 else "N/A"
-        )
-        lines.append(
-            f"| {domain} | {c['total']} | {c['with_evidence']} "
-            f"| {c['without_evidence']} | {coverage} |"
-        )
+        coverage = f"{100.0 * c['with_evidence'] / c['total']:.0f}%" if c["total"] > 0 else "N/A"
+        lines.append(f"| {domain} | {c['total']} | {c['with_evidence']} | {c['without_evidence']} | {coverage} |")
 
     total_all = sum(c["total"] for c in domain_counts.values())
     total_with = sum(c["with_evidence"] for c in domain_counts.values())
     total_without = sum(c["without_evidence"] for c in domain_counts.values())
     total_cov = f"{100.0 * total_with / total_all:.0f}%" if total_all > 0 else "N/A"
-    lines.append(
-        f"| **Total** | **{total_all}** | **{total_with}** "
-        f"| **{total_without}** | **{total_cov}** |"
-    )
+    lines.append(f"| **Total** | **{total_all}** | **{total_with}** | **{total_without}** | **{total_cov}** |")
 
     return "\n".join(lines)
 
@@ -704,9 +680,7 @@ def _build_nist_mapping(assessments, requirements):
         nist_controls = req_data.get("nist_controls", [])
         nist_str = ", ".join(nist_controls) if nist_controls else "N/A"
         status = assessment_map.get(req_id, {}).get("status", "not_assessed")
-        lines.append(
-            f"| {req_id} | {domain} | {nist_str} | {status} |"
-        )
+        lines.append(f"| {req_id} | {domain} | {nist_str} | {status} |")
 
     return "\n".join(lines)
 
@@ -723,10 +697,7 @@ def _build_auto_check_results(assessments, requirements):
         if req_data.get("automation_level") == "auto":
             auto_req_ids.add(req_id)
 
-    auto_assessments = [
-        a for a in assessments
-        if a.get("requirement_id") in auto_req_ids
-    ]
+    auto_assessments = [a for a in assessments if a.get("requirement_id") in auto_req_ids]
 
     if not auto_assessments:
         return "*No automated check results available.*"
@@ -742,9 +713,7 @@ def _build_auto_check_results(assessments, requirements):
         result = (a.get("automation_result") or "N/A").replace("\n", " ").strip()
         if len(result) > 60:
             result = result[:57] + "..."
-        lines.append(
-            f"| {req_id} | {domain} | {status} | {result} |"
-        )
+        lines.append(f"| {req_id} | {domain} | {status} | {result} |")
 
     return "\n".join(lines)
 
@@ -760,10 +729,7 @@ def _build_manual_review_items(assessments, requirements):
         if req_data.get("automation_level") in ("semi", "manual"):
             manual_req_ids.add(req_id)
 
-    manual_assessments = [
-        a for a in assessments
-        if a.get("requirement_id") in manual_req_ids
-    ]
+    manual_assessments = [a for a in assessments if a.get("requirement_id") in manual_req_ids]
 
     if not manual_assessments:
         return "*No manual review items.*"
@@ -781,16 +747,14 @@ def _build_manual_review_items(assessments, requirements):
         notes = (a.get("notes") or "").replace("\n", " ").strip()
         if len(notes) > 60:
             notes = notes[:57] + "..."
-        lines.append(
-            f"| {req_id} | {domain} | {auto_level} | {status} | {notes} |"
-        )
+        lines.append(f"| {req_id} | {domain} | {auto_level} | {status} | {notes} |")
 
     return "\n".join(lines)
 
 
-def _build_executive_summary(overall_score, overall_status, gate_result,
-                             domain_scores, cisa_status, assessments,
-                             requirements):
+def _build_executive_summary(
+    overall_score, overall_status, gate_result, domain_scores, cisa_status, assessments, requirements
+):
     """Build the executive summary paragraph.
 
     Provides a high-level overview of the assessment results including
@@ -804,9 +768,7 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
     total_not_assessed = sum(1 for a in assessments if a.get("status") == "not_assessed")
 
     # Count domains with assessments
-    domains_with_data = sum(
-        1 for d in domain_scores.values() if d.get("total", 0) > 0
-    )
+    domains_with_data = sum(1 for d in domain_scores.values() if d.get("total", 0) > 0)
 
     # Count critical not_satisfied
     critical_not_satisfied = 0
@@ -822,7 +784,8 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
 
     # Identify weakest domain
     scored_domains = {
-        d: s for d, s in domain_scores.items()
+        d: s
+        for d, s in domain_scores.items()
         if s.get("total", 0) > 0 and s.get("total", 0) != s.get("not_applicable", 0)
     }
     weakest_domain = ""
@@ -846,18 +809,14 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
         f"**{total_not_assessed}** not assessed, "
         f"**{total_na}** not applicable."
     )
-    lines.append(
-        f"- **{cisa_compliant}/{cisa_total}** CISA Secure by Design commitments are compliant."
-    )
+    lines.append(f"- **{cisa_compliant}/{cisa_total}** CISA Secure by Design commitments are compliant.")
     if critical_not_satisfied > 0:
         lines.append(
             f"- **{critical_not_satisfied} critical-priority requirement(s) not satisfied** "
             f"-- immediate remediation required."
         )
     if weakest_domain:
-        lines.append(
-            f"- Weakest domain: **{weakest_domain}** ({weakest_score:.1f}%)."
-        )
+        lines.append(f"- Weakest domain: **{weakest_domain}** ({weakest_score:.1f}%).")
 
     return "\n".join(lines), critical_not_satisfied
 
@@ -865,6 +824,7 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
 # ---------------------------------------------------------------------------
 # Variable substitution & CUI markings
 # ---------------------------------------------------------------------------
+
 
 def _apply_cui_markings(content, cui_config):
     """Apply CUI header and footer banners to the report content."""
@@ -881,15 +841,18 @@ def _apply_cui_markings(content, cui_config):
 
 def _substitute_variables(template, variables):
     """Replace {{variable_name}} placeholders in the template."""
+
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
+
     return re.sub(r"\{\{(\w+)\}\}", replacer, template)
 
 
 # ---------------------------------------------------------------------------
 # Audit logging
 # ---------------------------------------------------------------------------
+
 
 def _log_audit_event(conn, project_id, action, details, file_path):
     """Log an audit trail event for SbD report generation."""
@@ -917,6 +880,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
+
 
 def generate_sbd_report(project_id, output_path=None, db_path=None):
     """Generate a Secure by Design assessment report for a project.
@@ -973,14 +937,17 @@ def generate_sbd_report(project_id, output_path=None, db_path=None):
         auto_check_results = _build_auto_check_results(assessments, requirements)
         manual_review_items = _build_manual_review_items(assessments, requirements)
         executive_summary, critical_not_satisfied = _build_executive_summary(
-            overall_score, overall_status, gate_result,
-            domain_scores, cisa_status, assessments, requirements,
+            overall_score,
+            overall_status,
+            gate_result,
+            domain_scores,
+            cisa_status,
+            assessments,
+            requirements,
         )
 
         # Count domains with data
-        domains_assessed = sum(
-            1 for d in domain_scores.values() if d.get("total", 0) > 0
-        )
+        domains_assessed = sum(1 for d in domain_scores.values() if d.get("total", 0) > 0)
 
         # Load CUI config for banner variables
         cui_config = _load_cui_config()
@@ -1007,7 +974,6 @@ def generate_sbd_report(project_id, output_path=None, db_path=None):
             "project_name": project_name,
             "project_id": project_id,
             "classification": project.get("classification", "CUI"),
-
             # Report metadata
             "version": new_version,
             "report_version": new_version,
@@ -1016,76 +982,46 @@ def generate_sbd_report(project_id, output_path=None, db_path=None):
             "assessor": assessor,
             "generation_timestamp": now.strftime("%Y-%m-%d %H:%M UTC"),
             "icdev_version": "1.0",
-
             # Overall scores
             "overall_score": f"{overall_score:.1f}",
             "overall_status": overall_status,
             "gate_result": gate_result,
             "domains_assessed": str(domains_assessed),
             "critical_not_satisfied": str(critical_not_satisfied),
-
             # Executive summary
             "executive_summary": executive_summary,
-
             # CISA commitments
             "cisa_commitment_table": cisa_commitment_table,
-
             # Domain scores
             "domain_scores_table": domain_scores_table,
-
             # Domain details
             "domain_details": domain_details,
-
             # Auto-check and manual review
             "auto_check_results": auto_check_results,
             "manual_review_items": manual_review_items,
-
             # Findings and remediation
             "critical_findings": findings_table,
             "findings_table": findings_table,
             "remediation_table": remediation_table,
-
             # Evidence
             "evidence_summary": evidence_summary,
-
             # NIST mapping
             "nist_control_mapping": nist_mapping,
-
             # Assessment counts
             "total_assessments": str(len(assessments)),
-            "assessments_satisfied": str(sum(
-                1 for a in assessments if a.get("status") == "satisfied"
-            )),
-            "assessments_not_satisfied": str(sum(
-                1 for a in assessments if a.get("status") == "not_satisfied"
-            )),
-            "assessments_partial": str(sum(
-                1 for a in assessments if a.get("status") == "partially_satisfied"
-            )),
-            "assessments_na": str(sum(
-                1 for a in assessments if a.get("status") == "not_applicable"
-            )),
-            "assessments_not_assessed": str(sum(
-                1 for a in assessments if a.get("status") == "not_assessed"
-            )),
-            "assessments_risk_accepted": str(sum(
-                1 for a in assessments if a.get("status") == "risk_accepted"
-            )),
-
+            "assessments_satisfied": str(sum(1 for a in assessments if a.get("status") == "satisfied")),
+            "assessments_not_satisfied": str(sum(1 for a in assessments if a.get("status") == "not_satisfied")),
+            "assessments_partial": str(sum(1 for a in assessments if a.get("status") == "partially_satisfied")),
+            "assessments_na": str(sum(1 for a in assessments if a.get("status") == "not_applicable")),
+            "assessments_not_assessed": str(sum(1 for a in assessments if a.get("status") == "not_assessed")),
+            "assessments_risk_accepted": str(sum(1 for a in assessments if a.get("status") == "risk_accepted")),
             # Cross-reference data
             "stig_findings_count": str(sum(r.get("cnt", 0) for r in stig_findings)),
             "sbom_records_count": str(len(sbom_records)),
-            "sbom_latest_date": (
-                sbom_records[0].get("generated_at", "N/A") if sbom_records else "N/A"
-            ),
-
+            "sbom_latest_date": (sbom_records[0].get("generated_at", "N/A") if sbom_records else "N/A"),
             # CUI banners
-            "cui_banner_top": cui_config.get(
-                "document_header", cui_config.get("banner_top", "CUI // SP-CTI")
-            ),
-            "cui_banner_bottom": cui_config.get(
-                "document_footer", cui_config.get("banner_bottom", "CUI // SP-CTI")
-            ),
+            "cui_banner_top": cui_config.get("document_header", cui_config.get("banner_top", "CUI // SP-CTI")),
+            "cui_banner_bottom": cui_config.get("document_footer", cui_config.get("banner_bottom", "CUI // SP-CTI")),
         }
 
         # Per-domain score variables (e.g., authentication_score, etc.)
@@ -1144,15 +1080,14 @@ def generate_sbd_report(project_id, output_path=None, db_path=None):
             "domains_assessed": domains_assessed,
             "total_assessments": len(assessments),
             "critical_not_satisfied": critical_not_satisfied,
-            "cisa_commitments_compliant": sum(
-                1 for c in cisa_status if c["status"] == "Compliant"
-            ),
+            "cisa_commitments_compliant": sum(1 for c in cisa_status if c["status"] == "Compliant"),
             "stig_findings": sum(r.get("cnt", 0) for r in stig_findings),
             "sbom_records": len(sbom_records),
             "output_file": str(out_file),
         }
         _log_audit_event(
-            conn, project_id,
+            conn,
+            project_id,
             f"SbD report v{new_version} generated",
             audit_details,
             out_file,
@@ -1181,8 +1116,7 @@ def generate_sbd_report(project_id, output_path=None, db_path=None):
             "overall_status": overall_status,
             "gate_result": gate_result,
             "domain_scores": {
-                domain: domain_scores[domain]["score"] for domain in SBD_DOMAINS
-                if domain_scores[domain]["total"] > 0
+                domain: domain_scores[domain]["score"] for domain in SBD_DOMAINS if domain_scores[domain]["total"] > 0
             },
             "cisa_status": [
                 {
@@ -1207,25 +1141,18 @@ def generate_sbd_report(project_id, output_path=None, db_path=None):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate SbD assessment report"
-    )
+    parser = argparse.ArgumentParser(description="Generate SbD assessment report")
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument("--output-dir", help="Output directory")
+    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
     parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH, help="Database path"
-    )
-    parser.add_argument(
-        "--format", choices=["text", "json"], default="text",
-        help="Output format: text (default) or json"
+        "--format", choices=["text", "json"], default="text", help="Output format: text (default) or json"
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:
-        result = generate_sbd_report(
-            args.project_id, args.output_dir, args.db_path
-        )
+        result = generate_sbd_report(args.project_id, args.output_dir, args.db_path)
         if args.format == "json":
             print(json.dumps(result, indent=2))
         else:

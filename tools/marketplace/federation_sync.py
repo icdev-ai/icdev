@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Federation Sync — Synchronize tenant-local and central catalogs.
 
 Handles the federated model where each tenant manages their own catalog
@@ -34,9 +34,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,11 +52,14 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # Graceful imports
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # IL hierarchy for compatibility filtering
 IL_HIERARCHY = {"IL2": 0, "IL4": 1, "IL5": 2, "IL6": 3}
@@ -64,8 +67,7 @@ IL_HIERARCHY = {"IL2": 0, "IL4": 1, "IL5": 2, "IL6": 3}
 
 def _get_db(db_path=None):
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -81,8 +83,11 @@ def _audit(event_type, actor, action, details=None):
     if _HAS_AUDIT:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor,
-                action=action, details=details, db_path=DB_PATH,
+                event_type=event_type,
+                actor=actor,
+                action=action,
+                details=details,
+                db_path=DB_PATH,
             )
         except Exception:
             pass
@@ -91,6 +96,7 @@ def _audit(event_type, actor, action, details=None):
 # ---------------------------------------------------------------------------
 # Sync operations
 # ---------------------------------------------------------------------------
+
 
 def promote_approved(tenant_id, db_path=None):
     """Promote all approved tenant-local assets to central_vetted.
@@ -121,12 +127,14 @@ def promote_approved(tenant_id, db_path=None):
                 "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = ? WHERE id = ?",
                 (_now(), asset["id"]),
             )
-            promoted.append({
-                "asset_id": asset["id"],
-                "name": asset["name"],
-                "version": asset["current_version"],
-                "slug": asset["slug"],
-            })
+            promoted.append(
+                {
+                    "asset_id": asset["id"],
+                    "name": asset["name"],
+                    "version": asset["current_version"],
+                    "slug": asset["slug"],
+                }
+            )
 
         conn.commit()
 
@@ -176,7 +184,7 @@ def pull_available(tenant_id, consumer_il, db_path=None):
                       SELECT asset_id FROM marketplace_installations
                       WHERE tenant_id = ? AND status = 'active'
                   )
-                ORDER BY a.avg_rating DESC, a.install_count DESC""",
+                ORDER BY a.avg_rating DESC, a.install_count DESC""",  # nosec B608 -- table/column names are internal constants, not user input
             (*compatible_ils, tenant_id),
         ).fetchall()
 
@@ -294,7 +302,7 @@ def get_sync_status(db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Federation Sync")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Federation Sync")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 

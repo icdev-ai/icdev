@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Cross-artifact consistency analyzer.
 
 Validates internal consistency of spec markdown files: acceptance criteria
@@ -717,7 +717,7 @@ def _format_human(result: dict, fix_suggestions: bool = False) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Cross-Artifact Consistency Analyzer"
+        description="ICDEV™ Cross-Artifact Consistency Analyzer"
     )
     parser.add_argument("--spec-file", type=str, help="Check a single spec markdown file")
     parser.add_argument("--spec-dir", type=str, help="Batch check all .md files in directory (recursive)")

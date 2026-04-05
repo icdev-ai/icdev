@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Database Migration Runner.
+"""ICDEV™ Database Migration Runner.
 
 D150: Lightweight migration framework using stdlib only (no Alembic).
 Tracks schema versions via `schema_migrations` table. Supports .sql and .py
@@ -14,14 +14,13 @@ import hashlib
 import importlib.util
 import json
 import logging
-import os
 import re
 import sqlite3
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -92,9 +91,7 @@ class MigrationRunner:
             return False
         conn = self._get_connection()
         try:
-            c = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
-            )
+            c = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
             return c.fetchone() is not None
         finally:
             conn.close()
@@ -260,9 +257,7 @@ class MigrationRunner:
             # Python migration
             up_py = mdir / "up.py"
             if up_py.exists() and not up_sql.exists():
-                spec = importlib.util.spec_from_file_location(
-                    f"migration_{version}_up", str(up_py)
-                )
+                spec = importlib.util.spec_from_file_location(f"migration_{version}_up", str(up_py))
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
                 if hasattr(mod, "up"):
@@ -272,19 +267,17 @@ class MigrationRunner:
 
             # Record in schema_migrations
             conn.execute(
-                "INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES (?, ?, ?, ?)",
                 (version, name, migration.get("checksum", ""), elapsed_ms),
             )
             conn.commit()
 
-            logger.info(
-                "Migration %s applied in %dms", version, elapsed_ms
-            )
+            logger.info("Migration %s applied in %dms", version, elapsed_ms)
 
             # Audit trail (best-effort)
             try:
                 from tools.audit.audit_logger import log_event
+
                 log_event(
                     event_type="config_changed",
                     actor="icdev-migrate",
@@ -339,9 +332,7 @@ class MigrationRunner:
 
             down_py = mdir / "down.py"
             if down_py.exists() and not down_sql.exists():
-                spec = importlib.util.spec_from_file_location(
-                    f"migration_{version}_down", str(down_py)
-                )
+                spec = importlib.util.spec_from_file_location(f"migration_{version}_down", str(down_py))
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
                 if hasattr(mod, "down"):
@@ -351,8 +342,7 @@ class MigrationRunner:
 
             # Mark as rolled back (append-only — don't delete the row)
             conn.execute(
-                "UPDATE schema_migrations SET rolled_back_at = datetime('now') "
-                "WHERE version = ?",
+                "UPDATE schema_migrations SET rolled_back_at = datetime('now') WHERE version = ?",
                 (version,),
             )
             conn.commit()
@@ -370,9 +360,7 @@ class MigrationRunner:
     # ------------------------------------------------------------------
     # Bulk operations
     # ------------------------------------------------------------------
-    def migrate_up(
-        self, target: Optional[str] = None, dry_run: bool = False
-    ) -> List[Dict]:
+    def migrate_up(self, target: Optional[str] = None, dry_run: bool = False) -> List[Dict]:
         """Apply all pending migrations up to target version."""
         self.ensure_migrations_table()
         pending = self.get_pending_migrations()
@@ -436,19 +424,23 @@ class MigrationRunner:
             version = m["version"]
             discovered = all_discovered.get(version)
             if not discovered:
-                issues.append({
-                    "version": version,
-                    "issue": "migration_files_missing",
-                    "detail": f"Migration {version} was applied but files no longer exist",
-                })
+                issues.append(
+                    {
+                        "version": version,
+                        "issue": "migration_files_missing",
+                        "detail": f"Migration {version} was applied but files no longer exist",
+                    }
+                )
                 continue
 
             if discovered["checksum"] != m["checksum"]:
-                issues.append({
-                    "version": version,
-                    "issue": "checksum_mismatch",
-                    "detail": f"Expected {m['checksum']}, found {discovered['checksum']}",
-                })
+                issues.append(
+                    {
+                        "version": version,
+                        "issue": "checksum_mismatch",
+                        "detail": f"Expected {m['checksum']}, found {discovered['checksum']}",
+                    }
+                )
 
         return issues
 
@@ -512,9 +504,7 @@ class MigrationRunner:
             "database": "icdev",
             "reversible": True,
         }
-        (mdir / "meta.json").write_text(
-            json.dumps(meta, indent=2), encoding="utf-8"
-        )
+        (mdir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
         logger.info("Created migration scaffold: %s", mdir)
         return str(mdir)

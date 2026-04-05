@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Resilience — Structured Exception Hierarchy.
+"""ICDEV™ Resilience — Structured Exception Hierarchy.
 
 D148: Structured error hierarchy for new code. Existing bare exceptions
 are left untouched to avoid mass-refactor risk. New code SHOULD use these
@@ -14,7 +14,7 @@ Usage:
 
 
 class ICDevError(Exception):
-    """Base exception for all ICDEV errors.
+    """Base exception for all ICDEV™ errors.
 
     Attributes:
         service: Name of the service that caused the error (e.g. "bedrock").

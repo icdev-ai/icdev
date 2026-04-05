@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """DoD MOSA (10 U.S.C. section 4401) Assessment Engine.
 
 Assesses projects against MOSA modular open systems approach requirements.
@@ -31,7 +31,9 @@ class MOSAAssessor(BaseAssessor):
     CATALOG_FILENAME = "mosa_framework.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """MOSA-specific automated checks.
 
@@ -64,8 +66,7 @@ class MOSAAssessor(BaseAssessor):
             results["MOSA-INT-1"] = "partially_satisfied"
 
         # Dependency manifests -> MOSA-ARCH-5
-        dep_files = ["requirements.txt", "package.json", "go.mod",
-                      "Cargo.toml", "pyproject.toml"]
+        dep_files = ["requirements.txt", "package.json", "go.mod", "Cargo.toml", "pyproject.toml"]
         if any((pp / f).exists() for f in dep_files) or list(pp.rglob("*.csproj")):
             results["MOSA-ARCH-5"] = "satisfied"
 

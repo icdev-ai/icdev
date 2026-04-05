@@ -3,10 +3,10 @@
 """PDP/PEP Configuration Generator — Policy Decision Point and Policy Enforcement Point configs for ZTA.
 
 Generates PEP configurations (Istio AuthorizationPolicy, Linkerd ServerAuthorization) that point
-to external Policy Decision Points. ICDEV does NOT implement PDP logic itself.
+to external Policy Decision Points. ICDEV™ does NOT implement PDP logic itself.
 
 ADR D124: PDP modeled as external reference (Zscaler, Palo Alto, DISA ICAM, CrowdStrike) —
-ICDEV generates PEP configs (Istio AuthorizationPolicy) but does NOT implement PDP itself.
+ICDEV™ generates PEP configs (Istio AuthorizationPolicy) but does NOT implement PDP itself.
 
 Usage:
     python tools/devsecops/pdp_config_generator.py --project-id "proj-123" --pdp-type disa_icam --json
@@ -151,18 +151,18 @@ def _find_pdp_reference(config: dict, pdp_type: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# PDP reference generation (D124: ICDEV documents but does NOT implement PDP)
+# PDP reference generation (D124: ICDEV™ documents but does NOT implement PDP)
 # ---------------------------------------------------------------------------
 
 def generate_pdp_reference(project_id: str, pdp_type: str) -> dict:
     """Document external PDP integration point for a project.
 
-    ICDEV does not implement PDP logic. This function generates documentation
+    ICDEV™ does not implement PDP logic. This function generates documentation
     and integration configuration describing how the project's PEP will connect
     to the specified external PDP. The customer is responsible for deploying
     and operating the PDP.
 
-    ADR D124: PDP is an external reference. ICDEV generates PEP configs only.
+    ADR D124: PDP is an external reference. ICDEV™ generates PEP configs only.
 
     Args:
         project_id: Project identifier.
@@ -207,7 +207,7 @@ def generate_pdp_reference(project_id: str, pdp_type: str) -> dict:
         "integration_config": integration_config,
         "documentation": documentation,
         "deployment_notes": deployment_notes,
-        "adr_reference": "ADR D124: PDP is external — ICDEV generates PEP configs only",
+        "adr_reference": "ADR D124: PDP is external — ICDEV™ generates PEP configs only",
         "generated_at": now,
         "status": "reference_documented",
     }
@@ -360,7 +360,7 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
     docs = {
         "disa_icam": {
             "summary": "DISA ICAM (Identity, Credential, and Access Management) provides DoD-wide identity services. "
-                       "ICDEV generates Istio/Linkerd PEP configurations that delegate authorization decisions "
+                       "ICDEV™ generates Istio/Linkerd PEP configurations that delegate authorization decisions "
                        "to the DISA ICAM ext_authz gRPC service. The DISA ICAM service evaluates OIDC tokens "
                        "and CAC/PIV certificates to grant or deny access.",
             "customer_responsibilities": [
@@ -383,7 +383,7 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "zscaler": {
             "summary": "Zscaler Private Access (ZPA) provides Zero Trust Network Access. "
-                       "ICDEV generates K8s Connector DaemonSet manifests and PEP network policies "
+                       "ICDEV™ generates K8s Connector DaemonSet manifests and PEP network policies "
                        "that route traffic through Zscaler's cloud enforcement points. "
                        "Policy decisions occur in the Zscaler cloud — not within the cluster.",
             "customer_responsibilities": [
@@ -407,7 +407,7 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         "palo_alto_prisma": {
             "summary": "Palo Alto Prisma Access combines ZTNA and cloud-delivered NGFW. "
                        "Prisma Cloud Defender provides runtime container security. "
-                       "ICDEV generates Defender DaemonSet manifests and PEP policies. "
+                       "ICDEV™ generates Defender DaemonSet manifests and PEP policies. "
                        "Policy enforcement occurs in Prisma Access cloud.",
             "customer_responsibilities": [
                 "Provision Palo Alto Prisma Access tenant",
@@ -429,7 +429,7 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "crowdstrike": {
             "summary": "CrowdStrike Falcon provides device trust and endpoint detection. "
-                       "ICDEV generates Falcon Sensor DaemonSet manifests and device posture "
+                       "ICDEV™ generates Falcon Sensor DaemonSet manifests and device posture "
                        "check configurations. The Falcon API is called at admission time to "
                        "verify device ZTA score before granting access.",
             "customer_responsibilities": [
@@ -452,9 +452,9 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
         },
         "microsoft_entra": {
             "summary": "Microsoft Entra ID (formerly Azure AD) provides cloud identity and conditional access. "
-                       "ICDEV generates Istio/Linkerd PEP configurations that validate Entra ID JWT tokens "
+                       "ICDEV™ generates Istio/Linkerd PEP configurations that validate Entra ID JWT tokens "
                        "and enforce conditional access policies. Phishing-resistant MFA and device compliance "
-                       "checks are enforced through Entra conditional access — not by ICDEV.",
+                       "checks are enforced through Entra conditional access — not by ICDEV™.",
             "customer_responsibilities": [
                 "Register application in Microsoft Entra ID tenant",
                 "Configure conditional access policies (MFA, device compliance, risk-based)",
@@ -474,7 +474,7 @@ def _build_pdp_documentation(pdp_type: str, ref: dict, project: dict) -> dict:
             ],
         },
         "custom": {
-            "summary": "Customer-provided PDP integration. ICDEV generates PEP configurations "
+            "summary": "Customer-provided PDP integration. ICDEV™ generates PEP configurations "
                        "with placeholder endpoints that the customer must update. The PDP must "
                        "implement the Envoy ext_authz v3 gRPC API to integrate with Istio/Linkerd.",
             "customer_responsibilities": [
@@ -574,7 +574,7 @@ def generate_pep_config(project_id: str, mesh: str = "istio", pdp_type: str = "d
     For Istio: generates AuthorizationPolicy YAML pointing to external authz provider.
     For Linkerd: generates ServerAuthorization with external policy reference.
 
-    The PEP enforces decisions made by the external PDP — ICDEV does not implement
+    The PEP enforces decisions made by the external PDP — ICDEV™ does not implement
     the PDP itself (ADR D124).
 
     Args:
@@ -614,7 +614,7 @@ def generate_pep_config(project_id: str, mesh: str = "istio", pdp_type: str = "d
     result["mesh"] = mesh
     result["pdp_type"] = pdp_type
     result["generated_at"] = now
-    result["adr_reference"] = "ADR D124: PEP generated by ICDEV; PDP is external"
+    result["adr_reference"] = "ADR D124: PEP generated by ICDEV™; PDP is external"
 
     return result
 
@@ -895,7 +895,7 @@ def generate_device_trust_config(project_id: str, mdm_type: str = "crowdstrike")
     """Generate device posture checking integration config.
 
     Documents how device trust is enforced via an external MDM/EDR solution.
-    ICDEV generates the K8s manifests and configuration references — the
+    ICDEV™ generates the K8s manifests and configuration references — the
     actual device posture decisions are made by the external MDM/EDR service.
 
     Args:
@@ -935,10 +935,10 @@ def generate_device_trust_config(project_id: str, mdm_type: str = "crowdstrike")
         "posture_policy": posture_policy,
         "enforcement_model": (
             "Device posture decisions are made by the external MDM/EDR. "
-            "ICDEV generates K8s admission webhook configs and PEP policies "
+            "ICDEV™ generates K8s admission webhook configs and PEP policies "
             "that query the MDM API at admission time."
         ),
-        "adr_reference": "ADR D124: device trust PDP is external — ICDEV generates PEP integration configs",
+        "adr_reference": "ADR D124: device trust PDP is external — ICDEV™ generates PEP integration configs",
         "generated_at": now,
     }
 
@@ -1249,7 +1249,7 @@ def main():
                     print(f"  Policy:   {policy}")
                 for note in pep.get("integration_notes", [])[:3]:
                     print(f"  Note:     {note}")
-            print("ADR:        ADR D124 — PDP is external; ICDEV generates PEP configs only")
+            print("ADR:        ADR D124 — PDP is external; ICDEV™ generates PEP configs only")
 
 
 if __name__ == "__main__":

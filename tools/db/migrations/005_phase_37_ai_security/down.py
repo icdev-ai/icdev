@@ -8,9 +8,13 @@ import sqlite3
 def down(conn: sqlite3.Connection):
     """Remove Phase 37 AI Security tables."""
     tables = [
-        "prompt_injection_log", "ai_telemetry", "ai_bom",
-        "atlas_assessments", "atlas_red_team_results",
-        "owasp_llm_assessments", "nist_ai_rmf_assessments",
+        "prompt_injection_log",
+        "ai_telemetry",
+        "ai_bom",
+        "atlas_assessments",
+        "atlas_red_team_results",
+        "owasp_llm_assessments",
+        "nist_ai_rmf_assessments",
         "iso42001_assessments",
     ]
     for table in tables:

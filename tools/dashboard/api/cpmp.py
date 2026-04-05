@@ -12,21 +12,21 @@ Integration points:
     cpars_predictor.py       → Deterministic weighted CPARS scoring
     subcontractor_tracker.py → FAR 52.219-9, ISR/SSR
     negative_event_tracker.py → NDAA event-based tracking
-    cdrl_generator.py        → CDRL auto-generation via ICDEV tools
+    cdrl_generator.py        → CDRL auto-generation via ICDEV™ tools
     sam_contract_sync.py     → SAM.gov Contract Awards API
 """
 
-import json
 import os
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, g, jsonify, request
 
 from tools.dashboard.auth import require_role
+from tools.common.helpers import now_isoformat
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -38,15 +38,10 @@ cpmp_api = Blueprint("cpmp_api", __name__, url_prefix="/api/cpmp")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
-
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _uuid():
@@ -56,12 +51,16 @@ def _uuid():
 def _audit(conn, action, details="", actor="cpmp_api"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), _now(), "cpmp.api", actor, action, details, "cpmp"),
+            (_uuid(), now_isoformat(), "cpmp.api", actor, action, details, "cpmp"),
         )
     except Exception:
         pass
+
+
+def _classification():
+    return DEFAULT_CLASSIFICATION
 
 
 def _cor_access_log(conn, user_id, contract_id, action):
@@ -69,7 +68,7 @@ def _cor_access_log(conn, user_id, contract_id, action):
         conn.execute(
             "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (_uuid(), user_id, contract_id, action, _now(), "CUI // SP-CTI"),
+            (_uuid(), user_id, contract_id, action, now_isoformat(), _classification()),
         )
     except Exception:
         pass
@@ -79,13 +78,15 @@ def _cor_access_log(conn, user_id, contract_id, action):
 # Phase A — Contracts CRUD
 # =====================================================================
 
+
 @cpmp_api.route("/contracts", methods=["GET"])
 def list_contracts():
     """GET /api/cpmp/contracts — List contracts with optional filters."""
     try:
         from tools.govcon.contract_manager import list_contracts as _list
+
         status = request.args.get("status")
-        agency = request.args.get("agency")
+        request.args.get("agency")
         limit = int(request.args.get("limit", 50))
         result = _list(status=status, limit=limit)
         return jsonify(result)
@@ -98,6 +99,7 @@ def create_contract():
     """POST /api/cpmp/contracts — Create a new contract."""
     try:
         from tools.govcon.contract_manager import create_contract as _create
+
         data = request.get_json(silent=True) or {}
         result = _create(data)
         return jsonify(result), 201 if result.get("status") == "ok" else 400
@@ -110,6 +112,7 @@ def get_contract(contract_id):
     """GET /api/cpmp/contracts/<id> — Get contract details."""
     try:
         from tools.govcon.contract_manager import get_contract as _get
+
         result = _get(contract_id)
         if result.get("status") == "error":
             return jsonify(result), 404
@@ -123,6 +126,7 @@ def update_contract(contract_id):
     """PUT /api/cpmp/contracts/<id> — Update contract fields."""
     try:
         from tools.govcon.contract_manager import update_contract as _update
+
         data = request.get_json(silent=True) or {}
         result = _update(contract_id, data)
         if result.get("status") == "error":
@@ -137,6 +141,7 @@ def transition_contract(contract_id):
     """PUT /api/cpmp/contracts/<id>/status — Transition contract status."""
     try:
         from tools.govcon.contract_manager import transition_contract as _transition
+
         data = request.get_json(silent=True) or {}
         new_status = data.get("status")
         changed_by = data.get("changed_by")
@@ -155,11 +160,13 @@ def transition_contract(contract_id):
 # Phase A — CLINs
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/clins", methods=["GET"])
 def list_clins(contract_id):
     """GET /api/cpmp/contracts/<id>/clins — List CLINs for a contract."""
     try:
         from tools.govcon.contract_manager import list_clins as _list
+
         result = _list(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -171,6 +178,7 @@ def create_clin(contract_id):
     """POST /api/cpmp/contracts/<id>/clins — Create a CLIN."""
     try:
         from tools.govcon.contract_manager import create_clin as _create
+
         data = request.get_json(silent=True) or {}
         result = _create(contract_id, data)
         return jsonify(result), 201 if result.get("status") == "ok" else 400
@@ -183,6 +191,7 @@ def update_clin(clin_id):
     """PUT /api/cpmp/clins/<id> — Update a CLIN."""
     try:
         from tools.govcon.contract_manager import update_clin as _update
+
         data = request.get_json(silent=True) or {}
         result = _update(clin_id, data)
         if result.get("status") == "error":
@@ -196,11 +205,13 @@ def update_clin(clin_id):
 # Phase A — WBS
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/wbs", methods=["GET"])
 def list_wbs(contract_id):
     """GET /api/cpmp/contracts/<id>/wbs — List WBS elements (flat or tree)."""
     try:
         from tools.govcon.contract_manager import list_wbs as _list, build_wbs_tree as _tree
+
         tree = request.args.get("tree", "").lower() == "true"
         if tree:
             result = _tree(contract_id)
@@ -216,6 +227,7 @@ def create_wbs(contract_id):
     """POST /api/cpmp/contracts/<id>/wbs — Create a WBS element."""
     try:
         from tools.govcon.contract_manager import create_wbs as _create
+
         data = request.get_json(silent=True) or {}
         result = _create(contract_id, data)
         return jsonify(result), 201 if result.get("status") == "ok" else 400
@@ -228,6 +240,7 @@ def update_wbs(wbs_id):
     """PUT /api/cpmp/wbs/<id> — Update a WBS element."""
     try:
         from tools.govcon.contract_manager import update_wbs as _update
+
         data = request.get_json(silent=True) or {}
         result = _update(wbs_id, data)
         if result.get("status") == "error":
@@ -241,11 +254,13 @@ def update_wbs(wbs_id):
 # Phase A — Deliverables
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/deliverables", methods=["GET"])
 def list_deliverables(contract_id):
     """GET /api/cpmp/contracts/<id>/deliverables — List deliverables."""
     try:
         from tools.govcon.contract_manager import list_deliverables as _list
+
         status = request.args.get("status")
         result = _list(contract_id, status=status)
         return jsonify(result)
@@ -258,6 +273,7 @@ def create_deliverable(contract_id):
     """POST /api/cpmp/contracts/<id>/deliverables — Create a deliverable."""
     try:
         from tools.govcon.contract_manager import create_deliverable as _create
+
         data = request.get_json(silent=True) or {}
         result = _create(contract_id, data)
         return jsonify(result), 201 if result.get("status") == "ok" else 400
@@ -270,6 +286,7 @@ def get_deliverable(deliverable_id):
     """GET /api/cpmp/deliverables/<id> — Get deliverable with generations/history."""
     try:
         from tools.govcon.contract_manager import get_deliverable as _get
+
         result = _get(deliverable_id)
         if result.get("status") == "error":
             return jsonify(result), 404
@@ -283,6 +300,7 @@ def update_deliverable(deliverable_id):
     """PUT /api/cpmp/deliverables/<id> — Update deliverable fields."""
     try:
         from tools.govcon.contract_manager import update_deliverable as _update
+
         data = request.get_json(silent=True) or {}
         result = _update(deliverable_id, data)
         if result.get("status") == "error":
@@ -297,6 +315,7 @@ def transition_deliverable(deliverable_id):
     """PUT /api/cpmp/deliverables/<id>/status — Transition deliverable status."""
     try:
         from tools.govcon.contract_manager import transition_deliverable as _transition
+
         data = request.get_json(silent=True) or {}
         new_status = data.get("status")
         changed_by = data.get("changed_by")
@@ -315,11 +334,13 @@ def transition_deliverable(deliverable_id):
 # Phase A — Portfolio + Transition
 # =====================================================================
 
+
 @cpmp_api.route("/portfolio", methods=["GET"])
 def get_portfolio():
     """GET /api/cpmp/portfolio — Portfolio dashboard summary."""
     try:
         from tools.govcon.portfolio_manager import get_portfolio_summary
+
         result = get_portfolio_summary()
         return jsonify(result)
     except Exception as e:
@@ -331,6 +352,7 @@ def transition_from_opportunity(opp_id):
     """POST /api/cpmp/from-opportunity/<opp_id> — Create contract from won proposal."""
     try:
         from tools.govcon.portfolio_manager import transition_from_opportunity
+
         data = request.get_json(silent=True) or {}
         result = transition_from_opportunity(opp_id, created_by=data.get("created_by"))
         if result.get("status") == "error":
@@ -344,11 +366,13 @@ def transition_from_opportunity(opp_id):
 # Phase B — EVM
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/evm", methods=["GET"])
 def get_evm(contract_id):
     """GET /api/cpmp/contracts/<id>/evm — Aggregated contract-level EVM."""
     try:
         from tools.govcon.evm_engine import aggregate_contract_evm
+
         result = aggregate_contract_evm(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -360,6 +384,7 @@ def record_evm_period(contract_id):
     """POST /api/cpmp/contracts/<id>/evm — Record an EVM period snapshot."""
     try:
         from tools.govcon.evm_engine import record_period
+
         data = request.get_json(silent=True) or {}
         wbs_id = data.get("wbs_id")
         period_date = data.get("period_date")
@@ -382,6 +407,7 @@ def evm_forecast(contract_id):
     """GET /api/cpmp/contracts/<id>/evm/forecast — Monte Carlo EAC forecast."""
     try:
         from tools.govcon.evm_engine import forecast_monte_carlo
+
         iterations = int(request.args.get("iterations", 10000))
         result = forecast_monte_carlo(contract_id, iterations)
         return jsonify(result)
@@ -394,6 +420,7 @@ def evm_scurve(contract_id):
     """GET /api/cpmp/contracts/<id>/evm/scurve — S-curve chart data."""
     try:
         from tools.govcon.evm_engine import generate_scurve_data
+
         result = generate_scurve_data(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -405,6 +432,7 @@ def evm_ipmdar(contract_id):
     """GET /api/cpmp/contracts/<id>/evm/ipmdar — IPMDAR-compatible data."""
     try:
         from tools.govcon.evm_engine import generate_ipmdar_data
+
         result = generate_ipmdar_data(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -416,6 +444,7 @@ def evm_periods(contract_id):
     """GET /api/cpmp/contracts/<id>/evm/periods — List EVM period records."""
     try:
         from tools.govcon.evm_engine import get_evm_periods
+
         wbs_id = request.args.get("wbs_id")
         result = get_evm_periods(contract_id, wbs_id)
         return jsonify(result)
@@ -427,11 +456,13 @@ def evm_periods(contract_id):
 # Phase B — Subcontractors
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/subcontractors", methods=["GET"])
 def list_subcontractors(contract_id):
     """GET /api/cpmp/contracts/<id>/subcontractors — List subcontractors."""
     try:
         from tools.govcon.subcontractor_tracker import list_subcontractors as _list
+
         business_size = request.args.get("business_size")
         result = _list(contract_id, business_size=business_size)
         return jsonify(result)
@@ -444,6 +475,7 @@ def create_subcontractor(contract_id):
     """POST /api/cpmp/contracts/<id>/subcontractors — Add a subcontractor."""
     try:
         from tools.govcon.subcontractor_tracker import create_subcontractor as _create
+
         data = request.get_json(silent=True) or {}
         result = _create(contract_id, data)
         return jsonify(result), 201 if result.get("status") == "ok" else 400
@@ -456,6 +488,7 @@ def update_subcontractor(sub_id):
     """PUT /api/cpmp/subcontractors/<id> — Update subcontractor."""
     try:
         from tools.govcon.subcontractor_tracker import update_subcontractor as _update
+
         data = request.get_json(silent=True) or {}
         result = _update(sub_id, data)
         if result.get("status") == "error":
@@ -470,6 +503,7 @@ def subcontractor_noncompliance(contract_id):
     """GET /api/cpmp/contracts/<id>/subcontractors/noncompliance — Detect noncompliance."""
     try:
         from tools.govcon.subcontractor_tracker import detect_noncompliance
+
         result = detect_noncompliance(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -481,6 +515,7 @@ def sb_compliance(contract_id):
     """GET /api/cpmp/contracts/<id>/sb-compliance — Small business compliance."""
     try:
         from tools.govcon.subcontractor_tracker import compute_sb_compliance
+
         result = compute_sb_compliance(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -491,11 +526,13 @@ def sb_compliance(contract_id):
 # Phase B — Small Business Plans (ISR/SSR)
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/small-business", methods=["GET"])
 def list_sb_reports(contract_id):
     """GET /api/cpmp/contracts/<id>/small-business — List ISR/SSR reports."""
     try:
         from tools.govcon.subcontractor_tracker import list_sb_reports as _list
+
         result = _list(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -507,6 +544,7 @@ def create_sb_report(contract_id):
     """POST /api/cpmp/contracts/<id>/small-business — Create ISR/SSR report."""
     try:
         from tools.govcon.subcontractor_tracker import create_sb_report as _create
+
         data = request.get_json(silent=True) or {}
         period = data.get("period")
         report_type = data.get("type", "isr")
@@ -522,11 +560,13 @@ def create_sb_report(contract_id):
 # Phase B — CPARS
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/cpars", methods=["GET"])
 def list_cpars(contract_id):
     """GET /api/cpmp/contracts/<id>/cpars — List CPARS assessments."""
     try:
         from tools.govcon.cpars_predictor import list_assessments as _list
+
         result = _list(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -538,6 +578,7 @@ def create_cpars(contract_id):
     """POST /api/cpmp/contracts/<id>/cpars — Create CPARS assessment."""
     try:
         from tools.govcon.cpars_predictor import create_assessment as _create
+
         data = request.get_json(silent=True) or {}
         period_start = data.get("period_start")
         period_end = data.get("period_end")
@@ -554,6 +595,7 @@ def update_cpars(assessment_id):
     """PUT /api/cpmp/cpars/<id> — Update CPARS assessment."""
     try:
         from tools.govcon.cpars_predictor import update_assessment as _update
+
         data = request.get_json(silent=True) or {}
         result = _update(assessment_id, data)
         if result.get("status") == "error":
@@ -568,6 +610,7 @@ def predict_cpars(contract_id):
     """GET /api/cpmp/contracts/<id>/cpars/predict — Predictive CPARS score."""
     try:
         from tools.govcon.cpars_predictor import predict_cpars as _predict
+
         result = _predict(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -579,6 +622,7 @@ def cpars_trend(contract_id):
     """GET /api/cpmp/contracts/<id>/cpars/trend — CPARS score trend."""
     try:
         from tools.govcon.cpars_predictor import get_cpars_trend as _trend
+
         result = _trend(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -589,11 +633,13 @@ def cpars_trend(contract_id):
 # Phase B — Negative Events
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/negative-events", methods=["GET"])
 def list_negative_events(contract_id):
     """GET /api/cpmp/contracts/<id>/negative-events — List negative events."""
     try:
         from tools.govcon.negative_event_tracker import list_events as _list
+
         severity = request.args.get("severity")
         status = request.args.get("status")
         result = _list(contract_id, severity=severity, status=status)
@@ -607,6 +653,7 @@ def record_negative_event(contract_id):
     """POST /api/cpmp/contracts/<id>/negative-events — Record a negative event."""
     try:
         from tools.govcon.negative_event_tracker import record_event as _record
+
         data = request.get_json(silent=True) or {}
         data["contract_id"] = contract_id
         result = _record(contract_id, data)
@@ -620,6 +667,7 @@ def update_negative_event(event_id):
     """PUT /api/cpmp/negative-events/<id> — Update corrective action status."""
     try:
         from tools.govcon.negative_event_tracker import update_corrective_action as _update
+
         data = request.get_json(silent=True) or {}
         ca_status = data.get("corrective_action_status")
         if not ca_status:
@@ -637,6 +685,7 @@ def auto_detect_events(contract_id):
     """POST /api/cpmp/contracts/<id>/negative-events/auto-detect — Run auto-detection."""
     try:
         from tools.govcon.negative_event_tracker import auto_detect_all as _detect
+
         result = _detect(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -648,6 +697,7 @@ def ndaa_thresholds(contract_id):
     """GET /api/cpmp/contracts/<id>/negative-events/ndaa-thresholds — Check NDAA thresholds."""
     try:
         from tools.govcon.negative_event_tracker import check_ndaa_thresholds
+
         result = check_ndaa_thresholds(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -658,11 +708,13 @@ def ndaa_thresholds(contract_id):
 # Phase B — Health
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/health", methods=["GET"])
 def contract_health(contract_id):
     """GET /api/cpmp/contracts/<id>/health — Compute contract health score."""
     try:
         from tools.govcon.portfolio_manager import compute_contract_health
+
         result = compute_contract_health(contract_id)
         return jsonify(result)
     except Exception as e:
@@ -673,11 +725,13 @@ def contract_health(contract_id):
 # Phase C — CDRL Generation
 # =====================================================================
 
+
 @cpmp_api.route("/contracts/<contract_id>/generate-cdrl/<deliverable_id>", methods=["POST"])
 def generate_cdrl(contract_id, deliverable_id):
     """POST /api/cpmp/contracts/<id>/generate-cdrl/<did> — Generate CDRL."""
     try:
         from tools.govcon.cdrl_generator import generate_cdrl as _generate
+
         data = request.get_json(silent=True) or {}
         project_id = data.get("project_id")
         result = _generate(deliverable_id, project_id)
@@ -691,6 +745,7 @@ def generate_due_cdrls(contract_id):
     """POST /api/cpmp/contracts/<id>/generate-due — Generate all due CDRLs."""
     try:
         from tools.govcon.cdrl_generator import generate_all_due as _generate
+
         data = request.get_json(silent=True) or {}
         days_ahead = data.get("days_ahead")
         result = _generate(contract_id, days_ahead)
@@ -704,6 +759,7 @@ def list_cdrl_generations():
     """GET /api/cpmp/cdrl-generations — List CDRL generation records."""
     try:
         from tools.govcon.cdrl_generator import list_generations as _list
+
         contract_id = request.args.get("contract_id")
         deliverable_id = request.args.get("deliverable_id")
         status = request.args.get("status")
@@ -717,11 +773,13 @@ def list_cdrl_generations():
 # Phase C — SAM.gov Contract Awards
 # =====================================================================
 
+
 @cpmp_api.route("/sam/sync-awards", methods=["POST"])
 def sync_sam_awards():
     """POST /api/cpmp/sam/sync-awards — Sync awards from SAM.gov."""
     try:
         from tools.govcon.sam_contract_sync import sync_awards
+
         data = request.get_json(silent=True) or {}
         lookback_days = data.get("lookback_days")
         result = sync_awards(lookback_days)
@@ -735,6 +793,7 @@ def list_sam_awards():
     """GET /api/cpmp/sam/awards — List cached SAM.gov awards."""
     try:
         from tools.govcon.sam_contract_sync import list_awards
+
         linked_only = request.args.get("linked_only", "").lower() == "true"
         limit = int(request.args.get("limit", 50))
         result = list_awards(linked_only, limit)
@@ -748,6 +807,7 @@ def search_sam_awards():
     """GET /api/cpmp/sam/awards/search?q=keyword — Search awards."""
     try:
         from tools.govcon.sam_contract_sync import search_awards
+
         query = request.args.get("q", "")
         if not query:
             return jsonify({"status": "error", "message": "q parameter required"}), 400
@@ -762,6 +822,7 @@ def link_sam_award(sam_award_id):
     """POST /api/cpmp/sam/link/<sam_award_id> — Link SAM award to contract."""
     try:
         from tools.govcon.sam_contract_sync import link_award_to_contract
+
         data = request.get_json(silent=True) or {}
         contract_id = data.get("contract_id")
         if not contract_id:
@@ -778,6 +839,7 @@ def link_sam_award(sam_award_id):
 # Phase C — COR Portal (Read-Only)
 # =====================================================================
 
+
 def _get_cor_contracts(cor_email):
     """Get contracts where the COR email matches."""
     conn = _get_db()
@@ -791,8 +853,12 @@ def _get_cor_contracts(cor_email):
 
 # Hidden fields for COR view (from config)
 COR_HIDDEN_FIELDS = {
-    "subcontractor_pricing", "internal_cost_details", "internal_notes",
-    "corrective_action_details", "billed_value", "ac_cumulative",
+    "subcontractor_pricing",
+    "internal_cost_details",
+    "internal_notes",
+    "corrective_action_details",
+    "billed_value",
+    "ac_cumulative",
 }
 
 
@@ -836,6 +902,7 @@ def cor_get_contract(contract_id):
         if not any(c.get("id") == contract_id for c in cor_contracts):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.contract_manager import get_contract as _get
+
         result = _get(contract_id)
         if result.get("status") == "error":
             return jsonify(result), 404
@@ -860,6 +927,7 @@ def cor_list_deliverables(contract_id):
         if not any(c.get("id") == contract_id for c in cor_contracts):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.contract_manager import list_deliverables as _list
+
         result = _list(contract_id)
         conn = _get_db()
         _cor_access_log(conn, cor_email, contract_id, "view_deliverables")
@@ -882,6 +950,7 @@ def cor_get_evm(contract_id):
         if not any(c.get("id") == contract_id for c in cor_contracts):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.evm_engine import aggregate_contract_evm
+
         result = aggregate_contract_evm(contract_id)
         conn = _get_db()
         _cor_access_log(conn, cor_email, contract_id, "view_evm")
@@ -904,6 +973,7 @@ def cor_get_cpars(contract_id):
         if not any(c.get("id") == contract_id for c in cor_contracts):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.cpars_predictor import list_assessments as _list
+
         result = _list(contract_id)
         conn = _get_db()
         _cor_access_log(conn, cor_email, contract_id, "view_cpars")

@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV DevSecOps & Zero Trust",
+  "name": "ICDEV™ DevSecOps & Zero Trust",
   "description": "DevSecOps pipeline security, Zero Trust Architecture (NIST SP 800-207), policy-as-code, secrets lifecycle, ZTA maturity scoring, service mesh configuration.",
   "url": "https://localhost:8457",
   "version": "1.0.0",

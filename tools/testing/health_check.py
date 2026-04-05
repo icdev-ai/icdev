@@ -1,15 +1,15 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV System Health Check
+# ICDEV™ System Health Check
 # Adapted from ADW health_check.py for Gov/DoD environment validation
 
 """
-ICDEV Health Check — validates the entire ICDEV system is operational.
+ICDEV™ Health Check — validates the entire ICDEV™ system is operational.
 
 Usage:
     python tools/testing/health_check.py [--json] [--project-id <id>]
 
 Checks performed:
-1. Environment variables (ICDEV, AWS, optional keys)
+1. Environment variables (ICDEV™, AWS, optional keys)
 2. Database connectivity (icdev.db — 28 tables)
 3. Python dependencies (stdlib + optional packages)
 4. Tool availability (audit, compliance, security, builder, etc.)
@@ -24,11 +24,11 @@ import argparse
 import importlib
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from tools.db.storage import get_connection
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -57,7 +57,7 @@ except ImportError:
 def check_env_vars() -> CheckResult:
     """Check required and optional environment variables."""
     required_vars = {
-        "ICDEV_DB_PATH": "Path to ICDEV database (default: data/icdev.db)",
+        "ICDEV_DB_PATH": "Path to ICDEV™ database (default: data/icdev.db)",
     }
 
     optional_vars = {
@@ -99,7 +99,7 @@ def check_env_vars() -> CheckResult:
 
 
 def check_database() -> CheckResult:
-    """Check ICDEV database connectivity and table structure."""
+    """Check ICDEV™ database connectivity and table structure."""
     db_path = os.getenv("ICDEV_DB_PATH", str(PROJECT_ROOT / "data" / "icdev.db"))
 
     if not Path(db_path).exists():
@@ -109,7 +109,7 @@ def check_database() -> CheckResult:
         )
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_connection()
         cursor = conn.cursor()
 
         # Get all tables
@@ -117,11 +117,25 @@ def check_database() -> CheckResult:
         tables = [row[0] for row in cursor.fetchall()]
 
         expected_tables = [
-            "a2a_task_artifacts", "a2a_task_history", "a2a_tasks", "agents",
-            "alerts", "audit_trail", "code_reviews", "compliance_controls",
-            "deployments", "failure_log", "knowledge_patterns", "metric_snapshots",
-            "poam_items", "project_controls", "projects", "sbom_records",
-            "self_healing_events", "ssp_documents", "stig_findings",
+            "a2a_task_artifacts",
+            "a2a_task_history",
+            "a2a_tasks",
+            "agents",
+            "alerts",
+            "audit_trail",
+            "code_reviews",
+            "compliance_controls",
+            "deployments",
+            "failure_log",
+            "knowledge_patterns",
+            "metric_snapshots",
+            "poam_items",
+            "project_controls",
+            "projects",
+            "sbom_records",
+            "self_healing_events",
+            "ssp_documents",
+            "stig_findings",
         ]
 
         missing_tables = [t for t in expected_tables if t not in tables]
@@ -190,7 +204,7 @@ def check_python_deps() -> CheckResult:
 
 
 def check_tools() -> CheckResult:
-    """Check that core ICDEV tool modules are importable."""
+    """Check that core ICDEV™ tool modules are importable."""
     tool_modules = {
         "tools.db.init_icdev_db": "Database initialization",
         "tools.audit.audit_logger": "Audit trail",
@@ -270,8 +284,7 @@ def check_git_repo() -> CheckResult:
     """Check git repository configuration."""
     try:
         result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT)
+            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=str(PROJECT_ROOT)
         )
 
         if result.returncode != 0:
@@ -305,9 +318,7 @@ def check_claude_code() -> CheckResult:
     claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
 
     try:
-        result = subprocess.run(
-            [claude_path, "--version"], capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run([claude_path, "--version"], capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
             return CheckResult(
                 success=False,
@@ -333,11 +344,14 @@ def check_claude_code() -> CheckResult:
 def check_playwright() -> CheckResult:
     """Check if Playwright is installed and browsers are available."""
     from tools.compat.platform_utils import get_npx_cmd
+
     npx = get_npx_cmd()
     try:
         result = subprocess.run(
             [npx, "playwright", "--version"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
             cwd=str(PROJECT_ROOT),
         )
         if result.returncode != 0:
@@ -350,7 +364,11 @@ def check_playwright() -> CheckResult:
         version = result.stdout.strip()
 
         # Check for native test files
-        native_tests = list((PROJECT_ROOT / "tests" / "e2e").glob("*.spec.ts")) if (PROJECT_ROOT / "tests" / "e2e").exists() else []
+        native_tests = (
+            list((PROJECT_ROOT / "tests" / "e2e").glob("*.spec.ts"))
+            if (PROJECT_ROOT / "tests" / "e2e").exists()
+            else []
+        )
 
         return CheckResult(
             success=True,
@@ -420,7 +438,7 @@ def run_health_check() -> HealthCheckResult:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV System Health Check")
+    parser = argparse.ArgumentParser(description="ICDEV™ System Health Check")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--project-id", help="Optional project ID for scoped checks")
     args = parser.parse_args()
@@ -458,7 +476,12 @@ def main():
             print(f"\n  [{status_str}] {check_name.replace('_', ' ').title()}")
 
             for key, value in check_result.details.items():
-                if value is not None and key not in ["missing_required", "missing_optional", "unavailable", "invalid_servers"]:
+                if value is not None and key not in [
+                    "missing_required",
+                    "missing_optional",
+                    "unavailable",
+                    "invalid_servers",
+                ]:
                     print(f"       {key}: {value}")
 
             if check_result.error:

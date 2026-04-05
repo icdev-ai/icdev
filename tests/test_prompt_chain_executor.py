@@ -47,6 +47,7 @@ from icdev.tools.agent.prompt_chain_executor import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def db_path(tmp_path):
     """Create a temp DB with the prompt_chain_executions table."""
@@ -97,7 +98,8 @@ def db_path(tmp_path):
 def sample_chains_yaml(tmp_path):
     """Create a temporary prompt_chains.yaml for testing."""
     config = tmp_path / "prompt_chains.yaml"
-    config.write_text("""
+    config.write_text(
+        """
 prompt_chains:
   simple_chain:
     description: "A simple two-step chain"
@@ -147,7 +149,9 @@ defaults:
   model_effort: high
   record_chain: true
   audit_trail: true
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     return config
 
 
@@ -155,7 +159,8 @@ defaults:
 def invalid_chains_yaml(tmp_path):
     """Create an invalid prompt_chains.yaml for testing validation."""
     config = tmp_path / "invalid_chains.yaml"
-    config.write_text("""
+    config.write_text(
+        """
 prompt_chains:
   bad_agent_chain:
     description: "Chain with invalid agent"
@@ -194,7 +199,9 @@ prompt_chains:
       - step_id: blank
         agent: builder
         prompt: "   "
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     return config
 
 
@@ -207,20 +214,22 @@ def executor(db_path, sample_chains_yaml):
 @pytest.fixture
 def mock_llm_response():
     """Create a factory for mock LLMResponse objects."""
-    def _make(content="Mock LLM output", model_id="test-model",
-              input_tokens=100, output_tokens=50):
+
+    def _make(content="Mock LLM output", model_id="test-model", input_tokens=100, output_tokens=50):
         response = MagicMock()
         response.content = content
         response.model_id = model_id
         response.input_tokens = input_tokens
         response.output_tokens = output_tokens
         return response
+
     return _make
 
 
 # ============================================================
 # Test: YAML Loading
 # ============================================================
+
 
 class TestYAMLLoading:
     """Test loading chain definitions from YAML."""
@@ -276,6 +285,7 @@ class TestYAMLLoading:
 # ============================================================
 # Test: Chain Validation
 # ============================================================
+
 
 class TestChainValidation:
     """Test chain structure validation."""
@@ -338,27 +348,26 @@ class TestChainValidation:
 # Test: Variable Substitution
 # ============================================================
 
+
 class TestVariableSubstitution:
     """Test $INPUT, $ORIGINAL, and $STEP{x} variable replacement."""
 
     def test_input_substitution(self):
         """$INPUT is replaced with current input."""
-        result = substitute_variables(
-            "Analyze: $INPUT", "my data", "original", {}
-        )
+        result = substitute_variables("Analyze: $INPUT", "my data", "original", {})
         assert result == "Analyze: my data"
 
     def test_original_substitution(self):
         """$ORIGINAL is replaced with the original user input."""
-        result = substitute_variables(
-            "Original was: $ORIGINAL", "current", "first input", {}
-        )
+        result = substitute_variables("Original was: $ORIGINAL", "current", "first input", {})
         assert result == "Original was: first input"
 
     def test_step_reference(self):
         """$STEP{step_id} is replaced with the step's output."""
         result = substitute_variables(
-            "Plan: $STEP{plan_step}", "current", "orig",
+            "Plan: $STEP{plan_step}",
+            "current",
+            "orig",
             {"plan_step": "The plan content"},
         )
         assert result == "Plan: The plan content"
@@ -367,7 +376,8 @@ class TestVariableSubstitution:
         """Multiple $STEP references in one template."""
         result = substitute_variables(
             "Review: $STEP{review}\nPlan: $STEP{plan}",
-            "current", "orig",
+            "current",
+            "orig",
             {"review": "Review output", "plan": "Plan output"},
         )
         assert "Review output" in result
@@ -375,9 +385,7 @@ class TestVariableSubstitution:
 
     def test_missing_step_reference(self):
         """$STEP{x} with unknown step_id shows MISSING marker."""
-        result = substitute_variables(
-            "Ref: $STEP{nonexistent}", "current", "orig", {}
-        )
+        result = substitute_variables("Ref: $STEP{nonexistent}", "current", "orig", {})
         assert "[MISSING:" in result
         assert "nonexistent" in result
 
@@ -385,7 +393,9 @@ class TestVariableSubstitution:
         """All three variable types in one template."""
         result = substitute_variables(
             "Input: $INPUT\nOriginal: $ORIGINAL\nStep: $STEP{s1}",
-            "prev_output", "user_input", {"s1": "step1_result"},
+            "prev_output",
+            "user_input",
+            {"s1": "step1_result"},
         )
         assert "prev_output" in result
         assert "user_input" in result
@@ -401,6 +411,7 @@ class TestVariableSubstitution:
 # ============================================================
 # Test: Content Hashing
 # ============================================================
+
 
 class TestContentHashing:
     """Test SHA-256 content hashing."""
@@ -426,6 +437,7 @@ class TestContentHashing:
 # ============================================================
 # Test: Dry Run
 # ============================================================
+
 
 class TestDryRun:
     """Test dry-run mode (no LLM calls)."""
@@ -467,6 +479,7 @@ class TestDryRun:
 # Test: Chain Execution
 # ============================================================
 
+
 class TestChainExecution:
     """Test full chain execution with mocked LLM."""
 
@@ -480,9 +493,7 @@ class TestChainExecution:
         ]
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "simple_chain", "test input", project_id="proj-test"
-        )
+        result = executor.execute_chain("simple_chain", "test input", project_id="proj-test")
 
         assert result.status == "completed"
         assert result.steps_completed == 2
@@ -502,9 +513,7 @@ class TestChainExecution:
         ]
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "three_step_chain", "Build auth module", project_id="proj-test"
-        )
+        result = executor.execute_chain("three_step_chain", "Build auth module", project_id="proj-test")
 
         assert result.status == "completed"
         assert result.steps_completed == 3
@@ -525,9 +534,7 @@ class TestChainExecution:
         ]
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "simple_chain", "test input", project_id="proj-test"
-        )
+        result = executor.execute_chain("simple_chain", "test input", project_id="proj-test")
 
         assert result.status == "failed"
         assert result.steps_completed == 1
@@ -542,9 +549,7 @@ class TestChainExecution:
         mock_router.invoke.side_effect = RuntimeError("No model available")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "simple_chain", "test input", project_id="proj-test"
-        )
+        result = executor.execute_chain("simple_chain", "test input", project_id="proj-test")
 
         assert result.status == "failed"
         assert result.steps_completed == 0
@@ -562,9 +567,7 @@ class TestChainExecution:
         mock_router.invoke.return_value = mock_llm_response("output")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "single_step_chain", "test", project_id="proj-1"
-        )
+        result = executor.execute_chain("single_step_chain", "test", project_id="proj-1")
         assert result.id.startswith("pce-")
 
     @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
@@ -577,9 +580,7 @@ class TestChainExecution:
         ]
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "simple_chain", "test", project_id="proj-1"
-        )
+        result = executor.execute_chain("simple_chain", "test", project_id="proj-1")
 
         assert result.total_tokens_used == 100 + 50 + 200 + 75
 
@@ -590,9 +591,7 @@ class TestChainExecution:
         mock_router.invoke.return_value = mock_llm_response("output")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "single_step_chain", "test", project_id="proj-1"
-        )
+        result = executor.execute_chain("single_step_chain", "test", project_id="proj-1")
 
         step = result.step_results["only_step"]
         assert step.duration_ms >= 0
@@ -604,9 +603,7 @@ class TestChainExecution:
         mock_router.invoke.return_value = mock_llm_response("output")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "single_step_chain", "test", project_id="proj-1"
-        )
+        result = executor.execute_chain("single_step_chain", "test", project_id="proj-1")
 
         assert result.total_duration_ms >= 0
 
@@ -614,6 +611,7 @@ class TestChainExecution:
 # ============================================================
 # Test: DB Storage
 # ============================================================
+
 
 class TestDBStorage:
     """Test database persistence of execution results."""
@@ -625,9 +623,7 @@ class TestDBStorage:
         mock_router.invoke.return_value = mock_llm_response("output")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "single_step_chain", "test input", project_id="proj-test"
-        )
+        result = executor.execute_chain("single_step_chain", "test input", project_id="proj-test")
 
         # Query DB directly
         conn = sqlite3.connect(str(db_path))
@@ -652,9 +648,7 @@ class TestDBStorage:
         mock_router.invoke.return_value = mock_llm_response("out", model_id="test-m")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "single_step_chain", "test", project_id="proj-1"
-        )
+        result = executor.execute_chain("single_step_chain", "test", project_id="proj-1")
 
         conn = sqlite3.connect(str(db_path))
         row = conn.execute(
@@ -675,9 +669,7 @@ class TestDBStorage:
         mock_router.invoke.side_effect = RuntimeError("boom")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "single_step_chain", "test", project_id="proj-1"
-        )
+        result = executor.execute_chain("single_step_chain", "test", project_id="proj-1")
 
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
@@ -697,9 +689,7 @@ class TestDBStorage:
         _ensure_table(db)
 
         conn = sqlite3.connect(str(db))
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         table_names = [t[0] for t in tables]
         conn.close()
 
@@ -709,6 +699,7 @@ class TestDBStorage:
 # ============================================================
 # Test: History Query
 # ============================================================
+
 
 class TestHistory:
     """Test execution history retrieval."""
@@ -776,6 +767,7 @@ class TestHistory:
 # Test: List Chains
 # ============================================================
 
+
 class TestListChains:
     """Test chain listing functionality."""
 
@@ -807,6 +799,7 @@ class TestListChains:
 # Test: Agent Function Mapping
 # ============================================================
 
+
 class TestAgentMapping:
     """Test agent-to-LLM-function mapping."""
 
@@ -836,6 +829,7 @@ class TestAgentMapping:
 # Test: Audit Trail
 # ============================================================
 
+
 class TestAuditTrail:
     """Test audit trail recording during chain execution."""
 
@@ -851,9 +845,9 @@ class TestAuditTrail:
 
         # Find the start audit call
         start_calls = [
-            c for c in mock_audit.call_args_list
-            if c.kwargs.get("event_type") == "prompt_chain.started"
-            or (c.args and c.args[0] == "prompt_chain.started")
+            c
+            for c in mock_audit.call_args_list
+            if c.kwargs.get("event_type") == "prompt_chain.started" or (c.args and c.args[0] == "prompt_chain.started")
         ]
         assert len(start_calls) >= 1
 
@@ -868,7 +862,8 @@ class TestAuditTrail:
         executor.execute_chain("single_step_chain", "test", project_id="proj-1")
 
         completed_calls = [
-            c for c in mock_audit.call_args_list
+            c
+            for c in mock_audit.call_args_list
             if c.kwargs.get("event_type") == "prompt_chain.completed"
             or (c.args and c.args[0] == "prompt_chain.completed")
         ]
@@ -887,16 +882,14 @@ class TestAuditTrail:
 
         executor.execute_chain("simple_chain", "test", project_id="proj-1")
 
-        step_calls = [
-            c for c in mock_audit.call_args_list
-            if "prompt_chain.step" in str(c)
-        ]
+        step_calls = [c for c in mock_audit.call_args_list if "prompt_chain.step" in str(c)]
         assert len(step_calls) >= 2
 
 
 # ============================================================
 # Test: Data Classes
 # ============================================================
+
 
 class TestDataClasses:
     """Test data class construction and defaults."""
@@ -933,6 +926,7 @@ class TestDataClasses:
 # Test: Edge Cases
 # ============================================================
 
+
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
@@ -943,9 +937,7 @@ class TestEdgeCases:
         mock_router.invoke.return_value = mock_llm_response("")
         mock_get_router.return_value = mock_router
 
-        result = executor.execute_chain(
-            "single_step_chain", "test", project_id="proj-1"
-        )
+        result = executor.execute_chain("single_step_chain", "test", project_id="proj-1")
         assert result.status == "completed"
         assert result.final_output == ""
 

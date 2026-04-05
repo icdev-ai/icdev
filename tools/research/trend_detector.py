@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Cross-Session Trend Detection for ICDEV Research Engine (D-RES-11).
+# POC: ICDEV™ System Administrator
+"""Cross-Session Trend Detection for ICDEV™ Research Engine (D-RES-11).
 
 Analyzes research_challenges entries across sessions and verticals to identify
 emerging, active, declining, and stale trends by clustering challenges with
@@ -49,6 +49,7 @@ import re
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -68,12 +69,14 @@ CONFIG_PATH = BASE_DIR / "args" / "research_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -81,28 +84,152 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 # =========================================================================
 # CONSTANTS
 # =========================================================================
 # Hardcoded English stopwords (~100 common words) — no NLTK dependency needed
-STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "been", "by", "but",
-    "can", "could", "did", "do", "does", "for", "from", "had", "has",
-    "have", "he", "her", "him", "his", "how", "i", "if", "in", "into",
-    "is", "it", "its", "just", "may", "me", "might", "more", "most",
-    "must", "my", "no", "nor", "not", "of", "on", "or", "our", "out",
-    "own", "re", "s", "she", "should", "so", "some", "such", "t",
-    "than", "that", "the", "their", "them", "then", "there", "these",
-    "they", "this", "those", "through", "to", "too", "up", "us",
-    "very", "was", "we", "were", "what", "when", "where", "which",
-    "while", "who", "whom", "why", "will", "with", "would", "you",
-    "your", "about", "above", "after", "again", "all", "also", "am",
-    "any", "because", "before", "being", "between", "both", "during",
-    "each", "few", "further", "get", "got", "here", "how", "itself",
-    "let", "like", "make", "many", "much", "new", "now", "off", "old",
-    "one", "only", "other", "over", "same", "set", "since", "still",
-    "take", "two", "under", "use", "used", "using", "way", "well",
-})
+STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "by",
+        "but",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "just",
+        "may",
+        "me",
+        "might",
+        "more",
+        "most",
+        "must",
+        "my",
+        "no",
+        "nor",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "out",
+        "own",
+        "re",
+        "s",
+        "she",
+        "should",
+        "so",
+        "some",
+        "such",
+        "t",
+        "than",
+        "that",
+        "the",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "up",
+        "us",
+        "very",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "why",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
+        "about",
+        "above",
+        "after",
+        "again",
+        "all",
+        "also",
+        "am",
+        "any",
+        "because",
+        "before",
+        "being",
+        "between",
+        "both",
+        "during",
+        "each",
+        "few",
+        "further",
+        "get",
+        "got",
+        "here",
+        "how",
+        "itself",
+        "let",
+        "like",
+        "make",
+        "many",
+        "much",
+        "new",
+        "now",
+        "off",
+        "old",
+        "one",
+        "only",
+        "other",
+        "over",
+        "same",
+        "set",
+        "since",
+        "still",
+        "take",
+        "two",
+        "under",
+        "use",
+        "used",
+        "using",
+        "way",
+        "well",
+    }
+)
 
 # Minimum keyword length to consider
 MIN_KEYWORD_LEN = 3
@@ -124,8 +251,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -322,20 +448,22 @@ def detect_trends(session_id=None, db_path=None):
             else:
                 kw_list = extract_keywords(f"{title} {desc}")
 
-            challenge_data.append({
-                "id": row["id"],
-                "session_id": row["session_id"],
-                "vertical_id": row["vertical_id"],
-                "title": title,
-                "description": desc,
-                "category": row["category"],
-                "signal_count": row["signal_count"] or 1,
-                "keywords": frozenset(kw_list),
-                "severity": row["severity"] or "notable",
-                "composite_score": row["composite_score"] or 0.0,
-                "first_seen": row["first_seen"],
-                "last_seen": row["last_seen"],
-            })
+            challenge_data.append(
+                {
+                    "id": row["id"],
+                    "session_id": row["session_id"],
+                    "vertical_id": row["vertical_id"],
+                    "title": title,
+                    "description": desc,
+                    "category": row["category"],
+                    "signal_count": row["signal_count"] or 1,
+                    "keywords": frozenset(kw_list),
+                    "severity": row["severity"] or "notable",
+                    "composite_score": row["composite_score"] or 0.0,
+                    "first_seen": row["first_seen"],
+                    "last_seen": row["last_seen"],
+                }
+            )
 
         # -----------------------------------------------------------------
         # Step 4: Group by category
@@ -409,12 +537,8 @@ def detect_trends(session_id=None, db_path=None):
                 signal_count = sum(ch["signal_count"] for ch in cluster_points)
 
                 # Collect cross-session metadata
-                vertical_ids = sorted(set(
-                    ch["vertical_id"] for ch in cluster_points if ch["vertical_id"]
-                ))
-                session_ids = sorted(set(
-                    ch["session_id"] for ch in cluster_points if ch["session_id"]
-                ))
+                vertical_ids = sorted(set(ch["vertical_id"] for ch in cluster_points if ch["vertical_id"]))
+                session_ids = sorted(set(ch["session_id"] for ch in cluster_points if ch["session_id"]))
 
                 # Dates
                 dates = sorted(ch["last_seen"] for ch in cluster_points if ch["last_seen"])
@@ -450,7 +574,11 @@ def detect_trends(session_id=None, db_path=None):
                 # Step 8: Lifecycle status based on velocity
                 # -----------------------------------------------------------------
                 status = _determine_lifecycle(
-                    velocity, acceleration, last_seen, now, stale_after,
+                    velocity,
+                    acceleration,
+                    last_seen,
+                    now,
+                    stale_after,
                 )
 
                 # Severity distribution for metadata
@@ -493,9 +621,7 @@ def detect_trends(session_id=None, db_path=None):
         # -----------------------------------------------------------------
         # Step 9: Mark stale trends — no new challenges in stale_after_days
         # -----------------------------------------------------------------
-        stale_cutoff = (now - timedelta(days=stale_after)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        stale_cutoff = (now - timedelta(days=stale_after)).strftime("%Y-%m-%dT%H:%M:%SZ")
         stale_candidates = conn.execute(
             """SELECT DISTINCT keyword_fingerprint
                FROM research_trends
@@ -506,9 +632,7 @@ def detect_trends(session_id=None, db_path=None):
         for row in stale_candidates:
             fp = row["keyword_fingerprint"]
             # Only mark stale if no recent detection refreshed it
-            already_fresh = any(
-                t["keyword_fingerprint"] == fp for t in detected_trends
-            )
+            already_fresh = any(t["keyword_fingerprint"] == fp for t in detected_trends)
             if not already_fresh:
                 # Insert a stale row to preserve history (append-only)
                 latest = conn.execute(
@@ -521,16 +645,12 @@ def detect_trends(session_id=None, db_path=None):
                     stale_trend = {
                         "id": _trend_id(),
                         "name": latest["name"],
-                        "vertical_ids": json.loads(latest["vertical_ids"])
-                            if latest["vertical_ids"] else [],
-                        "session_ids": json.loads(latest["session_ids"])
-                            if latest["session_ids"] else [],
-                        "challenge_ids": json.loads(latest["challenge_ids"])
-                            if latest["challenge_ids"] else [],
+                        "vertical_ids": json.loads(latest["vertical_ids"]) if latest["vertical_ids"] else [],
+                        "session_ids": json.loads(latest["session_ids"]) if latest["session_ids"] else [],
+                        "challenge_ids": json.loads(latest["challenge_ids"]) if latest["challenge_ids"] else [],
                         "signal_count": latest["signal_count"],
                         "keyword_fingerprint": fp,
-                        "keywords": json.loads(latest["keywords"])
-                            if latest["keywords"] else [],
+                        "keywords": json.loads(latest["keywords"]) if latest["keywords"] else [],
                         "velocity": 0.0,
                         "acceleration": 0.0 - (latest["velocity"] or 0.0),
                         "status": "stale",
@@ -718,15 +838,17 @@ def _cross_register_to_innovation(conn, detected_trends):
 
         sig_id = f"isig-{uuid.uuid4().hex[:12]}"
         now = _now()
-        metadata = json.dumps({
-            "research_trend_id": trend_id,
-            "cross_registered_from": "research_engine",
-            "trend_name": trend["name"],
-            "trend_status": trend["status"],
-            "velocity": trend["velocity"],
-            "vertical_ids": trend["vertical_ids"],
-            "session_ids": trend["session_ids"],
-        })
+        metadata = json.dumps(
+            {
+                "research_trend_id": trend_id,
+                "cross_registered_from": "research_engine",
+                "trend_name": trend["name"],
+                "trend_status": trend["status"],
+                "velocity": trend["velocity"],
+                "vertical_ids": trend["vertical_ids"],
+                "session_ids": trend["session_ids"],
+            }
+        )
 
         try:
             conn.execute(
@@ -888,25 +1010,18 @@ def get_trend_report(db_path=None):
         }
 
         total = len(deduped)
-        avg_velocity = (
-            sum(t["velocity"] for t in deduped) / total if total else 0
-        )
+        avg_velocity = sum(t["velocity"] for t in deduped) / total if total else 0
         total_signals = sum(t["signal_count"] for t in deduped)
 
         # Count cross-vertical trends
-        cross_vertical_count = sum(
-            1 for t in deduped if len(t.get("vertical_ids", [])) > 1
-        )
+        cross_vertical_count = sum(1 for t in deduped if len(t.get("vertical_ids", [])) > 1)
 
         # Summary text
         parts = []
         for s, c in status_counts.items():
             if c > 0:
                 parts.append(f"{c} {s}")
-        summary_text = (
-            f"{total} trends tracked: {', '.join(parts)}."
-            if parts else "No trends."
-        )
+        summary_text = f"{total} trends tracked: {', '.join(parts)}." if parts else "No trends."
         if cross_vertical_count > 0:
             summary_text += f" {cross_vertical_count} cross-vertical."
 
@@ -940,22 +1055,17 @@ def _row_to_trend(row):
     return {
         "id": row["id"],
         "name": row["name"],
-        "vertical_ids": json.loads(row["vertical_ids"])
-            if row["vertical_ids"] else [],
-        "session_ids": json.loads(row["session_ids"])
-            if row["session_ids"] else [],
-        "challenge_ids": json.loads(row["challenge_ids"])
-            if row["challenge_ids"] else [],
+        "vertical_ids": json.loads(row["vertical_ids"]) if row["vertical_ids"] else [],
+        "session_ids": json.loads(row["session_ids"]) if row["session_ids"] else [],
+        "challenge_ids": json.loads(row["challenge_ids"]) if row["challenge_ids"] else [],
         "signal_count": row["signal_count"],
-        "keywords": json.loads(row["keywords"])
-            if row["keywords"] else [],
+        "keywords": json.loads(row["keywords"]) if row["keywords"] else [],
         "velocity": row["velocity"],
         "acceleration": row["acceleration"],
         "status": row["status"],
         "first_seen": row["first_seen"],
         "last_seen": row["last_seen"],
-        "metadata": json.loads(row["metadata"])
-            if row["metadata"] else {},
+        "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
         "detected_at": row["detected_at"],
     }
 
@@ -1042,11 +1152,7 @@ def _print_human(args, result):
         for trend in result.get("trends", []):
             icon = _STATUS_ICONS.get(trend["status"], "[???]")
             cross = " [CROSS]" if trend.get("cross_vertical") else ""
-            print(
-                f"  {icon} {trend['name']}"
-                f"  -- {trend['signal_count']} signals,"
-                f" v={trend['velocity']:.4f}/day{cross}"
-            )
+            print(f"  {icon} {trend['name']}  -- {trend['signal_count']} signals, v={trend['velocity']:.4f}/day{cross}")
             kws = ", ".join(trend.get("keywords", [])[:5])
             print(f"         keywords: {kws}")
 
@@ -1064,11 +1170,7 @@ def _print_human(args, result):
         for t in result.get("top_trending", [])[:10]:
             icon = _STATUS_ICONS.get(t["status"], "[???]")
             cross = " [CROSS]" if t.get("cross_vertical") else ""
-            print(
-                f"    {icon} {t['name']}"
-                f"  -- {t['signal_count']} signals,"
-                f" v={t['velocity']:.4f}/day{cross}"
-            )
+            print(f"    {icon} {t['name']}  -- {t['signal_count']} signals, v={t['velocity']:.4f}/day{cross}")
         print()
         print("  By Vertical:")
         for vid, trends in result.get("by_vertical", {}).items():
@@ -1080,35 +1182,27 @@ def _print_human(args, result):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Trend Detector -- cross-session trend detection (D-RES-11)"
+        description="ICDEV™ Research Trend Detector -- cross-session trend detection (D-RES-11)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--detect", action="store_true",
-        help="Detect trends from challenges (omit --session-id for cross-session)"
+        "--detect", action="store_true", help="Detect trends from challenges (omit --session-id for cross-session)"
     )
-    group.add_argument(
-        "--trends", action="store_true",
-        help="Get trends (optional --status filter)"
-    )
-    group.add_argument(
-        "--report", action="store_true",
-        help="Generate a full trend report"
-    )
+    group.add_argument("--trends", action="store_true", help="Get trends (optional --status filter)")
+    group.add_argument("--report", action="store_true", help="Generate a full trend report")
 
     parser.add_argument(
-        "--session-id", type=str, default=None,
-        help="Optional session ID for single-session detection (omit for cross-session)"
+        "--session-id",
+        type=str,
+        default=None,
+        help="Optional session ID for single-session detection (omit for cross-session)",
     )
     parser.add_argument(
-        "--status", type=str, default=None,
-        help="Filter by status for --trends (emerging, active, declining, stale)"
+        "--status", type=str, default=None, help="Filter by status for --trends (emerging, active, declining, stale)"
     )
 
     args = parser.parse_args()

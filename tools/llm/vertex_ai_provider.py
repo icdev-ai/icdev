@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Google Vertex AI LLM Provider.
 
 Supports Google Cloud Vertex AI with Assured Workloads for FedRAMP
@@ -45,6 +45,7 @@ try:
         Part,
     )
     import vertexai
+
     HAS_VERTEX = True
 except ImportError:
     aiplatform = None  # type: ignore[assignment]
@@ -55,7 +56,7 @@ except ImportError:
 def _convert_messages_to_vertex(
     messages: List[Dict[str, Any]],
 ) -> List[Any]:
-    """Convert ICDEV universal messages to Vertex AI Content format.
+    """Convert ICDEV™ universal messages to Vertex AI Content format.
 
     Handles plain strings, Anthropic-style content blocks, and
     OpenAI-style content blocks. Maps 'assistant' role to 'model'.
@@ -72,9 +73,7 @@ def _convert_messages_to_vertex(
         vertex_role = "model" if role == "assistant" else "user"
 
         if isinstance(content, str):
-            result.append(
-                Content(role=vertex_role, parts=[Part.from_text(content)])
-            )
+            result.append(Content(role=vertex_role, parts=[Part.from_text(content)]))
             continue
 
         if isinstance(content, list):
@@ -94,10 +93,9 @@ def _convert_messages_to_vertex(
                     media_type = source.get("media_type", "image/png")
                     if b64_data:
                         import base64
+
                         image_bytes = base64.b64decode(b64_data)
-                        parts.append(
-                            Part.from_data(data=image_bytes, mime_type=media_type)
-                        )
+                        parts.append(Part.from_data(data=image_bytes, mime_type=media_type))
 
                 elif btype == "image_url":
                     # OpenAI format: data URI
@@ -108,25 +106,20 @@ def _convert_messages_to_vertex(
                         if ":" in header and ";" in header:
                             media_type = header.split(":")[1].split(";")[0]
                         import base64
+
                         image_bytes = base64.b64decode(b64_data)
-                        parts.append(
-                            Part.from_data(data=image_bytes, mime_type=media_type)
-                        )
+                        parts.append(Part.from_data(data=image_bytes, mime_type=media_type))
 
                 elif btype == "tool_result":
                     inner = block.get("content", [])
                     for ib in inner:
                         if isinstance(ib, dict) and ib.get("type") == "text":
-                            parts.append(
-                                Part.from_text(ib.get("text", ""))
-                            )
+                            parts.append(Part.from_text(ib.get("text", "")))
 
             if parts:
                 result.append(Content(role=vertex_role, parts=parts))
         else:
-            result.append(
-                Content(role=vertex_role, parts=[Part.from_text(str(content))])
-            )
+            result.append(Content(role=vertex_role, parts=[Part.from_text(str(content))]))
 
     return result
 
@@ -173,13 +166,11 @@ class VertexAIProvider(LLMProvider):
             return
         if not HAS_VERTEX:
             raise ImportError(
-                "google-cloud-aiplatform SDK required for Vertex AI. "
-                "Install: pip install google-cloud-aiplatform"
+                "google-cloud-aiplatform SDK required for Vertex AI. Install: pip install google-cloud-aiplatform"
             )
         if not self._project:
             raise ValueError(
-                "Google Cloud project ID required. "
-                "Set GOOGLE_CLOUD_PROJECT or pass project= to constructor."
+                "Google Cloud project ID required. Set GOOGLE_CLOUD_PROJECT or pass project= to constructor."
             )
 
         init_kwargs: Dict[str, Any] = {
@@ -192,9 +183,7 @@ class VertexAIProvider(LLMProvider):
         vertexai.init(**init_kwargs)
         self._initialized = True
 
-    def invoke(
-        self, request: LLMRequest, model_id: str, model_config: dict
-    ) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke Vertex AI Gemini model synchronously."""
         self._ensure_initialized()
         start_time = time.time()
@@ -212,10 +201,7 @@ class VertexAIProvider(LLMProvider):
             gen_config_kwargs["stop_sequences"] = request.stop_sequences
 
         # Structured JSON output
-        if (
-            request.output_schema
-            and model_config.get("supports_structured_output", False)
-        ):
+        if request.output_schema and model_config.get("supports_structured_output", False):
             gen_config_kwargs["response_mime_type"] = "application/json"
 
         gen_config = GenerationConfig(**gen_config_kwargs)
@@ -257,18 +243,18 @@ class VertexAIProvider(LLMProvider):
                         text_parts.append(part.text)
                     elif hasattr(part, "function_call") and part.function_call:
                         fc = part.function_call
-                        tool_calls.append({
-                            "id": f"call_{len(tool_calls)}",
-                            "name": fc.name,
-                            "input": dict(fc.args) if fc.args else {},
-                        })
+                        tool_calls.append(
+                            {
+                                "id": f"call_{len(tool_calls)}",
+                                "name": fc.name,
+                                "input": dict(fc.args) if fc.args else {},
+                            }
+                        )
 
             finish_reason = getattr(candidate, "finish_reason", None)
             if finish_reason is not None:
                 resp.stop_reason = (
-                    str(finish_reason.name).lower()
-                    if hasattr(finish_reason, "name")
-                    else str(finish_reason)
+                    str(finish_reason.name).lower() if hasattr(finish_reason, "name") else str(finish_reason)
                 )
 
         resp.content = "\n".join(text_parts)
@@ -277,12 +263,8 @@ class VertexAIProvider(LLMProvider):
         # Token usage
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             usage = response.usage_metadata
-            resp.input_tokens = (
-                getattr(usage, "prompt_token_count", 0) or 0
-            )
-            resp.output_tokens = (
-                getattr(usage, "candidates_token_count", 0) or 0
-            )
+            resp.input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+            resp.output_tokens = getattr(usage, "candidates_token_count", 0) or 0
 
         # Try parsing structured output
         if resp.content.strip().startswith(("{", "[")):
@@ -293,9 +275,7 @@ class VertexAIProvider(LLMProvider):
 
         return resp
 
-    def invoke_streaming(
-        self, request: LLMRequest, model_id: str, model_config: dict
-    ) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke Vertex AI with streaming response."""
         self._ensure_initialized()
         start_time = time.time()
@@ -326,19 +306,14 @@ class VertexAIProvider(LLMProvider):
         vertex_messages = _convert_messages_to_vertex(request.messages)
 
         try:
-            response = model.generate_content(
-                vertex_messages, stream=True
-            )
+            response = model.generate_content(vertex_messages, stream=True)
 
             for chunk in response:
                 if hasattr(chunk, "text") and chunk.text:
                     yield {"type": "text", "text": chunk.text}
                 elif hasattr(chunk, "candidates") and chunk.candidates:
                     for candidate in chunk.candidates:
-                        if (
-                            hasattr(candidate, "content")
-                            and candidate.content
-                        ):
+                        if hasattr(candidate, "content") and candidate.content:
                             for part in candidate.content.parts:
                                 if hasattr(part, "text") and part.text:
                                     yield {

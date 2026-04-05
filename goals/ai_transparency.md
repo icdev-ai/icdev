@@ -2,7 +2,7 @@
 # Goal: AI Transparency & Accountability (Phase 48)
 
 ## Purpose
-Bridge the vocabulary gap between ICDEV's technical AI capabilities (XAI, SHAP, telemetry)
+Bridge the vocabulary gap between ICDEV™'s technical AI capabilities (XAI, SHAP, telemetry)
 and government stakeholder terminology (model cards, High-Impact AI, bias testing, GAO audit
 readiness). Implements 4 new compliance frameworks and 8 supporting tools.
 
@@ -59,11 +59,11 @@ readiness). Implements 4 new compliance frameworks and 8 supporting tools.
 ## Architecture Decisions
 - **D307**: BaseAssessor ABC pattern (D116) — ~150-200 LOC each, automatic gate/CLI/crosswalk
 - **D308**: Google Model Cards format — open standard, Gov AI community
-- **D309**: System cards are ICDEV-specific — broader than model cards
+- **D309**: System cards are ICDEV™-specific — broader than model cards
 - **D310**: Confabulation detector — deterministic methods only, air-gap safe
 - **D311**: Fairness assessor — compliance documentation evidence, not statistical bias testing
 - **D312**: AI inventory — OMB M-25-21 schema for government reporting
-- **D313**: GAO evidence builder — reuses existing ICDEV data, no new collection
+- **D313**: GAO evidence builder — reuses existing ICDEV™ data, no new collection
 - **D314**: AI data category trigger — auto-activates all 4 frameworks
 - **D315**: COSAiS overlay — deferred until NIST publishes final spec (late 2026)
 

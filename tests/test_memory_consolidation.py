@@ -9,7 +9,7 @@ append-only log, no similar entries.
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -32,9 +32,10 @@ def consolidator():
 # Keyword extraction
 # ---------------------------------------------------------------------------
 
+
 class TestKeywordExtraction:
     def test_basic(self):
-        kw = MemoryConsolidator._extract_keywords("The ICDEV system manages deployments")
+        kw = MemoryConsolidator._extract_keywords("The ICDEV™ system manages deployments")
         assert "icdev" in kw
         assert "system" in kw
         assert "manages" in kw
@@ -53,6 +54,7 @@ class TestKeywordExtraction:
 # ---------------------------------------------------------------------------
 # Jaccard similarity
 # ---------------------------------------------------------------------------
+
 
 class TestJaccardSimilarity:
     def test_identical_sets(self):
@@ -79,6 +81,7 @@ class TestJaccardSimilarity:
 # ---------------------------------------------------------------------------
 # Keyword decision thresholds
 # ---------------------------------------------------------------------------
+
 
 class TestKeywordDecision:
     def test_skip_threshold(self, consolidator):
@@ -114,6 +117,7 @@ class TestKeywordDecision:
 # check_for_consolidation
 # ---------------------------------------------------------------------------
 
+
 class TestCheckForConsolidation:
     @patch.object(MemoryConsolidator, "_find_similar", return_value=[])
     def test_no_similar_entries(self, mock_find, consolidator):
@@ -125,9 +129,7 @@ class TestCheckForConsolidation:
     @patch.object(MemoryConsolidator, "_find_similar")
     @patch.object(MemoryConsolidator, "_log_consolidation")
     def test_with_similar_uses_keyword(self, mock_log, mock_find, consolidator):
-        mock_find.return_value = [
-            {"id": 1, "content": "similar", "entry_type": "fact", "similarity": 0.92}
-        ]
+        mock_find.return_value = [{"id": 1, "content": "similar", "entry_type": "fact", "similarity": 0.92}]
         result = consolidator.check_for_consolidation("similar text", "fact")
         assert result["method"] == "keyword"
         assert result["recommended_action"] == "SKIP"
@@ -136,6 +138,7 @@ class TestCheckForConsolidation:
 # ---------------------------------------------------------------------------
 # Execute consolidation
 # ---------------------------------------------------------------------------
+
 
 class TestExecuteConsolidation:
     def test_dry_run(self, consolidator):
@@ -156,6 +159,7 @@ class TestExecuteConsolidation:
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
 
 class TestConstants:
     def test_actions_defined(self):
@@ -180,10 +184,12 @@ class TestConstants:
 # Stats
 # ---------------------------------------------------------------------------
 
+
 class TestStats:
     @patch("icdev.tools.memory.memory_consolidation.sqlite3")
     def test_get_stats_handles_db_error(self, mock_sqlite):
         import sqlite3
+
         mock_sqlite.connect.side_effect = sqlite3.OperationalError("no table")
         mock_sqlite.OperationalError = sqlite3.OperationalError
         c = MemoryConsolidator()

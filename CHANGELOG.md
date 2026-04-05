@@ -2,15 +2,31 @@
 
 # Changelog
 
-All notable changes to ICDEV are documented in this file.
+All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [1.2.8] - 2026-03-31
+
+### Added
+- **Network Design Canvas** — ACAS/Nessus vulnerability scan overlay with host-to-node matching and severity heat maps
+- **Network Design Canvas** — Natural language topology queries powered by deterministic graph algorithms (NetworkX) with local LLM fallback
+- **Network Design Canvas** — Cloud architecture diagram generation for all 6 CSPs
+- **Network Design Canvas** — Compliance audit page with per-device STIG tracking and exportable checklists
+- **Network Design Canvas** — 1,000+ device types, protocols, and interface constants
+- **Network Design Canvas** — Enhanced inventory export (CSV, JSON, YAML) with advanced filtering
+- **IBM Cloud IaC** — New Terraform generator for IBM Cloud (VPC, IKS, KMS, COS, LogDNA, SysDig)
+- **Azure IaC** — Major expansion: AKS, Key Vault, Front Door, Application Gateway, NSG rules
+- **GCP IaC** — Major expansion: GKE, Cloud KMS, Cloud Armor, VPC Service Controls
+- **OCI IaC** — Major expansion: OKE, Vault, WAF, Network Security Groups, Bastion
+- **SRE Operations** — Dashboard, runbook library, incident tracking, toil budgets, SLO monitoring
+- **Pipeline Canvas** — Visual CI/CD pipeline designer with drag-and-drop stages and YAML export
 
 ## [Unreleased]
 
 ### Added
 - Comprehensive test suite expansion (324+ new tests across 21 test files)
-- CI/CD pipeline for ICDEV itself (GitHub Actions + GitLab CI)
+- CI/CD pipeline for ICDEV™ itself (GitHub Actions + GitLab CI)
 - REST API endpoints for Phases 22-28 capabilities
 - Helm chart completion for all 15 agents
 - Project documentation (README, CONTRIBUTING, CHANGELOG)
@@ -79,7 +95,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Phase 19-22] - 2026-01-XX
 
 ### Added
-- Agentic application generation producing mini-ICDEV clone child applications (D44-D53)
+- Agentic application generation producing mini-ICDEV™ clone child applications (D44-D53)
 - 6-dimension fitness scoring for agentic suitability assessment (D46)
 - Blueprint-driven generation with 12-step pipeline (D47)
 - Grandchild prevention mechanism (D52)
@@ -96,7 +112,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Per-tenant K8s namespace provisioning (D63)
 - Offline license keys with RSA-SHA256 signatures for on-prem (D64)
 - Helm chart for on-prem deployment (D65)
-- Federated GOTCHA marketplace with 3-tier catalog (D74-D81)
+- Federated FORGE marketplace with 3-tier catalog (D74-D81)
 - 7-gate automated security scanning for marketplace assets (D76)
 - IL-aware compatibility checking with high-watermark consumption rule (D77)
 - Community ratings and reviews for marketplace assets
@@ -153,8 +169,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Phase 1-6] - 2025-XX-XX
 
 ### Added
-- Initial ICDEV platform with GOTCHA 6-layer agentic framework
-- ATLAS and M-ATLAS build workflows (Architect, Trace, Link, Assemble, Stress-test)
+- Initial ICDEV™ platform with FORGE 6-layer agentic framework
+- ANVIL and M-ANVIL build workflows (Architect, Navigate, Verify, Integrate, Launch)
 - 15 multi-agent architecture across 3 tiers (Core, Domain, Support)
 - A2A protocol (JSON-RPC 2.0 over mutual TLS) for inter-agent communication
 - 14 MCP servers for Claude Code integration (stdio transport)

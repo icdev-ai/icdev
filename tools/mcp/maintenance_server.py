@@ -25,10 +25,12 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Lazy tool imports — tools may still be under construction
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -38,6 +40,7 @@ def _import_tool(module_path, func_name):
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_scan_dependencies(args: dict) -> dict:
     """Inventory all project dependencies with version staleness."""
@@ -125,6 +128,7 @@ def handle_remediate(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     """Create and configure the maintenance MCP server with all tools registered."""
@@ -221,7 +225,7 @@ def create_server() -> MCPServer:
                 },
                 "vulnerability_id": {
                     "type": "integer",
-                    "description": "Specific vulnerability ID to remediate (optional, remediates all eligible if omitted)",
+                    "description": "Specific vulnerability ID to remediate (optional, remediates all eligible if omitted)",  # noqa: E501
                 },
                 "auto": {
                     "type": "boolean",

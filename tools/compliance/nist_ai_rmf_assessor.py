@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """NIST AI RMF Assessor — AI Risk Management Framework assessment.
 
 Assesses NIST AI Risk Management Framework 1.0 compliance across
@@ -31,7 +31,9 @@ class NISTAIRMFAssessor(BaseAssessor):
     CATALOG_FILENAME = "nist_ai_rmf.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """NIST AI RMF automated checks.
 

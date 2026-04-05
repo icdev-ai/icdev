@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Seed the ICDEV Playground database with sample data."""
-import sqlite3
-import uuid
-from datetime import datetime, timezone
+"""Seed the ICDEV™ Playground database with sample data."""
+
+from tools.db.storage import get_connection
 
 
 def seed_playground_db(db_path):
-    conn = sqlite3.connect(db_path)
+    conn = get_connection(db_path=str(db_path))
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
@@ -81,7 +80,8 @@ def seed_playground_db(db_path):
     ]
     for p in projects:
         conn.execute(
-            "INSERT OR IGNORE INTO projects (id, name, status, compliance_score, classification, impact_level) VALUES (?, ?, ?, ?, ?, ?)", p
+            "INSERT OR IGNORE INTO projects (id, name, status, compliance_score, classification, impact_level) VALUES (?, ?, ?, ?, ?, ?)",
+            p,
         )
 
     # 20 NIST controls for proj-demo-001
@@ -186,18 +186,44 @@ def seed_playground_db(db_path):
     ]
     for s in stigs:
         conn.execute(
-            "INSERT OR IGNORE INTO stig_findings (id, project_id, rule_id, severity, status, title) VALUES (?, ?, ?, ?, ?, ?)", s
+            "INSERT OR IGNORE INTO stig_findings (id, project_id, rule_id, severity, status, title) VALUES (?, ?, ?, ?, ?, ?)",
+            s,
         )
 
     # POAM items
     poams = [
-        ("poam-d001", "proj-demo-001", "Continuous monitoring not fully implemented", "open", "high", "Deploy monitoring agents", "2026-04-15"),
-        ("poam-d002", "proj-demo-001", "Incident response plan incomplete", "open", "medium", "Complete IR tabletop exercise", "2026-05-01"),
-        ("poam-d003", "proj-demo-001", "Transmission confidentiality partial", "open", "medium", "Implement TLS 1.3 everywhere", "2026-03-30"),
+        (
+            "poam-d001",
+            "proj-demo-001",
+            "Continuous monitoring not fully implemented",
+            "open",
+            "high",
+            "Deploy monitoring agents",
+            "2026-04-15",
+        ),
+        (
+            "poam-d002",
+            "proj-demo-001",
+            "Incident response plan incomplete",
+            "open",
+            "medium",
+            "Complete IR tabletop exercise",
+            "2026-05-01",
+        ),
+        (
+            "poam-d003",
+            "proj-demo-001",
+            "Transmission confidentiality partial",
+            "open",
+            "medium",
+            "Implement TLS 1.3 everywhere",
+            "2026-03-30",
+        ),
     ]
     for pm in poams:
         conn.execute(
-            "INSERT OR IGNORE INTO poam_items (id, project_id, finding, status, severity, milestone, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)", pm
+            "INSERT OR IGNORE INTO poam_items (id, project_id, finding, status, severity, milestone, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            pm,
         )
 
     conn.commit()
@@ -206,6 +232,7 @@ def seed_playground_db(db_path):
 
 if __name__ == "__main__":
     import sys
+
     path = sys.argv[1] if len(sys.argv) > 1 else "playground.db"
     seed_playground_db(path)
     print(f"Seeded playground DB at {path}")

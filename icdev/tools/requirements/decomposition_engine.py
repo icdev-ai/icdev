@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+from __future__ import annotations
+
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """SAFe Agile hierarchy decomposition engine.
 
 Decomposes intake session requirements into SAFe hierarchy:
@@ -662,7 +664,7 @@ def detect_parallel_groups(session_id, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV SAFe Decomposition Engine"
+        description="ICDEV™ SAFe Decomposition Engine"
     )
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument(

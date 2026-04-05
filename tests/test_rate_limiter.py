@@ -1,9 +1,10 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-"""Tests for the ICDEV SaaS Rate Limiter (tools/saas/rate_limiter.py).
+"""Tests for the ICDEV™ SaaS Rate Limiter (tools/saas/rate_limiter.py).
 
 Validates tier-based rate limiting (starter/professional/enterprise),
 InMemoryBackend sliding-window tracking, cleanup of expired entries,
@@ -11,7 +12,6 @@ and tenant reset functionality.
 """
 
 import time
-from unittest.mock import patch
 
 import pytest
 
@@ -23,6 +23,7 @@ try:
         cleanup_expired_windows,
         reset_tenant,
     )
+
     _IMPORT_OK = True
 except ImportError:
     _IMPORT_OK = False
@@ -34,10 +35,12 @@ pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tools.saas.rate_limiter 
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def fresh_backend(monkeypatch):
     """Reset the global backend before each test to ensure isolation."""
     import icdev.tools.saas.rate_limiter as rl
+
     monkeypatch.setattr(rl, "_backend", None)
     # Force InMemoryBackend (bypass scaling config)
     backend = InMemoryBackend()
@@ -48,6 +51,7 @@ def fresh_backend(monkeypatch):
 # ---------------------------------------------------------------------------
 # Tier Rate Limit Configuration
 # ---------------------------------------------------------------------------
+
 
 class TestTierConfig:
     """Verify the tier rate limit constants."""
@@ -67,6 +71,7 @@ class TestTierConfig:
 # Enterprise (unlimited) tier
 # ---------------------------------------------------------------------------
 
+
 class TestEnterpriseTier:
     """Verify enterprise tier is always allowed."""
 
@@ -85,6 +90,7 @@ class TestEnterpriseTier:
 # ---------------------------------------------------------------------------
 # Starter tier rate limiting
 # ---------------------------------------------------------------------------
+
 
 class TestStarterTier:
     """Verify starter tier enforces 60 req/min."""
@@ -117,6 +123,7 @@ class TestStarterTier:
 # Professional tier rate limiting
 # ---------------------------------------------------------------------------
 
+
 class TestProfessionalTier:
     """Verify professional tier has higher limits."""
 
@@ -135,6 +142,7 @@ class TestProfessionalTier:
 # Unknown tier falls back to starter
 # ---------------------------------------------------------------------------
 
+
 class TestUnknownTier:
     """Verify unknown tiers fall back to starter limits."""
 
@@ -146,6 +154,7 @@ class TestUnknownTier:
 # ---------------------------------------------------------------------------
 # InMemoryBackend internals
 # ---------------------------------------------------------------------------
+
 
 class TestInMemoryBackend:
     """Verify InMemoryBackend behavior directly."""
@@ -188,6 +197,7 @@ class TestInMemoryBackend:
 # ---------------------------------------------------------------------------
 # Module-level convenience functions
 # ---------------------------------------------------------------------------
+
 
 class TestModuleFunctions:
     """Verify cleanup_expired_windows and reset_tenant module functions."""

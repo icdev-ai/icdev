@@ -1,7 +1,7 @@
 <div align="center">
 
 <!-- Hero Banner -->
-<img src="https://img.shields.io/badge/ICDEV-The_System_That_Builds_Systems-0d1117?style=for-the-badge&labelColor=1a1a2e&color=16213e" alt="ICDEV" />
+<img src="https://img.shields.io/badge/ICDEV™-The_System_That_Builds_Systems-0d1117?style=for-the-badge&labelColor=1a1a2e&color=16213e" alt="ICDEV™" />
 
 <br/>
 
@@ -18,18 +18,18 @@
 [![Languages](https://img.shields.io/badge/Languages-6_First--Class-0078d4?style=flat-square)](.)
 [![Cloud](https://img.shields.io/badge/Cloud_Providers-6_CSPs-ff6f00?style=flat-square)](.)
 [![Tests](https://img.shields.io/badge/Tests-3,800+-25a162?style=flat-square)](.)
-[![License](https://img.shields.io/badge/License-AGPL--3.0_+_Commercial-blue?style=flat-square)](.)
+[![License](https://img.shields.io/badge/License-Apache--2.0_+_Commercial-blue?style=flat-square)](.)
 
 <br/>
 
-> **ICDEV doesn't write code. It engineers complete, ATO-ready, production-grade applications —**
+> **ICDEV™ doesn't write code. It engineers complete, ATO-ready, production-grade applications —**
 > **then those applications engineer their own features.**
 
-> **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV applies to generated artifacts.
+> **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV™ applies to generated artifacts.
 
 <br/>
 
-[Architecture](#architecture) &bull; [Why ICDEV](#why-icdev-exists) &bull; [Capabilities](#capabilities) &bull; [Compliance](#compliance-coverage) &bull; [Agents](#multi-agent-architecture) &bull; [Cloud](#multi-cloud-deployment) &bull; [Metrics](#by-the-numbers)
+[Architecture](#architecture) &bull; [Why ICDEV™](#why-icdev-exists) &bull; [Capabilities](#capabilities) &bull; [Compliance](#compliance-coverage) &bull; [Agents](#multi-agent-architecture) &bull; [Cloud](#multi-cloud-deployment) &bull; [Metrics](#by-the-numbers)
 
 </div>
 
@@ -54,9 +54,9 @@ Building software for the U.S. Government is broken.
 
 ---
 
-## What ICDEV Actually Does
+## What ICDEV™ Actually Does
 
-ICDEV is a **meta-builder** — an autonomous AI engineering platform that generates complete, production-ready, compliance-certified applications. Every application it builds inherits:
+ICDEV™ is a **meta-builder** — an autonomous AI engineering platform that generates complete, production-ready, compliance-certified applications. Every application it builds inherits:
 
 - Full test-driven development (RED → GREEN → REFACTOR)
 - Behavior-driven specifications (Gherkin/Cucumber)
@@ -72,11 +72,11 @@ ICDEV is a **meta-builder** — an autonomous AI engineering platform that gener
 
 ## Architecture
 
-### GOTCHA Framework — 6-Layer Separation of Concerns
+### FORGE Framework — 6-Layer Separation of Concerns
 
 The core architectural principle: **LLMs are probabilistic. Business logic must be deterministic.**
 
-At 90% accuracy per step, a 5-step LLM chain yields ~59% end-to-end accuracy. GOTCHA solves this by isolating the AI to orchestration while all execution is deterministic.
+At 90% accuracy per step, a 5-step LLM chain yields ~59% end-to-end accuracy. FORGE solves this by isolating the AI to orchestration while all execution is deterministic.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -103,9 +103,9 @@ At 90% accuracy per step, a 5-step LLM chain yields ~59% end-to-end accuracy. GO
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### ATLAS Workflow — How Applications Get Built
+### ANVIL Workflow — How Applications Get Built
 
-Every application follows the ATLAS methodology (with optional Model phase for MBSE):
+Every application follows the ANVIL methodology (with optional Model phase for MBSE):
 
 ```
   ┌──────────┐   ┌───────────┐   ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌─────────────┐
@@ -160,7 +160,7 @@ Every application follows the ATLAS methodology (with optional Model phase for M
 
 ---
 
-## Why ICDEV Exists
+## Why ICDEV™ Exists
 
 ### The Flywheel
 
@@ -175,7 +175,7 @@ Every application follows the ATLAS methodology (with optional Model phase for M
                               ▼
 ┌──────────────┐    ┌─────────────────────┐    ┌──────────────┐
 │   MEASURE    │    │   INTAKE (require)  │    │    BUILD     │
-│  Runtime     │◄───│  RICOAS: AI-driven  │───▶│  ATLAS/TDD   │
+│  Runtime     │◄───│  RICOAS: AI-driven  │───▶│  ANVIL/TDD   │
 │  Feedback    │    │  gap detection,     │    │  6 languages │
 │  Code Intel  │    │  SAFe decomposition │    │  500+ tools  │
 └──────┬───────┘    └─────────────────────┘    └──────┬───────┘
@@ -232,7 +232,7 @@ Every cycle strengthens the system:
 
 | Capability | What It Means |
 |:---|:---|
-| **Child App Generation** | ICDEV generates mini-ICDEV clones — production applications with their own GOTCHA framework, ATLAS workflow, 10-12 agents, 21 goals, and full compliance stack |
+| **Child App Generation** | ICDEV™ generates mini-ICDEV™ clones — production applications with their own FORGE framework, ANVIL workflow, 10-12 agents, 21 goals, and full compliance stack |
 | **Evolutionary Intelligence** | Capability genome versioning (semver + SHA-256), 72-hour staging window, bidirectional parent-child learning, cross-pollination with HITL approval |
 | **Federated Marketplace** | Share skills, goals, compliance extensions across tenant organizations through a 9-gate security pipeline with IL-aware content filtering |
 | **Innovation Engine** | Autonomous self-improvement: web scanning (CVE, standards, community), 5-dimension scoring, compliance triage, trend detection, solution generation |
@@ -242,7 +242,7 @@ Every cycle strengthens the system:
 
 ## Compliance Coverage
 
-ICDEV implements a **dual-hub crosswalk model**: implement a control once at either hub, and it cascades to every connected framework automatically.
+ICDEV™ implements a **dual-hub crosswalk model**: implement a control once at either hub, and it cascades to every connected framework automatically.
 
 ```
                      ┌─────────────────────────────────┐
@@ -298,7 +298,7 @@ ICDEV implements a **dual-hub crosswalk model**: implement a control once at eit
 
 ## Multi-Cloud Deployment
 
-ICDEV applications deploy to any authorized cloud — or air-gapped on-premises environments — from a single codebase.
+ICDEV™ applications deploy to any authorized cloud — or air-gapped on-premises environments — from a single codebase.
 
 | Cloud Provider | Region | Impact Levels | Key Services |
 |:---|:---|:---|:---|
@@ -355,11 +355,11 @@ Every deployment includes:
 
 ## Child Application Generation
 
-ICDEV generates production-ready child applications — each a mini-ICDEV with its own agents, goals, and compliance stack.
+ICDEV™ generates production-ready child applications — each a mini-ICDEV™ with its own agents, goals, and compliance stack.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ICDEV (Parent Platform)                                            │
+│  ICDEV™ (Parent Platform)                                            │
 │                                                                     │
 │  ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐  │
 │  │  Child App A    │   │  Child App B    │   │  Child App C    │  │
@@ -367,14 +367,14 @@ ICDEV generates production-ready child applications — each a mini-ICDEV with i
 │  │  │ 10-12     │  │   │  │ 10-12     │  │   │  │ 10-12     │  │  │
 │  │  │ Agents    │  │   │  │ Agents    │  │   │  │ Agents    │  │  │
 │  │  │ 21 Goals  │  │   │  │ 21 Goals  │  │   │  │ 21 Goals  │  │  │
-│  │  │ GOTCHA    │  │   │  │ GOTCHA    │  │   │  │ GOTCHA    │  │  │
+│  │  │ FORGE    │  │   │  │ FORGE    │  │   │  │ FORGE    │  │  │
 │  │  │ ATLAS     │  │   │  │ ATLAS     │  │   │  │ ATLAS     │  │  │
 │  │  │ Full TDD  │  │   │  │ Full TDD  │  │   │  │ Full TDD  │  │  │
 │  │  │ Compliance│  │   │  │ Compliance│  │   │  │ Compliance│  │  │
 │  │  └───────────┘  │   │  └───────────┘  │   │  └───────────┘  │  │
 │  │                 │   │                 │   │                 │  │
 │  │  Reports back   │   │  Reports back   │   │  Reports back   │  │
-│  │  via A2A ──────────────────────────────────────────▶ ICDEV  │  │
+│  │  via A2A ──────────────────────────────────────────▶ ICDEV™  │  │
 │  └─────────────────┘   └─────────────────┘   └─────────────────┘  │
 │                                                                     │
 │  Evolutionary Intelligence: genome versioning, capability           │
@@ -461,7 +461,7 @@ Customer Need
              │
              ▼
 ┌─────────────────────────┐
-│  ATLAS BUILD PIPELINE   │  TDD code generation in 6 languages
+│  ANVIL BUILD PIPELINE   │  TDD code generation in 6 languages
 │  9-Step Test Pipeline   │  STIG-hardened containers
 │  Multi-Cloud Deploy     │  cATO monitoring
 │  Self-Healing Monitor   │  Pattern-based auto-remediation
@@ -505,7 +505,7 @@ Customer Need
 
 ## SaaS Multi-Tenancy
 
-ICDEV operates as a multi-tenant SaaS platform with IL-appropriate isolation:
+ICDEV™ operates as a multi-tenant SaaS platform with IL-appropriate isolation:
 
 | Impact Level | Compute Isolation | Database Isolation | Network Isolation |
 |:---|:---|:---|:---|
@@ -515,7 +515,7 @@ ICDEV operates as a multi-tenant SaaS platform with IL-appropriate isolation:
 
 **Authentication**: API key, OAuth 2.0/OIDC, CAC/PIV (DoD PKI)
 **Transport**: REST API + MCP Streamable HTTP (JSON-RPC 2.0)
-**Marketplace**: Federated GOTCHA asset sharing with 9-gate security pipeline
+**Marketplace**: Federated FORGE asset sharing with 9-gate security pipeline
 
 ---
 
@@ -548,9 +548,9 @@ ICDEV operates as a multi-tenant SaaS platform with IL-appropriate isolation:
 
 ## What Makes This Different
 
-Most "AI coding tools" are glorified autocomplete. ICDEV is fundamentally different:
+Most "AI coding tools" are glorified autocomplete. ICDEV™ is fundamentally different:
 
-| Typical AI Tool | ICDEV |
+| Typical AI Tool | ICDEV™ |
 |:---|:---|
 | Suggests code snippets | Engineers complete applications |
 | No compliance awareness | 34 compliance frameworks with dual-hub crosswalk |
@@ -564,15 +564,15 @@ Most "AI coding tools" are glorified autocomplete. ICDEV is fundamentally differ
 
 ---
 
-## Built with ICDEV
+## Built with ICDEV™
 
-These production applications were autonomously generated by ICDEV — each with its own agent architecture, compliance stack, TDD pipeline, and full GOTCHA framework.
+These production applications were autonomously generated by ICDEV™ — each with its own agent architecture, compliance stack, TDD pipeline, and full FORGE framework.
 
 | Application | Description | Stack | Status |
 |:---|:---|:---|:---|
 | [**GovProposal**](https://github.com/icdev-ai/govproposal) | Government proposal lifecycle platform — SAM.gov opportunity scanning, RFP analysis, AI-assisted section drafting, compliance matrix generation, review workflows, and CPMP post-award tracking | Python, Flask, SQLite, 10 agents, 34 compliance frameworks | Production |
 
-> *This list grows as ICDEV generates more applications. Each child app inherits 10-12 AI agents, 21 goal workflows, full TDD/BDD testing, and multi-cloud deployment — autonomously, from a single requirements intake session.*
+> *This list grows as ICDEV™ generates more applications. Each child app inherits 10-12 AI agents, 21 goal workflows, full TDD/BDD testing, and multi-cloud deployment — autonomously, from a single requirements intake session.*
 
 ---
 
@@ -581,7 +581,7 @@ These production applications were autonomously generated by ICDEV — each with
 ### Install from PyPI
 
 ```bash
-# Install ICDEV
+# Install ICDEV™
 pip install icdev
 
 # Add LLM providers (pick what you need)
@@ -644,14 +644,14 @@ python tools/installer/installer.py --interactive
 ## License
 
 Dual-licensed:
-- **AGPL-3.0** — Open source (government transparency obligations)
-- **Commercial** — Available for proprietary deployments
+- **Apache License 2.0** — Free for use, modification, and distribution with patent protection
+- **Commercial** — Enterprise support, custom SLAs, and dedicated compliance consulting
 
 ---
 
 <div align="center">
 
-**ICDEV — A system that builds systems.**
+**ICDEV™ — A system that builds systems.**
 
 *Autonomous AI engineering for the missions that matter.*
 

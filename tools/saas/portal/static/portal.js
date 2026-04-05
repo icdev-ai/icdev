@@ -1,8 +1,8 @@
 /**
- * ICDEV SaaS Tenant Admin Portal -- JavaScript
+ * ICDEV™ SaaS Tenant Admin Portal -- JavaScript
  * CUI // SP-CTI
  *
- * Client-side logic for the ICDEV admin portal: API calls, toast notifications,
+ * Client-side logic for the ICDEV™ admin portal: API calls, toast notifications,
  * confirm dialogs, API key management, user invitations, auto-refresh, and SSE.
  */
 
@@ -490,7 +490,7 @@
 
     /**
      * Dictionary of government/DoD/compliance acronyms with plain-English
-     * definitions. Same 42 terms as the main ICDEV dashboard.
+     * definitions. Same 42 terms as the main ICDEV™ dashboard.
      */
     var GLOSSARY = {
         "POA&M":   "Plan of Action & Milestones \u2014 your fix-it list for security gaps with deadlines",
@@ -516,7 +516,7 @@
         "ISSO":    "Information System Security Officer \u2014 person responsible for system security",
         "RMF":     "Risk Management Framework \u2014 the 6-step process for getting your ATO",
         "eMASS":   "Enterprise Mission Assurance Support Service \u2014 DoD\u2019s system for tracking ATOs",
-        "A2A":     "Agent-to-Agent \u2014 how ICDEV\u2019s AI agents communicate with each other",
+        "A2A":     "Agent-to-Agent \u2014 how ICDEV™\u2019s AI agents communicate with each other",
         "SAFe":    "Scaled Agile Framework \u2014 method for organizing large development teams",
         "WSJF":    "Weighted Shortest Job First \u2014 prioritization formula: value divided by effort",
         "BDD":     "Behavior-Driven Development \u2014 writing tests in plain English before coding",

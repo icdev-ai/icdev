@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Assess ATO boundary impact and manage supply chain risk for requirements"
+description: "ICDEV™ workflow: Assess ATO boundary impact and manage supply chain risk for requirements"
 globs:
   - "**/*.py"
   - "**/*.yaml"

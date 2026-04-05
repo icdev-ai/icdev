@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""FIPS 199 Security Categorization Engine for ICDEV.
+"""FIPS 199 Security Categorization Engine for ICDEV™.
 
 Implements FIPS Publication 199 security categorization by mapping information
 types from NIST SP 800-60 Vol 2 to CIA impact levels, computing the high
@@ -39,7 +39,7 @@ IMPACT_REVERSE = {0: "N/A", 1: "Low", 2: "Moderate", 3: "High"}
 # ---------------------------------------------------------------------------
 
 def _get_connection(db_path=None):
-    """Standard ICDEV DB connection with Row factory."""
+    """Standard ICDEV™ DB connection with Row factory."""
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(

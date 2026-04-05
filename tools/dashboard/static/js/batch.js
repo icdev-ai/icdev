@@ -1,10 +1,10 @@
 // CUI // SP-CTI
 /**
- * ICDEV Dashboard - Batch Operations Module
+ * ICDEV™ Dashboard - Batch Operations Module
  * Provides catalog display, execution, and progress tracking for
  * multi-step batch operations (Full ATO, Security Scan, etc.).
  *
- * Extends window.ICDEV (created by api.js, enhanced by ux.js).
+ * Extends window.ICDEV™ (created by api.js, enhanced by ux.js).
  * Auto-initializes on DOMContentLoaded when pathname is /batch.
  * Zero external dependencies.
  */

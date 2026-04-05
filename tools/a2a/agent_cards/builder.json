@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV Builder",
+  "name": "ICDEV™ Builder",
   "description": "Code generation with TDD methodology. Writes tests first (Cucumber/Gherkin), then generates implementation code, scaffolds projects, and runs linting/formatting.",
   "url": "https://localhost:8445",
   "version": "1.0.0",

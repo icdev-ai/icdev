@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """SOC 2 Type II Trust Service Criteria Assessment Engine.
 
 Assesses projects against AICPA SOC 2 Trust Service Criteria across
@@ -31,7 +31,9 @@ class SOC2Assessor(BaseAssessor):
     CATALOG_FILENAME = "soc2_trust_criteria.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """SOC 2-specific automated checks.
 

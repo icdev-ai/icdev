@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Universal AI Coding Companion — single CLI entry point.
+"""ICDEV™ Universal AI Coding Companion — single CLI entry point.
 
 Orchestrates tool detection, instruction file generation, MCP config
 generation, and skill translation across all supported AI coding tools.
@@ -22,17 +22,19 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.dx.tool_detector import detect_tools
-from tools.dx.instruction_generator import generate_instructions, collect_project_data
-from tools.dx.mcp_config_generator import generate_mcp_config
-from tools.dx.skill_translator import translate_skills, list_skills
+from tools.dx.tool_detector import detect_tools  # noqa: E402
+from tools.dx.instruction_generator import generate_instructions, collect_project_data  # noqa: E402
+from tools.dx.mcp_config_generator import generate_mcp_config  # noqa: E402
+from tools.dx.skill_translator import translate_skills  # noqa: E402
 
 try:
     import yaml as _yaml
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return _yaml.safe_load(f)
 except ImportError:
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return json.loads(f.read())
@@ -41,8 +43,7 @@ except ImportError:
 REGISTRY_PATH = BASE_DIR / "args" / "companion_registry.yaml"
 
 
-def setup_companion(directory=None, platforms=None, write=False,
-                    dry_run=False, detect=False):
+def setup_companion(directory=None, platforms=None, write=False, dry_run=False, detect=False):
     """Full companion setup: detect tools, generate all configs.
 
     Returns:
@@ -62,10 +63,7 @@ def setup_companion(directory=None, platforms=None, write=False,
     if platforms is None:
         # Auto: use detected tools (excluding claude_code)
         if detection["detected"]:
-            platforms = [
-                t["tool_id"] for t in detection["detected"]
-                if t["tool_id"] != "claude_code"
-            ]
+            platforms = [t["tool_id"] for t in detection["detected"] if t["tool_id"] != "claude_code"]
         if not platforms:
             # Default to top 4 most popular
             platforms = ["codex", "cursor", "copilot", "gemini"]
@@ -119,14 +117,8 @@ def setup_companion(directory=None, platforms=None, write=False,
         )
 
     # Build summary
-    instruction_count = sum(
-        1 for v in instruction_results.values()
-        if isinstance(v, dict) and v.get("written")
-    )
-    mcp_count = sum(
-        1 for v in mcp_results.values()
-        if isinstance(v, dict) and v.get("written")
-    )
+    instruction_count = sum(1 for v in instruction_results.values() if isinstance(v, dict) and v.get("written"))
+    mcp_count = sum(1 for v in mcp_results.values() if isinstance(v, dict) and v.get("written"))
     skill_count = sum(
         sum(1 for sv in pv.values() if isinstance(sv, dict) and sv.get("written"))
         for pv in skill_results.values()
@@ -145,21 +137,20 @@ def setup_companion(directory=None, platforms=None, write=False,
     return {
         "detected_tools": detection,
         "instruction_files": {
-            k: {kk: vv for kk, vv in v.items() if kk != "content"}
-            if isinstance(v, dict) else v
+            k: {kk: vv for kk, vv in v.items() if kk != "content"} if isinstance(v, dict) else v
             for k, v in instruction_results.items()
         },
         "mcp_configs": {
-            k: {kk: vv for kk, vv in v.items() if kk != "content"}
-            if isinstance(v, dict) else v
+            k: {kk: vv for kk, vv in v.items() if kk != "content"} if isinstance(v, dict) else v
             for k, v in mcp_results.items()
         },
         "skill_translations": {
             platform: {
-                skill: {kk: vv for kk, vv in info.items() if kk != "content"}
-                if isinstance(info, dict) else info
+                skill: {kk: vv for kk, vv in info.items() if kk != "content"} if isinstance(info, dict) else info
                 for skill, info in pdata.items()
-            } if isinstance(pdata, dict) and "error" not in pdata else pdata
+            }
+            if isinstance(pdata, dict) and "error" not in pdata
+            else pdata
             for platform, pdata in skill_results.items()
         },
         "project_data": {
@@ -173,9 +164,7 @@ def setup_companion(directory=None, platforms=None, write=False,
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV Universal AI Coding Companion"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Universal AI Coding Companion")
     parser.add_argument("--dir", help="Project directory")
     parser.add_argument("--setup", action="store_true", help="Full setup")
     parser.add_argument("--sync", action="store_true", help="Regenerate (alias for --setup)")
@@ -225,8 +214,8 @@ def main():
         return
 
     if args.setup or args.sync:
-        platforms = ["all"] if args.all else (
-            [p.strip() for p in args.platforms.split(",")] if args.platforms else None
+        platforms = (
+            ["all"] if args.all else ([p.strip() for p in args.platforms.split(",")] if args.platforms else None)
         )
 
         result = setup_companion(
@@ -240,7 +229,7 @@ def main():
             print(json.dumps(result, indent=2))
         else:
             s = result["summary"]
-            print(f"ICDEV Companion Setup — {s['project_name']}")
+            print(f"ICDEV™ Companion Setup — {s['project_name']}")
             print(f"{'=' * 50}")
             print(f"Platforms targeted: {s['platforms_targeted']}")
             print(f"Instruction files:  {s['instruction_files_written']} written")

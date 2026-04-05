@@ -1,6 +1,6 @@
 // CUI // SP-CTI
 // E2E Test: Dashboard Health Check
-// Verifies ICDEV web dashboard loads correctly with CUI banners and core navigation.
+// Verifies ICDEV™ web dashboard loads correctly with CUI banners and core navigation.
 
 import { test, expect } from '@playwright/test';
 
@@ -10,7 +10,7 @@ test.describe('Dashboard Health Check', () => {
   test('dashboard loads with CUI banners and navigation', async ({ page }) => {
     // Step 1-3: Navigate and verify page loads
     await page.goto('/');
-    await expect(page).toHaveTitle(/ICDEV/i);
+    await expect(page).toHaveTitle(/ICDEV™/i);
 
     // Step 4: Screenshot the full dashboard
     await page.screenshot({

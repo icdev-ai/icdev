@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Innovation Engine MCP server exposing innovation tools.
 
 Tools:
@@ -23,20 +23,21 @@ Runs as MCP server over stdio with Content-Length framing.
 
 import os
 import sys
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from tools.mcp.base_server import MCPServer
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 def _import_tool(module_path, func_name):
     """Dynamically import a function (graceful fallback)."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -44,8 +45,7 @@ def _import_tool(module_path, func_name):
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -188,7 +188,7 @@ if __name__ == "__main__":
             "properties": {
                 "source": {
                     "type": "string",
-                    "description": "Specific source to scan (github, cve_databases, stackoverflow, hackernews) or omit for all",
+                    "description": "Specific source to scan (github, cve_databases, stackoverflow, hackernews) or omit for all",  # noqa: E501
                 },
             },
         },
@@ -268,14 +268,14 @@ if __name__ == "__main__":
 
     server.register_tool(
         name="introspect",
-        description="Run introspective analysis on ICDEV internal telemetry",
+        description="Run introspective analysis on ICDEV™ internal telemetry",
         handler=handle_introspect,
         input_schema={
             "type": "object",
             "properties": {
                 "type": {
                     "type": "string",
-                    "description": "Analysis type: all, failed_self_heals, gate_failures, unused_tools, slow_pipelines, nlq_gaps, knowledge_gaps",
+                    "description": "Analysis type: all, failed_self_heals, gate_failures, unused_tools, slow_pipelines, nlq_gaps, knowledge_gaps",  # noqa: E501
                     "default": "all",
                 },
             },

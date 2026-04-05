@@ -32,8 +32,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.gateway.adapters.base import BaseChannelAdapter
-from tools.gateway.event_envelope import CommandEnvelope, parse_command_text
+from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
 logger = logging.getLogger("icdev.gateway.adapters.mattermost")
 
@@ -61,8 +61,7 @@ class MattermostAdapter(BaseChannelAdapter):
 
         return hmac.compare_digest(signature, self.webhook_token)
 
-    def parse_webhook(self, request_data: Dict[str, Any],
-                      headers: Dict[str, str]) -> Optional[CommandEnvelope]:
+    def parse_webhook(self, request_data: Dict[str, Any], headers: Dict[str, str]) -> Optional[CommandEnvelope]:
         """Parse a Mattermost outgoing webhook payload into a CommandEnvelope.
 
         Mattermost outgoing webhook format:
@@ -83,9 +82,8 @@ class MattermostAdapter(BaseChannelAdapter):
         if not text:
             return None
 
-        # Only process ICDEV commands
-        if not (text.startswith("/icdev") or text.startswith("/bind")
-                or text.startswith("icdev-")):
+        # Only process ICDEV™ commands
+        if not (text.startswith("/icdev") or text.startswith("/bind") or text.startswith("icdev-")):
             return None
 
         command, args = parse_command_text(text)
@@ -117,8 +115,7 @@ class MattermostAdapter(BaseChannelAdapter):
 
         return envelope
 
-    def send_message(self, channel_user_id: str, text: str,
-                     thread_id: str = "") -> bool:
+    def send_message(self, channel_user_id: str, text: str, thread_id: str = "") -> bool:
         """Send a message via Mattermost REST API.
 
         Uses POST /api/v4/posts to create a new post in the channel.
@@ -134,17 +131,23 @@ class MattermostAdapter(BaseChannelAdapter):
 
         url = f"{self.base_url}/api/v4/posts"
 
-        payload = json.dumps({
-            "channel_id": thread_id,
-            "message": text,
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "channel_id": thread_id,
+                "message": text,
+            }
+        ).encode("utf-8")
 
         try:
-            req = Request(url, data=payload, headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.token}",
-            })
-            with urlopen(req, timeout=10) as resp:
+            req = Request(
+                url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.token}",
+                },
+            )
+            with urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return resp.status in (200, 201)
         except (URLError, Exception) as e:
             logger.error("Mattermost send failed: %s", e)

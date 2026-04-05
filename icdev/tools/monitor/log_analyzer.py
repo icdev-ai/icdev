@@ -52,7 +52,7 @@ DEFAULT_PATTERNS = [
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     path = db_path or DB_PATH
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row

@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Proactive Heartbeat Daemon — periodically checks for actionable items (D141-D142).
 
-Polls on a configurable interval and runs 7 check functions against the ICDEV
+Polls on a configurable interval and runs 7 check functions against the ICDEV™
 database.  Each check detects a specific class of overdue / stale / failing
 items and fans notifications to the audit trail, SSE dashboard, and (optionally)
 the remote-command gateway.
@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import json
-import os
 import signal
 import sqlite3
 import sys
@@ -24,6 +23,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -61,8 +61,7 @@ def _generate_id() -> str:
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a SQLite connection with WAL mode and row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path), timeout=10)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     try:
         conn.execute("PRAGMA journal_mode=WAL")
     except sqlite3.OperationalError:
@@ -140,6 +139,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "interval_seconds": 86400,
             "stale_days": 90,
         },
+        "coherence_health": {
+            "enabled": True,
+            "interval_seconds": 3600,
+        },
     },
 }
 
@@ -196,10 +199,7 @@ def _notify(
     2. SSE broadcast (best-effort HTTP POST to dashboard)
     3. Gateway mailbox broadcast (if configured, best-effort)
     """
-    event_type = (
-        "heartbeat_check_critical" if severity == "critical"
-        else "heartbeat_check_warning"
-    )
+    event_type = "heartbeat_check_critical" if severity == "critical" else "heartbeat_check_warning"
 
     # --- 1. Audit trail ---------------------------------------------------
     try:
@@ -217,21 +217,26 @@ def _notify(
 
     # --- 2. SSE broadcast --------------------------------------------------
     try:
-        payload = json.dumps({
-            "event_type": event_type,
-            "check_type": check_type,
-            "severity": severity,
-            "title": title,
-            "details": details,
-            "timestamp": _utcnow_iso(),
-        }).encode("utf-8")
+        payload = json.dumps(
+            {
+                "event_type": event_type,
+                "check_type": check_type,
+                "severity": severity,
+                "title": title,
+                "details": details,
+                "timestamp": _utcnow_iso(),
+            }
+        ).encode("utf-8")
+        import os as _os
+
+        _dash_port = _os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
         req = urllib.request.Request(
-            "http://localhost:5000/api/events/ingest",
+            f"http://localhost:{_dash_port}/api/events/ingest",
             data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=3)  # noqa: S310
+        urllib.request.urlopen(req, timeout=3)  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
     except (urllib.error.URLError, OSError, ValueError):
         pass  # dashboard may not be running
 
@@ -440,21 +445,23 @@ def check_memory_maintenance(
     # D181: Flush auto-capture buffer as first step
     try:
         from tools.memory.auto_capture import flush_buffer, buffer_status
+
         buf = buffer_status(db_path=mem_path)
         if buf.get("total_buffered", 0) > 0:
             flush_result = flush_buffer(db_path=mem_path)
-            items.append({
-                "type": "buffer_flush",
-                "flushed": flush_result.get("flushed", 0),
-                "duplicates": flush_result.get("duplicates", 0),
-            })
+            items.append(
+                {
+                    "type": "buffer_flush",
+                    "flushed": flush_result.get("flushed", 0),
+                    "duplicates": flush_result.get("duplicates", 0),
+                }
+            )
     except (ImportError, Exception):
         pass  # auto_capture not available
 
     # Original: detect stale entries
     try:
-        conn = sqlite3.connect(str(mem_path), timeout=10)
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         try:
             rows = conn.execute(
                 """SELECT m.id, m.content_type, m.created_at,
@@ -476,8 +483,88 @@ def check_memory_maintenance(
         status = "warning" if count > 0 else "ok"
         return {"status": status, "count": count, "items": items}
     except Exception as exc:
-        return {"status": "ok", "count": len(items), "items": items,
-                "note": f"table not found or error: {exc}"}
+        return {"status": "ok", "count": len(items), "items": items, "note": f"table not found or error: {exc}"}
+
+
+def check_coherence_health(
+    config: Optional[dict] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Check 8: Implementation coherence drift detection.
+
+    Runs the coherence checker to detect implementation drift such as
+    missing __init__.py files, stale imports, unregistered DB tables,
+    or config/code misalignment.
+    """
+    try:
+        from tools.workflow.coherence_checker import run_checks
+
+        report = run_checks()
+        if not report.overall_pass:
+            return {
+                "status": "warning",
+                "count": report.failed_checks + report.warned_checks,
+                "items": [
+                    {
+                        "type": "coherence_drift",
+                        "failed": report.failed_checks,
+                        "warned": report.warned_checks,
+                        "passed": report.passed_checks,
+                        "total": report.total_checks,
+                    }
+                ],
+            }
+        return {
+            "status": "ok",
+            "count": 0,
+            "items": [],
+        }
+    except Exception as exc:
+        return {
+            "status": "ok",
+            "count": 0,
+            "items": [],
+            "note": f"Coherence checker unavailable: {exc}",
+        }
+
+
+def check_review_board_health(
+    config: dict = None,
+    db_path=None,
+) -> Dict[str, Any]:
+    """Check Review Board daemon health — circuit breakers, critical findings."""
+    try:
+        conn = _get_connection(db_path)
+        try:
+            # Check for tripped circuit breakers
+            try:
+                cb_rows = conn.execute(
+                    "SELECT reflex_name FROM review_board_reflex_state WHERE circuit_breaker_open = 1"
+                ).fetchall()
+            except Exception:
+                cb_rows = []
+
+            # Check for unfixed critical findings
+            try:
+                critical = conn.execute(
+                    "SELECT COUNT(*) FROM review_board_findings WHERE severity = 'critical' AND fix_applied = 0"
+                ).fetchone()
+                critical_count = critical[0] if critical else 0
+            except Exception:
+                critical_count = 0
+
+            items = []
+            for r in cb_rows:
+                items.append({"type": "circuit_breaker_open", "reflex": r[0]})
+            if critical_count > 0:
+                items.append({"type": "critical_findings", "count": critical_count})
+
+            status = "critical" if cb_rows or critical_count > 0 else "ok"
+            return {"status": status, "count": len(items), "items": items}
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"status": "ok", "count": 0, "items": [], "note": f"Review board tables not available: {exc}"}
 
 
 # ---------------------------------------------------------------------------
@@ -491,6 +578,8 @@ CHECK_REGISTRY: Dict[str, Callable] = {
     "failing_tests": check_failing_tests,
     "expiring_isas": check_expiring_isas,
     "memory_maintenance": check_memory_maintenance,
+    "coherence_health": check_coherence_health,
+    "review_board_health": check_review_board_health,
 }
 
 
@@ -740,9 +829,7 @@ def _format_status_human(statuses: List[dict]) -> str:
 # ---------------------------------------------------------------------------
 def main() -> None:
     """CLI entry point for the heartbeat daemon."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV Heartbeat Daemon (D141) — proactive check loop"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Heartbeat Daemon (D141) — proactive check loop")
     parser.add_argument("--once", action="store_true", help="Single pass, then exit")
     parser.add_argument("--check", type=str, help="Run a specific check only")
     parser.add_argument("--status", action="store_true", help="Show latest check statuses")

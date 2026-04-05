@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Plan+Build — Combined planning and implementation workflow
+# ICDEV™ Plan+Build — Combined planning and implementation workflow
 
 """
 Usage: python tools/ci/workflows/icdev_plan_build.py <issue-number> [run-id]

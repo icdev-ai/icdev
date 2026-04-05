@@ -2,7 +2,7 @@
 # /icdev-trace — Observability, Tracing & Explainable AI
 
 Query distributed traces, provenance lineage, run AgentSHAP analysis, and assess
-XAI compliance for ICDEV projects.
+XAI compliance for ICDEV™ projects.
 
 ## Workflow
 

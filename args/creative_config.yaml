@@ -1,16 +1,111 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Creative Engine Configuration — customer-centric feature discovery
+# ICDEV™ Creative Engine Configuration — customer-centric feature discovery
 # Automates competitor gap analysis, pain point discovery, feature opportunity scouting
 
 # =========================================================================
 # Product Domain (what you're building for)
 # =========================================================================
 domain:
-  name: ""                              # e.g., "government proposal management"
-  g2_category_url: ""                   # G2 category page URL for auto-discovery
-  capterra_category_url: ""             # Capterra category page URL
+  name: "file synchronization"
+  g2_category_url: "https://www.g2.com/categories/file-sync"
+  capterra_category_url: "https://www.capterra.com/file-sync-software/"
   trustradius_category_url: ""          # TrustRadius category page URL
-  producthunt_topic: ""                 # Product Hunt topic for monitoring
+  producthunt_topic: "file-sync"        # Product Hunt topic for monitoring
+
+# Secondary domain — blockchain monitoring & analytics
+blockchain:
+  name: "blockchain"
+  g2_category_url: "https://www.g2.com/categories/blockchain"
+  capterra_category_url: "https://www.capterra.com/blockchain-software/"
+  trustradius_category_url: "https://www.trustradius.com/blockchain-platforms"
+  producthunt_topic: "blockchain"
+  keywords:
+    - blockchain
+    - smart contract
+    - DeFi
+    - web3
+    - distributed ledger
+    - tokenization
+    - consensus mechanism
+    - on-chain analytics
+    - crypto compliance
+    - digital asset
+
+# AI agent frameworks domain
+ai_agent_frameworks:
+  name: "AI agent frameworks"
+  g2_category_url: "https://www.g2.com/categories/ai-agents"
+  capterra_category_url: "https://www.capterra.com/ai-agent-software/"
+  trustradius_category_url: ""
+  producthunt_topic: "ai-agents"
+  keywords:
+    - AI agent
+    - autonomous agent
+    - self-improving agent
+    - agent framework
+    - tool calling
+    - function calling
+    - MCP
+    - agent protocol
+    - skill learning
+    - memory system
+    - multi-agent
+    - agent orchestration
+    - hermes agent
+    - claude code
+    - openai codex
+
+# Network Canvas domain — network design, diagramming, simulation for architects
+network_canvas:
+  name: "network design"
+  g2_category_url: "https://www.g2.com/categories/network-diagramming"
+  capterra_category_url: "https://www.capterra.com/network-diagram-software/"
+  trustradius_category_url: "https://www.trustradius.com/network-management"
+  producthunt_topic: "network-design"
+  keywords:
+    - network diagram
+    - network topology
+    - network design
+    - network simulation
+    - network canvas
+    - network architect
+    - cloud network
+    - infrastructure diagram
+    - network monitoring
+    - network visualization
+    - VLAN design
+    - subnet planning
+    - firewall rules
+    - load balancer
+    - SDN
+    - network compliance
+    - STIG network
+    - zero trust network
+    - network automation
+    - infrastructure as code
+
+# Knowledge graph tools domain
+knowledge_graph:
+  name: "knowledge graph"
+  g2_category_url: "https://www.g2.com/categories/graph-databases"
+  capterra_category_url: "https://www.capterra.com/graph-database-software/"
+  trustradius_category_url: "https://www.trustradius.com/graph-databases"
+  producthunt_topic: "knowledge-graph"
+  keywords:
+    - knowledge graph
+    - graph database
+    - Neo4j
+    - TigerGraph
+    - Amazon Neptune
+    - property graph
+    - RDF
+    - ontology
+    - graph analytics
+    - graph neural network
+    - linked data
+    - semantic web
+    - entity resolution
+    - relationship extraction
 
 # =========================================================================
 # Source Adapters
@@ -45,11 +140,76 @@ sources:
     scan_interval_hours: 12
     platforms:
       - name: reddit
-        subreddits: []                   # populated per domain
+        subreddits:
+          - selfhosted
+          - DataHoarder
+          - syncthing
+          - nextcloud
+          - sysadmin
+          - homelab
+          - linux
+          - opensource
+          - blockchain
+          - ethereum
+          - CryptoCurrency
+          - defi
+          - solana
+          - web3
+          - networking
+          - ccna
+          - netsec
+          - cloudcomputing
+          - aws
+          - azure
+          - devops
+          - NetworkEngineering
         sort: hot
         max_results: 50
         min_upvotes: 10
-        keyword_filter: []               # populated per domain
+        keyword_filter:
+          - file sync
+          - file synchronization
+          - cloud sync
+          - backup sync
+          - syncthing
+          - rclone
+          - nextcloud
+          - owncloud
+          - seafile
+          - network diagram
+          - network topology
+          - network design tool
+          - network simulation
+          - network canvas
+          - infrastructure diagram
+          - Visio alternative
+          - draw.io network
+          - Lucidchart network
+          - NetBox
+          - SolarWinds
+          - PRTG
+          - Cisco network
+          - network visualization
+          - subnet calculator
+          - VLAN planning
+          - firewall diagram
+          - zero trust architecture
+          - dropbox alternative
+          - self-hosted sync
+          - peer-to-peer sync
+          - real-time sync
+          - conflict resolution
+          - delta sync
+          - blockchain
+          - smart contract
+          - web3
+          - DeFi
+          - on-chain
+          - crypto compliance
+          - distributed ledger
+          - tokenization
+          - NFT
+          - DAO
       - name: govcon_blogs
         urls: []                         # populated per domain
         max_results: 30
@@ -63,7 +223,28 @@ sources:
   github_issues:
     enabled: true
     scan_interval_hours: 12
-    repos: []                            # populated per domain
+    repos:
+      - syncthing/syncthing
+      - rclone/rclone
+      - nextcloud/server
+      - owncloud/core
+      - haiwen/seafile
+      - ethereum/go-ethereum
+      - solana-labs/solana
+      - hyperledger/fabric
+      - ChainSafe/web3.js
+      - OpenZeppelin/openzeppelin-contracts
+      - paradigmxyz/reth
+      - foundry-rs/foundry
+      - paperclipai/paperclip
+      - crytic/slither
+      - netbox-community/netbox
+      - jgraph/drawio
+      - mininet/mininet
+      - batfish/batfish
+      - nautobot/nautobot
+      - GNS3/gns3-gui
+      - networktocode/ntc-templates
     labels: [enhancement, feature-request, feature, wishlist, "help wanted"]
     max_results: 100
     rate_limit:
@@ -73,7 +254,15 @@ sources:
   producthunt:
     enabled: true
     scan_interval_hours: 168             # weekly
-    topics: []                           # populated per domain
+    topics:
+      - file-sync
+      - file-sharing
+      - cloud-storage
+      - backup
+      - blockchain
+      - web3
+      - crypto
+      - defi
     max_results: 20
 
 # =========================================================================

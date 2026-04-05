@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.supply_chain.dependency_graph — supply chain dependency graph
@@ -12,16 +13,9 @@ import sqlite3
 import pytest
 
 from icdev.tools.supply_chain.dependency_graph import (
-    CRITICALITY_LEVELS,
-    DEPENDENCY_TYPES,
-    RISK_TIERS,
-    SECTION_889,
-    SOURCE_TARGET_TYPES,
-    VENDOR_TYPES,
     add_dependency,
     add_vendor,
     build_graph,
-    get_critical_path,
     get_downstream,
     get_upstream,
     propagate_impact,
@@ -126,25 +120,21 @@ def seeded_db(dep_db):
 # TestAddVendor
 # ---------------------------------------------------------------------------
 
+
 class TestAddVendor:
     """add_vendor: insert a vendor record and validate constraints."""
 
     def test_add_vendor_returns_id_and_name(self, dep_db):
-        result = add_vendor(
-            PROJECT_ID, "Acme Corp", "cots", "US", db_path=str(dep_db))
+        result = add_vendor(PROJECT_ID, "Acme Corp", "cots", "US", db_path=str(dep_db))
         assert "vendor_id" in result
         assert result["vendor_name"] == "Acme Corp"
         assert result["scrm_risk_tier"] == "moderate"
 
     def test_add_vendor_persists_to_db(self, dep_db):
-        result = add_vendor(
-            PROJECT_ID, "Beta Inc", "oss", "CA",
-            scrm_risk_tier="low", db_path=str(dep_db))
+        result = add_vendor(PROJECT_ID, "Beta Inc", "oss", "CA", scrm_risk_tier="low", db_path=str(dep_db))
         conn = sqlite3.connect(str(dep_db))
         conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT * FROM supply_chain_vendors WHERE id = ?",
-            (result["vendor_id"],)).fetchone()
+        row = conn.execute("SELECT * FROM supply_chain_vendors WHERE id = ?", (result["vendor_id"],)).fetchone()
         conn.close()
         assert row is not None
         assert row["vendor_name"] == "Beta Inc"
@@ -154,31 +144,27 @@ class TestAddVendor:
 
     def test_add_vendor_invalid_type_raises(self, dep_db):
         with pytest.raises(ValueError, match="vendor_type"):
-            add_vendor(PROJECT_ID, "Bad", "invalid_type", "US",
-                       db_path=str(dep_db))
+            add_vendor(PROJECT_ID, "Bad", "invalid_type", "US", db_path=str(dep_db))
 
     def test_add_vendor_invalid_risk_tier_raises(self, dep_db):
         with pytest.raises(ValueError, match="scrm_risk_tier"):
-            add_vendor(PROJECT_ID, "Bad", "cots", "US",
-                       scrm_risk_tier="extreme", db_path=str(dep_db))
+            add_vendor(PROJECT_ID, "Bad", "cots", "US", scrm_risk_tier="extreme", db_path=str(dep_db))
 
     def test_add_vendor_invalid_section_889_raises(self, dep_db):
         with pytest.raises(ValueError, match="section_889_status"):
-            add_vendor(PROJECT_ID, "Bad", "cots", "US",
-                       section_889_status="nope", db_path=str(dep_db))
+            add_vendor(PROJECT_ID, "Bad", "cots", "US", section_889_status="nope", db_path=str(dep_db))
 
 
 # ---------------------------------------------------------------------------
 # TestAddDependency
 # ---------------------------------------------------------------------------
 
+
 class TestAddDependency:
     """add_dependency: insert a dependency edge with validation."""
 
     def test_add_dependency_returns_id(self, dep_db):
-        result = add_dependency(
-            PROJECT_ID, "svc-auth", "svc-db", "depends_on", "high",
-            db_path=str(dep_db))
+        result = add_dependency(PROJECT_ID, "svc-auth", "svc-db", "depends_on", "high", db_path=str(dep_db))
         assert "dependency_id" in result
         assert result["source"] == "svc-auth"
         assert result["target"] == "svc-db"
@@ -186,24 +172,21 @@ class TestAddDependency:
 
     def test_add_dependency_invalid_type_raises(self, dep_db):
         with pytest.raises(ValueError, match="dependency_type"):
-            add_dependency(PROJECT_ID, "A", "B", "unknown_dep", "medium",
-                           db_path=str(dep_db))
+            add_dependency(PROJECT_ID, "A", "B", "unknown_dep", "medium", db_path=str(dep_db))
 
     def test_add_dependency_invalid_criticality_raises(self, dep_db):
         with pytest.raises(ValueError, match="criticality"):
-            add_dependency(PROJECT_ID, "A", "B", "depends_on", "ultra",
-                           db_path=str(dep_db))
+            add_dependency(PROJECT_ID, "A", "B", "depends_on", "ultra", db_path=str(dep_db))
 
     def test_add_dependency_with_vendor_id_in_metadata(self, dep_db):
-        vendor = add_vendor(PROJECT_ID, "VendorX", "saas", "US",
-                            db_path=str(dep_db))
+        vendor = add_vendor(PROJECT_ID, "VendorX", "saas", "US", db_path=str(dep_db))
         result = add_dependency(
-            PROJECT_ID, "app", "vendor-lib", "depends_on", "medium",
-            vendor_id=vendor["vendor_id"], db_path=str(dep_db))
+            PROJECT_ID, "app", "vendor-lib", "depends_on", "medium", vendor_id=vendor["vendor_id"], db_path=str(dep_db)
+        )
         conn = sqlite3.connect(str(dep_db))
         row = conn.execute(
-            "SELECT metadata FROM supply_chain_dependencies WHERE id = ?",
-            (result["dependency_id"],)).fetchone()
+            "SELECT metadata FROM supply_chain_dependencies WHERE id = ?", (result["dependency_id"],)
+        ).fetchone()
         conn.close()
         meta = json.loads(row[0])
         assert meta["vendor_id"] == vendor["vendor_id"]
@@ -212,6 +195,7 @@ class TestAddDependency:
 # ---------------------------------------------------------------------------
 # TestBuildGraph
 # ---------------------------------------------------------------------------
+
 
 class TestBuildGraph:
     """build_graph: construct adjacency-list representation from DB."""
@@ -242,6 +226,7 @@ class TestBuildGraph:
 # TestTraversal
 # ---------------------------------------------------------------------------
 
+
 class TestTraversal:
     """get_upstream / get_downstream: BFS traversal of the graph."""
 
@@ -250,8 +235,10 @@ class TestTraversal:
         names = {entry["component"] for entry in result["upstream"]}
         # A depends on B, C; B,C depend on D; D depends on E
         assert names == {
-            "component:B", "component:C",
-            "component:D", "component:E",
+            "component:B",
+            "component:C",
+            "component:D",
+            "component:E",
         }
 
     def test_upstream_of_leaf_is_empty(self, seeded_db):
@@ -264,8 +251,10 @@ class TestTraversal:
         names = {entry["component"] for entry in result["downstream"]}
         # Everything that transitively depends on E: D, B, C, A
         assert names == {
-            "component:D", "component:B",
-            "component:C", "component:A",
+            "component:D",
+            "component:B",
+            "component:C",
+            "component:A",
         }
         assert result["impact_radius"] == 4
 
@@ -279,22 +268,19 @@ class TestTraversal:
 # TestImpactPropagation
 # ---------------------------------------------------------------------------
 
+
 class TestImpactPropagation:
     """propagate_impact: severity decay and blast radius calculation."""
 
     def test_critical_impact_from_e(self, seeded_db):
-        result = propagate_impact(
-            PROJECT_ID, "E", "vulnerability", "critical",
-            db_path=str(seeded_db))
+        result = propagate_impact(PROJECT_ID, "E", "vulnerability", "critical", db_path=str(seeded_db))
         assert result["source_component"] == "E"
         assert result["impact_type"] == "vulnerability"
         assert result["severity"] == "critical"
         assert result["blast_radius"] == 4  # D, B, C, A
 
     def test_severity_decays_per_hop(self, seeded_db):
-        result = propagate_impact(
-            PROJECT_ID, "E", "vulnerability", "critical",
-            db_path=str(seeded_db))
+        result = propagate_impact(PROJECT_ID, "E", "vulnerability", "critical", db_path=str(seeded_db))
         # Base score for critical = 10.0, decay = 0.8
         # Hop 1 (D): 10.0 * 0.8 = 8.0
         hop1 = [a for a in result["affected_components"] if a["hop"] == 1]
@@ -304,11 +290,8 @@ class TestImpactPropagation:
 
     def test_low_severity_stays_contained(self, dep_db):
         # Single edge: X -> Y
-        add_dependency(PROJECT_ID, "X", "Y", "depends_on", "low",
-                       db_path=str(dep_db))
-        result = propagate_impact(
-            PROJECT_ID, "Y", "deprecation", "low",
-            db_path=str(dep_db))
+        add_dependency(PROJECT_ID, "X", "Y", "depends_on", "low", db_path=str(dep_db))
+        result = propagate_impact(PROJECT_ID, "Y", "deprecation", "low", db_path=str(dep_db))
         # Only X depends on Y, blast radius = 1
         assert result["blast_radius"] == 1
         affected = result["affected_components"][0]
@@ -317,20 +300,15 @@ class TestImpactPropagation:
         assert affected["propagated_severity"] == "low"
 
     def test_recommendations_critical_severity(self, seeded_db):
-        result = propagate_impact(
-            PROJECT_ID, "E", "vulnerability", "critical",
-            db_path=str(seeded_db))
+        result = propagate_impact(PROJECT_ID, "E", "vulnerability", "critical", db_path=str(seeded_db))
         recs = " ".join(result["recommendations"])
         assert "incident response" in recs.lower()
 
     def test_no_downstream_gives_contained_recommendation(self, dep_db):
         # Isolated node: add one edge so the component exists but has no
         # downstream dependents.
-        add_dependency(PROJECT_ID, "solo", "target", "depends_on", "medium",
-                       db_path=str(dep_db))
-        result = propagate_impact(
-            PROJECT_ID, "solo", "outage", "medium",
-            db_path=str(dep_db))
+        add_dependency(PROJECT_ID, "solo", "target", "depends_on", "medium", db_path=str(dep_db))
+        result = propagate_impact(PROJECT_ID, "solo", "outage", "medium", db_path=str(dep_db))
         assert result["blast_radius"] == 0
         recs = " ".join(result["recommendations"])
         assert "contained" in recs.lower()

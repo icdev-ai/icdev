@@ -51,6 +51,6 @@ These are included in EVERY generated app regardless of fitness score:
 - Self-healing with pattern detection
 - A2A interoperability (agent card)
 - AIOps (predictive scaling, anomaly detection)
-- GOTCHA framework (goals, tools, args, context, hardprompts)
+- FORGE framework (goals, tools, args, context, hardprompts)
 - AI governance (token budgets, prompt injection defense)
 - User feedback collection (RLHF-lite)

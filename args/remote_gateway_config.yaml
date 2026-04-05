@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 # Remote Command Gateway Configuration (Phase 28)
-# Controls which messaging channels can issue ICDEV commands remotely.
+# Controls which messaging channels can issue ICDEV™ commands remotely.
 #
 # D134: Air-gapped environments use internal chat + optional Mattermost only
 # D137: Command allowlist is YAML-driven with per-channel overrides
@@ -188,8 +188,8 @@ gateway:
 
   # Agent Card (A2A protocol)
   agent_card:
-    name: "ICDEV Remote Command Gateway"
-    description: "Receives commands from messaging channels, validates through 8-gate security chain, executes via ICDEV tools, returns classification-filtered responses."
+    name: "ICDEV™ Remote Command Gateway"
+    description: "Receives commands from messaging channels, validates through 8-gate security chain, executes via ICDEV™ tools, returns classification-filtered responses."
     version: "1.0.0"
 
   # Response formatting

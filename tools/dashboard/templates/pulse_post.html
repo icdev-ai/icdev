@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+{% block title %}{{ app_name }} — Pulse: {{ post.title[:50] if post else 'Post' }}{% endblock %}
+{% block content %}
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+    <a href="/pulse" style="color: var(--text-dim); font-size: 13px;">&larr; Back to Pulse</a>
+</div>
+
+{% if post %}
+<!-- Hero Image -->
+{% if post.hero_image_path %}
+<div style="margin-bottom: 16px; border-radius: 8px; overflow: hidden; max-height: 400px;">
+    <img src="/api/pulse/hero-image/{{ post.id }}" alt="Hero image for {{ post.title }}"
+         style="width: 100%; height: auto; display: block; object-fit: cover;" />
+</div>
+{% endif %}
+
+<!-- Generated Video -->
+{% if post.generated_video_path %}
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+        <h3 style="margin: 0; font-size: 14px;">Generated Video
+            <span class="badge badge-blue" style="margin-left: 8px;">{{ post.generated_video_method or 'unknown' }}</span>
+            {% if post.generated_video_duration %}
+            <span style="color: var(--text-dim); font-size: 12px; margin-left: 8px;">{{ '%.1f'|format(post.generated_video_duration) }}s</span>
+            {% endif %}
+        </h3>
+    </div>
+    <div style="border-radius: 8px; overflow: hidden; background: #000;">
+        {% if post.generated_video_method == 'animated_svg' %}
+        <object data="/api/pulse/generated-video/{{ post.id }}" type="image/svg+xml"
+                style="width: 100%; max-height: 400px; display: block;">
+            Generated video (SVG)
+        </object>
+        {% else %}
+        <video controls autoplay muted loop playsinline
+               style="width: 100%; max-height: 400px; display: block;"
+               poster="/api/pulse/hero-image/{{ post.id }}">
+            <source src="/api/pulse/generated-video/{{ post.id }}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+        <div>
+            <h2 style="margin: 0;">{{ post.title or 'Untitled' }}</h2>
+            <div style="font-size: 13px; color: var(--text-dim); margin-top: 4px;">
+                <span class="badge {% if post.status == 'published' %}badge-green{% elif post.status == 'draft' %}badge-orange{% elif post.status == 'approved' %}badge-green{% elif post.status == 'rejected' %}badge-red{% else %}badge-blue{% endif %}">
+                    {{ post.status }}
+                </span>
+                &nbsp;|&nbsp; {{ post.word_count or 0 }} words
+                &nbsp;|&nbsp; WriteGuard: {{ 'PASSED' if post.writeguard_passed else 'NEEDS REVIEW' }}
+                {% if post.published_at %}&nbsp;|&nbsp; Published: {{ post.published_at[:10] }}{% endif %}
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            {% if post.status in ('draft', 'in_review') %}
+            <button class="btn btn-rewrite" onclick="rewritePost('{{ post.id }}')" id="btn-rewrite">Rewrite (Sonnet)</button>
+            <button class="btn btn-success" onclick="approvePost('{{ post.id }}')">Approve</button>
+            <button class="btn btn-danger" onclick="rejectPost('{{ post.id }}')">Reject</button>
+            {% elif post.status == 'approved' %}
+            <button class="btn btn-primary" onclick="publishPost('{{ post.id }}')">Publish &amp; Go Live</button>
+            {% endif %}
+            {% if post.status == 'published' %}
+            <button class="btn btn-wp" onclick="pushToWordPress('{{ post.id }}')" id="btn-wp">
+                <span id="wp-icon">W</span> Push to WordPress
+            </button>
+            {% endif %}
+            <button class="btn" onclick="exportPost('{{ post.id }}')">Export</button>
+            <span id="wp-status" style="font-size: 11px; color: var(--text-dim);"></span>
+        </div>
+    </div>
+</div>
+
+<!-- Quality Stats Panel -->
+<div class="card" style="margin-bottom: 16px; border-left: 3px solid {{ '#22c55e' if post.writeguard_passed else '#f59e0b' }};">
+    <h3 style="margin: 0 0 8px 0; font-size: 14px;">WriteGuard Quality Stats</h3>
+    <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+        <div class="stat-card mini">
+            <div class="label">Grammar</div>
+            <div class="value {{ 'green' if (post.grammar_score or 0) >= 80 else 'orange' if (post.grammar_score or 0) >= 60 else 'red' }}">
+                {{ '%.0f'|format(post.grammar_score) if post.grammar_score else '—' }}
+            </div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Readability</div>
+            <div class="value {{ 'green' if (post.readability_score or 0) >= 80 else 'orange' if (post.readability_score or 0) >= 60 else 'red' }}">
+                {{ '%.0f'|format(post.readability_score) if post.readability_score else '—' }}
+            </div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Plagiarism</div>
+            <div class="value {{ 'green' if (post.plagiarism_score or 0) >= 80 else 'orange' if (post.plagiarism_score or 0) >= 60 else 'red' }}">
+                {{ '%.0f'|format(post.plagiarism_score) if post.plagiarism_score else '—' }}
+            </div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">AI Detection</div>
+            <div class="value {{ 'green' if (post.ai_detection_score or 0) >= 60 else 'orange' if (post.ai_detection_score or 0) >= 40 else 'red' }}">
+                {{ '%.0f'|format(post.ai_detection_score) if post.ai_detection_score else '—' }}
+            </div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Overall</div>
+            <div class="value {{ 'green' if (post.readability_score or 0) >= 80 else 'orange' if (post.readability_score or 0) >= 60 else 'red' }}" style="font-size: 20px;">
+                {{ '%.0f'|format(post.readability_score) if post.readability_score else '—' }}
+            </div>
+        </div>
+    </div>
+    <div id="rewrite-status" style="font-size: 12px; color: var(--text-dim); margin-top: 8px;"></div>
+</div>
+
+<!-- SEO Score Panel -->
+<div class="card" style="margin-bottom: 16px; border-left: 3px solid {{ '#22c55e' if (post.seo_score or 0) >= 80 else '#f59e0b' if (post.seo_score or 0) >= 60 else '#ef4444' }};">
+    <h3 style="margin: 0 0 8px 0; font-size: 14px;">SEO Score</h3>
+    <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+        <div class="stat-card mini">
+            <div class="label">Score</div>
+            <div class="value {{ 'green' if (post.seo_score or 0) >= 80 else 'orange' if (post.seo_score or 0) >= 60 else 'red' }}" style="font-size: 20px;">
+                {{ '%.0f'|format(post.seo_score) if post.seo_score else '—' }}
+            </div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">SEO Title</div>
+            <div class="value" style="font-size: 12px; word-break: break-word;">{{ post.seo_title or '—' }}</div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Meta Description</div>
+            <div class="value" style="font-size: 11px; word-break: break-word;">{{ (post.seo_description or '—')[:80] }}{% if (post.seo_description or '')|length > 80 %}...{% endif %}</div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Keywords</div>
+            <div class="value" style="font-size: 11px; word-break: break-word;">{{ post.seo_keywords or '—' }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- TL;DR -->
+{% if post.tldr %}
+<div class="card" style="margin-bottom: 16px; border-left: 3px solid var(--primary);">
+    <h3 style="margin: 0 0 6px 0; font-size: 14px;">TL;DR</h3>
+    <p style="font-size: 13px; color: var(--text-dim); margin: 0;">{{ post.tldr }}</p>
+</div>
+{% endif %}
+
+<!-- Metadata -->
+<div class="stat-grid" style="margin-bottom: 16px;">
+    <div class="stat-card">
+        <div class="label">SEO Title</div>
+        <div style="font-size: 13px;">{{ post.seo_title or '—' }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">SEO Description</div>
+        <div style="font-size: 13px;">{{ (post.seo_description or '—')[:100] }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Keywords</div>
+        <div style="font-size: 13px;">{{ (post.seo_keywords or '—')[:80] }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Topic</div>
+        <div style="font-size: 13px;">{{ post.topic or '—' }}</div>
+    </div>
+</div>
+
+<!-- Capabilities Referenced -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+        <h3 style="margin: 0; font-size: 14px;">ICDEV™ Capabilities Referenced</h3>
+        <button class="btn btn-sm" onclick="enrichThisPost('{{ post.id }}')" id="btn-enrich" title="Rewrite with ICDEV™ capability context (Claude Sonnet)">Enrich with Capabilities</button>
+    </div>
+    <div id="post-capabilities" style="padding: 8px 0;">
+        <div class="cap-cell" data-caps="{{ post.capabilities_referenced or '' | e }}">
+            <span style="color: var(--text-dim); font-size: 13px;">No capabilities matched yet.</span>
+        </div>
+    </div>
+</div>
+
+<!-- Review Notes -->
+{% if post.review_notes %}
+<div class="card" style="margin-bottom: 16px; border-left: 3px solid var(--error);">
+    <h3 style="margin: 0 0 6px 0; font-size: 14px;">Review Notes</h3>
+    <p style="font-size: 13px; color: var(--text-dim); margin: 0;">{{ post.review_notes }}</p>
+</div>
+{% endif %}
+
+<!-- Editable Content -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+        <h2>Content</h2>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm" onclick="toggleEdit()" id="btn-edit">Edit</button>
+            <button class="btn btn-sm btn-primary" onclick="saveContent()" id="btn-save" style="display:none;">Save</button>
+            <button class="btn btn-sm" onclick="toggleEdit()" id="btn-cancel" style="display:none;">Cancel</button>
+        </div>
+    </div>
+    <div id="content-preview" style="padding: 8px 0; font-size: 14px; line-height: 1.7; max-height: 600px; overflow-y: auto;">
+        {{ post.body_html|safe if post.body_html else (post.body_markdown or 'No content yet.')|e }}
+    </div>
+    <textarea id="content-editor" style="display: none; width: 100%; min-height: 500px; padding: 12px;
+              border-radius: 6px; border: 1px solid #1e2d45; background: #0a0f1a; color: #e2e8f0;
+              font-family: monospace; font-size: 13px; line-height: 1.6; resize: vertical;">{{ post.body_markdown or '' }}</textarea>
+</div>
+
+{% else %}
+<div class="card" style="padding: 24px; text-align: center; color: var(--text-dim);">
+    Post not found.
+</div>
+{% endif %}
+
+<style>
+    .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .badge-green { background: rgba(34,197,94,.15); color: #22c55e; }
+    .badge-orange { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .badge-red { background: rgba(239,68,68,.15); color: #ef4444; }
+    .badge-blue { background: rgba(14,165,233,.15); color: var(--accent); }
+    .btn-sm { padding: 3px 8px; font-size: 11px; }
+    .btn-danger { background: rgba(239,68,68,.15); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
+    .btn-danger:hover { background: rgba(239,68,68,.25); }
+    .btn-rewrite { background: rgba(168,85,247,.15); color: #a855f7; border: 1px solid rgba(168,85,247,.3); font-weight: 600; }
+    .btn-rewrite:hover { background: rgba(168,85,247,.25); }
+    .btn-wp { background: rgba(33,117,155,.15); color: #21759b; border: 1px solid rgba(33,117,155,.3); font-weight: 600; }
+    .btn-wp:hover { background: rgba(33,117,155,.25); }
+    .btn-wp.pushing { opacity: .6; pointer-events: none; }
+    .btn-wp.done { background: rgba(34,197,94,.15); color: #22c55e; border-color: rgba(34,197,94,.3); }
+    .stat-card.mini { padding: 8px 12px; }
+    .stat-card.mini .label { font-size: 11px; }
+    .stat-card.mini .value { font-size: 16px; }
+</style>
+
+<script>
+let editing = false;
+
+function toggleEdit() {
+    editing = !editing;
+    document.getElementById('content-preview').style.display = editing ? 'none' : '';
+    document.getElementById('content-editor').style.display = editing ? '' : 'none';
+    document.getElementById('btn-edit').style.display = editing ? 'none' : '';
+    document.getElementById('btn-save').style.display = editing ? '' : 'none';
+    document.getElementById('btn-cancel').style.display = editing ? '' : 'none';
+}
+
+async function saveContent() {
+    const body_markdown = document.getElementById('content-editor').value;
+    const res = await fetch('/api/pulse/posts/{{ post.id if post else "" }}', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({body_markdown})
+    });
+    const data = await res.json();
+    if (data.updated) {
+        location.reload();
+    } else {
+        alert('Save failed: ' + (data.error || 'Unknown'));
+    }
+}
+
+async function rewritePost(id) {
+    if (!confirm('Rewrite this post via Claude Sonnet? This will analyze quality issues and auto-fix them.')) return;
+    const btn = document.getElementById('btn-rewrite');
+    const statusEl = document.getElementById('rewrite-status');
+    if (btn) { btn.disabled = true; btn.textContent = 'Rewriting...'; }
+    statusEl.innerHTML = '<span style="color:#a855f7;">Sending to Claude Sonnet for rewrite...</span>';
+
+    try {
+        const res = await fetch('/api/pulse/posts/' + id + '/rewrite-llm', {method: 'POST'});
+        const data = await res.json();
+        if (data.quality_stats) {
+            statusEl.innerHTML = '<span style="color:#22c55e;">Rewrite complete! Score: ' +
+                (data.quality_score||0).toFixed(0) + '</span>';
+            setTimeout(() => location.reload(), 1500);
+        } else if (data.message) {
+            statusEl.innerHTML = '<span style="color:var(--text-dim);">' + data.message + '</span>';
+            if (btn) { btn.disabled = false; btn.textContent = 'Rewrite (Sonnet)'; }
+        } else {
+            statusEl.innerHTML = '<span style="color:var(--error);">Rewrite failed: ' + (data.error || 'Unknown') + '</span>';
+            if (btn) { btn.disabled = false; btn.textContent = 'Rewrite (Sonnet)'; }
+        }
+    } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--error);">Error: ' + e.message + '</span>';
+        if (btn) { btn.disabled = false; btn.textContent = 'Rewrite (Sonnet)'; }
+    }
+}
+
+async function approvePost(id) {
+    if (!confirm('Approve this post?')) return;
+    await fetch('/api/pulse/posts/' + id + '/approve', {method: 'POST'});
+    location.reload();
+}
+
+async function rejectPost(id) {
+    const notes = prompt('Rejection notes (optional):') || '';
+    await fetch('/api/pulse/posts/' + id + '/reject', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({notes})
+    });
+    location.reload();
+}
+
+async function publishPost(id) {
+    if (!confirm('Publish this post and push to WordPress (go live on icdev.ai)?')) return;
+    const statusEl = document.getElementById('wp-status');
+    statusEl.textContent = 'Publishing to WordPress...';
+    statusEl.style.color = '#f59e0b';
+    try {
+        const res = await fetch('/api/pulse/posts/' + id + '/publish', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({auto_push: true})
+        });
+        const data = await res.json();
+        if (data.hostinger && data.hostinger.status === 'ok') {
+            statusEl.textContent = 'Live on icdev.ai!';
+            statusEl.style.color = '#22c55e';
+            if (data.hostinger.url) {
+                statusEl.innerHTML = '<a href="' + data.hostinger.url + '" target="_blank" style="color:#22c55e;">Live on icdev.ai &rarr;</a>';
+            }
+        } else if (data.hostinger && data.hostinger.status === 'error') {
+            statusEl.textContent = 'Published locally. WP: ' + (data.hostinger.message || 'error');
+            statusEl.style.color = '#f59e0b';
+        } else {
+            statusEl.textContent = 'Published locally.';
+            statusEl.style.color = '#f59e0b';
+        }
+    } catch (e) {
+        statusEl.textContent = 'Published locally. WP push failed.';
+        statusEl.style.color = '#ef4444';
+    }
+    setTimeout(() => location.reload(), 2500);
+}
+
+async function pushToWordPress(id) {
+    const btn = document.getElementById('btn-wp');
+    const statusEl = document.getElementById('wp-status');
+    btn.classList.add('pushing');
+    btn.innerHTML = '&#8987; Pushing...';
+    statusEl.textContent = '';
+    try {
+        const res = await fetch('/api/pulse/posts/' + id + '/push-hostinger', {method: 'POST'});
+        const data = await res.json();
+        if (data.status === 'ok') {
+            btn.classList.remove('pushing');
+            btn.classList.add('done');
+            btn.innerHTML = '&#10003; Live on WordPress';
+            if (data.url) {
+                statusEl.innerHTML = '<a href="' + data.url + '" target="_blank" style="color:#22c55e;">View post &rarr;</a>';
+            } else {
+                statusEl.textContent = 'Published at ' + (data.published_at || 'now');
+                statusEl.style.color = '#22c55e';
+            }
+        } else {
+            btn.classList.remove('pushing');
+            btn.innerHTML = 'W Push to WordPress';
+            statusEl.textContent = data.error || data.message || 'Push failed';
+            statusEl.style.color = '#ef4444';
+        }
+    } catch (e) {
+        btn.classList.remove('pushing');
+        btn.innerHTML = 'W Push to WordPress';
+        statusEl.textContent = 'Network error: ' + e.message;
+        statusEl.style.color = '#ef4444';
+    }
+}
+
+async function exportPost(id) {
+    const res = await fetch('/api/pulse/posts/' + id + '/export', {method: 'POST'});
+    const data = await res.json();
+    if (data.exports) {
+        alert('Exported!\nMDX: ' + (data.exports.mdx || 'N/A') + '\nHTML: ' + (data.exports.html || 'N/A'));
+    } else {
+        alert('Export failed: ' + (data.error || 'Unknown'));
+    }
+}
+
+// ── Capability badges ───────────────────────────────────────────
+document.querySelectorAll('.cap-cell').forEach(cell => {
+    const raw = cell.getAttribute('data-caps');
+    if (!raw) return;
+    try {
+        const caps = JSON.parse(raw);
+        if (Array.isArray(caps) && caps.length) {
+            cell.innerHTML = caps.map(c =>
+                '<span class="badge badge-blue" style="font-size:12px;margin:2px;padding:4px 8px;" title="Domain: ' +
+                (c.domain || '') + ' | Score: ' + (c.score || 0) + '">' +
+                (c.name || c.slug || '') + '</span>'
+            ).join('');
+        }
+    } catch(e) { /* leave default text */ }
+});
+
+// ── Enrich single post ──────────────────────────────────────────
+async function enrichThisPost(postId) {
+    const btn = document.getElementById('btn-enrich');
+    if (!confirm('Rewrite this post with ICDEV™ capability references via Claude Sonnet?')) return;
+    btn.disabled = true;
+    btn.textContent = 'Enriching...';
+    try {
+        const res = await fetch('/api/pulse/posts/' + postId + '/enrich-capabilities', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'ok' || data.capabilities_matched) {
+            alert('Post enriched with ' + (data.capabilities_matched || 0) + ' capabilities. Reloading...');
+            location.reload();
+        } else {
+            alert('Result: ' + (data.status || 'unknown') + ' — ' + (data.error || data.message || ''));
+            btn.textContent = 'Enrich with Capabilities';
+            btn.disabled = false;
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.textContent = 'Enrich with Capabilities';
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 class TaskStatus(Enum):
     """Valid task lifecycle states per A2A protocol."""
+
     SUBMITTED = "submitted"
     WORKING = "working"
     INPUT_REQUIRED = "input-required"
@@ -34,6 +35,7 @@ class TaskStatus(Enum):
 @dataclass
 class Artifact:
     """An output artifact produced by a task."""
+
     name: str
     content_type: str
     data: Any = None
@@ -60,6 +62,7 @@ class Artifact:
 @dataclass
 class StatusEvent:
     """A status change event in the task lifecycle."""
+
     status: str
     timestamp: str = ""
     message: str = ""
@@ -87,6 +90,7 @@ class StatusEvent:
 @dataclass
 class Task:
     """An A2A task with full lifecycle tracking."""
+
     id: str = ""
     status: str = "submitted"
     skill_id: str = ""
@@ -114,10 +118,12 @@ class Task:
             self.updated_at = now
         # Record initial status in history if empty
         if not self.history:
-            self.history.append(StatusEvent(
-                status=self.status,
-                message="Task created",
-            ))
+            self.history.append(
+                StatusEvent(
+                    status=self.status,
+                    message="Task created",
+                )
+            )
 
     def update_status(self, new_status: str, message: str = "") -> None:
         """Transition to a new status with history tracking."""
@@ -125,13 +131,14 @@ class Task:
             raise ValueError(f"Invalid status '{new_status}'. Valid: {[s.value for s in TaskStatus]}")
         self.status = new_status
         self.updated_at = datetime.now(timezone.utc).isoformat() + "Z"
-        self.history.append(StatusEvent(
-            status=new_status,
-            message=message,
-        ))
+        self.history.append(
+            StatusEvent(
+                status=new_status,
+                message=message,
+            )
+        )
 
-    def add_artifact(self, name: str, content_type: str, data: Any = None,
-                     classification: str = "CUI") -> Artifact:
+    def add_artifact(self, name: str, content_type: str, data: Any = None, classification: str = "CUI") -> Artifact:
         """Add an output artifact to the task."""
         artifact = Artifact(
             name=name,

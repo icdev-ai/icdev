@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Get detailed status for an ICDEV-managed project.
+"""Get detailed status for an ICDEV™-managed project.
 
 Reports on:
   - Project info (name, type, status, tech stack)
@@ -451,7 +451,7 @@ def format_detailed(data: dict) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Get detailed status for an ICDEV-managed project"
+        description="Get detailed status for an ICDEV™-managed project"
     )
     parser.add_argument(
         "--project-id", "--project", required=True,

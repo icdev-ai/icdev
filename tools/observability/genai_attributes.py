@@ -42,7 +42,7 @@ GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
 GEN_AI_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
 
-# --- ICDEV Extensions (not in OTel spec) ---
+# --- ICDEV™ Extensions (not in OTel spec) ---
 GEN_AI_USAGE_THINKING_TOKENS = "gen_ai.usage.thinking_tokens"
 GEN_AI_USAGE_COST_USD = "gen_ai.usage.cost_usd"
 GEN_AI_LATENCY_MS = "gen_ai.latency_ms"
@@ -62,7 +62,7 @@ A2A_TARGET_AGENT = "a2a.target_agent"
 A2A_METHOD = "a2a.method"
 A2A_TASK_ID = "a2a.task_id"
 
-# --- ICDEV Metadata ---
+# --- ICDEV™ Metadata ---
 ICDEV_PROJECT_ID = "icdev.project_id"
 ICDEV_AGENT_ID = "icdev.agent_id"
 ICDEV_CLASSIFICATION = "icdev.classification"

@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for behavioral drift detection in AITelemetryLogger (Phase 45, Gap 1, D257)."""
 
-import math
 import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -12,6 +11,7 @@ import pytest
 
 # Ensure project root on path
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.security.ai_telemetry_logger import AITelemetryLogger
@@ -49,10 +49,12 @@ def drift_db(tmp_path):
     return db_path
 
 
-def _seed_telemetry(db_path, agent_id, count, hours_ago_start, hours_ago_end,
-                    latency_mean=100, output_mean=500, cost_mean=0.01):
+def _seed_telemetry(
+    db_path, agent_id, count, hours_ago_start, hours_ago_end, latency_mean=100, output_mean=500, cost_mean=0.01
+):
     """Seed ai_telemetry with synthetic data."""
     import random
+
     random.seed(42)
     conn = sqlite3.connect(str(db_path))
     now = datetime.now(timezone.utc)
@@ -66,7 +68,8 @@ def _seed_telemetry(db_path, agent_id, count, hours_ago_start, hours_ago_end,
                VALUES (?, ?, 'claude-sonnet', 'anthropic', 'hash1', 'hash2',
                        ?, ?, ?, ?, ?)""",
             (
-                str(uuid.uuid4()), agent_id,
+                str(uuid.uuid4()),
+                agent_id,
                 random.randint(100, 500),
                 int(random.gauss(output_mean, output_mean * 0.1)),
                 round(random.gauss(latency_mean, latency_mean * 0.1), 2),
@@ -96,13 +99,27 @@ class TestBehavioralDrift:
     def test_stable_behavior_no_alerts(self, drift_db):
         """If current window matches baseline, no alerts."""
         # Seed baseline: 100 records over 7 days (168h ago to 24h ago)
-        _seed_telemetry(drift_db, "agent-1", count=100,
-                        hours_ago_start=192, hours_ago_end=25,
-                        latency_mean=100, output_mean=500, cost_mean=0.01)
+        _seed_telemetry(
+            drift_db,
+            "agent-1",
+            count=100,
+            hours_ago_start=192,
+            hours_ago_end=25,
+            latency_mean=100,
+            output_mean=500,
+            cost_mean=0.01,
+        )
         # Seed current window: 10 records in last 24h with SAME distribution
-        _seed_telemetry(drift_db, "agent-1", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=100, output_mean=500, cost_mean=0.01)
+        _seed_telemetry(
+            drift_db,
+            "agent-1",
+            count=10,
+            hours_ago_start=23,
+            hours_ago_end=0,
+            latency_mean=100,
+            output_mean=500,
+            cost_mean=0.01,
+        )
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(agent_id="agent-1", min_samples=50)
@@ -112,13 +129,27 @@ class TestBehavioralDrift:
 
     def test_latency_spike_detected(self, drift_db):
         """A 10x latency increase should trigger an alert."""
-        _seed_telemetry(drift_db, "agent-2", count=100,
-                        hours_ago_start=192, hours_ago_end=25,
-                        latency_mean=50, output_mean=500, cost_mean=0.01)
+        _seed_telemetry(
+            drift_db,
+            "agent-2",
+            count=100,
+            hours_ago_start=192,
+            hours_ago_end=25,
+            latency_mean=50,
+            output_mean=500,
+            cost_mean=0.01,
+        )
         # Current window: 10x higher latency
-        _seed_telemetry(drift_db, "agent-2", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=500, output_mean=500, cost_mean=0.01)
+        _seed_telemetry(
+            drift_db,
+            "agent-2",
+            count=10,
+            hours_ago_start=23,
+            hours_ago_end=0,
+            latency_mean=500,
+            output_mean=500,
+            cost_mean=0.01,
+        )
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(agent_id="agent-2", min_samples=50)
@@ -128,13 +159,27 @@ class TestBehavioralDrift:
 
     def test_cost_spike_detected(self, drift_db):
         """A large cost increase should trigger an alert."""
-        _seed_telemetry(drift_db, "agent-3", count=100,
-                        hours_ago_start=192, hours_ago_end=25,
-                        latency_mean=100, output_mean=500, cost_mean=0.001)
+        _seed_telemetry(
+            drift_db,
+            "agent-3",
+            count=100,
+            hours_ago_start=192,
+            hours_ago_end=25,
+            latency_mean=100,
+            output_mean=500,
+            cost_mean=0.001,
+        )
         # Current: 50x cost spike
-        _seed_telemetry(drift_db, "agent-3", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=100, output_mean=500, cost_mean=0.05)
+        _seed_telemetry(
+            drift_db,
+            "agent-3",
+            count=10,
+            hours_ago_start=23,
+            hours_ago_end=0,
+            latency_mean=100,
+            output_mean=500,
+            cost_mean=0.05,
+        )
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(agent_id="agent-3", min_samples=50)
@@ -143,13 +188,27 @@ class TestBehavioralDrift:
 
     def test_output_token_spike_detected(self, drift_db):
         """Large output token increase should trigger an alert."""
-        _seed_telemetry(drift_db, "agent-4", count=100,
-                        hours_ago_start=192, hours_ago_end=25,
-                        latency_mean=100, output_mean=200, cost_mean=0.01)
+        _seed_telemetry(
+            drift_db,
+            "agent-4",
+            count=100,
+            hours_ago_start=192,
+            hours_ago_end=25,
+            latency_mean=100,
+            output_mean=200,
+            cost_mean=0.01,
+        )
         # Current: 5x output size
-        _seed_telemetry(drift_db, "agent-4", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=100, output_mean=1000, cost_mean=0.01)
+        _seed_telemetry(
+            drift_db,
+            "agent-4",
+            count=10,
+            hours_ago_start=23,
+            hours_ago_end=0,
+            latency_mean=100,
+            output_mean=1000,
+            cost_mean=0.01,
+        )
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(agent_id="agent-4", min_samples=50)
@@ -158,15 +217,10 @@ class TestBehavioralDrift:
 
     def test_filter_by_agent_id(self, drift_db):
         """Only detect drift for specified agent."""
-        _seed_telemetry(drift_db, "agent-A", count=100,
-                        hours_ago_start=192, hours_ago_end=25)
-        _seed_telemetry(drift_db, "agent-B", count=100,
-                        hours_ago_start=192, hours_ago_end=25)
-        _seed_telemetry(drift_db, "agent-A", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=1000)
-        _seed_telemetry(drift_db, "agent-B", count=10,
-                        hours_ago_start=23, hours_ago_end=0)
+        _seed_telemetry(drift_db, "agent-A", count=100, hours_ago_start=192, hours_ago_end=25)
+        _seed_telemetry(drift_db, "agent-B", count=100, hours_ago_start=192, hours_ago_end=25)
+        _seed_telemetry(drift_db, "agent-A", count=10, hours_ago_start=23, hours_ago_end=0, latency_mean=1000)
+        _seed_telemetry(drift_db, "agent-B", count=10, hours_ago_start=23, hours_ago_end=0)
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(agent_id="agent-A", min_samples=50)
@@ -174,16 +228,10 @@ class TestBehavioralDrift:
 
     def test_all_agents_scanned(self, drift_db):
         """Without agent_id filter, scan all agents."""
-        _seed_telemetry(drift_db, "agent-X", count=60,
-                        hours_ago_start=192, hours_ago_end=25)
-        _seed_telemetry(drift_db, "agent-Y", count=60,
-                        hours_ago_start=192, hours_ago_end=25)
-        _seed_telemetry(drift_db, "agent-X", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=1000)
-        _seed_telemetry(drift_db, "agent-Y", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=1000)
+        _seed_telemetry(drift_db, "agent-X", count=60, hours_ago_start=192, hours_ago_end=25)
+        _seed_telemetry(drift_db, "agent-Y", count=60, hours_ago_start=192, hours_ago_end=25)
+        _seed_telemetry(drift_db, "agent-X", count=10, hours_ago_start=23, hours_ago_end=0, latency_mean=1000)
+        _seed_telemetry(drift_db, "agent-Y", count=10, hours_ago_start=23, hours_ago_end=0, latency_mean=1000)
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(min_samples=50)
@@ -192,32 +240,20 @@ class TestBehavioralDrift:
 
     def test_custom_threshold(self, drift_db):
         """Higher threshold means fewer alerts."""
-        _seed_telemetry(drift_db, "agent-T", count=100,
-                        hours_ago_start=192, hours_ago_end=25,
-                        latency_mean=100)
-        _seed_telemetry(drift_db, "agent-T", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=300)
+        _seed_telemetry(drift_db, "agent-T", count=100, hours_ago_start=192, hours_ago_end=25, latency_mean=100)
+        _seed_telemetry(drift_db, "agent-T", count=10, hours_ago_start=23, hours_ago_end=0, latency_mean=300)
 
         logger = AITelemetryLogger(db_path=drift_db)
 
-        alerts_normal = logger.detect_behavioral_drift(
-            agent_id="agent-T", threshold_sigma=2.0, min_samples=50
-        )
-        alerts_strict = logger.detect_behavioral_drift(
-            agent_id="agent-T", threshold_sigma=100.0, min_samples=50
-        )
+        alerts_normal = logger.detect_behavioral_drift(agent_id="agent-T", threshold_sigma=2.0, min_samples=50)
+        alerts_strict = logger.detect_behavioral_drift(agent_id="agent-T", threshold_sigma=100.0, min_samples=50)
 
         assert len(alerts_strict) <= len(alerts_normal)
 
     def test_alert_structure(self, drift_db):
         """Verify alert dict has required fields."""
-        _seed_telemetry(drift_db, "agent-S", count=100,
-                        hours_ago_start=192, hours_ago_end=25,
-                        latency_mean=50)
-        _seed_telemetry(drift_db, "agent-S", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=500)
+        _seed_telemetry(drift_db, "agent-S", count=100, hours_ago_start=192, hours_ago_end=25, latency_mean=50)
+        _seed_telemetry(drift_db, "agent-S", count=10, hours_ago_start=23, hours_ago_end=0, latency_mean=500)
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(agent_id="agent-S", min_samples=50)
@@ -234,13 +270,9 @@ class TestBehavioralDrift:
 
     def test_severity_classification(self, drift_db):
         """Severity should escalate with z-score magnitude."""
-        _seed_telemetry(drift_db, "agent-V", count=100,
-                        hours_ago_start=192, hours_ago_end=25,
-                        latency_mean=10)
+        _seed_telemetry(drift_db, "agent-V", count=100, hours_ago_start=192, hours_ago_end=25, latency_mean=10)
         # Massive spike: 100x
-        _seed_telemetry(drift_db, "agent-V", count=10,
-                        hours_ago_start=23, hours_ago_end=0,
-                        latency_mean=1000)
+        _seed_telemetry(drift_db, "agent-V", count=10, hours_ago_start=23, hours_ago_end=0, latency_mean=1000)
 
         logger = AITelemetryLogger(db_path=drift_db)
         alerts = logger.detect_behavioral_drift(agent_id="agent-V", min_samples=50)
@@ -259,16 +291,11 @@ class TestBehavioralDrift:
 
     def test_custom_window_hours(self, drift_db):
         """Custom window_hours parameter is respected."""
-        _seed_telemetry(drift_db, "agent-W", count=100,
-                        hours_ago_start=192, hours_ago_end=50)
-        _seed_telemetry(drift_db, "agent-W", count=10,
-                        hours_ago_start=48, hours_ago_end=0,
-                        latency_mean=500)
+        _seed_telemetry(drift_db, "agent-W", count=100, hours_ago_start=192, hours_ago_end=50)
+        _seed_telemetry(drift_db, "agent-W", count=10, hours_ago_start=48, hours_ago_end=0, latency_mean=500)
 
         logger = AITelemetryLogger(db_path=drift_db)
         # 48-hour window should include the spiky data
-        alerts = logger.detect_behavioral_drift(
-            agent_id="agent-W", window_hours=48, min_samples=50
-        )
+        alerts = logger.detect_behavioral_drift(agent_id="agent-W", window_hours=48, min_samples=50)
         # Should detect something
         assert isinstance(alerts, list)

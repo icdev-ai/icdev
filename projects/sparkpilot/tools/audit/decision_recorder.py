@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 """Record decisions with full rationale for audit trail.
-Every ICDEV decision (why X over Y) is captured for traceability."""
+Every ICDEV™ decision (why X over Y) is captured for traceability."""
 
 import argparse
 from pathlib import Path

@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Pull-Based Telemetry Collector for ICDEV Child Apps (D210).
+# POC: ICDEV™ System Administrator
+"""Pull-Based Telemetry Collector for ICDEV™ Child Apps (D210).
 
 Collects health and performance telemetry from child applications
 via pull-based HTTP requests to their health endpoints. Stores
@@ -24,12 +24,12 @@ Usage:
     summary = collector.get_health_summary("child-abc")
 """
 
-import hashlib
 import json
 import sqlite3
 import sys
 import urllib.error
 import urllib.request
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -45,13 +45,14 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # =========================================================================
 try:
     from tools.security.ai_telemetry_logger import AITelemetryLogger
+
     _telemetry = AITelemetryLogger()
 except Exception:
     _telemetry = None
 
 
 class TelemetryCollector:
-    """Pull-based telemetry collector for ICDEV child applications.
+    """Pull-based telemetry collector for ICDEV™ child applications.
 
     Polls child app health endpoints and stores telemetry in
     the child_telemetry table. Used by the evolution engine to
@@ -77,12 +78,8 @@ class TelemetryCollector:
 
     def _get_connection(self) -> sqlite3.Connection:
         if not self.db_path.exists():
-            raise FileNotFoundError(
-                f"Database not found: {self.db_path}\n"
-                "Run: python tools/db/init_icdev_db.py"
-            )
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+            raise FileNotFoundError(f"Database not found: {self.db_path}\nRun: python tools/db/init_icdev_db.py")
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _ensure_table(self, conn: sqlite3.Connection) -> None:
@@ -176,7 +173,7 @@ class TelemetryCollector:
                 endpoint_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 response_time_ms = int((time.time() - start_time) * 1000)
                 raw = resp.read().decode("utf-8")
 
@@ -201,15 +198,9 @@ class TelemetryCollector:
             else:
                 telemetry["health_status"] = "unknown"
 
-            telemetry["genome_version"] = data.get(
-                "genome_version", data.get("version")
-            )
-            telemetry["uptime_hours"] = float(
-                data.get("uptime_hours", 0.0)
-            )
-            telemetry["error_rate"] = float(
-                data.get("error_rate", 0.0)
-            )
+            telemetry["genome_version"] = data.get("genome_version", data.get("version"))
+            telemetry["uptime_hours"] = float(data.get("uptime_hours", 0.0))
+            telemetry["error_rate"] = float(data.get("error_rate", 0.0))
 
             compliance = data.get("compliance_scores", {})
             telemetry["compliance_scores_json"] = json.dumps(compliance)
@@ -236,15 +227,11 @@ class TelemetryCollector:
         except urllib.error.URLError as e:
             telemetry["health_status"] = "unreachable"
             telemetry["raw_response"] = str(e)
-            telemetry["response_time_ms"] = int(
-                (time.time() - start_time) * 1000
-            )
+            telemetry["response_time_ms"] = int((time.time() - start_time) * 1000)
         except Exception as e:
             telemetry["health_status"] = "unreachable"
             telemetry["raw_response"] = str(e)
-            telemetry["response_time_ms"] = int(
-                (time.time() - start_time) * 1000
-            )
+            telemetry["response_time_ms"] = int((time.time() - start_time) * 1000)
 
         return telemetry
 
@@ -287,7 +274,8 @@ class TelemetryCollector:
             conn.close()
 
     def get_latest_heartbeat(
-        self, child_id: str,
+        self,
+        child_id: str,
     ) -> Optional[Dict[str, Any]]:
         """Get the most recent heartbeat for a child app.
 
@@ -397,6 +385,34 @@ class TelemetryCollector:
         finally:
             conn.close()
 
+    def collect_egress(
+        self,
+        child_id: str,
+        egress_endpoint: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Collect network egress data from child (D-NC-6, NemoClaw pattern).
+
+        Optional extension — polls child /health/egress endpoint and
+        stores results in child_telemetry with metric_type='egress'.
+        Fails gracefully if EgressMonitor is unavailable.
+
+        Args:
+            child_id: Child app ID.
+            egress_endpoint: URL of child's egress health endpoint.
+
+        Returns:
+            Egress data dict or None on failure.
+        """
+        try:
+            from tools.registry.egress_monitor import EgressMonitor
+
+            monitor = EgressMonitor(db_path=self.db_path, timeout=self.timeout)
+            data = monitor.collect_egress(child_id, egress_endpoint)
+            monitor.store_egress(data)
+            return data
+        except Exception:
+            return None
+
     def get_all_children_health(self) -> List[Dict[str, Any]]:
         """Get health summary for all registered children.
 
@@ -408,9 +424,7 @@ class TelemetryCollector:
             self._ensure_table(conn)
 
             # Get distinct child IDs from telemetry
-            child_ids = conn.execute(
-                "SELECT DISTINCT child_id FROM child_telemetry"
-            ).fetchall()
+            child_ids = conn.execute("SELECT DISTINCT child_id FROM child_telemetry").fetchall()
 
             summaries = []
             for row in child_ids:

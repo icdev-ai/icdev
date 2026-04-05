@@ -1,0 +1,559 @@
+{% extends "network/base.html" %}
+{% block title %}Compliance Audit — {{ topology.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Compliance Audit</h1>
+    <p class="page-subtitle">{{ topology.name }} — {{ profile.classification }} / {{ profile.environment }}</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/canvas/{{ topology.id }}" class="btn btn-secondary">Canvas</a>
+    <button class="btn btn-primary" onclick="runAudit()">Run Audit</button>
+    <button class="btn btn-secondary" onclick="exportReport()">Export Xacta XML</button>
+    <label class="btn btn-secondary" style="cursor:pointer;" title="Import STIG .ckl or XCCDF results file">
+      &#x1f4c2; Import STIG
+      <input type="file" id="stig-file-input" accept=".ckl,.xml,.xccdf" style="display:none;" onchange="importStigFile(this)"/>
+    </label>
+  </div>
+</div>
+
+<!-- Regime Selector -->
+<section class="panel panel-wide">
+  <div class="panel-header"><h2 class="panel-title">Compliance Profile</h2></div>
+  <div style="padding:1rem;">
+    <div class="form-grid" style="max-width:800px;">
+      <label>Classification
+        <select id="sel-classification" onchange="updateProfile()">
+          {% for c in ["PUBLIC", "CUI", "SECRET", "TOP SECRET"] %}
+          <option value="{{ c }}" {% if c == profile.classification %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Impact Level
+        <select id="sel-environment" onchange="updateProfile()">
+          {% for e in ["IL2", "IL4", "IL5", "IL6"] %}
+          <option value="{{ e }}" {% if e == profile.environment %}selected{% endif %}>{{ e }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div style="margin-top:1rem;">
+      <strong style="font-size:0.85rem;color:var(--text-dim);">Active Regimes:</strong>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+        {% for rid, rcfg in all_regimes.items() %}
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.85rem;cursor:pointer;">
+          <input type="checkbox" class="regime-check" value="{{ rid }}"
+                 {% if rid in regimes %}checked{% endif %}
+                 onchange="updateProfile()">
+          {{ rcfg.name }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Audit Results (populated by JS) -->
+<div id="audit-results" style="display:none;">
+  <!-- Scores per regime -->
+  <div id="regime-scores" class="stats-bar"></div>
+
+  <!-- Findings Summary -->
+  <div class="stats-bar" id="findings-summary"></div>
+
+  <!-- Topology Risk Map -->
+  <section class="panel panel-wide">
+    <div class="panel-header"><h2 class="panel-title">Topology Risk Map</h2></div>
+    <p style="padding:0 1rem;font-size:0.8rem;color:var(--text-dim);">
+      <span style="color:#e74c3c;">Red</span> = finding (CAT1/CAT2) &nbsp;
+      <span style="color:#f39c12;">Orange</span> = CAT3 &nbsp;
+      <span style="color:#27ae60;">Green</span> = compliant
+    </p>
+    <div id="compliance-diagram" style="padding:1rem;overflow:auto;max-height:500px;"></div>
+  </section>
+
+  <!-- Findings Table -->
+  <section class="panel panel-wide">
+    <div class="panel-header"><h2 class="panel-title" id="findings-title">Findings</h2></div>
+    <div id="findings-table"></div>
+  </section>
+
+  <!-- Remediation Plan -->
+  <section class="panel panel-wide" id="remediation-section" style="display:none;">
+    <div class="panel-header">
+      <h2 class="panel-title">Remediation Plan</h2>
+      <span id="remediation-risk-badge" style="padding:2px 10px;border-radius:4px;font-size:0.75rem;font-weight:bold;"></span>
+    </div>
+    <div id="remediation-summary" style="padding:0.75rem 1rem;font-size:0.85rem;color:var(--text-dim);border-bottom:1px solid var(--border);"></div>
+    <div id="remediation-stats" class="stats-bar" style="padding:0.5rem 1rem;"></div>
+    <div id="remediation-phases" style="padding:0.5rem 1rem;"></div>
+  </section>
+</div>
+
+<!-- STIG Import Results (populated by JS) -->
+<div id="stig-results" style="display:none;">
+  <section class="panel panel-wide">
+    <div class="panel-header"><h2 class="panel-title">STIG Import Results</h2></div>
+    <div id="stig-summary" class="stats-bar"></div>
+    <p style="padding:0 1rem;font-size:0.8rem;color:var(--text-dim);">
+      <span style="color:#e74c3c;">&#x25cf; Red</span> = CAT1 open findings &nbsp;
+      <span style="color:#f39c12;">&#x25cf; Yellow</span> = CAT2/CAT3 open &nbsp;
+      <span style="color:#27ae60;">&#x25cf; Green</span> = all checks passing
+    </p>
+    <div id="stig-diagram" style="padding:1rem;overflow:auto;max-height:500px;"></div>
+  </section>
+
+  <section class="panel panel-wide" id="stig-matched-panel" style="display:none;">
+    <div class="panel-header"><h2 class="panel-title" id="stig-matched-title">Matched Devices</h2></div>
+    <div id="stig-matched-table"></div>
+  </section>
+
+  <section class="panel panel-wide" id="stig-unmatched-panel" style="display:none;">
+    <div class="panel-header"><h2 class="panel-title">Unmatched</h2></div>
+    <div style="display:flex;gap:2rem;padding:1rem;flex-wrap:wrap;">
+      <div id="stig-unmatched-hosts"></div>
+      <div id="stig-unmatched-devices"></div>
+    </div>
+  </section>
+</div>
+
+<!-- STIG Import History -->
+<section class="panel panel-wide" id="stig-history-panel" style="display:none;">
+  <div class="panel-header"><h2 class="panel-title">STIG Import History</h2></div>
+  <table class="data-table" id="stig-history-table">
+    <thead><tr><th>Date</th><th>File</th><th>STIG</th><th>Format</th><th>Matched</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<!-- Previous Audits -->
+{% if audits %}
+<section class="panel panel-wide">
+  <div class="panel-header"><h2 class="panel-title">Audit History</h2></div>
+  <table class="data-table">
+    <thead><tr><th>Date</th><th>Regimes</th><th>Passed</th><th>Failed</th><th>Score</th></tr></thead>
+    <tbody>
+    {% for a in audits %}
+      <tr>
+        <td class="ts">{{ (a.ran_at or '')[:16] }}</td>
+        <td>{{ a.check_type }}</td>
+        <td style="color:#27ae60;">{{ a.passed }}</td>
+        <td style="color:#e74c3c;">{{ a.failed }}</td>
+        <td>{{ (a.passed / (a.passed + a.failed) * 100 if (a.passed + a.failed) > 0 else 0)|round(0)|int }}%</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if open_findings %}
+<section class="panel panel-wide">
+  <div class="panel-header"><h2 class="panel-title">Open Findings ({{ open_findings|length }})</h2></div>
+  <table class="data-table">
+    <thead><tr><th>Rule</th><th>Severity</th><th>Title</th><th>Affected</th><th>Regime(s)</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for f in open_findings %}
+      <tr>
+        <td><strong>{{ f.rule_id }}</strong></td>
+        <td><span class="badge badge-{% if f.severity == 'CAT1' %}danger{% elif f.severity == 'CAT2' %}warning{% else %}info{% endif %}">{{ f.severity }}</span></td>
+        <td>{{ f.title }}</td>
+        <td>{{ f.affected_entity or '—' }}</td>
+        <td>{{ f.regime }}</td>
+        <td>
+          {% if f.fix_action %}<button class="btn btn-primary" style="font-size:0.7rem;padding:2px 8px;" onclick="applyFix('{{ f.id }}')">Fix It</button>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+const TOPO_ID = '{{ topology.id }}';
+
+function getSelectedRegimes() {
+  return Array.from(document.querySelectorAll('.regime-check:checked')).map(c => c.value);
+}
+
+function updateProfile() {
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/profile', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      regimes: getSelectedRegimes(),
+      classification: document.getElementById('sel-classification').value,
+      environment: document.getElementById('sel-environment').value,
+    })
+  });
+}
+
+function runAudit() {
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Auditing...';
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/audit', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({})
+  }).then(r => r.json()).then(d => {
+    btn.disabled = false; btn.textContent = 'Run Audit';
+    showResults(d);
+  }).catch(e => { btn.disabled = false; btn.textContent = 'Run Audit'; alert('Error: ' + e); });
+}
+
+function showResults(d) {
+  document.getElementById('audit-results').style.display = 'block';
+
+  // Regime scores
+  let scoresHtml = '';
+  for (const [rid, s] of Object.entries(d.scores || {})) {
+    const color = s.score_pct >= 80 ? '#27ae60' : s.score_pct >= 50 ? '#f39c12' : '#e74c3c';
+    scoresHtml += `<div class="stat-card">
+      <div class="stat-value" style="color:${color}">${s.score_pct}%</div>
+      <div class="stat-label">${s.regime}</div>
+      <div style="font-size:0.7rem;color:var(--text-dim);">${s.passed}/${s.total_rules} passed</div>
+    </div>`;
+  }
+  document.getElementById('regime-scores').innerHTML = scoresHtml;
+
+  // Summary
+  document.getElementById('findings-summary').innerHTML = `
+    <div class="stat-card"><div class="stat-value">${d.total_findings}</div><div class="stat-label">Total Findings</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#e74c3c">${d.cat1_count}</div><div class="stat-label">CAT1 (Critical)</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#f39c12">${d.cat2_count}</div><div class="stat-label">CAT2 (High)</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#5dade2">${d.cat3_count}</div><div class="stat-label">CAT3 (Medium)</div></div>
+    ${d.remediated_count ? `<div class="stat-card"><div class="stat-value" style="color:#27ae60">${d.remediated_count}</div><div class="stat-label">Auto-Remediated</div></div>` : ''}
+  `;
+
+  // Findings table
+  document.getElementById('findings-title').textContent = `Findings (${d.total_findings})`;
+  if (d.findings && d.findings.length) {
+    let html = '<table class="data-table"><thead><tr><th>Rule</th><th>Sev</th><th>Title</th><th>Affected</th><th>Regimes</th><th>Fix</th></tr></thead><tbody>';
+    d.findings.forEach(f => {
+      const sevColor = f.severity === 'CAT1' ? '#e74c3c' : f.severity === 'CAT2' ? '#f39c12' : '#5dade2';
+      html += `<tr>
+        <td><strong>${f.rule_id}</strong></td>
+        <td><span style="color:${sevColor};font-weight:bold;">${f.severity}</span></td>
+        <td>${f.title}<br><span style="font-size:0.75rem;color:var(--text-dim);">${f.description}</span></td>
+        <td>${f.affected_entity || '—'}</td>
+        <td style="font-size:0.75rem;">${f.regimes.join(', ')}</td>
+        <td>${f.fix_action ? '<button class="btn btn-primary" style="font-size:0.7rem;padding:2px 8px;" onclick="applyFixFromAudit(this,\'' + f.rule_id + '\')">Fix It</button>' : '—'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('findings-table').innerHTML = html;
+  } else {
+    document.getElementById('findings-table').innerHTML = '<p style="padding:1rem;color:#27ae60;font-weight:bold;">All checks passed — no findings.</p>';
+  }
+
+  // Remediation plan
+  renderRemediationPlan(d.remediation_plan);
+
+  // Render topology diagram with compliance coloring
+  renderComplianceDiagram(d);
+  document.getElementById('audit-results').scrollIntoView({behavior: 'smooth'});
+}
+
+function renderRemediationPlan(plan) {
+  const section = document.getElementById('remediation-section');
+  if (!plan || !plan.phases || !plan.phases.length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+
+  // Risk badge
+  const badge = document.getElementById('remediation-risk-badge');
+  const riskColors = {CRITICAL:'#e74c3c', HIGH:'#f39c12', MODERATE:'#f1c40f', LOW:'#27ae60'};
+  badge.textContent = `Risk: ${plan.overall_risk}`;
+  badge.style.background = riskColors[plan.overall_risk] || '#888';
+  badge.style.color = plan.overall_risk === 'MODERATE' ? '#222' : '#fff';
+
+  // Summary
+  document.getElementById('remediation-summary').textContent = plan.summary;
+
+  // Stats bar
+  document.getElementById('remediation-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-value">${plan.total_actions}</div><div class="stat-label">Total Actions</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#27ae60">${plan.auto_fixable}</div><div class="stat-label">Auto-Fixable</div></div>
+    <div class="stat-card"><div class="stat-value">${plan.estimated_effort}</div><div class="stat-label">Est. Effort</div></div>
+    <div class="stat-card"><div class="stat-value">${plan.phases.length}</div><div class="stat-label">Phases</div></div>
+  `;
+
+  // Phases
+  let html = '';
+  plan.phases.forEach(p => {
+    const priColor = p.priority === 'CRITICAL' ? '#e74c3c' : p.priority === 'HIGH' ? '#f39c12' : '#5dade2';
+    html += `<div style="margin-bottom:1rem;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+      <div style="padding:0.6rem 1rem;background:rgba(${p.priority==='CRITICAL'?'231,76,60':p.priority==='HIGH'?'243,156,18':'93,173,226'},0.12);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:700;color:${priColor};">Phase ${p.phase}</span>
+        <span style="font-size:0.85rem;color:var(--text);">${p.name}</span>
+        <span style="margin-left:auto;font-size:0.75rem;color:var(--text-dim);">${p.actions.length} actions &middot; ~${p.total_effort_hours}h &middot; ${p.auto_fixable_count} auto-fixable</span>
+      </div>
+      <div style="font-size:0.8rem;color:var(--text-dim);padding:0.4rem 1rem;border-bottom:1px solid var(--border);">${p.description}</div>
+      <table class="data-table" style="margin:0;"><thead><tr><th style="width:100px;">Rule</th><th style="width:60px;">Sev</th><th>Remediation Step</th><th style="width:60px;">Effort</th><th style="width:50px;">Fix</th></tr></thead><tbody>`;
+    p.actions.forEach(a => {
+      const sevColor = a.severity === 'CAT1' ? '#e74c3c' : a.severity === 'CAT2' ? '#f39c12' : '#5dade2';
+      html += `<tr>
+        <td><strong>${a.rule_id}</strong><br><span style="font-size:0.7rem;color:var(--text-dim);">${a.title}</span></td>
+        <td><span style="color:${sevColor};font-weight:bold;">${a.severity}</span></td>
+        <td style="font-size:0.8rem;">${a.remediation_step}</td>
+        <td style="text-align:center;">${a.effort_hours}h</td>
+        <td>${a.auto_fixable ? '<button class="btn btn-primary" style="font-size:0.65rem;padding:1px 6px;" onclick="applyFixFromAudit(this,\'' + a.rule_id + '\')">Fix</button>' : '—'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  });
+  document.getElementById('remediation-phases').innerHTML = html;
+}
+
+function renderComplianceDiagram(d) {
+  const container = document.getElementById('compliance-diagram');
+  // Fetch topology graph
+  fetch(NC_BASE + '/api/topologies/' + TOPO_ID).then(r => r.json()).then(topo => {
+    const graph = topo.graph_json || {nodes:[], edges:[]};
+    const nodes = graph.nodes || [];
+    const edges = graph.edges || [];
+    if (!nodes.length) { container.innerHTML = '<p style="color:var(--text-dim);">No nodes.</p>'; return; }
+
+    // Build affected entity lookup
+    const affected = {};
+    (d.findings || []).forEach(f => {
+      const key = f.affected_entity || '';
+      if (!affected[key]) affected[key] = [];
+      affected[key].push(f);
+    });
+
+    const padding = 60;
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    nodes.forEach(n => { const x=n.x||0, y=n.y||0; if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; });
+    const w = (maxX-minX)+padding*2+120, h = (maxY-minY)+padding*2+80;
+    const ox = -minX+padding, oy = -minY+padding;
+    const pos = {};
+    nodes.forEach(n => { pos[n.id] = {x:(n.x||0)+ox, y:(n.y||0)+oy}; });
+
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(w,400)}" height="${Math.max(h,300)}" style="font-family:Segoe UI,system-ui,sans-serif;">`;
+    edges.forEach(e => {
+      const s=pos[e.source], t=pos[e.target];
+      if(!s||!t) return;
+      const edgeLabel = `${nodes.find(n=>n.id===e.source)?.label||'?'} — ${nodes.find(n=>n.id===e.target)?.label||'?'}`;
+      const edgeFindings = affected[edgeLabel] || [];
+      const color = edgeFindings.length ? (edgeFindings.some(f=>f.severity==='CAT1') ? '#e74c3c' : '#f39c12') : '#2c3e6e';
+      svg += `<line x1="${s.x+55}" y1="${s.y+30}" x2="${t.x+55}" y2="${t.y+30}" stroke="${color}" stroke-width="${edgeFindings.length?3:1.5}" opacity="0.7"/>`;
+    });
+    nodes.forEach(n => {
+      const p = pos[n.id]; if(!p) return;
+      const label = n.label || n.id;
+      const nodeFindings = affected[label] || affected[n.id] || [];
+      let fill, stroke;
+      if (nodeFindings.some(f=>f.severity==='CAT1')) { fill='#3a0f0f'; stroke='#e74c3c'; }
+      else if (nodeFindings.some(f=>f.severity==='CAT2')) { fill='#2b1a0f'; stroke='#f39c12'; }
+      else if (nodeFindings.length) { fill='#0f1a2b'; stroke='#5dade2'; }
+      else { fill='#0f2b1a'; stroke='#27ae60'; }
+      svg += `<rect x="${p.x}" y="${p.y}" width="110" height="60" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+      svg += `<text x="${p.x+55}" y="${p.y+22}" text-anchor="middle" fill="${stroke}" font-size="11" font-weight="bold">${label}</text>`;
+      svg += `<text x="${p.x+55}" y="${p.y+37}" text-anchor="middle" fill="#7a8cb0" font-size="9">${n.type||''}</text>`;
+      if (nodeFindings.length) {
+        svg += `<text x="${p.x+55}" y="${p.y+52}" text-anchor="middle" fill="${stroke}" font-size="8">${nodeFindings.length} finding(s)</text>`;
+      } else {
+        svg += `<text x="${p.x+55}" y="${p.y+52}" text-anchor="middle" fill="#27ae60" font-size="8">compliant</text>`;
+      }
+    });
+    svg += '</svg>';
+    container.innerHTML = svg;
+  });
+}
+
+function applyFix(findingId) {
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/fix', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({finding_id: findingId})
+  }).then(r => r.json()).then(d => {
+    if (d.applied) { alert('Fix applied: ' + d.detail); location.reload(); }
+    else alert('Could not apply fix: ' + d.detail);
+  });
+}
+
+function applyFixFromAudit(btn, ruleId) {
+  // For findings from fresh audit (not yet in DB), re-run audit then fix
+  btn.disabled = true; btn.textContent = 'Fixing...';
+  // Just re-run audit to persist findings, then reload page to show fix buttons
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/audit', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(() => location.reload());
+}
+
+function exportReport() {
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/export', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}
+  }).then(r => r.json()).then(d => {
+    const blob = new Blob([d.content], {type: 'application/xml'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = d.filename; a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+// ── STIG Import ──────────────────────────────────────────────────────────
+
+function importStigFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  const statusEl = document.getElementById('tb-status') || document.querySelector('.page-subtitle');
+  if (statusEl) statusEl.textContent = 'Importing STIG file...';
+
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/stig-import', {
+    method: 'POST', body: formData
+  }).then(r => r.json()).then(d => {
+    input.value = '';
+    if (d.error) { alert('Import error: ' + d.error); return; }
+    showStigResults(d);
+    loadStigHistory();
+  }).catch(e => { input.value = ''; alert('Import failed: ' + e); });
+}
+
+function showStigResults(d) {
+  document.getElementById('stig-results').style.display = 'block';
+
+  // Summary stats
+  document.getElementById('stig-summary').innerHTML = `
+    <div class="stat-card"><div class="stat-value">${d.stig_name || 'Unknown STIG'}</div><div class="stat-label">STIG ${d.stig_version || ''}</div></div>
+    <div class="stat-card"><div class="stat-value">${d.total_matched}/${d.total_hosts}</div><div class="stat-label">Hosts Matched</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#27ae60">${d.total_pass}</div><div class="stat-label">Checks Passed</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#e74c3c">${d.total_fail}</div><div class="stat-label">Checks Failed</div></div>
+  `;
+
+  // Render colored topology diagram
+  renderStigDiagram(d);
+
+  // Matched devices table
+  if (d.matched && d.matched.length) {
+    const panel = document.getElementById('stig-matched-panel');
+    panel.style.display = 'block';
+    document.getElementById('stig-matched-title').textContent = `Matched Devices (${d.matched.length})`;
+    let html = '<table class="data-table"><thead><tr><th>Device</th><th>Hostname</th><th>Status</th><th>CAT1</th><th>CAT2</th><th>CAT3</th><th>Pass</th><th>Fail</th></tr></thead><tbody>';
+    d.matched.forEach(m => {
+      const color = m.status === 'red' ? '#e74c3c' : m.status === 'yellow' ? '#f39c12' : '#27ae60';
+      html += `<tr>
+        <td><strong>${m.label}</strong></td>
+        <td>${m.hostname}</td>
+        <td><span style="color:${color};font-weight:bold;text-transform:uppercase;">${m.status}</span></td>
+        <td style="color:#e74c3c;">${m.cat1_count}</td>
+        <td style="color:#f39c12;">${m.cat2_count}</td>
+        <td style="color:#5dade2;">${m.cat3_count}</td>
+        <td style="color:#27ae60;">${m.summary.pass || 0}</td>
+        <td style="color:#e74c3c;">${m.summary.fail || 0}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('stig-matched-table').innerHTML = html;
+  }
+
+  // Unmatched hosts/devices
+  if ((d.unmatched_hosts && d.unmatched_hosts.length) || (d.unmatched_devices && d.unmatched_devices.length)) {
+    document.getElementById('stig-unmatched-panel').style.display = 'block';
+    let hostsHtml = '';
+    if (d.unmatched_hosts && d.unmatched_hosts.length) {
+      hostsHtml = '<div><strong style="color:#e74c3c;">Unmatched Hosts (no device match):</strong><ul style="margin:4px 0;padding-left:1.2rem;">';
+      d.unmatched_hosts.forEach(h => { hostsHtml += `<li>${h}</li>`; });
+      hostsHtml += '</ul></div>';
+    }
+    document.getElementById('stig-unmatched-hosts').innerHTML = hostsHtml;
+
+    let devHtml = '';
+    if (d.unmatched_devices && d.unmatched_devices.length) {
+      devHtml = '<div><strong style="color:#f39c12;">Devices Without STIG Data:</strong><ul style="margin:4px 0;padding-left:1.2rem;">';
+      d.unmatched_devices.forEach(dv => { devHtml += `<li>${dv.label}</li>`; });
+      devHtml += '</ul></div>';
+    }
+    document.getElementById('stig-unmatched-devices').innerHTML = devHtml;
+  }
+
+  document.getElementById('stig-results').scrollIntoView({behavior: 'smooth'});
+}
+
+function renderStigDiagram(d) {
+  const container = document.getElementById('stig-diagram');
+  fetch(NC_BASE + '/api/topologies/' + TOPO_ID).then(r => r.json()).then(topo => {
+    const graph = topo.graph_json || {nodes:[], edges:[]};
+    const nodes = graph.nodes || [];
+    const edges = graph.edges || [];
+    if (!nodes.length) { container.innerHTML = '<p style="color:var(--text-dim);">No nodes in topology.</p>'; return; }
+
+    // Build device status lookup from matched results
+    const deviceStatus = {};
+    (d.matched || []).forEach(m => {
+      deviceStatus[m.node_id] = m;
+    });
+
+    const padding = 60;
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    nodes.forEach(n => { const x=n.x||0, y=n.y||0; if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; });
+    const w = (maxX-minX)+padding*2+120, h = (maxY-minY)+padding*2+80;
+    const ox = -minX+padding, oy = -minY+padding;
+    const pos = {};
+    nodes.forEach(n => { pos[n.id] = {x:(n.x||0)+ox, y:(n.y||0)+oy}; });
+
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(w,400)}" height="${Math.max(h,300)}" style="font-family:Segoe UI,system-ui,sans-serif;">`;
+
+    // Draw edges
+    edges.forEach(e => {
+      const s=pos[e.source], t=pos[e.target];
+      if(!s||!t) return;
+      svg += `<line x1="${s.x+55}" y1="${s.y+30}" x2="${t.x+55}" y2="${t.y+30}" stroke="#2c3e6e" stroke-width="1.5" opacity="0.5"/>`;
+    });
+
+    // Draw nodes with STIG compliance coloring
+    nodes.forEach(n => {
+      const p = pos[n.id]; if(!p) return;
+      const label = n.label || n.id;
+      const ds = deviceStatus[n.id];
+      let fill, stroke, statusText;
+      if (ds) {
+        if (ds.status === 'red') { fill='#3a0f0f'; stroke='#e74c3c'; }
+        else if (ds.status === 'yellow') { fill='#2b1a0f'; stroke='#f39c12'; }
+        else { fill='#0f2b1a'; stroke='#27ae60'; }
+        const fc = ds.cat1_count + ds.cat2_count + ds.cat3_count;
+        statusText = fc > 0 ? `${fc} failing` : 'compliant';
+      } else {
+        fill='#1a1a2e'; stroke='#4a5568';
+        statusText = 'no data';
+      }
+      svg += `<rect x="${p.x}" y="${p.y}" width="110" height="60" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+      svg += `<text x="${p.x+55}" y="${p.y+22}" text-anchor="middle" fill="${stroke}" font-size="11" font-weight="bold">${label}</text>`;
+      svg += `<text x="${p.x+55}" y="${p.y+37}" text-anchor="middle" fill="#7a8cb0" font-size="9">${n.type||''}</text>`;
+      svg += `<text x="${p.x+55}" y="${p.y+52}" text-anchor="middle" fill="${stroke}" font-size="8">${statusText}</text>`;
+    });
+    svg += '</svg>';
+    container.innerHTML = svg;
+  });
+}
+
+function loadStigHistory() {
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/stig-imports')
+    .then(r => r.json()).then(rows => {
+      if (!rows.length) return;
+      document.getElementById('stig-history-panel').style.display = 'block';
+      const tbody = document.querySelector('#stig-history-table tbody');
+      tbody.innerHTML = '';
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="ts">${(r.imported_at||'').slice(0,16)}</td>
+          <td>${r.filename}</td>
+          <td>${r.stig_name || '—'}</td>
+          <td>${r.format}</td>
+          <td>${r.matched_hosts}/${r.total_hosts}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+}
+
+// Load STIG import history on page load
+document.addEventListener('DOMContentLoaded', loadStigHistory);
+</script>
+{% endblock %}

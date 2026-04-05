@@ -2,7 +2,7 @@
 """Example custom LLM provider template.
 
 Copy this file and implement the three required methods to create a
-custom LLM provider for ICDEV.
+custom LLM provider for ICDEV™.
 
 After implementing, register in args/llm_config.yaml:
 

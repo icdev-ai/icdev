@@ -31,6 +31,7 @@ def _load_config() -> dict:
     """Load auto_indexer config from rag_config.yaml."""
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "rag_config.yaml"
         if config_path.exists():
             with open(config_path) as f:
@@ -58,12 +59,27 @@ class AutoIndexer:
     """
 
     SUPPORTED_EXTENSIONS: Set[str] = {
-        ".md", ".txt", ".py", ".yaml", ".yml", ".json", ".pdf",
+        ".md",
+        ".txt",
+        ".py",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".pdf",
     }
     EXCLUDED_DIRS: Set[str] = {
-        ".git", "node_modules", "__pycache__", ".venv", "venv",
-        ".tmp", ".pytest_cache", ".mypy_cache", "dist", "build",
-        ".eggs", "*.egg-info",
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".tmp",
+        ".pytest_cache",
+        ".mypy_cache",
+        "dist",
+        "build",
+        ".eggs",
+        "*.egg-info",
     }
 
     def __init__(
@@ -163,6 +179,7 @@ class AutoIndexer:
             # Delegate to PDF provider chain
             try:
                 from tools.rag.pdf_provider import extract_pdf
+
                 extraction = extract_pdf(path)
                 if extraction.status == "extracted" and extraction.pages:
                     content = extraction.full_text
@@ -209,6 +226,7 @@ class AutoIndexer:
 
             # Embed
             from tools.rag.ingestion_manager import _get_embedding_provider, _embed_chunks
+
             provider = _get_embedding_provider()
             embedded = _embed_chunks(chunks, provider) if provider else 0
 
@@ -280,10 +298,7 @@ class AutoIndexer:
         project_root = self._project_dir.resolve()
         for root, dirs, files in os.walk(self._project_dir):
             # Filter excluded directories (modifying dirs in-place)
-            dirs[:] = [
-                d for d in dirs
-                if d not in self.EXCLUDED_DIRS and not d.endswith(".egg-info")
-            ]
+            dirs[:] = [d for d in dirs if d not in self.EXCLUDED_DIRS and not d.endswith(".egg-info")]
 
             for fname in files:
                 path = Path(root) / fname
@@ -343,6 +358,7 @@ class AutoIndexer:
         """Get content hashes of previously indexed chunks."""
         try:
             from tools.rag.vector_store_factory import VectorStoreFactory
+
             store = VectorStoreFactory.create(tenant_id=self._tenant_id)
             if hasattr(store, "get_all_content_hashes"):
                 return set(store.get_all_content_hashes())

@@ -1,4 +1,4 @@
-# Deployment Profiles for ICDEV Modular Installation
+# Deployment Profiles for ICDEV™ Modular Installation
 # Each profile pre-selects modules, compliance frameworks, and platform defaults
 # Profiles are starting points — all can be customized post-install via --add-module
 
@@ -104,7 +104,7 @@ profiles:
 
   govcloud_full:
     name: "GovCloud Full Platform"
-    description: "Complete ICDEV platform for AWS GovCloud deployment"
+    description: "Complete ICDEV™ platform for AWS GovCloud deployment"
     team_size: "10-100+"
     modules: ALL
     default_compliance: ALL
@@ -125,7 +125,7 @@ profiles:
     notes: "Start with minimum core and add modules individually via --add-module."
 
   # ── Customer Delivery Profiles (D374) ───────────────────────────────
-  # Free on-prem ICDEV for winning GovProposal customers.
+  # Free on-prem ICDEV™ for winning GovProposal customers.
   # Excludes internal business tools: GovProposal/RFX, GovCon Intel,
   # Creative Engine, Innovation Engine, Marketplace SaaS, agentic gen.
 

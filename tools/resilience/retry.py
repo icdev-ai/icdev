@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Resilience — Reusable Retry Utility.
+"""ICDEV™ Resilience — Reusable Retry Utility.
 
 D147: Extracted from tools/agent/bedrock_client.py. Provides a decorator and
 a callable wrapper with exponential backoff + full jitter.
@@ -35,7 +35,7 @@ def backoff_delay(
     Algorithm: min(cap, base * 2^attempt) * random(0.5, 1.0)
     Prevents thundering herd when multiple callers retry simultaneously.
     """
-    delay = min(max_delay, base_delay * (2 ** attempt))
+    delay = min(max_delay, base_delay * (2**attempt))
     return delay * random.uniform(0.5, 1.0)
 
 

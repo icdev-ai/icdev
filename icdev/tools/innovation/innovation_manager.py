@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Innovation Engine Manager — main orchestrator for autonomous self-improvement.
 
 Coordinates the full innovation pipeline:
@@ -567,7 +567,7 @@ def run_daemon(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Innovation Engine — autonomous self-improvement orchestrator"
+        description="ICDEV™ Innovation Engine — autonomous self-improvement orchestrator"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")

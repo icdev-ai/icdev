@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 59 (GovCon Intelligence), Phase 60 (CPMP), Phase 21 (SaaS Multi-Tenancy) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-28 |
 
 ---
@@ -24,7 +24,7 @@ Phases 59 and 60 built the GovCon Intelligence capture pipeline and the Contract
 
 3. **No proposal-to-contract bridge** — When a proposal was awarded, teams manually recreated contract data (CLINs, WBS, deliverables) in the CPMP. There was no automated bridge to carry proposal metadata, compliance matrix, and staffing data forward into post-award management.
 
-4. **No parent-only isolation** — GovProposal is an ICDEV internal capability for business development — it should NOT be included in child applications generated for customers. No mechanism existed to exclude GovProposal tools, routes, and templates from child app scaffolding.
+4. **No parent-only isolation** — GovProposal is an ICDEV™ internal capability for business development — it should NOT be included in child applications generated for customers. No mechanism existed to exclude GovProposal tools, routes, and templates from child app scaffolding.
 
 Phase 62 closes these gaps with a 14-step proposal lifecycle, AI-powered response drafting with knowledge base, explicit proposal-to-contract bridging, and clean feature-flag isolation via `ICDEV_GOVCON_ENABLED`.
 
@@ -357,7 +357,7 @@ GovProposal links appear in the nav bar only when `ICDEV_GOVCON_ENABLED=true`:
 
 ## 11. Testing
 
-Testing follows existing ICDEV patterns:
+Testing follows existing ICDEV™ patterns:
 
 - Unit tests for deterministic functions (compliance grading, status transitions, knowledge base search)
 - Integration tests for database operations (append-only enforcement, bridge creation)
@@ -369,7 +369,7 @@ Testing follows existing ICDEV patterns:
 ## 12. Content Guidance
 
 - Management Volume responses must reference the **post-award management portal** (CPMP) that tracks requirements and CDRLs
-- Technical Volume responses should reference specific ICDEV tools and capabilities from the knowledge base
+- Technical Volume responses should reference specific ICDEV™ tools and capabilities from the knowledge base
 - Past Performance responses should include CPARS-compatible rating language
 - All proposal content must use Government-appropriate formal tone
 

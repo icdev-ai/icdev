@@ -5,15 +5,12 @@
 Covers: AbsorptionEngine, LearningCollector, CrossPollinator.
 """
 
-import json
 import os
 import sqlite3
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 # Ensure project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -35,20 +32,20 @@ class TestAbsorptionEngine(unittest.TestCase):
 
     def _get_engine(self):
         from icdev.tools.registry.absorption_engine import AbsorptionEngine
+
         return AbsorptionEngine(db_path=self.db_path)
 
     def test_import(self):
         """AbsorptionEngine class should be importable."""
         from icdev.tools.registry.absorption_engine import AbsorptionEngine
+
         self.assertTrue(callable(AbsorptionEngine))
 
     def test_init_creates_tables(self):
         """Initialization should create required DB tables."""
-        engine = self._get_engine()
+        self._get_engine()
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = {row[0] for row in cursor.fetchall()}
         conn.close()
         # Should have at least the staging/evaluation related tables
@@ -101,20 +98,20 @@ class TestLearningCollector(unittest.TestCase):
 
     def _get_collector(self):
         from icdev.tools.registry.learning_collector import LearningCollector
+
         return LearningCollector(db_path=self.db_path)
 
     def test_import(self):
         """LearningCollector class should be importable."""
         from icdev.tools.registry.learning_collector import LearningCollector
+
         self.assertTrue(callable(LearningCollector))
 
     def test_init_creates_tables(self):
         """Initialization should create child_learned_behaviors table."""
-        collector = self._get_collector()
+        self._get_collector()
         conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = {row[0] for row in cursor.fetchall()}
         conn.close()
         self.assertTrue(len(tables) >= 1)
@@ -181,11 +178,13 @@ class TestCrossPollinator(unittest.TestCase):
 
     def _get_pollinator(self):
         from icdev.tools.registry.cross_pollinator import CrossPollinator
+
         return CrossPollinator(db_path=self.db_path)
 
     def test_import(self):
         """CrossPollinator class should be importable."""
         from icdev.tools.registry.cross_pollinator import CrossPollinator
+
         self.assertTrue(callable(CrossPollinator))
 
     def test_find_candidates_empty(self):

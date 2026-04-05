@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 59 (GovCon Intelligence), Phase 21 (SaaS Multi-Tenancy) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-28 |
 
 ---
@@ -37,7 +37,7 @@ Phase 60 closes this gap with a complete Contract Performance Management Portal 
 3. Forecast cost and schedule completion using Monte Carlo simulation with PERT distributions (D-CPMP-2)
 4. Predict CPARS ratings via deterministic 5-dimension weighted scoring with NDAA penalty table (D-CPMP-3)
 5. Track subcontractors with FAR 52.219-9 small business compliance, flow-down verification, and cybersecurity status
-6. Auto-generate CDRLs by dispatching to existing ICDEV tools: SSP, SBOM, STIG, POAM, EVM reports (D-CPMP-5)
+6. Auto-generate CDRLs by dispatching to existing ICDEV™ tools: SSP, SBOM, STIG, POAM, EVM reports (D-CPMP-5)
 7. Auto-detect NDAA negative events from contract performance data (delinquent deliveries, cost overruns, quality rejections)
 8. Provide a COR portal with read-only government access filtered by COR email (D-CPMP-4)
 9. Sync contract awards from SAM.gov Contract Awards API with content-hash deduplication (D-CPMP-6)
@@ -89,7 +89,7 @@ Phase 60 closes this gap with a complete Contract Performance Management Portal 
 - **Deterministic scoring** -- Health, CPARS prediction, and EVM all use weighted averages with fixed, configurable weights (D21, D-CPMP-3, D-CPMP-8)
 - **Air-gap safe** -- Monte Carlo uses Python stdlib `random.betavariate` for PERT distributions, no numpy/scipy (D22, D-CPMP-2)
 - **Append-only audit** -- Status history, negative events, EVM periods, CDRL generations, and COR access logs are immutable (D6, D-CPMP-7)
-- **Tool reuse** -- CDRL generation dispatches to existing ICDEV compliance tools rather than reimplementing (D-CPMP-5)
+- **Tool reuse** -- CDRL generation dispatches to existing ICDEV™ compliance tools rather than reimplementing (D-CPMP-5)
 - **Explicit transitions** -- Proposal-to-contract bridge requires human confirmation, not automatic (D-CPMP-9)
 - **Namespace isolation** -- All 13 tables prefixed `cpmp_` to avoid collision with existing schema (D-CPMP-1)
 
@@ -218,10 +218,10 @@ FAR 52.219-9 small business subcontracting compliance.
 
 ### Component 6: CDRL Generator (`tools/govcon/cdrl_generator.py`)
 
-Dispatches CDRL generation to existing ICDEV tools (D-CPMP-5).
+Dispatches CDRL generation to existing ICDEV™ tools (D-CPMP-5).
 
 **Tool Mapping:**
-| CDRL Type | ICDEV Tool |
+| CDRL Type | ICDEV™ Tool |
 |-----------|------------|
 | SSP | `tools/compliance/ssp_generator.py` |
 | SBOM | `tools/compliance/sbom_generator.py` |
@@ -486,7 +486,7 @@ python tools/db/init_icdev_db.py
 | D-CPMP-2 | Monte Carlo via stdlib `random` | Air-gap safe, no numpy/scipy required (D22 pattern) |
 | D-CPMP-3 | CPARS prediction is deterministic weighted average | Reproducible, not probabilistic (D21 pattern); ML upgrade path later |
 | D-CPMP-4 | COR portal is read-only routes on same Flask app | Reuses existing auth; role-based access sufficient |
-| D-CPMP-5 | CDRL generator dispatches to existing ICDEV tools | Reuse ssp_generator, sbom_generator, stig_checker, etc. |
+| D-CPMP-5 | CDRL generator dispatches to existing ICDEV™ tools | Reuse ssp_generator, sbom_generator, stig_checker, etc. |
 | D-CPMP-6 | SAM.gov follows sam_scanner pattern | Consistent rate limiting, content-hash deduplication |
 | D-CPMP-7 | Negative events append-only | NIST AU-2 compliance (D6 pattern) |
 | D-CPMP-8 | Health is deterministic weighted average | Configurable weights via YAML (D21, D26 patterns) |
@@ -506,7 +506,7 @@ python tools/db/init_icdev_db.py
 | `tools/govcon/cpars_predictor.py` | Weighted CPARS scoring, NDAA penalty, rating thresholds |
 | `tools/govcon/subcontractor_tracker.py` | FAR 52.219-9, flow-down, cybersecurity, ISR/SSR |
 | `tools/govcon/negative_event_tracker.py` | NDAA events, auto-detection, CPARS impact |
-| `tools/govcon/cdrl_generator.py` | ICDEV tool dispatch, batch CDRL generation |
+| `tools/govcon/cdrl_generator.py` | ICDEV™ tool dispatch, batch CDRL generation |
 | `tools/govcon/sam_contract_sync.py` | SAM.gov Contract Awards API adapter |
 | `tools/dashboard/api/cpmp.py` | Flask Blueprint with ~40 CPMP endpoints |
 | `tools/dashboard/templates/cpmp/portfolio.html` | Portfolio dashboard page |

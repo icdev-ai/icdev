@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
@@ -114,6 +115,7 @@ AMBIGUITY_PATTERNS = [
 # Priority matrix tests
 # ---------------------------------------------------------------------------
 
+
 class TestPriorityMatrix:
     def test_mission_critical_unknown_is_p1(self):
         assert PRIORITY_MATRIX[("mission_critical", "unknown")] == 1
@@ -133,6 +135,7 @@ class TestPriorityMatrix:
 # ---------------------------------------------------------------------------
 # Impact scoring
 # ---------------------------------------------------------------------------
+
 
 class TestScoreImpact:
     def test_mission_keyword(self):
@@ -156,6 +159,7 @@ class TestScoreImpact:
 # ---------------------------------------------------------------------------
 # Uncertainty scoring
 # ---------------------------------------------------------------------------
+
 
 class TestScoreUncertainty:
     def test_empty_is_unknown(self):
@@ -184,6 +188,7 @@ class TestScoreUncertainty:
 # Find ambiguous phrase
 # ---------------------------------------------------------------------------
 
+
 class TestFindAmbiguousPhrase:
     def test_finds_match(self):
         result = _find_ambiguous_phrase("do it as needed", AMBIGUITY_PATTERNS)
@@ -198,6 +203,7 @@ class TestFindAmbiguousPhrase:
 # ---------------------------------------------------------------------------
 # Question generation
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateQuestion:
     def test_unknown_question(self):
@@ -232,6 +238,7 @@ class TestGenerateQuestion:
 # Prioritization
 # ---------------------------------------------------------------------------
 
+
 class TestPrioritizeQuestions:
     def test_sorts_by_priority(self):
         items = [
@@ -244,10 +251,7 @@ class TestPrioritizeQuestions:
         assert result[-1]["priority"] == 5
 
     def test_respects_max_questions(self):
-        items = [
-            {"priority": i, "impact": "enhancement", "section": f"S{i}"}
-            for i in range(10)
-        ]
+        items = [{"priority": i, "impact": "enhancement", "section": f"S{i}"} for i in range(10)]
         result = _prioritize_questions(items, max_questions=3)
         assert len(result) == 3
 
@@ -263,6 +267,7 @@ class TestPrioritizeQuestions:
 # ---------------------------------------------------------------------------
 # Spec-level analysis
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeSpecClarity:
     def test_good_spec_returns_ok(self, tmp_path):
@@ -281,7 +286,7 @@ class TestAnalyzeSpecClarity:
         assert len(result["questions"]) > 0
 
     def test_missing_sections_flagged(self, tmp_path):
-        minimal = "# CUI\n\n## Feature Description\nJust a description with enough words to pass the minimum threshold for the checker.\n"
+        minimal = "# CUI\n\n## Feature Description\nJust a description with enough words to pass the minimum threshold for the checker.\n"  # noqa: E501
         spec_file = tmp_path / "minimal.md"
         spec_file.write_text(minimal, encoding="utf-8")
         result = analyze_spec_clarity(spec_file, max_questions=10)
@@ -296,6 +301,7 @@ class TestAnalyzeSpecClarity:
 # ---------------------------------------------------------------------------
 # Session-level analysis (DB-backed)
 # ---------------------------------------------------------------------------
+
 
 def _init_clarification_db(db_path: Path):
     """Create the minimal schema for clarification engine tests."""
@@ -349,8 +355,7 @@ class TestAnalyzeRequirementsClarity:
             ("sess-2", "proj-1"),
         )
         conn.execute(
-            "INSERT INTO intake_requirements (id, session_id, raw_text, requirement_type) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO intake_requirements (id, session_id, raw_text, requirement_type) VALUES (?, ?, ?, ?)",
             ("req-1", "sess-2", "We need it done", "functional"),
         )
         conn.commit()
@@ -369,8 +374,7 @@ class TestAnalyzeRequirementsClarity:
             ("sess-3", "proj-1"),
         )
         conn.execute(
-            "INSERT INTO intake_requirements (id, session_id, raw_text, requirement_type) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO intake_requirements (id, session_id, raw_text, requirement_type) VALUES (?, ?, ?, ?)",
             (
                 "req-2",
                 "sess-3",

@@ -1,0 +1,65 @@
+# CUI // SP-CTI
+# LLM Judge Rubric: Proposal Management Volume
+
+name: "Proposal Management Volume"
+content_type: proposal_management
+description: "Evaluates GovCon management volume sections for approach clarity, staffing specificity, risk awareness, transition planning, and portal integration."
+
+dimensions:
+  approach_clarity:
+    weight: 0.25
+    description: "Is the management approach clearly articulated with defined processes and governance?"
+    anchors:
+      1: "No management approach. Just restates the requirement."
+      2: "Vague approach. 'We will manage the project' without process detail."
+      3: "Adequate approach with some process detail. Standard PMO language."
+      4: "Clear approach with defined governance, cadence, escalation paths."
+      5: "Excellent approach. Specific tools (Jira, ServiceNow), CDRL delivery process, portal references."
+
+  staffing_specificity:
+    weight: 0.20
+    description: "Does the section name specific roles, qualifications, and staffing approach?"
+    anchors:
+      1: "No staffing detail."
+      2: "Generic roles mentioned. 'Experienced team' without specifics."
+      3: "Roles listed with general qualifications."
+      4: "Named roles with certifications, clearance levels, years of experience."
+      5: "Full staffing matrix. Named individuals (or pseudonyms), credentials, ramp plan."
+
+  risk_awareness:
+    weight: 0.20
+    description: "Does the section identify program risks with realistic mitigations?"
+    anchors:
+      1: "No risk discussion."
+      2: "One or two generic risks without mitigations."
+      3: "Some risks identified with standard mitigations."
+      4: "Key risks with specific, actionable mitigations tied to approach."
+      5: "Comprehensive risk register. Proactive monitoring approach. Past lessons applied."
+
+  transition_planning:
+    weight: 0.15
+    description: "Does the section address transition-in/transition-out with concrete plans?"
+    anchors:
+      1: "No transition discussion."
+      2: "Acknowledges transition but no plan."
+      3: "Generic transition timeline. Phase-in/phase-out mentioned."
+      4: "Detailed transition plan with milestones, knowledge transfer, parallel ops period."
+      5: "Complete transition with risk mitigations, rollback plan, and acceptance criteria."
+
+  portal_integration:
+    weight: 0.20
+    description: "Does the section reference the post-award management portal for tracking and transparency?"
+    anchors:
+      1: "No mention of delivery tracking or management portal."
+      2: "Vague reference to 'tracking tools' without specifics."
+      3: "Mentions portal but doesn't describe capabilities."
+      4: "References CPMP portal features: CDRL tracking, SOW obligations, COR visibility."
+      5: "Deep portal integration: EVM dashboards, CPARS prediction, automated CDRL generation, subcontractor monitoring."
+
+few_shot_examples:
+  - score: 2
+    excerpt: "We will assign a qualified project manager to oversee all deliverables."
+    reasoning: "Generic, no named qualifications, no process detail, no portal reference."
+  - score: 5
+    excerpt: "Our PM (PMP-certified, TS/SCI, 12 years DoD) manages via the CPMP portal which auto-generates DD Form 1423 CDRLs, tracks SOW obligations against WBS milestones, and provides COR read-only access for real-time contract health monitoring."
+    reasoning: "Named credentials, specific portal features, COR visibility, connects to CDRL process."

@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 10 (Web Dashboard), Phase 30 (Dashboard Authentication & RBAC) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-The ICDEV dashboard serves a diverse audience: program managers tracking schedule risk, ISSOs verifying compliance posture, developers monitoring build pipelines, and contracting officers reviewing deliverables. Many of these users operate in high-stress, time-constrained environments where cognitive overload directly impacts mission effectiveness. The existing dashboard presents raw technical data -- STIG CAT1 counts, POAM identifiers, NIST control families, CVE severity scores -- without any translation layer for non-technical operators.
+The ICDEV™ dashboard serves a diverse audience: program managers tracking schedule risk, ISSOs verifying compliance posture, developers monitoring build pipelines, and contracting officers reviewing deliverables. Many of these users operate in high-stress, time-constrained environments where cognitive overload directly impacts mission effectiveness. The existing dashboard presents raw technical data -- STIG CAT1 counts, POAM identifiers, NIST control families, CVE severity scores -- without any translation layer for non-technical operators.
 
 A program manager seeing "0 CAT1 STIG findings" does not know whether that is good or bad. An ISSO encountering "FedRAMP Moderate baseline: 325 controls" needs to know which controls are satisfied without reading a 200-page SSP. A contracting officer viewing an audit trail full of JSON event types cannot quickly assess whether deliverables are on track.
 
@@ -28,7 +28,7 @@ These are "low impact" changes -- they require no new backend logic, no database
 
 ## 2. Goals
 
-1. Implement a glossary tooltip system using `data-glossary` HTML attributes and client-side JavaScript, providing plain-English definitions for every Gov/DoD and ICDEV-specific acronym on hover
+1. Implement a glossary tooltip system using `data-glossary` HTML attributes and client-side JavaScript, providing plain-English definitions for every Gov/DoD and ICDEV™-specific acronym on hover
 2. Add friendly timestamps throughout the dashboard ("2 hours ago", "yesterday", "last Tuesday") alongside ISO-8601 precision timestamps for auditability
 3. Provide breadcrumb navigation on all pages for spatial orientation within the dashboard hierarchy
 4. Implement ARIA accessibility features: skip-to-content link, role attributes, aria-labels, focus management, and WCAG 2.1 AA compliance on all interactive elements
@@ -83,7 +83,7 @@ These are "low impact" changes -- they require no new backend logic, no database
 The system SHALL implement a glossary tooltip system using `data-glossary` HTML attributes on domain-specific terms, with client-side JavaScript rendering plain-English definitions on hover.
 
 #### REQ-31-002: Comprehensive Term Coverage
-The glossary SHALL include definitions for all Gov/DoD acronyms (ATO, SSP, POAM, STIG, CUI, SBOM, FedRAMP, CMMC, cATO, IL2-IL6), ICDEV-specific terms (GOTCHA, ATLAS, RICOAS), and compliance concepts (CAT1/CAT2/CAT3, control families).
+The glossary SHALL include definitions for all Gov/DoD acronyms (ATO, SSP, POAM, STIG, CUI, SBOM, FedRAMP, CMMC, cATO, IL2-IL6), ICDEV™-specific terms (FORGE, ANVIL, RICOAS), and compliance concepts (CAT1/CAT2/CAT3, control families).
 
 #### REQ-31-003: No Backend Changes
 The glossary system SHALL be implemented entirely in client-side JavaScript with no backend API calls, database queries, or server-side rendering changes required.

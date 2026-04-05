@@ -1,5 +1,5 @@
 // CUI // SP-CTI
-// ICDEV Unified Chat — multi-stream backbone + RICOAS intake features.
+// ICDEV™ Unified Chat — multi-stream backbone + RICOAS intake features.
 // Merges Phase 44 multi-stream (D257-D260) with RICOAS requirements intake.
 // Single page: context sidebar | message stream | RICOAS + Governance sidebar.
 
@@ -72,7 +72,7 @@
         if (badge) _userId = badge.textContent.trim() || _userId;
     } catch (e) {}
 
-    var ns = window.ICDEV || {};
+    var ns = window.ICDEV™ || {};
 
     // ===================================================================
     // Utility helpers
@@ -223,7 +223,7 @@
                 if (data.error) {
                     // Fallback: show welcome message
                     var stream = document.getElementById('message-stream');
-                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! I\'m the ICDEV Requirements Analyst. Tell me about the application you want to build.' });
+                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! I\'m the ICDEV™ Requirements Analyst. Tell me about the application you want to build.' });
                     return;
                 }
                 var messages = data.messages || data.conversation || [];
@@ -1503,7 +1503,7 @@
         closeContext: closeContext
     };
 
-    window.ICDEV = ns;
+    window.ICDEV™ = ns;
 
     // Init on DOM ready
     if (document.readyState === 'loading') {

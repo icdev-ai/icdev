@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV Architecture Extractor — reverse-engineering extraction tool.
+"""ICDEV™ Architecture Extractor — reverse-engineering extraction tool.
 
 Extracts call graphs, component diagrams, data flows, service boundaries,
 database schemas, and architecture summaries from legacy applications
@@ -12,6 +12,8 @@ Usage:
 
 Classification: CUI // SP-CTI
 """
+from __future__ import annotations
+
 import argparse
 import collections
 import json
@@ -73,9 +75,9 @@ _RE = {
 
 # -- Helpers -------------------------------------------------------------------
 def _get_db() -> sqlite3.Connection:
-    """Return sqlite3 connection to ICDEV database with WAL mode and Row factory."""
+    """Return sqlite3 connection to ICDEV™ database with WAL mode and Row factory."""
     if not DB_PATH.exists():
-        raise FileNotFoundError(f"ICDEV database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first.")
+        raise FileNotFoundError(f"ICDEV™ database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first.")
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -696,8 +698,8 @@ _EXT = {"call-graph": lambda a: extract_call_graph(a.app_id),
         "summary": lambda a: generate_architecture_summary(a.app_id)}
 
 def main():
-    """CLI entry point for the ICDEV Architecture Extractor."""
-    ap = argparse.ArgumentParser(description="CUI // SP-CTI -- ICDEV Architecture Extractor",
+    """CLI entry point for the ICDEV™ Architecture Extractor."""
+    ap = argparse.ArgumentParser(description="CUI // SP-CTI -- ICDEV™ Architecture Extractor",
                                  epilog="Classification: CUI // SP-CTI")
     ap.add_argument("--app-id", required=True, help="Legacy application ID to analyze.")
     ap.add_argument("--extract", required=True, choices=list(_EXT.keys()), help="Extraction type.")

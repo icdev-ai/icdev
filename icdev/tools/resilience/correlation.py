@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Resilience — Correlation ID Middleware.
+"""ICDEV™ Resilience — Correlation ID Middleware.
 
 D149: Request-scoped correlation IDs propagated through Flask middleware,
 A2A JSON-RPC metadata, and audit trail session_id.

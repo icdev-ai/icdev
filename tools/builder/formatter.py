@@ -20,6 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Language support (Phase 16)
 try:
     import importlib.util as _ilu
+
     _ls_path = Path(__file__).parent / "language_support.py"
     if _ls_path.exists():
         _ls_spec = _ilu.spec_from_file_location("language_support", _ls_path)
@@ -72,9 +73,7 @@ def format_python(project_path: str, check_only: bool = False) -> Dict:
         result["success"] = all(t["success"] for t in result["tools_run"])
 
     result["raw_output"] = "\n".join(outputs)
-    result["files_changed"] = (
-        isort_result.get("files_changed", []) + black_result.get("files_changed", [])
-    )
+    result["files_changed"] = isort_result.get("files_changed", []) + black_result.get("files_changed", [])
     return result
 
 
@@ -83,14 +82,20 @@ def _run_black(root: Path, check_only: bool) -> Dict:
     cmd = [sys.executable, "-m", "black", "--line-length=100"]
     if check_only:
         cmd.append("--check")
-    cmd.extend([
-        "--exclude", r"/(venv|node_modules|\.git|__pycache__|build|dist)/",
-        str(root),
-    ])
+    cmd.extend(
+        [
+            "--exclude",
+            r"/(venv|node_modules|\.git|__pycache__|build|dist)/",
+            str(root),
+        ]
+    )
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         output = proc.stdout + proc.stderr
         files_changed = []
@@ -125,16 +130,24 @@ def _run_isort(root: Path, check_only: bool) -> Dict:
     cmd = [sys.executable, "-m", "isort", "--profile=black", "--line-length=100"]
     if check_only:
         cmd.append("--check-only")
-    cmd.extend([
-        "--skip", "venv",
-        "--skip", "node_modules",
-        "--skip", ".git",
-        str(root),
-    ])
+    cmd.extend(
+        [
+            "--skip",
+            "venv",
+            "--skip",
+            "node_modules",
+            "--skip",
+            ".git",
+            str(root),
+        ]
+    )
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         output = proc.stdout + proc.stderr
         files_changed = []
@@ -193,7 +206,10 @@ def format_javascript(project_path: str, check_only: bool = False) -> Dict:
         try:
             check = subprocess.run(
                 cmd_parts + ["--version"],
-                capture_output=True, text=True, timeout=30, cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(root),
             )
             if check.returncode == 0:
                 prettier_cmd = cmd_parts
@@ -204,12 +220,14 @@ def format_javascript(project_path: str, check_only: bool = False) -> Dict:
     if not prettier_cmd:
         result["success"] = False
         result["raw_output"] = "prettier not found. Install with: npm install -g prettier"
-        result["tools_run"].append({
-            "tool": "prettier",
-            "success": False,
-            "output": "prettier not found",
-            "files_changed": [],
-        })
+        result["tools_run"].append(
+            {
+                "tool": "prettier",
+                "success": False,
+                "output": "prettier not found",
+                "files_changed": [],
+            }
+        )
         return result
 
     # Build prettier command
@@ -218,14 +236,21 @@ def format_javascript(project_path: str, check_only: bool = False) -> Dict:
         cmd.append("--check")
     else:
         cmd.append("--write")
-    cmd.extend([
-        "--ignore-path", ".gitignore",
-        str(root / "src" / "**" / "*.{js,jsx,ts,tsx,json,css,md}"),
-    ])
+    cmd.extend(
+        [
+            "--ignore-path",
+            ".gitignore",
+            str(root / "src" / "**" / "*.{js,jsx,ts,tsx,json,css,md}"),
+        ]
+    )
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(root),
         )
         output = proc.stdout + proc.stderr
         files_changed = []
@@ -279,27 +304,37 @@ def format_java(project_path: str, check_only: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             ["google-java-format", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
-            result["raw_output"] = "google-java-format not found. Install from: https://github.com/google/google-java-format"
-            result["tools_run"].append({
+            result["raw_output"] = (
+                "google-java-format not found. Install from: https://github.com/google/google-java-format"
+            )
+            result["tools_run"].append(
+                {
+                    "tool": "google-java-format",
+                    "success": False,
+                    "output": "google-java-format not found",
+                    "files_changed": [],
+                }
+            )
+            return result
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        result["success"] = False
+        result["raw_output"] = (
+            "google-java-format not found. Install from: https://github.com/google/google-java-format"
+        )
+        result["tools_run"].append(
+            {
                 "tool": "google-java-format",
                 "success": False,
                 "output": "google-java-format not found",
                 "files_changed": [],
-            })
-            return result
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        result["success"] = False
-        result["raw_output"] = "google-java-format not found. Install from: https://github.com/google/google-java-format"
-        result["tools_run"].append({
-            "tool": "google-java-format",
-            "success": False,
-            "output": "google-java-format not found",
-            "files_changed": [],
-        })
+            }
+        )
         return result
 
     # Find all .java files (excluding build directories)
@@ -315,12 +350,14 @@ def format_java(project_path: str, check_only: bool = False) -> Dict:
 
     if not java_files:
         result["raw_output"] = "No .java files found"
-        result["tools_run"].append({
-            "tool": "google-java-format",
-            "success": True,
-            "output": "No .java files found",
-            "files_changed": [],
-        })
+        result["tools_run"].append(
+            {
+                "tool": "google-java-format",
+                "success": True,
+                "output": "No .java files found",
+                "files_changed": [],
+            }
+        )
         return result
 
     if check_only:
@@ -330,7 +367,11 @@ def format_java(project_path: str, check_only: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         output = proc.stdout + proc.stderr
         files_changed = []
@@ -388,18 +429,22 @@ def format_go(project_path: str, check_only: bool = False) -> Dict:
     try:
         subprocess.run(
             ["gofmt", "-h"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         # gofmt -h returns non-zero but prints usage; check for FileNotFoundError instead
     except FileNotFoundError:
         result["success"] = False
         result["raw_output"] = "gofmt not found. Install Go from https://go.dev"
-        result["tools_run"].append({
-            "tool": "gofmt",
-            "success": False,
-            "output": "gofmt not found",
-            "files_changed": [],
-        })
+        result["tools_run"].append(
+            {
+                "tool": "gofmt",
+                "success": False,
+                "output": "gofmt not found",
+                "files_changed": [],
+            }
+        )
         return result
     except subprocess.TimeoutExpired:
         result["success"] = False
@@ -415,7 +460,11 @@ def format_go(project_path: str, check_only: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         output = proc.stdout + proc.stderr
         files_changed = []
@@ -479,27 +528,33 @@ def format_rust(project_path: str, check_only: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             ["cargo", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
             result["raw_output"] = "cargo not found. Install Rust toolchain from https://rustup.rs"
-            result["tools_run"].append({
-                "tool": "cargo-fmt",
-                "success": False,
-                "output": "cargo not found",
-                "files_changed": [],
-            })
+            result["tools_run"].append(
+                {
+                    "tool": "cargo-fmt",
+                    "success": False,
+                    "output": "cargo not found",
+                    "files_changed": [],
+                }
+            )
             return result
     except (subprocess.TimeoutExpired, FileNotFoundError):
         result["success"] = False
         result["raw_output"] = "cargo not found. Install Rust toolchain from https://rustup.rs"
-        result["tools_run"].append({
-            "tool": "cargo-fmt",
-            "success": False,
-            "output": "cargo not found",
-            "files_changed": [],
-        })
+        result["tools_run"].append(
+            {
+                "tool": "cargo-fmt",
+                "success": False,
+                "output": "cargo not found",
+                "files_changed": [],
+            }
+        )
         return result
 
     if check_only:
@@ -509,7 +564,11 @@ def format_rust(project_path: str, check_only: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         output = proc.stdout + proc.stderr
         files_changed = []
@@ -568,27 +627,33 @@ def format_csharp(project_path: str, check_only: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             ["dotnet", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
             result["raw_output"] = "dotnet not found. Install .NET SDK from https://dotnet.microsoft.com"
-            result["tools_run"].append({
-                "tool": "dotnet-format",
-                "success": False,
-                "output": "dotnet not found",
-                "files_changed": [],
-            })
+            result["tools_run"].append(
+                {
+                    "tool": "dotnet-format",
+                    "success": False,
+                    "output": "dotnet not found",
+                    "files_changed": [],
+                }
+            )
             return result
     except (subprocess.TimeoutExpired, FileNotFoundError):
         result["success"] = False
         result["raw_output"] = "dotnet not found. Install .NET SDK from https://dotnet.microsoft.com"
-        result["tools_run"].append({
-            "tool": "dotnet-format",
-            "success": False,
-            "output": "dotnet not found",
-            "files_changed": [],
-        })
+        result["tools_run"].append(
+            {
+                "tool": "dotnet-format",
+                "success": False,
+                "output": "dotnet not found",
+                "files_changed": [],
+            }
+        )
         return result
 
     if check_only:
@@ -598,7 +663,11 @@ def format_csharp(project_path: str, check_only: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         output = proc.stdout + proc.stderr
         files_changed = []
@@ -645,6 +714,7 @@ def format_project(project_path: str, check_only: bool = False) -> Dict:
     else:
         try:
             from tools.builder.linter import detect_language
+
             languages = detect_language(project_path)
         except ImportError:
             # Fallback inline detection
@@ -661,6 +731,7 @@ def format_project(project_path: str, check_only: bool = False) -> Dict:
                     if list(root.glob("**/*.js")):
                         langs.append("javascript")
                 return langs
+
             languages = _detect_language(project_path)
 
     # TypeScript reuses format_javascript (prettier handles both)

@@ -24,7 +24,7 @@ from tools.finetune.provider import FineTuneProvider, FineTuneRequest, FineTuneS
 
 logger = logging.getLogger("icdev.finetune.azure")
 
-# Azure OpenAI status → ICDEV status mapping
+# Azure OpenAI status → ICDEV™ status mapping
 _STATUS_MAP = {
     "validating_files": "preparing",
     "queued": "pending",
@@ -54,11 +54,11 @@ class AzureOpenAIFineTuneProvider(FineTuneProvider):
     ):
         cloud_cfg = (config or {}).get("cloud", {}).get("azure_openai", {})
         self._api_key = api_key or cloud_cfg.get("api_key", "") or os.environ.get("AZURE_OPENAI_API_KEY", "")
-        self._endpoint = endpoint or cloud_cfg.get("endpoint", "") or os.environ.get(
-            "AZURE_OPENAI_ENDPOINT", ""
-        )
-        self._api_version = api_version or cloud_cfg.get("api_version", "") or os.environ.get(
-            "AZURE_OPENAI_API_VERSION", "2024-08-01-preview"
+        self._endpoint = endpoint or cloud_cfg.get("endpoint", "") or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        self._api_version = (
+            api_version
+            or cloud_cfg.get("api_version", "")
+            or os.environ.get("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
         )
         self._client = None
 
@@ -68,6 +68,7 @@ class AzureOpenAIFineTuneProvider(FineTuneProvider):
             return self._client
         try:
             import openai
+
             self._client = openai.AzureOpenAI(
                 api_key=self._api_key,
                 azure_endpoint=self._endpoint,
@@ -75,9 +76,7 @@ class AzureOpenAIFineTuneProvider(FineTuneProvider):
             )
             return self._client
         except ImportError:
-            raise ImportError(
-                "openai package not installed. Install with: pip install openai"
-            )
+            raise ImportError("openai package not installed. Install with: pip install openai")
 
     @property
     def provider_name(self) -> str:
@@ -100,10 +99,7 @@ class AzureOpenAIFineTuneProvider(FineTuneProvider):
         try:
             client = self._get_client()
             models = client.models.list()
-            ft_models = [
-                m.id for m in models.data
-                if hasattr(m, "id")
-            ][:5]
+            ft_models = [m.id for m in models.data if hasattr(m, "id")][:5]
             return {
                 "available": True,
                 "provider": "azure_openai",
@@ -214,7 +210,8 @@ class AzureOpenAIFineTuneProvider(FineTuneProvider):
             if job.status == "running":
                 try:
                     events = client.fine_tuning.jobs.list_events(
-                        fine_tuning_job_id=job.id, limit=10,
+                        fine_tuning_job_id=job.id,
+                        limit=10,
                     )
                     for event in events.data:
                         if hasattr(event, "data") and event.data:
@@ -266,9 +263,7 @@ class AzureOpenAIFineTuneProvider(FineTuneProvider):
             return [
                 {"model_id": m.id, "provider": "azure_openai"}
                 for m in models.data
-                if hasattr(m, "id") and any(
-                    x in m.id for x in ("gpt-4o-mini", "gpt-35-turbo", "gpt-4o")
-                )
+                if hasattr(m, "id") and any(x in m.id for x in ("gpt-4o-mini", "gpt-35-turbo", "gpt-4o"))
             ]
         except Exception:
             return []

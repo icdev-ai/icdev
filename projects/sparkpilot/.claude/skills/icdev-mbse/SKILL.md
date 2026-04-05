@@ -13,7 +13,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ```
 
 ## What This Does
-Integrates MBSE into the ICDEV SDLC workflow:
+Integrates MBSE into the ICDEV™ SDLC workflow:
 1. **Import SysML models** from Cameo Systems Modeler (XMI format)
 2. **Import requirements** from IBM DOORS NG (ReqIF format)
 3. **Build digital thread** — end-to-end traceability from requirements to NIST controls
@@ -139,6 +139,6 @@ Print final summary:
 
 ## Related Skills
 - `/icdev-init` — Initialize project (set mbse_enabled=1 with --mbse flag)
-- `/icdev-build` — Build code (M-ATLAS: Model→Architect→Trace→Link→Assemble→Stress-test)
+- `/icdev-build` — Build code (M-ANVIL: Model→Architect→Trace→Link→Assemble→Stress-test)
 - `/icdev-comply` — Generate compliance artifacts (uses digital thread for traceability)
 - `/icdev-test` — Run tests (includes model-generated test stubs)

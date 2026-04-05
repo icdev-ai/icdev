@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Initialize the ICDEV operational database with full schema."""
+"""Initialize the ICDEV™ operational database with full schema."""
 
 import sqlite3
 import argparse
@@ -2250,7 +2250,7 @@ CREATE INDEX IF NOT EXISTS idx_fips200_project ON fips200_assessments(project_id
 CREATE INDEX IF NOT EXISTS idx_fips200_status ON fips200_assessments(status);
 
 -- ============================================================
--- MARKETPLACE — Federated GOTCHA Asset Registry (Phase 22)
+-- MARKETPLACE — Federated FORGE Asset Registry (Phase 22)
 -- ============================================================
 
 -- Core asset registry (skills, goals, hardprompts, context, args, compliance extensions)
@@ -2830,7 +2830,7 @@ CREATE INDEX IF NOT EXISTS idx_turns_session ON ci_conversation_turns(session_id
 -- REMOTE COMMAND GATEWAY (Phase 28)
 -- ============================================================
 
--- Bound identities: channel user <-> ICDEV user
+-- Bound identities: channel user <-> ICDEV™ user
 CREATE TABLE IF NOT EXISTS remote_user_bindings (
     id TEXT PRIMARY KEY,
     channel TEXT NOT NULL,
@@ -4128,7 +4128,7 @@ CREATE TABLE IF NOT EXISTS model_cards (
 CREATE INDEX IF NOT EXISTS idx_model_cards_project ON model_cards(project_id);
 CREATE INDEX IF NOT EXISTS idx_model_cards_model ON model_cards(model_name);
 
--- ── System Cards (ICDEV system-level AI documentation) ──
+-- ── System Cards (ICDEV™ system-level AI documentation) ──
 CREATE TABLE IF NOT EXISTS system_cards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
@@ -4818,7 +4818,7 @@ CREATE INDEX IF NOT EXISTS idx_rfp_pattern_coverage ON rfp_requirement_patterns(
 CREATE INDEX IF NOT EXISTS idx_rfp_pattern_fingerprint ON rfp_requirement_patterns(keyword_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_rfp_pattern_status ON rfp_requirement_patterns(status);
 
--- ICDEV capability-to-requirement bridge (append-only, D6/D363)
+-- ICDEV™ capability-to-requirement bridge (append-only, D6/D363)
 CREATE TABLE IF NOT EXISTS icdev_capability_map (
     id TEXT PRIMARY KEY,
     pattern_id TEXT NOT NULL REFERENCES rfp_requirement_patterns(id),
@@ -4925,7 +4925,7 @@ CREATE INDEX IF NOT EXISTS idx_award_hash ON govcon_awards(content_hash);
 CREATE INDEX IF NOT EXISTS idx_award_sam ON govcon_awards(sam_opportunity_id);
 
 -- ── Customer Delivery Tracking (D374) ────────────────────────────────
--- Tracks which ICDEV components a winning customer receives on-prem.
+-- Tracks which ICDEV™ components a winning customer receives on-prem.
 -- Append-only: once a delivery is created, it cannot be modified.
 -- delivery_tier maps to deployment_profiles.yaml customer_* profiles.
 
@@ -5447,11 +5447,11 @@ CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(q
 CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
 
 -- =========================================================================
--- ATLAS Critique Phase (Phase 61 — Feature 3)
+-- ANVIL Critique Phase (Phase 61 — Feature 3)
 -- =========================================================================
 
--- Critique sessions: one per ATLAS critique invocation (append-only except status updates)
-CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
+-- Critique sessions: one per ANVIL critique invocation (append-only except status updates)
+CREATE TABLE IF NOT EXISTS anvil_critique_sessions (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
     workflow_id TEXT,
@@ -5472,13 +5472,13 @@ CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
     completed_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_critique_session_project ON atlas_critique_sessions(project_id);
-CREATE INDEX IF NOT EXISTS idx_critique_session_status ON atlas_critique_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_critique_session_project ON anvil_critique_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_critique_session_status ON anvil_critique_sessions(status);
 
 -- Critique findings: individual findings from critic agents (append-only, NIST AU)
-CREATE TABLE IF NOT EXISTS atlas_critique_findings (
+CREATE TABLE IF NOT EXISTS anvil_critique_findings (
     id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL REFERENCES atlas_critique_sessions(id),
+    session_id TEXT NOT NULL REFERENCES anvil_critique_sessions(id),
     critic_agent TEXT NOT NULL,
     round_number INTEGER DEFAULT 1,
     finding_type TEXT NOT NULL CHECK(finding_type IN (
@@ -5495,9 +5495,9 @@ CREATE TABLE IF NOT EXISTS atlas_critique_findings (
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_critique_finding_session ON atlas_critique_findings(session_id);
-CREATE INDEX IF NOT EXISTS idx_critique_finding_severity ON atlas_critique_findings(severity);
-CREATE INDEX IF NOT EXISTS idx_critique_finding_type ON atlas_critique_findings(finding_type);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_session ON anvil_critique_findings(session_id);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_severity ON anvil_critique_findings(severity);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_type ON anvil_critique_findings(finding_type);
 
 -- =========================================================================
 -- PROMPT CHAIN EXECUTIONS (Phase 61 — Feature 2)
@@ -5728,7 +5728,7 @@ def _has_migration_system(path):
 
 
 def init_db(db_path=None):
-    """Initialize the ICDEV database with full schema.
+    """Initialize the ICDEV™ database with full schema.
 
     If the migration system (schema_migrations table) is detected, redirects
     to the migration runner instead of re-running the monolithic init script.
@@ -5871,7 +5871,7 @@ def init_db(db_path=None):
             pass
     conn.commit()
     conn.close()
-    print(f"ICDEV database initialized at {path}")
+    print(f"ICDEV™ database initialized at {path}")
 
     # Verify tables
     conn = sqlite3.connect(str(path))
@@ -5884,7 +5884,7 @@ def init_db(db_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Initialize ICDEV database")
+    parser = argparse.ArgumentParser(description="Initialize ICDEV™ database")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database file path")
     parser.add_argument("--reset", action="store_true", help="Drop and recreate all tables")
     args = parser.parse_args()

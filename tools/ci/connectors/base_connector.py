@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Chat Connector ABC — base class for all chat platform connectors (D66, D136)
+# ICDEV™ Chat Connector ABC — base class for all chat platform connectors (D66, D136)
 
 """
 Abstract base class for chat platform connectors.
@@ -44,7 +44,10 @@ class ChatConnectorAdapter(ABC):
 
     @abstractmethod
     def send_message(
-        self, channel_id: str, text: str, thread_id: str = None,
+        self,
+        channel_id: str,
+        text: str,
+        thread_id: str = None,
     ) -> bool:
         """Send a message to a channel/thread.
 

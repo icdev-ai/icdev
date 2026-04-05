@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV dashboard BDD scenarios."""
+"""Step definitions for ICDEV™ dashboard BDD scenarios."""
 
 import os
 import sys

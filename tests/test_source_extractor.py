@@ -2,10 +2,7 @@
 # CUI // SP-CTI
 """Tests for tools/translation/source_extractor.py — Phase 43 IR extraction."""
 
-import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -16,8 +13,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.translation.source_extractor import (
     extract_source,
     build_dependency_graph,
-    _extract_python,
-    _extract_regex,
     _detect_python_idioms,
     _count_branches,
     SUPPORTED_LANGUAGES,
@@ -27,6 +22,7 @@ from icdev.tools.translation.source_extractor import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def python_source(tmp_path):
@@ -72,7 +68,7 @@ class Calculator:
 @pytest.fixture
 def java_source(tmp_path):
     """Create a temporary Java source file for regex extraction."""
-    code = '''// CUI // SP-CTI
+    code = """// CUI // SP-CTI
 package com.icdev.calc;
 
 import java.util.List;
@@ -91,7 +87,7 @@ public class Calculator {
         return result;
     }
 }
-'''
+"""
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     (src_dir / "Calculator.java").write_text(code, encoding="utf-8")
@@ -101,7 +97,7 @@ public class Calculator {
 @pytest.fixture
 def go_source(tmp_path):
     """Create a temporary Go source file."""
-    code = '''// CUI // SP-CTI
+    code = """// CUI // SP-CTI
 package calc
 
 import "fmt"
@@ -116,7 +112,7 @@ func Hello(name string) string {
 func Add(a int, b int) int {
     return a + b
 }
-'''
+"""
     src_dir = tmp_path / "src"
     src_dir.mkdir()
     (src_dir / "calc.go").write_text(code, encoding="utf-8")
@@ -126,6 +122,7 @@ func Add(a int, b int) int {
 # ---------------------------------------------------------------------------
 # Tests: Python extraction (AST-based)
 # ---------------------------------------------------------------------------
+
 
 class TestPythonExtraction:
     """Tests for Python AST-based extraction."""
@@ -197,6 +194,7 @@ class TestPythonExtraction:
 # Tests: Regex-based extraction (Java, Go)
 # ---------------------------------------------------------------------------
 
+
 class TestRegexExtraction:
     """Tests for regex-based extraction (non-Python languages)."""
 
@@ -225,6 +223,7 @@ class TestRegexExtraction:
 # Tests: Dependency graph
 # ---------------------------------------------------------------------------
 
+
 class TestDependencyGraph:
     """Tests for post-order dependency traversal (D244)."""
 
@@ -245,6 +244,7 @@ class TestDependencyGraph:
 # ---------------------------------------------------------------------------
 # Tests: Idiom detection
 # ---------------------------------------------------------------------------
+
 
 class TestIdiomDetection:
     """Tests for Python idiom detection."""
@@ -284,6 +284,7 @@ class TestIdiomDetection:
 # Tests: Complexity counting
 # ---------------------------------------------------------------------------
 
+
 class TestComplexityCounting:
     """Tests for branch complexity estimation."""
 
@@ -294,13 +295,14 @@ class TestComplexityCounting:
 
     def test_count_branches(self):
         """Function with branches should have higher complexity."""
-        code = "def check(x):\n    if x > 0:\n        return 'pos'\n    elif x < 0:\n        return 'neg'\n    else:\n        return 'zero'"
+        code = "def check(x):\n    if x > 0:\n        return 'pos'\n    elif x < 0:\n        return 'neg'\n    else:\n        return 'zero'"  # noqa: E501
         assert _count_branches(code) >= 3
 
 
 # ---------------------------------------------------------------------------
 # Tests: Supported languages
 # ---------------------------------------------------------------------------
+
 
 class TestSupportedLanguages:
     """Tests for language support constants."""

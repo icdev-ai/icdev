@@ -5,15 +5,12 @@
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.project.manifest_loader import (
-    IL_DEFAULTS,
     _apply_defaults,
     _apply_env_overrides,
     _deep_get,
@@ -26,11 +23,13 @@ from icdev.tools.project.manifest_loader import (
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
+
 def _write_yaml(tmp_dir: str, content: dict) -> str:
     """Write a dict as YAML (or JSON fallback) to tmp_dir/icdev.yaml."""
     path = Path(tmp_dir) / "icdev.yaml"
     try:
         import yaml
+
         path.write_text(yaml.dump(content), encoding="utf-8")
     except ImportError:
         path.write_text(json.dumps(content), encoding="utf-8")
@@ -38,6 +37,7 @@ def _write_yaml(tmp_dir: str, content: dict) -> str:
 
 
 # ── Test deep helpers ────────────────────────────────────────────────────
+
 
 class TestDeepHelpers:
     def test_deep_get_nested(self):
@@ -54,6 +54,7 @@ class TestDeepHelpers:
 
 
 # ── Test load_manifest ───────────────────────────────────────────────────
+
 
 class TestLoadManifest:
     def test_load_minimal_yaml(self, tmp_path):
@@ -98,6 +99,7 @@ class TestLoadManifest:
         p = tmp_path / "icdev.yaml"
         try:
             import yaml
+
             p.write_text(yaml.dump(["list", "not", "dict"]), encoding="utf-8")
         except ImportError:
             p.write_text(json.dumps(["list"]), encoding="utf-8")
@@ -117,6 +119,7 @@ class TestLoadManifest:
 
 
 # ── Test defaults ────────────────────────────────────────────────────────
+
 
 class TestApplyDefaults:
     def test_il4_defaults(self):
@@ -182,6 +185,7 @@ class TestApplyDefaults:
 
 # ── Test env overrides ───────────────────────────────────────────────────
 
+
 class TestEnvOverrides:
     def test_impact_level_override(self):
         config = {"impact_level": "IL4"}
@@ -209,35 +213,28 @@ class TestEnvOverrides:
 
 # ── Test validation ──────────────────────────────────────────────────────
 
+
 class TestValidateManifest:
     def test_valid_il4_config(self):
-        config = _apply_defaults(
-            {"project": {"name": "test"}, "impact_level": "IL4"}
-        )
+        config = _apply_defaults({"project": {"name": "test"}, "impact_level": "IL4"})
         errors, warnings = validate_manifest(config)
         assert errors == []
 
     def test_il6_requires_secret(self):
-        config = _apply_defaults(
-            {"project": {"name": "test"}, "impact_level": "IL6"}
-        )
+        config = _apply_defaults({"project": {"name": "test"}, "impact_level": "IL6"})
         # Override classification to non-SECRET
         config["classification"]["level"] = "CUI"
         errors, _ = validate_manifest(config)
         assert any("SECRET" in e for e in errors)
 
     def test_cjis_requires_il4(self):
-        config = _apply_defaults(
-            {"project": {"name": "test"}, "impact_level": "IL2"}
-        )
+        config = _apply_defaults({"project": {"name": "test"}, "impact_level": "IL2"})
         config["compliance"]["frameworks"] = ["cjis"]
         errors, _ = validate_manifest(config)
         assert any("cjis" in e for e in errors)
 
     def test_fedramp_high_requires_govcloud(self):
-        config = _apply_defaults(
-            {"project": {"name": "test"}, "impact_level": "IL4"}
-        )
+        config = _apply_defaults({"project": {"name": "test"}, "impact_level": "IL4"})
         config["compliance"]["frameworks"] = ["fedramp_high"]
         config["deployment"]["cloud"] = "aws"
         errors, _ = validate_manifest(config)
@@ -249,17 +246,13 @@ class TestValidateManifest:
         assert any("name" in e for e in errors)
 
     def test_no_frameworks_il4_warning(self):
-        config = _apply_defaults(
-            {"project": {"name": "test"}, "impact_level": "IL4"}
-        )
+        config = _apply_defaults({"project": {"name": "test"}, "impact_level": "IL4"})
         config["compliance"]["frameworks"] = []
         _, warnings = validate_manifest(config)
         assert any("No compliance frameworks" in w for w in warnings)
 
     def test_cui_disabled_il5_warning(self):
-        config = _apply_defaults(
-            {"project": {"name": "test"}, "impact_level": "IL5"}
-        )
+        config = _apply_defaults({"project": {"name": "test"}, "impact_level": "IL5"})
         config["classification"]["cui_markings"] = False
         _, warnings = validate_manifest(config)
         assert any("CUI markings disabled" in w for w in warnings)
@@ -267,19 +260,16 @@ class TestValidateManifest:
 
 # ── Test VCS detection ───────────────────────────────────────────────────
 
+
 class TestDetectVcsPlatform:
     def test_github_detected(self, tmp_path):
         with mock.patch("subprocess.run") as mock_run:
-            mock_run.return_value = mock.Mock(
-                returncode=0, stdout="https://github.com/org/repo.git\n"
-            )
+            mock_run.return_value = mock.Mock(returncode=0, stdout="https://github.com/org/repo.git\n")
             assert detect_vcs_platform(str(tmp_path)) == "github"
 
     def test_gitlab_detected(self, tmp_path):
         with mock.patch("subprocess.run") as mock_run:
-            mock_run.return_value = mock.Mock(
-                returncode=0, stdout="https://gitlab.example.mil/org/repo.git\n"
-            )
+            mock_run.return_value = mock.Mock(returncode=0, stdout="https://gitlab.example.mil/org/repo.git\n")
             assert detect_vcs_platform(str(tmp_path)) == "gitlab"
 
     def test_no_remote_returns_unknown(self, tmp_path):

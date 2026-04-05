@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
@@ -13,13 +14,13 @@ from icdev.tools.requirements.constitution_manager import (
     remove_principle,
     load_defaults,
     validate_spec,
-    VALID_CATEGORIES,
 )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _init_test_db(db_path: Path):
     """Create minimal schema required by constitution_manager in a temp DB."""
@@ -94,6 +95,7 @@ A simple widget that shows data.
 # Tests: add_principle
 # ---------------------------------------------------------------------------
 
+
 class TestAddPrinciple:
     """Verify adding constitution principles to the DB."""
 
@@ -142,6 +144,7 @@ class TestAddPrinciple:
 # Tests: list_principles
 # ---------------------------------------------------------------------------
 
+
 class TestListPrinciples:
     """Verify listing constitution principles."""
 
@@ -171,9 +174,7 @@ class TestListPrinciples:
         db_path = tmp_path / "test.db"
         _init_test_db(db_path)
 
-        result = add_principle(
-            "proj-004", "To be removed", category="general", db_path=db_path
-        )
+        result = add_principle("proj-004", "To be removed", category="general", db_path=db_path)
         add_principle("proj-004", "Active one", category="general", db_path=db_path)
 
         # Deactivate one
@@ -190,6 +191,7 @@ class TestListPrinciples:
 # Tests: remove_principle
 # ---------------------------------------------------------------------------
 
+
 class TestRemovePrinciple:
     """Verify soft-delete behavior."""
 
@@ -197,9 +199,7 @@ class TestRemovePrinciple:
         db_path = tmp_path / "test.db"
         _init_test_db(db_path)
 
-        result = add_principle(
-            "proj-005", "Will be removed", category="operations", db_path=db_path
-        )
+        result = add_principle("proj-005", "Will be removed", category="operations", db_path=db_path)
         principle_id = result["principle_id"]
 
         remove_result = remove_principle(principle_id, db_path=db_path)
@@ -220,6 +220,7 @@ class TestRemovePrinciple:
 # ---------------------------------------------------------------------------
 # Tests: load_defaults
 # ---------------------------------------------------------------------------
+
 
 class TestLoadDefaults:
     """Verify loading default DoD principles from context JSON."""
@@ -251,6 +252,7 @@ class TestLoadDefaults:
 # ---------------------------------------------------------------------------
 # Tests: validate_spec
 # ---------------------------------------------------------------------------
+
 
 class TestValidateSpec:
     """Verify spec validation against constitution principles."""

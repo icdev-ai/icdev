@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Translation {{ job.id[:8] }}… — ICDEV Dashboard{% endblock %}
+{% block title %}Translation {{ job.id[:8] }}… — ICDEV™ Dashboard{% endblock %}
 
 {% block content %}
 <div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
@@ -187,7 +187,7 @@
                     <span class="badge">{{ d.mapping_source }}</span>
                     {% endif %}
                 </td>
-                <td>{{ "%.0f"|format((d.confidence or 0) * 100) }}%</td>
+                <td>{{ ((d.confidence or 0) * 100)|round(0)|int }}%</td>
                 <td>{{ d.domain or '—' }}</td>
             </tr>
             {% endfor %}

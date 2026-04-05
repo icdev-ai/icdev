@@ -3,14 +3,10 @@
 """Tests for tools/project/session_context_builder.py."""
 
 import json
-import os
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
-from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.project.session_context_builder import (
@@ -28,11 +24,13 @@ from icdev.tools.project.session_context_builder import (
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
+
 def _write_yaml(tmp_dir: str, content: dict) -> str:
     """Write a dict as YAML (or JSON fallback) to tmp_dir/icdev.yaml."""
     path = Path(tmp_dir) / "icdev.yaml"
     try:
         import yaml
+
         path.write_text(yaml.dump(content), encoding="utf-8")
     except ImportError:
         path.write_text(json.dumps(content), encoding="utf-8")
@@ -136,7 +134,7 @@ def _create_test_db(db_path: str, project_id: str = None, directory: str = None)
 
     if project_id and directory:
         conn.execute(
-            "INSERT INTO projects (id, name, type, classification, directory_path, impact_level) VALUES (?, 'Test App', 'api', 'CUI', ?, 'IL4')",
+            "INSERT INTO projects (id, name, type, classification, directory_path, impact_level) VALUES (?, 'Test App', 'api', 'CUI', ?, 'IL4')",  # noqa: E501
             (project_id, directory),
         )
         conn.commit()
@@ -146,6 +144,7 @@ def _create_test_db(db_path: str, project_id: str = None, directory: str = None)
 
 
 # ── Test detect_project ─────────────────────────────────────────────────
+
 
 class TestDetectProject:
     def test_detects_yaml(self, tmp_path):
@@ -196,6 +195,7 @@ class TestDetectProject:
 
 
 # ── Test build_session_context ──────────────────────────────────────────
+
 
 class TestBuildSessionContext:
     def test_context_with_yaml(self, tmp_path):
@@ -251,6 +251,7 @@ class TestBuildSessionContext:
 
 # ── Test compliance summary ─────────────────────────────────────────────
 
+
 class TestComplianceSummary:
     def test_compliance_from_db(self, tmp_path):
         db_path = str(tmp_path / "test.db")
@@ -262,9 +263,15 @@ class TestComplianceSummary:
         conn.execute("INSERT INTO poam_items (project_id, status) VALUES ('proj-c1', 'open')")
         conn.execute("INSERT INTO poam_items (project_id, status) VALUES ('proj-c1', 'closed')")
         conn.execute("INSERT INTO stig_findings (project_id, severity, status) VALUES ('proj-c1', 'CAT1', 'Open')")
-        conn.execute("INSERT INTO project_controls (project_id, control_id, implementation_status) VALUES ('proj-c1', 'AC-2', 'implemented')")
-        conn.execute("INSERT INTO project_controls (project_id, control_id, implementation_status) VALUES ('proj-c1', 'AC-3', 'planned')")
-        conn.execute("INSERT INTO framework_applicability (project_id, framework_id, status) VALUES ('proj-c1', 'fedramp_moderate', 'confirmed')")
+        conn.execute(
+            "INSERT INTO project_controls (project_id, control_id, implementation_status) VALUES ('proj-c1', 'AC-2', 'implemented')"  # noqa: E501
+        )
+        conn.execute(
+            "INSERT INTO project_controls (project_id, control_id, implementation_status) VALUES ('proj-c1', 'AC-3', 'planned')"  # noqa: E501
+        )
+        conn.execute(
+            "INSERT INTO framework_applicability (project_id, framework_id, status) VALUES ('proj-c1', 'fedramp_moderate', 'confirmed')"  # noqa: E501
+        )
         conn.execute("INSERT INTO cato_evidence (project_id, readiness_score) VALUES ('proj-c1', 0.72)")
         conn.commit()
         conn.close()
@@ -290,18 +297,21 @@ class TestComplianceSummary:
 
 # ── Test dev profile summary ────────────────────────────────────────────
 
+
 class TestDevProfileSummary:
     def test_profile_from_db(self, tmp_path):
         db_path = str(tmp_path / "test.db")
         _create_test_db(db_path)
 
         conn = sqlite3.connect(db_path)
-        dims = json.dumps({
-            "language": {"primary": "python", "min_version": "3.11"},
-            "style": {"line_length": 100, "naming_convention": "snake_case"},
-            "testing": {"framework": "pytest", "min_coverage": 80},
-            "security": {"crypto_standard": "FIPS 140-2"},
-        })
+        dims = json.dumps(
+            {
+                "language": {"primary": "python", "min_version": "3.11"},
+                "style": {"line_length": 100, "naming_convention": "snake_case"},
+                "testing": {"framework": "pytest", "min_coverage": 80},
+                "security": {"crypto_standard": "FIPS 140-2"},
+            }
+        )
         conn.execute(
             "INSERT INTO dev_profiles (scope, scope_id, version, dimensions) VALUES ('project', 'proj-dp1', 1, ?)",
             (dims,),
@@ -326,6 +336,7 @@ class TestDevProfileSummary:
 
 # ── Test recent activity ────────────────────────────────────────────────
 
+
 class TestRecentActivity:
     def test_activity_from_db(self, tmp_path):
         db_path = str(tmp_path / "test.db")
@@ -333,10 +344,10 @@ class TestRecentActivity:
 
         conn = sqlite3.connect(db_path)
         conn.execute(
-            "INSERT INTO audit_trail (project_id, event_type, actor, action) VALUES ('proj-a1', 'code.commit', 'builder', 'Built auth module')"
+            "INSERT INTO audit_trail (project_id, event_type, actor, action) VALUES ('proj-a1', 'code.commit', 'builder', 'Built auth module')"  # noqa: E501
         )
         conn.execute(
-            "INSERT INTO audit_trail (project_id, event_type, actor, action) VALUES ('proj-a1', 'test_passed', 'builder', 'All tests pass')"
+            "INSERT INTO audit_trail (project_id, event_type, actor, action) VALUES ('proj-a1', 'test_passed', 'builder', 'All tests pass')"  # noqa: E501
         )
         conn.commit()
         conn.close()
@@ -355,6 +366,7 @@ class TestRecentActivity:
 
 # ── Test intake sessions ────────────────────────────────────────────────
 
+
 class TestIntakeSessions:
     def test_active_sessions(self, tmp_path):
         db_path = str(tmp_path / "test.db")
@@ -362,10 +374,10 @@ class TestIntakeSessions:
 
         conn = sqlite3.connect(db_path)
         conn.execute(
-            "INSERT INTO intake_sessions (id, project_id, customer_name, status, readiness_score) VALUES ('sess-1', 'proj-i1', 'Jane Smith', 'active', 0.45)"
+            "INSERT INTO intake_sessions (id, project_id, customer_name, status, readiness_score) VALUES ('sess-1', 'proj-i1', 'Jane Smith', 'active', 0.45)"  # noqa: E501
         )
         conn.execute(
-            "INSERT INTO intake_sessions (id, project_id, customer_name, status) VALUES ('sess-2', 'proj-i1', 'Bob Jones', 'completed')"
+            "INSERT INTO intake_sessions (id, project_id, customer_name, status) VALUES ('sess-2', 'proj-i1', 'Bob Jones', 'completed')"  # noqa: E501
         )
         conn.commit()
         conn.close()
@@ -377,6 +389,7 @@ class TestIntakeSessions:
 
 
 # ── Test suggest workflows ──────────────────────────────────────────────
+
 
 class TestSuggestWorkflows:
     def test_setup_needed(self):
@@ -437,6 +450,7 @@ class TestSuggestWorkflows:
 
 # ── Test format_markdown ────────────────────────────────────────────────
 
+
 class TestFormatMarkdown:
     def test_setup_needed_format(self):
         ctx = {
@@ -450,7 +464,7 @@ class TestFormatMarkdown:
             "warnings": ["No icdev.yaml found"],
         }
         md = _format_markdown(ctx)
-        assert "No ICDEV project detected" in md
+        assert "No ICDEV™ project detected" in md
         assert "icdev.yaml" in md
 
     def test_full_context_format(self):
@@ -487,7 +501,12 @@ class TestFormatMarkdown:
                 "crypto_standard": "FIPS 140-2",
             },
             "recent_activity": [
-                {"event_type": "code.commit", "actor": "builder", "action": "Built auth module", "timestamp": "2026-02-21T10:00:00"},
+                {
+                    "event_type": "code.commit",
+                    "actor": "builder",
+                    "action": "Built auth module",
+                    "timestamp": "2026-02-21T10:00:00",
+                },
             ],
             "intake_sessions": [],
             "recommended_workflows": [
@@ -508,6 +527,7 @@ class TestFormatMarkdown:
 
 
 # ── Test init_from_manifest ─────────────────────────────────────────────
+
 
 class TestInitFromManifest:
     def test_init_creates_project(self, tmp_path):

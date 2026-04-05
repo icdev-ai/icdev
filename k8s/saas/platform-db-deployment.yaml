@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV SaaS - Platform PostgreSQL Database
+# ICDEV™ SaaS - Platform PostgreSQL Database
 # For dev/test environments only — production should use AWS RDS
 # Stores platform-level tenant metadata, users, API keys, subscriptions
 ---

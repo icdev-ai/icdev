@@ -1,6 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.cli.output_formatter — human-friendly terminal output formatting."""
@@ -39,6 +40,7 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _strip_ansi(text: str) -> str:
     """Remove ANSI escape sequences for assertion clarity."""
     return re.sub(r"\033\[[0-9;]*m", "", text)
@@ -47,6 +49,7 @@ def _strip_ansi(text: str) -> str:
 # ---------------------------------------------------------------------------
 # TestFormatTable
 # ---------------------------------------------------------------------------
+
 
 class TestFormatTable:
     """format_table: ASCII box-drawing table rendering."""
@@ -109,6 +112,7 @@ class TestFormatTable:
 # TestFormatBanner
 # ---------------------------------------------------------------------------
 
+
 class TestFormatBanner:
     """format_banner: full-width colored status banner."""
 
@@ -154,6 +158,7 @@ class TestFormatBanner:
 # ---------------------------------------------------------------------------
 # TestFormatScore
 # ---------------------------------------------------------------------------
+
 
 class TestFormatScore:
     """format_score: colored score display with Unicode bar."""
@@ -220,6 +225,7 @@ class TestFormatScore:
 # TestFormatKv
 # ---------------------------------------------------------------------------
 
+
 class TestFormatKv:
     """format_kv: aligned key-value display."""
 
@@ -272,6 +278,7 @@ class TestFormatKv:
 # TestFormatSection
 # ---------------------------------------------------------------------------
 
+
 class TestFormatSection:
     """format_section: decorated section header."""
 
@@ -300,6 +307,7 @@ class TestFormatSection:
 # ---------------------------------------------------------------------------
 # TestFormatList
 # ---------------------------------------------------------------------------
+
 
 class TestFormatList:
     """format_list: bulleted or numbered list."""
@@ -340,6 +348,7 @@ class TestFormatList:
 # ---------------------------------------------------------------------------
 # TestFormatPipeline
 # ---------------------------------------------------------------------------
+
 
 class TestFormatPipeline:
     """format_pipeline: horizontal pipeline with status indicators."""
@@ -415,6 +424,7 @@ class TestFormatPipeline:
 # TestAutoColorValue
 # ---------------------------------------------------------------------------
 
+
 class TestAutoColorValue:
     """_auto_color_value: pattern-based value coloring."""
 
@@ -463,6 +473,7 @@ class TestAutoColorValue:
 # TestVisibleLen
 # ---------------------------------------------------------------------------
 
+
 class TestVisibleLen:
     """_visible_len: display width ignoring ANSI codes."""
 
@@ -488,6 +499,7 @@ class TestVisibleLen:
 # TestAnsiStrip
 # ---------------------------------------------------------------------------
 
+
 class TestAnsiStrip:
     """_Ansi.strip: removes ANSI escape sequences."""
 
@@ -504,6 +516,7 @@ class TestAnsiStrip:
 # ---------------------------------------------------------------------------
 # TestCuiWrap
 # ---------------------------------------------------------------------------
+
 
 class TestCuiWrap:
     """_cui_wrap: classification banner wrapping."""
@@ -525,6 +538,7 @@ class TestCuiWrap:
 # ---------------------------------------------------------------------------
 # TestFormatJsonHuman
 # ---------------------------------------------------------------------------
+
 
 class TestFormatJsonHuman:
     """format_json_human: recursive dict/list rendering."""
@@ -572,6 +586,7 @@ class TestFormatJsonHuman:
 # ---------------------------------------------------------------------------
 # TestAutoFormat
 # ---------------------------------------------------------------------------
+
 
 class TestAutoFormat:
     """auto_format: intelligent formatter selection by data shape."""
@@ -642,6 +657,7 @@ class TestAutoFormat:
 # TestAddHumanFlag
 # ---------------------------------------------------------------------------
 
+
 class TestAddHumanFlag:
     """add_human_flag / should_use_human: argparse integration."""
 
@@ -673,6 +689,7 @@ class TestAddHumanFlag:
 # ---------------------------------------------------------------------------
 # TestHumanOutputDecorator
 # ---------------------------------------------------------------------------
+
 
 class TestHumanOutputDecorator:
     """human_output: decorator intercepting dict returns for --human formatting."""

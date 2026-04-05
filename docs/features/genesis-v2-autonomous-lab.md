@@ -1,7 +1,7 @@
 # Genesis v2.0 — Autonomous Research Lab
 
 ## Overview
-Genesis v2.0 is a continuous self-improvement engine for ICDEV. It runs 12 autonomous "Reflexes" on schedules — researching threats, auditing code quality, generating tests, publishing content, and evolving the platform. Knowledge flows from the v2.0 research lab to v1.x production via Genesis Knowledge Packets (GKP).
+Genesis v2.0 is a continuous self-improvement engine for ICDEV™. It runs 12 autonomous "Reflexes" on schedules — researching threats, auditing code quality, generating tests, publishing content, and evolving the platform. Knowledge flows from the v2.0 research lab to v1.x production via Genesis Knowledge Packets (GKP).
 
 ## Architecture
 

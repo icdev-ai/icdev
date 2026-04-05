@@ -41,7 +41,7 @@ DOCKERFILE_CHECKS = [
     {
         "id": "DS003",
         "name": "Using ADD instead of COPY",
-        "description": "ADD has extra functionality that can be a security risk. Use COPY unless you need ADD features.",
+        "description": "ADD has extra functionality that can be a security risk. Use COPY unless you need ADD features.",  # noqa: E501
         "severity": "LOW",
         "pattern": r"^ADD\s+",
         "check_type": "regex",
@@ -73,7 +73,7 @@ DOCKERFILE_CHECKS = [
     {
         "id": "DS007",
         "name": "Secrets in ENV",
-        "description": "Potential secrets found in ENV directives. Use build secrets or runtime environment variables instead.",
+        "description": "Potential secrets found in ENV directives. Use build secrets or runtime environment variables instead.",  # noqa: E501
         "severity": "HIGH",
         "pattern": r"ENV\s+\S*(PASSWORD|SECRET|KEY|TOKEN|CREDENTIAL)\S*\s*=",
         "check_type": "regex",
@@ -166,7 +166,9 @@ def scan_image(
     try:
         version_check = subprocess.run(
             ["trivy", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -179,16 +181,22 @@ def scan_image(
 
     # Run trivy scan
     cmd = [
-        "trivy", "image",
-        "--format", "json",
-        "--severity", severity_filter,
+        "trivy",
+        "image",
+        "--format",
+        "json",
+        "--severity",
+        severity_filter,
         "--no-progress",
         image_name,
     ]
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -241,19 +249,21 @@ def _parse_trivy_output(json_str: str) -> List[Dict]:
         vulnerabilities = target_result.get("Vulnerabilities", []) or []
 
         for vuln in vulnerabilities:
-            findings.append({
-                "target": target,
-                "target_type": target_type,
-                "vulnerability_id": vuln.get("VulnerabilityID", ""),
-                "package": vuln.get("PkgName", ""),
-                "installed_version": vuln.get("InstalledVersion", ""),
-                "fixed_version": vuln.get("FixedVersion", ""),
-                "severity": vuln.get("Severity", "UNKNOWN"),
-                "title": vuln.get("Title", ""),
-                "description": vuln.get("Description", "")[:200],
-                "primary_url": vuln.get("PrimaryURL", ""),
-                "cvss_score": _extract_cvss(vuln.get("CVSS", {})),
-            })
+            findings.append(
+                {
+                    "target": target,
+                    "target_type": target_type,
+                    "vulnerability_id": vuln.get("VulnerabilityID", ""),
+                    "package": vuln.get("PkgName", ""),
+                    "installed_version": vuln.get("InstalledVersion", ""),
+                    "fixed_version": vuln.get("FixedVersion", ""),
+                    "severity": vuln.get("Severity", "UNKNOWN"),
+                    "title": vuln.get("Title", ""),
+                    "description": vuln.get("Description", "")[:200],
+                    "primary_url": vuln.get("PrimaryURL", ""),
+                    "cvss_score": _extract_cvss(vuln.get("CVSS", {})),
+                }
+            )
 
     return findings
 
@@ -328,39 +338,45 @@ def scan_dockerfile(
         for check in DOCKERFILE_CHECKS:
             if check["check_type"] == "regex" and check["pattern"]:
                 if re.search(check["pattern"], stripped, re.IGNORECASE):
-                    result["findings"].append({
-                        "check_id": check["id"],
-                        "name": check["name"],
-                        "description": check["description"],
-                        "severity": check["severity"],
-                        "line": line_num,
-                        "line_content": stripped[:100],
-                    })
+                    result["findings"].append(
+                        {
+                            "check_id": check["id"],
+                            "name": check["name"],
+                            "description": check["description"],
+                            "severity": check["severity"],
+                            "line": line_num,
+                            "line_content": stripped[:100],
+                        }
+                    )
 
     # Post-scan checks
     if not has_user:
         for check in DOCKERFILE_CHECKS:
             if check["check_type"] == "no_user_directive":
-                result["findings"].append({
-                    "check_id": check["id"],
-                    "name": check["name"],
-                    "description": check["description"],
-                    "severity": check["severity"],
-                    "line": 0,
-                    "line_content": "(no USER directive found)",
-                })
+                result["findings"].append(
+                    {
+                        "check_id": check["id"],
+                        "name": check["name"],
+                        "description": check["description"],
+                        "severity": check["severity"],
+                        "line": 0,
+                        "line_content": "(no USER directive found)",
+                    }
+                )
 
     if not has_healthcheck:
         for check in DOCKERFILE_CHECKS:
             if check["check_type"] == "no_healthcheck":
-                result["findings"].append({
-                    "check_id": check["id"],
-                    "name": check["name"],
-                    "description": check["description"],
-                    "severity": check["severity"],
-                    "line": 0,
-                    "line_content": "(no HEALTHCHECK directive found)",
-                })
+                result["findings"].append(
+                    {
+                        "check_id": check["id"],
+                        "name": check["name"],
+                        "description": check["description"],
+                        "severity": check["severity"],
+                        "line": 0,
+                        "line_content": "(no HEALTHCHECK directive found)",
+                    }
+                )
 
     # Summary
     severity_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
@@ -403,13 +419,9 @@ def evaluate_gate(
     max_high = thresholds.get("max_high", 0)
 
     if severity_counts["CRITICAL"] > max_critical:
-        violations.append(
-            f"CRITICAL vulnerabilities: {severity_counts['CRITICAL']} (max: {max_critical})"
-        )
+        violations.append(f"CRITICAL vulnerabilities: {severity_counts['CRITICAL']} (max: {max_critical})")
     if severity_counts["HIGH"] > max_high:
-        violations.append(
-            f"HIGH vulnerabilities: {severity_counts['HIGH']} (max: {max_high})"
-        )
+        violations.append(f"HIGH vulnerabilities: {severity_counts['HIGH']} (max: {max_high})")
 
     return {
         "passed": len(violations) == 0,

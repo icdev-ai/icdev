@@ -10,7 +10,6 @@ Trigger: When tools write to tables registered as realtime sources.
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, Optional
 
 # Source tables that trigger real-time RAG ingestion
@@ -24,7 +23,7 @@ REALTIME_TABLES = {
     "research_challenges",
     "research_forecasts",
     "memory_entries",
-    "atlas_critique_findings",
+    "anvil_critique_findings",
 }
 
 # Map table names to source_type keys
@@ -38,7 +37,7 @@ TABLE_TO_SOURCE_TYPE = {
     "research_challenges": "research_challenges",
     "research_forecasts": "research_forecasts",
     "memory_entries": "memory_entries",
-    "atlas_critique_findings": "atlas_critique_findings",
+    "anvil_critique_findings": "anvil_critique_findings",
 }
 
 
@@ -75,6 +74,7 @@ def handle(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     try:
         from pathlib import Path
         import yaml
+
         config_path = Path(__file__).resolve().parent.parent.parent.parent / "args" / "rag_config.yaml"
         if config_path.exists():
             with open(config_path) as f:
@@ -112,6 +112,7 @@ def handle(context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     try:
         from tools.rag.ingestion_manager import ingest_single_record
+
         result = ingest_single_record(
             source_type=source_type,
             record=record,

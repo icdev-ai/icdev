@@ -1,5 +1,5 @@
 // CUI // SP-CTI
-// ICDEV Unified Chat — multi-stream backbone + RICOAS intake features.
+// ICDEV™ Unified Chat — multi-stream backbone + RICOAS intake features.
 // Merges Phase 44 multi-stream (D257-D260) with RICOAS requirements intake.
 // Single page: context sidebar | message stream | RICOAS + Governance sidebar.
 
@@ -223,7 +223,7 @@
                 if (data.error) {
                     // Fallback: show welcome message
                     var stream = document.getElementById('message-stream');
-                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! I\'m the ICDEV Requirements Analyst. Tell me about the application you want to build.' });
+                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! I\'m the ICDEV™ Requirements Analyst. Tell me about the application you want to build.' });
                     return;
                 }
                 var messages = data.messages || data.conversation || [];
@@ -799,6 +799,67 @@
     }
 
     // ===================================================================
+    // SECTION 11b: Send to Kanban — decompose plan into backlog tasks
+    // ===================================================================
+
+    function chatSendToKanban() {
+        // Get the last assistant message content from the active context
+        var contextId = _activeContextId;
+        if (!contextId) {
+            alert("No active chat context");
+            return;
+        }
+
+        // Collect all assistant messages from the chat to build the plan
+        var messages = document.querySelectorAll("#chat-messages .chat-msg-assistant .chat-msg-content");
+        if (!messages.length) {
+            alert("No assistant messages found");
+            return;
+        }
+
+        // Use the last assistant message as the plan (most recent plan output)
+        var lastMsg = messages[messages.length - 1];
+        var planMarkdown = lastMsg.innerText || lastMsg.textContent || "";
+
+        if (!planMarkdown.trim()) {
+            alert("No plan content found in chat");
+            return;
+        }
+
+        // Preview first
+        ICDEV.fetchJSON("/api/kanban/preview-plan", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({markdown: planMarkdown})
+        }).then(function(data) {
+            if (!data || !data.count) {
+                alert("Could not extract tasks from the plan. Try a more structured format (## Phase 1, ## Step 2, etc.)");
+                return;
+            }
+            // Confirm with user
+            var taskList = data.tasks.map(function(t, i) {
+                return (i + 1) + ". [" + t.priority + "] " + t.title;
+            }).join("\n");
+
+            if (confirm("Send " + data.count + " tasks to Kanban backlog?\n\n" + taskList)) {
+                ICDEV.fetchJSON("/api/kanban/from-plan", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({markdown: planMarkdown})
+                }).then(function(result) {
+                    if (result && result.tasks_created) {
+                        alert(result.tasks_created + " tasks added to Kanban backlog!");
+                        // Refresh kanban if on that page
+                        if (typeof ICDEV.refreshKanban === "function") {
+                            ICDEV.refreshKanban();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    // ===================================================================
     // SECTION 12: RICOAS Features — COA rendering & selection
     // ===================================================================
 
@@ -1104,24 +1165,23 @@
 
     function showRicoasSidebar() {
         var rightSidebar = document.getElementById('right-sidebar');
-        var ricoas = document.getElementById('ricoas-sidebar');
+        var layout = document.getElementById('chat-layout');
         var ricoasBtn = document.getElementById('btn-ricoas-toggle');
-        if (rightSidebar) rightSidebar.style.display = 'block';
-        if (ricoas) ricoas.style.display = 'block';
+        if (rightSidebar) rightSidebar.classList.add('chat-right-panel--visible');
+        if (layout) layout.classList.add('chat-layout--right-open');
         if (ricoasBtn) ricoasBtn.style.display = 'inline-block';
+        // Switch to RICOAS tab
+        var tab = document.getElementById('tab-ricoas');
+        if (tab) tab.click();
     }
 
     function hideRicoasSidebar() {
-        var ricoas = document.getElementById('ricoas-sidebar');
         var ricoasBtn = document.getElementById('btn-ricoas-toggle');
-        if (ricoas) ricoas.style.display = 'none';
         if (ricoasBtn) ricoasBtn.style.display = 'none';
-        // Hide right sidebar if gov is also hidden
-        var gov = document.getElementById('gov-sidebar');
-        if (!gov || gov.style.display === 'none') {
-            var rightSidebar = document.getElementById('right-sidebar');
-            if (rightSidebar) rightSidebar.style.display = 'none';
-        }
+        var rightSidebar = document.getElementById('right-sidebar');
+        var layout = document.getElementById('chat-layout');
+        if (rightSidebar) rightSidebar.classList.remove('chat-right-panel--visible');
+        if (layout) layout.classList.remove('chat-layout--right-open');
     }
 
     function stopRicoasTimers() {
@@ -1174,11 +1234,23 @@
         }
     }
 
+    // Advisory content_type → display metadata mapping (D-CU-2)
+    var ADVISORY_MAP = {
+        'governance_advisory': { label: 'Governance', advisory: 'governance', icon: '\u26A0' },
+        'bayesian_advisory':   { label: 'Bayesian Learning', advisory: 'bayesian', icon: '\uD83E\uDDE0' },
+        'rag_attribution':     { label: 'Knowledge Sources', advisory: 'rag', icon: '\uD83D\uDCDA' },
+        'code_quality_advisory': { label: 'Code Quality', advisory: 'code_quality', icon: '\uD83D\uDD27' },
+        'genesis_advisory':    { label: 'Genesis Insight', advisory: 'genesis', icon: '\uD83D\uDD2C' },
+        'intake_advisory':     { label: 'Requirements', advisory: 'intake', icon: '\uD83D\uDCCB' },
+        'context_health':      { label: 'Context Health', advisory: 'health', icon: '\u26A1' },
+        'workflow_status':     { label: 'Workflow', advisory: 'workflow', icon: '\uD83D\uDD04' }
+    };
+
     function renderMessages(messages) {
         var stream = document.getElementById('message-stream');
         if (!stream) return;
         if (!messages.length) {
-            stream.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted); font-size: 0.9rem;">Start a conversation by sending a message.</div>';
+            stream.innerHTML = '<div class="msg-bubble msg-bubble--system">Start a conversation by sending a message.</div>';
             return;
         }
         var html = '';
@@ -1190,7 +1262,7 @@
     function appendMessage(msg) {
         var stream = document.getElementById('message-stream');
         if (!stream) return;
-        var placeholder = stream.querySelector('[style*="text-align: center"]');
+        var placeholder = stream.querySelector('.msg-bubble--system');
         if (placeholder && stream.children.length === 1) stream.innerHTML = '';
         stream.innerHTML += renderMessageHtml(msg);
         stream.scrollTop = stream.scrollHeight;
@@ -1198,22 +1270,40 @@
 
     function renderMessageHtml(msg) {
         var role = msg.role || 'user';
-        var bgColor = role === 'assistant' ? 'var(--bg-secondary)' : role === 'intervention' ? 'var(--bg-warning, #332)' : role === 'system' ? 'var(--bg-tertiary, #112)' : 'transparent';
-        var borderLeft = role === 'intervention' ? '3px solid var(--accent-yellow, #fa0)' : role === 'system' ? '3px solid var(--accent-red, #d44)' : 'none';
-        var label = role === 'assistant' ? 'Agent' : role === 'intervention' ? 'Intervention' : role === 'system' ? 'System' : 'You';
-        var labelColor = role === 'assistant' ? 'var(--accent-blue)' : role === 'intervention' ? 'var(--accent-yellow, #fa0)' : role === 'system' ? 'var(--accent-red, #d44)' : 'var(--accent-green, #0a0)';
-        var extraClass = '';
-        if (msg.role === 'governance_advisory') {
-            extraClass = ' msg-governance_advisory';
-            label = 'Governance Advisory';
-            labelColor = 'var(--accent-purple, #7c4dff)';
+        var ct = msg.content_type || 'text';
+
+        // Check if this is an advisory message type
+        var advInfo = ADVISORY_MAP[ct] || ADVISORY_MAP[role];
+        if (advInfo) {
+            return '<div class="msg-bubble msg-bubble--advisory" data-advisory="' + advInfo.advisory + '">'
+                + '<span class="msg-advisory-icon">' + advInfo.icon + '</span>'
+                + '<span class="agent-name">' + advInfo.label + (msg.turn_number ? ' (#' + msg.turn_number + ')' : '') + '</span>'
+                + '<div class="msg-markdown">' + renderContent(msg.content || '') + '</div>'
+                + '</div>';
         }
 
-        return '<div class="' + extraClass + '" style="padding: 8px 12px; margin-bottom: 4px; background: ' + bgColor + '; border-left: ' + borderLeft + '; border-radius: 4px;">'
-            + '<div style="font-size: 0.75rem; font-weight: 600; color: ' + labelColor + '; margin-bottom: 4px;">'
-            + label + (msg.turn_number ? ' (#' + msg.turn_number + ')' : '') + '</div>'
-            + '<div style="font-size: 0.85rem; white-space: pre-wrap; word-break: break-word;">' + escHtml(msg.content || '') + '</div>'
+        // Role-based bubble class
+        var bubbleClass = 'msg-bubble';
+        var label = 'You';
+        if (role === 'assistant') { bubbleClass += ' msg-bubble--agent'; label = 'Agent'; }
+        else if (role === 'system') { bubbleClass += ' msg-bubble--system'; label = 'System'; }
+        else if (role === 'intervention') { bubbleClass += ' msg-bubble--intervention'; label = 'Intervention'; }
+        else { bubbleClass += ' msg-bubble--user'; }
+
+        var turnSuffix = msg.turn_number ? ' (#' + msg.turn_number + ')' : '';
+
+        return '<div class="' + bubbleClass + '">'
+            + '<div class="agent-name">' + label + turnSuffix + '</div>'
+            + '<div class="msg-markdown">' + renderContent(msg.content || '') + '</div>'
             + '</div>';
+    }
+
+    function renderContent(text) {
+        // Use marked.js if available, otherwise escape HTML and preserve whitespace
+        if (typeof marked !== 'undefined') {
+            try { return marked.parse(text); } catch (e) { /* fall through */ }
+        }
+        return '<span style="white-space:pre-wrap;word-break:break-word;">' + escHtml(text) + '</span>';
     }
 
     function appendTechniqueActivation(data) {
@@ -1221,15 +1311,15 @@
         if (!stream) return;
         var tech = data.technique || {};
         var qs = data.suggested_questions || [];
-        var html = '<div style="padding: 8px 12px; margin-bottom: 4px; background: var(--bg-tertiary, #112); border-left: 3px solid var(--accent-blue); border-radius: 4px;">';
-        html += '<div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-blue); margin-bottom: 4px;">Technique Activated</div>';
-        html += '<div style="font-size: 0.85rem;"><strong>' + escHtml(tech.name || 'Technique') + '</strong>';
-        if (tech.description) html += '<br><span style="color: var(--text-secondary);">' + escHtml(tech.description) + '</span>';
+        var html = '<div class="msg-bubble msg-bubble--advisory" data-advisory="intake">';
+        html += '<div class="agent-name">Technique Activated</div>';
+        html += '<div class="msg-markdown"><strong>' + escHtml(tech.name || 'Technique') + '</strong>';
+        if (tech.description) html += '<br><span class="intel-section-content">' + escHtml(tech.description) + '</span>';
         html += '</div>';
         if (qs.length > 0) {
-            html += '<div style="margin-top: 6px; font-size: 0.8rem;">Try asking:</div>';
+            html += '<div class="intel-section-content" style="margin-top:6px;">Try asking:</div>';
             for (var i = 0; i < qs.length; i++) {
-                html += '<button class="technique-question-btn" data-q="' + escAttr(qs[i]) + '" style="display: block; margin: 4px 0; padding: 4px 8px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 3px; color: var(--text-primary); cursor: pointer; font-size: 0.8rem; text-align: left; width: 100%;">' + escHtml(qs[i]) + '</button>';
+                html += '<button class="technique-question-btn action-card" data-q="' + escAttr(qs[i]) + '">' + escHtml(qs[i]) + '</button>';
             }
         }
         html += '</div>';
@@ -1246,9 +1336,21 @@
         }
     }
 
+    function showTypingIndicator(visible) {
+        var el = document.getElementById('typing-indicator');
+        if (el) {
+            if (visible) el.classList.add('typing-indicator--visible');
+            else el.classList.remove('typing-indicator--visible');
+        }
+    }
+
     function updateInterventionBar(isProcessing) {
         var bar = document.getElementById('intervention-bar');
-        if (bar) bar.style.display = isProcessing ? 'block' : 'none';
+        if (bar) {
+            if (isProcessing) bar.classList.add('chat-intervention--visible');
+            else bar.classList.remove('chat-intervention--visible');
+        }
+        showTypingIndicator(isProcessing);
     }
 
     function updateTopStats(contexts) {
@@ -1383,10 +1485,10 @@
         var btnCreate = document.getElementById('btn-create-context');
 
         if (btnNew) btnNew.addEventListener('click', function () {
-            if (modal) modal.style.display = 'flex';
+            if (modal) modal.classList.add('chat-modal-overlay--visible');
         });
         if (btnCancel) btnCancel.addEventListener('click', function () {
-            if (modal) modal.style.display = 'none';
+            if (modal) modal.classList.remove('chat-modal-overlay--visible');
         });
         if (btnCreate) btnCreate.addEventListener('click', function () {
             var title = document.getElementById('new-ctx-title').value.trim();
@@ -1399,7 +1501,7 @@
             } else {
                 createContext({ title: title, agent_model: model, system_prompt: prompt });
             }
-            if (modal) modal.style.display = 'none';
+            if (modal) modal.classList.remove('chat-modal-overlay--visible');
             document.getElementById('new-ctx-title').value = '';
             document.getElementById('new-ctx-prompt').value = '';
             document.getElementById('new-ctx-intake').checked = false;
@@ -1485,6 +1587,7 @@
     ns.chatViewRequirements = chatViewRequirements;
     ns.chatGeneratePRD = chatGeneratePRD;
     ns.chatValidatePRD = chatValidatePRD;
+    ns.chatSendToKanban = chatSendToKanban;
     ns.chatSelectCoa = chatSelectCoa;
     ns.chatUnselectCoa = chatUnselectCoa;
     ns.chatViewProject = chatViewProject;

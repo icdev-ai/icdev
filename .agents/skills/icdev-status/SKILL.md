@@ -22,7 +22,7 @@ Shows a comprehensive status overview:
 ```bash
 python tools/project/session_context_builder.py --format markdown
 ```
-If the current directory contains `icdev.yaml` or is a registered ICDEV project, this outputs:
+If the current directory contains `icdev.yaml` or is a registered ICDEV™ project, this outputs:
 - Project metadata (name, type, language, impact level, classification, ATO status)
 - Compliance posture (frameworks, SSP, POAMs, STIG findings, controls, cATO readiness)
 - Dev profile summary (language, style, testing, crypto standards)
@@ -42,7 +42,7 @@ Run the CLI command or use MCP tool `project_status` MCP tool from icdev-core fo
 ### 3. Display Project Overview
 ```
 ╔══════════════════════════════════════╗
-║  ICDEV Project Status                ║
+║  ICDEV™ Project Status                ║
 ║  CUI // SP-CTI                       ║
 ╠══════════════════════════════════════╣
 ║  Project:  <name>                    ║

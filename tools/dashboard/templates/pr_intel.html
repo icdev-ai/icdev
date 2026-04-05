@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+{% block title %}PR Intelligence - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">PR Intelligence</span>
+    </nav>
+
+    <h1>PR Intelligence &mdash; Compliance Drift Detection</h1>
+    <p class="text-muted">Diff-based compliance analysis at the pull request level. Detects security findings, compliance impacts, and control drift across every PR before merge.</p>
+
+    <!-- Stats Grid -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-total" class="stat-value" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Total Reports</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-pass-rate" class="stat-value" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Pass Rate (%)</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-security" class="stat-value" style="font-size:2rem;font-weight:bold;color:#d32f2f;">--</div>
+            <div class="stat-label" style="color:#666;">Security Findings</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-compliance" class="stat-value" style="font-size:2rem;font-weight:bold;color:#f57c00;">--</div>
+            <div class="stat-label" style="color:#666;">Compliance Impacts</div>
+        </div>
+    </div>
+
+    <!-- Status Distribution -->
+    <h2 style="margin-top:2rem;">Status Distribution</h2>
+    <div style="border:1px solid #ddd;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;">
+        <div id="dist-pass" style="margin-bottom:0.75rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-weight:600;color:#388e3c;">Pass</span>
+                <span id="dist-pass-label" style="font-size:0.85rem;color:#666;">0 (0%)</span>
+            </div>
+            <div style="background:#e0e0e0;border-radius:6px;height:22px;overflow:hidden;">
+                <div id="dist-pass-bar" style="background:#388e3c;height:100%;width:0%;transition:width 0.5s;border-radius:6px;"></div>
+            </div>
+        </div>
+        <div id="dist-warn" style="margin-bottom:0.75rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-weight:600;color:#f57c00;">Warn</span>
+                <span id="dist-warn-label" style="font-size:0.85rem;color:#666;">0 (0%)</span>
+            </div>
+            <div style="background:#e0e0e0;border-radius:6px;height:22px;overflow:hidden;">
+                <div id="dist-warn-bar" style="background:#f57c00;height:100%;width:0%;transition:width 0.5s;border-radius:6px;"></div>
+            </div>
+        </div>
+        <div id="dist-fail">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-weight:600;color:#d32f2f;">Fail</span>
+                <span id="dist-fail-label" style="font-size:0.85rem;color:#666;">0 (0%)</span>
+            </div>
+            <div style="background:#e0e0e0;border-radius:6px;height:22px;overflow:hidden;">
+                <div id="dist-fail-bar" style="background:#d32f2f;height:100%;width:0%;transition:width 0.5s;border-radius:6px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Compliance Drift Panel -->
+    <h2 style="margin-top:2rem;">Compliance Drift</h2>
+    <p style="font-size:0.9rem;color:#666;margin-bottom:0.75rem;">Controls that drift most often indicate systemic compliance gaps.</p>
+    <div style="border:1px solid #ddd;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;">
+        <table id="tbl-drift" style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr style="border-bottom:2px solid #ddd;">
+                    <th style="text-align:left;padding:0.5rem;">Control ID</th>
+                    <th style="text-align:left;padding:0.5rem;">Control Family</th>
+                    <th style="text-align:center;padding:0.5rem;">Drift Count</th>
+                    <th style="text-align:left;padding:0.5rem;min-width:200px;">Frequency</th>
+                </tr>
+            </thead>
+            <tbody id="drift-body">
+                <tr><td colspan="4" style="padding:1.5rem;text-align:center;color:#999;">Loading drift data...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reports Table -->
+    <h2 style="margin-top:2rem;">Reports</h2>
+    <div style="margin-bottom:0.75rem;display:flex;gap:0.5rem;align-items:center;">
+        <label style="font-weight:600;font-size:0.9rem;">Filter:</label>
+        <select id="filter-status" onchange="loadReports()" style="padding:0.3rem 0.6rem;border:1px solid #ccc;border-radius:4px;background:#fff;font-size:0.85rem;">
+            <option value="">All Status</option>
+            <option value="pass">Pass</option>
+            <option value="warn">Warn</option>
+            <option value="fail">Fail</option>
+        </select>
+    </div>
+    <div class="table-container">
+        <table id="tbl-reports" style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr style="border-bottom:2px solid #ddd;">
+                    <th style="text-align:left;padding:0.5rem;">PR Reference</th>
+                    <th style="text-align:left;padding:0.5rem;">Project</th>
+                    <th style="text-align:center;padding:0.5rem;">Files Changed</th>
+                    <th style="text-align:center;padding:0.5rem;">Security Findings</th>
+                    <th style="text-align:center;padding:0.5rem;">Compliance Impacts</th>
+                    <th style="text-align:center;padding:0.5rem;">Status</th>
+                    <th style="text-align:left;padding:0.5rem;">Date</th>
+                </tr>
+            </thead>
+            <tbody id="reports-body">
+                <tr><td colspan="7" style="padding:1.5rem;text-align:center;color:#999;">Loading reports...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <!-- Pagination -->
+    <div id="pagination" style="margin-top:1rem;display:flex;justify-content:center;gap:0.5rem;align-items:center;">
+        <button id="btn-prev" onclick="changePage(-1)" disabled style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;font-size:0.85rem;">Prev</button>
+        <span id="page-info" style="font-size:0.85rem;color:#666;">Page 1</span>
+        <button id="btn-next" onclick="changePage(1)" disabled style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;font-size:0.85rem;">Next</button>
+    </div>
+
+    <!-- Report Detail Panel -->
+    <div id="detail-panel" style="display:none;margin-top:2rem;border:1px solid #ddd;border-radius:8px;padding:1.5rem;background:#fafafa;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h2 style="margin:0;">Report Detail</h2>
+            <button onclick="closeDetail()" style="padding:0.3rem 0.8rem;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;font-size:0.85rem;">Close</button>
+        </div>
+        <div id="detail-summary" style="margin-bottom:1rem;">
+            <h3 style="font-size:1rem;margin:0 0 0.5rem;">Diff Summary</h3>
+            <div id="detail-diff" style="padding:0.75rem;background:#fff;border:1px solid #e0e0e0;border-radius:6px;font-size:0.9rem;color:#333;"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1rem;">
+            <div>
+                <h3 style="font-size:1rem;margin:0 0 0.5rem;">Security Findings</h3>
+                <ul id="detail-security" style="padding-left:1.2rem;margin:0;font-size:0.9rem;"></ul>
+            </div>
+            <div>
+                <h3 style="font-size:1rem;margin:0 0 0.5rem;">Compliance Impacts</h3>
+                <ul id="detail-compliance" style="padding-left:1.2rem;margin:0;font-size:0.9rem;"></ul>
+            </div>
+        </div>
+        <div style="margin-bottom:1rem;">
+            <h3 style="font-size:1rem;margin:0 0 0.5rem;">Code Quality Delta</h3>
+            <div id="detail-quality" style="padding:0.75rem;background:#fff;border:1px solid #e0e0e0;border-radius:6px;font-size:0.9rem;"></div>
+        </div>
+        <div>
+            <h3 style="font-size:1rem;margin:0 0 0.5rem;cursor:pointer;" onclick="toggleFullJson()">Full Report JSON <span id="json-toggle" style="font-size:0.8rem;color:#1976d2;">[show]</span></h3>
+            <pre id="detail-json" style="display:none;padding:0.75rem;background:#fff;border:1px solid #e0e0e0;border-radius:6px;font-size:0.8rem;max-height:400px;overflow:auto;white-space:pre-wrap;word-break:break-all;"></pre>
+        </div>
+    </div>
+
+    <!-- Analyze PR -->
+    <h2 style="margin-top:2rem;">Analyze PR</h2>
+    <div style="margin:1rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:1rem;align-items:end;">
+            <div>
+                <label for="analyze-project" style="display:block;font-weight:600;margin-bottom:0.3rem;">Project ID</label>
+                <input id="analyze-project" type="text" placeholder="e.g. proj-123" style="width:100%;padding:0.5rem 0.8rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;" />
+            </div>
+            <div>
+                <label for="analyze-pr" style="display:block;font-weight:600;margin-bottom:0.3rem;">PR Reference</label>
+                <input id="analyze-pr" type="text" placeholder="e.g. PR-42 or feature/my-branch" style="width:100%;padding:0.5rem 0.8rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;" />
+            </div>
+            <div>
+                <button onclick="analyzePR()" id="btn-analyze" style="padding:0.5rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;white-space:nowrap;">Analyze</button>
+            </div>
+        </div>
+        <div id="analyze-status" style="margin-top:0.75rem;font-size:0.9rem;color:#666;"></div>
+    </div>
+</div>
+
+<script>
+// State
+let currentPage = 1;
+const pageSize = 20;
+let totalReports = 0;
+let reportsData = [];
+
+// --- Init ---
+async function init() {
+    await Promise.all([loadStats(), loadDrift(), loadReports()]);
+}
+
+// --- Stats ---
+async function loadStats() {
+    try {
+        const resp = await fetch('/api/pr-intel/stats');
+        if (!resp.ok) throw new Error('Failed to load stats');
+        const data = await resp.json();
+
+        document.getElementById('stat-total').textContent = data.total_reports ?? 0;
+
+        const passRate = data.pass_rate ?? 0;
+        const prEl = document.getElementById('stat-pass-rate');
+        prEl.textContent = passRate.toFixed(1);
+        if (passRate >= 80) prEl.style.color = '#388e3c';
+        else if (passRate >= 50) prEl.style.color = '#f57c00';
+        else prEl.style.color = '#d32f2f';
+
+        document.getElementById('stat-security').textContent = data.security_findings ?? 0;
+        document.getElementById('stat-compliance').textContent = data.compliance_impacts ?? 0;
+
+        // Status distribution
+        const total = (data.pass_count ?? 0) + (data.warn_count ?? 0) + (data.fail_count ?? 0);
+        if (total > 0) {
+            renderDistBar('pass', data.pass_count ?? 0, total);
+            renderDistBar('warn', data.warn_count ?? 0, total);
+            renderDistBar('fail', data.fail_count ?? 0, total);
+        }
+    } catch (e) {
+        console.error('Stats load error:', e);
+    }
+}
+
+function renderDistBar(key, count, total) {
+    const pct = ((count / total) * 100).toFixed(1);
+    document.getElementById('dist-' + key + '-label').textContent = count + ' (' + pct + '%)';
+    document.getElementById('dist-' + key + '-bar').style.width = pct + '%';
+}
+
+// --- Drift ---
+async function loadDrift() {
+    try {
+        const resp = await fetch('/api/pr-intel/drift');
+        if (!resp.ok) throw new Error('Failed to load drift');
+        const data = await resp.json();
+        const controls = data.controls ?? [];
+        const tbody = document.getElementById('drift-body');
+
+        if (controls.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="padding:1.5rem;text-align:center;color:#999;">No compliance drift detected yet.</td></tr>';
+            return;
+        }
+
+        const maxCount = controls.reduce(function(m, c) { return Math.max(m, c.drift_count); }, 1);
+        let html = '';
+        for (let i = 0; i < controls.length; i++) {
+            const c = controls[i];
+            const barWidth = ((c.drift_count / maxCount) * 100).toFixed(1);
+            html += '<tr style="border-bottom:1px solid #eee;">' +
+                '<td style="padding:0.5rem;font-weight:600;font-family:monospace;">' + escHtml(c.control_id) + '</td>' +
+                '<td style="padding:0.5rem;">' + escHtml(c.control_family ?? '--') + '</td>' +
+                '<td style="padding:0.5rem;text-align:center;font-weight:600;">' + c.drift_count + '</td>' +
+                '<td style="padding:0.5rem;">' +
+                    '<div style="background:#e0e0e0;border-radius:4px;height:14px;overflow:hidden;">' +
+                        '<div style="background:#1976d2;height:100%;width:' + barWidth + '%;border-radius:4px;"></div>' +
+                    '</div>' +
+                '</td></tr>';
+        }
+        tbody.innerHTML = html;
+    } catch (e) {
+        console.error('Drift load error:', e);
+        document.getElementById('drift-body').innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:#d32f2f;">Error loading drift data.</td></tr>';
+    }
+}
+
+// --- Reports ---
+async function loadReports() {
+    try {
+        const status = document.getElementById('filter-status').value;
+        let url = '/api/pr-intel/reports?page=' + currentPage + '&page_size=' + pageSize;
+        if (status) url += '&status=' + encodeURIComponent(status);
+
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('Failed to load reports');
+        const data = await resp.json();
+        reportsData = data.reports ?? [];
+        totalReports = data.total ?? 0;
+
+        const tbody = document.getElementById('reports-body');
+        if (reportsData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="padding:1.5rem;text-align:center;color:#999;">No reports found. Analyze a PR to get started.</td></tr>';
+            updatePagination();
+            return;
+        }
+
+        let html = '';
+        for (let i = 0; i < reportsData.length; i++) {
+            const r = reportsData[i];
+            const statusColor = r.status === 'pass' ? '#388e3c' : r.status === 'warn' ? '#f57c00' : '#d32f2f';
+            const statusBg = r.status === 'pass' ? '#e8f5e9' : r.status === 'warn' ? '#fff3e0' : '#ffebee';
+            const secCount = parseCount(r.security_findings);
+            const compCount = parseCount(r.compliance_impacts);
+
+            html += '<tr style="border-bottom:1px solid #eee;cursor:pointer;" onclick="showDetail(' + i + ')">' +
+                '<td style="padding:0.5rem;font-weight:600;">' + escHtml(r.pr_reference ?? '--') + '</td>' +
+                '<td style="padding:0.5rem;font-size:0.85rem;color:#666;">' + escHtml(r.project_id ?? '--') + '</td>' +
+                '<td style="padding:0.5rem;text-align:center;">' + (r.files_changed ?? 0) + '</td>' +
+                '<td style="padding:0.5rem;text-align:center;font-weight:600;color:' + (secCount > 0 ? '#d32f2f' : '#388e3c') + ';">' + secCount + '</td>' +
+                '<td style="padding:0.5rem;text-align:center;font-weight:600;color:' + (compCount > 0 ? '#f57c00' : '#388e3c') + ';">' + compCount + '</td>' +
+                '<td style="padding:0.5rem;text-align:center;">' +
+                    '<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:0.8rem;background:' + statusBg + ';color:' + statusColor + ';">' + escHtml((r.status ?? 'unknown').charAt(0).toUpperCase() + (r.status ?? 'unknown').slice(1)) + '</span>' +
+                '</td>' +
+                '<td style="padding:0.5rem;font-size:0.85rem;color:#666;">' + escHtml((r.created_at ?? '--').substring(0, 16)) + '</td>' +
+                '</tr>';
+        }
+        tbody.innerHTML = html;
+        updatePagination();
+    } catch (e) {
+        console.error('Reports load error:', e);
+        document.getElementById('reports-body').innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;color:#d32f2f;">Error loading reports.</td></tr>';
+    }
+}
+
+function parseCount(val) {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') {
+        try { return JSON.parse(val).length; } catch (_) { return 0; }
+    }
+    if (Array.isArray(val)) return val.length;
+    return 0;
+}
+
+function updatePagination() {
+    const totalPages = Math.max(1, Math.ceil(totalReports / pageSize));
+    document.getElementById('page-info').textContent = 'Page ' + currentPage + ' of ' + totalPages;
+    document.getElementById('btn-prev').disabled = currentPage <= 1;
+    document.getElementById('btn-next').disabled = currentPage >= totalPages;
+}
+
+function changePage(delta) {
+    currentPage += delta;
+    if (currentPage < 1) currentPage = 1;
+    loadReports();
+}
+
+// --- Detail Panel ---
+function showDetail(idx) {
+    const r = reportsData[idx];
+    if (!r) return;
+
+    // Diff summary
+    document.getElementById('detail-diff').textContent = r.diff_summary ?? r.pr_reference + ' — ' + (r.files_changed ?? 0) + ' files changed';
+
+    // Security findings
+    const secEl = document.getElementById('detail-security');
+    const secItems = parseJsonField(r.security_findings);
+    if (secItems.length === 0) {
+        secEl.innerHTML = '<li style="color:#388e3c;">No security findings.</li>';
+    } else {
+        secEl.innerHTML = secItems.map(function(s) {
+            return '<li style="margin-bottom:0.3rem;">' + escHtml(typeof s === 'string' ? s : (s.description ?? s.finding ?? JSON.stringify(s))) + '</li>';
+        }).join('');
+    }
+
+    // Compliance impacts
+    const compEl = document.getElementById('detail-compliance');
+    const compItems = parseJsonField(r.compliance_impacts);
+    if (compItems.length === 0) {
+        compEl.innerHTML = '<li style="color:#388e3c;">No compliance impacts.</li>';
+    } else {
+        compEl.innerHTML = compItems.map(function(c) {
+            const controlId = c.control_id ? '<strong style="font-family:monospace;">' + escHtml(c.control_id) + '</strong> — ' : '';
+            return '<li style="margin-bottom:0.3rem;">' + controlId + escHtml(typeof c === 'string' ? c : (c.description ?? c.impact ?? JSON.stringify(c))) + '</li>';
+        }).join('');
+    }
+
+    // Code quality delta
+    const qualEl = document.getElementById('detail-quality');
+    if (r.code_quality_delta !== undefined && r.code_quality_delta !== null) {
+        const delta = typeof r.code_quality_delta === 'object' ? r.code_quality_delta : { delta: r.code_quality_delta };
+        let qualHtml = '';
+        for (const k in delta) {
+            qualHtml += '<span style="display:inline-block;margin-right:1rem;"><strong>' + escHtml(k) + ':</strong> ' + escHtml(String(delta[k])) + '</span>';
+        }
+        qualEl.innerHTML = qualHtml || '<span style="color:#999;">No quality data.</span>';
+    } else {
+        qualEl.innerHTML = '<span style="color:#999;">No quality data available.</span>';
+    }
+
+    // Full JSON
+    document.getElementById('detail-json').textContent = JSON.stringify(r, null, 2);
+    document.getElementById('detail-json').style.display = 'none';
+    document.getElementById('json-toggle').textContent = '[show]';
+
+    document.getElementById('detail-panel').style.display = 'block';
+    document.getElementById('detail-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeDetail() {
+    document.getElementById('detail-panel').style.display = 'none';
+}
+
+function toggleFullJson() {
+    const el = document.getElementById('detail-json');
+    const toggle = document.getElementById('json-toggle');
+    if (el.style.display === 'none') {
+        el.style.display = 'block';
+        toggle.textContent = '[hide]';
+    } else {
+        el.style.display = 'none';
+        toggle.textContent = '[show]';
+    }
+}
+
+function parseJsonField(val) {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string') {
+        try { const parsed = JSON.parse(val); return Array.isArray(parsed) ? parsed : []; } catch (_) { return []; }
+    }
+    return [];
+}
+
+// --- Analyze PR ---
+async function analyzePR() {
+    const projectId = document.getElementById('analyze-project').value.trim();
+    const prRef = document.getElementById('analyze-pr').value.trim();
+    const statusEl = document.getElementById('analyze-status');
+    const btn = document.getElementById('btn-analyze');
+
+    if (!projectId || !prRef) {
+        statusEl.textContent = 'Please provide both Project ID and PR Reference.';
+        statusEl.style.color = '#d32f2f';
+        return;
+    }
+
+    btn.disabled = true;
+    statusEl.textContent = 'Analyzing PR...';
+    statusEl.style.color = '#666';
+
+    try {
+        const resp = await fetch('/api/pr-intel/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: projectId, pr_reference: prRef })
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            statusEl.textContent = 'Analysis complete: ' + (data.status ?? 'done') + '. Refreshing data...';
+            statusEl.style.color = '#388e3c';
+            await Promise.all([loadStats(), loadDrift(), loadReports()]);
+        } else {
+            statusEl.textContent = 'Error: ' + (data.error ?? data.message ?? 'Analysis failed.');
+            statusEl.style.color = '#d32f2f';
+        }
+    } catch (e) {
+        statusEl.textContent = 'Network error: ' + e.message;
+        statusEl.style.color = '#d32f2f';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// --- Utility ---
+function escHtml(str) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
+// --- Boot ---
+document.addEventListener('DOMContentLoaded', init);
+</script>
+{% endblock %}

@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Initialize a new ICDEV project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline"
+description: "ICDEV™ workflow: Initialize a new ICDEV™ project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline"
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-init
 
-When the user asks to initialize a new icdev project with compliance scaffolding, cui markings, and nist 800-53 control baseline, follow these steps:
+When the user asks to initialize a new icdev™ project with compliance scaffolding, cui markings, and nist 800-53 control baseline, follow these steps:
 
 1. **Check for icdev.yaml (Manifest-First Path)**
    ```bash

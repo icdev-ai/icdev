@@ -2,7 +2,7 @@
 # Observability, Traceability & Explainable AI Goal (Phase 46)
 
 ## Purpose
-Provide full observability into ICDEV's 15-agent architecture through distributed tracing,
+Provide full observability into ICDEV™'s 15-agent architecture through distributed tracing,
 artifact provenance, and explainable AI. Operators can see inside agent runs, trace tool call
 chains, understand why agents chose specific tools, and demonstrate explainability for ATO compliance.
 

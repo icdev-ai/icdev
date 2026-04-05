@@ -9,33 +9,33 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 48 (AI Transparency), Phase 49 (AI Accountability), Phase 17 (Multi-Framework Compliance) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-26 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV supports 30+ compliance frameworks but lacks two capabilities critical for organizations operating in the European Union market or deploying to DoD Platform One infrastructure:
+ICDEV™ supports 30+ compliance frameworks but lacks two capabilities critical for organizations operating in the European Union market or deploying to DoD Platform One infrastructure:
 
 **EU AI Act (Regulation 2024/1689):** The European Union's comprehensive AI regulation entered force in 2024, imposing mandatory risk classification and compliance requirements on all AI systems placed on the EU market. Organizations building AI-enabled systems for dual-use (US Government + EU allies/NATO partners) need automated risk classification, Annex III high-risk requirement assessment, and crosswalk integration with existing NIST 800-53 controls. Without this, teams manually map EU requirements to their existing compliance posture -- an error-prone and time-consuming process.
 
-**Platform One / Iron Bank:** DoD's centralized repository of hardened container images (Iron Bank) requires specific metadata artifacts for container approval submissions. Teams building ICDEV-managed applications for Platform One deployment must produce `hardening_manifest.yaml` files conforming to Iron Bank's schema, with correct base image references from `registry1.dso.mil`, OCI labels, vulnerability scan references, and classification markings. Without automated generation, teams hand-craft these manifests and frequently fail validation.
+**Platform One / Iron Bank:** DoD's centralized repository of hardened container images (Iron Bank) requires specific metadata artifacts for container approval submissions. Teams building ICDEV™-managed applications for Platform One deployment must produce `hardening_manifest.yaml` files conforming to Iron Bank's schema, with correct base image references from `registry1.dso.mil`, OCI labels, vulnerability scan references, and classification markings. Without automated generation, teams hand-craft these manifests and frequently fail validation.
 
-Phase 57 closes both gaps with two independent but complementary components that integrate into ICDEV's existing compliance and infrastructure pipelines.
+Phase 57 closes both gaps with two independent but complementary components that integrate into ICDEV™'s existing compliance and infrastructure pipelines.
 
 ---
 
 ## 2. Goals
 
 1. Classify AI systems into 4 EU AI Act risk levels: Unacceptable, High-Risk, Limited Risk, Minimal Risk
-2. Assess compliance against 12 Annex III high-risk requirements (Articles 9-15) using existing ICDEV evidence
+2. Assess compliance against 12 Annex III high-risk requirements (Articles 9-15) using existing ICDEV™ evidence
 3. Bridge EU AI Act requirements through the ISO 27001 international hub to the NIST 800-53 US hub via the dual-hub crosswalk (D111)
 4. Integrate as a BaseAssessor subclass with full gate evaluation, CLI, and crosswalk support (D116)
 5. Generate Platform One Iron Bank hardening manifests (`hardening_manifest.yaml`) with OCI-compliant labels
 6. Auto-detect project language and select the correct Iron Bank base image from `registry1.dso.mil`
 7. Produce container approval records and validate manifests against Iron Bank required fields
-8. Support all 6 ICDEV first-class languages (Python, Java, Go, Node/TypeScript, Rust, C#/.NET) plus a UBI9 base fallback
+8. Support all 6 ICDEV™ first-class languages (Python, Java, Go, Node/TypeScript, Rust, C#/.NET) plus a UBI9 base fallback
 
 ---
 
@@ -55,7 +55,7 @@ Phase 57 closes both gaps with two independent but complementary components that
     │       └──────────┬───┘             │          │
     │                  ↓                 ↓          │
     │        ┌─────────────────────────────┐        │
-    │        │  Existing ICDEV DB Tables   │        │
+    │        │  Existing ICDEV™ DB Tables   │        │
     │        │  (Phase 48/49 evidence)     │        │
     │        └────────────┬────────────────┘        │
     │                     ↓                         │
@@ -103,7 +103,7 @@ Phase 57 closes both gaps with two independent but complementary components that
 
 ### Component 1: EU AI Act Risk Classifier (`tools/compliance/eu_ai_act_classifier.py`)
 
-**Class `EUAIActClassifier(BaseAssessor)`** with 12 automated checks mapping EU requirements to existing ICDEV evidence:
+**Class `EUAIActClassifier(BaseAssessor)`** with 12 automated checks mapping EU requirements to existing ICDEV™ evidence:
 
 | Requirement | ID | Evidence Source | Check Logic |
 |-------------|-----|----------------|-------------|
@@ -122,7 +122,7 @@ Phase 57 closes both gaps with two independent but complementary components that
 
 **Risk Level Classification (4 tiers):**
 
-| Level | Description | ICDEV Treatment |
+| Level | Description | ICDEV™ Treatment |
 |-------|-------------|-----------------|
 | Unacceptable | Banned practices (social scoring, real-time biometric ID) | Blocked -- system cannot proceed |
 | High-Risk | Annex III areas (biometrics, critical infra, law enforcement, etc.) | Full 12-requirement compliance required |

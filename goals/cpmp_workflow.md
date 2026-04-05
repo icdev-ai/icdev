@@ -8,7 +8,7 @@
 - To manage contract performance, deliverables, and compliance
 - To track EVM metrics and forecast cost/schedule
 - To predict CPARS ratings and manage negative events
-- To auto-generate CDRLs using ICDEV tools
+- To auto-generate CDRLs using ICDEV™ tools
 - To provide COR read-only visibility into contract status
 
 ## Prerequisites
@@ -103,7 +103,7 @@
 
 13. **Auto-Generate CDRLs**
     - `POST /api/cpmp/contracts/<id>/generate-cdrl/<deliverable_id>`
-    - Maps cdrl_type to ICDEV tool: ssp→ssp_generator, sbom→sbom_generator, evm_report→evm_engine, icd→icd_generator
+    - Maps cdrl_type to ICDEV™ tool: ssp→ssp_generator, sbom→sbom_generator, evm_report→evm_engine, icd→icd_generator
     - Records generation in `cpmp_cdrl_generations` (append-only audit)
     - Batch: `POST /api/cpmp/contracts/<id>/generate-due` — generates all CDRLs due within configured window
 
@@ -131,7 +131,7 @@
 | CPARS Predictor | `tools/govcon/cpars_predictor.py` | Weighted scoring, NDAA penalty, rating thresholds |
 | Subcontractor Tracker | `tools/govcon/subcontractor_tracker.py` | FAR 52.219-9, flow-down, cybersecurity, ISR/SSR |
 | Negative Event Tracker | `tools/govcon/negative_event_tracker.py` | NDAA events, auto-detection, CPARS impact |
-| CDRL Generator | `tools/govcon/cdrl_generator.py` | ICDEV tool dispatch, batch generation |
+| CDRL Generator | `tools/govcon/cdrl_generator.py` | ICDEV™ tool dispatch, batch generation |
 | SAM Contract Sync | `tools/govcon/sam_contract_sync.py` | SAM.gov Contract Awards API adapter |
 | CPMP API | `tools/dashboard/api/cpmp.py` | Flask Blueprint with ~40 endpoints |
 
@@ -165,7 +165,7 @@
 | D-CPMP-2 | Monte Carlo via stdlib `random` | Air-gap safe (D22) |
 | D-CPMP-3 | CPARS prediction is deterministic weighted average | Reproducible (D21) |
 | D-CPMP-4 | COR portal is read-only routes on same Flask app | Reuses existing auth |
-| D-CPMP-5 | CDRL generator dispatches to existing ICDEV tools | Reuse existing generators |
+| D-CPMP-5 | CDRL generator dispatches to existing ICDEV™ tools | Reuse existing generators |
 | D-CPMP-6 | SAM.gov follows sam_scanner pattern | Consistent rate limiting |
 | D-CPMP-7 | Negative events append-only | NIST AU-2 (D6) |
 | D-CPMP-8 | Health is deterministic weighted average | Configurable via YAML (D26) |

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """RFP Amendment Tracker — version tracking, diff engine, Q&A response capture.
 
 Tracks RFP amendments/revisions with auto-diff between versions using
@@ -28,9 +28,9 @@ import argparse
 import difflib
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,9 +48,9 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # HELPERS
 # =========================================================================
 
+
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -66,7 +66,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="amendment_tracker"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "govcon.amendment", actor, action, details, "govcon"),
         )
@@ -84,6 +84,7 @@ def _extract_text_from_file(file_path):
     if fp.suffix.lower() == ".pdf":
         try:
             import pypdf
+
             reader = pypdf.PdfReader(str(fp))
             pages = [p.extract_text() or "" for p in reader.pages]
             return "\n".join(pages).strip() or None
@@ -103,8 +104,8 @@ def _extract_text_from_file(file_path):
 # CORE FUNCTIONS
 # =========================================================================
 
-def upload_amendment(opp_id, title, file_path=None, text=None,
-                     description=None, amendment_date=None, uploaded_by=None):
+
+def upload_amendment(opp_id, title, file_path=None, text=None, description=None, amendment_date=None, uploaded_by=None):
     """Upload a new RFP amendment (file or text).
 
     Auto-increments version_number, auto-computes diff against previous version.
@@ -127,9 +128,7 @@ def upload_amendment(opp_id, title, file_path=None, text=None,
     conn = _get_db()
     try:
         # Verify opportunity exists
-        opp = conn.execute(
-            "SELECT id, title FROM proposal_opportunities WHERE id = ?", (opp_id,)
-        ).fetchone()
+        opp = conn.execute("SELECT id, title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
         if not opp:
             return {"status": "error", "message": f"Opportunity {opp_id} not found"}
 
@@ -146,8 +145,7 @@ def upload_amendment(opp_id, title, file_path=None, text=None,
         changes_detected = 0
         if next_version > 1:
             prev = conn.execute(
-                "SELECT amendment_text FROM proposal_amendments "
-                "WHERE opportunity_id = ? AND version_number = ? ",
+                "SELECT amendment_text FROM proposal_amendments WHERE opportunity_id = ? AND version_number = ? ",
                 (opp_id, next_version - 1),
             ).fetchone()
             if prev and prev["amendment_text"]:
@@ -165,11 +163,20 @@ def upload_amendment(opp_id, title, file_path=None, text=None,
             " changes_detected, uploaded_by, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                amendment_id, opp_id, next_version, title,
-                description or "", amendment_date or now[:10],
-                source_type, str(file_path) if file_path else None,
-                amendment_text, diff_summary, json.dumps(diff_data),
-                changes_detected, uploaded_by or "system", now,
+                amendment_id,
+                opp_id,
+                next_version,
+                title,
+                description or "",
+                amendment_date or now[:10],
+                source_type,
+                str(file_path) if file_path else None,
+                amendment_text,
+                diff_summary,
+                json.dumps(diff_data),
+                changes_detected,
+                uploaded_by or "system",
+                now,
             ),
         )
 
@@ -184,13 +191,10 @@ def upload_amendment(opp_id, title, file_path=None, text=None,
             "INSERT INTO proposal_status_history "
             "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            ("amendment", amendment_id, "", "uploaded",
-             uploaded_by or "system",
-             f"Amendment v{next_version}: {title}"),
+            ("amendment", amendment_id, "", "uploaded", uploaded_by or "system", f"Amendment v{next_version}: {title}"),
         )
 
-        _audit(conn, f"amendment_uploaded v{next_version}",
-               f"opp={opp_id}, title={title}, changes={changes_detected}")
+        _audit(conn, f"amendment_uploaded v{next_version}", f"opp={opp_id}, title={title}, changes={changes_detected}")
         conn.commit()
 
         return {
@@ -214,10 +218,9 @@ def compute_diff_text(old_text, new_text):
     old_lines = old_text.splitlines(keepends=True)
     new_lines = new_text.splitlines(keepends=True)
 
-    diff = list(difflib.unified_diff(old_lines, new_lines,
-                                     fromfile="Previous Version",
-                                     tofile="Current Version",
-                                     lineterm=""))
+    diff = list(
+        difflib.unified_diff(old_lines, new_lines, fromfile="Previous Version", tofile="Current Version", lineterm="")
+    )
 
     additions = sum(1 for line in diff if line.startswith("+") and not line.startswith("+++"))
     deletions = sum(1 for line in diff if line.startswith("-") and not line.startswith("---"))
@@ -264,9 +267,7 @@ def compute_diff(amendment_id):
     """
     conn = _get_db()
     try:
-        amend = conn.execute(
-            "SELECT * FROM proposal_amendments WHERE id = ?", (amendment_id,)
-        ).fetchone()
+        amend = conn.execute("SELECT * FROM proposal_amendments WHERE id = ?", (amendment_id,)).fetchone()
         if not amend:
             return {"status": "error", "message": f"Amendment {amendment_id} not found"}
 
@@ -294,8 +295,7 @@ def compute_diff(amendment_id):
             }
 
         prev = conn.execute(
-            "SELECT amendment_text FROM proposal_amendments "
-            "WHERE opportunity_id = ? AND version_number = ?",
+            "SELECT amendment_text FROM proposal_amendments WHERE opportunity_id = ? AND version_number = ?",
             (amend["opportunity_id"], amend["version_number"] - 1),
         ).fetchone()
 
@@ -344,9 +344,15 @@ def list_amendments(opp_id):
         conn.close()
 
 
-def record_response(question_id, response_text, amendment_id=None,
-                    response_date=None, impacts_requirements=False,
-                    impact_notes=None, recorded_by=None):
+def record_response(
+    question_id,
+    response_text,
+    amendment_id=None,
+    response_date=None,
+    impacts_requirements=False,
+    impact_notes=None,
+    recorded_by=None,
+):
     """Record a government Q&A response linked to a question.
 
     Auto-updates the question status to 'answered'.
@@ -383,11 +389,16 @@ def record_response(question_id, response_text, amendment_id=None,
             " response_date, impacts_requirements, impact_notes, recorded_by, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                response_id, question_id, q["opportunity_id"],
-                amendment_id, response_text,
+                response_id,
+                question_id,
+                q["opportunity_id"],
+                amendment_id,
+                response_text,
                 response_date or now[:10],
                 1 if impacts_requirements else 0,
-                impact_notes or "", recorded_by or "system", now,
+                impact_notes or "",
+                recorded_by or "system",
+                now,
             ),
         )
 
@@ -403,13 +414,17 @@ def record_response(question_id, response_text, amendment_id=None,
             "INSERT INTO proposal_status_history "
             "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            ("question", question_id, old_status, "answered",
-             recorded_by or "system",
-             f"Government response recorded (impacts_requirements={impacts_requirements})"),
+            (
+                "question",
+                question_id,
+                old_status,
+                "answered",
+                recorded_by or "system",
+                f"Government response recorded (impacts_requirements={impacts_requirements})",
+            ),
         )
 
-        _audit(conn, "response_recorded",
-               f"question={question_id}, impacts={impacts_requirements}")
+        _audit(conn, "response_recorded", f"question={question_id}, impacts={impacts_requirements}")
         conn.commit()
 
         return {
@@ -426,6 +441,7 @@ def record_response(question_id, response_text, amendment_id=None,
 # =========================================================================
 # CLI
 # =========================================================================
+
 
 def _build_parser():
     p = argparse.ArgumentParser(description="RFP Amendment Tracker (D-QTG-3)")
@@ -471,9 +487,12 @@ def main():
             result = {"status": "error", "message": "--upload requires --opp-id and --file"}
         else:
             result = upload_amendment(
-                opp_id=args.opp_id, title=args.title,
-                file_path=args.file, description=args.description,
-                amendment_date=args.amendment_date, uploaded_by=args.uploaded_by,
+                opp_id=args.opp_id,
+                title=args.title,
+                file_path=args.file,
+                description=args.description,
+                amendment_date=args.amendment_date,
+                uploaded_by=args.uploaded_by,
             )
 
     elif args.upload_text:
@@ -481,9 +500,12 @@ def main():
             result = {"status": "error", "message": "--upload-text requires --opp-id and --text"}
         else:
             result = upload_amendment(
-                opp_id=args.opp_id, title=args.title,
-                text=args.text, description=args.description,
-                amendment_date=args.amendment_date, uploaded_by=args.uploaded_by,
+                opp_id=args.opp_id,
+                title=args.title,
+                text=args.text,
+                description=args.description,
+                amendment_date=args.amendment_date,
+                uploaded_by=args.uploaded_by,
             )
 
     elif args.diff:
@@ -503,9 +525,12 @@ def main():
             result = {"status": "error", "message": "--record-response requires --question-id and --response"}
         else:
             result = record_response(
-                question_id=args.question_id, response_text=args.response,
-                amendment_id=args.amendment_id, response_date=args.response_date,
-                impacts_requirements=args.impacts, impact_notes=args.impact_notes,
+                question_id=args.question_id,
+                response_text=args.response,
+                amendment_id=args.amendment_id,
+                response_date=args.response_date,
+                impacts_requirements=args.impacts,
+                impact_notes=args.impact_notes,
                 recorded_by=args.recorded_by,
             )
 
@@ -521,9 +546,9 @@ def main():
 def _print_human(result):
     """Human-readable output."""
     status = result.get("status", "unknown")
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Amendment Tracker — {status.upper()}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     if status == "error":
         print(f"  ERROR: {result.get('message', '')}")
@@ -543,8 +568,14 @@ def _print_human(result):
         return
 
     # Single amendment or response
-    for key in ("amendment_id", "response_id", "version_number",
-                "diff_summary", "changes_detected", "impacts_requirements"):
+    for key in (
+        "amendment_id",
+        "response_id",
+        "version_number",
+        "diff_summary",
+        "changes_detected",
+        "impacts_requirements",
+    ):
         if key in result:
             print(f"  {key}: {result[key]}")
 

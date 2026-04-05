@@ -23,16 +23,16 @@ Usage:
     modified_ctx = extension_manager.dispatch(ExtensionPoint.TOOL_EXECUTE_BEFORE, context)
 """
 
+from __future__ import annotations
+
 import importlib.util
 import logging
-import os
 import threading
 import time
-import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 logger = logging.getLogger("icdev.extensions")
 
@@ -43,8 +43,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Extension Points
 # ---------------------------------------------------------------------------
 
+
 class ExtensionPoint(str, Enum):
-    """Available hook points in the ICDEV lifecycle."""
+    """Available hook points in the ICDEV™ lifecycle."""
 
     TOOL_EXECUTE_BEFORE = "tool_execute_before"
     TOOL_EXECUTE_AFTER = "tool_execute_after"
@@ -61,6 +62,7 @@ class ExtensionPoint(str, Enum):
 # ---------------------------------------------------------------------------
 # Extension Handler
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ExtensionHandler:
@@ -82,6 +84,7 @@ class ExtensionHandler:
 # Configuration loader
 # ---------------------------------------------------------------------------
 
+
 def _load_extension_config() -> dict:
     """Load extension configuration from args/extension_config.yaml."""
     config_path = BASE_DIR / "args" / "extension_config.yaml"
@@ -89,6 +92,7 @@ def _load_extension_config() -> dict:
         return {"extensions": {"enabled": True, "hook_points": {}, "safety": {}}}
     try:
         import yaml
+
         with open(config_path) as f:
             return yaml.safe_load(f) or {}
     except ImportError:
@@ -99,6 +103,7 @@ def _load_extension_config() -> dict:
 # Extension Manager
 # ---------------------------------------------------------------------------
 
+
 class ExtensionManager:
     """Loads, registers, and dispatches extension hooks.
 
@@ -106,9 +111,7 @@ class ExtensionManager:
     """
 
     def __init__(self) -> None:
-        self._handlers: Dict[ExtensionPoint, List[ExtensionHandler]] = {
-            ep: [] for ep in ExtensionPoint
-        }
+        self._handlers: Dict[ExtensionPoint, List[ExtensionHandler]] = {ep: [] for ep in ExtensionPoint}
         self._lock = threading.Lock()
         self._config = _load_extension_config()
         self._loaded_files: set = set()
@@ -198,7 +201,9 @@ class ExtensionManager:
             if elapsed_ms > max_total_ms:
                 logger.warning(
                     "Extension dispatch timeout for %s after %.0fms (limit=%dms)",
-                    hook_point.value, elapsed_ms, max_total_ms,
+                    hook_point.value,
+                    elapsed_ms,
+                    max_total_ms,
                 )
                 break
 
@@ -213,7 +218,9 @@ class ExtensionManager:
 
                 logger.debug(
                     "Extension %s.%s completed in %.1fms (modified=%s)",
-                    hook_point.value, ext.name, duration_ms,
+                    hook_point.value,
+                    ext.name,
+                    duration_ms,
                     ext.allow_modification and isinstance(ret, dict),
                 )
 
@@ -221,7 +228,11 @@ class ExtensionManager:
                 duration_ms = (time.time() - handler_start) * 1000
                 logger.error(
                     "Extension %s.%s raised %s in %.1fms: %s",
-                    hook_point.value, ext.name, type(exc).__name__, duration_ms, exc,
+                    hook_point.value,
+                    ext.name,
+                    type(exc).__name__,
+                    duration_ms,
+                    exc,
                 )
                 if not catch_exceptions:
                     raise
@@ -296,9 +307,7 @@ class ExtensionManager:
         scope_id: str,
     ) -> Optional[ExtensionHandler]:
         """Load a single extension file."""
-        spec = importlib.util.spec_from_file_location(
-            f"ext_{hook_point.value}_{file_path.stem}", str(file_path)
-        )
+        spec = importlib.util.spec_from_file_location(f"ext_{hook_point.value}_{file_path.stem}", str(file_path))
         if spec is None or spec.loader is None:
             return None
 
@@ -381,8 +390,7 @@ class ExtensionManager:
                     try:
                         hook_point = ExtensionPoint(hook_name)
                     except ValueError:
-                        logger.warning(
-                            "Unknown hook point '%s' in %s", hook_name, py_file)
+                        logger.warning("Unknown hook point '%s' in %s", hook_name, py_file)
                         continue
 
                     handler_fn = meta.get("handler")
@@ -409,9 +417,7 @@ class ExtensionManager:
 
     def _load_file(self, file_path: Path):
         """Load a Python file via importlib and return the module."""
-        spec = importlib.util.spec_from_file_location(
-            f"ext_builtin_{file_path.stem}", str(file_path)
-        )
+        spec = importlib.util.spec_from_file_location(f"ext_builtin_{file_path.stem}", str(file_path))
         if spec is None or spec.loader is None:
             return None
         module = importlib.util.module_from_spec(spec)
@@ -429,17 +435,19 @@ class ExtensionManager:
             points = [hook_point] if hook_point else list(ExtensionPoint)
             for hp in points:
                 for h in self._handlers.get(hp, []):
-                    handlers.append({
-                        "name": h.name,
-                        "hook_point": h.hook_point.value,
-                        "priority": h.priority,
-                        "allow_modification": h.allow_modification,
-                        "scope": h.scope,
-                        "scope_id": h.scope_id,
-                        "enabled": h.enabled,
-                        "description": h.description,
-                        "file_path": h.file_path,
-                    })
+                    handlers.append(
+                        {
+                            "name": h.name,
+                            "hook_point": h.hook_point.value,
+                            "priority": h.priority,
+                            "allow_modification": h.allow_modification,
+                            "scope": h.scope,
+                            "scope_id": h.scope_id,
+                            "enabled": h.enabled,
+                            "description": h.description,
+                            "file_path": h.file_path,
+                        }
+                    )
             return handlers
 
     def handler_count(self, hook_point: Optional[ExtensionPoint] = None) -> int:

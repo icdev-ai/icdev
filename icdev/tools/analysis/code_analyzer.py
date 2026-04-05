@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Code Quality Analyzer — AST-based self-analysis for ICDEV.
+"""Code Quality Analyzer — AST-based self-analysis for ICDEV™.
 
 Phase 52 (D331-D337). Read-only, advisory-only. Never modifies source files.
 Computes per-function metrics (cyclomatic/cognitive complexity, nesting depth,
@@ -712,7 +712,7 @@ def main():
     )
     parser.add_argument("--project-dir", help="Project root to scan")
     parser.add_argument("--file", help="Analyze a single file")
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--db-path", help="Override DB path")
     parser.add_argument("--store", action="store_true", help="Write results to DB")
     parser.add_argument("--trend", action="store_true", help="Show trend data")

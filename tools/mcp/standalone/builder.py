@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Standalone MCP Server -- Builder.
+"""ICDEV™ Standalone MCP Server -- Builder.
 
-Wrapper script that resolves the ICDEV installation directory, sets up
+Wrapper script that resolves the ICDEV™ installation directory, sets up
 sys.path and environment, then starts the Builder MCP server.
 Partial capabilities are acceptable -- missing tools are logged, not fatal.
 """
+
 import logging
 import os
 import sys
@@ -15,7 +16,7 @@ logger = logging.getLogger("icdev.mcp.standalone.builder")
 
 
 def _resolve_base_dir():
-    """Resolve ICDEV base directory."""
+    """Resolve ICDEV™ base directory."""
     env_dir = os.environ.get("ICDEV_BASE_DIR")
     if env_dir and Path(env_dir).is_dir():
         return Path(env_dir)
@@ -37,14 +38,16 @@ def main():
 
     try:
         from tools.mcp.builder_server import create_server
+
         server = create_server()
-        logger.info("Starting ICDEV Builder MCP server (base_dir=%s)", base_dir)
+        logger.info("Starting ICDEV™ Builder MCP server (base_dir=%s)", base_dir)
         server.run()
     except ImportError as e:
         logger.warning("Some capabilities unavailable: %s", e)
         logger.info("Server starting with partial capabilities...")
         try:
             from tools.mcp.builder_server import create_server
+
             server = create_server()
             server.run()
         except Exception as exc:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""CLI wrapper for ICDEV backup/restore operations.
+"""CLI wrapper for ICDEV™ backup/restore operations.
 
 Usage:
     python tools/db/backup.py --backup [--db icdev] [--encrypt --passphrase "..."] [--json]
@@ -26,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.backup_manager import BackupManager
+from tools.db.backup_manager import BackupManager  # noqa: E402
 
 
 def _print_human(data, label: str = "Result") -> None:
@@ -70,9 +70,7 @@ def _print_output(data, as_json: bool, label: str = "Result") -> None:
 def cmd_backup(args, manager: BackupManager) -> None:
     """Handle --backup command."""
     if args.all:
-        results = manager.backup_all(
-            output_dir=Path(args.output_dir) if args.output_dir else None
-        )
+        results = manager.backup_all(output_dir=Path(args.output_dir) if args.output_dir else None)
         _print_output(results, args.json, "Backup All Databases")
         # Check for errors
         if any("error" in r for r in results):
@@ -128,9 +126,7 @@ def cmd_backup(args, manager: BackupManager) -> None:
             )
             sys.exit(1)
         try:
-            enc_path = manager.encrypt(
-                Path(result["backup_path"]), args.passphrase
-            )
+            enc_path = manager.encrypt(Path(result["backup_path"]), args.passphrase)
             result["encrypted"] = True
             result["encrypted_path"] = str(enc_path)
         except ImportError as exc:
@@ -211,9 +207,7 @@ def cmd_verify(args, manager: BackupManager) -> None:
 
 def cmd_list(args, manager: BackupManager) -> None:
     """Handle --list command."""
-    records = manager.list_backups(
-        backup_dir=Path(args.backup_dir) if args.backup_dir else None
-    )
+    records = manager.list_backups(backup_dir=Path(args.backup_dir) if args.backup_dir else None)
     _print_output(records, args.json, "Backups")
 
 
@@ -228,9 +222,7 @@ def cmd_prune(args, manager: BackupManager) -> None:
 
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV database backup/restore tool (CUI // SP-CTI)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ database backup/restore tool (CUI // SP-CTI)")
 
     # Operation modes (mutually exclusive)
     ops = parser.add_mutually_exclusive_group(required=True)
@@ -271,9 +263,7 @@ def main() -> None:
     parser.add_argument("--backup-dir", help="Directory to scan for backups")
 
     # Output format
-    parser.add_argument(
-        "--json", action="store_true", help="Output in JSON format"
-    )
+    parser.add_argument("--json", action="store_true", help="Output in JSON format")
 
     args = parser.parse_args()
     manager = BackupManager()

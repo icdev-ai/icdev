@@ -9,22 +9,22 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 47 (Unified MCP Gateway), Phase 45 (OWASP Agentic Security), Phase 48 (AI Transparency), Phase 49 (AI Accountability) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-25 |
 
 ---
 
 ## 1. Problem Statement
 
-FedRAMP 20x replaces static documentation-heavy authorization packages with continuous, machine-readable Key Security Indicators (KSIs). Cloud service providers must demonstrate real-time compliance evidence across 43 KSIs organized by NIST 800-53 control families. Existing ICDEV compliance tools generate individual artifacts (SSP, POAM, SBOM, STIG reports) but there is no mechanism to map this evidence to FedRAMP 20x KSI schemas, assess maturity levels, or bundle it into an authorization package.
+FedRAMP 20x replaces static documentation-heavy authorization packages with continuous, machine-readable Key Security Indicators (KSIs). Cloud service providers must demonstrate real-time compliance evidence across 43 KSIs organized by NIST 800-53 control families. Existing ICDEV™ compliance tools generate individual artifacts (SSP, POAM, SBOM, STIG reports) but there is no mechanism to map this evidence to FedRAMP 20x KSI schemas, assess maturity levels, or bundle it into an authorization package.
 
-Separately, agentic AI systems face a distinct threat taxonomy identified by the OWASP Top 10 for Agentic AI (ASI01-ASI10). ICDEV already implements controls for these risks across multiple phases (prompt injection detection, tool chain validation, trust scoring, behavioral drift), but there is no unified assessor that evaluates all 10 ASI risks and generates a compliance posture report.
+Separately, agentic AI systems face a distinct threat taxonomy identified by the OWASP Top 10 for Agentic AI (ASI01-ASI10). ICDEV™ already implements controls for these risks across multiple phases (prompt injection detection, tool chain validation, trust scoring, behavioral drift), but there is no unified assessor that evaluates all 10 ASI risks and generates a compliance posture report.
 
 Without Phase 53:
-- No automated mapping from ICDEV evidence to FedRAMP 20x KSI definitions
+- No automated mapping from ICDEV™ evidence to FedRAMP 20x KSI definitions
 - No maturity level assessment (none/basic/intermediate/advanced) per KSI
 - No authorization package bundling (OSCAL SSP + KSI evidence + supporting artifacts)
-- No unified OWASP ASI01-ASI10 risk assessment leveraging existing ICDEV controls
+- No unified OWASP ASI01-ASI10 risk assessment leveraging existing ICDEV™ controls
 - No dashboard visibility into FedRAMP 20x KSI coverage or agentic AI risk posture
 
 ---
@@ -32,11 +32,11 @@ Without Phase 53:
 ## 2. Goals
 
 1. Define 43 KSIs across 11 NIST 800-53 control families (AC, AU, CA, CM, IA, IR, RA, SA, SC, SI, SR) plus an AI-specific family with 6 KSIs
-2. Map each KSI to ICDEV evidence sources (DB tables, config files, tool outputs) with automated collection
+2. Map each KSI to ICDEV™ evidence sources (DB tables, config files, tool outputs) with automated collection
 3. Determine maturity level per KSI: `none` (0% evidence), `basic` (>0%), `intermediate` (>=50%), `advanced` (>=80%)
 4. Generate machine-readable KSI evidence artifacts following the `cssp_evidence_collector.py` pattern
 5. Bundle OSCAL SSP, KSI evidence, SBOM, POAM, AI-BOM, and OWASP ASI assessment into an authorization package
-6. Implement OWASP ASI01-ASI10 assessor via BaseAssessor ABC with 10 automated checks mapping to existing ICDEV controls
+6. Implement OWASP ASI01-ASI10 assessor via BaseAssessor ABC with 10 automated checks mapping to existing ICDEV™ controls
 7. Provide `/fedramp-20x` dashboard page with KSI status grid, evidence table, and generate/package actions
 8. Store OWASP ASI assessment results in `owasp_asi_assessments` table for trend tracking and crosswalk integration
 
@@ -85,7 +85,7 @@ Without Phase 53:
 
 ### Key Design Principles
 
-- **Evidence-based, not assessment-based** -- KSI generator maps existing ICDEV evidence to KSI schemas; it does NOT create a new compliance assessment framework (D338)
+- **Evidence-based, not assessment-based** -- KSI generator maps existing ICDEV™ evidence to KSI schemas; it does NOT create a new compliance assessment framework (D338)
 - **BaseAssessor for OWASP ASI** -- ASI01-ASI10 is a proper risk assessment with satisfied/not_satisfied checks, so it uses BaseAssessor ABC (D339)
 - **Bundle extends OSCAL** -- Authorization packager bundles KSI evidence alongside existing OSCAL SSP, not replacing it (D340)
 - **Air-gap safe** -- All evidence collection uses stdlib file checks and SQLite queries; no external API calls
@@ -96,7 +96,7 @@ Without Phase 53:
 
 ### Component 1: FedRAMP 20x KSI Generator (`tools/compliance/fedramp_ksi_generator.py`)
 
-Generates machine-readable KSI evidence artifacts for FedRAMP 20x continuous authorization. Maps ICDEV evidence (DB records, configs, scan results) to 43 KSI definitions organized by NIST 800-53 families. Follows the `cssp_evidence_collector.py` pattern (D338).
+Generates machine-readable KSI evidence artifacts for FedRAMP 20x continuous authorization. Maps ICDEV™ evidence (DB records, configs, scan results) to 43 KSI definitions organized by NIST 800-53 families. Follows the `cssp_evidence_collector.py` pattern (D338).
 
 **70+ Evidence Collectors** organized by source type:
 
@@ -130,9 +130,9 @@ python tools/compliance/fedramp_ksi_generator.py --project-id proj-123 --all --h
 
 ### Component 2: OWASP ASI01-ASI10 Assessor (`tools/compliance/owasp_asi_assessor.py`)
 
-BaseAssessor subclass with 10 automated checks mapping each ASI risk to existing ICDEV controls:
+BaseAssessor subclass with 10 automated checks mapping each ASI risk to existing ICDEV™ controls:
 
-| ASI Risk | Title | ICDEV Control Mapping | Check Method |
+| ASI Risk | Title | ICDEV™ Control Mapping | Check Method |
 |----------|-------|----------------------|--------------|
 | ASI-01 | Agentic Goal Hijacking | `prompt_injection_detector` | `prompt_injection_log` records exist |
 | ASI-02 | Tool and Function Abuse | `mcp_tool_authorizer`, `tool_chain_validator` | `tool_chain_events` records exist |
@@ -202,12 +202,12 @@ Each KSI includes:
 - `ksi_id` -- unique identifier (e.g., `KSI-AC-01`)
 - `title` -- human-readable name
 - `nist_controls` -- mapped NIST 800-53 control IDs
-- `evidence_sources` -- list of ICDEV evidence collector keys
+- `evidence_sources` -- list of ICDEV™ evidence collector keys
 - `maturity_levels` -- descriptions for basic/intermediate/advanced
 
 ### Component 5: OWASP ASI Risk Catalog (`context/compliance/owasp_agentic_asi.json`)
 
-JSON catalog defining 10 ASI risks with risk levels, evidence requirements, NIST 800-53 crosswalk mappings, ICDEV control references, and automated check descriptions. Risk levels range from `critical` (ASI-01 through ASI-05) to `high` (ASI-06 through ASI-10).
+JSON catalog defining 10 ASI risks with risk levels, evidence requirements, NIST 800-53 crosswalk mappings, ICDEV™ control references, and automated check descriptions. Risk levels range from `critical` (ASI-01 through ASI-05) to `high` (ASI-06 through ASI-10).
 
 ---
 

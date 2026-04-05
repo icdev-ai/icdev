@@ -17,7 +17,7 @@ CLI: python tools/builder/scaffolder.py --project-path PATH --name "my-app" --ty
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import List
 
@@ -32,6 +32,7 @@ try:
         get_code_header,
         get_document_banner,
     )
+
     _HAS_CLASSIFICATION_MGR = True
 except ImportError:
     _HAS_CLASSIFICATION_MGR = False
@@ -71,7 +72,7 @@ _DEFAULT_CUI_CODE_HEADER = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 _DEFAULT_CUI_BANNER_MD = """\
@@ -149,7 +150,7 @@ tmp/
 
 def _readme_content(name: str, project_type: str, description: str = "") -> str:
     """Generate a README with CUI banners."""
-    desc = description or f"A {project_type} project scaffolded by ICDEV Builder."
+    desc = description or f"A {project_type} project scaffolded by ICDEV™ Builder."
     return f"""{CUI_BANNER}
 
 # {name}
@@ -408,26 +409,28 @@ def scaffold_javascript_frontend(project_path: str, name: str) -> List[str]:
     files = []
 
     # package.json
-    package_json = json.dumps({
-        "name": name,
-        "version": "0.1.0",
-        "description": "JavaScript frontend project - CUI // SP-CTI",
-        "main": "src/index.js",
-        "scripts": {
-            "start": "node src/index.js",
-            "test": "jest",
-            "lint": "eslint src/",
-            "format": "prettier --write src/",
-            "build": "echo 'Build step placeholder'"
-        },
-        "devDependencies": {
-            "jest": "^29.0.0",
-            "eslint": "^8.0.0",
-            "prettier": "^3.0.0"
-        },
-        "license": "UNLICENSED",
-        "private": True
-    }, indent=2) + "\n"
+    package_json = (
+        json.dumps(
+            {
+                "name": name,
+                "version": "0.1.0",
+                "description": "JavaScript frontend project - CUI // SP-CTI",
+                "main": "src/index.js",
+                "scripts": {
+                    "start": "node src/index.js",
+                    "test": "jest",
+                    "lint": "eslint src/",
+                    "format": "prettier --write src/",
+                    "build": "echo 'Build step placeholder'",
+                },
+                "devDependencies": {"jest": "^29.0.0", "eslint": "^8.0.0", "prettier": "^3.0.0"},
+                "license": "UNLICENSED",
+                "private": True,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     _write_file(root / "package.json", package_json)
     files.append(str(root / "package.json"))
 
@@ -437,7 +440,7 @@ def scaffold_javascript_frontend(project_path: str, name: str) -> List[str]:
 // Controlled by: Department of Defense
 // CUI Category: CTI
 // Distribution: D
-// POC: ICDEV System Administrator
+// POC: ICDEV™ System Administrator
 
 /**
  * Main entry point for {name}.
@@ -1262,6 +1265,7 @@ SCAFFOLDERS = {
 # Phase 16: Multi-language scaffolders (Java, Go, Rust, C#, TypeScript)
 try:
     import importlib.util
+
     _ext_path = Path(__file__).parent / "scaffolder_extended.py"
     if _ext_path.exists():
         _spec = importlib.util.spec_from_file_location("scaffolder_extended", _ext_path)
@@ -1289,6 +1293,7 @@ def _load_dev_profile(scope_id, scope="project", db_path=None):
     """
     try:
         from tools.builder.dev_profile_manager import resolve_profile
+
         result = resolve_profile(scope, scope_id, db_path=db_path)
         if result and "resolved" in result:
             return result["resolved"]
@@ -1322,8 +1327,7 @@ def _apply_profile_overrides(content, profile, language="python"):
     versions = lang.get("versions", {})
     py_version = versions.get("python")
     if py_version and language == "python":
-        content = content.replace('requires-python = ">=3.10"',
-                                  f'requires-python = "{py_version}"')
+        content = content.replace('requires-python = ">=3.10"', f'requires-python = "{py_version}"')
 
     # Container base image override
     container_bases = arch.get("container_base", {})
@@ -1338,7 +1342,7 @@ def _apply_profile_overrides(content, profile, language="python"):
 def _log_audit(project_path: str, name: str, project_type: str, files: List[str]) -> None:
     """Log scaffolding to audit trail."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, details, affected_files, classification)
@@ -1368,7 +1372,7 @@ def _run_agentic_generation(args, base_files):
     3. Generate child app via child_app_generator.py
 
     The base scaffold provides the language-specific project structure.
-    The agentic pipeline adds GOTCHA framework, agents, memory, CI/CD, etc.
+    The agentic pipeline adds FORGE framework, agents, memory, CI/CD, etc.
     """
     import importlib.util
 
@@ -1390,9 +1394,12 @@ def _run_agentic_generation(args, base_files):
             "component": args.name,
             "overall_score": 6.5,
             "scores": {
-                "data_complexity": 5, "decision_complexity": 7,
-                "user_interaction": 6, "integration_density": 7,
-                "compliance_sensitivity": 7, "scale_variability": 5,
+                "data_complexity": 5,
+                "decision_complexity": 7,
+                "user_interaction": 6,
+                "integration_density": 7,
+                "compliance_sensitivity": 7,
+                "scale_variability": 5,
             },
             "recommendations": {"architecture": "agent"},
         }
@@ -1476,48 +1483,52 @@ def main():
 
     # Phase 34: Dev profile override
     parser.add_argument(
-        "--dev-profile-scope", type=str, default=None,
-        help="Dev profile scope to load (e.g., 'project')")
+        "--dev-profile-scope", type=str, default=None, help="Dev profile scope to load (e.g., 'project')"
+    )
     parser.add_argument(
-        "--dev-profile-scope-id", type=str, default=None,
-        help="Dev profile scope ID to resolve (e.g., 'proj-123')")
+        "--dev-profile-scope-id", type=str, default=None, help="Dev profile scope ID to resolve (e.g., 'proj-123')"
+    )
 
     # Phase 26: MOSA scaffolding flag
     parser.add_argument(
-        "--mosa", action="store_true",
-        help="Add MOSA directories: interfaces/, docs/icd/, docs/tsp/, openapi/")
+        "--mosa", action="store_true", help="Add MOSA directories: interfaces/, docs/icd/, docs/tsp/, openapi/"
+    )
 
     # Phase 19: Agentic generation flags
     agentic_group = parser.add_argument_group("agentic generation (Phase 19)")
     agentic_group.add_argument(
-        "--agentic", action="store_true",
-        help="Generate mini-ICDEV clone with GOTCHA framework, agents, memory, CI/CD")
+        "--agentic", action="store_true", help="Generate mini-ICDEV™ clone with FORGE framework, agents, memory, CI/CD"
+    )
     agentic_group.add_argument(
-        "--fitness-scorecard", type=str, default=None,
-        help="Path to fitness scorecard JSON (from agentic_fitness.py)")
+        "--fitness-scorecard", type=str, default=None, help="Path to fitness scorecard JSON (from agentic_fitness.py)"
+    )
     agentic_group.add_argument(
-        "--user-decisions", type=str, default=None,
-        help="User decisions JSON string or path to JSON file")
+        "--user-decisions", type=str, default=None, help="User decisions JSON string or path to JSON file"
+    )
     agentic_group.add_argument(
-        "--port-offset", type=int, default=1000,
-        help="Port offset from ICDEV base ports (default: 1000)")
+        "--port-offset", type=int, default=1000, help="Port offset from ICDEV™ base ports (default: 1000)"
+    )
     agentic_group.add_argument(
-        "--parent-callback-url", type=str, default=None,
-        help="URL for parent ICDEV A2A callback")
+        "--parent-callback-url", type=str, default=None, help="URL for parent ICDEV™ A2A callback"
+    )
     agentic_group.add_argument(
-        "--cloud-provider", type=str, default="aws",
+        "--cloud-provider",
+        type=str,
+        default="aws",
         choices=["aws", "gcp", "azure", "oracle", "ibm"],
-        help="Target cloud provider (default: aws)")
+        help="Target cloud provider (default: aws)",
+    )
     agentic_group.add_argument(
-        "--cloud-region", type=str, default="us-gov-west-1",
-        help="Target deployment region (default: us-gov-west-1)")
+        "--cloud-region", type=str, default="us-gov-west-1", help="Target deployment region (default: us-gov-west-1)"
+    )
+    agentic_group.add_argument("--govcloud", action="store_true", help="Enable GovCloud/Gov-region endpoints")
     agentic_group.add_argument(
-        "--govcloud", action="store_true",
-        help="Enable GovCloud/Gov-region endpoints")
-    agentic_group.add_argument(
-        "--impact-level", type=str, default="IL4",
+        "--impact-level",
+        type=str,
+        default="IL4",
         choices=["IL2", "IL4", "IL5", "IL6"],
-        help="DoD Impact Level (default: IL4)")
+        help="DoD Impact Level (default: IL4)",
+    )
 
     args = parser.parse_args()
 
@@ -1561,7 +1572,7 @@ def main():
     print(f"\nScaffolded {len(files)} files for '{args.name}' ({args.type})")
 
     # Phase 26: If --mosa, create MOSA directory structure
-    if getattr(args, 'mosa', False):
+    if getattr(args, "mosa", False):
         mosa_dirs = ["interfaces", "docs/icd", "docs/tsp", "openapi"]
         proj_root = os.path.join(args.project_path, args.name)
         for d in mosa_dirs:
@@ -1582,6 +1593,7 @@ def main():
         except Exception as e:
             print(f"  Agentic generation failed: {e}")
             import traceback
+
             traceback.print_exc()
 
 

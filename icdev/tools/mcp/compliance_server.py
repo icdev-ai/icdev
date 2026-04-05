@@ -740,7 +740,7 @@ def handle_oscal_resolve_profile(args: dict) -> dict:
 
 
 def handle_oscal_catalog_lookup(args: dict) -> dict:
-    """Look up controls in the OSCAL catalog (official NIST or ICDEV fallback)."""
+    """Look up controls in the OSCAL catalog (official NIST or ICDEV™ fallback)."""
     control_id = args.get("control_id")
     family = args.get("family")
 
@@ -1378,7 +1378,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="oscal_catalog_lookup",
-        description="Look up NIST 800-53 controls from the OSCAL catalog. Uses official NIST OSCAL catalog (1000+ controls) with ICDEV fallback (39 controls).",
+        description="Look up NIST 800-53 controls from the OSCAL catalog. Uses official NIST OSCAL catalog (1000+ controls) with ICDEV™ fallback (39 controls).",
         input_schema={
             "type": "object",
             "properties": {
