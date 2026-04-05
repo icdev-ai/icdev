@@ -98,6 +98,16 @@ except ImportError:
     _HAS_CHAT_API = False
 from tools.dashboard.ux_helpers import register_ux_filters
 
+# QDC — Quality Design Canvas (Phase 65)
+_QDC_ENABLED = os.environ.get("ICDEV_QDC_ENABLED", "true").lower() in ("true", "1", "yes")
+_HAS_QDC = False
+if _QDC_ENABLED:
+    try:
+        from tools.qdc_canvas.blueprint import qdc_bp  # noqa: E402
+        _HAS_QDC = True
+    except ImportError:
+        _HAS_QDC = False
+
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
 # ---------------------------------------------------------------------------
@@ -745,6 +755,7 @@ def create_app() -> Flask:
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
             "govcon_enabled": _HAS_GOVCON,
+            "qdc_enabled": _HAS_QDC,
         }
 
     # ---- Auto-register A2A agents from card files ----
@@ -794,6 +805,14 @@ def create_app() -> Flask:
     app.register_blueprint(orchestration_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
+
+    # ---- QDC — Quality Design Canvas ----
+    if _HAS_QDC:
+        try:
+            app.register_blueprint(qdc_bp)
+            app.logger.info("Quality Design Canvas registered at /quality/")
+        except Exception as exc:
+            app.logger.warning("QDC registration failed: %s", exc)
 
     # ---- Convenience JSON routes that match the spec ----
 

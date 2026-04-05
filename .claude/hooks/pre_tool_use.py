@@ -224,6 +224,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "pg_teaming_assessments",
         # File Sync Module (D-SYNC-7 — sync_log is append-only, NIST AU)
         "sync_log",
+        # Phase 65 — Quality Design Canvas (D-QDC-5)
+        "qdc_audit",
+        "qdc_gate_results",
+        "qdc_uqs_history",
         # Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
         "red_team_results",
         "genesis_convergence_log",

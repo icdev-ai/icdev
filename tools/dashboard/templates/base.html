@@ -45,6 +45,9 @@
             <li><a href="/knowledge-search" class="{% if '/knowledge-search' in request.path %}active{% endif %}">Knowledge</a></li>
             <li><a href="/finetune" class="{% if '/finetune' in request.path %}active{% endif %}">Fine-Tuning</a></li>
             <li><a href="/genesis" class="{% if '/genesis' in request.path %}active{% endif %}">Genesis</a></li>
+            {% if qdc_enabled %}
+            <li><a href="/quality/" class="{% if '/quality' in request.path %}active{% endif %}" style="color:#2196f3;">QA/QC</a></li>
+            {% endif %}
             <li><a href="/pulse" class="{% if '/pulse' in request.path %}active{% endif %}">Pulse</a></li>
             {% if govcon_enabled %}
             <li><a href="/proposals" class="{% if '/proposals' in request.path %}active{% endif %}">Proposals</a></li>
