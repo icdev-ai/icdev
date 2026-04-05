@@ -15,6 +15,8 @@ Diagram types supported:
 - architecture: Component labels, cloud/on-prem boundaries, protocols
 - data_flow: CUI markings on flows, encryption indicators, classifications
 - ato_boundary: Authorization boundary lines, interconnection points
+- infrastructure: CSP-agnostic infra quality — HA, segmentation, encryption,
+  logging, IAM, no direct internet to data tier
 
 Usage:
     # Validate a network zone diagram
@@ -38,6 +40,15 @@ Usage:
     python tools/compliance/diagram_validator.py \\
         --image network.png --type network_zone \\
         --expected-zones "DMZ,Enclave A,Management Zone" --json
+
+    # Validate CSP-agnostic infrastructure diagram
+    python tools/compliance/diagram_validator.py \\
+        --image infra.png --type infrastructure --json
+
+    # Validate infra with expected tiers
+    python tools/compliance/diagram_validator.py \\
+        --image infra.png --type infrastructure \\
+        --expected-tiers "Web Tier,App Tier,Data Tier,Management Plane" --json
 """
 
 import argparse
@@ -113,6 +124,20 @@ DIAGRAM_VALIDATIONS: Dict[str, List[str]] = {
         "Interconnection points are documented",
         "System name and classification are labeled on the boundary",
     ],
+    "infrastructure": [
+        "Authorization boundary is clearly drawn separating the system from external entities",
+        "High availability is visible — components span at least two availability zones, regions, or fault domains",
+        "Network segmentation is present — public-facing, application, and data tiers are separated (e.g. DMZ / trust-untrust / public-private subnets)",
+        "Logging and monitoring components are present (e.g. centralized log aggregation, SIEM, CloudTrail, audit service)",
+        "Encryption is indicated at trust boundaries — TLS/IPSec on connections crossing zone boundaries or the internet",
+        "Management and control plane is separated from the data/workload plane",
+        "No direct internet exposure to the data tier — databases and storage behind private subnets or service endpoints",
+        "Firewall or network filtering is positioned between untrusted and trusted zones",
+        "Identity and access management components are present (e.g. IAM, SSO, directory service, key management)",
+        "Redundant connectivity paths exist for on-premises or hybrid links (e.g. VPN + Direct Connect, dual ISP)",
+        "All components are labeled with their role or service name — no unnamed boxes or icons",
+        "External interconnection points are clearly marked where traffic enters or leaves the boundary",
+    ],
 }
 
 VALID_DIAGRAM_TYPES = list(DIAGRAM_VALIDATIONS.keys())
@@ -129,6 +154,20 @@ _SYSTEM_PROMPT_TEMPLATE = (
     '{{"validations": [{{"check": string, "passed": bool, "confidence": '
     'float 0.0-1.0, "explanation": string}}], "overall_assessment": string, '
     '"recommendations": [string]}}'
+)
+
+_INFRA_SYSTEM_PROMPT = (
+    "You are a cloud infrastructure architecture reviewer validating a "
+    "CSP-agnostic infrastructure diagram for DoD/federal ATO readiness. "
+    "This diagram may use icons or stencils from ANY cloud provider (AWS, "
+    "Azure, GCP, OCI, IBM, or generic). Do NOT penalize or reward based on "
+    "which CSP icons are used — focus only on whether the required "
+    "architectural patterns are present regardless of vendor. For EACH of "
+    "the following checks, determine if it passes or fails based on what "
+    "you see in the diagram. Respond with EXACTLY this JSON format (no "
+    'markdown): {{"validations": [{{"check": string, "passed": bool, '
+    '"confidence": float 0.0-1.0, "explanation": string}}], '
+    '"overall_assessment": string, "recommendations": [string]}}'
 )
 
 
@@ -306,7 +345,10 @@ def validate_diagram(
     checks_text = "\n".join(f"- {c}" for c in checks)
 
     # --- Build multimodal request ---
-    system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(diagram_type=diagram_type)
+    if diagram_type == "infrastructure":
+        system_prompt = _INFRA_SYSTEM_PROMPT
+    else:
+        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(diagram_type=diagram_type)
 
     user_content: List[Dict[str, Any]] = [
         {
@@ -466,6 +508,37 @@ def check_data_flow(
     )
 
 
+def check_infrastructure_diagram(
+    image_path: str,
+    project_id: Optional[str] = None,
+    expected_tiers: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate a CSP-agnostic infrastructure diagram.
+
+    Checks for HA, network segmentation, encryption at trust boundaries,
+    logging/monitoring, IAM, management plane separation, and data tier
+    isolation — regardless of which cloud provider icons are used.
+
+    Args:
+        image_path: Path to the infrastructure diagram image.
+        project_id: Optional ICDEV™ project identifier for audit logging.
+        expected_tiers: Optional list of architecture tiers that should
+            be present (e.g. ``["Web Tier", "App Tier", "Data Tier"]``).
+
+    Returns:
+        Validation result dict.
+    """
+    expected_components = None
+    if expected_tiers:
+        expected_components = [f"Architecture tier: {t}" for t in expected_tiers]
+    return validate_diagram(
+        image_path=image_path,
+        diagram_type="infrastructure",
+        project_id=project_id,
+        expected_components=expected_components,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -499,6 +572,10 @@ def main():
         help="Comma-separated list of expected network zones (network_zone type only)",
     )
     parser.add_argument(
+        "--expected-tiers",
+        help="Comma-separated list of expected architecture tiers (infrastructure type only)",
+    )
+    parser.add_argument(
         "--classification",
         default="CUI",
         help="Classification level for data flow diagrams (default: CUI)",
@@ -513,7 +590,16 @@ def main():
     args = parser.parse_args()
 
     # --- Route to the appropriate function ---
-    if args.diagram_type == "network_zone" and args.expected_zones:
+    if args.diagram_type == "infrastructure":
+        tiers = None
+        if args.expected_tiers:
+            tiers = [t.strip() for t in args.expected_tiers.split(",") if t.strip()]
+        result = check_infrastructure_diagram(
+            image_path=args.image,
+            project_id=args.project_id,
+            expected_tiers=tiers,
+        )
+    elif args.diagram_type == "network_zone" and args.expected_zones:
         zones = [z.strip() for z in args.expected_zones.split(",") if z.strip()]
         result = check_network_zones(args.image, expected_zones=zones)
     elif args.diagram_type == "data_flow":
