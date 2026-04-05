@@ -21,6 +21,7 @@ QDC_SA11_MAP: dict[str, dict[str, str]] = {
     "runtime": {"control": "SI-6", "title": "Security and Privacy Function Verification", "family": "SI"},
     "integrity": {"control": "SI-7", "title": "Software, Firmware, and Information Integrity", "family": "SI"},
     "config": {"control": "CM-6", "title": "Configuration Settings", "family": "CM"},
+    "diagram": {"control": "PL-2", "title": "System Security and Privacy Plans — Architecture Diagrams", "family": "PL"},
 }
 
 # ---------------------------------------------------------------------------
@@ -41,6 +42,7 @@ QDC_GATE_TOOLS: dict[str, str | None] = {
     "runtime": "tools/monitor/health_checker.py",
     "integrity": "tools/security/blueprint_verifier.py",
     "config": "tools/compliance/stig_checker.py",
+    "diagram": "tools/compliance/diagram_validator.py",
 }
 
 # ---------------------------------------------------------------------------
@@ -61,6 +63,7 @@ QDC_OBJECTS: dict = {
             {"id": "gate-review", "label": "Code Review Gate", "type": "gate-review"},
             {"id": "gate-pentest", "label": "Pen Test Gate", "type": "gate-pentest"},
             {"id": "gate-iast", "label": "IAST Gate", "type": "gate-iast"},
+            {"id": "gate-diagram", "label": "Diagram Quality Gate", "type": "gate-diagram"},
         ],
         "quality_sources": [
             {"id": "src-repo", "label": "Code Repository", "type": "src-repo"},
@@ -118,6 +121,7 @@ QDC_NODE_DESCS: dict[str, str] = {
     "gate-review": "Code Review Gate — enforces peer review of all code changes before merge. Maps to NIST SA-11(4).",
     "gate-pentest": "Penetration Test Gate — tracks manual or automated pen-test execution and findings. Maps to NIST SA-11(5).",  # noqa: E501
     "gate-iast": "Interactive Application Security Testing — instruments the running application to detect vulnerabilities in real time. Maps to NIST SA-11(9).",  # noqa: E501
+    "gate-diagram": "Diagram Quality Gate — validates infrastructure diagrams for ATO readiness: HA, network segmentation, encryption, logging, IAM, data tier isolation. CSP-agnostic (works with AWS, Azure, GCP, OCI, IBM). Maps to NIST PL-2.",  # noqa: E501
     # quality_sources
     "src-repo": "Code Repository — source control system providing code artifacts to quality gates.",
     "src-pipeline": "CI/CD Pipeline — automated build and deployment pipeline that triggers quality gates.",

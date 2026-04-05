@@ -92,6 +92,10 @@ gates:
     tool: "tools/compliance/stig_checker.py"
     blocking: true
     dimension: compliance_readiness
+  pl2_diagram:
+    tool: "tools/compliance/diagram_validator.py"
+    blocking: false
+    dimension: compliance_readiness
 
 evidence:
   format: "oscal_json"
