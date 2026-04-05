@@ -108,6 +108,10 @@ def usage_time_series():
     days = min(int(request.args.get("days", "30")), 90)
     conn = _get_db()
     try:
+        # Compute cutoff in Python for cross-backend compat (SQLite vs PostgreSQL)
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         rows = conn.execute(
             """SELECT
                    DATE(created_at) as day,
@@ -116,10 +120,10 @@ def usage_time_series():
                    SUM(cost_estimate_usd) as cost,
                    COUNT(*) as requests
                FROM agent_token_usage
-               WHERE created_at >= datetime('now', ? || ' days')
+               WHERE created_at >= ?
                GROUP BY DATE(created_at)
                ORDER BY day""",
-            (f"-{days}",),
+            (cutoff,),
         ).fetchall()
 
         result = []
