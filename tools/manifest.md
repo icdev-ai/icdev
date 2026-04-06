@@ -1644,8 +1644,8 @@
 | Blueprint Helpers | tools\network\blueprint_helpers.py | Auto-registered: network/blueprint_helpers.py | --json | JSON |
 | Observability Engine | tools\observability_canvas\observability_engine.py | Auto-registered: observability_canvas/observability_engine.py | --json | JSON |
 | E2E New Canvases | tools\testing\e2e_new_canvases.py | Auto-registered: testing/e2e_new_canvases.py | --json | JSON |
-| Canvas Orchestrator | tools\canvas\orchestrator.py | Cross-Canvas Integration Engine — links all 7 design canvases (IDC/NDC/SDC/BDC/PDC/ODC/DDC) via canvas_projects entity in icdev.db; CRUD for design projects, link/unlink designs, aggregate compliance summary across all canvases | create --name / list / summary --json | JSON |
-| Canvas KG Builder | tools\canvas\kg_builder.py | Incremental Knowledge Graph builder for all 7 design canvases. rebuild_canvas_kg(canvas, design_id) for targeted on-save upsert with SHA-256 delta detection; rebuild_all() for full cold-start rebuild; stores source_canvas/source_design_id provenance in every node; logs every build to canvas_kg_build_log (append-only). | --build-all / --build-canvas idc --design-id \<id\> / --stats --json | JSON |
+| Canvas Orchestrator | tools\canvas\orchestrator.py | Cross-Canvas Integration Engine — links all 9 design canvases (IDC/NDC/SDC/BDC/PDC/ODC/DDC/QDC/MDC) via canvas_projects entity in icdev.db; CRUD for design projects, link/unlink designs, aggregate compliance summary, compute 4-dimension readiness score (completeness/compliance/coverage/risk) | create --name / list / summary --json | JSON |
+| Canvas KG Builder | tools\canvas\kg_builder.py | Incremental Knowledge Graph builder for all 9 design canvases. rebuild_canvas_kg(canvas, design_id) for targeted on-save upsert; stores nodes/edges to canvas_kg_nodes and canvas_kg_edges in icdev.db; logs every build to canvas_kg_build_log (append-only — NIST AU). | --build-all / --build-canvas idc --design-id \<id\> / --stats --json | JSON |
 | Canvas Projects API | tools\dashboard\api\canvas_projects.py | REST API Blueprint for canvas_projects: GET/POST/PUT/DELETE /api/canvas-projects, link/unlink canvas designs, GET /api/canvas-projects/compliance for 7-canvas posture summary | (blueprint) | JSON |
 
 
@@ -1702,7 +1702,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Export Utils | tools\canvas\export_utils.py | Auto-registered: canvas/export_utils.py | --json | JSON |
+| Canvas Export Utils | tools\canvas\export_utils.py | Unified multi-format export for all 9 design canvases. 5 functions: export_json, export_markdown, export_csv, export_drawio (mxGraphModel XML), export_svg. CUI banner included in all formats. | (library — called by canvas blueprints) | JSON / Markdown / CSV / DrawIO XML / SVG |
 | Iac Generator | tools\infra_canvas\iac_generator.py | Auto-registered: infra_canvas/iac_generator.py | --json | JSON |
 | E2E Bdc Canvas | tools\testing\e2e_bdc_canvas.py | Auto-registered: testing/e2e_bdc_canvas.py | --json | JSON |
 | E2E Ddc Canvas | tools\testing\e2e_ddc_canvas.py | Auto-registered: testing/e2e_ddc_canvas.py | --json | JSON |
@@ -1724,7 +1724,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Auto Remediate | tools\canvas\auto_remediate.py | Auto-registered: canvas/auto_remediate.py | --json | JSON |
+| Canvas Auto Remediate | tools\canvas\auto_remediate.py | Confidence-tiered auto-remediation for canvas assessment findings. >=0.7 auto-fix (add missing nodes), 0.3-0.7 suggest, <0.3 escalate. IDC (8 rules) and ODC (8 rules) wrappers. Max 5 auto-fixes/hour rate limiter. | (library — called by IDC/ODC blueprints on save) | JSON remediation report |
 
 
 ## Auto-Registered (Coherence Fix)
