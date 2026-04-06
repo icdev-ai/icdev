@@ -86,6 +86,7 @@ def _get_canvas_assessment_score(canvas_key, design_id):
         "odc": ("observability_canvas", "odc_assessments"),
         "ddc": ("data_canvas", "ddc_assessments"),
         "ndc": ("network_canvas", "ndc_assessments"),
+        "mdc": ("migration_canvas", "mc_assessments"),
     }
     info = table_map.get(canvas_key)
     if not info:
@@ -163,3 +164,8 @@ def on_odc_design_saved(design_id):
 def on_ddc_design_saved(design_id):
     """Triggered when a Data Design Canvas design is saved."""
     _on_canvas_saved("ddc", design_id)
+
+
+def on_mdc_design_saved(design_id):
+    """Triggered when a Migration Design Canvas design is saved."""
+    _on_canvas_saved("mdc", design_id)

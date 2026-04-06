@@ -1752,3 +1752,10 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Migration Engine | tools\migration_canvas\migration_engine.py | Auto-registered: migration_canvas/migration_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| E2E Diagram Validator | tools\testing\e2e_diagram_validator.py | Auto-registered: testing/e2e_diagram_validator.py | --json | JSON |
+| Lens Migration | tools\oracle\lenses\lens_migration.py | Auto-registered: lenses/lens_migration.py | --json | JSON |

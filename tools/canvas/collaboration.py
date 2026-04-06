@@ -33,6 +33,7 @@ class CanvasCollabManager:
         "odc": "observability_canvas.db",
         "ddc": "data_canvas.db",
         "qdc": "qdc_canvas.db",
+        "mdc": "migration_canvas.db",
     }
 
     def __init__(self, canvas_key: str, db_path: str | None = None, collab_table: str | None = None):
