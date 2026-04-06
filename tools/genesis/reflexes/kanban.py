@@ -18,7 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -428,7 +428,8 @@ def _send_notification(task: dict, event: str = "in_progress"):
         "in_progress": "now in progress",
         "done": "completed",
         "failed": "failed (returned to backlog with 10-min cooldown)",
-        "token_exhausted": "PAUSED — token limit hit, move to backlog via dashboard to resume",
+        "token_exhausted": f"PAUSED — token limit hit, auto-retry in ~{TOKEN_RETRY_DELAY_SECONDS // 60} min",
+        "retry_exhausted": f"GAVE UP — exceeded {TOKEN_MAX_RETRY_COUNT} retries, moved to backlog",
     }
     label = event_labels.get(event, event)
     title = f"Task {event}: {task['title']}"
@@ -909,25 +910,82 @@ def _check_completed():
 
 
 def _check_token_exhausted_tasks() -> list:
-    """Token-exhausted tasks stay PAUSED until manually moved back to backlog.
+    """Return token-exhausted tasks that have waited past the cooldown period.
 
-    Previously auto-retried after TOKEN_RETRY_DELAY_SECONDS. Now tasks in
-    token_exhausted status remain parked — the user or dashboard must
-    explicitly move them to backlog or scheduled to resume execution.
+    Queries tasks with status='token_exhausted' whose updated_at is older
+    than TOKEN_RETRY_DELAY_SECONDS ago.  Returns them sorted by priority
+    (critical > high > medium > low) so the caller retries the most
+    important task first.
 
-    Returns empty list (no auto-retry).
+    Tasks that have exceeded TOKEN_MAX_RETRY_COUNT retries are moved back
+    to backlog with their retry counter cleared (give-up after ~5 hours).
     """
-    # Log count for visibility but don't auto-retry
     conn = get_connection()
     try:
-        row = conn.execute("SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'token_exhausted'").fetchone()
-        count = dict(row).get("cnt", 0)
-        if count:
+        rows = conn.execute(
+            "SELECT * FROM kanban_tasks WHERE status = 'token_exhausted' "
+            "ORDER BY CASE priority "
+            "  WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+            "  WHEN 'medium' THEN 2 ELSE 3 END, "
+            "updated_at ASC"
+        ).fetchall()
+        if not rows:
+            return []
+
+        now = datetime.now(timezone.utc)
+        ready = []
+        for row in rows:
+            task = dict(row)
+            # Check cooldown: updated_at must be older than TOKEN_RETRY_DELAY_SECONDS
+            updated_str = task.get("updated_at", "")
+            try:
+                if updated_str:
+                    # Handle both offset-aware and naive ISO formats
+                    updated_str = updated_str.replace("Z", "+00:00")
+                    if "+" not in updated_str and "T" in updated_str:
+                        updated_str += "+00:00"
+                    updated_at = datetime.fromisoformat(updated_str)
+                else:
+                    # No timestamp — treat as ready
+                    updated_at = now - timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS + 1)
+            except (ValueError, TypeError):
+                updated_at = now - timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS + 1)
+
+            # Make both TZ-aware for comparison
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+
+            elapsed = (now - updated_at).total_seconds()
+            if elapsed < TOKEN_RETRY_DELAY_SECONDS:
+                remaining = TOKEN_RETRY_DELAY_SECONDS - elapsed
+                logger.debug(
+                    "Task %s cooling down — %ds remaining",
+                    task["id"],
+                    int(remaining),
+                )
+                continue
+
+            # Check retry count — give up after TOKEN_MAX_RETRY_COUNT
+            retry_count = _get_retry_count(task["id"])
+            if retry_count >= TOKEN_MAX_RETRY_COUNT:
+                logger.info(
+                    "Task %s exceeded max retries (%d) — moving to backlog",
+                    task["id"],
+                    TOKEN_MAX_RETRY_COUNT,
+                )
+                _move_task(task["id"], "backlog")
+                _clear_retry_count(task["id"])
+                _send_notification(task, event="retry_exhausted")
+                continue
+
+            ready.append(task)
+
+        if ready:
             logger.info(
-                "%d task(s) paused (token_exhausted) — move to backlog via dashboard to resume",
-                count,
+                "%d token-exhausted task(s) ready for retry (cooldown elapsed)",
+                len(ready),
             )
-        return []
+        return ready
     finally:
         conn.close()
 
