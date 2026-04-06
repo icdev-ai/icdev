@@ -150,6 +150,98 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
     return False, None
 
 
+def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
+    """Parse a reset hint into an absolute UTC datetime for resume.
+
+    Handles these forms from Claude CLI output:
+      - "5 minutes" / "5m" / "5 min"        → now + N minutes
+      - "1 hour" / "2h" / "1 hr"            → now + N hours
+      - "300 seconds" / "300s"               → now + N seconds
+      - "2:00 AM" / "2:00 pm" / "14:00"     → next occurrence of that wall-clock time (local TZ)
+      - None / unparseable                   → now + TOKEN_RETRY_DELAY_SECONDS (5 min fallback)
+    """
+    now = datetime.now(timezone.utc)
+    fallback = now + timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS)
+
+    if not reset_hint:
+        return fallback
+
+    hint = reset_hint.strip().lower()
+
+    # ── Relative: "N minutes/hours/seconds" ───────────────────────────
+    rel = re.match(
+        r"(\d+)\s*(?:"
+        r"(s(?:ec(?:ond)?s?)?)|"
+        r"(m(?:in(?:ute)?s?)?)|"
+        r"(h(?:(?:ou)?rs?)?)"
+        r")\b",
+        hint,
+    )
+    if rel:
+        n = int(rel.group(1))
+        if rel.group(2):  # seconds
+            return now + timedelta(seconds=max(n, 60))
+        if rel.group(3):  # minutes
+            return now + timedelta(minutes=max(n, 1))
+        if rel.group(4):  # hours
+            return now + timedelta(hours=n)
+
+    # ── Absolute: "2:00 AM" / "14:00" ────────────────────────────────
+    abs_match = re.match(r"(\d{1,2}):(\d{2})\s*(am|pm)?", hint)
+    if abs_match:
+        hour = int(abs_match.group(1))
+        minute = int(abs_match.group(2))
+        ampm = abs_match.group(3)
+        if ampm == "pm" and hour < 12:
+            hour += 12
+        elif ampm == "am" and hour == 12:
+            hour = 0
+        # Build a local datetime, then convert to UTC
+        try:
+            local_now = datetime.now().astimezone()
+            target = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= local_now:
+                target += timedelta(days=1)  # Next occurrence
+            return target.astimezone(timezone.utc)
+        except (ValueError, OverflowError):
+            pass
+
+    return fallback
+
+
+def _save_resume_at(task_id: str, resume_at: datetime):
+    """Persist the resume-at timestamp for a token-exhausted task."""
+    _ensure_prompt_dir()
+    resume_file = PROMPT_DIR / f"{task_id}.resume_at"
+    resume_file.write_text(resume_at.isoformat(), encoding="utf-8")
+
+
+def _load_resume_at(task_id: str) -> Optional[datetime]:
+    """Load the persisted resume-at timestamp, or None if missing."""
+    resume_file = PROMPT_DIR / f"{task_id}.resume_at"
+    if not resume_file.exists():
+        return None
+    try:
+        text = resume_file.read_text(encoding="utf-8").strip()
+        if "+" not in text and text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        elif "+" not in text and "-" not in text[10:]:
+            text += "+00:00"
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, OSError):
+        return None
+
+
+def _clear_resume_at(task_id: str):
+    """Remove resume-at file on success or retry-give-up."""
+    resume_file = PROMPT_DIR / f"{task_id}.resume_at"
+    if resume_file.exists():
+        resume_file.unlink(missing_ok=True)
+
+
 def _get_retry_count(task_id: str) -> int:
     """Get the current token-exhaustion retry count for a task."""
     conn = get_connection()
@@ -428,7 +520,7 @@ def _send_notification(task: dict, event: str = "in_progress"):
         "in_progress": "now in progress",
         "done": "completed",
         "failed": "failed (returned to backlog with 10-min cooldown)",
-        "token_exhausted": f"PAUSED — token limit hit, auto-retry in ~{TOKEN_RETRY_DELAY_SECONDS // 60} min",
+        "token_exhausted": "PAUSED — token limit hit, will auto-resume at scheduled time",
         "retry_exhausted": f"GAVE UP — exceeded {TOKEN_MAX_RETRY_COUNT} retries, moved to backlog",
     }
     label = event_labels.get(event, event)
@@ -776,6 +868,7 @@ def _check_completed():
                     # Exceeded max retries — move to backlog, give up
                     _move_task(task_id, "backlog")
                     _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
                     _send_notification(task_dict, event="failed")
                     print(
                         f"  Kanban: {task_id} TOKEN EXHAUSTED — "
@@ -783,13 +876,19 @@ def _check_completed():
                         f"returning to backlog"
                     )
                 else:
-                    # Park in token_exhausted — scheduler will retry later
+                    # Park in token_exhausted — scheduler will retry at resume_at
                     _move_task(task_id, "token_exhausted")
+                    resume_at = _parse_resume_at(reset_hint)
+                    _save_resume_at(task_id, resume_at)
+                    wait_seconds = max(0, (resume_at - datetime.now(timezone.utc)).total_seconds())
+                    wait_minutes = int(wait_seconds / 60) + 1
                     reset_msg = f" (reset hint: {reset_hint})" if reset_hint else ""
+                    resume_local = resume_at.astimezone().strftime("%I:%M %p")
                     print(
                         f"  Kanban: {task_id} TOKEN EXHAUSTED"
                         f"{reset_msg} — retry {retry_count}/"
-                        f"{TOKEN_MAX_RETRY_COUNT}, will auto-restart"
+                        f"{TOKEN_MAX_RETRY_COUNT}, will resume at "
+                        f"{resume_local} (~{wait_minutes} min)"
                     )
                     # Notify via Telegram
                     _send_notification(task_dict, event="token_exhausted")
@@ -798,14 +897,14 @@ def _check_completed():
                             send as tg_send,
                         )
 
-                        eta_minutes = TOKEN_RETRY_DELAY_SECONDS // 60
                         tg_send(
                             f"Token limit: {task_dict.get('title', task_id)[:50]}",
                             (
                                 f"Claude token/rate limit hit on retry "
                                 f"{retry_count}/{TOKEN_MAX_RETRY_COUNT}."
                                 f"{reset_msg}\n"
-                                f"Will auto-retry in ~{eta_minutes} min."
+                                f"Will auto-resume at {resume_local} "
+                                f"(~{wait_minutes} min)."
                             ),
                             severity="warning",
                         )
@@ -828,6 +927,7 @@ def _check_completed():
                     except Exception:
                         pass
                     _clear_retry_count(task_id)
+                    _clear_resume_at(task_id)
                 else:
                     print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
                     try:
@@ -875,6 +975,7 @@ def _check_completed():
                 if prompt_path.exists():
                     prompt_path.unlink()
                 _clear_retry_count(task_id)
+                _clear_resume_at(task_id)
                 print(f"  Kanban: {task_id} completed (exit {ret}, verified={verified})")
 
                 # ── WORKTREE CLEANUP (only on verified done) ─────────
@@ -910,15 +1011,14 @@ def _check_completed():
 
 
 def _check_token_exhausted_tasks() -> list:
-    """Return token-exhausted tasks that have waited past the cooldown period.
+    """Return token-exhausted tasks whose resume_at time has passed.
 
-    Queries tasks with status='token_exhausted' whose updated_at is older
-    than TOKEN_RETRY_DELAY_SECONDS ago.  Returns them sorted by priority
-    (critical > high > medium > low) so the caller retries the most
-    important task first.
+    Each task has a persisted resume_at timestamp (written when parked).
+    The scheduler calls this every 60s — tasks are only returned once
+    their resume_at is in the past, so there is zero wasted polling.
 
-    Tasks that have exceeded TOKEN_MAX_RETRY_COUNT retries are moved back
-    to backlog with their retry counter cleared (give-up after ~5 hours).
+    Falls back to TOKEN_RETRY_DELAY_SECONDS after updated_at if no
+    resume_at file exists (e.g. task was parked before this code shipped).
     """
     conn = get_connection()
     try:
@@ -936,55 +1036,64 @@ def _check_token_exhausted_tasks() -> list:
         ready = []
         for row in rows:
             task = dict(row)
-            # Check cooldown: updated_at must be older than TOKEN_RETRY_DELAY_SECONDS
-            updated_str = task.get("updated_at", "")
-            try:
-                if updated_str:
-                    # Handle both offset-aware and naive ISO formats
-                    updated_str = updated_str.replace("Z", "+00:00")
-                    if "+" not in updated_str and "T" in updated_str:
-                        updated_str += "+00:00"
-                    updated_at = datetime.fromisoformat(updated_str)
-                else:
-                    # No timestamp — treat as ready
+            task_id = task["id"]
+
+            # 1. Load persisted resume_at (preferred)
+            resume_at = _load_resume_at(task_id)
+
+            # 2. Fallback: updated_at + TOKEN_RETRY_DELAY_SECONDS
+            if resume_at is None:
+                updated_str = task.get("updated_at", "")
+                try:
+                    if updated_str:
+                        updated_str = updated_str.replace("Z", "+00:00")
+                        if "+" not in updated_str and "T" in updated_str:
+                            updated_str += "+00:00"
+                        updated_at = datetime.fromisoformat(updated_str)
+                        if updated_at.tzinfo is None:
+                            updated_at = updated_at.replace(tzinfo=timezone.utc)
+                    else:
+                        updated_at = now - timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS + 1)
+                except (ValueError, TypeError):
                     updated_at = now - timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS + 1)
-            except (ValueError, TypeError):
-                updated_at = now - timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS + 1)
+                resume_at = updated_at + timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS)
 
-            # Make both TZ-aware for comparison
-            if updated_at.tzinfo is None:
-                updated_at = updated_at.replace(tzinfo=timezone.utc)
-
-            elapsed = (now - updated_at).total_seconds()
-            if elapsed < TOKEN_RETRY_DELAY_SECONDS:
-                remaining = TOKEN_RETRY_DELAY_SECONDS - elapsed
-                logger.debug(
-                    "Task %s cooling down — %ds remaining",
-                    task["id"],
-                    int(remaining),
+            # 3. Not yet — log and skip
+            if now < resume_at:
+                remaining = (resume_at - now).total_seconds()
+                resume_local = resume_at.astimezone().strftime("%I:%M %p")
+                logger.info(
+                    "Task %s waiting until %s (%d min remaining)",
+                    task_id,
+                    resume_local,
+                    int(remaining / 60) + 1,
                 )
                 continue
 
-            # Check retry count — give up after TOKEN_MAX_RETRY_COUNT
-            retry_count = _get_retry_count(task["id"])
+            # 4. Check retry count — give up after TOKEN_MAX_RETRY_COUNT
+            retry_count = _get_retry_count(task_id)
             if retry_count >= TOKEN_MAX_RETRY_COUNT:
                 logger.info(
                     "Task %s exceeded max retries (%d) — moving to backlog",
-                    task["id"],
+                    task_id,
                     TOKEN_MAX_RETRY_COUNT,
                 )
-                _move_task(task["id"], "backlog")
-                _clear_retry_count(task["id"])
+                _move_task(task_id, "backlog")
+                _clear_retry_count(task_id)
+                _clear_resume_at(task_id)
                 _send_notification(task, event="retry_exhausted")
                 continue
 
+            # 5. Ready to resume
+            resume_local = resume_at.astimezone().strftime("%I:%M %p")
+            logger.info(
+                "Task %s resume_at %s reached — ready for retry (#%d)",
+                task_id,
+                resume_local,
+                retry_count + 1,
+            )
             ready.append(task)
 
-        if ready:
-            logger.info(
-                "%d token-exhausted task(s) ready for retry (cooldown elapsed)",
-                len(ready),
-            )
         return ready
     finally:
         conn.close()
