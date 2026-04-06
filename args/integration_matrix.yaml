@@ -173,3 +173,103 @@ subsystems:
       - rag           # reranker boost
     integration_type: function_call
     trigger: table_or_tool_change
+
+  # ── Design Canvas Subsystems (9-canvas suite) ──────────────────────────
+
+  canvas_idc:
+    tables:
+      - infra_designs
+      - idc_assessments
+    connects_to:
+      - canvas_sdc     # on-save → SDC security assessment
+      - canvas_qdc     # on-save → QDC quality score
+      - canvas_odc     # infra should verify monitoring coverage
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_ndc:
+    tables:
+      - topologies
+      - nc_compliance_findings
+    connects_to:
+      - canvas_sdc     # on-save → SDC STRIDE import via bridge
+      - canvas_qdc     # on-save → QDC quality score
+      - canvas_bdc     # boundary validates against NDC enclaves
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_sdc:
+    tables:
+      - security_designs
+      - sc_assessments
+    connects_to:
+      - canvas_ndc     # bidirectional bridge (push remediation)
+      - canvas_qdc     # on-save → QDC quality score
+      - compliance     # sc_assessments feed compliance posture
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_bdc:
+    tables:
+      - boundary_designs
+      - bdc_assessments
+    connects_to:
+      - canvas_sdc     # on-save → SDC boundary validation
+      - canvas_ndc     # validates against NDC topology IDs
+      - canvas_qdc     # on-save → QDC quality score
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_pdc:
+    tables:
+      - pipelines
+      - pdc_assessments
+    connects_to:
+      - canvas_sdc     # on-save → SDC pipeline security scan
+      - canvas_qdc     # on-save → QDC quality score
+      - compliance     # SLSA attestation integration
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_odc:
+    tables:
+      - observability_designs
+      - odc_assessments
+    connects_to:
+      - canvas_sdc     # on-save → SDC logging control verification
+      - canvas_qdc     # on-save → QDC quality score
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_ddc:
+    tables:
+      - data_designs
+      - ddc_assessments
+    connects_to:
+      - canvas_sdc     # on-save → SDC CUI/PII exposure scan
+      - canvas_qdc     # on-save → QDC quality score
+      - canvas_odc     # CUI entities should verify audit log coverage
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_qdc:
+    tables:
+      - qdc_designs
+      - qdc_assessments
+      - qdc_cross_canvas_links
+    connects_to:
+      - genesis        # bidirectional with Genesis quality reflex
+      - compliance     # UQS feeds compliance readiness
+    integration_type: event_hook
+    trigger: table_or_tool_change
+
+  canvas_mdc:
+    tables:
+      - migration_designs
+      - mc_assessments
+    connects_to:
+      - canvas_sdc     # on-save → SDC migration security assessment
+      - canvas_qdc     # on-save → QDC quality score
+      - canvas_idc     # migration targets link to target infra designs
+    integration_type: event_hook
+    trigger: table_or_tool_change

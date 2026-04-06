@@ -877,6 +877,159 @@ def on_odc_design_saved(design_id: str) -> dict:
         return {"status": "error", "error": str(exc)}
 
 
+def on_mdc_design_saved(design_id: str) -> dict:
+    """Called after an MDC migration design is saved.
+
+    Assesses migration designs for security risks: unpatched source systems,
+    missing ATO gates on GovCloud targets, absent compliance bridges, and
+    missing rollback controls.
+    Persists findings to sc_assessments with trigger_source='mdc_save'.
+    """
+    _MIGRATION_CHECKS = {
+        "ctl-ato-gate": ("MC-SEC-001", "Migration target missing ATO gate control", "CAT1"),
+        "ctl-compliance-bridge": ("MC-SEC-002", "Missing compliance bridge for target environment", "CAT2"),
+        "ctl-rollback": ("MC-SEC-003", "No rollback control defined for migration", "CAT2"),
+        "ctl-security-scan": ("MC-SEC-004", "Missing security scan gate in migration path", "CAT2"),
+        "ctl-test-gate": ("MC-SEC-005", "No test gate before migration cutover", "CAT3"),
+    }
+
+    try:
+        from tools.migration_canvas.db.init_db import get_connection as get_mdc_conn
+        from tools.security_canvas.db.init_db import get_connection as get_sdc_conn
+
+        with get_mdc_conn() as mdc_conn:
+            row = mdc_conn.execute(
+                "SELECT name, graph_json FROM migration_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return {"status": "skipped", "reason": "MDC design not found"}
+
+        design_name = row[0]
+        graph = json.loads(row[1]) if isinstance(row[1], str) else (row[1] or {})
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+
+        node_ids = {n.get("id", "") for n in nodes}
+        node_types = {n.get("id", ""): n.get("type", "") for n in nodes}
+
+        findings = []
+
+        # Check for required control nodes
+        for prefix, (rule_id, title, severity) in _MIGRATION_CHECKS.items():
+            has_control = any(
+                nid.startswith(prefix) or node_types.get(nid, "").startswith(prefix)
+                for nid in node_ids
+            )
+            if not has_control:
+                findings.append(
+                    {"rule_id": rule_id, "title": title, "severity": severity}
+                )
+
+        # Check GovCloud targets without ATO gate connected
+        govcloud_targets = [
+            n for n in nodes
+            if n.get("id", "").startswith("tgt-") and "govcloud" in n.get("id", "").lower()
+        ]
+        ato_gates = {
+            n.get("id") for n in nodes if n.get("id", "").startswith("ctl-ato")
+        }
+        for tgt in govcloud_targets:
+            tgt_id = tgt.get("id", "")
+            connected_to_ato = any(
+                (e.get("source") in ato_gates and e.get("target") == tgt_id)
+                or (e.get("target") in ato_gates and e.get("source") == tgt_id)
+                for e in edges
+            )
+            if not connected_to_ato:
+                findings.append(
+                    {
+                        "rule_id": "MC-SEC-006",
+                        "title": f"GovCloud target '{tgt.get('label', tgt_id)}' has no connected ATO gate",
+                        "severity": "CAT1",
+                    }
+                )
+
+        # Check source systems without security scan in path
+        sources = [n for n in nodes if n.get("id", "").startswith("src-")]
+        scan_nodes = {
+            n.get("id") for n in nodes if "security" in n.get("id", "").lower() or "scan" in n.get("id", "").lower()
+        }
+        for src in sources:
+            src_id = src.get("id", "")
+            has_scan_in_path = any(
+                (e.get("source") == src_id and e.get("target") in scan_nodes)
+                or (e.get("source") in scan_nodes and e.get("target") == src_id)
+                for e in edges
+            )
+            if not has_scan_in_path and scan_nodes:
+                findings.append(
+                    {
+                        "rule_id": "MC-SEC-007",
+                        "title": f"Source '{src.get('label', src_id)}' not connected to security scan",
+                        "severity": "CAT3",
+                    }
+                )
+
+        cat1 = sum(1 for f in findings if f["severity"] == "CAT1")
+        cat2 = sum(1 for f in findings if f["severity"] == "CAT2")
+        cat3 = sum(1 for f in findings if f["severity"] == "CAT3")
+        risk_score = float(cat1 * 10 + cat2 * 4 + cat3)
+        grade = (
+            "F" if risk_score >= 20
+            else ("D" if risk_score >= 12
+                  else ("C" if risk_score >= 4 else ("B" if risk_score >= 1 else "A")))
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        assess_id = str(uuid.uuid4())
+
+        with get_sdc_conn() as sdc_conn:
+            sdc_conn.execute(
+                "INSERT INTO sc_assessments "
+                "(id, design_id, assessment_type, trigger_source, "
+                "source_entity_id, total_threats, total_controls, "
+                "risk_score, posture_grade, findings_json, "
+                "recommendations_json, ran_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    assess_id,
+                    None,
+                    "mdc_migration_scan",
+                    "mdc_save",
+                    design_id,
+                    len(findings),
+                    len(_MIGRATION_CHECKS),
+                    risk_score,
+                    grade,
+                    json.dumps(findings),
+                    json.dumps([]),
+                    now,
+                ),
+            )
+
+        logger.info(
+            "Security agent: MDC %s assessed (cat1=%s, cat2=%s, score=%s, grade=%s)",
+            design_id,
+            cat1,
+            cat2,
+            risk_score,
+            grade,
+        )
+        return {
+            "status": "assessed",
+            "assessment_id": assess_id,
+            "design_name": design_name,
+            "cat1": cat1,
+            "cat2": cat2,
+            "cat3": cat3,
+            "risk_score": risk_score,
+            "posture_grade": grade,
+        }
+    except Exception as exc:
+        logger.warning("Security agent error on MDC save: %s", exc)
+        return {"status": "error", "error": str(exc)}
+
+
 def auto_assess(design_id: str, trigger_source: str = "auto") -> dict:
     """Core assessment orchestrator. Called by blueprint on design save.
 

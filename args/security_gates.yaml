@@ -1221,3 +1221,27 @@ studio_workflow:
   thresholds:
     max_steps_per_workflow: 50
     max_workflow_timeout_seconds: 3600
+
+# Design Canvas Compliance Gates (9-canvas suite integration)
+canvas_compliance:
+  description: "Cross-canvas compliance posture — blocks on CAT1 findings, warns on low scores"
+  blocking:
+    - canvas_cat1_finding_unresolved
+    - canvas_assessment_not_completed_for_ato
+    - canvas_project_missing_required_canvases
+  warning:
+    - canvas_assessment_score_below_70
+    - canvas_migration_design_unassessed
+    - canvas_cross_canvas_links_stale
+    - canvas_kg_build_failed
+  thresholds:
+    max_cat1_findings: 0
+    min_canvas_score: 70
+    required_canvases_for_ato:
+      - sdc
+      - bdc
+      - ndc
+      - odc
+    assessment_max_age_days: 30
+    require_migration_assessment: true
+    kg_build_required: false
