@@ -39,8 +39,9 @@ Categories:
     llmops (10)
     agent_topology (3)
     sre (8)
+    canvas (8)
 
-Total: 251 tools, 6 resources
+Total: 259 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -5978,6 +5979,111 @@ TOOL_REGISTRY = {
         "handler": "handle_oracle_kanban_bridge_gate",
         "description": "Gate check: verify the Oracle kanban bridge can reach the database. Returns pass/fail.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    # ── Cross-Canvas Integration (9-canvas suite) ────────────────────────
+    "canvas_create_project": {
+        "category": "canvas",
+        "module": "tools.canvas.orchestrator",
+        "handler": "create_project",
+        "description": "Create a cross-canvas design project linking designs from up to 9 canvases.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Project name"},
+                "description": {"type": "string", "description": "Project description"},
+                "classification": {"type": "string", "description": "Classification level", "default": "CUI"},
+            },
+            "required": ["name"],
+        },
+    },
+    "canvas_list_projects": {
+        "category": "canvas",
+        "module": "tools.canvas.orchestrator",
+        "handler": "list_projects",
+        "description": "List all cross-canvas design projects sorted by last updated.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    "canvas_link_design": {
+        "category": "canvas",
+        "module": "tools.canvas.orchestrator",
+        "handler": "link_design",
+        "description": "Link a canvas design to a project. canvas_key: idc/ndc/sdc/bdc/pdc/odc/ddc/qdc/mdc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Canvas project ID"},
+                "canvas_key": {"type": "string", "description": "Canvas identifier (idc/ndc/sdc/bdc/pdc/odc/ddc/qdc/mdc)"},
+                "design_id": {"type": "string", "description": "Design ID from the canvas DB"},
+            },
+            "required": ["project_id", "canvas_key", "design_id"],
+        },
+    },
+    "canvas_unlink_design": {
+        "category": "canvas",
+        "module": "tools.canvas.orchestrator",
+        "handler": "unlink_design",
+        "description": "Unlink a canvas design from a project.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Canvas project ID"},
+                "canvas_key": {"type": "string", "description": "Canvas identifier to unlink"},
+            },
+            "required": ["project_id", "canvas_key"],
+        },
+    },
+    "canvas_compliance_summary": {
+        "category": "canvas",
+        "module": "tools.canvas.orchestrator",
+        "handler": "get_compliance_summary",
+        "description": "Aggregate compliance scores across all canvases linked to a project.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Canvas project ID"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    "canvas_compute_readiness": {
+        "category": "canvas",
+        "module": "tools.canvas.orchestrator",
+        "handler": "compute_readiness",
+        "description": "Compute 4-dimension readiness score (completeness, compliance, coverage, risk) for a canvas project.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Canvas project ID"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    "canvas_kg_rebuild": {
+        "category": "canvas",
+        "module": "tools.canvas.kg_builder",
+        "handler": "rebuild_canvas_kg",
+        "description": "Rebuild the knowledge graph for a specific canvas design. Extracts nodes/edges and writes to unified KG.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "canvas_key": {"type": "string", "description": "Canvas identifier (idc/ndc/sdc/bdc/pdc/odc/ddc/qdc/mdc)"},
+                "design_id": {"type": "string", "description": "Design ID to rebuild"},
+            },
+            "required": ["canvas_key", "design_id"],
+        },
+    },
+    "canvas_compliance_gate": {
+        "category": "canvas",
+        "module": "tools.canvas.orchestrator",
+        "handler": "compute_readiness",
+        "description": "Gate check: verify canvas project readiness meets thresholds for ATO/deploy.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Canvas project ID"},
+            },
+            "required": ["project_id"],
+        },
     },
 }
 

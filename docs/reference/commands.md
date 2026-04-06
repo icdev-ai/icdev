@@ -2115,3 +2115,53 @@ python tools/oracle/lens_child_app_demand.py --gate                             
 # GET  /api/oracle/lens-status                                                          # Per-lens health: last_run, prediction_count, avg_confidence
 # GET  /api/oracle/convergence                                                          # Convergence events with consensus_score and action_taken
 ```
+
+## Cross-Canvas Integration Commands
+
+```bash
+# ── Canvas Orchestrator — Project Management ─────────────────────────────────
+
+# Create a cross-canvas design project
+python tools/canvas/orchestrator.py --create --name "ATO Boundary Project"          # Create project linking designs
+
+# List all canvas projects
+python tools/canvas/orchestrator.py --list --json                                   # List projects sorted by updated_at
+
+# Link a canvas design to a project
+python tools/canvas/orchestrator.py --link --project-id cp-xxx --canvas idc --design-id xxx
+
+# Unlink a canvas design
+python tools/canvas/orchestrator.py --unlink --project-id cp-xxx --canvas mdc
+
+# Get compliance summary across all linked canvases
+python tools/canvas/orchestrator.py --compliance --project-id cp-xxx --json
+
+# Compute 4-dimension readiness score (completeness, compliance, coverage, risk)
+python tools/canvas/orchestrator.py --readiness --project-id cp-xxx --json
+
+# ── Canvas KG Builder — Knowledge Graph ──────────────────────────────────────
+
+# Rebuild KG for a specific canvas design (called automatically on save)
+python tools/canvas/kg_builder.py --canvas idc --design-id xxx --json
+
+# ── Canvas Export Utils — Multi-Format Export ────────────────────────────────
+# (Library — called by canvas blueprint export routes, not standalone CLI)
+# Supported formats: JSON, Markdown, CSV, DrawIO XML, SVG
+# All exports include CUI classification banner
+
+# ── Canvas Auto-Remediation ──────────────────────────────────────────────────
+# (Library — called by IDC/ODC blueprints on save)
+# Confidence-tiered: >=0.7 auto-fix, 0.3-0.7 suggest, <0.3 escalate
+# Rate-limited: max 5 auto-fixes per hour
+
+# ── Dashboard API Endpoints (via Flask dashboard) ────────────────────────────
+# GET    /api/canvas-projects                                                     # List all canvas projects
+# POST   /api/canvas-projects                                                     # Create a canvas project
+# GET    /api/canvas-projects/<id>                                                # Get single project
+# PATCH  /api/canvas-projects/<id>                                                # Update project
+# DELETE /api/canvas-projects/<id>                                                # Delete project
+# POST   /api/canvas-projects/<id>/link                                           # Link canvas design
+# POST   /api/canvas-projects/<id>/unlink                                         # Unlink canvas design
+# GET    /api/canvas-projects/compliance?project_id=<id>                          # Compliance summary
+# GET    /api/canvas-projects/<id>/readiness                                      # Readiness score
+```
