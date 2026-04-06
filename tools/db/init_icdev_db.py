@@ -9410,6 +9410,40 @@ CREATE INDEX IF NOT EXISTS idx_ckg_build_log_canvas
     ON canvas_kg_build_log(canvas);
 CREATE INDEX IF NOT EXISTS idx_ckg_build_log_design
     ON canvas_kg_build_log(design_id);
+
+-- ============================================================
+-- CANVAS KG NODES — Unified knowledge graph across all canvases
+-- Phase: Cross-Canvas Integration
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
+    id              TEXT PRIMARY KEY,
+    canvas          TEXT NOT NULL,
+    design_id       TEXT NOT NULL,
+    node_id         TEXT NOT NULL,
+    node_type       TEXT,
+    label           TEXT,
+    metadata_json   TEXT DEFAULT '{}',
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ckg_nodes_canvas
+    ON canvas_kg_nodes(canvas, design_id);
+
+-- ============================================================
+-- CANVAS KG EDGES — Unified knowledge graph edges across canvases
+-- Phase: Cross-Canvas Integration
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_kg_edges (
+    id              TEXT PRIMARY KEY,
+    canvas          TEXT NOT NULL,
+    design_id       TEXT NOT NULL,
+    source_id       TEXT NOT NULL,
+    target_id       TEXT NOT NULL,
+    edge_type       TEXT,
+    metadata_json   TEXT DEFAULT '{}',
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ckg_edges_canvas
+    ON canvas_kg_edges(canvas, design_id);
 """
 
 
