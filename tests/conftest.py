@@ -838,6 +838,48 @@ CREATE TABLE IF NOT EXISTS scoped_memory_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_sme_partition ON scoped_memory_entries (partition);
 CREATE INDEX IF NOT EXISTS idx_sme_hash ON scoped_memory_entries (partition, content_hash);
+
+CREATE TABLE IF NOT EXISTS canvas_projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    links_json TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
+    id TEXT PRIMARY KEY,
+    canvas TEXT NOT NULL,
+    design_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    node_type TEXT,
+    label TEXT,
+    metadata_json TEXT DEFAULT '{}',
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS canvas_kg_edges (
+    id TEXT PRIMARY KEY,
+    canvas TEXT NOT NULL,
+    design_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    edge_type TEXT,
+    metadata_json TEXT DEFAULT '{}',
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS canvas_kg_build_log (
+    build_id TEXT PRIMARY KEY,
+    canvas TEXT NOT NULL,
+    design_id TEXT NOT NULL,
+    nodes_upserted INTEGER DEFAULT 0,
+    edges_upserted INTEGER DEFAULT 0,
+    duration_ms REAL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ---------------------------------------------------------------------------

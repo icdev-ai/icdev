@@ -313,6 +313,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 72 — ICDEV™ Studio (D364, D365 — case history + automation runs)
         "studio_case_history",
         "studio_automation_runs",
+        # Cross-canvas KG build audit log (append-only — NIST AU)
+        "canvas_kg_build_log",
     ]
 
     if tool_name == "Bash":

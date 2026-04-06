@@ -291,7 +291,7 @@ CREATE TABLE IF NOT EXISTS research_build_buy (
     existing_solutions TEXT DEFAULT '[]',
     icdev_capability_coverage REAL DEFAULT 0.0,
     estimated_effort TEXT CHECK(estimated_effort IS NULL OR estimated_effort IN ('S','M','L','XL')),
-    estimated_cost_tier TEXT CHECK(estimated_cost_tier IS NULL OR estimated_cost_tier IN ('low','medium','high','very_high')),  # noqa: E501
+    estimated_cost_tier TEXT CHECK(estimated_cost_tier IS NULL OR estimated_cost_tier IN ('low','medium','high','very_high')),
     risk_level TEXT DEFAULT 'medium' CHECK(risk_level IN ('low','medium','high','critical')),
     score_breakdown TEXT DEFAULT '{}',
     metadata TEXT DEFAULT '{}',
