@@ -1,0 +1,67 @@
+# CUI // SP-CTI
+# Canvas Compliance Workflow — Assess all 9 canvases → Aggregate → Report
+description: "Cross-canvas compliance: assess all design canvases, aggregate scores, generate unified report"
+category: canvas_compliance
+steps:
+  - id: assess_sdc
+    name: "SDC Assessment"
+    tool: "tools/security_canvas/security_engine.py"
+    description: "Run security assessment on all SDC designs"
+
+  - id: assess_ndc
+    name: "NDC Assessment"
+    tool: "tools/network/routes/compliance.py"
+    description: "Run network compliance checks on all NDC topologies"
+
+  - id: assess_idc
+    name: "IDC Assessment"
+    tool: "tools/infra_canvas/infra_engine.py"
+    description: "Run infrastructure assessment on all IDC designs"
+
+  - id: assess_bdc
+    name: "BDC Assessment"
+    tool: "tools/boundary_canvas/boundary_engine.py"
+    description: "Run boundary assessment on all BDC designs"
+
+  - id: assess_pdc
+    name: "PDC Assessment"
+    tool: "tools/pipeline/constants.py"
+    description: "Run pipeline compliance checks on all PDC designs"
+
+  - id: assess_odc
+    name: "ODC Assessment"
+    tool: "tools/observability_canvas/observability_engine.py"
+    description: "Run observability assessment on all ODC designs"
+
+  - id: assess_ddc
+    name: "DDC Assessment"
+    tool: "tools/data_canvas/data_engine.py"
+    description: "Run data classification assessment on all DDC designs"
+
+  - id: assess_qdc
+    name: "QDC Assessment"
+    tool: "tools/qdc_canvas/qdc_engine.py"
+    description: "Compute Unified Quality Score across all QDC designs"
+
+  - id: assess_mdc
+    name: "MDC Assessment"
+    tool: "tools/migration_canvas/migration_engine.py"
+    description: "Run migration readiness assessment on all MDC designs"
+
+  - id: aggregate
+    name: "Aggregate Canvas Scores"
+    tool: "tools/canvas/orchestrator.py"
+    depends_on: [assess_sdc, assess_ndc, assess_idc, assess_bdc, assess_pdc, assess_odc, assess_ddc, assess_qdc, assess_mdc]
+    description: "Aggregate compliance scores across all 9 canvases into unified project readiness"
+
+  - id: multi_regime
+    name: "Multi-Regime Assessment"
+    tool: "tools/compliance/multi_regime_assessor.py"
+    depends_on: [aggregate]
+    description: "Run unified multi-framework compliance assessment informed by canvas scores"
+
+  - id: report
+    name: "Generate Unified Report"
+    tool: "tools/compliance/compliance_status.py"
+    depends_on: [multi_regime]
+    description: "Generate comprehensive compliance report with canvas posture overlay"
