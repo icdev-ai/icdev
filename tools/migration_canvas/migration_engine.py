@@ -6,6 +6,8 @@ Assesses migration designs against compliance rules, detects gaps,
 computes readiness scores, and suggests wave optimization.
 """
 
+from __future__ import annotations
+
 import json
 from typing import Any
 

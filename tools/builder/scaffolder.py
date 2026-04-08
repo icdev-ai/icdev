@@ -14,6 +14,8 @@ All templates include CUI markings, README with CUI banners, compliance/ dir.
 CLI: python tools/builder/scaffolder.py --project-path PATH --name "my-app" --type webapp
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

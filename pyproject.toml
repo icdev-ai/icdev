@@ -166,6 +166,7 @@ icdev-mcp-compliance = "icdev.tools.mcp.standalone.compliance:main"
 icdev-mcp-builder = "icdev.tools.mcp.standalone.builder:main"
 icdev-mcp-knowledge = "icdev.tools.mcp.standalone.knowledge:main"
 icdev-mcp-maintenance = "icdev.tools.mcp.standalone.maintenance:main"
+icdev-setup = "icdev.tools.installer.setup_wizard:main"
 
 [tool.setuptools.packages.find]
 include = ["icdev*"]

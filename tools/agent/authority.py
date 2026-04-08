@@ -8,6 +8,8 @@ in the agent_vetoes table, and handles veto overrides.
 Decision D42: YAML-defined authority matrix, vetoes append-only.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging

@@ -17,6 +17,8 @@ Usage:
     python tools/innovation/standards_monitor.py --assess --update-id "upd-xxx" --json
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json

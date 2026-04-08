@@ -13,6 +13,8 @@ The claude CLI runs headless with --dangerously-skip-permissions so tasks
 execute without human approval. The daemon monitors subprocess completion.
 """
 
+from __future__ import annotations
+
 import logging
 import re
 import shutil

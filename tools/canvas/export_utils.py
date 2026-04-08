@@ -7,6 +7,8 @@ JSON, Markdown, CSV, DrawIO XML, and SVG.
 No external dependencies — stdlib only.
 """
 
+from __future__ import annotations
+
 import csv
 import io
 import json

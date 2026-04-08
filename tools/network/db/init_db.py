@@ -22,7 +22,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 
 # Backend detection — NC_STORAGE_BACKEND only (NOT inherited from ICDEV_STORAGE_BACKEND)
 # NDC has its own DB (network_canvas.db). Set NC_STORAGE_BACKEND=postgresql to use PG.
-_NC_BACKEND = os.environ.get("NC_STORAGE_BACKEND", "sqlite").lower()
+_NC_BACKEND = os.environ.get("NC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
 
 
 def get_connection():

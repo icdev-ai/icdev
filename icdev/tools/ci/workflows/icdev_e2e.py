@@ -1,6 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
 # ICDEV™ E2E — Playwright browser verification workflow
 
+from __future__ import annotations
+
 """
 ICDEV™ E2E — Run Playwright E2E tests with screenshot validation.
 

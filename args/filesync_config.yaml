@@ -3,7 +3,7 @@
 # Controls file/folder synchronization behavior (D26 declarative pattern)
 
 filesync:
-  enabled: true
+  enabled: false
   env_override: ICDEV_FILESYNC_ENABLED
 
   # Default settings for new sync jobs

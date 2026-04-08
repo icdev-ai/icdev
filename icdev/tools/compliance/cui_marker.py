@@ -4,6 +4,8 @@
 Loads marking configuration from args/cui_markings.yaml and applies
 appropriate banners/headers based on file type."""
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys

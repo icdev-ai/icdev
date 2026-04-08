@@ -20,6 +20,8 @@ Usage:
     python tools/compliance/fedramp_ksi_generator.py --project-id proj-123 --all --human
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sqlite3
