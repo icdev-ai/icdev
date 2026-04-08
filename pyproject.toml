@@ -144,9 +144,37 @@ network = [
     "defusedxml>=0.7",   # Safe XML parsing for STIG import
     "networkx>=3.2",     # Graph analysis for NL topology queries
 ]
+# PostgreSQL backend (adds psycopg2 + production WSGI to any profile)
+postgresql = [
+    "psycopg2-binary>=2.9",
+    "gunicorn>=22.0",
+]
+# ── Mission-oriented install profiles ────────────────────────────────
+# Pick ONE profile at install time. All are air-gap safe except 'full'.
+#
+#   pip install icdev                          # base only (SQLite, no LLM)
+#   pip install 'icdev[developer]'             # local LLM + testing + search
+#   pip install 'icdev[govcloud]'              # IL4/IL5 GovCloud stack
+#   pip install 'icdev[govcloud,postgresql]'   # govcloud + PostgreSQL
+#   pip install 'icdev[dod-il6]'               # IL6 SECRET air-gap
+#   pip install 'icdev[full-airgap]'           # everything air-gap safe
+#   pip install 'icdev[full]'                  # everything (NOT air-gap)
+#
+# Developer — local LLM, testing, search, security scanning
+developer = [
+    "icdev[llm-local,search,testing,security]",
+]
+# GovCloud (IL4/IL5) — Bedrock + Anthropic, search, security, network canvas
+govcloud = [
+    "icdev[llm-airgap,search,security,network]",
+]
+# DoD IL6 SECRET — fully air-gapped, local LLM only, no cloud deps
+dod-il6 = [
+    "icdev[llm-local,search,security,network]",
+]
 # Everything (includes Google — NOT air-gap safe)
 full = [
-    "icdev[llm-all,search,testing,security,network]",
+    "icdev[llm-all,search,testing,security,network,saas]",
 ]
 # Air-gap safe full install (no Google auth, no tensorboard)
 full-airgap = [
