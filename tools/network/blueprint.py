@@ -6686,6 +6686,144 @@ def create_network_blueprint():
         """Global connectivity map — all approved/deployed projects stitched."""
         return render_template("network/global.html")
 
+    # ── Global Topology API ────────────────────────────────────────────────
+
+    @bp.route("/api/global-topology", methods=["GET"])
+    @nc_login_required
+    def nc_api_global_topology():
+        """Aggregate topology data across all projects for global view."""
+        conn = get_connection()
+        projects = []
+        try:
+            proj_rows = conn.execute(
+                "SELECT id, name, status FROM nc_projects ORDER BY name"
+            ).fetchall()
+        except Exception:
+            proj_rows = []
+
+        for pr in proj_rows:
+            pid = pr[0] if isinstance(pr, tuple) else pr["id"]
+            pname = pr[1] if isinstance(pr, tuple) else pr["name"]
+            pstatus = pr[2] if isinstance(pr, tuple) else pr["status"]
+            try:
+                topo_rows = conn.execute(
+                    "SELECT t.id, t.name, t.graph_json FROM topologies t "
+                    "JOIN nc_project_topologies pt ON pt.topology_id = t.id "
+                    "WHERE pt.project_id = ?", (pid,)
+                ).fetchall()
+            except Exception:
+                topo_rows = []
+
+            topos = []
+            for tr in topo_rows:
+                tid = tr[0] if isinstance(tr, tuple) else tr["id"]
+                tname = tr[1] if isinstance(tr, tuple) else tr["name"]
+                gjson = tr[2] if isinstance(tr, tuple) else tr["graph_json"]
+                try:
+                    g = json.loads(gjson)
+                    nc = len(g.get("nodes", []))
+                    ec = len(g.get("edges", []))
+                except Exception:
+                    nc, ec = 0, 0
+                topos.append({"id": tid, "name": tname, "node_count": nc, "edge_count": ec})
+            projects.append({"id": pid, "name": pname, "status": pstatus, "topologies": topos})
+
+        # Interconnects
+        interconnects = []
+        try:
+            ic_rows = conn.execute(
+                "SELECT id, src_project_id, dst_project_id, circuit_id, protocol, bandwidth, notes "
+                "FROM nc_interconnects ORDER BY created_at DESC"
+            ).fetchall()
+            for ic in ic_rows:
+                interconnects.append({
+                    "id": ic[0], "src_project_id": ic[1], "dst_project_id": ic[2],
+                    "circuit_id": ic[3], "protocol": ic[4], "bandwidth": ic[5], "notes": ic[6],
+                })
+        except Exception:
+            pass
+
+        conn.close()
+        return jsonify({
+            "total_projects": len(projects),
+            "projects": projects,
+            "total_interconnects": len(interconnects),
+            "interconnects": interconnects,
+        })
+
+    @bp.route("/api/interconnects", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_interconnect():
+        """Add a project-to-project interconnect."""
+        import uuid as _uid
+        body = request.json or {}
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO nc_interconnects (id, src_project_id, dst_project_id, circuit_id, "
+                "protocol, bandwidth, notes, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))",
+                (str(_uid.uuid4())[:12], body.get("src_project_id"), body.get("dst_project_id"),
+                 body.get("circuit_id", ""), body.get("protocol", ""), body.get("bandwidth", ""),
+                 body.get("notes", "")),
+            )
+            conn.commit()
+        except Exception as e:
+            conn.close()
+            return jsonify({"error": str(e)}), 500
+        conn.close()
+        return jsonify({"ok": True}), 201
+
+    @bp.route("/api/interconnects/<ic_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_interconnect(ic_id):
+        """Delete an interconnect."""
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_interconnects WHERE id = ?", (ic_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/conflicts", methods=["GET"])
+    @nc_login_required
+    def nc_api_check_conflicts():
+        """Check for IPAM/circuit conflicts across projects."""
+        conn = get_connection()
+        conflicts = []
+        ipam_count, circuit_count = 0, 0
+        try:
+            # Check overlapping IPAM blocks
+            ipam_rows = conn.execute("SELECT network, topology_id FROM nc_ipam_blocks").fetchall()
+            ipam_count = len(ipam_rows)
+            seen_nets = {}
+            for row in ipam_rows:
+                net = row[0] if isinstance(row, tuple) else row["network"]
+                tid = row[1] if isinstance(row, tuple) else row["topology_id"]
+                if net in seen_nets and seen_nets[net] != tid:
+                    conflicts.append({
+                        "type": "IPAM Overlap",
+                        "severity": "high",
+                        "detail": f"Network {net} used in topologies {seen_nets[net]} and {tid}",
+                    })
+                seen_nets[net] = tid
+
+            # Check duplicate circuit IDs
+            circ_rows = conn.execute("SELECT circuit_id, COUNT(*) as cnt FROM nc_circuits GROUP BY circuit_id HAVING cnt > 1").fetchall()
+            circuit_count = conn.execute("SELECT COUNT(*) FROM nc_circuits").fetchone()[0]
+            for row in circ_rows:
+                cid = row[0] if isinstance(row, tuple) else row["circuit_id"]
+                conflicts.append({
+                    "type": "Duplicate Circuit",
+                    "severity": "medium",
+                    "detail": f"Circuit ID {cid} appears in multiple topologies",
+                })
+        except Exception:
+            pass
+        conn.close()
+        return jsonify({
+            "conflicts": conflicts,
+            "checked": {"ipam_blocks": ipam_count, "circuits": circuit_count},
+        })
+
     # ── Global Topology Canvas (JointJS read-only composite) ──────────────
     @bp.route("/global/canvas")
     @nc_login_required
