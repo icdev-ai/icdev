@@ -25,11 +25,9 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from typing import Any, Dict, List
 from icdev._paths import get_project_root
 
 BASE_DIR = get_project_root()

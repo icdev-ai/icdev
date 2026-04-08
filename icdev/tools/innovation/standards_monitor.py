@@ -41,15 +41,18 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 
 # ── GRACEFUL IMPORTS ────────────────────────────────────────────────────
 try:
-    import yaml; _HAS_YAML = True
+    import yaml
+    _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 try:
-    import requests; _HAS_REQUESTS = True
+    import requests
+    _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event; _HAS_AUDIT = True
+    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
     def audit_log_event(**kwargs): return -1
@@ -149,8 +152,10 @@ def _parse_feed(xml_bytes):
         def _txt(tags):
             for t in tags:
                 el = item.find(f"atom:{t}", ATOM_NS) or item.find(t)
-                if el is not None and el.text: return el.text.strip()
-                if el is not None and el.get("href"): return el.get("href")
+                if el is not None and el.text:
+                    return el.text.strip()
+                if el is not None and el.get("href"):
+                    return el.get("href")
             return ""
         title = _txt(["title"])
         if not title:
@@ -211,9 +216,13 @@ def _check_feed_body(body_name, config, db_path, url_key, rss_key=None, filter_f
     all_entries, errors = [], []
     for url in urls:
         raw, err = _safe_get(url)
-        if err: errors.append(err); continue
+        if err:
+            errors.append(err)
+            continue
         parsed = _parse_feed(raw)
-        if parsed: all_entries = parsed; break
+        if parsed:
+            all_entries = parsed
+            break
     if filter_fn:
         all_entries = [e for e in all_entries if filter_fn(e, bc)]
     stored = _store_updates(body_name, all_entries, db_path)
@@ -221,7 +230,8 @@ def _check_feed_body(body_name, config, db_path, url_key, rss_key=None, filter_f
            f"{body_name}: {len(all_entries)} entries, {stored} new",
            {"body": body_name, "entries": len(all_entries), "stored": stored})
     res = {"body": body_name, "updates": len(all_entries), "stored": stored}
-    if errors and not all_entries: res["error"] = errors[0]
+    if errors and not all_entries:
+        res["error"] = errors[0]
     return res
 
 def check_nist_updates(config, db_path=None):
@@ -241,14 +251,19 @@ def check_cisa_updates(config, db_path=None):
     all_entries = []
     for key in ("alerts_url", "directives_url"):
         base = bc.get(key, "")
-        if not base: continue
+        if not base:
+            continue
         for sfx in ("/feed", ".xml", ""):
             raw, err = _safe_get(base.rstrip("/") + sfx)
-            if err: continue
+            if err:
+                continue
             parsed = _parse_feed(raw)
             if key == "directives_url":
-                for e in parsed: e["pub_type"] = "directive"
-            if parsed: all_entries.extend(parsed); break
+                for e in parsed:
+                    e["pub_type"] = "directive"
+            if parsed:
+                all_entries.extend(parsed)
+                break
     stored = _store_updates("cisa", all_entries, db_path)
     _audit("standards.check", "standards-monitor",
            f"CISA: {len(all_entries)} entries, {stored} new",
@@ -261,7 +276,8 @@ def check_dod_updates(config, db_path=None):
         topics = bc.get("watch_topics", ["zero trust", "DevSecOps", "CMMC", "cATO", "MOSA"])
         text = f"{e['title']} {e.get('summary', '')}".lower()
         if any(t.lower() in text for t in topics):
-            e["pub_type"] = "memo"; return True
+            e["pub_type"] = "memo"
+            return True
         return False
     return _check_feed_body("dod", config, db_path, url_key="cio_url", filter_fn=_f)
 
@@ -368,7 +384,8 @@ def get_standards_report(days=30, db_path=None):
         for r in rows:
             by_body.setdefault(r["body"], {"total": 0, "by_status": {}})
             by_body[r["body"]]["by_status"][r["status"]] = r["count"]
-            by_body[r["body"]]["total"] += r["count"]; total += r["count"]
+            by_body[r["body"]]["total"] += r["count"]
+            total += r["count"]
         assessed_rows = conn.execute(
             "SELECT id,body,title,publication_type,impact_assessment "
             "FROM innovation_standards_updates "
@@ -413,12 +430,14 @@ def main():
             elif args.body:
                 result = BODY_CHECKERS[args.body](_load_config(), args.db_path)
             else:
-                p.error("--check requires --body or --all"); return
+                p.error("--check requires --body or --all")
+                return
         elif args.report:
             result = get_standards_report(args.days, args.db_path)
         elif args.assess:
             if not args.update_id:
-                p.error("--assess requires --update-id"); return
+                p.error("--assess requires --update-id")
+                return
             result = assess_impact(args.update_id, args.db_path)
         else:
             result = {"error": "No action specified"}
@@ -434,7 +453,8 @@ def main():
 def _print_human(args, result):
     """Human-readable CLI output."""
     if "error" in result:
-        print(f"ERROR: {result['error']}"); return
+        print(f"ERROR: {result['error']}")
+        return
     if args.check and args.all:
         t = result.get("totals", {})
         print(f"Checked {result['bodies_checked']} bodies  |  "

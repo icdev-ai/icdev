@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import os  # noqa: F811 — needed directly (not just as _os)
 import sys
 import uuid
