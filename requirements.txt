@@ -29,6 +29,10 @@ rank_bm25>=0.2           # BM25 keyword search
 defusedxml>=0.7          # Safe XML parsing for STIG import (XXE protection)
 networkx>=3.2            # Graph analysis for topology NL query engine
 
+# === Network Diagram OCR Fallback (optional, air-gap safe) ===
+# pytesseract>=0.3       # OCR via Tesseract binary (requires system Tesseract)
+# rapidocr-onnxruntime>=1.3  # Pure Python OCR via ONNX (no system deps)
+
 # === Security Scanning ===
 # bandit>=1.7             # Python SAST (install per project)
 # pip-audit>=2.6          # Dependency auditing (install per project)
