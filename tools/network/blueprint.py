@@ -8851,6 +8851,18 @@ Output ONLY the JSON object. No other text."""
         conn.close()
         return jsonify({"status": "deleted"})
 
+    # ── Ingestion routes (file upload, config, NMS, folder watch) ────────
+    from tools.network.routes.ingestion import register_ingestion_routes
+
+    register_ingestion_routes(bp)
+
+    @bp.route("/ingestion")
+    @nc_login_required
+    def nc_ingestion_page():
+        """Network data ingestion dashboard."""
+        return render_template("network/ingestion.html",
+                               classification_banner=NC_CONFIG.get("app", {}).get("classification", ""))
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
