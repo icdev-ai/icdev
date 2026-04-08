@@ -396,38 +396,68 @@ The **dual-hub crosswalk engine** eliminates duplicate assessments:
 ### Option 1: Install from PyPI (recommended)
 
 ```bash
-# Install ICDEV™
+# Base install (lightweight — 5 deps)
 pip install icdev
 
-# Add LLM providers (pick what you need)
-pip install icdev[llm]          # OpenAI, Anthropic, Bedrock, Gemini, Ollama
-pip install icdev[full]         # Everything: all LLM providers + search + testing + security
+# Interactive setup wizard — choose DB, canvases, LLM, features
+icdev-setup
 
-# Initialize databases (234 tables)
-icdev-init-db
+# Or skip the wizard with a mission profile:
+pip install 'icdev[developer]'       # local LLM + dev tools
+pip install 'icdev[govcloud]'        # IL4/IL5 GovCloud (Bedrock + security)
+pip install 'icdev[dod-il6]'         # IL6 SECRET air-gap
+pip install 'icdev[full-airgap]'     # everything air-gap safe
+pip install 'icdev[full]'            # everything (NOT air-gap safe)
+
+# Add PostgreSQL to any profile:
+pip install 'icdev[govcloud,postgresql]'
 
 # Start the dashboard
 icdev-dashboard
 # → http://localhost:5000
 
-# Start the unified MCP server (241 tools for Claude Code / AI IDEs)
+# Start the unified MCP server (250+ tools for Claude Code / AI IDEs)
 icdev-mcp
 ```
 
-**Available extras:**
+**Install profiles (pick one):**
+
+| Profile | What it includes | Air-Gap Safe |
+|---------|-----------------|:------------:|
+| `icdev[developer]` | Local LLM + search + testing + security | Yes |
+| `icdev[govcloud]` | Bedrock + Anthropic + search + security + NDC | Yes |
+| `icdev[dod-il6]` | Local LLM only + search + security + NDC | Yes |
+| `icdev[full-airgap]` | All providers except Google + search + testing + security + NDC | Yes |
+| `icdev[full]` | Everything including Google providers + SaaS | No |
+| `icdev[minimal-airgap]` | Local LLM + search only (smallest footprint) | Yes |
+
+**Individual extras:**
 
 | Extra | What it adds |
 |-------|-------------|
-| `icdev[llm]` | OpenAI, Anthropic, Bedrock, Google GenAI, Ollama |
+| `icdev[llm]` | OpenAI, Anthropic, Ollama |
+| `icdev[llm-local]` | OpenAI SDK + Ollama (for local/air-gap servers) |
+| `icdev[llm-bedrock]` | AWS Bedrock (boto3) |
 | `icdev[llm-azure]` | Azure OpenAI |
-| `icdev[llm-vertex]` | Google Vertex AI |
+| `icdev[llm-gemini]` | Google Gemini (NOT air-gap safe) |
+| `icdev[llm-vertex]` | Google Vertex AI (NOT air-gap safe) |
 | `icdev[llm-oci]` | Oracle Cloud GenAI |
 | `icdev[llm-ibm]` | IBM watsonx.ai |
-| `icdev[llm-all]` | All LLM providers |
 | `icdev[search]` | Semantic + keyword search (numpy, rank_bm25) |
 | `icdev[testing]` | pytest, behave, ruff, pydantic |
 | `icdev[security]` | bandit, pip-audit, detect-secrets, cyclonedx-bom |
-| `icdev[full]` | Everything above |
+| `icdev[network]` | Network Design Canvas extras (defusedxml, networkx) |
+| `icdev[postgresql]` | PostgreSQL backend (psycopg2, gunicorn) |
+| `icdev[saas]` | Full SaaS multi-tenancy (PostgreSQL + Redis + JWT) |
+
+**Air-gapped environments** (PyPI mirror synced monthly):
+```bash
+# On connected staging machine — download wheels:
+pip download 'icdev[govcloud]' -d ./icdev-wheels
+
+# Transfer to air-gapped machine, then install:
+pip install --no-index --find-links ./icdev-wheels 'icdev[govcloud]'
+```
 
 ### Option 2: Install from source
 
@@ -445,16 +475,21 @@ python tools/dashboard/app.py
 # → http://localhost:5000
 ```
 
-### Option 3: Modular installation
+### Option 3: Setup wizard (post-install)
 
 ```bash
-# Interactive wizard
-python tools/installer/installer.py --interactive
+# Interactive wizard — walks through DB backend, canvases, LLM, features
+icdev-setup
 
-# Profile-based (pick your mission)
+# Plan-only mode — prints pip commands without installing (for air-gap staging)
+icdev-setup --plan-only
+
+# Show all install profiles
+icdev-setup --show-profiles
+
+# Profile-based installer (advanced)
 python tools/installer/installer.py --profile dod_team --compliance fedramp_high,cmmc
 python tools/installer/installer.py --profile healthcare --compliance hipaa,hitrust
-python tools/installer/installer.py --profile isv_startup --platform docker
 ```
 
 ### Generate your first application:
@@ -649,6 +684,7 @@ python tools/dashboard/app.py
 | `/govcon/requirements` | Requirement pattern analysis: frequency, domain heatmap, trend detection |
 | `/govcon/capabilities` | ICDEV™ capability coverage: L/M/N grading, gaps, enhancement recommendations |
 | `/network/canvas` | Network Design Canvas: topology builder, drag-and-drop, cloud architecture diagrams |
+| `/network/ingestion` | Network data ingestion: drag-and-drop upload, NMS adapter management, ingestion audit log |
 | `/network/compliance` | Network compliance audit: STIG findings, ACAS/Nessus vulnerability overlay, heat maps |
 | `/network/facilities` | Facilities management: rack layouts, power/cooling, cable tracking |
 | `/sre` | SRE Operations: runbook library, incident tracking, toil budgets, SLO monitoring |
@@ -783,6 +819,9 @@ Interactive topology builder for designing, documenting, and auditing network ar
 |------------|-------------|
 | **Topology Builder** | Drag-and-drop canvas with 200+ device types (routers, switches, firewalls, servers, IoT, OT/ICS) and automatic link routing |
 | **Cloud Architecture** | Generate cloud diagrams for all 6 CSPs — VPC/VNet/VCN, subnets, security groups, load balancers, managed services |
+| **Data Ingestion** | Unified pipeline with 3 input channels: REST API upload, drag-and-drop dashboard, and file-drop folder watcher. Supports diagrams (DrawIO/Visio/SVG), configs (Cisco IOS/NX-OS, Juniper, generic), documents (PDF/DOCX/TXT/MD), spreadsheets (CSV/Excel), and images (via vision LLM). All ingested data feeds RAG and Knowledge Graph automatically. |
+| **NMS Adapters** | Generic adapter interface (`NMSAdapter` ABC) for network management system integration. Ships with NetBox adapter + LibreNMS and SolarWinds stubs. Supports separation-of-duty workflows where network teams can't give ICDEV direct device access. |
+| **Config Parsing** | Dual-mode: generic text chunking for RAG search + vendor-specific regex parsers (Cisco IOS/NX-OS, Juniper JunOS) that extract interfaces, ACLs, routes, and BGP neighbors into Knowledge Graph nodes. |
 | **ACAS/Nessus Overlay** | Import `.nessus` scan files, auto-match hosts to topology nodes, render vulnerability heat maps with severity badges |
 | **Natural Language Queries** | Ask plain-English questions about any topology ("What happens if Core-Switch goes down?", "Show all paths between A and B") — powered by deterministic graph algorithms with local LLM fallback |
 | **STIG Compliance Audit** | Per-device STIG finding tracking, CAT I/II/III severity, audit history, exportable checklists |
