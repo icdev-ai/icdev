@@ -1390,6 +1390,64 @@ CREATE TABLE IF NOT EXISTS ni_device_configs (
     version         INTEGER DEFAULT 1,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Ingestion subsystem (Phase NDC-Ingest) ──────────────────────────────────
+
+-- Network documents (runbooks, SOPs, as-built docs, change requests)
+CREATE TABLE IF NOT EXISTS nc_documents (
+    id              TEXT PRIMARY KEY,
+    file_name       TEXT NOT NULL,
+    file_path       TEXT,
+    file_hash       TEXT NOT NULL,
+    file_size_bytes INTEGER DEFAULT 0,
+    doc_type        TEXT DEFAULT 'general'
+        CHECK(doc_type IN ('runbook','sop','as_built','change_request',
+                           'ip_plan','design_doc','general')),
+    extracted_text  TEXT DEFAULT '',
+    page_count      INTEGER DEFAULT 0,
+    provider_used   TEXT DEFAULT '',
+    topology_id     TEXT REFERENCES topologies(id),
+    project_id      TEXT DEFAULT 'default',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    status          TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','ingested','failed')),
+    error           TEXT,
+    ingested_at     TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ingestion audit log (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS nc_ingestion_log (
+    id              TEXT PRIMARY KEY,
+    channel         TEXT NOT NULL
+        CHECK(channel IN ('api','upload','folder_watch','nms_pull')),
+    file_name       TEXT,
+    file_type       TEXT,
+    file_hash       TEXT,
+    source_adapter  TEXT,
+    status          TEXT DEFAULT 'started'
+        CHECK(status IN ('started','completed','failed')),
+    result_json     TEXT DEFAULT '{}',
+    error           TEXT,
+    topology_id     TEXT,
+    project_id      TEXT DEFAULT 'default',
+    user_id         TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT
+);
+
+-- NMS adapter connection configurations
+CREATE TABLE IF NOT EXISTS nc_nms_connections (
+    id              TEXT PRIMARY KEY,
+    adapter_name    TEXT NOT NULL,
+    display_name    TEXT,
+    connection_json TEXT DEFAULT '{}',
+    last_sync_at    TEXT,
+    last_sync_status TEXT DEFAULT 'never',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
