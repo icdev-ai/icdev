@@ -14,6 +14,8 @@ Usage:
     from tools.dashboard.diagram_definitions import DIAGRAM_CATALOG
 """
 
+from __future__ import annotations
+
 DIAGRAM_CATALOG = {
     # ── Workflow Diagrams ───────────────────────────────────────────
     "atlas_workflow": {

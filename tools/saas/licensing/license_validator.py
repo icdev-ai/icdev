@@ -7,6 +7,8 @@ License keys are JSON documents signed with RSA-SHA256.
 No network access required — fully air-gap safe.
 """
 
+from __future__ import annotations
+
 import argparse
 import base64
 import json

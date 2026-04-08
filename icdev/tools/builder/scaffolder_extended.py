@@ -19,6 +19,8 @@ Distribution: D
 POC: ICDEV™ System Administrator
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import List
 from icdev._paths import get_project_root

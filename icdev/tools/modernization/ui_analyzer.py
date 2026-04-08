@@ -36,6 +36,8 @@ Environment:    AWS GovCloud (us-gov-west-1)
 Compliance:     NIST 800-53 Rev 5 / RMF
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging

@@ -20,6 +20,8 @@ Usage::
     print(env)  # {"airgap": True, "local_llm": [...], "claude_code": False, ...}
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import re

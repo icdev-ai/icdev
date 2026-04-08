@@ -12,6 +12,8 @@ Usage in ICDEV dashboard app.py:
         app.register_blueprint(bp, url_prefix="/boundary")
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os

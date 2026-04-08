@@ -125,7 +125,7 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
     }
 )
 # Network Design Canvas: feature-flagged, air-gap compatible
-_NETWORK_ENABLED = os.environ.get("ICDEV_NETWORK_ENABLED", "true").lower() == "true"
+_NETWORK_ENABLED = os.environ.get("ICDEV_NETWORK_ENABLED", "false").lower() == "true"
 _HAS_NETWORK = False
 if _NETWORK_ENABLED:
     try:
@@ -135,7 +135,7 @@ if _NETWORK_ENABLED:
     except ImportError:
         _HAS_NETWORK = False
 # Pipeline Design Canvas: feature-flagged, air-gap compatible
-_PIPELINE_ENABLED = os.environ.get("ICDEV_PIPELINE_ENABLED", "true").lower() == "true"
+_PIPELINE_ENABLED = os.environ.get("ICDEV_PIPELINE_ENABLED", "false").lower() == "true"
 _HAS_PIPELINE = False
 if _PIPELINE_ENABLED:
     try:
@@ -145,7 +145,7 @@ if _PIPELINE_ENABLED:
     except ImportError:
         _HAS_PIPELINE = False
 # Security Design Canvas: feature-flagged, air-gap compatible
-_SECURITY_CANVAS_ENABLED = os.environ.get("ICDEV_SECURITY_ENABLED", "true").lower() in ("true", "1", "yes")
+_SECURITY_CANVAS_ENABLED = os.environ.get("ICDEV_SECURITY_ENABLED", "false").lower() in ("true", "1", "yes")
 _HAS_SECURITY_CANVAS = False
 if _SECURITY_CANVAS_ENABLED:
     try:
@@ -155,7 +155,7 @@ if _SECURITY_CANVAS_ENABLED:
     except ImportError:
         _HAS_SECURITY_CANVAS = False
 # Infrastructure Design Canvas (IDC): feature-flagged
-_INFRA_CANVAS_ENABLED = os.environ.get("ICDEV_INFRA_ENABLED", "true").lower() in ("true", "1", "yes")
+_INFRA_CANVAS_ENABLED = os.environ.get("ICDEV_INFRA_ENABLED", "false").lower() in ("true", "1", "yes")
 _HAS_INFRA_CANVAS = False
 if _INFRA_CANVAS_ENABLED:
     try:
@@ -165,7 +165,7 @@ if _INFRA_CANVAS_ENABLED:
     except ImportError:
         _HAS_INFRA_CANVAS = False
 # Data Design Canvas (DDC): feature-flagged
-_DATA_CANVAS_ENABLED = os.environ.get("ICDEV_DATA_CANVAS_ENABLED", "true").lower() in ("true", "1", "yes")
+_DATA_CANVAS_ENABLED = os.environ.get("ICDEV_DATA_CANVAS_ENABLED", "false").lower() in ("true", "1", "yes")
 _HAS_DATA_CANVAS = False
 if _DATA_CANVAS_ENABLED:
     try:
@@ -175,7 +175,7 @@ if _DATA_CANVAS_ENABLED:
     except ImportError:
         _HAS_DATA_CANVAS = False
 # Boundary Design Canvas (BDC): feature-flagged
-_BOUNDARY_CANVAS_ENABLED = os.environ.get("ICDEV_BOUNDARY_ENABLED", "true").lower() in ("true", "1", "yes")
+_BOUNDARY_CANVAS_ENABLED = os.environ.get("ICDEV_BOUNDARY_ENABLED", "false").lower() in ("true", "1", "yes")
 _HAS_BOUNDARY_CANVAS = False
 if _BOUNDARY_CANVAS_ENABLED:
     try:
@@ -185,7 +185,7 @@ if _BOUNDARY_CANVAS_ENABLED:
     except ImportError:
         _HAS_BOUNDARY_CANVAS = False
 # Observability Design Canvas (ODC): feature-flagged
-_OBSERVABILITY_CANVAS_ENABLED = os.environ.get("ICDEV_OBSERVABILITY_ENABLED", "true").lower() in ("true", "1", "yes")
+_OBSERVABILITY_CANVAS_ENABLED = os.environ.get("ICDEV_OBSERVABILITY_ENABLED", "false").lower() in ("true", "1", "yes")
 _HAS_OBSERVABILITY_CANVAS = False
 if _OBSERVABILITY_CANVAS_ENABLED:
     try:
@@ -195,7 +195,7 @@ if _OBSERVABILITY_CANVAS_ENABLED:
     except ImportError:
         _HAS_OBSERVABILITY_CANVAS = False
 # Canvas Knowledge Graph: feature-flagged
-_CANVAS_KG_ENABLED = os.environ.get("ICDEV_CANVAS_KG_ENABLED", "true").lower() in ("true", "1", "yes")
+_CANVAS_KG_ENABLED = os.environ.get("ICDEV_CANVAS_KG_ENABLED", "false").lower() in ("true", "1", "yes")
 _HAS_CANVAS_KG = False
 if _CANVAS_KG_ENABLED:
     try:
@@ -252,7 +252,7 @@ _CANVAS_DEFS = [
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
-    _enabled = os.environ.get(_env, "true").lower() in ("true", "1", "yes")
+    _enabled = os.environ.get(_env, "false").lower() in ("true", "1", "yes")
     _CANVAS_FLAGS[_key] = False
     if _enabled:
         try:
