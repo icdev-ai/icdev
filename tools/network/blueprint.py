@@ -6678,6 +6678,13 @@ def create_network_blueprint():
             }
         )
 
+    # ── Global Connectivity Page ────────────────────────────────────────────
+    @bp.route("/global")
+    @nc_login_required
+    def nc_global():
+        """Global connectivity map — all approved/deployed projects stitched."""
+        return render_template("network/global.html")
+
     # ── Global Topology Canvas (JointJS read-only composite) ──────────────
     @bp.route("/global/canvas")
     @nc_login_required
@@ -8523,7 +8530,13 @@ Output ONLY the JSON object. No other text."""
 
     register_analysis_routes(bp)
 
-    # ── Network Intelligence routes (NII) ─────────────────────────────
+    # ── Network Intelligence page + API routes (NII) ───────────────────
+    @bp.route("/intelligence")
+    @nc_login_required
+    def nc_intelligence():
+        """Network Infrastructure Intelligence dashboard page."""
+        return render_template("network/intelligence.html")
+
     from tools.network.routes.intelligence import register_intelligence_routes
 
     register_intelligence_routes(bp)
