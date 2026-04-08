@@ -65,6 +65,11 @@ SCORING_PROFILES: Dict[str, Dict[str, float]] = {
         "centrality": 0.4,
         "recency": 0.3,
     },
+    "network_infrastructure": {
+        "edge_weight": 0.4,
+        "centrality": 0.4,
+        "recency": 0.2,
+    },
 }
 
 # Keywords for auto-detecting profile from query text
@@ -151,6 +156,34 @@ PROFILE_KEYWORDS: Dict[str, List[str]] = {
         "owasp",
         "stride",
         "penetration",
+    ],
+    "network_infrastructure": [
+        "network",
+        "router",
+        "switch",
+        "firewall",
+        "redundancy",
+        "failover",
+        "resiliency",
+        "link",
+        "circuit",
+        "bandwidth",
+        "latency",
+        "eol",
+        "end of life",
+        "spof",
+        "single point of failure",
+        "blast radius",
+        "wan",
+        "vpn",
+        "load balancer",
+        "uptime",
+        "sla",
+        "topology",
+        "capacity",
+        "vdi",
+        "vendor risk",
+        "config drift",
     ],
 }
 

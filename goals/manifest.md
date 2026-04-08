@@ -58,3 +58,4 @@
 | RAG Subsystem | goals/rag_subsystem.md | Universal RAG: multi-source ingestion, adaptive chunking, two-stage retrieval (vector + qwen3 re-rank), two-tier LLM injection, tiered retention, PROV-AGENT provenance, child app federation (Phase 64, D-RAG-1 through D-RAG-14) |
 | Genesis Daemon | goals/genesis_daemon.md | v2.0 autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers, always-on daemon |
 | Genesis Promoter | goals/genesis_promoter.md | Knowledge Bridge — GKP export/import, dedup, auto-promote, human review gateway |
+| Network Intelligence | goals/network_intelligence.md | Network Infrastructure Intelligence: 13 analysis dimensions (redundancy, EOL, blast radius, capacity planning, cost projection, config management, compliance, SLA, latency, vendor risk, circuits), diagram ingestion (Visio/Draw.io/PDF), self-provisioning via Ansible (D-NII-1 through D-NII-5) |

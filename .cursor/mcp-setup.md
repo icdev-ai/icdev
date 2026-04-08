@@ -7,7 +7,7 @@
 
 ## Servers
   - **icdev-unified**: `python tools/mcp/unified_server.py`
-  - **playwright**: `docker run -i --rm --init --pull=never --add-host=host.docker.internal:host-gateway mcr.microsoft.com/playwright/mcp:latest --headless --isolated --caps=vision`
+  - **playwright**: `cmd /c npx -y @playwright/mcp@latest`
 
 ## Quick Setup
 Copy `.mcp.json` to your Cursor MCP configuration. Cursor uses the same

@@ -11,18 +11,12 @@
       }
     },
     "playwright": {
-      "command": "docker",
+      "command": "cmd",
       "args": [
-        "run",
-        "-i",
-        "--rm",
-        "--init",
-        "--pull=never",
-        "--add-host=host.docker.internal:host-gateway",
-        "mcr.microsoft.com/playwright/mcp:latest",
-        "--headless",
-        "--isolated",
-        "--caps=vision"
+        "/c",
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
       ]
     }
   }

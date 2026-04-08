@@ -25,7 +25,7 @@ python tools/security/sast_runner.py --project-dir . --json
 
 ## MCP Servers
 
-0 MCP servers available. Configure in JetBrains Settings > AI Assistant > MCP. Server definitions in `.mcp.json`.
+2 MCP servers available. Configure in JetBrains Settings > AI Assistant > MCP. Server definitions in `.mcp.json`.
 
 ---
 

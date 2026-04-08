@@ -221,9 +221,26 @@ _COST_PATTERNS = [
     r"\b(cost|price|pricing|expensive|cheap|egress.?cost|data.?transfer.?cost)\b",
 ]
 
+# Network Infrastructure Intelligence patterns — dispatched to network_query_router
+_NII_PATTERNS = [
+    r"\b(redundan\w*|resilien\w*|SPOF|single\s*point\s*of\s*failure)\b",
+    r"\b(EOL|end\s*of\s*life|end\s*of\s*support|EOS)\b",
+    r"\b(blast\s*radius)\b",
+    r"\b(capacity|VDI|add\s*\d+\s*(user|seat))\b",
+    r"\b(vendor\s*(risk|concentrat)|supply\s*chain\s*risk)\b",
+    r"\b(circuit\s*(contract|expir|renew))\b",
+    r"\b(config\s*drift|golden\s*config|self[-\s]?provis|ansible\s*push)\b",
+    r"\b(SLA|availab\w*|MTBF|MTTR|uptime|downtime)\b.*\b(path|device|network)\b",
+    r"\b(TCO|\d+[-\s]year\s*(cost|project|forecast))\b",
+    r"\b(latency|RTT|round\s*trip)\b.*\b(path|device|network)\b",
+]
+
 
 def classify_query(question: str) -> str:
     q = question.lower()
+    # Check NII patterns first — delegate to network_intelligence engine
+    if any(re.search(p, q) for p in _NII_PATTERNS):
+        return "network_intelligence"
     if any(re.search(p, q) for p in _PATH_PATTERNS):
         return "path"
     if any(re.search(p, q) for p in _FAILURE_PATTERNS):
@@ -929,7 +946,20 @@ def answer_query(topology_id: str, question: str, conn: Any) -> dict[str, Any]:
     # Classify and route
     intent = classify_query(question)
 
-    if intent == "path":
+    if intent == "network_intelligence":
+        try:
+            from tools.network.network_query_router import route_query as _nii_route
+            nii_result = _nii_route(topology_id, question)
+            analysis = nii_result.get("analysis", {})
+            result = {
+                "answer": analysis.get("result_summary", json.dumps(analysis, indent=2, default=str)[:500]),
+                "data": analysis,
+                "engine": f"network_intelligence:{nii_result.get('intent', 'unknown')}",
+            }
+        except Exception as exc:
+            logger.warning("NII query routing failed: %s", exc)
+            result = _llm_query(question, graph, topo_name)
+    elif intent == "path":
         result = _path_query(question, graph)
     elif intent == "failure":
         result = _failure_query(question, graph)
