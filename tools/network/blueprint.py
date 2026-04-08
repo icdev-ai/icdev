@@ -28,6 +28,7 @@ from flask import (
     abort,
     g,
     jsonify,
+    redirect,
     render_template,
     request,
     session,
@@ -8563,11 +8564,6 @@ Output ONLY the JSON object. No other text."""
         return render_template("network/discovery.html") if os.path.exists(
             os.path.join(os.path.dirname(__file__), "..", "dashboard", "templates", "network", "discovery.html")
         ) else ("Discovery page coming soon", 200)
-
-    @bp.route("/ingestion")
-    @nc_login_required
-    def nc_ingestion_page():
-        return render_template("network/ingestion.html")
 
     @bp.route("/logout")
     def nc_logout():
