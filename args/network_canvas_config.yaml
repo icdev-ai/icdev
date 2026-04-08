@@ -38,3 +38,42 @@ templates:
 logging:
   level: INFO
   audit_enabled: true
+
+# ── Ingestion pipeline ────────────────────────────────────────────────────
+ingestion:
+  watch_folder: "data/ndc_inbox"           # Folder watcher directory
+  poll_interval_seconds: 30                # How often to scan watch folder
+  max_file_size_mb: 50                     # Reject files larger than this
+  supported_extensions:
+    - .drawio
+    - .vdx
+    - .svg
+    - .pdf
+    - .docx
+    - .txt
+    - .md
+    - .csv
+    - .xlsx
+    - .jpg
+    - .jpeg
+    - .png
+    - .conf
+    - .cfg
+    - .log
+  config_vendor_detection: true            # Auto-detect Cisco/Juniper/generic
+
+# ── NMS adapter connections ───────────────────────────────────────────────
+nms:
+  default_adapter: netbox
+  adapters:
+    netbox:
+      url: ""                              # Set via .env or here
+      token: ""
+      poll_interval_minutes: 60
+    librenms:
+      url: ""
+      token: ""
+    solarwinds:
+      url: ""
+      username: ""
+      password: ""
