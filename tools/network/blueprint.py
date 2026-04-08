@@ -1424,8 +1424,13 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_clear_all_topologies():
         conn = get_connection()
-        # Delete child tables first (FK constraints require this order)
+        # Delete child tables first (FK constraints require this order).
+        # Grandchild tables (e.g. nc_vuln_findings -> nc_vuln_scans -> topologies)
+        # must come before their parents.
         child_tables = [
+            "nc_vuln_findings",
+            "nc_vuln_hosts",
+            "ni_device_configs",
             "nc_device_geo",
             "nc_routing_entries",
             "nc_collected_configs",
@@ -1455,6 +1460,17 @@ def create_network_blueprint():
             "nc_project_topologies",
             "nc_groups",
             "nc_interconnects",
+            "nc_port_inventory",
+            "nc_module_inventory",
+            "nc_bw_simulations",
+            "nc_vuln_scans",
+            "nc_query_log",
+            "nc_collab_sessions",
+            "ndc_runbooks",
+            "ni_devices",
+            "ni_analyses",
+            "ni_state_snapshots",
+            "nc_documents",
         ]
         for tbl in child_tables:
             conn.execute(f"DELETE FROM {tbl}")  # nosec B608 -- table/column names are internal constants, not user input
