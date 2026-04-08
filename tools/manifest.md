@@ -1546,6 +1546,7 @@
 | Ato Generator | tools\network\ato_generator.py | Auto-registered: network/ato_generator.py | --json | JSON |
 | Fix Template Zones | tools\network\fix_template_zones.py | Auto-registered: network/fix_template_zones.py | --json | JSON |
 | Update Template Zones | tools\network\update_template_zones.py | Auto-registered: network/update_template_zones.py | --json | JSON |
+| OCR Fallback | tools/network/ocr_fallback.py | OCR-based diagram extraction fallback (pytesseract + rapidocr-onnxruntime ensemble) for air-gap environments without vision LLM. Spatial proximity inference for connection detection. | --image, --check, --json, --gate | JSON topology / status |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1759,3 +1760,19 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 |------|------|-------------|-------|--------|
 | E2E Diagram Validator | tools\testing\e2e_diagram_validator.py | Auto-registered: testing/e2e_diagram_validator.py | --json | JSON |
 | Lens Migration | tools\oracle\lenses\lens_migration.py | Auto-registered: lenses/lens_migration.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Parser | tools\network\config_parser.py | Auto-registered: network/config_parser.py | --json | JSON |
+| Device Manager | tools\network\device_manager.py | Auto-registered: network/device_manager.py | --json | JSON |
+| Folder Watcher | tools\network\folder_watcher.py | Auto-registered: network/folder_watcher.py | --json | JSON |
+| Ingestion Pipeline | tools\network\ingestion_pipeline.py | Auto-registered: network/ingestion_pipeline.py | --json | JSON |
+| Network Ingester | tools\network\network_ingester.py | Auto-registered: network/network_ingester.py | --json | JSON |
+| Network Intelligence | tools\network\network_intelligence.py | Auto-registered: network/network_intelligence.py | --json | JSON |
+| Network Query Router | tools\network\network_query_router.py | Auto-registered: network/network_query_router.py | --json | JSON |
+| Nms Adapter | tools\network\nms_adapter.py | Auto-registered: network/nms_adapter.py | --json | JSON |
+| Librenms Adapter | tools\network\adapters\librenms_adapter.py | Auto-registered: adapters/librenms_adapter.py | --json | JSON |
+| Netbox Adapter | tools\network\adapters\netbox_adapter.py | Auto-registered: adapters/netbox_adapter.py | --json | JSON |
+| Solarwinds Adapter | tools\network\adapters\solarwinds_adapter.py | Auto-registered: adapters/solarwinds_adapter.py | --json | JSON |
