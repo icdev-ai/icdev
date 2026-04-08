@@ -8528,6 +8528,99 @@ Output ONLY the JSON object. No other text."""
 
     register_intelligence_routes(bp)
 
+    # ── Enterprise Summary (missing route fix) ───────────────────────────────
+
+    @bp.route("/enterprise")
+    @nc_login_required
+    def nc_enterprise():
+        """Enterprise summary page — aggregate metrics across all projects."""
+        return render_template("network/enterprise.html")
+
+    @bp.route("/api/enterprise-summary")
+    @nc_login_required
+    def nc_enterprise_summary_api():
+        """Enterprise summary API — aggregate metrics."""
+        conn = get_connection()
+        total_topos = conn.execute("SELECT COUNT(*) FROM topologies").fetchone()[0]
+        total_devices = 0
+        total_interconnects = 0
+        total_cat1 = 0
+        total_open_findings = 0
+        compliance_pct = None
+
+        # Count devices from all topology graphs
+        rows = conn.execute("SELECT graph_json FROM topologies").fetchall()
+        for r in rows:
+            try:
+                g = json.loads(r[0] if isinstance(r, tuple) else r["graph_json"])
+                total_devices += len(g.get("nodes", []))
+                total_interconnects += len(g.get("edges", []))
+            except Exception:
+                pass
+
+        # Compliance findings
+        try:
+            findings = conn.execute(
+                "SELECT COUNT(*) FROM nc_compliance_findings WHERE status = 'open'"
+            ).fetchone()
+            total_open_findings = findings[0] if findings else 0
+            cat1 = conn.execute(
+                "SELECT COUNT(*) FROM nc_compliance_findings WHERE severity = 'CAT1' AND status = 'open'"
+            ).fetchone()
+            total_cat1 = cat1[0] if cat1 else 0
+        except Exception:
+            pass
+
+        # Projects
+        total_projects = 0
+        status_counts = {}
+        try:
+            proj_rows = conn.execute("SELECT status, COUNT(*) FROM nc_projects GROUP BY status").fetchall()
+            for pr in proj_rows:
+                s = pr[0] if isinstance(pr, tuple) else pr["status"]
+                c = pr[1] if isinstance(pr, tuple) else pr[1]
+                status_counts[s or "draft"] = c
+                total_projects += c
+        except Exception:
+            pass
+
+        # Cost
+        total_capex = 0
+        total_circuit_monthly = 0
+        try:
+            capex_row = conn.execute("SELECT SUM(purchase_cost) FROM ni_devices").fetchone()
+            total_capex = float(capex_row[0] or 0) if capex_row else 0
+            circ_row = conn.execute("SELECT SUM(monthly_cost_usd) FROM nc_circuits").fetchone()
+            total_circuit_monthly = float(circ_row[0] or 0) if circ_row else 0
+        except Exception:
+            pass
+
+        # Board reviews
+        board_reviews = {"pending": 0, "approved": 0, "rejected": 0}
+        try:
+            for status in ("pending", "approved", "rejected"):
+                cnt = conn.execute(
+                    "SELECT COUNT(*) FROM nc_governance_reviews WHERE status = ?", (status,)
+                ).fetchone()
+                board_reviews[status] = cnt[0] if cnt else 0
+        except Exception:
+            pass
+
+        conn.close()
+        return jsonify({
+            "total_projects": total_projects,
+            "total_topologies": total_topos,
+            "total_devices": total_devices,
+            "total_interconnects": total_interconnects,
+            "compliance_pct": compliance_pct,
+            "total_cat1": total_cat1,
+            "total_open_findings": total_open_findings,
+            "status_counts": status_counts,
+            "total_capex": total_capex,
+            "total_circuit_cost_monthly": total_circuit_monthly,
+            "board_reviews": board_reviews,
+        })
+
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _NDCCollabMgr
