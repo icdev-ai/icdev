@@ -8525,6 +8525,54 @@ Output ONLY the JSON object. No other text."""
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    # ── Missing page routes (nav links that need wiring) ────────────────
+
+    @bp.route("/what-if")
+    @nc_login_required
+    def nc_whatif():
+        return render_template("network/whatif.html")
+
+    @bp.route("/replacements")
+    @nc_login_required
+    def nc_replacements():
+        return render_template("network/replacement_map.html")
+
+    @bp.route("/budget")
+    @nc_login_required
+    def nc_budget():
+        return render_template("network/budget_forecast.html")
+
+    @bp.route("/design-patterns")
+    @nc_login_required
+    def nc_design_patterns():
+        return render_template("network/design_patterns.html")
+
+    @bp.route("/design-rules")
+    @nc_login_required
+    def nc_design_rules():
+        return render_template("network/design_rules.html")
+
+    @bp.route("/device-profiles")
+    @nc_login_required
+    def nc_device_profiles_page():
+        return render_template("network/device_profiles.html")
+
+    @bp.route("/discovery")
+    @nc_login_required
+    def nc_discovery_page():
+        return render_template("network/discovery.html") if os.path.exists(
+            os.path.join(os.path.dirname(__file__), "..", "dashboard", "templates", "network", "discovery.html")
+        ) else ("Discovery page coming soon", 200)
+
+    @bp.route("/ingestion")
+    @nc_login_required
+    def nc_ingestion_page():
+        return render_template("network/ingestion.html")
+
+    @bp.route("/logout")
+    def nc_logout():
+        return redirect("/network/")
+
     # ── Analysis routes (extracted to routes/analysis.py) ────────────────
     from tools.network.routes.analysis import register_analysis_routes
 
