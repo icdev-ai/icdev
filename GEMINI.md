@@ -39,7 +39,7 @@ python tools/project/project_status.py --project-id "" --json
 
 ## MCP Servers
 
-0 MCP servers available. Add to `.gemini/settings.json`:
+2 MCP servers available. Add to `.gemini/settings.json`:
 
 ```json
 {

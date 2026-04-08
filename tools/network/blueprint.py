@@ -8523,6 +8523,11 @@ Output ONLY the JSON object. No other text."""
 
     register_analysis_routes(bp)
 
+    # ── Network Intelligence routes (NII) ─────────────────────────────
+    from tools.network.routes.intelligence import register_intelligence_routes
+
+    register_intelligence_routes(bp)
+
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _NDCCollabMgr

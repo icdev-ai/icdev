@@ -263,6 +263,27 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "canvas_type": "NDC",
         "description": "Network Design Canvas compliance findings",
     },
+    # NII — Network Infrastructure Intelligence
+    "network_devices": {
+        "table": "ni_devices",
+        "db": "network_canvas",
+        "pk": "id",
+        "content_cols": ["label", "device_type", "vendor", "model", "notes"],
+        "metadata_cols": ["topology_id", "firmware_version", "eol_date", "criticality_score", "site"],
+        "priority": 2,
+        "mode": "realtime",
+        "description": "Network Infrastructure Intelligence device inventory with EOL tracking",
+    },
+    "network_intelligence_analyses": {
+        "table": "ni_analyses",
+        "db": "network_canvas",
+        "pk": "id",
+        "content_cols": ["analysis_type", "query_text", "result_summary"],
+        "metadata_cols": ["topology_id", "created_at"],
+        "priority": 3,
+        "mode": "batch",
+        "description": "Network Intelligence analysis results (redundancy, EOL, blast radius, capacity)",
+    },
     # SDC — Security Design Canvas
     "sdc_designs": {
         "table": "security_designs",

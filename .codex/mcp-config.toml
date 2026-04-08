@@ -9,5 +9,5 @@ args = ["tools/mcp/unified_server.py"]
   ICDEV_PROJECT_ROOT = "."
 
 [mcp.servers.playwright]
-command = "docker"
-args = ["run", "-i", "--rm", "--init", "--pull=never", "--add-host=host.docker.internal:host-gateway", "mcr.microsoft.com/playwright/mcp:latest", "--headless", "--isolated", "--caps=vision"]
+command = "cmd"
+args = ["/c", "npx", "-y", "@playwright/mcp@latest"]
