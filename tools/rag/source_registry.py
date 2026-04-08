@@ -284,6 +284,27 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "mode": "batch",
         "description": "Network Intelligence analysis results (redundancy, EOL, blast radius, capacity)",
     },
+    "ndc_configs": {
+        "table": "ni_device_configs",
+        "db": "network_canvas",
+        "pk": "id",
+        "content_cols": ["config_text"],
+        "metadata_cols": ["device_id", "config_type", "source", "created_at"],
+        "priority": 2,
+        "mode": "realtime",
+        "description": "Network device running/startup configurations for RAG search",
+    },
+    "ndc_documents": {
+        "table": "nc_documents",
+        "db": "network_canvas",
+        "pk": "id",
+        "content_cols": ["extracted_text"],
+        "metadata_cols": ["file_name", "file_hash", "doc_type", "classification", "ingested_at"],
+        "priority": 2,
+        "mode": "batch",
+        "filter": "status = 'ingested'",
+        "description": "Network runbooks, SOPs, as-built docs, change requests",
+    },
     # SDC — Security Design Canvas
     "sdc_designs": {
         "table": "security_designs",

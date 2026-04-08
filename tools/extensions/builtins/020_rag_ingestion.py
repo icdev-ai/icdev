@@ -24,6 +24,8 @@ REALTIME_TABLES = {
     "research_forecasts",
     "memory_entries",
     "anvil_critique_findings",
+    "ni_device_configs",
+    "nc_documents",
 }
 
 # Map table names to source_type keys
@@ -38,6 +40,8 @@ TABLE_TO_SOURCE_TYPE = {
     "research_forecasts": "research_forecasts",
     "memory_entries": "memory_entries",
     "anvil_critique_findings": "anvil_critique_findings",
+    "ni_device_configs": "ndc_configs",
+    "nc_documents": "ndc_documents",
 }
 
 
