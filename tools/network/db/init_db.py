@@ -1326,6 +1326,70 @@ CREATE TABLE IF NOT EXISTS ndc_runbooks (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Network Infrastructure Intelligence (NII) ──────────────────────────────
+
+-- Device inventory with EOL tracking and criticality scoring
+CREATE TABLE IF NOT EXISTS ni_devices (
+    id                      TEXT PRIMARY KEY,
+    topology_id             TEXT REFERENCES topologies(id),
+    node_id                 TEXT NOT NULL,
+    label                   TEXT NOT NULL,
+    device_type             TEXT NOT NULL,
+    vendor                  TEXT,
+    model                   TEXT,
+    firmware_version        TEXT,
+    eol_date                TEXT,
+    eos_date                TEXT,
+    purchase_date           TEXT,
+    purchase_cost           REAL DEFAULT 0,
+    annual_maintenance_cost REAL DEFAULT 0,
+    replacement_cost        REAL DEFAULT 0,
+    site                    TEXT,
+    rack_location           TEXT,
+    criticality_score       REAL DEFAULT 0,
+    downstream_count        INTEGER DEFAULT 0,
+    notes                   TEXT,
+    properties_json         TEXT DEFAULT '{}',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Cached analysis results (redundancy, EOL, blast radius, capacity, etc.)
+CREATE TABLE IF NOT EXISTS ni_analyses (
+    id              TEXT PRIMARY KEY,
+    topology_id     TEXT REFERENCES topologies(id),
+    analysis_type   TEXT NOT NULL,
+    query_text      TEXT,
+    input_json      TEXT DEFAULT '{}',
+    result_json     TEXT DEFAULT '{}',
+    result_summary  TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Temporal state snapshots for change tracking
+CREATE TABLE IF NOT EXISTS ni_state_snapshots (
+    id                  TEXT PRIMARY KEY,
+    topology_id         TEXT REFERENCES topologies(id),
+    snapshot_type       TEXT DEFAULT 'manual',
+    graph_json          TEXT NOT NULL,
+    device_count        INTEGER DEFAULT 0,
+    link_count          INTEGER DEFAULT 0,
+    change_description  TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Device configuration version tracking (drift detection + self-provisioning)
+CREATE TABLE IF NOT EXISTS ni_device_configs (
+    id              TEXT PRIMARY KEY,
+    device_id       TEXT REFERENCES ni_devices(id),
+    config_type     TEXT NOT NULL,
+    config_text     TEXT NOT NULL,
+    config_hash     TEXT NOT NULL,
+    source          TEXT,
+    version         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
