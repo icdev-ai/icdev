@@ -385,16 +385,16 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
     label: {
       refX: '50%', refY: '100%',
       textAnchor: 'middle',
-      dy: 2,
+      dy: 3,
       fontSize: 10,
-      fontWeight: '600',
+      fontWeight: '700',
       fontFamily: 'Segoe UI, system-ui, sans-serif',
       fill: '#eaeaea',
     },
     sublabel: {
       refX: '50%', refY: '100%',
       textAnchor: 'middle',
-      dy: 14,
+      dy: 16,
       fontSize: 8,
       fontFamily: 'Segoe UI, system-ui, sans-serif',
       fill: '#8899aa',
@@ -403,7 +403,7 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
     iplabel: {
       refX: '50%', refY: '100%',
       textAnchor: 'middle',
-      dy: 24,
+      dy: 28,
       fontSize: 8,
       fontFamily: 'Cascadia Code, Consolas, monospace',
       fill: '#66bb6a',
@@ -874,13 +874,13 @@ function createNode(type, x, y, label, nodeId, configData) {
     return node;
   }
 
-  // Group/site containers are larger
+  // Group/site containers are larger — use config dimensions if provided
   const isGroup = (type === 'group-site');
-  const w = isGroup ? 300 : 110;
-  const h = isGroup ? 200 : 70;
+  const w = config._width || (isGroup ? 300 : 110);
+  const h = config._height || (isGroup ? 200 : 70);
 
   // Try Cisco traditional stencil (filled shape + white detail)
-  const stencil = getCiscoStencil(type);
+  const stencil = isGroup ? null : getCiscoStencil(type);
 
   const node = new NetworkNode({
     id: nodeId || joint.util.uuid(),
@@ -890,10 +890,11 @@ function createNode(type, x, y, label, nodeId, configData) {
       body: {
         fill: config._fill || style.fill,
         stroke: config._stroke || style.stroke,
-        strokeWidth: stencil ? 1 : 2,
-        strokeOpacity: stencil ? 0.3 : 1,
-        rx: stencil ? 8 : 6,
-        ry: stencil ? 8 : 6,
+        strokeWidth: isGroup ? (config._strokeWidth || 2) : (stencil ? 1 : 2),
+        strokeOpacity: isGroup ? 0.8 : (stencil ? 0.3 : 1),
+        strokeDasharray: isGroup ? '8 4' : 'none',
+        rx: isGroup ? 12 : (stencil ? 8 : 6),
+        ry: isGroup ? 12 : (stencil ? 8 : 6),
       },
       stencilGroup: stencil ? {
         transform: 'translate(19, 3) scale(1.5)',
@@ -911,7 +912,15 @@ function createNode(type, x, y, label, nodeId, configData) {
         text: stencil ? '' : style.symbol,
         fill: config._stroke || style.stroke,
       },
-      label: {
+      label: isGroup ? {
+        text: displayLabel,
+        fill: config._textColor || '#8899aa',
+        refX: 12, refY: 18,
+        textAnchor: 'start',
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: '0.5px',
+      } : {
         text: displayLabel,
         fill: config._textColor || '#eaeaea',
       }
@@ -921,11 +930,13 @@ function createNode(type, x, y, label, nodeId, configData) {
   node.set('nodeType', type);
   node.set('configData', config);
 
-  // Populate sublabel (location/site) and iplabel (IP) from config
-  const loc = config.location || config.site || config.rack || '';
-  const ip = config.ipv4 || config.ip || config.ip_address || '';
-  if (loc) node.attr('sublabel/text', loc);
-  if (ip) node.attr('iplabel/text', ip);
+  // Populate sublabel (location/site) and iplabel (IP) from config — skip for groups
+  if (!isGroup) {
+    const loc = config.location || config.site || config.rack || '';
+    const ip = config.ipv4 || config.ip || config.ip_address || '';
+    if (loc) node.attr('sublabel/text', loc);
+    if (ip) node.attr('iplabel/text', ip);
+  }
 
   graph.addCell(node);
   _applyNodeRotation(node);
