@@ -198,9 +198,9 @@ enrichment_workflow:
   steps:
   - 1. Ingest diagram (DrawIO/Visio/PDF/image) via network_ingester.py
   - 2. Device types auto-classified from naming convention patterns in labels
-  - 3. Run topology_enricher.py to add site grouping boxes + rack infra
-  - 4. Assign hardware profiles to devices for EOL/cost/vendor intelligence
-  - 5. Populate IP addresses and rack positions in device config
+  - 3. Assign device metadata (vendor, model, site, rack, IP, cost) in ni_devices
+  - 4. Run topology_enricher.py AFTER metadata (reads site from ni_devices for grouping)
+  - 5. Assign hardware profiles for EOL/cost/vendor intelligence
   - 6. Save as template for reuse
   auto_classify_from_naming: true
   auto_site_grouping: true
