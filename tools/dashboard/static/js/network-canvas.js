@@ -180,12 +180,20 @@ const NODE_STYLES = {
   'internet-exchange':{ fill: '#0f2b1a', stroke: '#66bb6a', label: 'IXP',           symbol: 'IXP'},
   'cloud-region':     { fill: '#1a1a2e', stroke: '#636e72', label: 'Region',        symbol: 'REG'},
   'cloud':            { fill: '#0f0f2b', stroke: '#7f8c8d',  label: 'Cloud',         symbol: '☁' },
+  // Aliases for ingester types (so they never show '?')
+  'vpn_gateway':      { fill: '#0f2b2b', stroke: '#00bcd4',  label: 'VPN GW',        symbol: '🔒' },
+  'wan_link':         { fill: '#0f0f2b', stroke: '#7f8c8d',  label: 'WAN',           symbol: '☁' },
+  'load_balancer':    { fill: '#1a1a0f', stroke: '#f39c12',  label: 'Load Balancer', symbol: 'LB' },
+  'access_point':     { fill: '#1a0f2b', stroke: '#9b59b6',  label: 'WAP',           symbol: 'AP' },
+  'cloud_service':    { fill: '#0f0f2b', stroke: '#29b6f6',  label: 'Cloud Svc',     symbol: '☁' },
+  'switch':           { fill: '#0f2b0f', stroke: '#27ae60',  label: 'Switch',        symbol: 'SW' },
+  'unknown':          { fill: '#1a1a2e', stroke: '#7a8cb0',  label: 'Device',        symbol: '?' },
 };
 
 // Alias map: ingester/intelligence types → canvas NODE_STYLES keys
 const _TYPE_ALIASES = {
   'switch': 'switch-l2', 'load_balancer': 'load-balancer', 'access_point': 'wap',
-  'vpn_gateway': 'vpn', 'wan_link': 'cloud', 'cloud_service': 'cloud',
+  'vpn_gateway': 'router', 'wan_link': 'cloud', 'cloud_service': 'cloud',
   'unknown': 'server',
 };
 
@@ -308,9 +316,11 @@ function getCiscoStencil(type) {
   if (type.includes('router') || type === 'mpls-pe' || type === 'mpls-p' || type === 'route-reflector') return CISCO_STENCILS['router'];
   if (type.includes('firewall') || type.includes('fw') || type.includes('nfw')) return CISCO_STENCILS['firewall'];
   if (type.includes('server') || type.includes('srv') || type.includes('historian')) return CISCO_STENCILS['server'];
-  if (type.includes('balancer') || type.includes('lb') || type.includes('alb') || type.includes('nlb')) return CISCO_STENCILS['load-balancer'];
-  if (type.includes('cloud') || type.includes('vpc') || type.includes('vnet') || type.includes('vcn')) return CISCO_STENCILS['cloud'];
-  if (type.includes('wap') || type === 'wlc') return CISCO_STENCILS['wap'];
+  if (type.includes('vpn') || type === 'vpn_gateway') return CISCO_STENCILS['router'];
+  if (type.includes('balancer') || type === 'load_balancer' || type.includes('lb') || type.includes('alb') || type.includes('nlb')) return CISCO_STENCILS['load-balancer'];
+  if (type.includes('cloud') || type === 'wan_link' || type === 'cloud_service' || type.includes('vpc') || type.includes('vnet') || type.includes('vcn')) return CISCO_STENCILS['cloud'];
+  if (type.includes('wap') || type === 'wlc' || type === 'access_point') return CISCO_STENCILS['wap'];
+  if (type === 'switch') return CISCO_STENCILS['switch-l2'];
   if (type.includes('panel') || type.includes('odf')) return CISCO_STENCILS['patch-panel'];
   if (type.includes('roadm') || type.includes('oadm')) return CISCO_STENCILS['roadm'];
   if (type.includes('transponder') || type.includes('edfa')) return CISCO_STENCILS['transponder'];
@@ -383,27 +393,21 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
       fontFamily: 'Cascadia Code, Consolas, monospace',
     },
     label: {
-      refX: '50%', refY: '100%',
+      refX: '50%', refY: -2,
       textAnchor: 'middle',
-      dy: 3,
-      fontSize: 10,
+      fontSize: 9,
       fontWeight: '700',
       fontFamily: 'Segoe UI, system-ui, sans-serif',
       fill: '#eaeaea',
     },
     sublabel: {
-      refX: '50%', refY: '100%',
-      textAnchor: 'middle',
-      dy: 16,
-      fontSize: 8,
-      fontFamily: 'Segoe UI, system-ui, sans-serif',
-      fill: '#8899aa',
+      display: 'none',
       text: '',
     },
     iplabel: {
       refX: '50%', refY: '100%',
       textAnchor: 'middle',
-      dy: 28,
+      dy: 4,
       fontSize: 8,
       fontFamily: 'Cascadia Code, Consolas, monospace',
       fill: '#66bb6a',
