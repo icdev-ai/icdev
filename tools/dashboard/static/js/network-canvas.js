@@ -182,8 +182,15 @@ const NODE_STYLES = {
   'cloud':            { fill: '#0f0f2b', stroke: '#7f8c8d',  label: 'Cloud',         symbol: '☁' },
 };
 
+// Alias map: ingester/intelligence types → canvas NODE_STYLES keys
+const _TYPE_ALIASES = {
+  'switch': 'switch-l2', 'load_balancer': 'load-balancer', 'access_point': 'wap',
+  'vpn_gateway': 'vpn', 'wan_link': 'cloud', 'cloud_service': 'cloud',
+  'unknown': 'server',
+};
+
 function getStyle(type) {
-  return NODE_STYLES[type] || { fill: '#1a1a2e', stroke: '#7a8cb0', label: type, symbol: '?' };
+  return NODE_STYLES[type] || NODE_STYLES[_TYPE_ALIASES[type]] || { fill: '#1a1a2e', stroke: '#7a8cb0', label: type, symbol: '?' };
 }
 
 /* ── Cisco Traditional Stencils — filled SVG shapes (48x48 viewBox) ────────── */
@@ -378,10 +385,29 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
     label: {
       refX: '50%', refY: '100%',
       textAnchor: 'middle',
-      dy: 4,
+      dy: 2,
       fontSize: 10,
+      fontWeight: '600',
       fontFamily: 'Segoe UI, system-ui, sans-serif',
       fill: '#eaeaea',
+    },
+    sublabel: {
+      refX: '50%', refY: '100%',
+      textAnchor: 'middle',
+      dy: 14,
+      fontSize: 8,
+      fontFamily: 'Segoe UI, system-ui, sans-serif',
+      fill: '#8899aa',
+      text: '',
+    },
+    iplabel: {
+      refX: '50%', refY: '100%',
+      textAnchor: 'middle',
+      dy: 24,
+      fontSize: 8,
+      fontFamily: 'Cascadia Code, Consolas, monospace',
+      fill: '#66bb6a',
+      text: '',
     }
   },
   ports: {
@@ -417,6 +443,8 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
     ]},
     { tagName: 'text', selector: 'symbol' },
     { tagName: 'text', selector: 'label' },
+    { tagName: 'text', selector: 'sublabel' },
+    { tagName: 'text', selector: 'iplabel' },
   ]
 });
 
@@ -892,6 +920,13 @@ function createNode(type, x, y, label, nodeId, configData) {
 
   node.set('nodeType', type);
   node.set('configData', config);
+
+  // Populate sublabel (location/site) and iplabel (IP) from config
+  const loc = config.location || config.site || config.rack || '';
+  const ip = config.ipv4 || config.ip || config.ip_address || '';
+  if (loc) node.attr('sublabel/text', loc);
+  if (ip) node.attr('iplabel/text', ip);
+
   graph.addCell(node);
   _applyNodeRotation(node);
   return node;
