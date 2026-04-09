@@ -36,6 +36,20 @@ def _get_db_path(db_name: str) -> Path:
     """Resolve database path from name."""
     if db_name == "memory":
         return MEMORY_DB
+    # Canvas databases live as separate SQLite files in data/
+    _CANVAS_DB_MAP = {
+        "network_canvas": "network_canvas.db",
+        "infra_canvas": "infra_canvas.db",
+        "security_canvas": "security_canvas.db",
+        "boundary_canvas": "boundary_canvas.db",
+        "data_canvas": "data_canvas.db",
+        "pipeline_canvas": "pipeline_canvas.db",
+        "observability_canvas": "observability_canvas.db",
+        "migration_canvas": "migration_canvas.db",
+        "qdc_canvas": "qdc_canvas.db",
+    }
+    if db_name in _CANVAS_DB_MAP:
+        return BASE_DIR / "data" / _CANVAS_DB_MAP[db_name]
     return ICDEV_DB
 
 
@@ -163,8 +177,19 @@ def ingest_source(
 
     col_str = ", ".join(all_cols)
 
-    conn = get_connection()
-    conn.execute("PRAGMA busy_timeout=5000")
+    # Canvas databases are separate SQLite files; main DB may be Postgres
+    if cfg["db"] != "icdev" and db_path.suffix == ".db" and db_path.exists():
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
+        _canvas_conn = True
+    else:
+        conn = get_connection()
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+        except Exception:
+            pass  # Postgres doesn't support PRAGMA
+        _canvas_conn = False
     sql = f"SELECT {col_str} FROM {table}"  # nosec B608 -- table/column names are internal constants, not user input
     conditions = []
     params: list = []
