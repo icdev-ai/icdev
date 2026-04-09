@@ -166,6 +166,9 @@ sources:
         sort: hot
         max_results: 50
         min_upvotes: 10
+        # Default flat filter — used when no active domain is set on the scan path.
+        # Mixes terms from all configured domains; per-domain filters below
+        # override this when the engine resolves an --domain flag.
         keyword_filter:
           - file sync
           - file synchronization
@@ -210,6 +213,78 @@ sources:
           - tokenization
           - NFT
           - DAO
+        # Per-domain keyword filters — keyed by `domain.name` from the active
+        # config section. When the engine runs with --domain "network design",
+        # only the matching list applies, eliminating cross-domain noise.
+        keyword_filter_by_domain:
+          "network design":
+            - network diagram
+            - network topology
+            - network design tool
+            - network simulation
+            - network canvas
+            - infrastructure diagram
+            - data center network
+            - spine leaf
+            - BGP
+            - OSPF
+            - EVPN
+            - VXLAN
+            - SDN
+            - SD-WAN
+            - network automation
+            - NetBox
+            - Batfish
+            - Nornir
+            - Ansible network
+            - SolarWinds
+            - PRTG
+            - Auvik
+            - Lansweeper
+            - Cisco network
+            - Cisco ACI
+            - Arista
+            - Juniper
+            - F5
+            - load balancer
+            - firewall diagram
+            - VLAN planning
+            - subnet calculator
+            - network visualization
+            - Visio alternative
+            - draw.io network
+            - Lucidchart network
+            - zero trust network
+            - microsegmentation
+            - DCIM
+            - data center
+          "file synchronization":
+            - file sync
+            - file synchronization
+            - cloud sync
+            - backup sync
+            - syncthing
+            - rclone
+            - nextcloud
+            - owncloud
+            - seafile
+            - dropbox alternative
+            - self-hosted sync
+            - peer-to-peer sync
+            - real-time sync
+            - conflict resolution
+            - delta sync
+          "blockchain":
+            - blockchain
+            - smart contract
+            - web3
+            - DeFi
+            - on-chain
+            - crypto compliance
+            - distributed ledger
+            - tokenization
+            - NFT
+            - DAO
       - name: govcon_blogs
         urls: []                         # populated per domain
         max_results: 30

@@ -229,10 +229,24 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     #     → SELECT ... FROM information_schema.tables WHERE table_schema='public' AND table_name=%s
     if "sqlite_master" in sql.lower():
         # Pattern: SELECT 1/name/count(*) FROM sqlite_master WHERE type='table' AND name=?
+        # Preserve the original SELECT clause so callers using count(*) for `... > 0`
+        # checks keep getting an integer back (not a table_name string).
+        def _master_named(m):
+            select_clause = m.group(1).strip().lower()
+            if "count" in select_clause:
+                return (
+                    "SELECT count(*) FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = %s"
+                )
+            return (
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = %s"
+            )
+
         sql = re.sub(
-            r"SELECT\s+(?:1|name|count\(\*\))\s+FROM\s+sqlite_master\s+"
+            r"SELECT\s+(1|name|count\(\*\))\s+FROM\s+sqlite_master\s+"
             r"WHERE\s+type\s*=\s*'table'\s+AND\s+name\s*=\s*%s",
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
+            _master_named,
             sql,
             flags=re.IGNORECASE,
         )
@@ -279,6 +293,29 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     sql = re.sub(
         r"\bjson_array_length\(\s*([^)]+)\s*\)",
         r"jsonb_array_length(\1::jsonb)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 17. julianday(X) → (EXTRACT(EPOCH FROM (X)::timestamptz) / 86400.0)
+    #     SQLite julianday() returns days since the Julian epoch as a real number.
+    #     The math (julianday(A) - julianday(B)) yields days; *86400 yields seconds.
+    #     Both forms are preserved by translating each call site individually.
+    #     'now' is recognized via the prior datetime('now') → NOW() rewrite, so
+    #     we also handle bare julianday('now') and julianday(NOW()) here.
+    def _replace_julianday(m):
+        inner = m.group(1).strip()
+        # Strip surrounding quotes from 'now' and replace with NOW()
+        if inner.lower() in ("'now'", '"now"'):
+            inner = "NOW()"
+        return f"(EXTRACT(EPOCH FROM ({inner})::timestamptz) / 86400.0)"
+
+    # Match julianday(...) where the argument has no nested parens.
+    # Nested cases (e.g. julianday(datetime(col, '-1 hour'))) are handled
+    # because datetime() is rewritten in rule 2-4 before we reach here.
+    sql = re.sub(
+        r"\bjulianday\s*\(\s*([^()]+?)\s*\)",
+        _replace_julianday,
         sql,
         flags=re.IGNORECASE,
     )

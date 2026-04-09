@@ -850,13 +850,25 @@ def scan_regulatory_bodies(config, session_config=None):
         api_base = fr_cfg.get("api", FEDERAL_REGISTER_API)
         max_results = fr_cfg.get("max_results", 50)
 
-        # Build search terms from vertical config
+        # Build search terms and a relevance filter from the vertical config.
+        # Prior behavior used reg-body acronyms (NIST, CISA, DISA) as search
+        # terms, which pulled in noise from any rule mentioning the acronym
+        # (CDFI bond programs, Endangered Species, etc.). We now drive search
+        # off the vertical's *topical* keywords and post-filter results so
+        # only docs whose title/abstract contains a vertical keyword survive.
         search_terms = []
+        vertical_keywords_lc = []
+        reg_bodies_lc = []
         if session_config:
-            reg_bodies = session_config.get("regulatory_bodies", [])
-            keywords = session_config.get("keywords", [])
-            # Use regulatory body names and vertical keywords as search terms
-            search_terms = reg_bodies[:3] + keywords[:5]
+            keywords = session_config.get("keywords", []) or []
+            reg_bodies = session_config.get("regulatory_bodies", []) or []
+            vertical_keywords_lc = [str(k).strip().lower() for k in keywords if k]
+            reg_bodies_lc = [str(b).strip().lower() for b in reg_bodies if b]
+            # Use the most distinctive (longest) keywords first — they tend to
+            # be multi-word phrases that scope tightly (e.g. "data center
+            # network", "BGP routing"), avoiding single-acronym false positives.
+            sorted_keywords = sorted(keywords, key=lambda k: -len(str(k)))
+            search_terms = [str(k) for k in sorted_keywords[:8] if k]
         if not search_terms:
             search_terms = ["technology", "cybersecurity"]
 
@@ -895,6 +907,19 @@ def scan_regulatory_bodies(config, session_config=None):
                         agency_names.append(agency)
 
                 publication_date = doc.get("publication_date", "")
+
+                # Relevance gate — drop docs that don't mention any vertical
+                # keyword in their title or abstract (or aren't from one of
+                # the vertical's listed regulatory bodies). Without this,
+                # broad search terms produce off-topic noise that pollutes
+                # the synthesis stage.
+                if vertical_keywords_lc:
+                    haystack = f"{doc_title} {doc_abstract}".lower()
+                    keyword_match = any(kw in haystack for kw in vertical_keywords_lc)
+                    agency_haystack = " ".join(agency_names).lower()
+                    agency_match = any(rb in agency_haystack for rb in reg_bodies_lc)
+                    if not (keyword_match or agency_match):
+                        continue
 
                 hash_input = f"federal_register_{doc_number}"
                 signals.append(

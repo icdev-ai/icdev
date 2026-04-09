@@ -673,7 +673,20 @@ def scan_reddit(config, competitors=None):
     sort_by = reddit_cfg.get("sort", "hot")
     max_results = reddit_cfg.get("max_results", 50)
     min_upvotes = reddit_cfg.get("min_upvotes", 10)
-    keyword_filter = [kw.lower() for kw in reddit_cfg.get("keyword_filter", [])]
+    # Resolve keyword filter — prefer per-domain list when an active domain is
+    # set on the config (creative_engine.run_full_pipeline writes _active_domain
+    # before invoking scan stages). Fall back to the flat keyword_filter.
+    active_domain = config.get("_active_domain") or ""
+    by_domain = reddit_cfg.get("keyword_filter_by_domain") or {}
+    domain_kws = None
+    if active_domain and isinstance(by_domain, dict):
+        # Case-insensitive domain lookup so "Network Design" matches "network design".
+        for key, kws in by_domain.items():
+            if str(key).strip().lower() == active_domain.strip().lower():
+                domain_kws = kws
+                break
+    raw_keywords = domain_kws if domain_kws is not None else reddit_cfg.get("keyword_filter", [])
+    keyword_filter = [kw.lower() for kw in raw_keywords]
     delay = _rate_delay(config, "community_forums")
 
     headers = {
@@ -1237,7 +1250,7 @@ def store_signals(signals, db_path=None):
 # =========================================================================
 # SCAN ORCHESTRATOR
 # =========================================================================
-def run_scan(source=None, db_path=None):
+def run_scan(source=None, db_path=None, active_domain=None):
     """Run source scan for the specified source or all enabled sources.
 
     Loads config, retrieves confirmed competitors from DB, invokes scanner
@@ -1246,11 +1259,17 @@ def run_scan(source=None, db_path=None):
     Args:
         source: Source name (g2, capterra, reddit, etc.) or None for all.
         db_path: Optional database path override.
+        active_domain: When set, scanners that support per-domain filtering
+            (currently scan_reddit) will use the matching keyword list from
+            ``keyword_filter_by_domain`` instead of the flat default.
 
     Returns:
         Dict with per-source results and aggregate totals.
     """
     config = _load_config()
+    if active_domain:
+        # Stash on the config dict so existing scanner signatures stay stable.
+        config["_active_domain"] = active_domain
     competitors = _get_confirmed_competitors(db_path)
     results = {}
     all_signals = []
