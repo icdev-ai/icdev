@@ -35,7 +35,7 @@ rag:
     min_score_threshold: 0.1         # Minimum score to include in results
 
   rerank:
-    enabled: true
+    enabled: false                   # Disabled: bge-reranker-v2-m3 not installed, qwen3 fallback too slow (~2s/chunk). Re-enable when BGE model is pulled or corpus > 500 chunks.
     method: bge                      # bge, llm, or hybrid (bge→llm fallback) (D-RAG-20)
     bge_model: bge-reranker-v2-m3   # Ollama cross-encoder model
     rerank_weight: 0.6               # Weight of rerank score in final blend
