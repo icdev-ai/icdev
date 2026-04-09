@@ -187,8 +187,8 @@ const NODE_STYLES = {
   'access_point':     { fill: '#1a0f2b', stroke: '#9b59b6',  label: 'WAP',           symbol: 'AP' },
   'cloud_service':    { fill: '#0f0f2b', stroke: '#29b6f6',  label: 'Cloud Svc',     symbol: '☁' },
   'switch':           { fill: '#0f2b0f', stroke: '#27ae60',  label: 'Switch',        symbol: 'SW' },
-  'pdu':              { fill: '#fff3e0', stroke: '#e65100',  label: 'PDU',           symbol: '⚡' },
-  'ups':              { fill: '#fff8e1', stroke: '#f57f17',  label: 'UPS',           symbol: '🔋' },
+  'pdu':              { fill: '#fff3e0', stroke: '#e65100',  label: 'PDU',           symbol: 'PDU' },
+  'ups':              { fill: '#fff8e1', stroke: '#f57f17',  label: 'UPS',           symbol: 'UPS' },
   'unknown':          { fill: '#f5f5f5', stroke: '#7a8cb0',  label: 'Device',        symbol: '?' },
 };
 
@@ -312,6 +312,8 @@ const CISCO_STENCILS = {
 
 // Map device type to stencil (with fallback matching)
 function getCiscoStencil(type) {
+  // Infrastructure types use text symbols, not stencils
+  if (type === 'pdu' || type === 'ups') return null;
   if (CISCO_STENCILS[type]) return CISCO_STENCILS[type];
   if (type.startsWith('switch-l3')) return CISCO_STENCILS['switch-l3'];
   if (type.startsWith('switch')) return CISCO_STENCILS['switch-l2'];
@@ -880,10 +882,11 @@ function createNode(type, x, y, label, nodeId, configData) {
     return node;
   }
 
-  // Group/site containers are larger — use config dimensions if provided
+  // Use config dimensions if provided, otherwise defaults
   const isGroup = (type === 'group-site');
-  const w = config._width || (isGroup ? 300 : 110);
-  const h = config._height || (isGroup ? 200 : 70);
+  const isInfra = (type === 'pdu' || type === 'ups' || type === 'patch-panel');
+  const w = config._width || (isGroup ? 300 : (isInfra ? 90 : 110));
+  const h = config._height || (isGroup ? 200 : (isInfra ? 50 : 70));
 
   // Try Cisco traditional stencil (filled shape + white detail)
   const stencil = isGroup ? null : getCiscoStencil(type);
