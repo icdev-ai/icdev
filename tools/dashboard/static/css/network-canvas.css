@@ -1299,11 +1299,24 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   overflow: auto;
   position: relative;
   background:
-    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+    linear-gradient(rgba(0,0,0,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,0,0,.06) 1px, transparent 1px);
   background-size: 20px 20px;
-  background-color: #12122a;
+  background-color: #ffffff;
 }
+/* Device tooltip on hover */
+.nc-device-tooltip {
+  position: fixed; z-index: 10000; pointer-events: none;
+  background: #1a1a2e; color: #eaeaea; border: 1px solid #4a90d9;
+  border-radius: 8px; padding: 12px 14px; font-size: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-width: 320px;
+  font-family: 'Segoe UI', system-ui, sans-serif; display: none;
+  line-height: 1.5;
+}
+.nc-device-tooltip .tt-header { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: #fff; }
+.nc-device-tooltip .tt-row { display: flex; gap: 6px; }
+.nc-device-tooltip .tt-key { color: #8899aa; min-width: 70px; }
+.nc-device-tooltip .tt-val { color: #eaeaea; font-weight: 600; }
 #canvas-container {
   width: max-content;
   height: max-content;

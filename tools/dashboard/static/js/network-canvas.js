@@ -398,7 +398,7 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
       fontSize: 9,
       fontWeight: '700',
       fontFamily: 'Segoe UI, system-ui, sans-serif',
-      fill: '#eaeaea',
+      fill: '#1a1a2e',
     },
     sublabel: {
       display: 'none',
@@ -410,7 +410,7 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
       dy: 4,
       fontSize: 8,
       fontFamily: 'Cascadia Code, Consolas, monospace',
-      fill: '#66bb6a',
+      fill: '#1565c0',
       text: '',
     }
   },
@@ -542,8 +542,8 @@ function initCanvas() {
     width: 5000,
     height: 5000,
     gridSize: 10,
-    drawGrid: { name: 'dot', args: { color: 'rgba(255,255,255,0.06)' } },
-    background: { color: 'transparent' },
+    drawGrid: { name: 'dot', args: { color: 'rgba(0,0,0,0.08)' } },
+    background: { color: '#ffffff' },
     defaultLink: () => new joint.shapes.standard.Link({
       attrs: {
         line: {
@@ -918,7 +918,7 @@ function createNode(type, x, y, label, nodeId, configData) {
       },
       label: isGroup ? {
         text: displayLabel,
-        fill: config._textColor || '#8899aa',
+        fill: config._textColor || '#333',
         refX: 12, refY: 18,
         textAnchor: 'start',
         fontSize: 12,
@@ -1004,7 +1004,7 @@ function createLink(srcId, tgtId, label, protocol, linkId) {
     target: { id: tgtId },
     attrs: linkAttrs,
     labels: label ? [{
-      attrs: { text: { text: label, fill: '#7a8cb0', fontSize: 10, fontFamily: 'Cascadia Code, Consolas, monospace' } },
+      attrs: { text: { text: label, fill: '#555', fontSize: 10, fontFamily: 'Cascadia Code, Consolas, monospace' } },
       position: 0.5
     }] : [],
     // Curved routing for tunnels
@@ -3204,18 +3204,108 @@ function _fetchAndApplyHeatmap(metric) {
     if (typeof paper === 'undefined' || !paper) return;
     clearInterval(_hookInterval);
 
-    paper.on('cell:mouseenter', function(cellView) {
-      if (!_heatmapOverlayActive) return;
-      const hv = _heatmapValues[cellView.model.id];
-      if (!hv) return;
-      const color = _heatmapColor(hv.value);
-      tip.innerHTML = `<span style="color:${color};">\u25CF</span> <strong>${hv.label}</strong><br>${hv.formatted}`;
-      tip.style.display = 'block';
+    // Create device tooltip element
+    var deviceTip = document.createElement('div');
+    deviceTip.className = 'nc-device-tooltip';
+    document.body.appendChild(deviceTip);
+
+    // Device role descriptions
+    var _roleDesc = {
+      'router': 'Core/edge router — forwards packets between networks using routing protocols (BGP, OSPF, IS-IS). Performs inter-VLAN routing, policy-based routing, and WAN connectivity.',
+      'switch': 'Network switch — provides Layer 2/3 switching for LAN segments. Handles VLAN trunking, STP, port security, and access control at the distribution or access layer.',
+      'firewall': 'Security firewall — inspects and filters traffic between network zones. Enforces security policies, NAT, VPN termination, IPS/IDS, and application-layer inspection.',
+      'server': 'Compute server — hosts applications, databases, or virtualization workloads. Connected to the network via redundant NICs for high availability.',
+      'load_balancer': 'Application delivery controller — distributes traffic across server pools using health checks, SSL offload, persistence, and content-based routing.',
+      'vpn_gateway': 'VPN concentrator — terminates encrypted tunnels (IPSec, SSL VPN) from remote sites and users. Provides secure remote access and site-to-site connectivity.',
+      'wan_link': 'WAN/MPLS circuit — provides inter-site connectivity via carrier MPLS, internet, or dedicated leased line. Managed by the service provider.',
+      'access_point': 'Wireless access point or controller — provides Wi-Fi coverage for end-user devices. Managed by a wireless LAN controller for centralized policy and roaming.',
+      'cloud_service': 'Cloud service endpoint — represents a cloud-hosted resource (VPC, VNet, or SaaS service) connected to the enterprise network.',
+    };
+
+    paper.on('cell:mouseenter', function(cellView, evt) {
+      var cell = cellView.model;
+      if (!cell.isElement || !cell.isElement()) return;
+      var nodeType = cell.get('nodeType') || '';
+      if (nodeType === 'group-site') return;
+
+      // Heatmap tooltip (existing)
+      if (_heatmapOverlayActive) {
+        var hv = _heatmapValues[cell.id];
+        if (hv) {
+          var color = _heatmapColor(hv.value);
+          tip.innerHTML = '<span style="color:' + color + ';">\u25CF</span> <strong>' + hv.label + '</strong><br>' + hv.formatted;
+          tip.style.display = 'block';
+        }
+        return;
+      }
+
+      // Device tooltip
+      var label = cell.attr('label/text') || '';
+      var ip = cell.attr('iplabel/text') || '';
+      var config = cell.get('configData') || {};
+      var site = config.site || config.location || '';
+      var rack = config.rack || '';
+      var hostname = config.hostname || label;
+      var vendor = config.vendor || '';
+      var model = config.model || '';
+      var roleDesc = _roleDesc[nodeType] || 'Network device';
+      var style = getStyle(nodeType);
+
+      var html = '<div class="tt-header">' + _esc(label) + '</div>';
+      html += '<div style="margin-bottom:6px;color:#aab;font-size:11px;font-style:italic;">' + _esc(roleDesc) + '</div>';
+      html += '<div class="tt-row"><span class="tt-key">Type</span><span class="tt-val">' + _esc(style.label || nodeType) + '</span></div>';
+      if (ip) html += '<div class="tt-row"><span class="tt-key">IP Address</span><span class="tt-val" style="color:#4fc3f7;">' + _esc(ip) + '</span></div>';
+      if (site) html += '<div class="tt-row"><span class="tt-key">Site</span><span class="tt-val">' + _esc(site) + '</span></div>';
+      if (rack) html += '<div class="tt-row"><span class="tt-key">Rack</span><span class="tt-val">' + _esc(rack) + '</span></div>';
+      if (vendor) html += '<div class="tt-row"><span class="tt-key">Vendor</span><span class="tt-val">' + _esc(vendor) + '</span></div>';
+      if (model) html += '<div class="tt-row"><span class="tt-key">Model</span><span class="tt-val">' + _esc(model) + '</span></div>';
+      if (config.os) html += '<div class="tt-row"><span class="tt-key">OS</span><span class="tt-val">' + _esc(config.os) + '</span></div>';
+      if (config.serial) html += '<div class="tt-row"><span class="tt-key">Serial</span><span class="tt-val">' + _esc(config.serial) + '</span></div>';
+      if (config.sw_version) html += '<div class="tt-row"><span class="tt-key">Version</span><span class="tt-val">' + _esc(config.sw_version) + '</span></div>';
+      if (config.eol_date) html += '<div class="tt-row"><span class="tt-key">EOL Date</span><span class="tt-val" style="color:#f57c00;">' + _esc(config.eol_date) + '</span></div>';
+      if (config.bandwidth) html += '<div class="tt-row"><span class="tt-key">Bandwidth</span><span class="tt-val">' + _esc(config.bandwidth) + '</span></div>';
+
+      // Port connections summary
+      var links = graph.getConnectedLinks(cell);
+      if (links.length > 0) {
+        html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #333;font-size:11px;color:#8899aa;">';
+        html += '<strong>' + links.length + ' connection(s):</strong>';
+        links.slice(0, 5).forEach(function(link) {
+          var lCfg = link.get('linkConfig') || link.get('cableData') || {};
+          var srcPort = lCfg.src_port || '';
+          var dstPort = lCfg.dst_port || '';
+          var other = link.getSourceCell();
+          if (other && other.id === cell.id) other = link.getTargetCell();
+          var otherLabel = other ? (other.attr('label/text') || '') : '?';
+          var linkLabel = link.labels && link.labels().length ? (link.labels()[0].attrs?.text?.text || '') : '';
+          html += '<div style="margin:2px 0;">\u2022 ' + _esc(linkLabel || 'link') + ' \u2192 ' + _esc(otherLabel);
+          if (srcPort || dstPort) html += ' <span style="color:#666;">(' + _esc(srcPort) + ' \u2194 ' + _esc(dstPort) + ')</span>';
+          html += '</div>';
+        });
+        if (links.length > 5) html += '<div style="color:#666;">+ ' + (links.length - 5) + ' more</div>';
+        html += '</div>';
+      }
+
+      deviceTip.innerHTML = html;
+      deviceTip.style.display = 'block';
+      deviceTip.style.left = (evt.clientX + 16) + 'px';
+      deviceTip.style.top = (evt.clientY + 16) + 'px';
     });
 
     paper.on('cell:mouseleave', function() {
       tip.style.display = 'none';
+      deviceTip.style.display = 'none';
     });
+
+    // Track mouse position for tooltip following
+    paper.el.addEventListener('mousemove', function(evt) {
+      if (deviceTip.style.display === 'block') {
+        deviceTip.style.left = (evt.clientX + 16) + 'px';
+        deviceTip.style.top = Math.min(evt.clientY + 16, window.innerHeight - deviceTip.offsetHeight - 10) + 'px';
+      }
+    });
+
+    function _esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
   }, 200);
 })();
 
