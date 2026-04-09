@@ -13,6 +13,7 @@ Usage::
 
 import json
 import logging
+import os
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -26,7 +27,21 @@ sys.path.insert(0, str(BASE_DIR))
 
 
 def check_local_llm() -> Dict[str, Any]:
-    """Check all local LLM servers (Ollama, vLLM, llama.cpp, LM Studio, etc.)."""
+    """Check all local LLM servers (Ollama, vLLM, llama.cpp, LM Studio, etc.).
+
+    In no-LLM mode (ICDEV_NO_LLM=true) this returns ``info`` with a note
+    that LLM checks are intentionally skipped — ICDEV™ runs in
+    deterministic-only mode and missing LLM servers are not a failure.
+    """
+    import os as _os
+
+    if _os.environ.get("ICDEV_NO_LLM", "").lower() in ("true", "1", "yes"):
+        return {
+            "status": "info",
+            "message": "ICDEV_NO_LLM=true — local LLM probing skipped (deterministic-only mode)",
+            "no_llm_mode": True,
+        }
+
     try:
         from tools.airgap.detector import probe_local_llm_servers
 
@@ -35,9 +50,11 @@ def check_local_llm() -> Dict[str, Any]:
 
         if not reachable:
             return {
-                "status": "fail",
-                "error": "No local LLM servers reachable",
+                "status": "warn",
+                "message": "No local LLM servers reachable — ICDEV™ will run in no-LLM "
+                "(deterministic-only) mode. Set ICDEV_NO_LLM=true to silence this warning.",
                 "probed": [s["name"] for s in servers],
+                "no_llm_mode": True,
             }
 
         # For Ollama specifically, also list models
@@ -105,12 +122,39 @@ def check_python_deps() -> Dict[str, Any]:
 
 
 def check_llm_routing() -> Dict[str, Any]:
-    """Check that LLM routing can resolve to local models."""
+    """Check that LLM routing can resolve to local models.
+
+    In no-LLM mode this returns ``info`` because routing without any
+    backing provider is the expected, supported configuration.
+    """
+    import os as _os
+
+    if _os.environ.get("ICDEV_NO_LLM", "").lower() in ("true", "1", "yes"):
+        return {
+            "status": "info",
+            "message": "ICDEV_NO_LLM=true — LLM routing intentionally disabled",
+            "no_llm_mode": True,
+        }
+
     try:
         from tools.llm.router import LLMRouter
         from tools.airgap.config_patcher import _is_provider_local
 
         router = LLMRouter()
+        # Use the new has_any_llm() preflight to distinguish "no provider
+        # at all" from "all probed providers timed out". Either way, the
+        # health check should report degraded — not unhealthy — because
+        # ICDEV™'s deterministic tools still work without an LLM.
+        if not router.has_any_llm():
+            return {
+                "status": "warn",
+                "message": "No LLM provider in any chain is reachable — ICDEV™ will run in "
+                "no-LLM (deterministic-only) mode. Set ICDEV_NO_LLM=true to silence "
+                "future probes and short-circuit LLM calls cleanly.",
+                "no_llm_mode": True,
+                "has_local_model": False,
+                "has_any_model": False,
+            }
 
         # Determine which providers are local by URL analysis
         local_provider_names = set()
@@ -225,6 +269,84 @@ def check_git() -> Dict[str, Any]:
     return {"status": "pass"}
 
 
+def check_no_llm_capabilities() -> Dict[str, Any]:
+    """Verify ICDEV™'s deterministic tools work without any LLM.
+
+    Even in environments with no LLM at all (no Ollama, no API keys, no
+    vLLM), the bulk of ICDEV™ — compliance template generation, security
+    scanning, audit trail, database operations, project scaffolding,
+    Jinja2 rendering — must still function. This check imports a
+    representative sample of those modules and confirms they load
+    without depending on the LLM router.
+    """
+    deterministic_modules = [
+        "tools.audit.audit_logger",
+        "tools.compliance.narrative_generator",
+        "tools.compliance.classification_manager",
+        "tools.db.storage",
+        "tools.project.project_create",
+    ]
+    results: Dict[str, str] = {}
+    for mod in deterministic_modules:
+        try:
+            __import__(mod)
+            results[mod] = "ok"
+        except ImportError as exc:
+            results[mod] = "missing: {}".format(exc)
+        except Exception as exc:
+            results[mod] = "error: {}".format(exc)
+
+    failures = [m for m, v in results.items() if not v.startswith("ok")]
+
+    # Verify the router itself raises LLMUnavailableError cleanly when
+    # invoked in no-LLM mode (rather than crashing the caller). This is
+    # the contract that lets every tool fall back to deterministic
+    # behavior on a single ``except LLMUnavailableError``.
+    router_contract_ok = False
+    contract_error = ""
+    try:
+        from tools.llm.router import LLMRouter, LLMUnavailableError
+        from tools.llm.provider import LLMRequest
+
+        old_env = os.environ.get("ICDEV_NO_LLM")
+        try:
+            os.environ["ICDEV_NO_LLM"] = "true"
+            router = LLMRouter()
+            try:
+                router.invoke(
+                    "default",
+                    LLMRequest(messages=[{"role": "user", "content": "ping"}], skip_injection_scan=True),
+                )
+            except LLMUnavailableError:
+                router_contract_ok = True
+            except Exception as exc:
+                contract_error = "router raised {} instead of LLMUnavailableError: {}".format(
+                    type(exc).__name__, exc
+                )
+        finally:
+            if old_env is None:
+                os.environ.pop("ICDEV_NO_LLM", None)
+            else:
+                os.environ["ICDEV_NO_LLM"] = old_env
+    except ImportError as exc:
+        contract_error = "router import failed: {}".format(exc)
+
+    if failures or not router_contract_ok:
+        return {
+            "status": "fail",
+            "modules": results,
+            "router_no_llm_contract": router_contract_ok,
+            "contract_error": contract_error,
+            "failures": failures,
+        }
+    return {
+        "status": "pass",
+        "modules": results,
+        "router_no_llm_contract": True,
+        "message": "Deterministic tools and no-LLM router contract verified",
+    }
+
+
 def check_cloud_unreachable() -> Dict[str, Any]:
     """Verify cloud APIs are NOT reachable (confirms air-gap)."""
     from tools.airgap.detector import detect_environment
@@ -251,6 +373,7 @@ def run_health_check() -> Dict[str, Any]:
         "database": check_database,
         "python_deps": check_python_deps,
         "llm_routing": check_llm_routing,
+        "no_llm_capabilities": check_no_llm_capabilities,
         "hooks": check_hooks,
         "pdf_extraction": check_pdf_extraction,
         "git": check_git,

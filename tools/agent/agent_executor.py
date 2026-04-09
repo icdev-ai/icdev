@@ -392,8 +392,17 @@ def execute_agent_bedrock(
                 classification=request.classification,
             )
             resp = router.invoke(routing_function, llm_req)
-        except ImportError:
-            # Fall back to BedrockClient
+        except (ImportError, RuntimeError) as router_err:
+            # ImportError: tools.llm.router or its deps missing.
+            # RuntimeError (incl. LLMUnavailableError): no provider in
+            # the chain could serve the request — e.g. no API keys, no
+            # local Ollama, or ICDEV_NO_LLM=true. Fall back to the
+            # BedrockClient path; if that also fails, fall back to CLI.
+            if isinstance(router_err, RuntimeError) and not isinstance(router_err, ImportError):
+                print(
+                    "Warning: LLMRouter unavailable ({}), trying BedrockClient".format(router_err),
+                    file=sys.stderr,
+                )
             try:
                 from tools.agent.bedrock_client import BedrockClient, BedrockRequest
 
@@ -418,7 +427,7 @@ def execute_agent_bedrock(
                     classification=request.classification,
                 )
                 resp = client.invoke(bedrock_req)
-            except ImportError:
+            except (ImportError, RuntimeError):
                 print("Warning: No LLM backend available, falling back to CLI", file=sys.stderr)
                 return execute_agent(request, max_retries=max_retries)
 

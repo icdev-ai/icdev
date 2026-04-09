@@ -23,6 +23,19 @@ try:
 except ImportError:
     _IMPORT_OK = False
 
+# The no-LLM mode tests below validate the *dev* router at tools/llm/router.py
+# (the icdev/ package above is a shipped snapshot that may lag behind dev).
+try:
+    from tools.llm.router import LLMRouter as _DevLLMRouter
+    from tools.llm.router import LLMUnavailableError as _DevLLMUnavailableError
+    from tools.llm.provider import LLMRequest as _DevLLMRequest
+    from tools.llm.provider import LLMResponse as _DevLLMResponse
+    from tools.llm.provider import LLMProvider as _DevLLMProvider
+
+    _DEV_IMPORT_OK = True
+except ImportError:
+    _DEV_IMPORT_OK = False
+
 pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tools.llm.router not available")
 
 
@@ -415,6 +428,163 @@ class TestModelPricing:
         all_pricing = router.get_all_model_pricing()
         assert "a" in all_pricing
         assert "b" in all_pricing
+
+
+# ---------------------------------------------------------------------------
+# No-LLM Mode (deterministic-only environments)
+# ---------------------------------------------------------------------------
+# These tests target the *dev* router at tools/llm/router.py — they
+# validate the contract that ICDEV™ degrades cleanly when no LLM is
+# available at all (no Ollama, no API keys, no vLLM, nothing). The
+# router must short-circuit with LLMUnavailableError so deterministic
+# tools (templates, rules-based scanning, audit, compliance generation)
+# can fall back without crashing.
+
+
+@pytest.mark.skipif(not _DEV_IMPORT_OK, reason="dev tools.llm.router not available")
+class TestNoLLMMode:
+    """Verify ICDEV™ degrades cleanly when no LLM is available at all."""
+
+    @staticmethod
+    def _make_dev_mock_provider(available=True, response_text="ok"):
+        """Build a MockProvider against the *dev* LLMProvider base class."""
+
+        class _DevMock(_DevLLMProvider):
+            @property
+            def provider_name(self):
+                return "devmock"
+
+            def invoke(self, request, model_id, model_config):
+                if not available:
+                    raise RuntimeError("devmock unavailable")
+                return _DevLLMResponse(content=response_text, model_id=model_id, provider="devmock")
+
+            def check_availability(self, model_id):
+                return available
+
+        return _DevMock()
+
+    def _config_file(self, tmp_path, cfg):
+        try:
+            import yaml
+        except ImportError:
+            pytest.skip("PyYAML not available")
+        f = tmp_path / "llm_config.yaml"
+        f.write_text(yaml.dump(cfg), encoding="utf-8")
+        return f
+
+    def test_unavailable_error_subclasses_runtime_error(self):
+        """Existing ``except RuntimeError`` blocks must keep working."""
+        err = _DevLLMUnavailableError("test", function="x", chain=["a"], no_llm_mode=True)
+        assert isinstance(err, RuntimeError)
+        assert err.function == "x"
+        assert err.chain == ["a"]
+        assert err.no_llm_mode is True
+
+    def test_env_var_activates_no_llm_mode(self, tmp_path, monkeypatch):
+        cfg = _make_config(routing={"default": {"chain": []}})
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        monkeypatch.setenv("ICDEV_NO_LLM", "true")
+        assert router.is_no_llm_mode() is True
+        monkeypatch.setenv("ICDEV_NO_LLM", "false")
+        assert router.is_no_llm_mode() is False
+
+    def test_config_setting_activates_no_llm_mode(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ICDEV_NO_LLM", raising=False)
+        cfg = _make_config(settings={"no_llm": True})
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        assert router.is_no_llm_mode() is True
+
+    def test_invoke_short_circuits_in_no_llm_mode(self, tmp_path, monkeypatch):
+        """invoke() must raise LLMUnavailableError without probing."""
+        monkeypatch.setenv("ICDEV_NO_LLM", "true")
+        cfg = _make_config(
+            providers={"p1": {"type": "ollama"}},
+            models={"m1": {"provider": "p1", "model_id": "any"}},
+            routing={"default": {"chain": ["m1"]}},
+        )
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        # Inject a provider that would succeed if reached — proves we
+        # short-circuit BEFORE touching the provider.
+        router._providers["p1"] = self._make_dev_mock_provider(available=True)
+        router._availability_cache["m1"] = True
+        router._availability_cache_time = time.time()
+
+        with pytest.raises(_DevLLMUnavailableError) as excinfo:
+            router.invoke("default", _DevLLMRequest(messages=[{"role": "user", "content": "x"}]))
+        assert excinfo.value.no_llm_mode is True
+        assert excinfo.value.function == "default"
+
+    def test_chain_exhaustion_raises_unavailable_error(self, tmp_path, monkeypatch):
+        """When all providers fail, the error is LLMUnavailableError."""
+        monkeypatch.delenv("ICDEV_NO_LLM", raising=False)
+        cfg = _make_config(
+            providers={"p1": {"type": "ollama"}},
+            models={"m1": {"provider": "p1", "model_id": "any"}},
+            routing={"default": {"chain": ["m1"]}},
+        )
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        router._providers["p1"] = self._make_dev_mock_provider(available=False)
+        router._availability_cache["m1"] = True
+        router._availability_cache_time = time.time()
+
+        with pytest.raises(_DevLLMUnavailableError) as excinfo:
+            router.invoke(
+                "default",
+                _DevLLMRequest(
+                    messages=[{"role": "user", "content": "x"}],
+                    skip_injection_scan=True,
+                ),
+            )
+        assert excinfo.value.no_llm_mode is False
+        # Backward compat — still catches as RuntimeError too.
+        assert isinstance(excinfo.value, RuntimeError)
+
+    def test_has_any_llm_returns_false_with_no_providers(self, tmp_path, monkeypatch):
+        """has_any_llm() preflight returns False so callers can degrade."""
+        monkeypatch.delenv("ICDEV_NO_LLM", raising=False)
+        _DevLLMRouter.clear_no_llm_cache()
+        cfg = _make_config(
+            providers={"p1": {"type": "ollama"}},
+            models={"m1": {"provider": "p1", "model_id": "any"}},
+            routing={"default": {"chain": ["m1"]}},
+        )
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        router._providers["p1"] = self._make_dev_mock_provider(available=False)
+        assert router.has_any_llm(refresh=True) is False
+
+    def test_has_any_llm_returns_true_with_one_working_provider(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ICDEV_NO_LLM", raising=False)
+        _DevLLMRouter.clear_no_llm_cache()
+        cfg = _make_config(
+            providers={"p_ok": {"type": "ollama"}},
+            models={"m_ok": {"provider": "p_ok", "model_id": "any"}},
+            routing={"default": {"chain": ["m_ok"]}},
+        )
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        router._providers["p_ok"] = self._make_dev_mock_provider(available=True)
+        assert router.has_any_llm(refresh=True) is True
+
+    def test_has_any_llm_short_circuits_in_no_llm_mode(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ICDEV_NO_LLM", "true")
+        cfg = _make_config(
+            providers={"p1": {"type": "ollama"}},
+            models={"m1": {"provider": "p1", "model_id": "any"}},
+            routing={"default": {"chain": ["m1"]}},
+        )
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        # Even though provider is available, no-LLM mode short-circuits.
+        router._providers["p1"] = self._make_dev_mock_provider(available=True)
+        router._availability_cache["m1"] = True
+        assert router.has_any_llm(refresh=True) is False
+
+    def test_embedding_provider_short_circuits_in_no_llm_mode(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ICDEV_NO_LLM", "true")
+        cfg = _make_config(embeddings={"default_chain": ["any"], "models": {}})
+        router = _DevLLMRouter(config_path=str(self._config_file(tmp_path, cfg)))
+        with pytest.raises(_DevLLMUnavailableError) as excinfo:
+            router.get_embedding_provider()
+        assert excinfo.value.no_llm_mode is True
 
 
 # [TEMPLATE: CUI // SP-CTI]

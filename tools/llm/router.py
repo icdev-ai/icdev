@@ -32,6 +32,30 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 
 
+class LLMUnavailableError(RuntimeError):
+    """Raised when no LLM provider in the routing chain can serve a request.
+
+    Subclasses ``RuntimeError`` so existing ``except RuntimeError`` blocks
+    keep working. Callers that want to react specifically to "no LLM at
+    all" environments should catch this class and degrade to deterministic
+    behavior (templates, rules, cached results, or skip the step).
+
+    Attributes:
+        function: ICDEV™ function name that was requested.
+        chain: List of model names that were tried (may be empty in
+            no-LLM mode where probing is short-circuited).
+        no_llm_mode: True when this was raised by an explicit no-LLM
+            configuration (env var or config flag) rather than runtime
+            probe failure.
+    """
+
+    def __init__(self, message: str, *, function: str = "", chain=None, no_llm_mode: bool = False):
+        super().__init__(message)
+        self.function = function
+        self.chain = list(chain or [])
+        self.no_llm_mode = no_llm_mode
+
+
 def _expand_env(value):
     """Expand ${VAR:-default} patterns in string values."""
     if not isinstance(value, str):
@@ -164,6 +188,102 @@ class LLMRouter:
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
+
+    # -------------------------------------------------------------------
+    # No-LLM mode (deterministic-only environments)
+    # -------------------------------------------------------------------
+    # Some deployments have NO LLM at all — no Ollama, no API keys, no
+    # vLLM, nothing. ICDEV™'s deterministic tools (templates, rules,
+    # static analysis, compliance generation) still work in those
+    # environments; the router just needs to short-circuit instead of
+    # spending 30+ seconds probing every chain entry.
+    #
+    # Activation:
+    #   1. ICDEV_NO_LLM=true env var (highest priority)
+    #   2. settings.no_llm: true in args/llm_config.yaml
+    #   3. Auto-detected at runtime by has_any_llm() returning False
+    #
+    # Process-wide cache so callers can poll cheaply.
+    _no_llm_runtime_cache: Optional[bool] = None
+    _no_llm_runtime_cache_time: float = 0.0
+    _NO_LLM_CACHE_TTL: float = 300.0  # 5 minutes
+
+    def is_no_llm_mode(self) -> bool:
+        """Return True when this environment has no LLM available.
+
+        Cheap check — only consults env var and config. Does NOT probe
+        the network. For a probing check, use ``has_any_llm()``.
+        """
+        env = os.environ.get("ICDEV_NO_LLM", "").lower()
+        if env in ("true", "1", "yes"):
+            return True
+        if env in ("false", "0", "no"):
+            return False
+        return bool(self._config.get("settings", {}).get("no_llm", False))
+
+    def has_any_llm(self, refresh: bool = False) -> bool:
+        """Return True if at least one model in any routing chain works.
+
+        Walks the union of all model chains in the config and asks each
+        provider whether it can serve a request. Result is cached for
+        ``_NO_LLM_CACHE_TTL`` seconds so callers can poll cheaply (e.g.
+        from a dashboard health check or a request preflight).
+
+        Honors ``is_no_llm_mode()`` — when explicit no-LLM mode is set,
+        returns False immediately without probing.
+
+        Args:
+            refresh: When True, ignore the cached result and re-probe.
+
+        Returns:
+            True if at least one provider+model pair is reachable.
+        """
+        if self.is_no_llm_mode():
+            return False
+
+        now = time.time()
+        if (
+            not refresh
+            and LLMRouter._no_llm_runtime_cache is not None
+            and (now - LLMRouter._no_llm_runtime_cache_time) < self._NO_LLM_CACHE_TTL
+        ):
+            return LLMRouter._no_llm_runtime_cache
+
+        # Collect every model name referenced by any routing chain
+        seen: set = set()
+        for route in self._config.get("routing", {}).values():
+            for model_name in route.get("chain", []) or []:
+                seen.add(model_name)
+
+        # Probe in chain-priority order: default chain first if present,
+        # so common cases short-circuit fast.
+        default_chain = self._config.get("routing", {}).get("default", {}).get("chain", []) or []
+        ordered = list(default_chain) + [m for m in seen if m not in default_chain]
+
+        result = False
+        for model_name in ordered:
+            try:
+                if self._check_model_available(model_name):
+                    result = True
+                    break
+            except Exception:
+                continue
+
+        LLMRouter._no_llm_runtime_cache = result
+        LLMRouter._no_llm_runtime_cache_time = now
+        if not result:
+            logger.warning(
+                "has_any_llm: no provider/model pair is reachable across %d configured models — "
+                "ICDEV™ will run in no-LLM (deterministic-only) mode",
+                len(ordered),
+            )
+        return result
+
+    @classmethod
+    def clear_no_llm_cache(cls) -> None:
+        """Clear the cached has_any_llm() result (e.g. after enabling Ollama)."""
+        cls._no_llm_runtime_cache = None
+        cls._no_llm_runtime_cache_time = 0.0
 
     # -------------------------------------------------------------------
     # Provider instantiation (lazy)
@@ -1044,8 +1164,24 @@ class LLMRouter:
             LLMResponse.
 
         Raises:
-            RuntimeError: If no provider in the chain can serve the request.
+            LLMUnavailableError: If no provider in the chain can serve the
+                request. Subclass of ``RuntimeError`` so existing
+                ``except RuntimeError`` blocks remain compatible. Callers
+                that need to degrade to deterministic behavior should
+                catch ``LLMUnavailableError`` specifically.
         """
+        # Explicit no-LLM mode: short-circuit before any probing or budget
+        # checks so deterministic-only environments don't pay the network
+        # round-trip cost on every call.
+        if self.is_no_llm_mode():
+            raise LLMUnavailableError(
+                "ICDEV_NO_LLM is set — LLM invocation is disabled. "
+                "Tool '{}' must use its deterministic fallback path.".format(function),
+                function=function,
+                chain=self._get_chain_for_function(function),
+                no_llm_mode=True,
+            )
+
         # Token budget enforcement (D-BUD-1: Paperclip-inspired per-agent hard-stops)
         if request.agent_id:
             try:
@@ -1187,12 +1323,26 @@ class LLMRouter:
                 self._get_rl_router().record_outcome(function, model_name, success=False)
                 continue
 
-        raise RuntimeError(
-            "All providers in chain {} failed for function '{}'. Last error: {}".format(chain, function, last_error)
+        raise LLMUnavailableError(
+            "All providers in chain {} failed for function '{}'. Last error: {}".format(chain, function, last_error),
+            function=function,
+            chain=chain,
+            no_llm_mode=False,
         )
 
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
+        # Explicit no-LLM mode: short-circuit so streaming UIs can render
+        # a "no LLM available" placeholder instead of hanging on probes.
+        if self.is_no_llm_mode():
+            raise LLMUnavailableError(
+                "ICDEV_NO_LLM is set — streaming LLM invocation is disabled. "
+                "Tool '{}' must use its deterministic fallback path.".format(function),
+                function=function,
+                chain=self._get_chain_for_function(function),
+                no_llm_mode=True,
+            )
+
         # D-RDT-3: Pre-invoke redaction for streaming path (parity with invoke)
         _redaction_session = self._pre_invoke_redaction(function, request)
 
@@ -1225,10 +1375,13 @@ class LLMRouter:
                 self._availability_cache[model_name] = False
                 continue
 
-        raise RuntimeError(
+        raise LLMUnavailableError(
             "All streaming providers in chain {} failed for function '{}'. Last error: {}".format(
                 chain, function, last_error
-            )
+            ),
+            function=function,
+            chain=chain,
+            no_llm_mode=False,
         )
 
     # -------------------------------------------------------------------
@@ -1240,8 +1393,21 @@ class LLMRouter:
         Walks the embeddings.default_chain from config.
 
         Raises:
-            RuntimeError if no embedding provider is available.
+            LLMUnavailableError if no embedding provider is available
+            (subclass of RuntimeError for backward compatibility). In
+            no-LLM environments, callers should fall back to BM25-only
+            keyword search instead of hybrid semantic+keyword.
         """
+        # Explicit no-LLM mode: short-circuit before probing.
+        if self.is_no_llm_mode():
+            raise LLMUnavailableError(
+                "ICDEV_NO_LLM is set — embedding provider is disabled. "
+                "Use BM25/keyword-only search as the fallback.",
+                function="embeddings",
+                chain=self._config.get("embeddings", {}).get("default_chain", []),
+                no_llm_mode=True,
+            )
+
         emb_cfg = self._config.get("embeddings", {})
         chain = emb_cfg.get("default_chain", [])
         models = emb_cfg.get("models", {})
@@ -1376,7 +1542,13 @@ class LLMRouter:
             except Exception as exc:
                 logger.debug("Embedding provider '%s' failed: %s", model_name, exc)
 
-        raise RuntimeError("No embedding provider available. Check llm_config.yaml embeddings section.")
+        raise LLMUnavailableError(
+            "No embedding provider available. Check llm_config.yaml embeddings section. "
+            "For deterministic-only environments, set ICDEV_NO_LLM=true and use BM25/keyword search.",
+            function="embeddings",
+            chain=chain,
+            no_llm_mode=False,
+        )
 
     # -------------------------------------------------------------------
     # Model pricing lookup
