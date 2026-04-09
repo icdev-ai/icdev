@@ -8936,6 +8936,8 @@ Output ONLY the JSON object. No other text."""
                     enrich_result = enrich_topology(topo_id, add_infra=False, add_groups=True)
                     response["enrichment"] = {
                         "groups_added": enrich_result.get("groups_added", 0),
+                        "facilities_created": enrich_result.get("facilities_created", 0),
+                        "racks_created": enrich_result.get("racks_created", 0),
                         "validation": enrich_result.get("validation", {}),
                     }
                 except Exception as e:
