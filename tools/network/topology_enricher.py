@@ -262,6 +262,27 @@ def enrich_topology(
         if facilities_created or racks_created:
             conn.commit()
 
+        # ── Auto-assign rack positions to devices ─────────────────────
+        # Assign each device to its site's rack with sequential RU positions
+        _RU_HEIGHT = {"router": 2, "firewall": 2, "load_balancer": 1, "switch": 1,
+                      "server": 2, "vpn_gateway": 1, "access_point": 1, "wan_link": 0}
+        for site in sorted(site_device_types.keys()):
+            site_key = site.lower().replace("-", "").replace(" ", "")
+            rack_name = f"{site}-R1"
+            # Start assigning from U10 upward (leave U1-U9 for infra/cable mgmt)
+            ru_cursor = 10
+            site_nodes = [d for d in devices if d.get("config", {}).get("site") == site]
+            for d in site_nodes:
+                dtype = d.get("type", "unknown")
+                ru_h = _RU_HEIGHT.get(dtype, 1)
+                if ru_h == 0:
+                    continue  # WAN links don't go in racks
+                rack_pos = f"{rack_name} / U{ru_cursor}" if ru_h == 1 else f"{rack_name} / U{ru_cursor}-U{ru_cursor + ru_h - 1}"
+                if "config" not in d:
+                    d["config"] = {}
+                d["config"]["rack"] = rack_pos
+                ru_cursor += ru_h
+
     # ── Rebuild graph ─────────────────────────────────────────────────
     graph["nodes"] = new_groups + devices + infra_nodes
 
