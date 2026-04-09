@@ -212,6 +212,56 @@ def enrich_topology(
             })
         groups_added = len(new_groups)
 
+    # ── Auto-create facilities + racks per site ─────────────────────
+    facilities_created = 0
+    racks_created = 0
+    if save and add_groups:
+        # Collect unique sites and their device types
+        site_device_types: dict[str, set[str]] = defaultdict(set)
+        for d in devices:
+            site = d.get("config", {}).get("site", "")
+            if site:
+                site_device_types[site].add(d.get("type", "unknown"))
+
+        for site in sorted(site_device_types.keys()):
+            dtypes = site_device_types[site]
+            site_key = site.lower().replace("-", "").replace(" ", "")
+            fac_id = f"fac-{site_key}"
+            rack_id = f"rack-{site_key}-r1"
+
+            # Create facility if not exists
+            existing_fac = conn.execute("SELECT id FROM nc_facilities WHERE id = ?", (fac_id,)).fetchone()
+            if not existing_fac:
+                conn.execute(
+                    "INSERT INTO nc_facilities (id, name, facility_type, city, operator) VALUES (?,?,?,?,?)",
+                    (fac_id, site, "colocation", site, "Auto-generated"),
+                )
+                facilities_created += 1
+
+            # Create rack if not exists
+            existing_rack = conn.execute("SELECT id FROM nc_racks WHERE id = ?", (rack_id,)).fetchone()
+            if not existing_rack:
+                has_fiber = bool(dtypes & {"router", "firewall", "load_balancer"})
+                has_copper = bool(dtypes & {"switch", "access_point", "server"})
+                infra_items = [
+                    {"type": "PDU-A", "model": "APC AP8886", "ru": "U41-U42", "feed": "A"},
+                    {"type": "PDU-B", "model": "APC AP8886", "ru": "U39-U40", "feed": "B"},
+                    {"type": "UPS", "model": "APC SRT3000RMXLI", "ru": "U1-U3", "runtime_min": 15},
+                ]
+                if has_fiber:
+                    infra_items.append({"type": "Fiber PP", "model": "Corning CCH-04U", "ru": "U38", "ports": 48, "media": "LC duplex"})
+                if has_copper:
+                    infra_items.append({"type": "Copper PP", "model": "Panduit CP48WSBLY", "ru": "U37", "ports": 48, "media": "Cat6a RJ45"})
+
+                conn.execute(
+                    "INSERT INTO nc_racks (id, facility_id, rack_name, total_ru, notes) VALUES (?,?,?,?,?)",
+                    (rack_id, fac_id, f"{site}-R1", 42, json.dumps({"infra": infra_items})),
+                )
+                racks_created += 1
+
+        if facilities_created or racks_created:
+            conn.commit()
+
     # ── Rebuild graph ─────────────────────────────────────────────────
     graph["nodes"] = new_groups + devices + infra_nodes
 
@@ -236,6 +286,8 @@ def enrich_topology(
         "devices": len(devices),
         "infra_added": infra_added,
         "groups_added": groups_added,
+        "facilities_created": facilities_created,
+        "racks_created": racks_created,
         "total_nodes": len(graph["nodes"]),
         "validation": {
             "issues_found": validation.get("issues_found", 0),

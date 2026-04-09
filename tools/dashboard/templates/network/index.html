@@ -369,8 +369,12 @@ document.getElementById('import-wizard-form').addEventListener('submit', async f
     // Show enrichment results
     var enrichInfo = d.enrichment || {};
     var valInfo = d.validation || {};
-    if (enrichInfo.groups_added) {
-      step('Enriched: ' + enrichInfo.groups_added + ' site groups', 70);
+    if (enrichInfo.groups_added || enrichInfo.facilities_created || enrichInfo.racks_created) {
+      var eMsg = [];
+      if (enrichInfo.groups_added) eMsg.push(enrichInfo.groups_added + ' site groups');
+      if (enrichInfo.facilities_created) eMsg.push(enrichInfo.facilities_created + ' facilities');
+      if (enrichInfo.racks_created) eMsg.push(enrichInfo.racks_created + ' racks (with PDU/UPS/PP)');
+      step('Enriched: ' + eMsg.join(', '), 70);
     }
 
     // Show validation results
@@ -385,6 +389,7 @@ document.getElementById('import-wizard-form').addEventListener('submit', async f
     var summary = '<strong style="color:#43a047;">\u2705 Import Successful</strong><br>';
     summary += d.node_count + ' devices, ' + d.edge_count + ' links';
     if (enrichInfo.groups_added) summary += ' &bull; ' + enrichInfo.groups_added + ' site groups';
+    if (enrichInfo.racks_created) summary += ' &bull; ' + enrichInfo.racks_created + ' racks created';
     if (valInfo.fixes_applied > 0) summary += ' &bull; ' + valInfo.fixes_applied + ' types fixed';
     else summary += ' &bull; All types valid';
     if (d.template) summary += ' &bull; Template saved';
