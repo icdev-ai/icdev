@@ -817,7 +817,7 @@ def main():
             result = stage_discover(domain=args.domain, db_path=args.db_path)
         elif args.scan:
             source = None if args.scan_all else args.source
-            result = stage_scan(source=source, db_path=args.db_path)
+            result = stage_scan(source=source, db_path=args.db_path, domain=args.domain)
         elif args.extract:
             result = stage_extract(db_path=args.db_path)
         elif args.score:
