@@ -747,7 +747,9 @@ def analyze_code_quality(db_path=None):
                    ON cq.function_name = rf.source_function
                WHERE cq.function_name IS NOT NULL
                  AND cq.cyclomatic_complexity >= 10
-               GROUP BY cq.function_name, cq.file_path
+               GROUP BY cq.function_name, cq.file_path, cq.cyclomatic_complexity,
+                        cq.cognitive_complexity, cq.nesting_depth, cq.smell_count,
+                        cq.maintainability_score
                ORDER BY cq.cyclomatic_complexity DESC
                LIMIT 50"""
         ).fetchall()

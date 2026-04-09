@@ -337,8 +337,18 @@ def scan_cve_databases(config):
                         "",
                     )
                     metrics = cve_data.get("metrics", {})
-                    cvss_data = metrics.get("cvssMetricV31", [{}])
-                    cvss_score = cvss_data[0].get("cvssData", {}).get("baseScore", 0.0) if cvss_data else 0.0
+                    cvss_data = metrics.get("cvssMetricV31") or metrics.get("cvssMetricV30") or []
+                    # NVD entries occasionally include cvssMetricV31 with baseScore: null,
+                    # so coerce defensively — `.get(key, default)` returns None when the
+                    # key exists with a null value, which then breaks `score / 10.0`.
+                    cvss_score = 0.0
+                    if cvss_data:
+                        raw = cvss_data[0].get("cvssData", {}).get("baseScore")
+                        if raw is not None:
+                            try:
+                                cvss_score = float(raw)
+                            except (TypeError, ValueError):
+                                cvss_score = 0.0
 
                     signals.append(
                         {
@@ -392,6 +402,14 @@ def scan_cve_databases(config):
                     for advisory in (data or [])[:max_results]:
                         ghsa_id = advisory.get("ghsa_id", "")
                         cve_id = advisory.get("cve_id", ghsa_id)
+                        # GitHub Advisory cvss can be missing, present-but-null, or
+                        # present with score: null. Coerce to a float defensively.
+                        adv_cvss = advisory.get("cvss") or {}
+                        adv_score_raw = adv_cvss.get("score")
+                        try:
+                            adv_score = float(adv_score_raw) if adv_score_raw is not None else 0.0
+                        except (TypeError, ValueError):
+                            adv_score = 0.0
                         signals.append(
                             {
                                 "id": _signal_id(),
@@ -406,10 +424,10 @@ def scan_cve_databases(config):
                                         "cve_id": cve_id,
                                         "severity": advisory.get("severity", ""),
                                         "ecosystem": eco,
-                                        "cvss_score": (advisory.get("cvss", {}) or {}).get("score", 0),
+                                        "cvss_score": adv_score,
                                     }
                                 ),
-                                "community_score": min(((advisory.get("cvss", {}) or {}).get("score", 0)) / 10.0, 1.0),
+                                "community_score": min(adv_score / 10.0, 1.0),
                                 "content_hash": _content_hash(ghsa_id or cve_id),
                                 "discovered_at": now_iso(),
                             }

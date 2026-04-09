@@ -190,7 +190,7 @@ def stage_discover(domain=None, db_path=None):
     return result
 
 
-def stage_scan(source=None, db_path=None):
+def stage_scan(source=None, db_path=None, domain=None):
     """Stage 1b: Scan all configured sources for customer signals.
 
     Runs source adapters (G2, Capterra, TrustRadius, Reddit, GitHub Issues,
@@ -199,6 +199,8 @@ def stage_scan(source=None, db_path=None):
     Args:
         source: Specific source name to scan, or None for all.
         db_path: Optional DB path override.
+        domain: Active product domain — passed to source_scanner.run_scan as
+            active_domain so per-domain keyword filters apply.
 
     Returns:
         Dict with scan results.
@@ -208,14 +210,14 @@ def stage_scan(source=None, db_path=None):
     run_scan = _try_import("tools.creative.source_scanner", "run_scan")
     if run_scan:
         try:
-            result["scan"] = run_scan(source=source, db_path=db_path)
+            result["scan"] = run_scan(source=source, db_path=db_path, active_domain=domain)
         except Exception as e:
             result["scan"] = {"error": str(e)}
     else:
         result["scan"] = {"error": "source_scanner not available"}
 
     result["completed_at"] = now_iso()
-    _audit("creative.scan", f"Scan complete source={source or 'all'}", result)
+    _audit("creative.scan", f"Scan complete source={source or 'all'} domain={domain or '-'}", result)
     return result
 
 
@@ -486,9 +488,10 @@ def run_full_pipeline(domain=None, db_path=None):
     if not domain:
         domain = config.get("domain", {}).get("name")
 
-    # Stage 1: Discover competitors + scan sources
+    # Stage 1: Discover competitors + scan sources (scan honors --domain via
+    # per-platform keyword_filter_by_domain entries in args/creative_config.yaml)
     result["stages"]["discover"] = stage_discover(domain=domain, db_path=db_path)
-    result["stages"]["scan"] = stage_scan(db_path=db_path)
+    result["stages"]["scan"] = stage_scan(db_path=db_path, domain=domain)
 
     # Stage 2: Extract pain points
     result["stages"]["extract"] = stage_extract(db_path=db_path)
