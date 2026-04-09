@@ -8893,6 +8893,79 @@ Output ONLY the JSON object. No other text."""
         conn.close()
         return jsonify({"deleted": cid})
 
+    # ── Import Wizard: combined ingest + enrich + validate ──────────
+    @bp.route("/api/import-wizard", methods=["POST"])
+    @nc_login_required
+    def nc_api_import_wizard():
+        """One-shot import: ingest diagram + enrich + validate."""
+        from tools.network.network_ingester import ingest_diagram
+        import tempfile as _tmpmod
+
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        f = request.files["file"]
+        project_id = request.form.get("project_id", "ndc-network-intelligence")
+        name = request.form.get("name", f.filename or "uploaded")
+        do_enrich = request.form.get("enrich", "true").lower() in ("true", "1", "yes")
+        do_template = request.form.get("save_template", "false").lower() in ("true", "1", "yes")
+
+        # Save to temp
+        tmp_path = Path(os.path.join(_tmpmod.gettempdir(), f"ndc_import_{_uuid.uuid4().hex[:8]}_{f.filename}"))
+        f.save(str(tmp_path))
+
+        try:
+            # Step 1: Ingest
+            ingest_result = ingest_diagram(str(tmp_path), project_id, name)
+            if ingest_result.get("error"):
+                return jsonify({"step": "ingest", "error": ingest_result["error"]}), 400
+
+            topo_id = ingest_result["topology_id"]
+            response = {
+                "topology_id": topo_id,
+                "topology_name": name,
+                "node_count": ingest_result.get("node_count", 0),
+                "edge_count": ingest_result.get("edge_count", 0),
+                "device_count": ingest_result.get("device_count", 0),
+            }
+
+            # Step 2: Enrich
+            if do_enrich:
+                try:
+                    from tools.network.topology_enricher import enrich_topology
+                    enrich_result = enrich_topology(topo_id, add_infra=False, add_groups=True)
+                    response["enrichment"] = {
+                        "groups_added": enrich_result.get("groups_added", 0),
+                        "validation": enrich_result.get("validation", {}),
+                    }
+                except Exception as e:
+                    response["enrichment"] = {"error": str(e)}
+
+            # Step 3: Validate
+            try:
+                from tools.network.topology_validator import validate_topology
+                val_result = validate_topology(topo_id, fix=True)
+                response["validation"] = {
+                    "issues_found": val_result.get("issues_found", 0),
+                    "fixes_applied": val_result.get("fixes_applied", 0),
+                    "passed": val_result.get("passed", True),
+                }
+            except Exception as e:
+                response["validation"] = {"error": str(e)}
+
+            # Step 4: Save template
+            if do_template:
+                try:
+                    from tools.network.topology_enricher import save_as_template
+                    tpl = save_as_template(topo_id, name + " (Template)")
+                    response["template"] = tpl
+                except Exception:
+                    pass
+
+            return jsonify(response)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
     # ── Topology Enrichment API ─────────────────────────────────────
     @bp.route("/api/topology/<tid>/enrich", methods=["POST"])
     @nc_login_required
@@ -8908,6 +8981,19 @@ Output ONLY the JSON object. No other text."""
             return jsonify(result)
         except ImportError:
             return jsonify({"error": "topology_enricher not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @bp.route("/api/topology/<tid>/validate", methods=["POST"])
+    @nc_login_required
+    def nc_api_validate_topology(tid):
+        try:
+            from tools.network.topology_validator import validate_topology
+            data = request.get_json(force=True, silent=True) or {}
+            result = validate_topology(tid, fix=data.get("fix", True))
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "topology_validator not available"}), 503
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 

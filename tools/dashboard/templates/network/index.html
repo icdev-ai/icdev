@@ -351,51 +351,50 @@ document.getElementById('import-wizard-form').addEventListener('submit', async f
   function step(msg, pct) { stepEl.textContent = msg; bar.style.width = pct + '%'; }
 
   try {
-    // Step 1: Upload & Ingest
-    step('Uploading and ingesting diagram...', 20);
+    // Single combined API call: ingest + enrich + validate
+    step('Uploading and processing diagram...', 20);
     const fd = new FormData(form);
     fd.append('project_id', 'ndc-network-intelligence');
-    const r1 = await fetch(NC_BASE + '/api/network-intelligence/ingest', {method: 'POST', body: fd});
-    const d1 = await r1.json();
-    if (d1.error) throw new Error(d1.error);
-    const topoId = d1.topology_id;
-    step('Ingested: ' + d1.node_count + ' devices, ' + d1.edge_count + ' links', 50);
+    fd.append('enrich', form.querySelector('[name="enrich"]').checked ? 'true' : 'false');
+    fd.append('save_template', form.querySelector('[name="save_template"]').checked ? 'true' : 'false');
 
-    // Step 2: Enrich (if checked)
-    const doEnrich = form.querySelector('[name="enrich"]').checked;
-    if (doEnrich) {
-      step('Enriching: adding site groups and rack infrastructure...', 60);
-      const r2 = await fetch(NC_BASE + '/api/topology/' + topoId + '/enrich', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({add_infra: true, add_groups: true})
-      });
-      const d2 = await r2.json();
-      if (!d2.error) {
-        step('Enriched: ' + (d2.infra_added || 0) + ' infra items, ' + (d2.groups_added || 0) + ' site groups', 80);
-      }
+    const r1 = await fetch(NC_BASE + '/api/import-wizard', {method: 'POST', body: fd});
+    const ct = r1.headers.get('content-type') || '';
+    if (!ct.includes('json')) throw new Error('Server returned non-JSON (status ' + r1.status + ')');
+    const d = await r1.json();
+    if (d.error) throw new Error(d.error);
+
+    step('Ingested: ' + d.node_count + ' devices, ' + d.edge_count + ' links', 50);
+
+    // Show enrichment results
+    var enrichInfo = d.enrichment || {};
+    var valInfo = d.validation || {};
+    if (enrichInfo.groups_added) {
+      step('Enriched: ' + enrichInfo.groups_added + ' site groups', 70);
     }
 
-    // Step 3: Save as template (if checked)
-    const doTemplate = form.querySelector('[name="save_template"]').checked;
-    if (doTemplate) {
-      step('Saving as template...', 90);
-      const tplName = form.querySelector('[name="name"]').value || 'Imported Topology';
-      await fetch(NC_BASE + '/api/topology/' + topoId + '/save-template', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: tplName + ' (Template)'})
-      });
-    }
+    // Show validation results
+    var valMsg = (valInfo.issues_found || 0) + ' issues checked';
+    if (valInfo.fixes_applied > 0) valMsg += ', ' + valInfo.fixes_applied + ' auto-fixed';
+    step('Validated: ' + valMsg + (valInfo.passed ? ' \u2714' : ''), 90);
 
-    step('Done!', 100);
+    step('\u2705 Complete! Opening canvas...', 100);
     resultEl.style.display = 'block';
     resultEl.style.background = 'rgba(67,160,71,0.1)';
     resultEl.style.border = '1px solid #43a047';
-    resultEl.innerHTML = '<strong style="color:#43a047;">Success!</strong> ' + d1.node_count + ' devices, ' + d1.edge_count + ' links imported. Opening canvas...';
+    var summary = '<strong style="color:#43a047;">\u2705 Import Successful</strong><br>';
+    summary += d.node_count + ' devices, ' + d.edge_count + ' links';
+    if (enrichInfo.groups_added) summary += ' &bull; ' + enrichInfo.groups_added + ' site groups';
+    if (valInfo.fixes_applied > 0) summary += ' &bull; ' + valInfo.fixes_applied + ' types fixed';
+    else summary += ' &bull; All types valid';
+    if (d.template) summary += ' &bull; Template saved';
+    summary += '<br><span style="color:#888;">Redirecting to canvas...</span>';
+    resultEl.innerHTML = summary;
 
-    // Step 4: Open canvas
+    // Open canvas
     setTimeout(function() {
-      window.location.href = '/network/canvas/' + topoId;
-    }, 1500);
+      window.location.href = '/network/canvas/' + d.topology_id;
+    }, 2000);
 
   } catch(err) {
     step('Error', 100);
