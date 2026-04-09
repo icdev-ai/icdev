@@ -156,6 +156,26 @@ def enrich_topology(
 
         infra_added = len(infra_nodes)
 
+    # ── Sync site info from ni_devices into graph_json nodes ─────────
+    # (ni_devices may have site set by metadata assignment after ingestion)
+    try:
+        dev_sites = {}
+        rows = conn.execute(
+            "SELECT node_id, site FROM ni_devices WHERE topology_id = ? AND site IS NOT NULL AND site != ''",
+            (topology_id,),
+        ).fetchall()
+        for r in rows:
+            nid = r["node_id"] if isinstance(r, dict) else r[0]
+            site = r["site"] if isinstance(r, dict) else r[1]
+            dev_sites[nid] = site
+        for d in devices:
+            if not d.get("config", {}).get("site") and d["id"] in dev_sites:
+                if "config" not in d:
+                    d["config"] = {}
+                d["config"]["site"] = dev_sites[d["id"]]
+    except Exception:
+        pass  # Best-effort: ni_devices table may not exist
+
     # ── Add site grouping boxes ───────────────────────────────────────
     new_groups = []
     if add_groups:
