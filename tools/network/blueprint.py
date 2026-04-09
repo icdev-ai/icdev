@@ -8712,6 +8712,129 @@ Output ONLY the JSON object. No other text."""
     def nc_device_profiles_page():
         return render_template("network/device_profiles.html")
 
+    # ── Hardware Profiles (datasheet-level specs) ────────────────────────
+    @bp.route("/hardware-profiles")
+    @nc_login_required
+    def nc_hardware_profiles_page():
+        return render_template("network/hardware_profiles.html")
+
+    @bp.route("/api/hardware-profiles", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_hardware_profiles():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, vendor, model, model_family, device_type, form_factor, "
+            "rack_units, throughput_gbps, power_max_w, replacement_cost, "
+            "eol_date, eos_date, ports_json, tags, is_builtin "
+            "FROM nc_hardware_profiles ORDER BY vendor, model"
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["ports"] = json.loads(d.pop("ports_json", "[]"))
+            except Exception:
+                d["ports"] = []
+            try:
+                d["tags"] = json.loads(d.pop("tags", "[]"))
+            except Exception:
+                d["tags"] = []
+            result.append(d)
+        return jsonify(result)
+
+    @bp.route("/api/hardware-profiles/<pid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_hardware_profile(pid):
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM nc_hardware_profiles WHERE id=?", (pid,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        d = dict(row)
+        for jcol in ("ports_json", "components_json", "mgmt_ports_json", "os_options", "tags"):
+            try:
+                d[jcol.replace("_json", "")] = json.loads(d.pop(jcol, "[]"))
+            except Exception:
+                d[jcol.replace("_json", "")] = []
+        return jsonify(d)
+
+    @bp.route("/api/hardware-profiles", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_hardware_profile():
+        data = request.get_json(force=True, silent=True) or {}
+        pid = "hw-" + str(_uuid.uuid4())[:8]
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_hardware_profiles (id, vendor, model, model_family, device_type, "
+            "form_factor, rack_units, weight_kg, power_typical_w, power_max_w, throughput_gbps, "
+            "ports_json, replacement_cost, eol_date, eos_date, tags, is_builtin, created_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)",
+            (pid, data.get("vendor", ""), data.get("model", ""), data.get("model_family", ""),
+             data.get("device_type", "router"), data.get("form_factor", "rack"),
+             data.get("rack_units", 1), data.get("weight_kg"),
+             data.get("power_typical_w"), data.get("power_max_w"), data.get("throughput_gbps"),
+             json.dumps(data.get("ports", [])), data.get("replacement_cost"),
+             data.get("eol_date"), data.get("eos_date"),
+             json.dumps(data.get("tags", [])), data.get("created_by", "")),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": pid}), 201
+
+    @bp.route("/api/hardware-profiles/<pid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_hardware_profile(pid):
+        conn = get_connection()
+        row = conn.execute("SELECT is_builtin FROM nc_hardware_profiles WHERE id=?", (pid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        if row["is_builtin"]:
+            conn.close()
+            return jsonify({"error": "Cannot delete built-in profile"}), 403
+        conn.execute("DELETE FROM nc_hardware_profiles WHERE id=?", (pid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"deleted": pid})
+
+    # ── Naming Conventions ─────────────────────────────────────────────
+    @bp.route("/api/naming-conventions", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_naming_conventions():
+        from tools.network.naming_engine import list_conventions
+        return jsonify(list_conventions())
+
+    @bp.route("/api/naming-conventions/<cid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_naming_convention(cid):
+        from tools.network.naming_engine import _load_convention
+        conv = _load_convention(cid)
+        if not conv:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(conv)
+
+    @bp.route("/api/naming-conventions/<cid>/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_generate_name(cid):
+        from tools.network.naming_engine import generate_name, bulk_generate
+        data = request.get_json(force=True, silent=True) or {}
+        count = data.pop("count", 1)
+        topology_id = data.pop("topology_id", "")
+        if count > 1:
+            result = bulk_generate(cid, count, data, topology_id)
+        else:
+            result = generate_name(cid, data, topology_id)
+        return jsonify(result)
+
+    @bp.route("/api/naming-conventions/<cid>/validate", methods=["POST"])
+    @nc_login_required
+    def nc_api_validate_name(cid):
+        from tools.network.naming_engine import validate_name
+        data = request.get_json(force=True, silent=True) or {}
+        name = data.get("name", "")
+        return jsonify(validate_name(name, cid))
+
     @bp.route("/discovery")
     @nc_login_required
     def nc_discovery_page():
