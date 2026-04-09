@@ -893,6 +893,79 @@ CREATE TABLE IF NOT EXISTS nc_device_profiles (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS nc_hardware_profiles (
+    id                  TEXT PRIMARY KEY,
+    vendor              TEXT NOT NULL,
+    model               TEXT NOT NULL,
+    model_family        TEXT,
+    device_type         TEXT NOT NULL,
+    form_factor         TEXT DEFAULT 'rack',
+    rack_units          INTEGER DEFAULT 1,
+    weight_kg           REAL,
+    depth_mm            INTEGER,
+    width_mm            INTEGER,
+    height_mm           INTEGER,
+    power_typical_w     INTEGER,
+    power_max_w         INTEGER,
+    psu_count           INTEGER DEFAULT 2,
+    psu_type            TEXT,
+    operating_temp_min_c INTEGER DEFAULT 0,
+    operating_temp_max_c INTEGER DEFAULT 40,
+    humidity_min_pct    INTEGER DEFAULT 10,
+    humidity_max_pct    INTEGER DEFAULT 85,
+    airflow_direction   TEXT,
+    altitude_max_m      INTEGER DEFAULT 3000,
+    acoustic_dba        REAL,
+    throughput_gbps     REAL,
+    pps_mpps            REAL,
+    routing_table_size  INTEGER,
+    arp_table_size      INTEGER,
+    mac_table_size      INTEGER,
+    nat_sessions        INTEGER,
+    vpn_tunnels         INTEGER,
+    vlan_count          INTEGER,
+    ports_json          TEXT DEFAULT '[]',
+    components_json     TEXT DEFAULT '[]',
+    mgmt_ports_json     TEXT DEFAULT '[]',
+    os_options          TEXT DEFAULT '[]',
+    license_model       TEXT,
+    eol_date            TEXT,
+    eos_date            TEXT,
+    replacement_cost    REAL,
+    annual_maintenance_pct REAL DEFAULT 0.15,
+    datasheet_url       TEXT,
+    image_url           TEXT,
+    tags                TEXT DEFAULT '[]',
+    is_builtin          INTEGER DEFAULT 0,
+    created_by          TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(vendor, model)
+);
+
+CREATE TABLE IF NOT EXISTS nc_naming_conventions (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL UNIQUE,
+    description     TEXT,
+    pattern         TEXT NOT NULL,
+    fields_json     TEXT NOT NULL DEFAULT '[]',
+    separator       TEXT DEFAULT '',
+    max_length      INTEGER DEFAULT 63,
+    case_rule       TEXT DEFAULT 'upper',
+    example         TEXT,
+    is_builtin      INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_naming_sequences (
+    id              TEXT PRIMARY KEY,
+    convention_id   TEXT REFERENCES nc_naming_conventions(id),
+    scope_key       TEXT NOT NULL,
+    topology_id     TEXT,
+    current_value   INTEGER DEFAULT 0,
+    UNIQUE(convention_id, scope_key, topology_id)
+);
+
 CREATE TABLE IF NOT EXISTS nc_discovery_configs (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
@@ -13563,6 +13636,159 @@ def init_db():
                 )
             conn.commit()
             print(f"[init_db] Seeded {len(_profiles)} device profiles.")
+
+        # ── Seed hardware profiles ────────────────────────────────────────
+        hw_count = conn.execute("SELECT COUNT(*) FROM nc_hardware_profiles").fetchone()[0]
+        if hw_count == 0:
+            _hw_profiles = [
+                # Juniper MX Series
+                ("hw-juniper-mx304", "Juniper", "MX304", "MX Series", "router", "rack", 2, 12.25, 508, 438, 88, 350, 480, 2, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 65, 4800, 2000, 4000000, 256000, None, None, None, None,
+                 json.dumps([{"count":4,"speed":"100GbE","type":"QSFP28","breakout":"4x25GbE"},{"count":8,"speed":"10GbE","type":"SFP+"}]),
+                 json.dumps([{"type":"Chassis","model":"MX304-PREM","qty":1},{"type":"RE","model":"JNP304-RE-S","qty":2},{"type":"Fan","model":"JNP-FAN-2RU","qty":3},{"type":"PSU","model":"JNP-PWR2200-AC","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS","JunOS Evolved"]), "subscription", "2031-12-31", "2029-12-31", 85000, 0.15,
+                 "https://www.juniper.net/documentation/us/en/hardware/mx304/", None, json.dumps(["core","edge","peering"]), 1),
+                ("hw-juniper-mx204", "Juniper", "MX204", "MX Series", "router", "rack", 1, 3.4, 298, 438, 44, 200, 275, 2, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 55, 400, 200, 2000000, 128000, None, None, None, None,
+                 json.dumps([{"count":4,"speed":"100GbE","type":"QSFP28","breakout":"4x25GbE"},{"count":8,"speed":"10GbE","type":"SFP+"}]),
+                 json.dumps([{"type":"Chassis","model":"MX204","qty":1},{"type":"PSU","model":"JNP-PWR-350-AC","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS"]), "subscription", "2030-06-30", "2028-06-30", 35000, 0.15, None, None, json.dumps(["access","cpe","small-core"]), 1),
+                ("hw-juniper-mx10003", "Juniper", "MX10003", "MX10000 Series", "router", "chassis", 3, 27.0, 610, 438, 131, 800, 1200, 4, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 72, 9600, 4000, 8000000, 512000, None, None, None, None,
+                 json.dumps([{"count":3,"speed":"line card slot","type":"MPC","breakout":"varies"}]),
+                 json.dumps([{"type":"Chassis","model":"MX10003","qty":1},{"type":"RE","model":"RE-MX10003","qty":2},{"type":"Fan","model":"MX10003-FAN","qty":6},{"type":"PSU","model":"PWR-MX10003-AC","qty":4}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS","JunOS Evolved"]), "subscription", "2033-12-31", "2031-12-31", 180000, 0.12, None, None, json.dumps(["core","backbone","dc-edge"]), 1),
+                ("hw-juniper-mx10008", "Juniper", "MX10008", "MX10000 Series", "router", "chassis", 13, 105.0, 610, 438, 572, 3000, 4500, 8, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 78, 28800, 12000, 16000000, 1024000, None, None, None, None,
+                 json.dumps([{"count":8,"speed":"line card slot","type":"MPC","breakout":"varies"}]),
+                 json.dumps([{"type":"Chassis","model":"MX10008","qty":1},{"type":"RE","model":"RE-MX10008","qty":2},{"type":"SCB","model":"SCB-MX10008","qty":3},{"type":"Fan","model":"MX10008-FAN","qty":8},{"type":"PSU","model":"PWR-MX10008-AC","qty":8}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS","JunOS Evolved"]), "subscription", "2034-12-31", "2032-12-31", 450000, 0.10, None, None, json.dumps(["core","backbone","ix"]), 1),
+                ("hw-juniper-mx480", "Juniper", "MX480", "MX Series", "router", "chassis", 8, 41.7, 610, 438, 355, 1200, 1800, 4, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 72, 2400, 960, 4000000, 256000, None, None, None, None,
+                 json.dumps([{"count":6,"speed":"MPC slot","type":"MPC","breakout":"varies"}]),
+                 json.dumps([{"type":"Chassis","model":"MX480","qty":1},{"type":"RE","model":"RE-S-2X00x6","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS"]), "perpetual", "2029-03-31", "2027-03-31", 120000, 0.15, None, None, json.dumps(["core","aggregation"]), 1),
+                ("hw-juniper-mx960", "Juniper", "MX960", "MX Series", "router", "chassis", 16, 85.0, 610, 438, 710, 2500, 3800, 8, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 75, 4800, 2000, 8000000, 512000, None, None, None, None,
+                 json.dumps([{"count":12,"speed":"MPC slot","type":"MPC","breakout":"varies"}]),
+                 json.dumps([{"type":"Chassis","model":"MX960","qty":1},{"type":"RE","model":"RE-S-2X00x6","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS"]), "perpetual", "2029-03-31", "2027-03-31", 200000, 0.12, None, None, json.dumps(["core","backbone","peering"]), 1),
+                ("hw-juniper-mx240", "Juniper", "MX240", "MX Series", "router", "chassis", 5, 24.5, 610, 438, 222, 600, 900, 2, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 68, 960, 480, 2000000, 128000, None, None, None, None,
+                 json.dumps([{"count":2,"speed":"MPC slot","type":"MPC","breakout":"varies"}]),
+                 json.dumps([{"type":"Chassis","model":"MX240","qty":1},{"type":"RE","model":"RE-S-1800x4","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS"]), "perpetual", "2028-12-31", "2026-12-31", 65000, 0.15, None, None, json.dumps(["edge","aggregation"]), 1),
+                ("hw-juniper-mx150", "Juniper", "MX150", "MX Series", "router", "rack", 1, 3.6, 254, 440, 44, 75, 100, 1, "AC", 0, 40, 10, 85, "side-to-side", 3000, 45, 50, 30, 500000, 64000, None, None, None, None,
+                 json.dumps([{"count":10,"speed":"1GbE","type":"RJ45"},{"count":2,"speed":"10GbE","type":"SFP+"}]),
+                 json.dumps([{"type":"Chassis","model":"MX150","qty":1}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["JunOS"]), "subscription", "2029-06-30", "2027-06-30", 12000, 0.18, None, None, json.dumps(["cpe","branch","sd-wan"]), 1),
+                # Cisco 8000 / ASR Series
+                ("hw-cisco-8101-32h", "Cisco", "8101-32H", "8000 Series", "router", "rack", 1, 9.5, 600, 438, 44, 400, 550, 2, "AC/DC", 0, 40, 10, 90, "front-to-back", 3000, 73, 12800, 4600, 10000000, 512000, None, None, None, None,
+                 json.dumps([{"count":32,"speed":"400GbE","type":"QSFP-DD","breakout":"4x100GbE"}]),
+                 json.dumps([{"type":"Chassis","model":"8101-32H","qty":1},{"type":"Fan","model":"8100-FAN","qty":4},{"type":"PSU","model":"PSU2KW-ACDD","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB-C"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XR"]), "subscription", "2034-12-31", "2032-12-31", 125000, 0.12, None, None, json.dumps(["core","spine","peering"]), 1),
+                ("hw-cisco-8102-64h", "Cisco", "8102-64H", "8000 Series", "router", "rack", 2, 18.0, 600, 438, 88, 800, 1100, 2, "AC/DC", 0, 40, 10, 90, "front-to-back", 3000, 75, 25600, 9200, 16000000, 1024000, None, None, None, None,
+                 json.dumps([{"count":64,"speed":"400GbE","type":"QSFP-DD","breakout":"4x100GbE"}]),
+                 json.dumps([{"type":"Chassis","model":"8102-64H","qty":1},{"type":"Fan","model":"8100-FAN","qty":6},{"type":"PSU","model":"PSU3KW-ACDD","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB-C"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XR"]), "subscription", "2034-12-31", "2032-12-31", 250000, 0.12, None, None, json.dumps(["core","spine","backbone"]), 1),
+                ("hw-cisco-8201", "Cisco", "8201", "8000 Series", "router", "rack", 1, 10.0, 600, 438, 44, 450, 600, 2, "AC/DC", 0, 40, 10, 90, "front-to-back", 3000, 72, 10800, 4000, 8000000, 512000, None, None, None, None,
+                 json.dumps([{"count":24,"speed":"400GbE","type":"QSFP-DD","breakout":"4x100GbE"},{"count":12,"speed":"100GbE","type":"QSFP28"}]),
+                 json.dumps([{"type":"Chassis","model":"8201","qty":1},{"type":"Fan","model":"8200-FAN","qty":4},{"type":"PSU","model":"PSU2KW-ACDD","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB-C"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XR"]), "subscription", "2034-12-31", "2032-12-31", 110000, 0.12, None, None, json.dumps(["core","edge","peering"]), 1),
+                ("hw-cisco-8202", "Cisco", "8202", "8000 Series", "router", "rack", 2, 17.0, 600, 438, 88, 700, 950, 2, "AC/DC", 0, 40, 10, 90, "front-to-back", 3000, 74, 10800, 4000, 8000000, 512000, None, None, None, None,
+                 json.dumps([{"count":12,"speed":"400GbE","type":"QSFP-DD","breakout":"4x100GbE"},{"count":60,"speed":"100GbE","type":"QSFP28"}]),
+                 json.dumps([{"type":"Chassis","model":"8202","qty":1},{"type":"Fan","model":"8200-FAN","qty":6},{"type":"PSU","model":"PSU3KW-ACDD","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB-C"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XR"]), "subscription", "2034-12-31", "2032-12-31", 135000, 0.12, None, None, json.dumps(["leaf","aggregation","dc-gw"]), 1),
+                ("hw-cisco-asr1001x", "Cisco", "ASR-1001-X", "ASR 1000 Series", "router", "rack", 1, 8.6, 445, 438, 44, 200, 275, 2, "AC", 0, 40, 10, 90, "side-to-side", 3000, 55, 20, 10, 1000000, 128000, None, 1000000, 2000, 4094,
+                 json.dumps([{"count":6,"speed":"1GbE","type":"RJ45"},{"count":2,"speed":"10GbE","type":"SFP+"}]),
+                 json.dumps([{"type":"Chassis","model":"ASR-1001-X","qty":1},{"type":"ESP","model":"ESP-20G","qty":1},{"type":"RP","model":"RP2","qty":1}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XE"]), "perpetual", "2028-12-31", "2026-12-31", 45000, 0.15, None, None, json.dumps(["branch","wan-edge","sd-wan"]), 1),
+                ("hw-cisco-asr1002hx", "Cisco", "ASR-1002-HX", "ASR 1000 Series", "router", "rack", 2, 14.5, 445, 438, 88, 350, 475, 2, "AC", 0, 40, 10, 90, "side-to-side", 3000, 60, 100, 50, 2000000, 256000, None, 2000000, 5000, 4094,
+                 json.dumps([{"count":8,"speed":"10GbE","type":"SFP+"},{"count":4,"speed":"1GbE","type":"RJ45"}]),
+                 json.dumps([{"type":"Chassis","model":"ASR-1002-HX","qty":1},{"type":"ESP","model":"ESP-100G","qty":1},{"type":"RP","model":"RP2","qty":1}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XE"]), "perpetual", "2029-06-30", "2027-06-30", 75000, 0.15, None, None, json.dumps(["wan-edge","aggregation"]), 1),
+                ("hw-cisco-asr9901", "Cisco", "ASR-9901", "ASR 9000 Series", "router", "rack", 2, 17.0, 600, 438, 88, 600, 850, 2, "AC/DC", 0, 40, 10, 90, "front-to-back", 3000, 72, 2400, 1000, 6000000, 256000, None, None, None, None,
+                 json.dumps([{"count":20,"speed":"100GbE","type":"QSFP28"},{"count":4,"speed":"10GbE","type":"SFP+"}]),
+                 json.dumps([{"type":"Chassis","model":"ASR-9901","qty":1},{"type":"RSP","model":"RSP-880","qty":2},{"type":"Fan","model":"ASR-9901-FAN","qty":4},{"type":"PSU","model":"PSU-2KW-AC","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XR"]), "subscription", "2031-12-31", "2029-12-31", 160000, 0.12, None, None, json.dumps(["core","peering","aggregation"]), 1),
+                ("hw-cisco-8111-32eh", "Cisco", "8111-32EH", "8000 Series", "router", "rack", 1, 9.5, 600, 438, 44, 380, 520, 2, "AC/DC", 0, 40, 10, 90, "front-to-back", 3000, 72, 12800, 4600, 10000000, 512000, None, None, None, None,
+                 json.dumps([{"count":32,"speed":"400GbE","type":"QSFP-DD","breakout":"4x100GbE"}]),
+                 json.dumps([{"type":"Chassis","model":"8111-32EH","qty":1},{"type":"Fan","model":"8100-FAN","qty":4},{"type":"PSU","model":"PSU2KW-ACDD","qty":2}]),
+                 json.dumps([{"type":"Console RJ45"},{"type":"USB-C"},{"type":"1GbE Mgmt"}]),
+                 json.dumps(["IOS-XR"]), "subscription", "2035-12-31", "2033-12-31", 130000, 0.12, None, None, json.dumps(["core","spine","peering"]), 1),
+            ]
+            for p in _hw_profiles:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_hardware_profiles "
+                    "(id, vendor, model, model_family, device_type, form_factor, rack_units, "
+                    "weight_kg, depth_mm, width_mm, height_mm, power_typical_w, power_max_w, "
+                    "psu_count, psu_type, operating_temp_min_c, operating_temp_max_c, "
+                    "humidity_min_pct, humidity_max_pct, airflow_direction, altitude_max_m, "
+                    "acoustic_dba, throughput_gbps, pps_mpps, routing_table_size, arp_table_size, "
+                    "mac_table_size, nat_sessions, vpn_tunnels, vlan_count, "
+                    "ports_json, components_json, mgmt_ports_json, os_options, license_model, "
+                    "eol_date, eos_date, replacement_cost, annual_maintenance_pct, "
+                    "datasheet_url, image_url, tags, is_builtin) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    p,
+                )
+            conn.commit()
+            print(f"[init_db] Seeded {len(_hw_profiles)} hardware profiles.")
+
+        # ── Seed naming conventions ─────────────────────────────────────
+        nc_count = conn.execute("SELECT COUNT(*) FROM nc_naming_conventions").fetchone()[0]
+        if nc_count == 0:
+            _conventions = [
+                ("nc-site-seq", "Site-Sequence", "Simple site code + sequence number",
+                 "{SITE}{SEQ}", json.dumps([
+                     {"name":"SITE","description":"Site/location code","type":"alpha","width":3,"pad":"none","values":["NYC","LAX","DCA","IAD","ORD","SFO","SEA","ATL","DAL","CHI"],"required":True},
+                     {"name":"SEQ","description":"Sequence number","type":"sequence","width":2,"pad":"0","start":1,"required":True}
+                 ]), "", 63, "upper", "NYC01", 1),
+                ("nc-site-role-seq", "Site-Role-Sequence", "Site code, device role, and sequence with dash separator",
+                 "{SITE}{SEP}{ROLE}{SEP}{SEQ}", json.dumps([
+                     {"name":"SITE","description":"Site/location code","type":"alpha","width":3,"pad":"none","values":["NYC","LAX","DCA","IAD","ORD"],"required":True},
+                     {"name":"ROLE","description":"Device role","type":"enum","width":4,"values":["CORE","DIST","ACCS","FWLL","VPNG","SRVR","WLAN","MGMT"],"required":True},
+                     {"name":"SEQ","description":"Sequence number","type":"sequence","width":2,"pad":"0","start":1,"required":True}
+                 ]), "-", 63, "upper", "NYC-CORE-01", 1),
+                ("nc-citybldg-role", "City-Building-Role", "City code, building ID, floor, role and sequence",
+                 "{CITY}{BLDG}{FLOOR}{SEP}{ROLE}{SEQ}", json.dumps([
+                     {"name":"CITY","description":"City code","type":"alpha","width":3,"pad":"none","required":True},
+                     {"name":"BLDG","description":"Building code","type":"alphanumeric","width":3,"pad":"none","required":True},
+                     {"name":"FLOOR","description":"Floor number","type":"numeric","width":1,"pad":"none","required":False},
+                     {"name":"ROLE","description":"Device role","type":"alpha","width":4,"pad":"none","required":True},
+                     {"name":"SEQ","description":"Sequence","type":"sequence","width":2,"pad":"0","start":1,"required":True}
+                 ]), "-", 63, "upper", "NYCWS3-CORE01", 1),
+                ("nc-dod-standard", "DoD Standard", "COCOM, base, building, role, and 3-digit sequence",
+                 "{COCOM}{SEP}{BASE}{SEP}{BLDG}{SEP}{ROLE}{SEP}{SEQ}", json.dumps([
+                     {"name":"COCOM","description":"Combatant command","type":"enum","width":6,"values":["CONUS","EUCOM","PACOM","CENTM","AFRCM","SOUTM"],"required":True},
+                     {"name":"BASE","description":"Installation name","type":"alpha","width":6,"pad":"none","required":True},
+                     {"name":"BLDG","description":"Building ID","type":"alphanumeric","width":4,"pad":"none","required":True},
+                     {"name":"ROLE","description":"Device role","type":"enum","width":3,"values":["RTR","SWI","FWL","SRV","VPN","WAP","LBR"],"required":True},
+                     {"name":"SEQ","description":"Sequence number","type":"sequence","width":3,"pad":"0","start":1,"required":True}
+                 ]), "-", 63, "upper", "CONUS-BRAGG-B12-RTR-001", 1),
+                ("nc-simple", "Simple", "Device type prefix with 3-digit sequence",
+                 "{TYPE}{SEP}{SEQ}", json.dumps([
+                     {"name":"TYPE","description":"Device type prefix","type":"enum","width":3,"values":["RTR","SW","FW","SRV","VPN","AP","LB","WAN"],"required":True},
+                     {"name":"SEQ","description":"Sequence number","type":"sequence","width":3,"pad":"0","start":1,"required":True}
+                 ]), "-", 63, "upper", "RTR-001", 1),
+            ]
+            for c in _conventions:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_naming_conventions "
+                    "(id, name, description, pattern, fields_json, separator, max_length, "
+                    "case_rule, example, is_builtin) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    c,
+                )
+            conn.commit()
+            print(f"[init_db] Seeded {len(_conventions)} naming conventions.")
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
