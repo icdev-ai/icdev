@@ -1776,3 +1776,11 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Librenms Adapter | tools\network\adapters\librenms_adapter.py | Auto-registered: adapters/librenms_adapter.py | --json | JSON |
 | Netbox Adapter | tools\network\adapters\netbox_adapter.py | Auto-registered: adapters/netbox_adapter.py | --json | JSON |
 | Solarwinds Adapter | tools\network\adapters\solarwinds_adapter.py | Auto-registered: adapters/solarwinds_adapter.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Naming Engine | tools\network\naming_engine.py | Auto-registered: network/naming_engine.py | --json | JSON |
+| Topology Enricher | tools\network\topology_enricher.py | Auto-registered: network/topology_enricher.py | --json | JSON |
+| Topology Validator | tools\network\topology_validator.py | Auto-registered: network/topology_validator.py | --json | JSON |
