@@ -187,7 +187,9 @@ const NODE_STYLES = {
   'access_point':     { fill: '#1a0f2b', stroke: '#9b59b6',  label: 'WAP',           symbol: 'AP' },
   'cloud_service':    { fill: '#0f0f2b', stroke: '#29b6f6',  label: 'Cloud Svc',     symbol: '☁' },
   'switch':           { fill: '#0f2b0f', stroke: '#27ae60',  label: 'Switch',        symbol: 'SW' },
-  'unknown':          { fill: '#1a1a2e', stroke: '#7a8cb0',  label: 'Device',        symbol: '?' },
+  'pdu':              { fill: '#fff3e0', stroke: '#e65100',  label: 'PDU',           symbol: '⚡' },
+  'ups':              { fill: '#fff8e1', stroke: '#f57f17',  label: 'UPS',           symbol: '🔋' },
+  'unknown':          { fill: '#f5f5f5', stroke: '#7a8cb0',  label: 'Device',        symbol: '?' },
 };
 
 // Alias map: ingester/intelligence types → canvas NODE_STYLES keys
@@ -3220,6 +3222,9 @@ function _fetchAndApplyHeatmap(metric) {
       'wan_link': 'WAN/MPLS circuit — provides inter-site connectivity via carrier MPLS, internet, or dedicated leased line. Managed by the service provider.',
       'access_point': 'Wireless access point or controller — provides Wi-Fi coverage for end-user devices. Managed by a wireless LAN controller for centralized policy and roaming.',
       'cloud_service': 'Cloud service endpoint — represents a cloud-hosted resource (VPC, VNet, or SaaS service) connected to the enterprise network.',
+      'pdu': 'Power Distribution Unit — distributes AC power from the facility feed to rack-mounted equipment via managed outlets. Supports remote monitoring, per-outlet metering, and sequential power-on.',
+      'ups': 'Uninterruptible Power Supply — provides battery backup during power outages for graceful shutdown or generator switchover. Conditions power to protect against surges and sags.',
+      'patch-panel': 'Patch panel — passive termination point for structured cabling. Fiber panels use LC/SC connectors for inter-rack and uplink runs. Copper panels use RJ45 Cat6a for access-layer horizontal cabling.',
     };
 
     paper.on('cell:mouseenter', function(cellView, evt) {
