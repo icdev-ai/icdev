@@ -34,22 +34,22 @@ logger = logging.getLogger("icdev.network.network_ingester")
 
 # Regex patterns mapping labels/types to canonical device types
 _DEVICE_TYPE_PATTERNS: list[tuple[str, str]] = [
-    # Firewalls (vendor names + naming convention codes)
-    (r"(?i)(palo\s*alto|fortinet|fortigate|checkpoint|asa|ftd|firepower|sophos|firewall|fw[-_]|nfw|[-_]FWLL[-_]|^FWLL[-_]|[-_]FW\d)", "firewall"),
-    # Routers (vendor names + naming convention codes: CORE, RTR)
-    (r"(?i)(router|asr|isr|nexus\s*7|cisco\s*[0-9]{4}|juniper\s*(mx|srx)|bgp|ospf|rtr[-_]|[-_]CORE[-_]|^CORE[-_]|[-_]RTR[-_]|^RTR[-_])", "router"),
+    # Firewalls (vendor names + ALL naming convention codes: FWLL, FWL, FW)
+    (r"(?i)(palo\s*alto|fortinet|fortigate|checkpoint|asa|ftd|firepower|sophos|firewall|nfw|[-_]FWLL?[-_]|[-_]FWL[-_]|[-_]FW[-_]|[-_]FW\d|^FW[-_]|^FWL[-_])", "firewall"),
+    # Routers (vendor names + naming convention codes: CORE, RTR, GW)
+    (r"(?i)(router|asr|isr|nexus\s*7|cisco\s*[0-9]{4}|juniper\s*(mx|srx)|bgp|ospf|[-_]CORE[-_]|[-_]RTR[-_]|^RTR[-_]|^CORE[-_]|[-_]GW$|^.*-GW$|internet.?gw|gateway)", "router"),
     # Load balancers
-    (r"(?i)(load\s*bal|f5|big[-\s]?ip|netscaler|citrix\s*adc|haproxy|nlb|alb|elb|lb[-_]|[-_]LB[-_]|^LB[-_])", "load_balancer"),
-    # Switches (vendor names + naming convention codes: DIST, ACCS)
-    (r"(?i)(switch|catalyst|nexus\s*[3-9]|arista\s*[0-9]|meraki\s*ms|sw[-_]|l2[-_]|l3[-_]|[-_]DIST[-_]|^DIST[-_]|[-_]ACCS[-_]|^ACCS[-_]|[-_]SW\d)", "switch"),
+    (r"(?i)(load\s*bal|f5|big[-\s]?ip|netscaler|citrix\s*adc|haproxy|nlb|alb|elb|[-_]LB[-_]|[-_]LBR[-_]|^LB[-_])", "load_balancer"),
+    # Switches (vendor names + ALL naming convention codes: DIST, ACCS, SWI, SW)
+    (r"(?i)(switch|catalyst|nexus\s*[3-9]|arista\s*[0-9]|meraki\s*ms|[-_]DIST[-_]|[-_]ACCS[-_]|[-_]SWI[-_]|[-_]SW[-_]|[-_]SW\d|^DIST[-_]|^ACCS[-_]|^SWI[-_]|^SW[-_])", "switch"),
     # VPN gateways
-    (r"(?i)(vpn|ipsec|ssl\s*vpn|anyconnect|wireguard|vpn[-_]gw|[-_]VPNG[-_]|^VPNG[-_])", "vpn_gateway"),
-    # Access points / Wireless
-    (r"(?i)(access\s*point|wifi|wireless|wap|meraki\s*mr|wlc|ap[-_]|[-_]WLAN[-_]|^WLAN[-_]|[-_]AP\d)", "access_point"),
-    # Servers
-    (r"(?i)(server|vm|hypervisor|esxi|vcenter|host|srv[-_]|dc[-_]|dns|dhcp|ntp|syslog|siem|[-_]SRVR[-_]|^SRVR[-_]|[-_]SRV\d)", "server"),
+    (r"(?i)(vpn|ipsec|ssl\s*vpn|anyconnect|wireguard|vpn[-_]gw|[-_]VPNG?[-_]|[-_]VPN[-_]|^VPN[-_])", "vpn_gateway"),
+    # Access points / Wireless (WLC, WLAN, AP, WAP)
+    (r"(?i)(access\s*point|wifi|wireless|wap|meraki\s*mr|[-_]WLAN[-_]|[-_]WLC[-_]|[-_]AP[-_]|[-_]AP\d|^WLC[-_]|^WLAN[-_]|^AP[-_])", "access_point"),
+    # Servers + Security appliances (SRV, SRVR, SIEM, IDS, IPS, NOC)
+    (r"(?i)(server|vm|hypervisor|esxi|vcenter|host|dns|dhcp|ntp|syslog|siem|[-_]SRVR?[-_]|[-_]SRV[-_]|[-_]SRV\d|[-_]IDS[-_]|[-_]IPS[-_]|[-_]SIEM[-_]|[-_]NOC[-_]|^SRV[-_]|^SRVR[-_])", "server"),
     # WAN links
-    (r"(?i)(wan|mpls|sd[-\s]?wan|dmpvn|internet\s*link|circuit|isp)", "wan_link"),
+    (r"(?i)(wan|mpls|sd[-\s]?wan|dmpvn|internet\s*link|circuit|isp|disa[-_]mpls|[-_]MPLS)", "wan_link"),
     # Cloud services
     (r"(?i)(cloud|aws|azure|gcp|oci|saas|paas|iaas|vpc|vnet|tgw)", "cloud_service"),
 ]

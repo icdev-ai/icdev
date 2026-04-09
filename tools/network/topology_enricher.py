@@ -221,6 +221,15 @@ def enrich_topology(
 
     conn.close()
 
+    # ── Auto-validate and fix unknown types ───────────────────────────
+    validation = {}
+    try:
+        from tools.network.topology_validator import validate_topology
+
+        validation = validate_topology(topology_id, fix=True)
+    except Exception:
+        pass
+
     return {
         "topology_id": topology_id,
         "topology_name": topo_name,
@@ -228,6 +237,11 @@ def enrich_topology(
         "infra_added": infra_added,
         "groups_added": groups_added,
         "total_nodes": len(graph["nodes"]),
+        "validation": {
+            "issues_found": validation.get("issues_found", 0),
+            "fixes_applied": validation.get("fixes_applied", 0),
+            "passed": validation.get("passed", True),
+        },
     }
 
 
