@@ -8835,6 +8835,64 @@ Output ONLY the JSON object. No other text."""
         name = data.get("name", "")
         return jsonify(validate_name(name, cid))
 
+    @bp.route("/api/naming-conventions", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_naming_convention():
+        data = request.get_json(force=True, silent=True) or {}
+        cid = "nc-" + str(_uuid.uuid4())[:8]
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_naming_conventions (id, name, description, pattern, "
+            "fields_json, separator, max_length, case_rule, example, is_builtin) "
+            "VALUES (?,?,?,?,?,?,?,?,?,0)",
+            (cid, data.get("name", ""), data.get("description", ""),
+             data.get("pattern", ""), data.get("fields_json", "[]"),
+             data.get("separator", ""), data.get("max_length", 63),
+             data.get("case_rule", "upper"), data.get("example", "")),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": cid}), 201
+
+    @bp.route("/api/naming-conventions/<cid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_naming_convention(cid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM nc_naming_conventions WHERE id=?", (cid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        updates = []
+        params = []
+        for col in ("name", "description", "pattern", "fields_json", "separator", "max_length", "case_rule", "example"):
+            if col in data:
+                updates.append(f"{col} = ?")
+                params.append(data[col])
+        if updates:
+            params.append(cid)
+            conn.execute(f"UPDATE nc_naming_conventions SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
+        conn.close()
+        return jsonify({"updated": cid})
+
+    @bp.route("/api/naming-conventions/<cid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_naming_convention(cid):
+        conn = get_connection()
+        row = conn.execute("SELECT is_builtin FROM nc_naming_conventions WHERE id=?", (cid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        if row["is_builtin"]:
+            conn.close()
+            return jsonify({"error": "Cannot delete built-in convention"}), 403
+        conn.execute("DELETE FROM nc_naming_conventions WHERE id=?", (cid,))
+        conn.execute("DELETE FROM nc_naming_sequences WHERE convention_id=?", (cid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"deleted": cid})
+
     @bp.route("/discovery")
     @nc_login_required
     def nc_discovery_page():
