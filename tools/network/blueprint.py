@@ -8893,6 +8893,38 @@ Output ONLY the JSON object. No other text."""
         conn.close()
         return jsonify({"deleted": cid})
 
+    # ── Topology Enrichment API ─────────────────────────────────────
+    @bp.route("/api/topology/<tid>/enrich", methods=["POST"])
+    @nc_login_required
+    def nc_api_enrich_topology(tid):
+        try:
+            from tools.network.topology_enricher import enrich_topology
+            data = request.get_json(force=True, silent=True) or {}
+            result = enrich_topology(
+                tid,
+                add_infra=data.get("add_infra", True),
+                add_groups=data.get("add_groups", True),
+            )
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "topology_enricher not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @bp.route("/api/topology/<tid>/save-template", methods=["POST"])
+    @nc_login_required
+    def nc_api_save_as_template(tid):
+        try:
+            from tools.network.topology_enricher import save_as_template
+            data = request.get_json(force=True, silent=True) or {}
+            name = data.get("name", f"Template from {tid}")
+            result = save_as_template(tid, name, data.get("description", ""))
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "topology_enricher not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @bp.route("/discovery")
     @nc_login_required
     def nc_discovery_page():

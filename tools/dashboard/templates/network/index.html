@@ -8,9 +8,9 @@
     <p class="page-subtitle">Enterprise topology design, simulation, and export</p>
   </div>
   <div class="page-actions">
-    <a href="/network/canvas/new" class="btn btn-primary">+ New Topology</a>
-    <a href="/network/templates" class="btn btn-secondary">Browse Templates</a>
-    <a href="/network/ingestion" class="btn btn-secondary">Data Ingestion</a>
+    <button class="btn btn-primary" onclick="document.getElementById('import-wizard').style.display='flex'" style="font-size:14px;padding:8px 18px;">Import Diagram</button>
+    <a href="/network/canvas/new" class="btn btn-secondary">+ Blank Canvas</a>
+    <a href="/network/templates" class="btn btn-secondary">Templates</a>
   </div>
 </div>
 
@@ -195,6 +195,55 @@
     </div>
   </div>
 </div>
+<!-- Import & Enrich Wizard -->
+<div id="import-wizard" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#ffffff;color:#222;border:2px solid #4a90d9;border-radius:12px;padding:28px;max-width:560px;width:95%;box-shadow:0 12px 60px rgba(0,0,0,0.8);">
+    <h2 style="margin:0 0 4px;font-size:18px;color:#1a1a2e;">Import Network Diagram</h2>
+    <p style="font-size:12px;color:#666;margin:0 0 20px;">Upload a diagram file. It will be automatically ingested, classified, enriched with site grouping and rack infrastructure, then opened in the canvas.</p>
+
+    <form id="import-wizard-form" enctype="multipart/form-data">
+      <!-- Step 1: File -->
+      <div style="margin-bottom:16px;">
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:4px;color:#333;">Diagram File</label>
+        <input type="file" name="file" accept=".vsdx,.vdx,.drawio,.xml,.pdf,.png,.jpg,.jpeg" required
+               style="width:100%;padding:10px;border:2px dashed #ccc;border-radius:8px;background:#f8f9fa;cursor:pointer;color:#333;">
+        <div style="font-size:11px;color:#888;margin-top:6px;">Supports: Visio (.vsdx/.vdx), Draw.io (.drawio/.xml), PDF, Images (PNG/JPG)</div>
+      </div>
+
+      <!-- Step 2: Name -->
+      <div style="margin-bottom:16px;">
+        <label style="font-weight:600;font-size:13px;display:block;margin-bottom:4px;color:#333;">Topology Name</label>
+        <input type="text" name="name" placeholder="e.g., NYC Data Center - Phase 2" style="width:100%;padding:8px 12px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#333;font-size:13px;">
+      </div>
+
+      <!-- Step 3: Options -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#444;">
+          <input type="checkbox" name="enrich" checked> Auto-enrich (site groups, rack infra)
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#444;">
+          <input type="checkbox" name="save_template"> Save as template
+        </label>
+      </div>
+
+      <!-- Progress -->
+      <div id="import-progress" style="display:none;margin-bottom:16px;">
+        <div id="import-step" style="font-size:12px;color:#555;margin-bottom:4px;"></div>
+        <div style="height:6px;background:#e0e0e0;border-radius:3px;overflow:hidden;">
+          <div id="import-bar" style="height:100%;background:#4a90d9;border-radius:3px;width:0%;transition:width 0.4s;"></div>
+        </div>
+      </div>
+
+      <!-- Result -->
+      <div id="import-result" style="display:none;margin-bottom:16px;padding:12px;border-radius:8px;font-size:12px;"></div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" style="padding:8px 20px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;color:#333;cursor:pointer;font-size:13px;" onclick="document.getElementById('import-wizard').style.display='none'">Cancel</button>
+        <button type="submit" style="padding:8px 20px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;font-size:13px;font-weight:600;" id="import-submit-btn">Import & Open</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -283,6 +332,87 @@ function clearAllSims() {
   if (!confirm('Delete ALL simulation results and scenarios? This cannot be undone.')) return;
   fetch(NC_BASE + '/api/simulations/clear-all', {method: 'DELETE'}).then(() => location.reload());
 }
+
+// ── Import & Enrich Wizard ─────────────────────────────────────────────
+document.getElementById('import-wizard-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = e.target;
+  const submitBtn = document.getElementById('import-submit-btn');
+  const progress = document.getElementById('import-progress');
+  const stepEl = document.getElementById('import-step');
+  const bar = document.getElementById('import-bar');
+  const resultEl = document.getElementById('import-result');
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Processing...';
+  progress.style.display = 'block';
+  resultEl.style.display = 'none';
+
+  function step(msg, pct) { stepEl.textContent = msg; bar.style.width = pct + '%'; }
+
+  try {
+    // Step 1: Upload & Ingest
+    step('Uploading and ingesting diagram...', 20);
+    const fd = new FormData(form);
+    fd.append('project_id', 'ndc-network-intelligence');
+    const r1 = await fetch(NC_BASE + '/api/network-intelligence/ingest', {method: 'POST', body: fd});
+    const d1 = await r1.json();
+    if (d1.error) throw new Error(d1.error);
+    const topoId = d1.topology_id;
+    step('Ingested: ' + d1.node_count + ' devices, ' + d1.edge_count + ' links', 50);
+
+    // Step 2: Enrich (if checked)
+    const doEnrich = form.querySelector('[name="enrich"]').checked;
+    if (doEnrich) {
+      step('Enriching: adding site groups and rack infrastructure...', 60);
+      const r2 = await fetch(NC_BASE + '/api/topology/' + topoId + '/enrich', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({add_infra: true, add_groups: true})
+      });
+      const d2 = await r2.json();
+      if (!d2.error) {
+        step('Enriched: ' + (d2.infra_added || 0) + ' infra items, ' + (d2.groups_added || 0) + ' site groups', 80);
+      }
+    }
+
+    // Step 3: Save as template (if checked)
+    const doTemplate = form.querySelector('[name="save_template"]').checked;
+    if (doTemplate) {
+      step('Saving as template...', 90);
+      const tplName = form.querySelector('[name="name"]').value || 'Imported Topology';
+      await fetch(NC_BASE + '/api/topology/' + topoId + '/save-template', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: tplName + ' (Template)'})
+      });
+    }
+
+    step('Done!', 100);
+    resultEl.style.display = 'block';
+    resultEl.style.background = 'rgba(67,160,71,0.1)';
+    resultEl.style.border = '1px solid #43a047';
+    resultEl.innerHTML = '<strong style="color:#43a047;">Success!</strong> ' + d1.node_count + ' devices, ' + d1.edge_count + ' links imported. Opening canvas...';
+
+    // Step 4: Open canvas
+    setTimeout(function() {
+      window.location.href = '/network/canvas/' + topoId;
+    }, 1500);
+
+  } catch(err) {
+    step('Error', 100);
+    bar.style.background = '#e53935';
+    resultEl.style.display = 'block';
+    resultEl.style.background = 'rgba(229,57,53,0.1)';
+    resultEl.style.border = '1px solid #e53935';
+    resultEl.innerHTML = '<strong style="color:#e53935;">Error:</strong> ' + err.message;
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Import & Open';
+  }
+});
+
+// Close wizard on backdrop click
+document.getElementById('import-wizard').addEventListener('click', function(e) {
+  if (e.target === this) this.style.display = 'none';
+});
 
 function filterByProject(pid) {
   if (pid) window.location.href = NC_BASE + '/?project=' + pid;
