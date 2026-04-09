@@ -200,8 +200,17 @@ enrichment_workflow:
   - 2. Device types auto-classified from naming convention patterns in labels
   - 3. Assign device metadata (vendor, model, site, rack, IP, cost) in ni_devices
   - 4. Run topology_enricher.py AFTER metadata (reads site from ni_devices for grouping)
-  - 5. Assign hardware profiles for EOL/cost/vendor intelligence
-  - 6. Save as template for reuse
+  - 5. Enricher auto-runs topology_validator.py to fix any remaining unknown types
+  - 6. Assign hardware profiles for EOL/cost/vendor intelligence
+  - 7. Save as template for reuse
+  validator:
+    tool: python tools/network/topology_validator.py --topology-id <ID> --fix --json
+    gate: python tools/network/topology_validator.py --all --gate
+    auto_run_on_enrich: true
+    checks:
+    - unknown_device_types (reclassify from label patterns)
+    - orphan_edges (remove edges referencing deleted nodes)
+    - duplicate_node_ids
   auto_classify_from_naming: true
   auto_site_grouping: true
   auto_rack_infra: true
