@@ -33,6 +33,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -908,17 +909,29 @@ def scan_regulatory_bodies(config, session_config=None):
 
                 publication_date = doc.get("publication_date", "")
 
-                # Relevance gate — drop docs that don't mention any vertical
-                # keyword in their title or abstract (or aren't from one of
-                # the vertical's listed regulatory bodies). Without this,
-                # broad search terms produce off-topic noise that pollutes
-                # the synthesis stage.
+                # Relevance gate — fed register search returns docs that match
+                # any token in the query (so a query for "data center fabric"
+                # also returns docs about "data" alone). We require at least
+                # one vertical keyword to appear in the title or abstract.
+                # Short acronyms (BGP, OSPF, SDN, F5, …) use word-boundary
+                # matching to avoid collisions like "F5" inside "USFS"; longer
+                # keywords use substring matching to catch normal phrasing.
+                # This kills the cross-domain noise (CDFI Bond, Marine Mammals)
+                # that earlier polluted the synthesis stage.
                 if vertical_keywords_lc:
                     haystack = f"{doc_title} {doc_abstract}".lower()
-                    keyword_match = any(kw in haystack for kw in vertical_keywords_lc)
-                    agency_haystack = " ".join(agency_names).lower()
-                    agency_match = any(rb in agency_haystack for rb in reg_bodies_lc)
-                    if not (keyword_match or agency_match):
+                    keyword_match = False
+                    for kw in vertical_keywords_lc:
+                        if len(kw) <= 4 and " " not in kw:
+                            # Word-boundary regex for short tokens
+                            if re.search(rf"\b{re.escape(kw)}\b", haystack):
+                                keyword_match = True
+                                break
+                        else:
+                            if kw in haystack:
+                                keyword_match = True
+                                break
+                    if not keyword_match:
                         continue
 
                 hash_input = f"federal_register_{doc_number}"
