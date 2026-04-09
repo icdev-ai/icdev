@@ -859,12 +859,9 @@ def scan_regulatory_bodies(config, session_config=None):
         # only docs whose title/abstract contains a vertical keyword survive.
         search_terms = []
         vertical_keywords_lc = []
-        reg_bodies_lc = []
         if session_config:
             keywords = session_config.get("keywords", []) or []
-            reg_bodies = session_config.get("regulatory_bodies", []) or []
             vertical_keywords_lc = [str(k).strip().lower() for k in keywords if k]
-            reg_bodies_lc = [str(b).strip().lower() for b in reg_bodies if b]
             # Use the most distinctive (longest) keywords first — they tend to
             # be multi-word phrases that scope tightly (e.g. "data center
             # network", "BGP routing"), avoiding single-acronym false positives.
