@@ -745,6 +745,8 @@ def retrieve(
                 "nodes_matched": 0,
                 "nodes_returned": 0,
                 "edges_returned": 0,
+                "nodes": [],
+                "edges": [],
                 "compressed": False,
                 "semantic_search": False,
                 "context": "(No knowledge graphs found for the given project.)",
@@ -863,6 +865,8 @@ def retrieve(
                 "nodes_matched": 0,
                 "nodes_returned": 0,
                 "edges_returned": 0,
+                "nodes": [],
+                "edges": [],
                 "compressed": False,
                 "semantic_search": semantic_search_used,
                 "context": "(No matching nodes found for the query.)",
@@ -952,6 +956,20 @@ def retrieve(
         )
 
         # Step 9: Return result
+        # Sanitize nodes for JSON serialization (drop internal keys, bytea)
+        serializable_nodes = []
+        for n in top_nodes:
+            sn = {k: v for k, v in n.items()
+                  if k not in ("_embedding_sim", "embedding", "embedding_vec")
+                  and not isinstance(v, (bytes, memoryview))}
+            serializable_nodes.append(sn)
+
+        serializable_edges = []
+        for e in top_edges:
+            se = {k: v for k, v in e.items()
+                  if not isinstance(v, (bytes, memoryview))}
+            serializable_edges.append(se)
+
         return {
             "status": "ok",
             "query": query,
@@ -960,6 +978,8 @@ def retrieve(
             "nodes_matched": total_matched,
             "nodes_returned": len(top_nodes),
             "edges_returned": len(top_edges),
+            "nodes": serializable_nodes,
+            "edges": serializable_edges,
             "compressed": compressed,
             "semantic_search": semantic_search_used,
             "context": final_context,
@@ -977,6 +997,8 @@ def retrieve(
             "nodes_matched": 0,
             "nodes_returned": 0,
             "edges_returned": 0,
+            "nodes": [],
+            "edges": [],
             "compressed": False,
             "semantic_search": False,
             "context": f"Retrieval error: {exc}",
