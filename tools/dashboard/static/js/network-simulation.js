@@ -2319,27 +2319,47 @@ function renderRackView() {
     }
   }
 
+  // ── Fetch rack infrastructure from DB (PDU, UPS, Patch Panels) ──
+  // These items are NOT on the canvas — they live in nc_racks.notes JSON
+  if (rackFilter && typeof NC_BASE !== 'undefined') {
+    fetch(NC_BASE + '/api/racks').then(function(r) { return r.json(); }).then(function(racks) {
+      var rack = racks.find(function(r) { return r.rack_name === rackFilter; });
+      if (!rack || !rack.notes) return;
+      try {
+        var notes = JSON.parse(rack.notes);
+        var infra = notes.infra || [];
+        var infraColors = {'PDU-A':'#e65100','PDU-B':'#e65100','UPS':'#f57f17','Fiber PP':'#37474f','Copper PP':'#455a64'};
+        infra.forEach(function(item) {
+          var uMatch = (item.ru || '').match(/U(\d+)(?:\s*-\s*U?(\d+))?/i);
+          if (!uMatch) return;
+          var uStart = parseInt(uMatch[1]);
+          var uEnd = uMatch[2] ? parseInt(uMatch[2]) : uStart;
+          rackDevices.push({
+            id: 'infra-' + item.type,
+            label: item.type,
+            type: 'infra',
+            uStart: Math.min(uStart, uEnd),
+            uEnd: Math.max(uStart, uEnd),
+            color: infraColors[item.type] || '#666',
+            model: item.model || '',
+            isSelected: false,
+            isInfra: true,
+          });
+        });
+        // Re-render with infra included
+        _drawRackDevices(svg, rackDevices, uSize, padTop, padLeft, rackWidth, uHeight);
+        // Update stats
+        var usedU = 0;
+        rackDevices.forEach(function(d) { usedU += (d.uEnd - d.uStart + 1); });
+        document.getElementById('rack-stat-used').textContent = 'Used: ' + usedU + 'U';
+        document.getElementById('rack-stat-free').textContent = 'Free: ' + (uSize - usedU) + 'U';
+        document.getElementById('rack-stat-power').textContent = 'Devices: ' + rackDevices.length;
+      } catch(e) { /* ignore parse errors */ }
+    }).catch(function() { /* no rack API */ });
+  }
+
   // Draw devices
-  rackDevices.forEach(function(dev) {
-    var yTop = padTop + (uSize - dev.uEnd) * uHeight;
-    var height = (dev.uEnd - dev.uStart + 1) * uHeight;
-    var x = padLeft + 10;
-    var w = rackWidth - 20;
-
-    var borderColor = dev.isSelected ? '#e94560' : '#444';
-    var borderWidth = dev.isSelected ? 2 : 1;
-
-    svgContent += '<rect x="' + x + '" y="' + (yTop+1) + '" width="' + w + '" height="' + (height-2) + '" rx="2" fill="' + dev.color + '" fill-opacity="0.7" stroke="' + borderColor + '" stroke-width="' + borderWidth + '" cursor="pointer"/>';
-    svgContent += '<text x="' + (x+6) + '" y="' + (yTop+height/2+4) + '" fill="#fff" font-size="10" font-family="Segoe UI,sans-serif" font-weight="600">' + dev.label + '</text>';
-    if (dev.model) {
-      svgContent += '<text x="' + (x+w-4) + '" y="' + (yTop+height/2+4) + '" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="8" font-family="Consolas,monospace">' + dev.model + '</text>';
-    }
-    // U-range label on the right rail
-    var uLabel = dev.uStart === dev.uEnd ? 'U' + dev.uStart : 'U' + dev.uStart + '-' + dev.uEnd;
-    svgContent += '<text x="' + (padLeft+rackWidth+4) + '" y="' + (yTop+height/2+4) + '" fill="#636e72" font-size="8" font-family="Consolas,monospace">' + uLabel + '</text>';
-  });
-
-  svg.innerHTML = svgContent;
+  _drawRackDevices(svg, rackDevices, uSize, padTop, padLeft, rackWidth, uHeight);
 
   // Update stats
   var usedU = 0;
@@ -2347,6 +2367,35 @@ function renderRackView() {
   document.getElementById('rack-stat-used').textContent = 'Used: ' + usedU + 'U';
   document.getElementById('rack-stat-free').textContent = 'Free: ' + (uSize - usedU) + 'U';
   document.getElementById('rack-stat-power').textContent = 'Devices: ' + rackDevices.length;
+}
+
+function _drawRackDevices(svg, rackDevices, uSize, padTop, padLeft, rackWidth, uHeight) {
+  // Infra style: dashed border for infrastructure items
+  var infraPattern = {'PDU-A':true,'PDU-B':true,'UPS':true,'Fiber PP':true,'Copper PP':true};
+
+  var svgContent = '';
+  rackDevices.forEach(function(dev) {
+    var yTop = padTop + (uSize - dev.uEnd) * uHeight;
+    var height = (dev.uEnd - dev.uStart + 1) * uHeight;
+    var x = padLeft + 10;
+    var w = rackWidth - 20;
+
+    var isInfra = dev.isInfra || infraPattern[dev.label];
+    var borderColor = dev.isSelected ? '#e94560' : (isInfra ? '#666' : '#444');
+    var borderWidth = dev.isSelected ? 2 : 1;
+    var dash = isInfra ? ' stroke-dasharray="4 2"' : '';
+    var opacity = isInfra ? '0.5' : '0.7';
+
+    svgContent += '<rect x="' + x + '" y="' + (yTop+1) + '" width="' + w + '" height="' + (height-2) + '" rx="2" fill="' + dev.color + '" fill-opacity="' + opacity + '" stroke="' + borderColor + '" stroke-width="' + borderWidth + '"' + dash + ' cursor="pointer"/>';
+    svgContent += '<text x="' + (x+6) + '" y="' + (yTop+height/2+4) + '" fill="#fff" font-size="10" font-family="Segoe UI,sans-serif" font-weight="' + (isInfra ? 'normal' : '600') + '">' + dev.label + '</text>';
+    if (dev.model) {
+      svgContent += '<text x="' + (x+w-4) + '" y="' + (yTop+height/2+4) + '" text-anchor="end" fill="rgba(255,255,255,0.5)" font-size="8" font-family="Consolas,monospace">' + dev.model + '</text>';
+    }
+    var uLabel = dev.uStart === dev.uEnd ? 'U' + dev.uStart : 'U' + dev.uStart + '-' + dev.uEnd;
+    svgContent += '<text x="' + (padLeft+rackWidth+4) + '" y="' + (yTop+height/2+4) + '" fill="#636e72" font-size="8" font-family="Consolas,monospace">' + uLabel + '</text>';
+  });
+
+  svg.innerHTML += svgContent;
 }
 
 function toggleRackView() {
