@@ -952,6 +952,71 @@
   </button>
 </div>
 
+<!-- Link Capture Context Menu -->
+<div id="link-ctx-menu" style="
+  display:none;position:fixed;z-index:9999;
+  background:#1a1a2e;border:1px solid #2ecc71;border-radius:6px;
+  box-shadow:0 4px 20px rgba(46,204,113,0.35);min-width:220px;overflow:hidden;">
+  <div style="padding:8px 14px;background:#12122a;border-bottom:1px solid #2a2a4a;
+    font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Link Capture</div>
+  <div id="link-ctx-link-label" style="padding:8px 14px 4px;font-size:12px;color:#2ecc71;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;"></div>
+  <button onclick="startLinkCapture()" class="ctx-menu-btn" id="link-ctx-start-btn">
+    &#x1F4E1; Start Capture
+    <span class="ctx-menu-sub">Stream packets to PCAP viewer</span>
+  </button>
+  <button onclick="showCaptures()" class="ctx-menu-btn">
+    &#x1F4C2; View Captures
+    <span class="ctx-menu-sub">List past captures on this link</span>
+  </button>
+</div>
+
+<!-- Packet Capture Viewer Modal -->
+<div id="capture-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x1F4E1; Packet Capture</h3>
+      <button class="close-btn" onclick="closeCapturePanel()">&#x2715;</button>
+    </div>
+
+    <!-- Active capture status -->
+    <div id="cap-status-section" style="padding:12px 16px;border-bottom:1px solid #2a2a4a;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span id="cap-status-badge" style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;"></span>
+        <span id="cap-link-label" style="font-size:13px;color:#cdd6f4;"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#7a8cb0;">
+        <div>Size: <span id="cap-size" style="color:#cdd6f4;">—</span></div>
+        <div>SHA256: <span id="cap-sha" style="color:#cdd6f4;font-family:monospace;font-size:10px;" title=""></span></div>
+        <div>Expires: <span id="cap-expiry" style="color:#cdd6f4;">—</span></div>
+        <div>ID: <span id="cap-id-display" style="color:#cdd6f4;font-family:monospace;font-size:10px;"></span></div>
+      </div>
+      <div id="cap-spinner" style="display:none;margin-top:8px;font-size:12px;color:#f39c12;">
+        &#x23F3; Capturing packets… <span id="cap-elapsed">0</span>s
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #2a2a4a;">
+      <button id="cap-stop-btn" onclick="stopCurrentCapture()" style="
+        display:none;padding:6px 14px;background:#e74c3c;border:none;border-radius:4px;
+        color:#fff;font-size:12px;cursor:pointer;">&#x23F9; Stop Capture</button>
+      <button id="cap-download-btn" onclick="downloadCurrentCapture()" style="
+        display:none;padding:6px 14px;background:#2ecc71;border:none;border-radius:4px;
+        color:#1a1a2e;font-size:12px;font-weight:600;cursor:pointer;">&#x2B07; Download .pcap</button>
+      <button onclick="startLinkCaptureFromPanel()" id="cap-new-btn" style="
+        padding:6px 14px;background:#3498db;border:none;border-radius:4px;
+        color:#fff;font-size:12px;cursor:pointer;">&#x25B6; New Capture</button>
+    </div>
+
+    <!-- Capture history for this link -->
+    <div style="padding:8px 16px 4px;font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">
+      Link Capture History</div>
+    <div id="cap-history-list" style="overflow-y:auto;flex:1;padding:0 8px 8px;">
+      <div style="color:#7a8cb0;font-size:12px;text-align:center;padding:16px;">No captures yet.</div>
+    </div>
+  </div>
+</div>
+
 <!-- Templates Overlay -->
 <div id="tpl-overlay" class="sim-overlay hidden">
   <div class="sim-panel tpl-panel">

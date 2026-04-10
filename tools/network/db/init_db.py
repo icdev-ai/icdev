@@ -1521,6 +1521,42 @@ CREATE TABLE IF NOT EXISTS nc_nms_connections (
     enabled         INTEGER DEFAULT 1,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── GNS3 / Lab Integration ──────────────────────────────────────────────────
+
+-- Lab run: a single emulation session tied to a topology
+CREATE TABLE IF NOT EXISTS nc_lab_runs (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT NOT NULL REFERENCES topologies(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL DEFAULT '',
+    backend     TEXT DEFAULT 'stub',   -- stub, gns3, containerlab, eve-ng
+    status      TEXT DEFAULT 'running', -- running, stopped, error
+    gns3_project_id TEXT DEFAULT '',   -- GNS3 project UUID if applicable
+    started_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    stopped_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_nc_lab_runs_topo ON nc_lab_runs(topology_id);
+
+-- Packet capture: one per link per session
+CREATE TABLE IF NOT EXISTS nc_packet_captures (
+    id          TEXT PRIMARY KEY,
+    link_id     TEXT NOT NULL,          -- JointJS link/edge ID on the canvas
+    lab_run_id  TEXT REFERENCES nc_lab_runs(id) ON DELETE SET NULL,
+    topology_id TEXT REFERENCES topologies(id) ON DELETE CASCADE,
+    src_label   TEXT DEFAULT '',        -- source node label
+    dst_label   TEXT DEFAULT '',        -- destination node label
+    protocol    TEXT DEFAULT '',        -- link protocol (BGP, OSPF, etc.)
+    status      TEXT DEFAULT 'running', -- running, complete, error
+    size_bytes  INTEGER DEFAULT 0,
+    sha256      TEXT DEFAULT '',
+    expiry_at   TEXT,                   -- auto-expire after 7 days
+    backend_ref TEXT DEFAULT '{}',      -- JSON: GNS3 node/adapter refs
+    pcap_data   BLOB,                   -- stored PCAP bytes (stub/small captures)
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    stopped_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_nc_captures_link ON nc_packet_captures(link_id);
+CREATE INDEX IF NOT EXISTS idx_nc_captures_run  ON nc_packet_captures(lab_run_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
