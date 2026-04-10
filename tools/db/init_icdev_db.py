@@ -4508,12 +4508,15 @@ CREATE TABLE IF NOT EXISTS ai_oversight_plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
     plan_name TEXT NOT NULL,
-    plan_data TEXT NOT NULL,
+    plan_data TEXT,
+    description TEXT DEFAULT '',
     approval_status TEXT DEFAULT 'draft'
         CHECK(approval_status IN ('draft', 'submitted', 'approved', 'rejected')),
     approved_by TEXT,
+    created_by TEXT DEFAULT '',
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_oversight_project ON ai_oversight_plans(project_id);
 
@@ -4524,10 +4527,14 @@ CREATE TABLE IF NOT EXISTS ai_accountability_appeals (
     appellant TEXT NOT NULL,
     ai_system TEXT NOT NULL,
     decision_contested TEXT,
+    grievance TEXT DEFAULT '',
     appeal_status TEXT DEFAULT 'submitted'
         CHECK(appeal_status IN ('submitted', 'under_review', 'resolved', 'dismissed')),
+    status TEXT DEFAULT 'submitted',
     resolution TEXT,
     resolved_by TEXT,
+    filed_at TEXT DEFAULT (datetime('now')),
+    resolved_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_appeals_project ON ai_accountability_appeals(project_id);
@@ -4537,10 +4544,14 @@ CREATE INDEX IF NOT EXISTS idx_ai_appeals_status ON ai_accountability_appeals(ap
 CREATE TABLE IF NOT EXISTS ai_caio_registry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
-    official_name TEXT NOT NULL,
-    official_role TEXT NOT NULL DEFAULT 'CAIO',
+    official_name TEXT,
+    official_role TEXT DEFAULT 'CAIO',
+    name TEXT,
+    role TEXT DEFAULT 'CAIO',
     organization TEXT,
     designation_date TEXT,
+    appointment_date TEXT DEFAULT (datetime('now')),
+    status TEXT DEFAULT 'active',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_caio_project ON ai_caio_registry(project_id);
@@ -4575,6 +4586,7 @@ CREATE TABLE IF NOT EXISTS ai_reassessment_schedule (
         CHECK(frequency IN ('quarterly', 'semi_annual', 'annual', 'biennial')),
     next_due TEXT,
     last_completed TEXT,
+    last_assessed TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(project_id, ai_system)
 );
@@ -4589,11 +4601,16 @@ CREATE TABLE IF NOT EXISTS ai_ethics_reviews (
         CHECK(review_type IN ('bias_testing_policy', 'impact_assessment', 'ethics_framework',
               'legal_compliance', 'pre_deployment', 'annual_review', 'other')),
     ai_system TEXT,
+    summary TEXT DEFAULT '',
     findings TEXT,
+    recommendation TEXT DEFAULT '',
     opt_out_policy INTEGER DEFAULT 0,
     legal_compliance_matrix INTEGER DEFAULT 0,
     pre_deployment_review INTEGER DEFAULT 0,
     reviewer TEXT,
+    status TEXT DEFAULT 'submitted',
+    submitted_at TEXT DEFAULT (datetime('now')),
+    reviewed_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_ethics_project ON ai_ethics_reviews(project_id);
