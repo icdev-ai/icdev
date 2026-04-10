@@ -1726,6 +1726,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Canvas Auto Remediate | tools\canvas\auto_remediate.py | Confidence-tiered auto-remediation for canvas assessment findings. >=0.7 auto-fix (add missing nodes), 0.3-0.7 suggest, <0.3 escalate. IDC (8 rules) and ODC (8 rules) wrappers. Max 5 auto-fixes/hour rate limiter. | (library — called by IDC/ODC blueprints on save) | JSON remediation report |
+| POA&M Auto-Remediator | tools\canvas\auto_remediator.py | Cross-canvas POA&M auto-remediator (CLI). Takes finding hashes (or --all-pending / --all-approved), looks up source design, backs up canvas DB, applies vendor-neutral handler (21 rules across security/observability/boundary canvases), re-runs assessment to verify, marks finding_approvals.decision='remediated', writes audit_trail. 5 IDC rules require vendor selection (file as GitHub issues instead). | --finding-hash, --all-pending, --all-approved, --canvas, --list-handlers, --dry-run, --json, --gate | Per-finding result + summary; updates finding_approvals + audit_trail |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1784,3 +1785,9 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Naming Engine | tools\network\naming_engine.py | Auto-registered: network/naming_engine.py | --json | JSON |
 | Topology Enricher | tools\network\topology_enricher.py | Auto-registered: network/topology_enricher.py | --json | JSON |
 | Topology Validator | tools\network\topology_validator.py | Auto-registered: network/topology_validator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Auto Remediator | tools\canvas\auto_remediator.py | Auto-registered: canvas/auto_remediator.py | --json | JSON |
