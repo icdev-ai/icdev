@@ -84,6 +84,47 @@ network_canvas:
     - network automation
     - infrastructure as code
 
+# Data Canvas domain — visual data modeling, lineage, governance, classification
+data_canvas:
+  name: "data design canvas"
+  g2_category_url: "https://www.g2.com/categories/data-modeling-tools"
+  capterra_category_url: "https://www.capterra.com/data-modeling-software/"
+  trustradius_category_url: "https://www.trustradius.com/data-modeling"
+  producthunt_topic: "data-modeling"
+  keywords:
+    - data canvas
+    - data design canvas
+    - visual data modeling
+    - ER diagram
+    - entity relationship
+    - data lineage
+    - data classification
+    - data governance
+    - data catalog
+    - data flow diagram
+    - schema visualization
+    - data mesh
+    - data product
+    - data contract
+    - logical data model
+    - physical data model
+    - dbml
+    - dbdiagram
+    - DataHub
+    - OpenMetadata
+    - Collibra
+    - Alation
+    - Atlan
+    - Apache Atlas
+    - Amundsen
+    - data observability
+    - data quality
+    - active metadata
+    - metadata management
+    - PII detection
+    - data masking
+    - data residency
+
 # Knowledge graph tools domain
 knowledge_graph:
   name: "knowledge graph"
@@ -163,6 +204,11 @@ sources:
           - azure
           - devops
           - NetworkEngineering
+          - dataengineering
+          - Database
+          - dataarchitect
+          - datascience
+          - GovIT
         sort: hot
         max_results: 50
         min_upvotes: 10
@@ -285,6 +331,41 @@ sources:
             - tokenization
             - NFT
             - DAO
+          "data design canvas":
+            - data modeling
+            - data model
+            - ER diagram
+            - entity relationship
+            - data lineage
+            - data catalog
+            - data governance
+            - data mesh
+            - data product
+            - data contract
+            - data classification
+            - data observability
+            - DataHub
+            - OpenMetadata
+            - Collibra
+            - Alation
+            - Atlan
+            - Amundsen
+            - Apache Atlas
+            - dbml
+            - dbdiagram
+            - schema visualization
+            - active metadata
+            - metadata management
+            - data quality
+            - PII detection
+            - data masking
+            - tokenization
+            - data steward
+            - data dictionary
+            - data vault
+            - data architect
+            - logical data model
+            - dimensional model
       - name: govcon_blogs
         urls: []                         # populated per domain
         max_results: 30
@@ -320,6 +401,13 @@ sources:
       - nautobot/nautobot
       - GNS3/gns3-gui
       - networktocode/ntc-templates
+      - datahub-project/datahub
+      - open-metadata/OpenMetadata
+      - amundsen-io/amundsen
+      - apache/atlas
+      - holistics/dbml
+      - duracelltomi/dbdiagram
+      - great-expectations/great_expectations
     labels: [enhancement, feature-request, feature, wishlist, "help wanted"]
     max_results: 100
     rate_limit:
