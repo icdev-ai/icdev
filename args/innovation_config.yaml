@@ -241,8 +241,8 @@ scoring:
     technical_depth: 0.15     # Phase 71: How concretely does it map to ICDEV™ modules?
   thresholds:
     auto_queue: 0.80          # Score >= 0.80: auto-queue for solution generation
-    suggest: 0.50             # Score 0.50-0.79: suggest to human, require approval
-    log_only: 0.00            # Score < 0.50: log for trend analysis, no action
+    suggest: 0.35             # Score 0.35-0.79: suggest to human, require approval (lowered from 0.50 — was filtering too aggressively)
+    log_only: 0.00            # Score < 0.35: log for trend analysis, no action
   max_auto_solutions_per_pi: 10   # Budget: max auto-generated solutions per PI
   max_signals_per_scan: 500       # Cap signals per scan cycle to prevent overload
 
@@ -264,7 +264,7 @@ triage:
   boundary_check:
     enabled: true
     block_on_red: true           # RED boundary impact blocks auto-generation
-    require_coa_for_orange: true # ORANGE requires alternative COA
+    require_coa_for_orange: false # ORANGE no longer blocks — route to suggest tier (was too aggressive, 99 signals blocked)
 
   # Compliance pre-check
   compliance_check:
@@ -278,8 +278,8 @@ triage:
   # Duplicate detection
   dedup:
     enabled: true
-    similarity_threshold: 0.85   # Cosine similarity for semantic dedup
-    time_window_days: 90         # Ignore signals similar to recent ones
+    similarity_threshold: 0.92   # Cosine similarity for semantic dedup (raised from 0.85 — was deduping distinct signals)
+    time_window_days: 60         # Ignore signals similar to recent ones (lowered from 90 days)
 
   # IP/License check
   license_check:

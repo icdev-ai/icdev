@@ -224,6 +224,18 @@ def _ensure_triage_tables(conn):
         )
     """)
 
+    # Migrate stage_name CHECK constraint to include module_impact_mapping
+    # (added in Phase 71; original constraint only covered 5 canonical stages)
+    try:
+        conn.execute("SAVEPOINT sp_constraint_migrate")
+        conn.execute("ALTER TABLE innovation_triage_log DROP CONSTRAINT IF EXISTS innovation_triage_log_stage_name_check")
+        conn.execute("RELEASE SAVEPOINT sp_constraint_migrate")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK TO SAVEPOINT sp_constraint_migrate")
+        except Exception:
+            pass
+
     # Add triage columns to innovation_signals if not present
     existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(innovation_signals)").fetchall()}
 
@@ -514,11 +526,15 @@ def _map_module_impact(signal, conn, config):
     conflict_solutions = []
     parallel_safe = True
     try:
+        # Use a savepoint so a missing innovation_solutions table does not
+        # abort the outer PostgreSQL transaction (InFailedSqlTransaction).
+        conn.execute("SAVEPOINT sp_module_impact")
         building_rows = conn.execute(
             """SELECT id, gotcha_layer, category
                FROM innovation_solutions
                WHERE status = 'building'"""
         ).fetchall()
+        conn.execute("RELEASE SAVEPOINT sp_module_impact")
         # Gather signal category from metadata if available
         sig_category = signal.get("category", "")
         for row in building_rows:
@@ -533,7 +549,11 @@ def _map_module_impact(signal, conn, config):
                 conflict_solutions.append(row["id"])
                 parallel_safe = False
     except Exception:
-        pass  # innovation_solutions may not exist yet; treat as safe
+        try:
+            conn.execute("ROLLBACK TO SAVEPOINT sp_module_impact")
+        except Exception:
+            pass  # savepoint may not exist if error was pre-savepoint
+        # innovation_solutions may not exist yet; treat as safe
 
     return {
         "matched_modules": matched_modules,
