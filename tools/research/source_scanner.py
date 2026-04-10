@@ -532,7 +532,37 @@ def scan_review_sites(config, session_config=None):
                 url = f"{base_url}/categories/{category}"
                 data, err = _safe_get(url, headers=headers)
                 if err:
-                    signals.append(_error_signal("review_site", f"g2 {category}: {err}"))
+                    # Synthesize a storable signal from the vertical's category config when
+                    # live scraping fails (G2 blocks bots). This wires migration.json
+                    # review_sites entries through to research_signals even without HTTP access.
+                    slug_label = category.replace("-", " ").title()
+                    vertical_keywords = (session_config or {}).get("keywords", [])[:5]
+                    body = (
+                        f"G2 market category: {slug_label}. "
+                        f"Relevant vertical terms: {', '.join(vertical_keywords)}."
+                    )
+                    hash_input = f"g2_{category}_vertical_config"
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "review_site",
+                            "source_type": "g2",
+                            "title": f"G2 category: {slug_label}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([category.replace("-", " ")]),
+                            "metadata": json.dumps(
+                                {"site": "g2", "category": category, "synthetic": True, "scrape_error": err}
+                            ),
+                            "discovered_at": _now(),
+                        }
+                    )
                     time.sleep(delay)
                     continue
 
@@ -608,7 +638,35 @@ def scan_review_sites(config, session_config=None):
                 url = f"{base_url}/software/{category}"
                 data, err = _safe_get(url, headers=headers)
                 if err:
-                    signals.append(_error_signal("review_site", f"capterra {category}: {err}"))
+                    # Synthesize storable signal from vertical category config on scrape failure.
+                    slug_label = category.replace("-", " ").title()
+                    vertical_keywords = (session_config or {}).get("keywords", [])[:5]
+                    body = (
+                        f"Capterra software category: {slug_label}. "
+                        f"Relevant vertical terms: {', '.join(vertical_keywords)}."
+                    )
+                    hash_input = f"capterra_{category}_vertical_config"
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "review_site",
+                            "source_type": "capterra",
+                            "title": f"Capterra category: {slug_label}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([category.replace("-", " ")]),
+                            "metadata": json.dumps(
+                                {"site": "capterra", "category": category, "synthetic": True, "scrape_error": err}
+                            ),
+                            "discovered_at": _now(),
+                        }
+                    )
                     time.sleep(delay)
                     continue
 
@@ -645,7 +703,40 @@ def scan_review_sites(config, session_config=None):
                 url = f"{base_url}/categories/{category}"
                 data, err = _safe_get(url, headers=headers)
                 if err:
-                    signals.append(_error_signal("review_site", f"trustpilot {category}: {err}"))
+                    # Synthesize storable signal from vertical category config on scrape failure.
+                    slug_label = category.replace("-", " ").title()
+                    vertical_keywords = (session_config or {}).get("keywords", [])[:5]
+                    body = (
+                        f"Trustpilot category: {slug_label}. "
+                        f"Relevant vertical terms: {', '.join(vertical_keywords)}."
+                    )
+                    hash_input = f"trustpilot_{category}_vertical_config"
+                    signals.append(
+                        {
+                            "id": _signal_id(),
+                            "session_id": None,
+                            "source": "review_site",
+                            "source_type": "domain_review",
+                            "title": f"Trustpilot category: {slug_label}",
+                            "body": body,
+                            "url": url,
+                            "author": None,
+                            "upvotes": 0,
+                            "citations": 0,
+                            "sentiment": None,
+                            "content_hash": _content_hash(hash_input),
+                            "keywords": json.dumps([category.replace("-", " ")]),
+                            "metadata": json.dumps(
+                                {
+                                    "site": "trustpilot",
+                                    "category": category,
+                                    "synthetic": True,
+                                    "scrape_error": err,
+                                }
+                            ),
+                            "discovered_at": _now(),
+                        }
+                    )
                     time.sleep(delay)
                     continue
 
