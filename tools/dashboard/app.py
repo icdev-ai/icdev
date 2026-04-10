@@ -1726,9 +1726,10 @@ def create_app() -> Flask:
             except Exception:
                 _all_findings = []
 
+            _excluded = {"declined", "accepted_risk", "remediated"}
             cat1_count = 0
             for _f in _all_findings:
-                if _f.get("severity") == "CAT1":
+                if _f.get("severity") == "CAT1" and _f.get("decision") not in _excluded:
                     cat1_count += 1
                     _activity.append(
                         {
@@ -1748,11 +1749,10 @@ def create_app() -> Flask:
             _activity.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
             recent_activity = _activity[:10]
 
-            # Firing alert count = CAT1 canvas findings
+            # Firing alert count = open CAT1 canvas findings (same exclusion as open_poam)
             firing_alerts = cat1_count
 
             # Open POAM count = open canvas findings (excludes declined/accepted_risk/remediated)
-            _excluded = {"declined", "accepted_risk", "remediated"}
             open_poam = sum(1 for _f in _all_findings if _f.get("decision") not in _excluded)
 
             # Group projects by status for Kanban columns
