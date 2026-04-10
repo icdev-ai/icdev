@@ -357,7 +357,7 @@ scheduling:
   daemon_mode: false
   daemon_interval_seconds: 3600       # 1 hour between pipeline runs
   quiet_hours:
-    enabled: true
+    enabled: false
     start: "22:00"
     end: "06:00"
     timezone: "US/Eastern"
