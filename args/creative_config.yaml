@@ -125,6 +125,63 @@ data_canvas:
     - data masking
     - data residency
 
+# DevOps Canvas / Pipeline Design Canvas domain
+devops_canvas:
+  name: devsecops pipeline
+  g2_category_url: https://www.g2.com/categories/continuous-integration
+  capterra_category_url: https://www.capterra.com/devops-software/
+  trustradius_category_url: https://www.trustradius.com/devops-tools
+  producthunt_topic: devops
+  keywords:
+    - devops canvas
+    - pipeline design canvas
+    - visual pipeline designer
+    - devsecops pipeline
+    - cicd
+    - ci/cd
+    - jenkins
+    - gitlab ci
+    - github actions
+    - circleci
+    - argo cd
+    - argo workflows
+    - tekton
+    - spinnaker
+    - harness
+    - drone ci
+    - buildkite
+    - terraform
+    - ansible
+    - kubernetes
+    - helm
+    - kustomize
+    - sast
+    - dast
+    - sca
+    - sbom
+    - container scanning
+    - trivy
+    - snyk
+    - checkov
+    - backstage
+    - internal developer portal
+    - platform engineering
+    - golden path
+    - policy as code
+    - opa
+    - gatekeeper
+    - kyverno
+    - sigstore
+    - cosign
+    - supply chain security
+    - dora metrics
+    - sre
+    - chaos engineering
+    - feature flags
+    - blue green deployment
+    - canary deployment
+    - progressive delivery
+
 # Knowledge graph tools domain
 knowledge_graph:
   name: "knowledge graph"
