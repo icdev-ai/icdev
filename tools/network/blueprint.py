@@ -9350,6 +9350,219 @@ Output ONLY the JSON object. No other text."""
         conn.close()
         return jsonify({"status": "deleted"})
 
+    # ── Packet Capture (GNS3 / lab link capture) ─────────────────────────
+
+    import hashlib
+    import struct
+    from datetime import timedelta
+
+    def _gen_stub_pcap() -> bytes:
+        """Return a minimal valid PCAP file (global header only, no packets).
+
+        Magic 0xa1b2c3d4, Ethernet link type.  Wireshark opens this cleanly and
+        reports "0 packets captured".  Real GNS3 captures replace this with the
+        streamed .pcapng file.
+        """
+        return struct.pack(
+            "<IHHiIII",
+            0xA1B2C3D4,  # magic number
+            2,            # version major
+            4,            # version minor
+            0,            # thiszone (UTC)
+            0,            # sigfigs
+            65535,        # snaplen
+            1,            # network (LINKTYPE_ETHERNET)
+        )
+
+    def _finalize_capture(conn, cap_id: str):
+        """Transition a 'running' capture to 'complete' with stub PCAP data."""
+        pcap_bytes = _gen_stub_pcap()
+        sha = hashlib.sha256(pcap_bytes).hexdigest()
+        expiry = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        conn.execute(
+            """UPDATE nc_packet_captures
+               SET status='complete', size_bytes=?, sha256=?, expiry_at=?,
+                   stopped_at=?, pcap_data=?
+               WHERE id=?""",
+            (len(pcap_bytes), sha, expiry, now, pcap_bytes, cap_id),
+        )
+
+    @bp.route("/api/captures", methods=["POST"])
+    @nc_login_required
+    def nc_api_capture_start():
+        """Start a packet capture on a canvas link.
+
+        Body: {link_id, topology_id, src_label?, dst_label?, protocol?, lab_run_id?}
+        """
+        body = request.get_json(force=True) or {}
+        link_id = (body.get("link_id") or "").strip()
+        topo_id = (body.get("topology_id") or "").strip()
+        if not link_id or not topo_id:
+            return jsonify({"error": "link_id and topology_id required"}), 400
+
+        cap_id = str(_uuid.uuid4())
+        lab_run_id = body.get("lab_run_id") or None
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # If no lab_run provided, auto-create a stub run for this topology
+        conn = get_connection()
+        if not lab_run_id:
+            lab_run_id = str(_uuid.uuid4())
+            conn.execute(
+                """INSERT INTO nc_lab_runs (id, topology_id, name, backend, status, started_at)
+                   VALUES (?, ?, ?, 'stub', 'running', ?)""",
+                (lab_run_id, topo_id, f"Auto-run {now[:10]}", now),
+            )
+
+        conn.execute(
+            """INSERT INTO nc_packet_captures
+               (id, link_id, lab_run_id, topology_id, src_label, dst_label,
+                protocol, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?)""",
+            (
+                cap_id,
+                link_id,
+                lab_run_id,
+                topo_id,
+                body.get("src_label", ""),
+                body.get("dst_label", ""),
+                body.get("protocol", ""),
+                now,
+            ),
+        )
+        conn.commit()
+        _audit(conn, "capture_started", "nc_packet_captures", cap_id, link_id)
+        conn.close()
+        return jsonify({"id": cap_id, "status": "running", "link_id": link_id})
+
+    @bp.route("/api/captures", methods=["GET"])
+    @nc_login_required
+    def nc_api_captures_list():
+        """List captures.  Query params: link_id, topology_id."""
+        link_id = request.args.get("link_id", "")
+        topo_id = request.args.get("topology_id", "")
+        conn = get_connection()
+        if link_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_packet_captures WHERE link_id=? ORDER BY created_at DESC",
+                (link_id,),
+            ).fetchall()
+        elif topo_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_packet_captures WHERE topology_id=? ORDER BY created_at DESC",
+                (topo_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM nc_packet_captures ORDER BY created_at DESC LIMIT 100"
+            ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            d = _row_to_dict(r)
+            d.pop("pcap_data", None)  # don't send binary over list endpoint
+            result.append(d)
+        return jsonify(result)
+
+    @bp.route("/api/captures/<cap_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_capture_get(cap_id):
+        """Poll a single capture; auto-finalizes stub captures after 5 s."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+
+        d = _row_to_dict(row)
+        d.pop("pcap_data", None)
+
+        # Auto-finalize stub captures that have been 'running' for ≥5 s
+        if d.get("status") == "running":
+            backend_ref = json.loads(d.get("backend_ref") or "{}")
+            is_stub = not backend_ref.get("gns3_node_id")
+            created = d.get("created_at", "")
+            try:
+                age = (
+                    datetime.now(timezone.utc)
+                    - datetime.fromisoformat(created.replace("Z", "+00:00"))
+                ).total_seconds()
+            except Exception:
+                age = 99
+            if is_stub and age >= 5:
+                _finalize_capture(conn, cap_id)
+                conn.commit()
+                row2 = conn.execute(
+                    "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+                ).fetchone()
+                d = _row_to_dict(row2)
+                d.pop("pcap_data", None)
+
+        conn.close()
+        return jsonify(d)
+
+    @bp.route("/api/captures/<cap_id>/stop", methods=["POST"])
+    @nc_login_required
+    def nc_api_capture_stop(cap_id):
+        """Stop a running capture."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT id, status FROM nc_packet_captures WHERE id=?", (cap_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        if row["status"] == "running":
+            _finalize_capture(conn, cap_id)
+            conn.commit()
+            _audit(conn, "capture_stopped", "nc_packet_captures", cap_id, cap_id)
+        conn.close()
+        return jsonify({"status": "complete"})
+
+    @bp.route("/api/captures/<cap_id>/download", methods=["GET"])
+    @nc_login_required
+    def nc_api_capture_download(cap_id):
+        """Download the .pcapng file for a completed capture."""
+        from flask import Response
+
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        d = _row_to_dict(row)
+
+        # Ensure capture is finalized before download
+        if d.get("status") == "running":
+            _finalize_capture(conn, cap_id)
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM nc_packet_captures WHERE id=?", (cap_id,)
+            ).fetchone()
+            d = _row_to_dict(row)
+
+        pcap_bytes = row["pcap_data"] if row["pcap_data"] else _gen_stub_pcap()
+        conn.close()
+
+        src = (d.get("src_label") or "src").replace(" ", "-")
+        dst = (d.get("dst_label") or "dst").replace(" ", "-")
+        ts = (d.get("created_at") or "").replace(":", "").replace("-", "")[:13]
+        filename = f"capture-{src}-{dst}-{ts}.pcap"
+
+        return Response(
+            pcap_bytes,
+            mimetype="application/vnd.tcpdump.pcap",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(pcap_bytes)),
+            },
+        )
+
     # ── Ingestion routes (file upload, config, NMS, folder watch) ────────
     from tools.network.routes.ingestion import register_ingestion_routes
 

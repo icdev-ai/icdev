@@ -613,11 +613,19 @@ function initCanvas() {
   paper.on('element:contextmenu', (view, evt) => {
     evt.preventDefault();
     selectCell(view.model);
+    hideLinkContextMenu();
     showBlastContextMenu(evt.clientX, evt.clientY, view.model);
   });
-  paper.on('blank:contextmenu', (view, evt) => { evt.preventDefault(); hideBlastContextMenu(); });
-  document.addEventListener('click', () => hideBlastContextMenu(), true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideBlastContextMenu(); });
+  // Right-click on link → capture context menu
+  paper.on('link:contextmenu', (view, evt) => {
+    evt.preventDefault();
+    selectCell(view.model);
+    hideBlastContextMenu();
+    showLinkContextMenu(evt.clientX, evt.clientY, view.model);
+  });
+  paper.on('blank:contextmenu', (view, evt) => { evt.preventDefault(); hideBlastContextMenu(); hideLinkContextMenu(); });
+  document.addEventListener('click', () => { hideBlastContextMenu(); hideLinkContextMenu(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideBlastContextMenu(); hideLinkContextMenu(); } });
 
   // Double-click link to annotate cable run
   paper.on('link:pointerdblclick', (view) => {
@@ -697,6 +705,265 @@ function showBlastContextMenu(x, y, cell) {
 function hideBlastContextMenu() {
   const menu = document.getElementById('blast-ctx-menu');
   if (menu) menu.style.display = 'none';
+}
+
+/* ── Link Capture Context Menu ──────────────────────────────────────────────── */
+let _capLinkId = null;
+let _capLinkLabel = '';
+let _capCurrentId = null;
+let _capPollTimer = null;
+let _capElapsedTimer = null;
+let _capElapsedSec = 0;
+
+function showLinkContextMenu(x, y, link) {
+  const menu = document.getElementById('link-ctx-menu');
+  if (!menu || !link.isLink()) return;
+  _capLinkId = link.id;
+
+  // Build label from source and target node names
+  const srcId = link.get('source') && link.get('source').id;
+  const tgtId = link.get('target') && link.get('target').id;
+  const srcCell = srcId && graph.getCell(srcId);
+  const tgtCell = tgtId && graph.getCell(tgtId);
+  const srcName = (srcCell && srcCell.attr('label/text')) || srcId || '?';
+  const tgtName = (tgtCell && tgtCell.attr('label/text')) || tgtId || '?';
+  const proto = link.get('protocol') || '';
+  _capLinkLabel = `${srcName} → ${tgtName}${proto ? ' [' + proto + ']' : ''}`;
+
+  document.getElementById('link-ctx-link-label').textContent = _capLinkLabel;
+
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const mw = 224, mh = 120;
+  menu.style.left = (x + mw > vw ? vw - mw - 8 : x) + 'px';
+  menu.style.top  = (y + mh > vh ? vh - mh - 8 : y) + 'px';
+  menu.style.display = 'block';
+}
+
+function hideLinkContextMenu() {
+  const menu = document.getElementById('link-ctx-menu');
+  if (menu) menu.style.display = 'none';
+}
+
+/** Called from the link context menu — starts a new capture and opens viewer. */
+function startLinkCapture() {
+  hideLinkContextMenu();
+  if (!_capLinkId) return;
+  openCapturePanel();
+  _doStartCapture(_capLinkId, _capLinkLabel);
+}
+
+/** Called from inside the capture panel — starts a new capture on the same link. */
+function startLinkCaptureFromPanel() {
+  if (!_capLinkId) return;
+  _doStartCapture(_capLinkId, _capLinkLabel);
+}
+
+/** Open the capture viewer without starting a new capture (show history). */
+function showCaptures() {
+  hideLinkContextMenu();
+  if (!_capLinkId) return;
+  openCapturePanel();
+  _loadCaptureHistory(_capLinkId);
+}
+
+function openCapturePanel() {
+  document.getElementById('capture-overlay').classList.remove('hidden');
+  document.getElementById('cap-link-label').textContent = _capLinkLabel;
+  document.getElementById('cap-status-badge').textContent = '';
+  document.getElementById('cap-status-badge').style.background = '';
+  document.getElementById('cap-size').textContent = '—';
+  document.getElementById('cap-sha').textContent = '—';
+  document.getElementById('cap-sha').title = '';
+  document.getElementById('cap-expiry').textContent = '—';
+  document.getElementById('cap-id-display').textContent = '—';
+  document.getElementById('cap-stop-btn').style.display = 'none';
+  document.getElementById('cap-download-btn').style.display = 'none';
+  document.getElementById('cap-spinner').style.display = 'none';
+}
+
+function closeCapturePanel() {
+  document.getElementById('capture-overlay').classList.add('hidden');
+  _stopCapturePolling();
+}
+
+function _doStartCapture(linkId, linkLabel) {
+  _stopCapturePolling();
+  _capCurrentId = null;
+
+  // Determine src/dst/protocol from link model
+  let srcLabel = '', dstLabel = '', protocol = '';
+  if (linkId) {
+    const link = graph.getCell(linkId);
+    if (link) {
+      const srcId = link.get('source') && link.get('source').id;
+      const tgtId = link.get('target') && link.get('target').id;
+      const srcCell = srcId && graph.getCell(srcId);
+      const tgtCell = tgtId && graph.getCell(tgtId);
+      srcLabel = (srcCell && srcCell.attr('label/text')) || srcId || '';
+      dstLabel = (tgtCell && tgtCell.attr('label/text')) || tgtId || '';
+      protocol = link.get('protocol') || '';
+    }
+  }
+
+  // Show running state immediately
+  _setCaptureStatusUI({ status: 'running', id: '…', size_bytes: 0, sha256: '', expiry_at: '', src_label: srcLabel, dst_label: dstLabel });
+
+  fetch(`/network/api/captures`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      link_id: linkId,
+      topology_id: currentTopoId,
+      src_label: srcLabel,
+      dst_label: dstLabel,
+      protocol: protocol,
+    }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { _setCaptureError(data.error); return; }
+      _capCurrentId = data.id;
+      document.getElementById('cap-id-display').textContent = data.id.slice(0, 8) + '…';
+      _startCapturePolling(data.id);
+      _loadCaptureHistory(linkId);
+    })
+    .catch(err => _setCaptureError(String(err)));
+}
+
+function _startCapturePolling(capId) {
+  _capElapsedSec = 0;
+  document.getElementById('cap-spinner').style.display = '';
+  document.getElementById('cap-elapsed').textContent = '0';
+  document.getElementById('cap-stop-btn').style.display = '';
+  document.getElementById('cap-download-btn').style.display = 'none';
+
+  _capElapsedTimer = setInterval(() => {
+    _capElapsedSec++;
+    const el = document.getElementById('cap-elapsed');
+    if (el) el.textContent = String(_capElapsedSec);
+  }, 1000);
+
+  _capPollTimer = setInterval(() => {
+    fetch(`/network/api/captures/${capId}`)
+      .then(r => r.json())
+      .then(data => {
+        _setCaptureStatusUI(data);
+        if (data.status !== 'running') {
+          _stopCapturePolling();
+          _loadCaptureHistory(_capLinkId);
+        }
+      })
+      .catch(() => {});
+  }, 2000);
+}
+
+function _stopCapturePolling() {
+  if (_capPollTimer) { clearInterval(_capPollTimer); _capPollTimer = null; }
+  if (_capElapsedTimer) { clearInterval(_capElapsedTimer); _capElapsedTimer = null; }
+}
+
+function _setCaptureStatusUI(data) {
+  const badge = document.getElementById('cap-status-badge');
+  const spinner = document.getElementById('cap-spinner');
+  const stopBtn = document.getElementById('cap-stop-btn');
+  const dlBtn = document.getElementById('cap-download-btn');
+
+  if (data.status === 'running') {
+    badge.textContent = '● RUNNING';
+    badge.style.background = '#e67e22';
+    badge.style.color = '#fff';
+    spinner.style.display = '';
+    stopBtn.style.display = '';
+    dlBtn.style.display = 'none';
+  } else if (data.status === 'complete') {
+    badge.textContent = '✓ COMPLETE';
+    badge.style.background = '#2ecc71';
+    badge.style.color = '#1a1a2e';
+    spinner.style.display = 'none';
+    stopBtn.style.display = 'none';
+    dlBtn.style.display = '';
+    const bytes = data.size_bytes || 0;
+    document.getElementById('cap-size').textContent = bytes < 1024 ? `${bytes} B` : `${(bytes/1024).toFixed(1)} KB`;
+    const sha = data.sha256 || '';
+    document.getElementById('cap-sha').textContent = sha ? sha.slice(0, 12) + '…' : '—';
+    document.getElementById('cap-sha').title = sha;
+    document.getElementById('cap-expiry').textContent = (data.expiry_at || '—').replace('T', ' ').replace('Z', ' UTC').slice(0, 20);
+    if (data.id) document.getElementById('cap-id-display').textContent = data.id.slice(0, 8) + '…';
+  } else {
+    badge.textContent = '✕ ERROR';
+    badge.style.background = '#e74c3c';
+    badge.style.color = '#fff';
+    spinner.style.display = 'none';
+    stopBtn.style.display = 'none';
+    dlBtn.style.display = 'none';
+  }
+}
+
+function _setCaptureError(msg) {
+  _stopCapturePolling();
+  const badge = document.getElementById('cap-status-badge');
+  badge.textContent = '✕ ERROR';
+  badge.style.background = '#e74c3c';
+  badge.style.color = '#fff';
+  document.getElementById('cap-spinner').style.display = 'none';
+  document.getElementById('cap-stop-btn').style.display = 'none';
+  document.getElementById('cap-size').textContent = msg;
+}
+
+function stopCurrentCapture() {
+  if (!_capCurrentId) return;
+  _stopCapturePolling();
+  fetch(`/network/api/captures/${_capCurrentId}/stop`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      _setCaptureStatusUI({ ...(data || {}), id: _capCurrentId });
+      return fetch(`/network/api/captures/${_capCurrentId}`);
+    })
+    .then(r => r && r.json())
+    .then(data => { if (data) { _setCaptureStatusUI(data); _loadCaptureHistory(_capLinkId); } })
+    .catch(() => {});
+}
+
+function downloadCurrentCapture() {
+  if (!_capCurrentId) return;
+  window.location.href = `/network/api/captures/${_capCurrentId}/download`;
+}
+
+function _loadCaptureHistory(linkId) {
+  if (!linkId) return;
+  const list = document.getElementById('cap-history-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:#7a8cb0;font-size:12px;text-align:center;padding:12px;">Loading…</div>';
+
+  fetch(`/network/api/captures?link_id=${encodeURIComponent(linkId)}`)
+    .then(r => r.json())
+    .then(captures => {
+      if (!captures.length) {
+        list.innerHTML = '<div style="color:#7a8cb0;font-size:12px;text-align:center;padding:16px;">No captures yet.</div>';
+        return;
+      }
+      list.innerHTML = captures.map(c => {
+        const isRunning = c.status === 'running';
+        const ts = (c.created_at || '').replace('T', ' ').replace('Z', '').slice(0, 16);
+        const bytes = c.size_bytes || 0;
+        const sizeStr = isRunning ? '…' : (bytes < 1024 ? `${bytes} B` : `${(bytes/1024).toFixed(1)} KB`);
+        const badgeColor = isRunning ? '#e67e22' : (c.status === 'complete' ? '#2ecc71' : '#e74c3c');
+        const badgeText = isRunning ? '● RUN' : (c.status === 'complete' ? '✓' : '✕');
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;
+          background:#12122a;margin-bottom:4px;font-size:11px;">
+          <span style="background:${badgeColor};color:${isRunning ? '#fff' : '#1a1a2e'};
+            padding:1px 5px;border-radius:8px;font-size:10px;font-weight:600;">${badgeText}</span>
+          <span style="color:#cdd6f4;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+            title="${_escHtml(c.id)}">${ts} · ${sizeStr}</span>
+          ${c.status === 'complete'
+            ? `<a href="/network/api/captures/${c.id}/download" style="color:#2ecc71;text-decoration:none;font-size:10px;">&#x2B07; .pcap</a>`
+            : isRunning
+              ? `<button onclick="_capCurrentId='${c.id}';stopCurrentCapture();" style="background:#e74c3c;border:none;color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer;">Stop</button>`
+              : ''}
+        </div>`;
+      }).join('');
+    })
+    .catch(() => { list.innerHTML = '<div style="color:#e74c3c;font-size:12px;text-align:center;padding:12px;">Failed to load.</div>'; });
 }
 
 /* ── Canvas Tooltips ──────────────────────────────────────────────────────────── */
