@@ -58,6 +58,11 @@ from tools.dashboard.api.kanban import kanban_api  # noqa: E402
 from tools.dashboard.api.kanban_plan import kanban_plan_api  # noqa: E402
 from tools.dashboard.api.agents import agents_api  # noqa: E402
 from tools.dashboard.api.compliance import compliance_api  # noqa: E402
+from tools.dashboard.api.poam import poam_api  # noqa: E402
+from tools.dashboard.findings_aggregator import (  # noqa: E402
+    aggregate_findings as _aggregate_findings,
+    open_finding_count as _open_finding_count,
+)
 from tools.dashboard.api.audit import audit_api  # noqa: E402
 from tools.dashboard.api.metrics import metrics_api  # noqa: E402
 from tools.dashboard.api.events import events_bp  # noqa: E402
@@ -1145,6 +1150,7 @@ def create_app() -> Flask:
     app.register_blueprint(kanban_plan_api)
     app.register_blueprint(agents_api)
     app.register_blueprint(compliance_api)
+    app.register_blueprint(poam_api)
     app.register_blueprint(audit_api)
     app.register_blueprint(metrics_api)
     app.register_blueprint(events_bp)
@@ -1697,81 +1703,33 @@ def create_app() -> Flask:
                     }
                 )
 
-            # Canvas DBs: extract CAT1 findings from recent assessments
-            _canvas_json_dbs = [
-                ("security_canvas.db", "sc_assessments", "findings_json", "ran_at", "Security Canvas"),
-                ("infra_canvas.db", "idc_assessments", "findings_json", "created_at", "Infra Canvas"),
-                ("observability_canvas.db", "od_assessments", "findings_json", "created_at", "Observability Canvas"),
-                ("boundary_canvas.db", "bd_assessments", "findings_json", "created_at", "Boundary Canvas"),
-                ("data_canvas.db", "dd_assessments", "findings_json", "created_at", "Data Canvas"),
-            ]
-            cat1_count = 0
-            open_canvas_count = 0
-            for _db_name, _tbl, _fcol, _tcol, _label in _canvas_json_dbs:
-                try:
-                    _cc = _sqlite3.connect(str(BASE_DIR / "data" / _db_name))
-                    _cc.row_factory = _sqlite3.Row
-                    _rows = _cc.execute(f"SELECT {_fcol}, {_tcol} FROM {_tbl} ORDER BY {_tcol} DESC LIMIT 3").fetchall()
-                    for _row in _rows:
-                        _ts = _row[1] or ""
-                        try:
-                            _items = json.loads(_row[0] or "[]")
-                        except (json.JSONDecodeError, TypeError):
-                            _items = []
-                        for _f in _items:
-                            _sev = _f.get("severity", "")
-                            open_canvas_count += 1
-                            if _sev == "CAT1":
-                                cat1_count += 1
-                                _detail = _f.get("title", "")
-                                _extra = _f.get("detail") or _f.get("affected_entity") or ""
-                                if _extra:
-                                    _detail = f"{_detail}: {_extra}"
-                                _activity.append(
-                                    {
-                                        "event_type": "Canvas Finding",
-                                        "source": _label,
-                                        "details": _detail,
-                                        "severity": "CAT1",
-                                        "created_at": _ts,
-                                    }
-                                )
-                    _cc.close()
-                except Exception:
-                    pass
+            # Canvas findings (POA&M) — single source of truth via aggregator.
+            # Replaces the prior inline triple-counting loops; the /poam page
+            # uses the same helper so the index counter and the list match.
+            try:
+                _all_findings = _aggregate_findings(
+                    get_db_conn=_get_db, include_remediated=False
+                )
+            except Exception:
+                _all_findings = []
 
-            # Direct findings tables (network, pipeline canvas)
-            _canvas_direct_dbs = [
-                ("network_canvas.db", "nc_compliance_findings", "Network Canvas"),
-                ("pipeline_canvas.db", "pc_compliance_findings", "Pipeline Canvas"),
-            ]
-            for _db_name, _tbl, _label in _canvas_direct_dbs:
-                try:
-                    _cc = _sqlite3.connect(str(BASE_DIR / "data" / _db_name))
-                    _cc.row_factory = _sqlite3.Row
-                    _rows = _cc.execute(
-                        f"SELECT severity, title, description, status, created_at "
-                        f"FROM {_tbl} ORDER BY created_at DESC LIMIT 10"
-                    ).fetchall()
-                    for _row in _rows:
-                        _sev = _row["severity"] or ""
-                        _status = _row["status"] or "open"
-                        if _status != "remediated":
-                            open_canvas_count += 1
-                        if _sev == "CAT1":
-                            cat1_count += 1
-                            _activity.append(
-                                {
-                                    "event_type": "Canvas Finding",
-                                    "source": _label,
-                                    "details": _row["title"] or "",
-                                    "severity": "CAT1",
-                                    "created_at": _row["created_at"] or "",
-                                }
-                            )
-                    _cc.close()
-                except Exception:
-                    pass
+            cat1_count = 0
+            for _f in _all_findings:
+                if _f.get("severity") == "CAT1":
+                    cat1_count += 1
+                    _activity.append(
+                        {
+                            "event_type": "Canvas Finding",
+                            "source": _f.get("canvas_label") or "",
+                            "details": (
+                                f"{_f.get('title', '')}: {_f.get('affected_entity', '')}"
+                                if _f.get("affected_entity")
+                                else _f.get("title", "")
+                            ),
+                            "severity": "CAT1",
+                            "created_at": _f.get("discovered_at") or "",
+                        }
+                    )
 
             # Sort merged activity by created_at DESC, limit 10
             _activity.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
@@ -1780,8 +1738,9 @@ def create_app() -> Flask:
             # Firing alert count = CAT1 canvas findings
             firing_alerts = cat1_count
 
-            # Open POAM count = total open canvas findings
-            open_poam = open_canvas_count
+            # Open POAM count = open canvas findings (excludes declined/accepted_risk/remediated)
+            _excluded = {"declined", "accepted_risk", "remediated"}
+            open_poam = sum(1 for _f in _all_findings if _f.get("decision") not in _excluded)
 
             # Group projects by status for Kanban columns
             kanban_columns = {
@@ -1817,6 +1776,16 @@ def create_app() -> Flask:
     def kanban_page():
         """Task Board — Kanban view for scheduled and planned work."""
         return render_template("kanban.html")
+
+    @app.route("/poam")
+    def poam_page():
+        """POA&M — Canvas findings approval workflow.
+
+        Aggregates findings from all 7 canvas DBs (security, infra, observability,
+        boundary, data, network, pipeline) and lets a reviewer approve, decline,
+        accept risk, or mark remediated. Approval state lives in finding_approvals.
+        """
+        return render_template("poam/list.html")
 
     @app.route("/projects")
     def projects_list():
