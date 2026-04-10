@@ -1019,6 +1019,19 @@ def create_app() -> Flask:
     except ImportError:
         pass
 
+    # Liveness probe — used by /start, container healthchecks, and uptime monitors.
+    # Cheap, no DB call. For deeper checks see /api/platform/health.
+    @app.route("/health", methods=["GET"])
+    def health():
+        return (
+            {
+                "status": "ok",
+                "service": "icdev-dashboard",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            200,
+        )
+
     # Role-based view configuration
     ROLE_VIEWS = {
         "pm": {
