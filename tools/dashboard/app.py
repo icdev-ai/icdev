@@ -7096,8 +7096,16 @@ def create_app() -> Flask:
 
         @app.route("/api/platform/health/<domain>", methods=["GET"])
         def api_platform_health_domain(domain: str):
-            """GET /api/platform/health/<domain> — Detailed findings for one domain."""
-            detail = get_domain_health(domain)
+            """GET /api/platform/health/<domain> — Detailed findings for one domain.
+
+            Each domain probe in tools/dashboard/platform_health.py opens a
+            storage connection and runs deterministic SELECT COUNT(*) checks
+            against backend tables (PG or SQLite). Results are not cached so
+            every call hits the database.
+            """
+            from tools.dashboard.platform_health import get_domain_health as _gdh  # noqa: E402
+
+            detail = _gdh(domain)
             return jsonify(
                 {
                     "domain": domain,

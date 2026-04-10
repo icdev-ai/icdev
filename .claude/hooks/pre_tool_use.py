@@ -315,6 +315,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "studio_automation_runs",
         # Cross-canvas KG build audit log (append-only — NIST AU)
         "canvas_kg_build_log",
+        # Phase 73 — Findings + Oracle Predictions (NIST AU, append-only)
+        "finding_approvals",
+        "oracle_convergence_events",
+        "oracle_predictions",
+        "oracle_remediation_proposals",
     ]
 
     if tool_name == "Bash":

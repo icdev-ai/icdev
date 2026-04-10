@@ -52,25 +52,35 @@ def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
 
 
 def _ensure_tables(conn: sqlite3.Connection) -> None:
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist.
+
+    Schemas mirror tools/db/init_icdev_db.py (canonical source of truth) so
+    tests using in-memory SQLite DBs see the same columns the manager writes.
+    Migration 014 keeps existing prod DBs aligned.
+    """
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS ai_oversight_plans (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT NOT NULL,
         plan_name TEXT NOT NULL,
+        plan_data TEXT,
         description TEXT DEFAULT '',
         approval_status TEXT DEFAULT 'draft',
+        approved_by TEXT,
         created_by TEXT DEFAULT '',
-        approved_by TEXT DEFAULT '',
+        classification TEXT DEFAULT 'CUI',
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS ai_caio_registry (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT NOT NULL,
-        name TEXT NOT NULL,
+        official_name TEXT,
+        official_role TEXT DEFAULT 'CAIO',
+        name TEXT,
         role TEXT DEFAULT 'CAIO',
         organization TEXT DEFAULT '',
+        designation_date TEXT,
         appointment_date TEXT DEFAULT (datetime('now')),
         status TEXT DEFAULT 'active',
         created_at TEXT DEFAULT (datetime('now'))
@@ -80,30 +90,41 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
         project_id TEXT NOT NULL,
         appellant TEXT NOT NULL,
         ai_system TEXT NOT NULL,
+        decision_contested TEXT,
         grievance TEXT DEFAULT '',
+        appeal_status TEXT DEFAULT 'submitted',
         status TEXT DEFAULT 'submitted',
         resolution TEXT DEFAULT '',
+        resolved_by TEXT,
         filed_at TEXT DEFAULT (datetime('now')),
-        resolved_at TEXT
+        resolved_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS ai_ethics_reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT NOT NULL,
         review_type TEXT NOT NULL,
+        ai_system TEXT,
         summary TEXT DEFAULT '',
         findings TEXT DEFAULT '',
         recommendation TEXT DEFAULT '',
+        opt_out_policy INTEGER DEFAULT 0,
+        legal_compliance_matrix INTEGER DEFAULT 0,
+        pre_deployment_review INTEGER DEFAULT 0,
+        reviewer TEXT,
         status TEXT DEFAULT 'submitted',
         submitted_at TEXT DEFAULT (datetime('now')),
-        reviewed_at TEXT
+        reviewed_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS ai_reassessment_schedule (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT NOT NULL,
         ai_system TEXT NOT NULL,
         frequency TEXT DEFAULT 'annual',
-        last_assessed TEXT,
         next_due TEXT,
+        last_completed TEXT,
+        last_assessed TEXT,
         created_at TEXT DEFAULT (datetime('now'))
     );
     """)
