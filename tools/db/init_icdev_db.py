@@ -290,6 +290,28 @@ CREATE TABLE IF NOT EXISTS poam_items (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Canvas-finding approval state (one row per unique finding across all canvas DBs).
+-- Findings live in their source canvas DBs (security_canvas.db, data_canvas.db, etc.)
+-- and are re-generated each scan; this table persists the human approval decision
+-- keyed by a stable SHA-256 hash of (canvas, rule_id, title, affected_entity).
+-- Mutable: a finding can move pending -> approved -> remediated. Each transition
+-- is also logged to audit_trail (append-only) for compliance.
+CREATE TABLE IF NOT EXISTS finding_approvals (
+    finding_hash TEXT PRIMARY KEY,
+    canvas_source TEXT NOT NULL,
+    rule_id TEXT,
+    severity TEXT,
+    title TEXT NOT NULL,
+    affected_entity TEXT,
+    decision TEXT DEFAULT 'pending' CHECK(decision IN ('pending', 'approved', 'declined', 'accepted_risk', 'remediated')),
+    decision_by TEXT,
+    decision_at TIMESTAMP,
+    decision_rationale TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS stig_findings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),
