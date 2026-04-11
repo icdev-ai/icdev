@@ -62,7 +62,6 @@ from tools.dashboard.api.poam import poam_api  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
     close_canvas_connections as _close_canvas_connections,
-    open_finding_count as _open_finding_count,
 )
 from tools.dashboard.api.audit import audit_api  # noqa: E402
 from tools.dashboard.api.metrics import metrics_api  # noqa: E402
@@ -1653,11 +1652,14 @@ def create_app() -> Flask:
                 cconn = _sqlite3.connect(str(db_path))
                 cconn.row_factory = _sqlite3.Row
                 try:
+                    # score_col/ts_col/table come from _TREND_CANVASES constant
+                    # defined above — a module-internal whitelist of 7-tuples,
+                    # not user input. Safe to interpolate.
                     rows = cconn.execute(
-                        f"SELECT {score_col} as raw_score, DATE({ts_col}) as day "
-                        f"FROM {table} "
-                        f"WHERE {ts_col} >= DATE('now', '-30 days') "
-                        f"ORDER BY {ts_col} DESC LIMIT 30"
+                        f"SELECT {score_col} as raw_score, DATE({ts_col}) as day "  # nosec B608 -- whitelist from _TREND_CANVASES
+                        f"FROM {table} "  # nosec B608
+                        f"WHERE {ts_col} >= DATE('now', '-30 days') "  # nosec B608
+                        f"ORDER BY {ts_col} DESC LIMIT 30"  # nosec B608
                     ).fetchall()
                     scores = []
                     for r in rows:
@@ -1753,8 +1755,8 @@ def create_app() -> Flask:
             recent_audit = conn.execute("SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT 10").fetchall()
 
             # --- Recent Activity & Findings: audit_trail + canvas CAT1 findings ---
-            import sqlite3 as _sqlite3
-
+            # Canvas findings now flow through _aggregate_findings() helper
+            # below, so no local sqlite3 import is needed here anymore.
             _audit_rows = conn.execute(
                 "SELECT event_type, actor, action, project_id, created_at "
                 "FROM audit_trail ORDER BY created_at DESC LIMIT 10"
@@ -3029,8 +3031,8 @@ def create_app() -> Flask:
                 try:
                     total = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
                     impl = conn.execute(
-                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?",
-                        (val,),  # nosec B608 -- table/column names are internal constants, not user input
+                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?",  # nosec B608 -- table/column from internal frameworks list, not user input
+                        (val,),
                     ).fetchone()["cnt"]
                     result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
                 except Exception:
@@ -7143,7 +7145,9 @@ def create_app() -> Flask:
         return render_template("platform_health.html")
 
     try:
-        from tools.dashboard.platform_health import get_platform_health, get_domain_health  # noqa: E402
+        # Only get_platform_health is used here; get_domain_health is imported
+        # locally inside the per-domain handler below (see _gdh alias at L7175).
+        from tools.dashboard.platform_health import get_platform_health  # noqa: E402
 
         @app.route("/api/platform/health", methods=["GET"])
         def api_platform_health():
