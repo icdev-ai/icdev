@@ -1344,15 +1344,16 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
     "adw": {
         "url": "(tutorial content by IndyDevDan — no public repo identified)",
         "license": "tutorial-restrictive",
-        "audit_status": "REWRITE REQUIRED per user directive 2026-04-11 (OPT-75)",
+        "audit_status": "rewrite complete 2026-04-11 (OPT-75 — all 18 files clean-room replaced)",
         "notes": (
-            "IndyDevDan's Agentic Developer Workflows tutorial material is "
-            "licensed for learning, not redistribution. 18 ICDEV files "
-            "currently cite 'Adapted from ADW adw_X.py' across tools/ci/ "
-            "and tools/testing/ — these need clean-room rewrite. See "
-            "OPT-75 for the phased rewrite plan. Files are allowlisted "
-            "until rewrite lands so the gate stays WARN instead of FAIL "
-            "for active development."
+            "All 18 files originally headed 'Adapted from ADW adw_X.py' "
+            "have been clean-room rewritten under OPT-75 from per-file "
+            "specs in docs/rewrite/adw/specs/. The new implementations "
+            "share no code with the tutorial material; each file was "
+            "rewritten from a spec that documented behavior only, not "
+            "implementation. _REWRITE_IN_PROGRESS_ALLOWLIST is now "
+            "empty — the attribution_claims check passes cleanly with "
+            "zero ADW citations remaining."
         ),
     },
     "mattpocock/skills": {
@@ -1459,10 +1460,10 @@ _REWRITE_IN_PROGRESS_ALLOWLIST: set[str] = {
     # tools/ci/workflows/icdev_sdlc.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 11/18)
     # tools/ci/workflows/icdev_test.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 9/18)
     # tools/testing/data_types.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 4/18)
-    "tools/testing/e2e_runner.py",
+    # tools/testing/e2e_runner.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 17/18)
     # tools/testing/health_check.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 15/18)
     # tools/testing/test_agent_models.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 16/18)
-    "tools/testing/test_orchestrator.py",
+    # tools/testing/test_orchestrator.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 18/18)
     # tools/testing/utils.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 3/18)
 }
 

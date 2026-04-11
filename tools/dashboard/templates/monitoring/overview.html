@@ -71,10 +71,57 @@ flowchart TD
     </div>
 </div>
 
-<!-- Recent Alerts Table -->
-<div class="table-container">
+<!-- Firing Alerts (highest priority, shown first) -->
+<div class="table-container" id="firing-alerts">
     <div class="table-header">
-        <h2>Recent Alerts</h2>
+        <h2>Firing Alerts ({{ firing_count }})</h2>
+    </div>
+    {% if firing_alerts %}
+    <table>
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Title</th>
+                <th>Source</th>
+                <th>Project</th>
+                <th>Auto-Healed</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for alert in firing_alerts %}
+            <tr>
+                <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
+                <td>{{ alert.title }}</td>
+                <td>{{ alert.source }}</td>
+                <td>
+                    {% if alert.project_id %}
+                    <a href="/projects/{{ alert.project_id }}">{{ alert.project_id[:12] }}</a>
+                    {% else %}
+                    <span class="text-muted">&mdash;</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if alert.auto_healed %}
+                    <span class="text-green">Yes</span>
+                    {% else %}
+                    <span class="text-muted">No</span>
+                    {% endif %}
+                </td>
+                <td class="text-muted">{{ alert.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-row" style="padding:1rem;">No alerts currently firing &mdash; all systems operational.</div>
+    {% endif %}
+</div>
+
+<!-- Recent Alerts Table (all statuses, history view) -->
+<div class="table-container" id="recent-alerts" style="margin-top:1.5rem;">
+    <div class="table-header">
+        <h2>Recent Alerts (all statuses)</h2>
     </div>
     <table>
         <thead>
@@ -98,7 +145,7 @@ flowchart TD
                     {% if alert.project_id %}
                     <a href="/projects/{{ alert.project_id }}">{{ alert.project_id[:12] }}</a>
                     {% else %}
-                    <span class="text-muted">—</span>
+                    <span class="text-muted">&mdash;</span>
                     {% endif %}
                 </td>
                 <td><span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></td>
