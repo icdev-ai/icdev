@@ -1,75 +1,118 @@
-# [TEMPLATE: CUI // SP-CTI]
-# ICDEV™ Agent Model Test — Verify Claude Code models work
-# Adapted from ADW test_agents.py
+# CUI // SP-CTI
+"""Smoke-test every Claude Code model tier in parallel.
 
+Pings ``opus``, ``sonnet``, and ``haiku`` with a fixed prompt, captures
+each response, and reports a single overall pass/fail. Used by the
+testing framework to confirm the model wiring before kicking off a
+real workflow.
+
+Implements the contract documented in
+``docs/rewrite/adw/specs/tools/testing/test_agent_models.md`` (OPT-75
+Phase 3 clean-room rewrite).
 """
-Test that Claude Code CLI models (opus, sonnet, haiku) respond correctly.
-
-Runs model tests in parallel to verify availability.
-
-Usage:
-    python tools/testing/test_agent_models.py
-"""
+from __future__ import annotations
 
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Dict, List, Tuple
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import AgentPromptRequest  # noqa: E402
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from tools.ci.modules.agent import prompt_claude_code  # noqa: E402
+from tools.testing.data_types import AgentPromptRequest  # noqa: E402
 from tools.testing.utils import make_run_id  # noqa: E402
 
-# Models to test
-MODELS = ["opus", "sonnet", "haiku"]
 
-TEST_PROMPT = """You are a helpful assistant. Please respond to this test with:
-1. Confirm you received this message
-2. State which model you are
-3. Say "Test successful!"
+MODELS: List[str] = ["opus", "sonnet", "haiku"]
 
-Keep your response brief."""
+TEST_PROMPT: str = (
+    "You are a helpful assistant. Please respond to this test with:\n"
+    "1. Confirm you received this message\n"
+    "2. State which model you are\n"
+    "3. Say \"Test successful!\"\n\n"
+    "Keep your response brief."
+)
 
 
-def test_model(model: str, run_id: str) -> tuple:
-    """Test a specific model and return (success, message)."""
-    print(f"\n{'=' * 50}")
+# ────────────────────────────────────────────────────────────────────────────
+# Per-model probe
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _output_file_for(run_id: str, model: str) -> Path:
+    return PROJECT_ROOT / "agents" / run_id / f"agent_test_{model}.jsonl"
+
+
+def _print_banner(model: str) -> None:
+    bar = "=" * 50
+    print(f"\n{bar}")
     print(f"Testing model: {model}")
-    print(f"{'=' * 50}")
+    print(bar)
 
-    output_file = str(PROJECT_ROOT / "agents" / run_id / f"agent_test_{model}.jsonl")
+
+def test_model(model: str, run_id: str) -> Tuple[bool, str]:
+    """Send the test prompt to ``model`` and report success or failure."""
+    _print_banner(model)
+    output_path = _output_file_for(run_id, model)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     request = AgentPromptRequest(
         prompt=TEST_PROMPT,
         agent_name=f"test_{model}",
         model=model,
-        output_file=output_file,
+        output_file=str(output_path),
     )
 
     try:
         response = prompt_claude_code(request)
-
-        if response.success:
-            print(f"PASS {model} — Success!")
-            print(f"Session ID: {response.session_id}")
-            print(f"Preview: {response.output[:200]}...")
-            return True, f"{model}: Success"
-        else:
-            print(f"FAIL {model} — Failed!")
-            print(f"Error: {response.output}")
-            return False, f"{model}: {response.output}"
-
-    except Exception as e:
-        error_msg = f"Exception: {str(e)}"
+    except Exception as exc:
+        message = f"Exception: {exc}"
         print(f"FAIL {model} — Exception!")
-        print(error_msg)
-        return False, f"{model}: {error_msg}"
+        print(message)
+        return False, f"{model}: {message}"
+
+    if getattr(response, "success", False):
+        preview = (getattr(response, "output", "") or "")[:200]
+        session = getattr(response, "session_id", None)
+        print(f"PASS {model} — Success!")
+        print(f"Session ID: {session}")
+        print(f"Preview: {preview}...")
+        return True, f"{model}: Success"
+
+    error_text = getattr(response, "output", "") or "no output"
+    print(f"FAIL {model} — Failed!")
+    print(f"Error: {error_text}")
+    return False, f"{model}: {error_text}"
 
 
-def main():
-    """Run tests for all models in parallel."""
+# ────────────────────────────────────────────────────────────────────────────
+# Driver
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _run_in_parallel(
+    models: List[str], run_id: str,
+) -> Dict[str, Tuple[bool, str]]:
+    results: Dict[str, Tuple[bool, str]] = {}
+    with ThreadPoolExecutor(max_workers=max(1, len(models))) as pool:
+        futures = {
+            pool.submit(test_model, model, run_id): model
+            for model in models
+        }
+        for future in as_completed(futures):
+            model = futures[future]
+            try:
+                results[model] = future.result()
+            except Exception as exc:
+                results[model] = (False, f"{model}: Exception: {exc}")
+    return results
+
+
+def main(argv: List[str] = None) -> int:
     run_id = make_run_id()
 
     print("CUI // SP-CTI")
@@ -77,38 +120,28 @@ def main():
     print(f"Run ID: {run_id}")
     print(f"Models: {', '.join(MODELS)}")
 
-    results = {}
-    all_success = True
+    results = _run_in_parallel(MODELS, run_id)
 
-    with ThreadPoolExecutor(max_workers=len(MODELS)) as executor:
-        future_to_model = {executor.submit(test_model, model, run_id): model for model in MODELS}
-
-        for future in as_completed(future_to_model):
-            model = future_to_model[future]
-            try:
-                success, message = future.result()
-                results[model] = (success, message)
-                if not success:
-                    all_success = False
-            except Exception as e:
-                results[model] = (False, f"Exception: {str(e)}")
-                all_success = False
-
-    print(f"\n{'=' * 50}")
+    print("\n" + "=" * 50)
     print("Test Summary")
-    print(f"{'=' * 50}")
+    print("=" * 50)
 
+    all_success = True
     for model in MODELS:
-        if model in results:
-            success, message = results[model]
-            status = "PASS" if success else "FAIL"
-            print(f"{status} — {message}")
+        if model not in results:
+            all_success = False
+            print(f"FAIL — {model}: not run")
+            continue
+        success, message = results[model]
+        status = "PASS" if success else "FAIL"
+        if not success:
+            all_success = False
+        print(f"{status} — {message}")
 
     overall = "All tests passed!" if all_success else "Some tests failed!"
     print(f"\nOverall: {overall}")
-
-    sys.exit(0 if all_success else 1)
+    return 0 if all_success else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

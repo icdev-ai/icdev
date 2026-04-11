@@ -1,52 +1,49 @@
-# [TEMPLATE: CUI // SP-CTI]
-# ICDEV™ System Health Check
-# Adapted from ADW health_check.py for Gov/DoD environment validation
+# CUI // SP-CTI
+"""ICDEV™ system health check.
 
+Runs eight diagnostic checks against the local ICDEV install and
+reports a single aggregate verdict. Designed to be invoked by an
+operator before doing anything risky, and by CI as a smoke test of
+the bundled tooling.
+
+Implements the contract documented in
+``docs/rewrite/adw/specs/tools/testing/health_check.md`` (OPT-75
+Phase 3 clean-room rewrite).
 """
-ICDEV™ Health Check — validates the entire ICDEV™ system is operational.
-
-Usage:
-    python tools/testing/health_check.py [--json] [--project-id <id>]
-
-Checks performed:
-1. Environment variables (ICDEV™, AWS, optional keys)
-2. Database connectivity (icdev.db — 28 tables)
-3. Python dependencies (stdlib + optional packages)
-4. Tool availability (audit, compliance, security, builder, etc.)
-5. MCP server syntax validation
-6. Git repository configuration
-7. Claude Code CLI (if ANTHROPIC_API_KEY set)
-
-Exit codes: 0 = healthy, 1 = unhealthy
-"""
+from __future__ import annotations
 
 import argparse
 import importlib
 import json
+import logging
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from tools.db.storage import get_connection
+from typing import Callable, Dict, List
 
-# Add project root to path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# data_types is the canonical source for these models. Fall back only
+# if the rewrite is run in a stripped-down environment without the
+# package — the structure of CheckResult is small enough to inline.
 try:
     from tools.testing.data_types import CheckResult, HealthCheckResult
-except ImportError:
-    # Inline fallback if data_types not available
-    class CheckResult:
+except ImportError:  # pragma: no cover - shim path
+    class CheckResult:  # type: ignore[no-redef]
         def __init__(self, success, error=None, warning=None, details=None):
             self.success = success
             self.error = error
             self.warning = warning
             self.details = details or {}
 
-    class HealthCheckResult:
-        def __init__(self, success, timestamp, checks=None, warnings=None, errors=None):
+    class HealthCheckResult:  # type: ignore[no-redef]
+        def __init__(self, success, timestamp, checks=None,
+                     warnings=None, errors=None):
             self.success = success
             self.timestamp = timestamp
             self.checks = checks or {}
@@ -54,12 +51,18 @@ except ImportError:
             self.errors = errors or []
 
 
+_logger = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Individual checks
+# ────────────────────────────────────────────────────────────────────────────
+
+
 def check_env_vars() -> CheckResult:
-    """Check required and optional environment variables."""
     required_vars = {
         "ICDEV_DB_PATH": "Path to ICDEV™ database (default: data/icdev.db)",
     }
-
     optional_vars = {
         "ANTHROPIC_API_KEY": "Anthropic API Key (for Claude Code CLI)",
         "AWS_ACCESS_KEY_ID": "AWS GovCloud access key",
@@ -69,25 +72,24 @@ def check_env_vars() -> CheckResult:
         "CLAUDE_CODE_PATH": "Path to Claude Code CLI (default: claude)",
     }
 
-    missing_required = []
-    missing_optional = []
-
+    missing_required: List[str] = []
     for var, desc in required_vars.items():
-        val = os.getenv(var)
-        if not val:
-            # Check if default path exists
-            if var == "ICDEV_DB_PATH":
-                default_path = PROJECT_ROOT / "data" / "icdev.db"
-                if default_path.exists():
-                    continue  # Default path works
-            missing_required.append(f"{var} ({desc})")
+        if os.getenv(var):
+            continue
+        # Allow ICDEV_DB_PATH to be unset when the default file exists.
+        if var == "ICDEV_DB_PATH":
+            default_path = PROJECT_ROOT / "data" / "icdev.db"
+            if default_path.exists():
+                continue
+        missing_required.append(f"{var} ({desc})")
 
-    for var, desc in optional_vars.items():
-        if not os.getenv(var):
-            missing_optional.append(f"{var} ({desc})")
+    missing_optional = [
+        f"{var} ({desc})"
+        for var, desc in optional_vars.items()
+        if not os.getenv(var)
+    ]
 
-    success = len(missing_required) == 0
-
+    success = not missing_required
     return CheckResult(
         success=success,
         error="Missing required environment variables" if not success else None,
@@ -98,104 +100,156 @@ def check_env_vars() -> CheckResult:
     )
 
 
-def check_database() -> CheckResult:
-    """Check ICDEV™ database connectivity and table structure."""
-    db_path = os.getenv("ICDEV_DB_PATH", str(PROJECT_ROOT / "data" / "icdev.db"))
+_EXPECTED_TABLES = (
+    "a2a_task_artifacts",
+    "a2a_task_history",
+    "a2a_tasks",
+    "agents",
+    "alerts",
+    "audit_trail",
+    "code_reviews",
+    "compliance_controls",
+    "deployments",
+    "failure_log",
+    "knowledge_patterns",
+    "metric_snapshots",
+    "poam_items",
+    "project_controls",
+    "projects",
+    "sbom_records",
+    "self_healing_events",
+    "ssp_documents",
+    "stig_findings",
+)
 
-    if not Path(db_path).exists():
+
+def _list_tables(conn) -> List[str]:
+    """Return every table name reachable from the connection. Tries the
+    SQLite catalog first, falls back to the Postgres catalog if the
+    first query fails."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
+        return [row[0] for row in cursor.fetchall()]
+    except Exception:
+        pass
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema NOT IN ('pg_catalog','information_schema') "
+            "ORDER BY table_name"
+        )
+        return [row[0] for row in cursor.fetchall()]
+    except Exception:
+        return []
+
+
+def check_database() -> CheckResult:
+    db_path = os.getenv(
+        "ICDEV_DB_PATH",
+        str(PROJECT_ROOT / "data" / "icdev.db"),
+    )
+
+    # When using the default sqlite path, require the file to exist.
+    if db_path.endswith(".db") and not Path(db_path).exists():
         return CheckResult(
             success=False,
-            error=f"Database not found at {db_path}. Run: python tools/db/init_icdev_db.py",
+            error=(
+                f"Database not found at {db_path}. "
+                f"Run: python tools/db/init_icdev_db.py"
+            ),
+        )
+
+    try:
+        from tools.db.storage import get_connection
+    except ImportError as exc:
+        return CheckResult(
+            success=False,
+            error=f"tools.db.storage import failed: {exc}",
         )
 
     try:
         conn = get_connection()
-        cursor = conn.cursor()
-
-        # Get all tables
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        tables = [row[0] for row in cursor.fetchall()]
-
-        expected_tables = [
-            "a2a_task_artifacts",
-            "a2a_task_history",
-            "a2a_tasks",
-            "agents",
-            "alerts",
-            "audit_trail",
-            "code_reviews",
-            "compliance_controls",
-            "deployments",
-            "failure_log",
-            "knowledge_patterns",
-            "metric_snapshots",
-            "poam_items",
-            "project_controls",
-            "projects",
-            "sbom_records",
-            "self_healing_events",
-            "ssp_documents",
-            "stig_findings",
-        ]
-
-        missing_tables = [t for t in expected_tables if t not in tables]
-
-        conn.close()
-
-        if missing_tables:
-            return CheckResult(
-                success=False,
-                error=f"Missing {len(missing_tables)} tables",
-                details={"tables_found": len(tables), "missing": missing_tables},
-            )
-
+    except Exception as exc:
         return CheckResult(
-            success=True,
-            details={"tables_found": len(tables), "db_path": db_path},
+            success=False,
+            error=f"Database connection failed: {exc}",
         )
-    except Exception as e:
-        return CheckResult(success=False, error=f"Database error: {str(e)}")
+
+    try:
+        tables = _list_tables(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    missing = [t for t in _EXPECTED_TABLES if t not in tables]
+    if missing:
+        return CheckResult(
+            success=False,
+            error=f"Missing {len(missing)} tables",
+            details={
+                "tables_found": len(tables),
+                "missing": missing,
+            },
+        )
+
+    return CheckResult(
+        success=True,
+        details={
+            "tables_found": len(tables),
+            "db_path": db_path,
+        },
+    )
+
+
+_REQUIRED_PYTHON_PKGS = {
+    "sqlite3": "Database access (stdlib)",
+    "pathlib": "File paths (stdlib)",
+    "json": "JSON parsing (stdlib)",
+    "argparse": "CLI arguments (stdlib)",
+}
+
+_OPTIONAL_PYTHON_PKGS = {
+    "yaml": "YAML config parsing (pyyaml)",
+    "jinja2": "Template rendering",
+    "flask": "Web dashboard",
+    "pytest": "Test runner",
+    "behave": "BDD test runner",
+    "pydantic": "Data validation",
+}
 
 
 def check_python_deps() -> CheckResult:
-    """Check that required Python packages are importable."""
-    required = {
-        "sqlite3": "Database access (stdlib)",
-        "pathlib": "File paths (stdlib)",
-        "json": "JSON parsing (stdlib)",
-        "argparse": "CLI arguments (stdlib)",
-    }
-
-    optional = {
-        "yaml": "YAML config parsing (pyyaml)",
-        "jinja2": "Template rendering",
-        "flask": "Web dashboard",
-        "pytest": "Test runner",
-        "behave": "BDD test runner",
-        "pydantic": "Data validation",
-    }
-
-    missing_required = []
-    missing_optional = []
-
-    for pkg, desc in required.items():
+    def _try_import(name: str) -> bool:
         try:
-            importlib.import_module(pkg)
+            importlib.import_module(name)
+            return True
         except ImportError:
-            missing_required.append(f"{pkg} ({desc})")
+            return False
 
-    for pkg, desc in optional.items():
-        try:
-            importlib.import_module(pkg)
-        except ImportError:
-            missing_optional.append(f"{pkg} ({desc})")
-
-    success = len(missing_required) == 0
-
+    missing_required = [
+        f"{pkg} ({desc})"
+        for pkg, desc in _REQUIRED_PYTHON_PKGS.items()
+        if not _try_import(pkg)
+    ]
+    missing_optional = [
+        f"{pkg} ({desc})"
+        for pkg, desc in _OPTIONAL_PYTHON_PKGS.items()
+        if not _try_import(pkg)
+    ]
+    success = not missing_required
     return CheckResult(
         success=success,
         error="Missing required Python packages" if not success else None,
-        warning=f"Missing optional packages: {', '.join(missing_optional)}" if missing_optional else None,
+        warning=(
+            f"Missing optional packages: {', '.join(missing_optional)}"
+            if missing_optional else None
+        ),
         details={
             "missing_required": missing_required,
             "missing_optional": missing_optional,
@@ -203,29 +257,30 @@ def check_python_deps() -> CheckResult:
     )
 
 
+_TOOL_PROBE_MODULES = {
+    "tools.db.init_icdev_db": "Database initialization",
+    "tools.audit.audit_logger": "Audit trail",
+    "tools.compliance.nist_lookup": "NIST control lookup",
+    "tools.security.sast_runner": "SAST scanning",
+    "tools.builder.scaffolder": "Project scaffolding",
+}
+
+
 def check_tools() -> CheckResult:
-    """Check that core ICDEV™ tool modules are importable."""
-    tool_modules = {
-        "tools.db.init_icdev_db": "Database initialization",
-        "tools.audit.audit_logger": "Audit trail",
-        "tools.compliance.nist_lookup": "NIST control lookup",
-        "tools.security.sast_runner": "SAST scanning",
-        "tools.builder.scaffolder": "Project scaffolding",
-    }
-
-    available = []
-    unavailable = []
-
-    for module, desc in tool_modules.items():
+    available: List[str] = []
+    unavailable: List[str] = []
+    for module, desc in _TOOL_PROBE_MODULES.items():
         try:
             importlib.import_module(module)
             available.append(module)
-        except (ImportError, Exception):
+        except Exception:
             unavailable.append(f"{module} ({desc})")
-
     return CheckResult(
         success=len(available) > 0,
-        warning=f"{len(unavailable)} tool modules unavailable" if unavailable else None,
+        warning=(
+            f"{len(unavailable)} tool modules unavailable"
+            if unavailable else None
+        ),
         details={
             "available": len(available),
             "unavailable": unavailable,
@@ -234,100 +289,103 @@ def check_tools() -> CheckResult:
 
 
 def check_mcp_servers() -> CheckResult:
-    """Check that MCP server configurations are valid."""
-    mcp_config_path = PROJECT_ROOT / ".mcp.json"
-
-    if not mcp_config_path.exists():
+    config_path = PROJECT_ROOT / ".mcp.json"
+    if not config_path.exists():
         return CheckResult(
             success=False,
             error=".mcp.json not found at project root",
         )
-
     try:
-        with open(mcp_config_path) as f:
-            config = json.load(f)
-
-        servers = config.get("mcpServers", {})
-        valid_servers = []
-        invalid_servers = []
-
-        for name, server_config in servers.items():
-            cmd = server_config.get("command")
-            args = server_config.get("args", [])
-
-            if cmd and args:
-                # Check if the script file exists (for python servers)
-                if cmd == "python" and args:
-                    script_path = PROJECT_ROOT / args[0]
-                    if script_path.exists():
-                        valid_servers.append(name)
-                    else:
-                        invalid_servers.append(f"{name} (script not found: {args[0]})")
-                else:
-                    valid_servers.append(name)
-            else:
-                invalid_servers.append(f"{name} (missing command or args)")
-
+        with open(config_path, "r", encoding="utf-8") as fh:
+            config = json.load(fh)
+    except json.JSONDecodeError as exc:
         return CheckResult(
-            success=len(valid_servers) > 0,
-            warning=f"{len(invalid_servers)} servers have issues" if invalid_servers else None,
-            details={
-                "valid_servers": valid_servers,
-                "invalid_servers": invalid_servers,
-            },
+            success=False,
+            error=f".mcp.json parse error: {exc}",
         )
-    except json.JSONDecodeError as e:
-        return CheckResult(success=False, error=f".mcp.json parse error: {e}")
+    except OSError as exc:
+        return CheckResult(
+            success=False,
+            error=f".mcp.json read error: {exc}",
+        )
+
+    servers = (config or {}).get("mcpServers") or {}
+    valid: List[str] = []
+    invalid: List[str] = []
+
+    for name, server_config in servers.items():
+        if not isinstance(server_config, dict):
+            invalid.append(f"{name} (not an object)")
+            continue
+        cmd = server_config.get("command")
+        args = server_config.get("args") or []
+        if not cmd or not args:
+            invalid.append(f"{name} (missing command or args)")
+            continue
+        if cmd == "python":
+            script_path = PROJECT_ROOT / args[0]
+            if script_path.exists():
+                valid.append(name)
+            else:
+                invalid.append(f"{name} (script not found: {args[0]})")
+        else:
+            valid.append(name)
+
+    return CheckResult(
+        success=len(valid) > 0,
+        warning=(
+            f"{len(invalid)} servers have issues" if invalid else None
+        ),
+        details={
+            "valid_servers": valid,
+            "invalid_servers": invalid,
+        },
+    )
 
 
 def check_git_repo() -> CheckResult:
-    """Check git repository configuration."""
     try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, cwd=str(PROJECT_ROOT)
-        )
-
-        if result.returncode != 0:
-            return CheckResult(
-                success=True,
-                warning="No git remote 'origin' configured",
-                details={"has_remote": False},
-            )
-
-        repo_url = result.stdout.strip()
-        return CheckResult(
-            success=True,
-            details={"repo_url": repo_url, "has_remote": True},
+        proc = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(PROJECT_ROOT),
         )
     except FileNotFoundError:
+        return CheckResult(success=False, error="Git is not installed")
+    if proc.returncode != 0:
         return CheckResult(
-            success=False,
-            error="Git is not installed",
+            success=True,
+            warning="No git remote 'origin' configured",
+            details={"has_remote": False},
         )
+    return CheckResult(
+        success=True,
+        details={
+            "repo_url": (proc.stdout or "").strip(),
+            "has_remote": True,
+        },
+    )
 
 
 def check_claude_code() -> CheckResult:
-    """Test Claude Code CLI functionality (only if ANTHROPIC_API_KEY is set)."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         return CheckResult(
             success=True,
             warning="ANTHROPIC_API_KEY not set, skipping Claude Code check",
             details={"skipped": True},
         )
-
     claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
-
     try:
-        result = subprocess.run([claude_path, "--version"], capture_output=True, text=True, timeout=10)
-        if result.returncode != 0:
-            return CheckResult(
-                success=False,
-                error=f"Claude Code CLI not functional at '{claude_path}'",
-            )
-
-        return CheckResult(
-            success=True,
-            details={"version": result.stdout.strip(), "path": claude_path},
+        proc = subprocess.run(
+            [claude_path, "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
         )
     except FileNotFoundError:
         return CheckResult(
@@ -335,54 +393,47 @@ def check_claude_code() -> CheckResult:
             error=f"Claude Code CLI not found at '{claude_path}'",
         )
     except subprocess.TimeoutExpired:
+        return CheckResult(success=False, error="Claude Code CLI timed out")
+
+    if proc.returncode != 0:
         return CheckResult(
             success=False,
-            error="Claude Code CLI timed out",
+            error=f"Claude Code CLI not functional at '{claude_path}'",
         )
+    return CheckResult(
+        success=True,
+        details={"version": (proc.stdout or "").strip(), "path": claude_path},
+    )
 
 
 def check_playwright() -> CheckResult:
-    """Check if Playwright is installed and browsers are available."""
-    from tools.compat.platform_utils import get_npx_cmd
-
-    npx = get_npx_cmd()
     try:
-        result = subprocess.run(
+        from tools.compat.platform_utils import get_npx_cmd
+        npx = get_npx_cmd()
+    except Exception:
+        return CheckResult(
+            success=True,
+            warning="npx helper unavailable — Playwright not probed",
+            details={"installed": False},
+        )
+
+    try:
+        proc = subprocess.run(
             [npx, "playwright", "--version"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
             cwd=str(PROJECT_ROOT),
-        )
-        if result.returncode != 0:
-            return CheckResult(
-                success=True,
-                warning="Playwright CLI not available (E2E tests will use MCP fallback)",
-                details={"installed": False},
-            )
-
-        version = result.stdout.strip()
-
-        # Check for native test files
-        native_tests = (
-            list((PROJECT_ROOT / "tests" / "e2e").glob("*.spec.ts"))
-            if (PROJECT_ROOT / "tests" / "e2e").exists()
-            else []
-        )
-
-        return CheckResult(
-            success=True,
-            details={
-                "installed": True,
-                "version": version,
-                "native_test_count": len(native_tests),
-                "mode": "native" if native_tests else "mcp",
-            },
         )
     except FileNotFoundError:
         return CheckResult(
             success=True,
-            warning="npx not found — Playwright unavailable (E2E tests will use MCP fallback)",
+            warning=(
+                "npx not found — Playwright unavailable "
+                "(E2E tests will use MCP fallback)"
+            ),
             details={"installed": False},
         )
     except subprocess.TimeoutExpired:
@@ -392,38 +443,62 @@ def check_playwright() -> CheckResult:
             details={"installed": False},
         )
 
+    if proc.returncode != 0:
+        return CheckResult(
+            success=True,
+            warning="Playwright CLI not available (E2E tests will use MCP fallback)",
+            details={"installed": False},
+        )
+
+    version = (proc.stdout or "").strip()
+    e2e_dir = PROJECT_ROOT / "tests" / "e2e"
+    native_tests = list(e2e_dir.glob("*.spec.ts")) if e2e_dir.exists() else []
+    return CheckResult(
+        success=True,
+        details={
+            "installed": True,
+            "version": version,
+            "native_test_count": len(native_tests),
+            "mode": "native" if native_tests else "mcp",
+        },
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Aggregate driver
+# ────────────────────────────────────────────────────────────────────────────
+
+
+_HEALTH_CHECKS: Dict[str, Callable[[], CheckResult]] = {
+    "environment": check_env_vars,
+    "database": check_database,
+    "python_deps": check_python_deps,
+    "tools": check_tools,
+    "mcp_servers": check_mcp_servers,
+    "git_repository": check_git_repo,
+    "claude_code": check_claude_code,
+    "playwright": check_playwright,
+}
+
 
 def run_health_check() -> HealthCheckResult:
-    """Run all health checks and return aggregate results.
-
-    Follows ADW health_check.py pattern: run each check, aggregate into
-    HealthCheckResult with overall success/failure.
-    """
+    """Run every check and aggregate results into a HealthCheckResult."""
     result = HealthCheckResult(
         success=True,
-        timestamp=datetime.now().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         checks={},
         warnings=[],
         errors=[],
     )
 
-    checks = {
-        "environment": check_env_vars,
-        "database": check_database,
-        "python_deps": check_python_deps,
-        "tools": check_tools,
-        "mcp_servers": check_mcp_servers,
-        "git_repository": check_git_repo,
-        "claude_code": check_claude_code,
-        "playwright": check_playwright,
-    }
-
-    for name, check_fn in checks.items():
+    for name, fn in _HEALTH_CHECKS.items():
         try:
-            check_result = check_fn()
-        except Exception as e:
-            check_result = CheckResult(success=False, error=f"Check crashed: {str(e)}")
-
+            check_result = fn()
+        except Exception as exc:
+            check_result = CheckResult(
+                success=False,
+                error=f"Check crashed: {exc}",
+            )
         result.checks[name] = check_result
 
         if not check_result.success:
@@ -436,71 +511,79 @@ def run_health_check() -> HealthCheckResult:
     return result
 
 
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV™ System Health Check")
-    parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--project-id", help="Optional project ID for scoped checks")
-    args = parser.parse_args()
+# ────────────────────────────────────────────────────────────────────────────
+# CLI
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _print_human(result: HealthCheckResult) -> None:
+    status = "HEALTHY" if result.success else "UNHEALTHY"
+    print(f"{'PASS' if result.success else 'FAIL'} Overall Status: {status}")
+    print(f"Timestamp: {result.timestamp}\n")
+    print("Check Results:")
+    print("-" * 50)
+
+    skip_keys = {
+        "missing_required",
+        "missing_optional",
+        "unavailable",
+        "invalid_servers",
+    }
+    for check_name, check_result in result.checks.items():
+        status_str = "PASS" if check_result.success else "FAIL"
+        print(f"\n  [{status_str}] {check_name.replace('_', ' ').title()}")
+        for key, value in (check_result.details or {}).items():
+            if value is None or key in skip_keys:
+                continue
+            print(f"       {key}: {value}")
+        if check_result.error:
+            print(f"       Error: {check_result.error}")
+        if check_result.warning:
+            print(f"       Warning: {check_result.warning}")
+
+    if result.warnings:
+        print("\nWarnings:")
+        for warning in result.warnings:
+            print(f"  - {warning}")
+    if result.errors:
+        print("\nErrors:")
+        for error in result.errors:
+            print(f"  - {error}")
+
+
+def _print_json(result: HealthCheckResult) -> None:
+    output = {
+        "success": result.success,
+        "timestamp": result.timestamp,
+        "checks": {
+            name: {
+                "success": chk.success,
+                "error": chk.error,
+                "warning": chk.warning,
+                "details": chk.details,
+            }
+            for name, chk in result.checks.items()
+        },
+        "warnings": result.warnings,
+        "errors": result.errors,
+    }
+    print(json.dumps(output, indent=2))
+
+
+def main(argv: List[str] = None) -> int:
+    parser = argparse.ArgumentParser(description="ICDEV™ system health check")
+    parser.add_argument("--json", action="store_true",
+                        help="Emit JSON to stdout")
+    parser.add_argument("--project-id", help="Reserved for future scoped checks")
+    args = parser.parse_args(argv)
 
     result = run_health_check()
-
     if args.json:
-        # Serialize to JSON
-        output = {
-            "success": result.success,
-            "timestamp": result.timestamp,
-            "checks": {},
-            "warnings": result.warnings,
-            "errors": result.errors,
-        }
-        for name, check in result.checks.items():
-            output["checks"][name] = {
-                "success": check.success,
-                "error": check.error,
-                "warning": check.warning,
-                "details": check.details,
-            }
-        print(json.dumps(output, indent=2))
+        _print_json(result)
     else:
-        # Human-readable output
-        status = "HEALTHY" if result.success else "UNHEALTHY"
-        print(f"{'PASS' if result.success else 'FAIL'} Overall Status: {status}")
-        print(f"Timestamp: {result.timestamp}\n")
-
-        print("Check Results:")
-        print("-" * 50)
-
-        for check_name, check_result in result.checks.items():
-            status_str = "PASS" if check_result.success else "FAIL"
-            print(f"\n  [{status_str}] {check_name.replace('_', ' ').title()}")
-
-            for key, value in check_result.details.items():
-                if value is not None and key not in [
-                    "missing_required",
-                    "missing_optional",
-                    "unavailable",
-                    "invalid_servers",
-                ]:
-                    print(f"       {key}: {value}")
-
-            if check_result.error:
-                print(f"       Error: {check_result.error}")
-            if check_result.warning:
-                print(f"       Warning: {check_result.warning}")
-
-        if result.warnings:
-            print("\nWarnings:")
-            for warning in result.warnings:
-                print(f"  - {warning}")
-
-        if result.errors:
-            print("\nErrors:")
-            for error in result.errors:
-                print(f"  - {error}")
-
-    sys.exit(0 if result.success else 1)
+        _print_human(result)
+    return 0 if result.success else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
