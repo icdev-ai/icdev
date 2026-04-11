@@ -316,12 +316,29 @@ function renderTaskKanban(tasks) {
 
             var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">\u{1F4C5} ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
 
-            return '<div class="kanban-card" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
+            // Native task dependency badge — renders a "blocked by X"
+            // chip when the backend reports is_blocked=true. The whole
+            // card is dimmed so operators see at a glance that the
+            // listener will not promote it until the dependency
+            // reaches status='done'. Tooltip includes the dependency's
+            // current status and id for quick jump.
+            var blockedBadge = '';
+            var blockedStyle = '';
+            if (t.is_blocked) {
+                var depTitle = t.depends_on_title || t.depends_on_task_id || 'unknown';
+                var depStatus = t.depends_on_status || 'unknown';
+                var tooltip = 'Blocked by ' + depTitle + ' (status: ' + depStatus + ', id: ' + (t.depends_on_task_id || '?') + ')';
+                blockedBadge = '<div style="margin-top:4px;"><span class="badge" title="' + esc(tooltip) + '" style="background:#f59e0b20; color:#f59e0b; font-size:10px;">\uD83D\uDD12 blocked by ' + esc(depTitle.length > 28 ? depTitle.slice(0, 28) + '\u2026' : depTitle) + '</span></div>';
+                blockedStyle = ' opacity:0.55;';
+            }
+
+            return '<div class="kanban-card" style="border-left:3px solid ' + pColor + '; cursor:pointer;' + blockedStyle + '" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                 + '<div class="kanban-card-meta">'
                 + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
                 + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
                 + '</div>'
+                + blockedBadge
                 + schedLine
                 + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
                 + '<div style="display:flex; gap:4px;">' + arrows + '</div>'
