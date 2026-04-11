@@ -3940,6 +3940,238 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    # ----------------------------------------------------------------
+    # /components-map — Internal Awareness Engine visual map (Phase 1f)
+    # ----------------------------------------------------------------
+    # Reads from kg_nodes / kg_edges under graph_id =
+    # "kg-icdev-self-awareness" (PostgreSQL via get_connection("icdev")).
+    # Populated by tools/awareness/component_indexer.py.
+
+    _COMPONENTS_MAP_GRAPH_ID = "kg-icdev-self-awareness"
+
+    def _cmap_pg():
+        """Return a PostgreSQL connection for components-map queries."""
+        return get_connection("icdev")
+
+    @app.route("/components-map")
+    def components_map_page():
+        """Components Map — interactive JointJS graph of all ICDEV(TM) components."""
+        stats = {"total": 0, "enabled": 0, "disabled": 0}
+        try:
+            conn = _cmap_pg()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id=%s",
+                (_COMPONENTS_MAP_GRAPH_ID,),
+            )
+            stats["total"] = (cur.fetchone() or {}).get("n", 0)
+            cur.execute(
+                """SELECT
+                       SUM(CASE WHEN (properties::jsonb)->>'enabled' = 'false' THEN 1 ELSE 0 END) AS dis,
+                       SUM(CASE WHEN (properties::jsonb)->>'enabled' != 'false' THEN 1 ELSE 0 END) AS en
+                   FROM kg_nodes WHERE graph_id=%s""",
+                (_COMPONENTS_MAP_GRAPH_ID,),
+            )
+            row = cur.fetchone() or {}
+            stats["enabled"] = int(row.get("en") or stats["total"])
+            stats["disabled"] = int(row.get("dis") or 0)
+            conn.close()
+        except Exception:  # pragma: no cover -- non-critical stat failure
+            pass
+        return render_template("components_map.html", stats=stats)
+
+    @app.route("/api/components-map/tree")
+    def api_cmap_tree():
+        """GET /api/components-map/tree -- hierarchical {category: [nodes]} JSON."""
+        tree: dict = {}
+        try:
+            conn = _cmap_pg()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, label, entity_type, properties FROM kg_nodes WHERE graph_id=%s ORDER BY entity_type, label",
+                (_COMPONENTS_MAP_GRAPH_ID,),
+            )
+            rows = cur.fetchall()
+            conn.close()
+            for r in rows:
+                cat = r["entity_type"] or "other"
+                props = json.loads(r["properties"]) if r["properties"] else {}
+                enabled = props.get("enabled", True)
+                tree.setdefault(cat, []).append({
+                    "id": r["id"],
+                    "label": r["label"],
+                    "enabled": enabled,
+                    "file_path": props.get("file_path", ""),
+                    "description": props.get("description", ""),
+                })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify(tree)
+
+    @app.route("/api/components-map/graph")
+    def api_cmap_graph():
+        """GET /api/components-map/graph -- JointJS-compatible {cells:[...]} payload.
+
+        Query params:
+          scope=<entity_type>  -- filter to one category
+          show_disabled=1      -- include disabled nodes (omitted by default)
+        """
+        scope = flask_request.args.get("scope", "").strip() or None
+        show_disabled = flask_request.args.get("show_disabled", "0") == "1"
+        cells: list = []
+        try:
+            conn = _cmap_pg()
+            cur = conn.cursor()
+            node_q = "SELECT id, label, entity_type, properties, centrality FROM kg_nodes WHERE graph_id=%s"
+            params: list = [_COMPONENTS_MAP_GRAPH_ID]
+            if scope:
+                node_q += " AND entity_type=%s"
+                params.append(scope)
+            cur.execute(node_q, params)
+            node_rows = cur.fetchall()
+            node_ids: set = set()
+            for r in node_rows:
+                props = json.loads(r["properties"]) if r["properties"] else {}
+                enabled = props.get("enabled", True)
+                if not show_disabled and enabled is False:
+                    continue
+                node_ids.add(r["id"])
+                cells.append({
+                    "type": "node",
+                    "id": r["id"],
+                    "label": r["label"],
+                    "entity_type": r["entity_type"] or "other",
+                    "enabled": enabled,
+                    "properties": props,
+                    "centrality": r["centrality"] or 0.0,
+                })
+            cur.execute(
+                "SELECT id, source_id, target_id, relationship, weight FROM kg_edges WHERE graph_id=%s",
+                (_COMPONENTS_MAP_GRAPH_ID,),
+            )
+            for e in cur.fetchall():
+                if e["source_id"] in node_ids and e["target_id"] in node_ids:
+                    cells.append({
+                        "type": "edge",
+                        "id": e["id"],
+                        "source": e["source_id"],
+                        "target": e["target_id"],
+                        "label": e["relationship"] or "",
+                        "weight": e["weight"] or 1.0,
+                    })
+            conn.close()
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"cells": cells, "count": len(cells)})
+
+    @app.route("/api/components-map/node/<path:node_id>")
+    def api_cmap_node(node_id: str):
+        """GET /api/components-map/node/<id> -- full node detail for hover/drawer."""
+        try:
+            conn = _cmap_pg()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, label, entity_type, properties, centrality, created_at "
+                "FROM kg_nodes WHERE graph_id=%s AND id=%s",
+                (_COMPONENTS_MAP_GRAPH_ID, node_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                conn.close()
+                return jsonify({"error": "node not found"}), 404
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM kg_edges WHERE graph_id=%s AND (source_id=%s OR target_id=%s)",
+                (_COMPONENTS_MAP_GRAPH_ID, node_id, node_id),
+            )
+            rel_count = (cur.fetchone() or {}).get("n", 0)
+            conn.close()
+            props = json.loads(row["properties"]) if row["properties"] else {}
+            return jsonify({
+                "id": row["id"],
+                "label": row["label"],
+                "entity_type": row["entity_type"] or "other",
+                "properties": props,
+                "centrality": row["centrality"] or 0.0,
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                "last_indexed_at": props.get("last_indexed_at"),
+                "relationships_count": rel_count,
+                "health": props.get("health", "unknown"),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/components-map/neighbors/<path:node_id>")
+    def api_cmap_neighbors(node_id: str):
+        """GET /api/components-map/neighbors/<id> -- 1-hop subgraph for expansion."""
+        cells: list = []
+        try:
+            conn = _cmap_pg()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, source_id, target_id, relationship, weight "
+                "FROM kg_edges WHERE graph_id=%s AND (source_id=%s OR target_id=%s)",
+                (_COMPONENTS_MAP_GRAPH_ID, node_id, node_id),
+            )
+            edges = cur.fetchall()
+            neighbor_ids: set = {node_id}
+            for e in edges:
+                neighbor_ids.add(e["source_id"])
+                neighbor_ids.add(e["target_id"])
+            placeholders = ",".join(["%s"] * len(neighbor_ids))
+            cur.execute(
+                f"SELECT id, label, entity_type, properties, centrality FROM kg_nodes "  # noqa: S608
+                f"WHERE graph_id=%s AND id IN ({placeholders})",
+                [_COMPONENTS_MAP_GRAPH_ID] + list(neighbor_ids),
+            )
+            node_index: set = set()
+            for r in cur.fetchall():
+                props = json.loads(r["properties"]) if r["properties"] else {}
+                cells.append({
+                    "type": "node",
+                    "id": r["id"],
+                    "label": r["label"],
+                    "entity_type": r["entity_type"] or "other",
+                    "enabled": props.get("enabled", True),
+                    "properties": props,
+                    "centrality": r["centrality"] or 0.0,
+                })
+                node_index.add(r["id"])
+            for e in edges:
+                if e["source_id"] in node_index and e["target_id"] in node_index:
+                    cells.append({
+                        "type": "edge",
+                        "id": e["id"],
+                        "source": e["source_id"],
+                        "target": e["target_id"],
+                        "label": e["relationship"] or "",
+                        "weight": e["weight"] or 1.0,
+                    })
+            conn.close()
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"cells": cells, "count": len(cells)})
+
+    @app.route("/api/components-map/refresh", methods=["POST"])
+    def api_cmap_refresh():
+        """POST /api/components-map/refresh -- trigger component_indexer rescan."""
+        import subprocess  # noqa: S404 -- intentional controlled subprocess
+        try:
+            cmd = ["python", "tools/awareness/component_indexer.py", "--scan"]
+            result = subprocess.run(  # noqa: S603
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=str(Path(__file__).parent.parent.parent),
+            )
+            return jsonify({
+                "ok": result.returncode == 0,
+                "stdout": result.stdout[-2000:] if result.stdout else "",
+                "stderr": result.stderr[-500:] if result.stderr else "",
+            })
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
     @app.route("/api/knowledge-graph/compliance-build", methods=["POST"])
     def api_knowledge_graph_compliance_build():
         """Build compliance crosswalk knowledge graph."""
