@@ -2,7 +2,14 @@
 # CUI // SP-CTI
 """Active extension hook system (Phase 44 — D261-D264).
 
-Extensions are loaded from numbered Python files (Agent Zero pattern).
+Extensions are loaded from numbered Python files — a filesystem ordering
+convention used by Unix /etc/rc.d/, cron.d/, systemd drop-ins, git hooks,
+and many other systems. ICDEV uses `NNN_name.py` (3-digit leading zero).
+Agent Zero uses a related `_NN_name.py` convention in its `extensions/python/
+<hook_point>/` layout. The naming convention is shared; the implementation
+(enum-keyed dispatcher in ICDEV vs decorator + base class in Agent Zero) is
+independent. See OPT-73 audit report.
+
 Two tiers: behavioral (modify data, requires allow_modification=True)
 and observational (log only). Layered override: project > tenant > default.
 Existing store_event() passive hooks are preserved as the observational tier.

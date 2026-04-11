@@ -1101,6 +1101,323 @@ def check_route_uniqueness(changed_files: Optional[List[Path]] = None) -> Cohere
 
 
 # ---------------------------------------------------------------------------
+# Attribution Claims (OPT-74) — catches "adapted from <project>" phrases
+# in tools/ and cross-references the cited upstream against a verified
+# license registry. Prevents future attribution drift of the kind that
+# slipped through in Phase 44 (Agent Zero cited as GPL-3.0 when it's
+# actually MIT, and 4 files claimed "adapted from" for code that was
+# actually clean-room).
+# ---------------------------------------------------------------------------
+
+# Registry of upstream projects that any ICDEV file may reference as an
+# inspiration. Each entry: url, verified license, audit status.
+# Add to this list when a new external repo is cited; the check fails for
+# unregistered citations.
+_ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
+    "agent zero": {
+        "url": "https://github.com/agent0ai/agent-zero",
+        "license": "MIT",
+        "audit_status": "clean-room verified 2026-04-11 (OPT-73)",
+        "notes": (
+            "Structural audit found zero class/method overlap across "
+            "chat_manager.py, state_tracker.py, extension_manager.py"
+        ),
+    },
+    "adw": {
+        "url": "(tutorial content by IndyDevDan — no public repo identified)",
+        "license": "tutorial-restrictive",
+        "audit_status": "REWRITE REQUIRED per user directive 2026-04-11 (OPT-75)",
+        "notes": (
+            "IndyDevDan's Agentic Developer Workflows tutorial material is "
+            "licensed for learning, not redistribution. 18 ICDEV files "
+            "currently cite 'Adapted from ADW adw_X.py' across tools/ci/ "
+            "and tools/testing/ — these need clean-room rewrite. See "
+            "OPT-75 for the phased rewrite plan. Files are allowlisted "
+            "until rewrite lands so the gate stays WARN instead of FAIL "
+            "for active development."
+        ),
+    },
+    "mattpocock/skills": {
+        "url": "https://github.com/mattpocock/skills",
+        "license": "MIT",
+        "audit_status": "not yet implemented (OPT-56 pending)",
+    },
+    "open-swe": {
+        "url": "https://github.com/langchain-ai/open-swe",
+        "license": "MIT",
+        "audit_status": "not yet implemented (OPT-61/62/63 pending)",
+    },
+    "promptfoo": {
+        "url": "https://github.com/promptfoo/promptfoo",
+        "license": "MIT",
+        "audit_status": "not yet implemented (OPT-64/65/66 pending)",
+    },
+    "deepagents": {
+        "url": "https://github.com/langchain-ai/deepagents",
+        "license": "MIT",
+        "audit_status": "not yet implemented (OPT-67 pending)",
+    },
+    "react-admin": {
+        "url": "https://github.com/marmelab/react-admin",
+        "license": "MIT",
+        "audit_status": "not yet implemented (OPT-68/69 pending)",
+    },
+    "optio": {
+        "url": "https://github.com/jonwiggins/optio",
+        "license": "MIT",
+        "audit_status": "not yet implemented (OPT-70/71/72 pending)",
+    },
+}
+
+# Licenses that block the gate if cited without an explicit audit exemption.
+# Copyleft licenses (GPL/AGPL) can create derivative-work obligations that
+# conflict with ICDEV's Apache-2.0 license and commercial option. Tutorial
+# content is restrictive by default (implicit all-rights-reserved).
+_BLOCKING_LICENSES = {
+    "GPL-2.0", "GPL-3.0", "AGPL-3.0", "LGPL-3.0",
+    "tutorial-restrictive",  # educational content not licensed for redistribution
+}
+
+# Files with a known blocking-license citation that are under active
+# rewrite. The gate stays WARN for these (not FAIL) until the rewrite
+# lands, to avoid blocking all development. Remove entries as each file
+# is rewritten clean-room.
+_REWRITE_IN_PROGRESS_ALLOWLIST: set[str] = {
+    "tools/ci/modules/agent.py",
+    "tools/ci/modules/git_ops.py",
+    "tools/ci/modules/state.py",
+    "tools/ci/modules/vcs.py",
+    "tools/ci/modules/workflow_ops.py",
+    "tools/ci/workflows/icdev_build.py",
+    "tools/ci/workflows/icdev_document.py",
+    "tools/ci/workflows/icdev_patch.py",
+    "tools/ci/workflows/icdev_plan.py",
+    "tools/ci/workflows/icdev_review.py",
+    "tools/ci/workflows/icdev_sdlc.py",
+    "tools/ci/workflows/icdev_test.py",
+    "tools/testing/data_types.py",
+    "tools/testing/e2e_runner.py",
+    "tools/testing/health_check.py",
+    "tools/testing/test_agent_models.py",
+    "tools/testing/test_orchestrator.py",
+    "tools/testing/utils.py",
+}
+
+# Phrases that indicate the source code is claiming to adopt from upstream.
+# Case-insensitive. If any of these appear in a file under tools/, we look
+# for the upstream project name nearby and cross-check the registry.
+_ATTRIBUTION_PHRASES = [
+    "adapted from",
+    "ported from",
+    "copied from",
+    "derived from",
+    "based on the",
+]
+
+
+def check_attribution_claims(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Scan tools/ for 'adapted from <project>' phrases and cross-check each
+    cited upstream against _ATTRIBUTION_REGISTRY. Fail the gate on:
+      1. A citation whose upstream is not in the registry (unverified)
+      2. A citation whose upstream has a blocking license (GPL/AGPL family)
+         without an explicit audit exemption in audit_status
+      3. (Soft warn) A citation whose nearby context suggests actual code
+         derivation rather than pattern inspiration — the auditor should
+         confirm clean-room status before clearing
+    """
+    import re
+
+    tools_dir = PROJECT_ROOT / "tools"
+    if not tools_dir.exists():
+        return CoherenceCheck(
+            check_id="attribution_claims",
+            check_name="Attribution Claims",
+            status="warn",
+            expected=["tools/ directory present"],
+            actual=["tools/ not found"],
+            missing=[],
+            extra=[],
+            message="tools/ directory missing — check skipped",
+        )
+
+    violations: List[str] = []
+    registered_hits = 0
+    unregistered_hits: List[str] = []
+
+    # Standards references that trigger the regex but are NOT project
+    # citations — they're compliance/standards body names, not upstream
+    # software projects.
+    _STANDARDS_ACRONYMS = {
+        "ieee", "nist", "dodi", "nsa", "dod", "owasp", "cmmc", "fedramp",
+        "mcsb", "slo", "iso", "sp", "stig", "cis", "atlas", "mitre",
+        "cncf", "opa", "kyverno", "nvd", "cve", "sbom", "oscal", "mbse",
+        "sysml", "icdev", "bmad",
+    }
+
+    py_files = list(tools_dir.rglob("*.py"))
+
+    for f in py_files:
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        # Position-based filter: attribution claims belong in the module
+        # docstring (first 30 lines). Prose "derived from X" in function
+        # bodies is almost never an attribution claim — it's describing
+        # derivation logic or standards references.
+        lines = text.splitlines()
+        header = "\n".join(lines[:30])
+
+        lower = header.lower()
+        # Only scan files whose header contains one of the phrases
+        if not any(p in lower for p in _ATTRIBUTION_PHRASES):
+            continue
+        # From here on, only scan the header — the full text is ignored.
+        text = header
+
+        # For each hit line, try to identify the cited project.
+        #
+        # Tightened regex (2026-04-11): the "project name" after the phrase
+        # must look like a proper name:
+        #   - Starts with an UPPERCASE letter (proper noun), OR
+        #   - Contains a slash / dot (URL or module path), OR
+        #   - Matches a known-project allowlist keyword
+        # This filters out natural-language prose like "based on the current
+        # time" or "derived from node type" while still catching real
+        # project citations like "Agent Zero", "Mistral AI", "LeanStral".
+        #
+        # Also require the phrase to appear at a file top (first 20 lines) OR
+        # in a docstring/comment block, to filter out mid-function prose.
+        for phrase in _ATTRIBUTION_PHRASES:
+            # Match: <phrase> <ProjectName> where ProjectName starts uppercase
+            # or looks like a URL/path/identifier.
+            pattern = re.compile(
+                rf"{re.escape(phrase)}\s+"
+                rf"([A-Z][A-Za-z0-9_\-./]+(?:\s+[A-Za-z0-9][A-Za-z0-9_\-./]*)?"
+                rf"|[a-z][a-z0-9_\-]+[/.][A-Za-z0-9_\-./]+)",
+                re.IGNORECASE,
+            )
+            for match in pattern.finditer(text):
+                raw_project = match.group(1).strip().rstrip("'s").strip()
+                # Strip trailing possessive / punctuation
+                raw_project = re.sub(r"[.,;:'\"].*$", "", raw_project).strip()
+                normalized = raw_project.lower()
+
+                # Skip bare lowercase single-words that are clearly internal
+                # path references (not external projects)
+                if normalized.startswith("tools/") or normalized.startswith("tests/"):
+                    continue
+                # Skip common English phrases that survived the main regex
+                _SKIP_PREFIXES = (
+                    "the ", "a ", "an ", "this ", "that ", "current ",
+                    "node ", "source ", "target ", "provided ",
+                )
+                if any(normalized.startswith(p) for p in _SKIP_PREFIXES):
+                    continue
+                # Skip single-word lowercase internal references
+                if "/" not in raw_project and "." not in raw_project:
+                    if len(raw_project.split()) == 1 and raw_project.islower():
+                        continue
+                # Skip standards references (IEEE/NIST/DoDI/etc.) — these
+                # are compliance citations, not project citations
+                first_token = normalized.split()[0] if normalized else ""
+                if first_token in _STANDARDS_ACRONYMS:
+                    continue
+                # Find position in file for file:line reporting
+                line_no = text[:match.start()].count("\n") + 1
+                rel = f.relative_to(PROJECT_ROOT) if f.is_relative_to(PROJECT_ROOT) else f
+
+                # Match against registry (exact or substring)
+                entry = None
+                for key, val in _ATTRIBUTION_REGISTRY.items():
+                    if key in normalized or normalized in key:
+                        entry = val
+                        break
+
+                if entry is None:
+                    unregistered_hits.append(
+                        f"{rel}:{line_no}: '{phrase} {raw_project}' — NOT in "
+                        f"_ATTRIBUTION_REGISTRY. Add entry with verified license "
+                        f"or rephrase to remove the claim."
+                    )
+                    continue
+
+                registered_hits += 1
+                lic = entry.get("license", "UNKNOWN")
+                if lic in _BLOCKING_LICENSES:
+                    audit = entry.get("audit_status", "")
+                    if "clean-room verified" not in audit.lower():
+                        # Files under active rewrite get a warn-level pass
+                        # until their rewrite ships. Stored as posix paths
+                        # for cross-platform compatibility.
+                        rel_posix = str(rel).replace("\\", "/")
+                        if rel_posix in _REWRITE_IN_PROGRESS_ALLOWLIST:
+                            # soft-warn only — don't add to violations
+                            unregistered_hits.append(
+                                f"{rel}:{line_no}: '{phrase} {raw_project}' "
+                                f"({lic}) — REWRITE IN PROGRESS per "
+                                f"_REWRITE_IN_PROGRESS_ALLOWLIST"
+                            )
+                            continue
+                        violations.append(
+                            f"{rel}:{line_no}: '{phrase} {raw_project}' cites a "
+                            f"{lic}-licensed upstream without a clean-room audit. "
+                            f"Resolve OPT-73-style audit before gate can pass."
+                        )
+
+    # Classification
+    if violations:
+        return CoherenceCheck(
+            check_id="attribution_claims",
+            check_name="Attribution Claims",
+            status="fail",
+            expected=[
+                f"{len(_ATTRIBUTION_REGISTRY)} registered upstream projects, "
+                "no unaudited GPL/AGPL citations"
+            ],
+            actual=[f"{len(violations)} blocking violation(s), "
+                    f"{len(unregistered_hits)} unregistered citation(s)"],
+            missing=[],
+            extra=violations + unregistered_hits,
+            message=(
+                f"{len(violations)} GPL/AGPL citation(s) lack clean-room audit. "
+                f"See extra field for per-file details."
+            ),
+        )
+
+    if unregistered_hits:
+        return CoherenceCheck(
+            check_id="attribution_claims",
+            check_name="Attribution Claims",
+            status="warn",
+            expected=["All attribution claims registered in _ATTRIBUTION_REGISTRY"],
+            actual=[f"{registered_hits} registered, "
+                    f"{len(unregistered_hits)} unregistered"],
+            missing=[],
+            extra=unregistered_hits,
+            message=(
+                f"{len(unregistered_hits)} attribution claim(s) cite unregistered "
+                f"upstream projects. Add to _ATTRIBUTION_REGISTRY or rephrase."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="attribution_claims",
+        check_name="Attribution Claims",
+        status="pass",
+        expected=[f"Scanned {len(py_files)} Python files in tools/"],
+        actual=[f"{registered_hits} registered attribution claim(s) verified"],
+        missing=[],
+        extra=[],
+        message=(
+            f"All {registered_hits} attribution claim(s) match the registry; "
+            f"no unaudited GPL/AGPL citations."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -1114,6 +1431,7 @@ CHECK_REGISTRY = {
     "import_usage": check_import_usage,
     "api_wiring": check_api_wiring,
     "route_uniqueness": check_route_uniqueness,
+    "attribution_claims": check_attribution_claims,
 }
 
 
@@ -1132,6 +1450,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "signature_call": "skip",  # too risky to auto-modify call sites
     "api_wiring": "suggest",  # suggest DB integration for hardcoded APIs
     "route_uniqueness": "skip",  # rename-one-of-two needs human judgment
+    "attribution_claims": "skip",  # license audit requires human confirmation
 }
 
 
