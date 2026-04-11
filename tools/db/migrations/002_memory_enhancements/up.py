@@ -36,7 +36,22 @@ def _compute_content_hash(content):
 
 def up(conn):
     """Apply memory enhancements to memory.db."""
-    # 1. Add columns to memory_entries (idempotent)
+    # 0. Ensure memory_entries base table exists (idempotent — D179)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS memory_entries (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            content     TEXT NOT NULL,
+            type        TEXT DEFAULT 'event',
+            importance  INTEGER DEFAULT 5,
+            embedding   BLOB,
+            created_at  TEXT DEFAULT (datetime('now')),
+            updated_at  TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_created
+            ON memory_entries(created_at);
+    """)
+
+    # 1. Add enhancement columns to memory_entries (idempotent)
     if _table_exists(conn, "memory_entries"):
         for col, col_def in [
             ("content_hash", "TEXT"),
