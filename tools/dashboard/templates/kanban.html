@@ -103,6 +103,26 @@
     </div>
 </div>
 
+<!-- OPT-62: mid-run message injection modal -->
+<div id="kanban-message-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1200; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; width:min(480px, 92vw); max-height:90vh; overflow:auto;">
+        <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:16px;">&#128172; Send message to running task</h3>
+            <button class="kanban-move-btn" onclick="closeMessageModal()" title="Close">&#10005;</button>
+        </div>
+        <div style="padding:16px 20px;">
+            <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;" id="kanban-msg-target">Task: —</div>
+            <textarea id="kanban-msg-text" placeholder="e.g. also please run ruff and bandit before finishing" rows="5" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-family:inherit; resize:vertical;"></textarea>
+            <div style="font-size:11px; color:var(--text-dim); margin-top:8px;">The message is queued and delivered at the next LLM call boundary (max 10 iterations per task).</div>
+            <div id="kanban-msg-status" style="font-size:12px; margin-top:8px; min-height:1em;"></div>
+        </div>
+        <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn" onclick="closeMessageModal()">Cancel</button>
+            <button class="btn btn-primary" id="kanban-msg-send" onclick="submitMessage()">Send</button>
+        </div>
+    </div>
+</div>
+
 <script>
 function _isoToLocal(iso) {
     // Convert ISO/UTC string to local datetime-local input value
@@ -274,6 +294,12 @@ function renderTaskKanban(tasks) {
             var llmTitle = llmModeTitles[llmMode] || '';
             var llmBadge = '<span title="' + llmTitle + '" style="font-size:11px; cursor:default;">' + llmIcon + '</span>';
 
+            // OPT-62: mid-run message injection button (in_progress only)
+            var msgBtn = '';
+            if (status === 'in_progress') {
+                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">\uD83D\uDCAC</button>';
+            }
+
             return '<div class="kanban-card" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                 + '<div class="kanban-card-meta">'
@@ -285,11 +311,62 @@ function renderTaskKanban(tasks) {
                 + schedLine
                 + execIdLine
                 + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
-                + '<div style="display:flex; gap:4px;">' + arrows + '</div>'
+                + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
                 + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">\u2715</button>'
                 + '</div>'
                 + '</div>';
         }).join('');
+    });
+}
+
+// OPT-62: mid-run message injection
+var _kanbanMsgTargetId = null;
+function openMessageModal(taskId, title) {
+    _kanbanMsgTargetId = taskId;
+    document.getElementById('kanban-msg-target').textContent = 'Task: ' + (title || taskId);
+    document.getElementById('kanban-msg-text').value = '';
+    document.getElementById('kanban-msg-status').textContent = '';
+    document.getElementById('kanban-msg-status').style.color = 'var(--text-dim)';
+    document.getElementById('kanban-message-modal').style.display = 'flex';
+    setTimeout(function() { document.getElementById('kanban-msg-text').focus(); }, 50);
+}
+
+function closeMessageModal() {
+    document.getElementById('kanban-message-modal').style.display = 'none';
+    _kanbanMsgTargetId = null;
+}
+
+function submitMessage() {
+    if (!_kanbanMsgTargetId) return;
+    var text = document.getElementById('kanban-msg-text').value.trim();
+    if (!text) {
+        document.getElementById('kanban-msg-status').textContent = 'Message cannot be empty.';
+        document.getElementById('kanban-msg-status').style.color = '#ef4444';
+        return;
+    }
+    var btn = document.getElementById('kanban-msg-send');
+    btn.disabled = true;
+    document.getElementById('kanban-msg-status').textContent = 'Sending…';
+    document.getElementById('kanban-msg-status').style.color = 'var(--text-dim)';
+    fetch('/api/kanban/tasks/' + _kanbanMsgTargetId + '/message', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ message: text, sender: 'dashboard' })
+    }).then(function(r) { return r.json().then(function(body) { return { ok: r.ok, status: r.status, body: body }; }); })
+    .then(function(res) {
+        btn.disabled = false;
+        if (res.ok) {
+            document.getElementById('kanban-msg-status').textContent = '\uD83D\uDC40 Queued — will be delivered at next LLM call.';
+            document.getElementById('kanban-msg-status').style.color = '#10b981';
+            setTimeout(closeMessageModal, 1200);
+        } else {
+            document.getElementById('kanban-msg-status').textContent = 'Failed: ' + (res.body && res.body.error ? res.body.error : ('HTTP ' + res.status));
+            document.getElementById('kanban-msg-status').style.color = '#ef4444';
+        }
+    }).catch(function(e) {
+        btn.disabled = false;
+        document.getElementById('kanban-msg-status').textContent = 'Error: ' + e;
+        document.getElementById('kanban-msg-status').style.color = '#ef4444';
     });
 }
 
