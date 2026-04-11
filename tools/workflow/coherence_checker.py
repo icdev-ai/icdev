@@ -1451,19 +1451,19 @@ _REWRITE_IN_PROGRESS_ALLOWLIST: set[str] = {
     # tools/ci/modules/state.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 1/18)
     "tools/ci/modules/vcs.py",
     "tools/ci/modules/workflow_ops.py",
-    "tools/ci/workflows/icdev_build.py",
-    "tools/ci/workflows/icdev_document.py",
-    "tools/ci/workflows/icdev_patch.py",
+    # tools/ci/workflows/icdev_build.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 6/18)
+    # tools/ci/workflows/icdev_document.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 7/18)
+    # tools/ci/workflows/icdev_patch.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 8/18)
     "tools/ci/workflows/icdev_plan.py",
-    "tools/ci/workflows/icdev_review.py",
+    # tools/ci/workflows/icdev_review.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 5/18)
     "tools/ci/workflows/icdev_sdlc.py",
     "tools/ci/workflows/icdev_test.py",
-    "tools/testing/data_types.py",
+    # tools/testing/data_types.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 4/18)
     "tools/testing/e2e_runner.py",
     "tools/testing/health_check.py",
     "tools/testing/test_agent_models.py",
     "tools/testing/test_orchestrator.py",
-    "tools/testing/utils.py",
+    # tools/testing/utils.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 3/18)
 }
 
 # Phrases that indicate the source code is claiming to adopt from upstream.
