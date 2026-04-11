@@ -271,13 +271,18 @@ function applySuggestedSelectPreset(preset) {
     suggestedItems.forEach(function(t) {
         var conf = t.oracle_confidence || 0;
         var val = t.oracle_value || 0;
+        var prio = (t.priority || '').toLowerCase();
         var match = false;
         switch (preset) {
-            case 'all':     match = true; break;
-            case 'conf95':  match = conf >= 0.95; break;
-            case 'conf90':  match = conf >= 0.90; break;
-            case 'value10': match = val >= 1.0; break;
-            case 'value08': match = val >= 0.8; break;
+            case 'all':      match = true; break;
+            case 'conf95':   match = conf >= 0.95; break;
+            case 'conf90':   match = conf >= 0.90; break;
+            case 'value10':  match = val >= 1.0; break;
+            case 'value08':  match = val >= 0.8; break;
+            case 'pri_crit': match = prio === 'critical'; break;
+            case 'pri_high': match = prio === 'high'; break;
+            case 'pri_med':  match = prio === 'medium'; break;
+            case 'pri_low':  match = prio === 'low'; break;
         }
         if (match) _selectedTaskIds.add(t.id);
     });
@@ -373,6 +378,7 @@ function renderTaskKanban(tasks) {
                 + '<select onchange="onSuggestedSortChange(this.value)" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
                 + '<option value="value"' + (_suggestedSort==='value'?' selected':'') + '>Value (default)</option>'
                 + '<option value="confidence"' + (_suggestedSort==='confidence'?' selected':'') + '>Confidence</option>'
+                + '<option value="priority"' + (_suggestedSort==='priority'?' selected':'') + '>Priority (critical→low)</option>'
                 + '<option value="created_at"' + (_suggestedSort==='created_at'?' selected':'') + '>Newest first</option>'
                 + '</select>'
                 + '</div>'
@@ -385,6 +391,10 @@ function renderTaskKanban(tasks) {
                 + '<option value="conf90">Confidence ≥ 90%</option>'
                 + '<option value="value10">Value ≥ 1.0</option>'
                 + '<option value="value08">Value ≥ 0.8</option>'
+                + '<option value="pri_crit">Priority: CRITICAL</option>'
+                + '<option value="pri_high">Priority: HIGH</option>'
+                + '<option value="pri_med">Priority: MEDIUM</option>'
+                + '<option value="pri_low">Priority: LOW</option>'
                 + '<option value="none">None</option>'
                 + '</select>'
                 + '</div>'
