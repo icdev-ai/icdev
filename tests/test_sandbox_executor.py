@@ -585,3 +585,130 @@ class TestResourceLimits:
         result = exe.execute(code="x=1", language="python", max_memory_mb=99999)
         # Unavailable — just confirms no exception raised with huge memory param
         assert result.status in ("unavailable", "disabled")
+
+
+# ---------------------------------------------------------------------------
+# OPT-63: Auto-recreate on container failure tests
+# ---------------------------------------------------------------------------
+
+
+class TestAutoRecreate:
+    """Sandbox auto-recreates when a container infrastructure error is detected."""
+
+    def _make_executor(self, tmp_db, auto_recreate_cfg=None):
+        """Return an executor with _available=True and custom auto_recreate config."""
+        cfg = dict(DEFAULT_CONFIG)
+        cfg["auto_recreate"] = auto_recreate_cfg or {
+            "enabled": True,
+            "max_retries": 2,
+            "backoff_seconds": 0,  # no real sleep in tests
+        }
+        with patch.object(SandboxExecutor, "_probe_availability", return_value=True):
+            return SandboxExecutor(config=cfg, db_path=tmp_db)
+
+    def test_retry_on_container_not_found_succeeds(self, tmp_db):
+        """ContainerNotFoundError triggers rebuild and retry; succeeds on second attempt."""
+        exe = self._make_executor(tmp_db)
+
+        call_count = 0
+
+        def mock_run_once(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("docker: No such container: llm-sandbox")
+            return SandboxResult(stdout="sandbox-ok", exit_code=0, status="completed")
+
+        with patch.object(exe, "_run_sandbox_once", side_effect=mock_run_once):
+            with patch.object(exe, "_rebuild_container") as mock_rebuild:
+                result = exe.execute(code="print('sandbox-ok')", language="python")
+
+        assert result.status == "completed", f"Expected completed, got {result.status}"
+        assert call_count == 2, f"Expected 2 attempts, got {call_count}"
+        mock_rebuild.assert_called_once_with(
+            language="python",
+            image=DEFAULT_CONFIG["images"]["python"],
+        )
+
+    def test_retry_exhausted_returns_failed(self, tmp_db):
+        """After max_retries (2) container rebuilds, execute() returns failed status."""
+        exe = self._make_executor(tmp_db)
+
+        call_count = 0
+
+        def always_fail(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("docker: No such container: llm-sandbox")
+
+        with patch.object(exe, "_run_sandbox_once", side_effect=always_fail):
+            with patch.object(exe, "_rebuild_container") as mock_rebuild:
+                result = exe.execute(code="print('hello')", language="python")
+
+        assert result.status == "failed", f"Expected failed, got {result.status}"
+        # original attempt + 2 rebuilds = 3 total attempts
+        assert call_count == 3, f"Expected 3 attempts, got {call_count}"
+        assert mock_rebuild.call_count == 2, f"Expected 2 rebuilds, got {mock_rebuild.call_count}"
+        assert "docker" in result.error.lower() or "container" in result.error.lower()
+
+    def test_auto_recreate_disabled_does_not_retry(self, tmp_db):
+        """When auto_recreate.enabled=False, container errors bubble up immediately."""
+        exe = self._make_executor(tmp_db, auto_recreate_cfg={"enabled": False, "max_retries": 2, "backoff_seconds": 0})
+
+        call_count = 0
+
+        def fail_once(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("docker: No such container")
+
+        with patch.object(exe, "_run_sandbox_once", side_effect=fail_once):
+            with patch.object(exe, "_rebuild_container") as mock_rebuild:
+                result = exe.execute(code="x=1", language="python")
+
+        assert result.status == "failed"
+        assert call_count == 1, "Should not retry when auto_recreate disabled"
+        mock_rebuild.assert_not_called()
+
+    def test_is_container_error_connection_refused(self, tmp_db):
+        """ConnectionRefusedError is classified as a container error."""
+        exe = self._make_executor(tmp_db)
+        assert exe._is_container_error(ConnectionRefusedError("connection refused"))
+
+    def test_is_container_error_docker_in_message(self, tmp_db):
+        """RuntimeError with 'docker' in message is classified as container error."""
+        exe = self._make_executor(tmp_db)
+        assert exe._is_container_error(RuntimeError("docker daemon not running"))
+
+    def test_is_container_error_not_found_class_name(self, tmp_db):
+        """Exception named 'NotFound' is classified as container error."""
+        exe = self._make_executor(tmp_db)
+
+        class NotFound(Exception):
+            pass
+
+        assert exe._is_container_error(NotFound("container gone"))
+
+    def test_is_container_error_value_error_not_matched(self, tmp_db):
+        """Generic ValueError unrelated to Docker is NOT a container error."""
+        exe = self._make_executor(tmp_db)
+        assert not exe._is_container_error(ValueError("bad argument"))
+
+    def test_timeout_does_not_trigger_retry(self, tmp_db):
+        """TimeoutError must not cause a rebuild — it exits the loop immediately."""
+        exe = self._make_executor(tmp_db)
+
+        call_count = 0
+
+        def timeout_always(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise TimeoutError("timed out")
+
+        with patch.object(exe, "_run_sandbox_once", side_effect=timeout_always):
+            with patch.object(exe, "_rebuild_container") as mock_rebuild:
+                result = exe.execute(code="x=1", language="python")
+
+        assert result.status == "timeout"
+        assert call_count == 1, "TimeoutError must not be retried"
+        mock_rebuild.assert_not_called()
