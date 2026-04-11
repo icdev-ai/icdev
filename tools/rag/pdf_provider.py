@@ -418,6 +418,48 @@ class PyPDFProvider(PDFProvider):
 # ---------------------------------------------------------------------------
 
 
+def _diagnose_provider_unavailable(name: str, config: Optional[dict] = None) -> str:
+    """Return a human-readable reason why a named provider isn't usable.
+
+    Used by extract_pdf when the provider chain is empty so operators get an
+    actionable error instead of just 'install pypdf'. Each branch isolates the
+    SDK import + credential check so a single missing dependency doesn't
+    poison the whole diagnostic.
+    """
+    cfg = config or {}
+    if name == "anthropic":
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            return "anthropic SDK not installed (pip install anthropic)"
+        import os as _os
+        if not (cfg.get("anthropic", {}).get("api_key") or _os.environ.get("ANTHROPIC_API_KEY")):
+            return "ANTHROPIC_API_KEY not set"
+        return "available but excluded by chain order"
+    if name == "google":
+        try:
+            import google.generativeai  # noqa: F401
+        except ImportError:
+            return "google-generativeai SDK not installed"
+        import os as _os
+        if not (cfg.get("google", {}).get("api_key") or _os.environ.get("GOOGLE_API_KEY")):
+            return "GOOGLE_API_KEY not set"
+        return "available but excluded by chain order"
+    if name == "vision_llava":
+        try:
+            import requests  # noqa: F401
+        except ImportError:
+            return "requests not installed"
+        return "Ollama not reachable or llava model not pulled (`ollama pull llava`)"
+    if name == "pypdf_text":
+        try:
+            from pypdf import PdfReader  # noqa: F401
+            return "available — should have been added to chain (config issue?)"
+        except ImportError:
+            return "pypdf not installed (pip install pypdf>=4.0) — REQUIRED for air-gap baseline"
+    return "unknown provider"
+
+
 def get_pdf_provider_chain(config: Optional[dict] = None) -> List[PDFProvider]:
     """Build PDF provider chain from config (D-RAG-15).
 
@@ -529,6 +571,19 @@ def extract_pdf(
 
     chain = get_pdf_provider_chain(cfg)
     if not chain:
+        # OPT-33: actionable diagnostic — tell the operator which providers
+        # were tried and why each was excluded so they can fix the right thing
+        # in their environment (air-gap vs cloud, missing SDK vs missing key).
+        diagnostics = []
+        for name in ("anthropic", "google", "vision_llava", "pypdf_text"):
+            reason = _diagnose_provider_unavailable(name, cfg)
+            diagnostics.append(f"  - {name}: {reason}")
+        msg = (
+            "No PDF extraction provider available. Tried:\n"
+            + "\n".join(diagnostics)
+            + "\nMinimum air-gap fix: pip install pypdf>=4.0"
+        )
+        logger.error(msg)
         return PDFExtraction(
             file_name=path.name,
             file_path=str(path),
@@ -537,7 +592,7 @@ def extract_pdf(
             pages=[],
             provider_used="none",
             status="failed",
-            error="No PDF extraction provider available (install pypdf)",
+            error=msg,
         )
 
     last_error = ""

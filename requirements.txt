@@ -59,6 +59,13 @@ requests>=2.31           # HTTP client for ELK/Splunk/Prometheus APIs
 # Presidio/spaCy incompatible with Python 3.14 — NOT used
 faker>=33.0              # Realistic surrogate generation for reversible anonymization
 
+# === RAG: PDF extraction air-gap baseline (OPT-33) ===
+# pypdf is the always-available PyPDFProvider in tools/rag/pdf_provider.py.
+# Without it, air-gap deployments have NO PDF extraction path because the
+# Anthropic/Google providers are gated by check_availability() and the LLaVA
+# vision provider needs Ollama running with llava pulled.
+pypdf>=4.0               # Pure-Python PDF text extraction — air-gap baseline
+
 # === Security: pinned to patch CVEs (see pip-audit) ===
 black>=26.3.1            # CVE-2026-32274: path traversal
 filelock>=3.20.3         # CVE-2025-68146, CVE-2026-22701: TOCTOU race

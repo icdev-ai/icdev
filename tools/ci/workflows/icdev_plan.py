@@ -42,30 +42,61 @@ from tools.testing.utils import setup_logger  # noqa: E402
 
 
 def check_env_vars(logger: logging.Logger) -> None:
-    """Check that Claude Code CLI or an API key is available.
+    """Check that at least one LLM provider is reachable for code_generation.
 
-    The workflow uses Claude Code CLI (which has its own session auth when
-    running inside VSCode extension). ANTHROPIC_API_KEY is only required
-    when running headless outside a Claude Code session.
+    OPT-32: ICDEV is LLM-agnostic. The plan workflow needs a code_generation
+    provider — Claude Code CLI is the most ergonomic option, but Bedrock,
+    Vertex, OCI GenAI, watsonx, and Ollama all qualify. We probe the LLMRouter
+    chain rather than hard-checking for `claude` on PATH or ANTHROPIC_API_KEY.
     """
     import shutil
 
-    # Claude Code CLI available = session auth works (VSCode extension, CLI login)
+    # 1. Claude Code CLI on PATH = session auth works (VSCode extension or CLI login)
     claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
     if shutil.which(claude_path):
-        logger.info(f"Claude Code CLI found at: {shutil.which(claude_path)}")
+        logger.info(f"Claude Code CLI found at: {shutil.which(claude_path)} — using session auth")
         return
 
-    # Fallback: check for direct API key
+    # 2. Probe LLMRouter for ANY reachable provider on the code_generation chain.
+    #    This covers Bedrock, Vertex, OCI, watsonx, Ollama, OpenAI-compatible
+    #    endpoints, and direct Anthropic API — anything configured in
+    #    args/llm_config.yaml.
+    try:
+        from tools.llm.router import LLMRouter
+    except ImportError as exc:
+        logger.error(f"LLMRouter import failed: {exc}")
+        sys.exit(1)
+
+    try:
+        router = LLMRouter()
+        provider, model_id, model_cfg = router.get_provider_for_function("code_generation")
+        if provider is not None:
+            logger.info(
+                f"LLM provider available: {provider.provider_name} / {model_id} "
+                f"(via LLMRouter for function=code_generation)"
+            )
+            return
+    except Exception as exc:
+        logger.warning(f"LLMRouter probe failed: {exc}")
+
+    # 3. Last-resort hint — check for direct API keys so the error message can
+    #    suggest the simplest fix for the operator's environment.
+    hints = []
     if os.getenv("ANTHROPIC_API_KEY"):
-        logger.info("Using ANTHROPIC_API_KEY for direct API access")
-        return
+        hints.append("ANTHROPIC_API_KEY is set but no provider matched it — check args/llm_config.yaml")
+    if os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_PROFILE"):
+        hints.append("AWS credentials present — Bedrock provider may need to be enabled in args/llm_config.yaml")
+    if os.getenv("OLLAMA_HOST") or os.getenv("OLLAMA_BASE_URL"):
+        hints.append("Ollama env vars set — confirm ollama serve is running and the model is pulled")
 
     logger.error(
-        "No Claude access available. Either:\n"
-        "  1. Run inside Claude Code (VSCode extension or CLI session), or\n"
-        "  2. Set ANTHROPIC_API_KEY environment variable"
+        "No LLM provider reachable for function=code_generation. Either:\n"
+        "  1. Install Claude Code CLI (VSCode extension or CLI login), or\n"
+        "  2. Configure a provider in args/llm_config.yaml (Bedrock, Vertex, OCI, watsonx, Ollama, Anthropic API), or\n"
+        "  3. Set ANTHROPIC_API_KEY for direct API access (legacy path)"
     )
+    for hint in hints:
+        logger.error(f"  hint: {hint}")
     sys.exit(1)
 
 
