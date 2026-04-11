@@ -1,6 +1,6 @@
 ---
 name: icdev-boundary
-description: Assess ATO boundary impact and manage supply chain risk for requirements
+description: "Assesses ATO boundary impact, generates COA alternatives, builds vendor dependency graphs, and runs SCRM assessments per NIST 800-161. Use when evaluating how a requirement affects an existing ATO boundary, triaging CVEs through the supply chain, checking Section 889 vendor compliance, or managing ISA/MOU lifecycle agreements."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: icdev-build
-description: Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking
+description: "Runs the full TDD cycle (RED → GREEN → REFACTOR) to generate tests, write minimal implementation, lint, and map NIST 800-53 controls for a feature. Use when implementing a new feature, fixing a bug with test-first discipline, or when generating code for an ICDEV™ project from a feature description."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -55,14 +55,6 @@ Run the CLI command or use MCP tool `control_map` MCP tool from icdev-compliance
 - Map `code.commit` activity to NIST controls (SA-11, CM-3)
 
 ### 6. Output Summary
-Display:
-- Tests written (count, types)
-- Code generated (files, lines)
-- Test results (pass/fail, coverage %)
-- Lint results (issues found/fixed)
-- Next steps
-
-### 7. Output Summary
 Display:
 - Tests written (count, types)
 - Code generated (files, lines)

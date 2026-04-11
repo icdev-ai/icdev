@@ -1,6 +1,6 @@
 ---
 name: icdev-integrate
-description: "Sync requirements with Jira, ServiceNow, GitLab, and DOORS NG"
+description: "Syncs ICDEV™ requirements and intake session data with external ALM tools including Jira, ServiceNow, GitLab, and IBM DOORS NG. Use when pushing requirements to Jira or DOORS NG, pulling work items into an intake session, or synchronizing project artifacts across ALM systems."
 ---
 
 # $icdev-integrate

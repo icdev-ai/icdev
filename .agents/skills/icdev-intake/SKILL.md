@@ -1,6 +1,6 @@
 ---
 name: icdev-intake
-description: Start or resume an AI-driven requirements intake session with conversational guidance, gap detection, readiness scoring, and SAFe decomposition
+description: "Runs RICOAS Phase 1 to create or resume a requirements intake session, guide structured questioning, auto-extract requirements, detect gaps, score readiness, and decompose into SAFe Epic → Story hierarchy. Use when starting a new requirements elicitation conversation, resuming an interrupted intake session, or decomposing a document into SAFe-structured work items."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: icdev-init
-description: Initialize a new ICDEV™ project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline
+description: "Initializes a new ICDEV™ project with UUID, directory scaffolding, CUI markings on all files, compliance templates, and a NIST 800-53 control baseline. Use when creating a new project from scratch, onboarding an existing codebase into ICDEV™, or when an icdev.yaml manifest is present and needs to be registered in the database."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -64,13 +64,6 @@ python tools/audit/audit_query.py --project-id <UUID> --recent 5
 ```
 
 ### 8. Output Summary
-Display:
-- Project UUID
-- Directory location
-- Compliance status (controls mapped)
-- Next steps: "Run /icdev-build to start TDD development"
-
-### 9. Output Summary
 Display:
 - Project UUID
 - Directory location

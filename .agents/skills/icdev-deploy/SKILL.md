@@ -1,6 +1,6 @@
 ---
 name: icdev-deploy
-description: Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment
+description: "Generates Terraform, Ansible, and Kubernetes IaC for AWS GovCloud and produces a GitLab CI/CD pipeline with security gates and manual production approval. Use when deploying a project to staging or production, scaffolding infrastructure-as-code for AWS GovCloud, or generating a CI/CD pipeline for an ICDEV™ project."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -59,15 +59,6 @@ Run the CLI command or use MCP tool `control_map` MCP tool from icdev-compliance
 - Map `deploy.staging` or `deploy.production` to NIST controls (CM-3, CM-5, SA-10)
 
 ### 8. Output Summary
-Display:
-- Generated files (Terraform, Ansible, K8s, CI/CD)
-- Target environment
-- Security gates status
-- Next steps:
-  - If `--generate-only`: "Review and commit IaC files, push to trigger pipeline"
-  - If deploying: "Pipeline triggered, monitor at <GitLab URL>"
-
-### 9. Output Summary
 Display:
 - Generated files (Terraform, Ansible, K8s, CI/CD)
 - Target environment
