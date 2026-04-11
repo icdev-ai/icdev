@@ -4072,6 +4072,45 @@ CREATE INDEX IF NOT EXISTS idx_ext_exec_ext ON extension_execution_log(extension
 CREATE INDEX IF NOT EXISTS idx_ext_exec_hook ON extension_execution_log(hook_point);
 
 -- ============================================================
+-- Phase 44: Memory System Core Tables
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    type TEXT DEFAULT 'event',
+    importance INTEGER DEFAULT 5,
+    embedding BLOB,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    content_hash TEXT,
+    user_id TEXT,
+    tenant_id TEXT,
+    source TEXT DEFAULT 'manual'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user
+    ON memory_entries(content_hash, user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_user_id ON memory_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_tenant_id ON memory_entries(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_memory_created ON memory_entries(created_at);
+
+CREATE TABLE IF NOT EXISTS daily_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(date);
+
+CREATE TABLE IF NOT EXISTS memory_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT,
+    query TEXT,
+    results_count INTEGER,
+    search_type TEXT,
+    accessed_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mem_access_search ON memory_access_log(search_type);
+
 -- Phase 44: AI-Driven Memory Consolidation (D276, append-only)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS memory_consolidation_log (
