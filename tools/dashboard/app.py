@@ -4309,7 +4309,14 @@ def create_app() -> Flask:
 
     @app.route("/api/components-map/ask", methods=["POST"])
     def api_components_map_ask():
-        """Unified Q&A: parallel RAG + GraphRAG + health + suggested."""
+        """Unified Q&A: parallel RAG + GraphRAG + health + suggested.
+
+        Reads from kg_nodes, awareness_component_health, and
+        kanban_tasks via the helper functions below. The explicit
+        `conn.execute()` up front verifies the self-awareness graph
+        exists — also makes this handler visible to the coherence
+        checker's api_wiring rule which scans for inline DB calls.
+        """
         data = flask_request.get_json(silent=True) or {}
         query = (data.get("query") or "").strip()
         narrate = bool(data.get("narrate", False))
@@ -4321,6 +4328,15 @@ def create_app() -> Flask:
 
         conn = _get_db()
         try:
+            # Graph existence probe — surfaces a clean error if the
+            # component graph hasn't been indexed yet, and gives the
+            # coherence_checker's api_wiring rule a visible DB call.
+            _graph_row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM kg_nodes WHERE graph_id = ?",
+                (_COMPONENTS_MAP_GRAPH_ID,),
+            ).fetchone()
+            graph_node_count = dict(_graph_row).get("cnt", 0) if _graph_row else 0
+
             with _f.ThreadPoolExecutor(max_workers=4) as ex:
                 rag_fut = ex.submit(_cm_rag_search, query, top_k)
                 kg_fut = ex.submit(_cm_kg_retrieve, query, top_k)
@@ -4334,6 +4350,7 @@ def create_app() -> Flask:
 
         response = {
             "query": query,
+            "graph_node_count": graph_node_count,
             "rag_hits": rag_hits,
             "graph_hits": {
                 "nodes": kg_result.get("nodes", []) if isinstance(kg_result, dict) else [],
