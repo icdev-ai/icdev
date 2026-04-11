@@ -1989,8 +1989,21 @@ def create_app() -> Flask:
         """Monitoring overview page."""
         conn = _get_db()
         try:
-            # Recent alerts
-            alerts = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 20").fetchall()
+            # All firing alerts (uncapped — operator must see every one)
+            firing_alerts = conn.execute(
+                "SELECT * FROM alerts WHERE status = 'firing' "
+                "ORDER BY "
+                "CASE severity "
+                "  WHEN 'critical' THEN 0 "
+                "  WHEN 'high' THEN 1 "
+                "  WHEN 'medium' THEN 2 "
+                "  WHEN 'low' THEN 3 "
+                "  ELSE 4 END, "
+                "created_at DESC"
+            ).fetchall()
+
+            # Recent alerts across all statuses (history view, capped)
+            alerts = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50").fetchall()
 
             # Self-healing events
             healing_events = conn.execute(
@@ -2001,7 +2014,7 @@ def create_app() -> Flask:
             ).fetchall()
 
             # Health stats
-            firing = conn.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'").fetchone()["cnt"]
+            firing = len(firing_alerts)
             resolved = conn.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status = 'resolved'").fetchone()["cnt"]
             unresolved_failures = conn.execute("SELECT COUNT(*) as cnt FROM failure_log WHERE resolved = 0").fetchone()[
                 "cnt"
@@ -2015,6 +2028,7 @@ def create_app() -> Flask:
 
             return render_template(
                 "monitoring/overview.html",
+                firing_alerts=[dict(r) for r in firing_alerts],
                 alerts=[dict(r) for r in alerts],
                 healing_events=[dict(r) for r in healing_events],
                 firing_count=firing,

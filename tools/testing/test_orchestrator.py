@@ -1,241 +1,269 @@
-# [TEMPLATE: CUI // SP-CTI]
-# ICDEV™ Test Orchestrator
-# Adapted from ADW adw_test.py — retry logic, resolution, E2E coordination
+# CUI // SP-CTI
+"""ICDEV™ end-to-end test orchestrator.
 
+Drives the full ICDEV test gauntlet for one project: syntax → quality
+→ unit → BDD → SAST → E2E → security gate → compliance gate →
+coherence → optional agentic tests → acceptance V&V → summary report.
+
+Used both as a standalone CLI and as the backend for
+:mod:`tools.ci.workflows.icdev_test`.
+
+Implements the contract documented in
+``docs/rewrite/adw/specs/tools/testing/test_orchestrator.md`` (OPT-75
+Phase 3 clean-room rewrite). Removes the dead-code bug at line 968 of
+the original (`[r for r in all_results if r.test_type == "security"]`
+was discarded).
 """
-ICDEV™ Test Orchestrator — runs unit, BDD, E2E, security, and compliance tests
-with automatic retry and failure resolution.
-
-Usage:
-    python tools/testing/test_orchestrator.py --project-dir <path> [--project-id <id>] [--skip-e2e] [--skip-security]
-
-Workflow (adapted from ADW adw_test.py):
-1. Health check — validate environment
-2. Unit tests (pytest) with retry + resolution
-3. BDD tests (behave) with retry + resolution
-4. E2E tests (Playwright MCP) with retry + resolution
-5. Security gate evaluation
-6. Compliance gate evaluation
-7. Acceptance criteria validation (V&V) — plan criteria + DOM content checks
-8. Summary report with audit trail
-
-Retry logic:
-- Unit/BDD: max 4 attempts (MAX_TEST_RETRY_ATTEMPTS)
-- E2E: max 2 attempts (MAX_E2E_TEST_RETRY_ATTEMPTS)
-- Resolution: attempt to fix failing tests between retries
-"""
+from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Tuple, Optional, List
+from typing import Any, List, Optional, Tuple
 
-# Add project root to path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.testing.data_types import (  # noqa: E402
-    TestResult,
     E2ETestResult,
-    GateResult,
     GateEvaluation,
+    GateResult,
+    TestResult,
     TestRunState,
 )
 from tools.testing.utils import (  # noqa: E402
+    ensure_run_dir,
+    get_safe_subprocess_env,
     make_run_id,
     setup_logger,
-    get_safe_subprocess_env,
     timestamp_iso,
-    ensure_run_dir,
 )
 
-# Constants (adapted from ADW)
-MAX_TEST_RETRY_ATTEMPTS = 4
-MAX_E2E_TEST_RETRY_ATTEMPTS = 2
+
+# ── Constants ───────────────────────────────────────────────────────────
+MAX_TEST_RETRY_ATTEMPTS: int = 4
+MAX_E2E_TEST_RETRY_ATTEMPTS: int = 2
+
+_PY_COMPILE_TIMEOUT_SECONDS: int = 10
+_RUFF_TIMEOUT_SECONDS: int = 60
+_BANDIT_TIMEOUT_SECONDS: int = 120
+_PYTEST_TIMEOUT_SECONDS: int = 300
+_BEHAVE_TIMEOUT_SECONDS: int = 300
+_COHERENCE_TIMEOUT_SECONDS: int = 120
+_AGENTIC_TIMEOUT_SECONDS: int = 120
+_SANDBOX_FILE_LIMIT: int = 15
+
+_PY_COMPILE_FILE_LIMIT: int = 50
+
+_module_logger = logging.getLogger(__name__)
 
 
-# --- Syntax & Quality Checks (adapted from ADW test.md) ---
+def _logger_for(logger: Optional[logging.Logger]) -> logging.Logger:
+    return logger if logger is not None else _module_logger
 
 
-def run_py_compile(project_dir: str, logger) -> TestResult:
-    """Run py_compile syntax check on Python source files.
+def _find_source_dir(project_dir: str) -> Optional[str]:
+    """Walk a small list of common source-dir names. Return the first
+    one that contains any ``.py`` file."""
+    for candidate in ("src", "app", "lib", project_dir):
+        check_dir = (
+            os.path.join(project_dir, candidate)
+            if candidate != project_dir else project_dir
+        )
+        if not os.path.isdir(check_dir):
+            continue
+        try:
+            entries = os.listdir(check_dir)
+        except OSError:
+            continue
+        if any(name.endswith(".py") for name in entries):
+            return check_dir
+    return None
 
-    Adapted from ADW test.md Step 1: Python Syntax Check.
-    Catches syntax errors before running full test suite.
-    """
-    logger.info("Running Python syntax check (py_compile)...")
+
+def _all_python_files(src_dir: str) -> List[str]:
+    out: List[str] = []
+    for root, _dirs, files in os.walk(src_dir):
+        for name in files:
+            if name.endswith(".py"):
+                out.append(os.path.join(root, name))
+    return out
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Quality checks
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def run_py_compile(
+    project_dir: str,
+    logger: Optional[logging.Logger] = None,
+) -> TestResult:
+    log = _logger_for(logger)
+    log.info("orchestrator: py_compile syntax check")
     env = get_safe_subprocess_env()
 
-    # Find the source directory
-    src_dir = None
-    for candidate in ["src", "app", "lib", project_dir]:
-        check_dir = os.path.join(project_dir, candidate) if candidate != project_dir else candidate
-        if os.path.isdir(check_dir):
-            py_files = [f for f in os.listdir(check_dir) if f.endswith(".py")]
-            if py_files:
-                src_dir = check_dir
-                break
-
+    src_dir = _find_source_dir(project_dir)
     if not src_dir:
         return TestResult(
             test_name="python_syntax_check",
             passed=True,
             execution_command="python -m py_compile (no source files found)",
-            test_purpose="Validates Python syntax by compiling source files to bytecode",
+            test_purpose="Validates Python syntax via py_compile",
             test_type="unit",
         )
 
-    # Compile each .py file
-    py_files = []
-    for root, dirs, files in os.walk(src_dir):
-        for f in files:
-            if f.endswith(".py"):
-                py_files.append(os.path.join(root, f))
-
-    errors = []
-    for py_file in py_files[:50]:  # Limit to prevent timeout
+    py_files = _all_python_files(src_dir)
+    errors: List[str] = []
+    for py_file in py_files[:_PY_COMPILE_FILE_LIMIT]:
         try:
-            cmd = [sys.executable, "-m", "py_compile", py_file]
-            proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=10)
-            if proc.returncode != 0:
-                errors.append(f"{py_file}: {proc.stderr.strip()}")
+            proc = subprocess.run(
+                [sys.executable, "-m", "py_compile", py_file],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                timeout=_PY_COMPILE_TIMEOUT_SECONDS,
+            )
         except subprocess.TimeoutExpired:
             errors.append(f"{py_file}: compilation timed out")
+            continue
+        if proc.returncode != 0:
+            errors.append(f"{py_file}: {(proc.stderr or '').strip()}")
 
-    passed = len(errors) == 0
-    logger.info(f"py_compile: {len(py_files)} files checked, {len(errors)} errors")
-
+    passed = not errors
+    log.info("orchestrator: py_compile %d files, %d errors", len(py_files), len(errors))
     return TestResult(
         test_name="python_syntax_check",
         passed=passed,
         execution_command=f"python -m py_compile {src_dir}/*.py",
-        test_purpose="Validates Python syntax by compiling source files to bytecode, catching syntax errors like missing colons, invalid indentation, or malformed statements",
+        test_purpose=(
+            "Validates Python syntax by compiling source files to "
+            "bytecode, catching syntax errors like missing colons, "
+            "invalid indentation, or malformed statements"
+        ),
         error="; ".join(errors[:5]) if errors else None,
         test_type="unit",
         nist_controls=["SA-11"],
     )
 
 
-def run_ruff(project_dir: str, logger) -> TestResult:
-    """Run Ruff linter for code quality checks.
-
-    Adapted from ADW test.md Step 2: Backend Code Quality Check.
-    Ruff is an extremely fast Python linter written in Rust that replaces
-    flake8, isort, and parts of pylint.
-    """
-    logger.info("Running Ruff code quality check...")
+def run_ruff(
+    project_dir: str,
+    logger: Optional[logging.Logger] = None,
+) -> TestResult:
+    log = _logger_for(logger)
+    log.info("orchestrator: ruff code quality")
     env = get_safe_subprocess_env()
 
-    # Try ruff directly, then via python -m
-    for cmd_variant in [["ruff", "check", project_dir], [sys.executable, "-m", "ruff", "check", project_dir]]:
+    cmd_variants = (
+        ["ruff", "check", project_dir],
+        [sys.executable, "-m", "ruff", "check", project_dir],
+    )
+    for cmd in cmd_variants:
         try:
-            proc = subprocess.run(cmd_variant, capture_output=True, text=True, env=env, timeout=60, cwd=project_dir)
-
-            # Ruff returns 0 if no issues, 1 if issues found
-            if proc.returncode == 0:
-                logger.info("Ruff: no issues found")
-                return TestResult(
-                    test_name="code_quality_ruff",
-                    passed=True,
-                    execution_command=" ".join(cmd_variant),
-                    test_purpose="Validates Python code quality using Ruff — identifies unused imports, style violations, security issues, and potential bugs",
-                    test_type="unit",
-                    nist_controls=["SA-11", "SA-15"],
-                )
-
-            # Issues found
-            output = proc.stdout.strip() or proc.stderr.strip()
-            # Count issues
-            issue_lines = [
-                line for line in output.splitlines() if line.strip() and ":" in line and not line.startswith("Found")
-            ]
-            logger.info(f"Ruff: {len(issue_lines)} issues found")
-
-            return TestResult(
-                test_name="code_quality_ruff",
-                passed=False,
-                execution_command=" ".join(cmd_variant),
-                test_purpose="Validates Python code quality using Ruff — identifies unused imports, style violations, security issues, and potential bugs",
-                error=output[:500],
-                test_type="unit",
-                nist_controls=["SA-11", "SA-15"],
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                timeout=_RUFF_TIMEOUT_SECONDS,
+                cwd=project_dir,
             )
-
         except FileNotFoundError:
             continue
         except subprocess.TimeoutExpired:
             return TestResult(
                 test_name="code_quality_ruff",
                 passed=False,
-                execution_command=" ".join(cmd_variant),
+                execution_command=" ".join(cmd),
                 test_purpose="Validates Python code quality using Ruff",
                 error="Ruff check timed out after 60 seconds",
                 test_type="unit",
             )
 
-    # Ruff not installed
-    logger.warning("Ruff not installed, skipping code quality check (pip install ruff)")
+        if proc.returncode == 0:
+            log.info("orchestrator: ruff clean")
+            return TestResult(
+                test_name="code_quality_ruff",
+                passed=True,
+                execution_command=" ".join(cmd),
+                test_purpose=(
+                    "Validates Python code quality using Ruff — "
+                    "identifies unused imports, style violations, "
+                    "security issues, and potential bugs"
+                ),
+                test_type="unit",
+                nist_controls=["SA-11", "SA-15"],
+            )
+
+        output = (proc.stdout or proc.stderr or "").strip()
+        log.info("orchestrator: ruff issues found")
+        return TestResult(
+            test_name="code_quality_ruff",
+            passed=False,
+            execution_command=" ".join(cmd),
+            test_purpose=(
+                "Validates Python code quality using Ruff — "
+                "identifies unused imports, style violations, "
+                "security issues, and potential bugs"
+            ),
+            error=output[:500],
+            test_type="unit",
+            nist_controls=["SA-11", "SA-15"],
+        )
+
+    log.warning("orchestrator: ruff not installed")
     return TestResult(
         test_name="code_quality_ruff",
         passed=True,
         execution_command="ruff check .",
-        test_purpose="Validates Python code quality using Ruff (SKIPPED — ruff not installed)",
+        test_purpose="Validates Python code quality using Ruff (SKIPPED)",
         test_type="unit",
     )
 
 
-def run_sandbox_isolation(project_dir: str, logger) -> TestResult:
-    """Run LLM Sandbox isolation check on Python source files (D-SEC-10).
+def run_sandbox_isolation(
+    project_dir: str,
+    logger: Optional[logging.Logger] = None,
+) -> TestResult:
+    log = _logger_for(logger)
+    log.info("orchestrator: sandbox isolation")
 
-    Executes each new/modified Python file inside a container sandbox to verify
-    it imports and runs cleanly in isolation. Gracefully degrades when Docker
-    or llm-sandbox is unavailable (does not block the pipeline).
-
-    NIST SA-11 (Developer Testing), SI-7 (Software Integrity).
-    """
-    logger.info("Running LLM Sandbox isolation check (D-SEC-10)...")
-
-    # Lazy import to avoid circular dependency and handle missing package
     try:
-        from tools.security.sandbox_executor import SandboxExecutor, SandboxResult  # noqa: F401
+        from tools.security.sandbox_executor import SandboxExecutor
     except ImportError:
-        logger.info("SandboxExecutor not available — skipping sandbox isolation")
         return TestResult(
             test_name="sandbox_isolation",
             passed=True,
-            execution_command="sandbox_executor.py --execute (SKIPPED — import failed)",
-            test_purpose="Container-isolated code execution check (SKIPPED — sandbox_executor not importable)",
+            execution_command="sandbox_executor.py (SKIPPED — import failed)",
+            test_purpose="Container-isolated code execution check (SKIPPED)",
             test_type="security",
             nist_controls=["SA-11", "SI-7"],
         )
 
     executor = SandboxExecutor()
-
-    # Check availability — graceful degradation on Windows dev without Docker
-    if not executor._enabled or not executor._available:
-        logger.info("LLM Sandbox unavailable (Docker not running or llm-sandbox not installed) — skipping")
+    if not getattr(executor, "_enabled", False) or not getattr(executor, "_available", False):
+        log.info("orchestrator: sandbox unavailable, skipping")
         return TestResult(
             test_name="sandbox_isolation",
             passed=True,
-            execution_command="sandbox_executor.py --health (SKIPPED — sandbox unavailable)",
-            test_purpose="Container-isolated code execution check (SKIPPED — sandbox unavailable)",
+            execution_command="sandbox_executor.py (SKIPPED — unavailable)",
+            test_purpose="Container-isolated code execution check (SKIPPED)",
             test_type="security",
             nist_controls=["SA-11", "SI-7"],
         )
 
-    # Find Python files (same logic as run_py_compile)
-    src_dir = None
-    for candidate in ["src", "app", "lib", project_dir]:
-        check_dir = os.path.join(project_dir, candidate) if candidate != project_dir else candidate
-        if os.path.isdir(check_dir):
-            py_files = [f for f in os.listdir(check_dir) if f.endswith(".py")]
-            if py_files:
-                src_dir = check_dir
-                break
-
+    src_dir = _find_source_dir(project_dir)
     if not src_dir:
         return TestResult(
             test_name="sandbox_isolation",
@@ -246,23 +274,19 @@ def run_sandbox_isolation(project_dir: str, logger) -> TestResult:
             nist_controls=["SA-11", "SI-7"],
         )
 
-    py_files = []
-    for root, dirs, files in os.walk(src_dir):
-        for f in files:
-            if f.endswith(".py"):
-                py_files.append(os.path.join(root, f))
-
-    # Cap at 15 files to keep total sandbox time under ~120s (15 * 8s worst case)
-    MAX_SANDBOX_FILES = 15
-    errors = []
+    py_files = _all_python_files(src_dir)
+    errors: List[str] = []
     checked = 0
-
-    for py_file in py_files[:MAX_SANDBOX_FILES]:
-        # Build a safe import check — just verify the file can be compiled and loaded
+    for py_file in py_files[:_SANDBOX_FILE_LIMIT]:
+        try:
+            src_excerpt = Path(py_file).read_text(
+                encoding="utf-8", errors="replace"
+            )[:4000]
+        except OSError:
+            continue
         code = (
             "import py_compile, sys, os\n"
-            "# Compile check only — no side effects\n"
-            f"src = '''{Path(py_file).read_text(encoding='utf-8', errors='replace')[:4000]}'''\n"
+            f"src = '''{src_excerpt}'''\n"
             "try:\n"
             "    compile(src, '<sandbox>', 'exec')\n"
             "    print('OK')\n"
@@ -270,7 +294,6 @@ def run_sandbox_isolation(project_dir: str, logger) -> TestResult:
             "    print(f'SYNTAX_ERROR: {e}')\n"
             "    sys.exit(1)\n"
         )
-
         result = executor.execute(
             code=code,
             language="python",
@@ -279,92 +302,67 @@ def run_sandbox_isolation(project_dir: str, logger) -> TestResult:
             timeout_seconds=15,
             actor="test-orchestrator",
         )
-
         checked += 1
-
-        if result.status == "completed" and result.exit_code == 0:
+        status = getattr(result, "status", "")
+        if status == "completed" and getattr(result, "exit_code", 1) == 0:
             continue
-        elif result.status in ("disabled", "unavailable"):
-            # Sandbox went away mid-run — skip remaining
-            logger.warning("Sandbox became unavailable mid-run — stopping checks")
+        if status in ("disabled", "unavailable"):
+            log.warning("orchestrator: sandbox went away mid-run")
             break
-        else:
-            rel_path = os.path.relpath(py_file, project_dir)
-            errors.append(f"{rel_path}: {result.error or result.stderr[:200]}")
+        rel_path = os.path.relpath(py_file, project_dir)
+        err = getattr(result, "error", "") or getattr(result, "stderr", "")
+        errors.append(f"{rel_path}: {err[:200]}")
 
-    passed = len(errors) == 0
-    logger.info(f"Sandbox isolation: {checked} files checked, {len(errors)} failures")
-
+    passed = not errors
+    log.info("orchestrator: sandbox checked %d files, %d failures", checked, len(errors))
     return TestResult(
         test_name="sandbox_isolation",
         passed=passed,
         execution_command=f"sandbox_executor.py --execute (D-SEC-10, {checked} files)",
-        test_purpose="Verifies Python files compile and load cleanly in a container sandbox with network isolation — catches dependency issues, syntax errors, and environment-specific failures",
+        test_purpose=(
+            "Verifies Python files compile and load cleanly in a "
+            "container sandbox with network isolation"
+        ),
         error="; ".join(errors[:5]) if errors else None,
         test_type="security",
         nist_controls=["SA-11", "SI-7"],
     )
 
 
-def run_bandit(project_dir: str, logger) -> TestResult:
-    """Run Bandit SAST security scan.
-
-    Adapted from ADW test.md security scan step + ICDEV™ security tools.
-    """
-    logger.info("Running Bandit SAST scan...")
+def run_bandit(
+    project_dir: str,
+    logger: Optional[logging.Logger] = None,
+) -> TestResult:
+    log = _logger_for(logger)
+    log.info("orchestrator: bandit SAST")
     env = get_safe_subprocess_env()
 
     src_dir = os.path.join(project_dir, "src")
     if not os.path.isdir(src_dir):
         src_dir = project_dir
 
+    cmd = [
+        sys.executable, "-m", "bandit", "-r", src_dir,
+        "-f", "json", "--severity-level", "medium",
+    ]
     try:
-        cmd = [sys.executable, "-m", "bandit", "-r", src_dir, "-f", "json", "--severity-level", "medium"]
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=120, cwd=project_dir)
-
-        # Parse JSON output
-        try:
-            bandit_data = json.loads(proc.stdout) if proc.stdout.strip() else {}
-            results = bandit_data.get("results", [])
-            high_issues = [r for r in results if r.get("issue_severity") == "HIGH"]
-            medium_issues = [r for r in results if r.get("issue_severity") == "MEDIUM"]
-
-            passed = len(high_issues) == 0
-            error_msg = None
-            if not passed:
-                error_msg = f"{len(high_issues)} HIGH severity issues: " + "; ".join(
-                    f"{r.get('test_id')}: {r.get('issue_text', '')} ({r.get('filename', '')}:{r.get('line_number', '')})"
-                    for r in high_issues[:3]
-                )
-
-            logger.info(f"Bandit: {len(high_issues)} HIGH, {len(medium_issues)} MEDIUM issues")
-            return TestResult(
-                test_name="security_sast_bandit",
-                passed=passed,
-                execution_command=" ".join(cmd),
-                test_purpose="Static application security testing — identifies common vulnerabilities like SQL injection, XSS, hardcoded secrets, and insecure function calls",
-                error=error_msg,
-                test_type="security",
-                nist_controls=["SA-11", "RA-5"],
-            )
-        except json.JSONDecodeError:
-            return TestResult(
-                test_name="security_sast_bandit",
-                passed=proc.returncode == 0,
-                execution_command=" ".join(cmd),
-                test_purpose="Static application security testing",
-                error=proc.stderr[:300] if proc.returncode != 0 else None,
-                test_type="security",
-                nist_controls=["SA-11", "RA-5"],
-            )
-
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=_BANDIT_TIMEOUT_SECONDS,
+            cwd=project_dir,
+        )
     except FileNotFoundError:
-        logger.warning("Bandit not installed, skipping SAST scan (pip install bandit)")
+        log.warning("orchestrator: bandit not installed")
         return TestResult(
             test_name="security_sast_bandit",
             passed=True,
             execution_command="bandit -r src/",
-            test_purpose="Static application security testing (SKIPPED — bandit not installed)",
+            test_purpose="SAST scan (SKIPPED — bandit not installed)",
             test_type="security",
         )
     except subprocess.TimeoutExpired:
@@ -377,422 +375,442 @@ def run_bandit(project_dir: str, logger) -> TestResult:
             test_type="security",
         )
 
-
-# --- Unit / BDD Test Execution ---
-
-
-def run_pytest(project_dir: str, logger) -> Tuple[List[TestResult], int, int]:
-    """Run pytest and parse results into TestResult objects."""
-    logger.info("Running pytest...")
-    env = get_safe_subprocess_env()
-    results = []
-
     try:
-        # Run pytest with JSON output
-        cmd = [
-            sys.executable,
-            "-m",
-            "pytest",
-            os.path.join(project_dir, "tests"),
-            "-v",
-            "--tb=short",
-            f"--junitxml={project_dir}/test-results.xml",
-            "--no-header",
-        ]
+        bandit_data = json.loads(proc.stdout) if (proc.stdout or "").strip() else {}
+    except json.JSONDecodeError:
+        return TestResult(
+            test_name="security_sast_bandit",
+            passed=proc.returncode == 0,
+            execution_command=" ".join(cmd),
+            test_purpose="Static application security testing",
+            error=(proc.stderr or "")[:300] if proc.returncode != 0 else None,
+            test_type="security",
+            nist_controls=["SA-11", "RA-5"],
+        )
 
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=300, cwd=project_dir)
+    results = bandit_data.get("results") or []
+    high_issues = [r for r in results if r.get("issue_severity") == "HIGH"]
+    medium_issues = [r for r in results if r.get("issue_severity") == "MEDIUM"]
+    passed = not high_issues
+    error_msg: Optional[str] = None
+    if not passed:
+        error_msg = (
+            f"{len(high_issues)} HIGH severity issues: "
+            + "; ".join(
+                f"{r.get('test_id')}: {r.get('issue_text', '')} "
+                f"({r.get('filename', '')}:{r.get('line_number', '')})"
+                for r in high_issues[:3]
+            )
+        )
+    log.info("orchestrator: bandit %d HIGH, %d MEDIUM", len(high_issues), len(medium_issues))
+    return TestResult(
+        test_name="security_sast_bandit",
+        passed=passed,
+        execution_command=" ".join(cmd),
+        test_purpose=(
+            "Static application security testing — identifies common "
+            "vulnerabilities like SQL injection, XSS, hardcoded "
+            "secrets, and insecure function calls"
+        ),
+        error=error_msg,
+        test_type="security",
+        nist_controls=["SA-11", "RA-5"],
+    )
 
-        # Parse verbose output for test results
-        for line in proc.stdout.splitlines():
-            if "PASSED" in line or "FAILED" in line or "ERROR" in line:
-                passed = "PASSED" in line
-                test_name = line.split("::")[1].split(" ")[0] if "::" in line else line.strip()
-                error_msg = None
-                if not passed:
-                    # Extract error from output
-                    error_msg = line.strip()
 
-                results.append(
-                    TestResult(
-                        test_name=test_name,
-                        passed=passed,
-                        execution_command=" ".join(cmd),
-                        test_purpose="Unit test",
-                        error=error_msg,
-                        test_type="unit",
-                        nist_controls=["SA-11"],
-                    )
-                )
+# ────────────────────────────────────────────────────────────────────────────
+# Test runners
+# ────────────────────────────────────────────────────────────────────────────
 
-        passed = sum(1 for r in results if r.passed)
-        failed = len(results) - passed
 
-        logger.info(f"pytest: {passed} passed, {failed} failed")
-        return results, passed, failed
+def run_pytest(
+    project_dir: str,
+    logger: Optional[logging.Logger] = None,
+) -> Tuple[List[TestResult], int, int]:
+    log = _logger_for(logger)
+    log.info("orchestrator: pytest")
+    env = get_safe_subprocess_env()
 
+    cmd = [
+        sys.executable, "-m", "pytest",
+        os.path.join(project_dir, "tests"),
+        "-v",
+        "--tb=short",
+        f"--junitxml={project_dir}/test-results.xml",
+        "--no-header",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=_PYTEST_TIMEOUT_SECONDS,
+            cwd=project_dir,
+        )
     except subprocess.TimeoutExpired:
-        logger.error("pytest timed out after 300 seconds")
+        log.error("orchestrator: pytest timed out")
         return [], 0, 0
     except FileNotFoundError:
-        logger.warning("pytest not installed, skipping unit tests")
+        log.warning("orchestrator: pytest not installed")
         return [], 0, 0
-    except Exception as e:
-        logger.error(f"pytest error: {e}")
+    except Exception as exc:
+        log.error("orchestrator: pytest error: %s", exc)
         return [], 0, 0
 
+    results: List[TestResult] = []
+    for line in (proc.stdout or "").splitlines():
+        if not any(marker in line for marker in ("PASSED", "FAILED", "ERROR")):
+            continue
+        passed = "PASSED" in line
+        if "::" in line:
+            test_name = line.split("::")[1].split(" ")[0]
+        else:
+            test_name = line.strip()
+        results.append(TestResult(
+            test_name=test_name,
+            passed=passed,
+            execution_command=" ".join(cmd),
+            test_purpose="Unit test",
+            error=None if passed else line.strip(),
+            test_type="unit",
+            nist_controls=["SA-11"],
+        ))
 
-def run_behave(project_dir: str, logger) -> Tuple[List[TestResult], int, int]:
-    """Run behave BDD tests and parse results."""
-    logger.info("Running behave BDD tests...")
+    passed_n = sum(1 for r in results if r.passed)
+    failed_n = len(results) - passed_n
+    log.info("orchestrator: pytest %d passed, %d failed", passed_n, failed_n)
+    return results, passed_n, failed_n
+
+
+def run_behave(
+    project_dir: str,
+    logger: Optional[logging.Logger] = None,
+) -> Tuple[List[TestResult], int, int]:
+    log = _logger_for(logger)
+    log.info("orchestrator: behave")
     env = get_safe_subprocess_env()
-    results = []
 
     features_dir = os.path.join(project_dir, "features")
     if not os.path.isdir(features_dir):
-        logger.info("No features/ directory found, skipping BDD tests")
+        log.info("orchestrator: no features/ directory, skipping behave")
         return [], 0, 0
 
+    results_file = os.path.join(project_dir, "behave-results.json")
+    cmd = [
+        sys.executable, "-m", "behave", features_dir,
+        "--format", "json",
+        "--outfile", results_file,
+        "--no-capture",
+    ]
     try:
-        cmd = [
-            sys.executable,
-            "-m",
-            "behave",
-            features_dir,
-            "--format",
-            "json",
-            "--outfile",
-            os.path.join(project_dir, "behave-results.json"),
-            "--no-capture",
-        ]
-
-        subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=300, cwd=project_dir)
-
-        # Parse JSON results if available
-        results_file = os.path.join(project_dir, "behave-results.json")
-        if os.path.exists(results_file):
-            with open(results_file) as f:
-                behave_data = json.load(f)
-
-            for feature in behave_data:
-                for scenario in feature.get("elements", []):
-                    scenario_name = scenario.get("name", "unknown")
-                    steps = scenario.get("steps", [])
-                    all_passed = all(s.get("result", {}).get("status") == "passed" for s in steps if "result" in s)
-                    error = None
-                    if not all_passed:
-                        failed_steps = [s for s in steps if s.get("result", {}).get("status") != "passed"]
-                        if failed_steps:
-                            error = failed_steps[0].get("result", {}).get("error_message", "Step failed")
-
-                    results.append(
-                        TestResult(
-                            test_name=scenario_name,
-                            passed=all_passed,
-                            execution_command=" ".join(cmd),
-                            test_purpose=f"BDD: {feature.get('name', 'unknown')}",
-                            error=error,
-                            test_type="bdd",
-                            nist_controls=["SA-11"],
-                        )
-                    )
-
-        passed = sum(1 for r in results if r.passed)
-        failed = len(results) - passed
-
-        logger.info(f"behave: {passed} passed, {failed} failed")
-        return results, passed, failed
-
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=_BEHAVE_TIMEOUT_SECONDS,
+            cwd=project_dir,
+        )
     except subprocess.TimeoutExpired:
-        logger.error("behave timed out after 300 seconds")
+        log.error("orchestrator: behave timed out")
         return [], 0, 0
     except FileNotFoundError:
-        logger.warning("behave not installed, skipping BDD tests")
+        log.warning("orchestrator: behave not installed")
         return [], 0, 0
-    except Exception as e:
-        logger.error(f"behave error: {e}")
+    except Exception as exc:
+        log.error("orchestrator: behave error: %s", exc)
         return [], 0, 0
 
+    results: List[TestResult] = []
+    if os.path.exists(results_file):
+        try:
+            with open(results_file, "r", encoding="utf-8") as fh:
+                behave_data = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            behave_data = []
+        for feature in behave_data or []:
+            for scenario in feature.get("elements") or []:
+                scenario_name = scenario.get("name", "unknown")
+                steps = scenario.get("steps") or []
+                all_passed = all(
+                    s.get("result", {}).get("status") == "passed"
+                    for s in steps if "result" in s
+                )
+                error = None
+                if not all_passed:
+                    failed_steps = [
+                        s for s in steps
+                        if s.get("result", {}).get("status") != "passed"
+                    ]
+                    if failed_steps:
+                        error = (
+                            failed_steps[0].get("result", {})
+                            .get("error_message", "Step failed")
+                        )
+                results.append(TestResult(
+                    test_name=scenario_name,
+                    passed=all_passed,
+                    execution_command=" ".join(cmd),
+                    test_purpose=f"BDD: {feature.get('name', 'unknown')}",
+                    error=error,
+                    test_type="bdd",
+                    nist_controls=["SA-11"],
+                ))
 
-# --- Test Retry + Resolution (adapted from ADW pattern) ---
+    passed_n = sum(1 for r in results if r.passed)
+    failed_n = len(results) - passed_n
+    log.info("orchestrator: behave %d passed, %d failed", passed_n, failed_n)
+    return results, passed_n, failed_n
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Driver: retry + resolution
+# ────────────────────────────────────────────────────────────────────────────
 
 
 def run_tests_with_resolution(
     project_dir: str,
-    run_id: str,
-    logger,
+    run_id: Optional[str] = None,
+    logger: Optional[logging.Logger] = None,
     max_attempts: int = MAX_TEST_RETRY_ATTEMPTS,
     skip_sandbox: bool = False,
 ) -> Tuple[List[TestResult], int, int]:
-    """Run unit + BDD tests with automatic retry logic.
+    log = _logger_for(logger)
+    if run_id is None:
+        run_id = make_run_id()
 
-    Adapted from ADW run_tests_with_resolution:
-    - Run tests
-    - If failures, attempt resolution
-    - Retry up to max_attempts
-    - Stop early if no progress
-    """
-    attempt = 0
-    all_results = []
+    all_results: List[TestResult] = []
     total_passed = 0
     total_failed = 0
 
-    while attempt < max_attempts:
-        attempt += 1
-        logger.info(f"\n=== Test Run Attempt {attempt}/{max_attempts} ===")
+    for attempt in range(1, max_attempts + 1):
+        log.info("\n=== Test Run Attempt %d/%d ===", attempt, max_attempts)
 
-        # Step 1: Syntax check (py_compile) — from ADW test.md pattern
-        syntax_result = run_py_compile(project_dir, logger)
+        syntax_result = run_py_compile(project_dir, log)
+        ruff_result = run_ruff(project_dir, log)
 
-        # Step 2: Code quality (Ruff) — from ADW test.md pattern
-        ruff_result = run_ruff(project_dir, logger)
-
-        # Step 2.5: Sandbox isolation check (D-SEC-10)
         if skip_sandbox:
             sandbox_result = TestResult(
                 test_name="sandbox_isolation",
                 passed=True,
-                execution_command="sandbox_executor.py (SKIPPED — --skip-sandbox flag)",
-                test_purpose="Container-isolated code execution check (SKIPPED)",
+                execution_command="sandbox_executor.py (SKIPPED — flag)",
+                test_purpose="Container-isolated code execution (SKIPPED)",
                 test_type="security",
                 nist_controls=["SA-11", "SI-7"],
             )
         else:
-            sandbox_result = run_sandbox_isolation(project_dir, logger)
+            sandbox_result = run_sandbox_isolation(project_dir, log)
 
-        # Step 3: Unit tests (pytest)
-        unit_results, unit_passed, unit_failed = run_pytest(project_dir, logger)
+        unit_results, _unit_passed, _unit_failed = run_pytest(project_dir, log)
+        bdd_results, _bdd_passed, _bdd_failed = run_behave(project_dir, log)
+        bandit_result = run_bandit(project_dir, log)
 
-        # Step 4: BDD tests (behave)
-        bdd_results, bdd_passed, bdd_failed = run_behave(project_dir, logger)
-
-        # Step 5: SAST security scan (Bandit)
-        bandit_result = run_bandit(project_dir, logger)
-
-        # Combine all results
-        quality_results = [syntax_result, ruff_result, sandbox_result, bandit_result]
-        all_results = quality_results + unit_results + bdd_results
+        all_results = (
+            [syntax_result, ruff_result, sandbox_result, bandit_result]
+            + unit_results + bdd_results
+        )
         total_passed = sum(1 for r in all_results if r.passed)
         total_failed = len(all_results) - total_passed
 
         if total_failed == 0:
-            logger.info("All tests passed!")
+            log.info("orchestrator: all tests passed")
             break
-
         if attempt == max_attempts:
-            logger.info(f"Reached maximum retry attempts ({max_attempts})")
+            log.info("orchestrator: max attempts reached")
             break
 
-        # Log failures for potential resolution
-        failed_tests = [t for t in all_results if not t.passed]
-        logger.info(f"Found {total_failed} failures, logging for resolution...")
-
-        for ft in failed_tests:
-            logger.info(f"  FAILED: {ft.test_name} - {ft.error or 'no error message'}")
-
-        # In ICDEV™, resolution would invoke the builder agent to fix code
-        # For now, just retry (the fix may come from external intervention)
-        logger.info(f"Retrying tests (attempt {attempt + 1}/{max_attempts})...")
+        for failed in (r for r in all_results if not r.passed):
+            log.info(
+                "  FAILED: %s — %s",
+                failed.test_name, failed.error or "(no error)"
+            )
+        log.info("orchestrator: retrying (attempt %d)", attempt + 1)
 
     return all_results, total_passed, total_failed
 
 
-# --- E2E Test Execution (native Playwright + MCP fallback) ---
+# ────────────────────────────────────────────────────────────────────────────
+# E2E
+# ────────────────────────────────────────────────────────────────────────────
 
 
 def _detect_e2e_mode() -> str:
-    """Detect best available E2E execution mode.
-
-    Prefers native Playwright (tests/e2e/*.spec.ts) over MCP (.claude/commands/e2e/*.md).
-    """
-    from tools.testing.e2e_runner import check_playwright_installed, discover_native_tests
-
+    try:
+        from tools.testing.e2e_runner import (
+            check_playwright_installed,
+            discover_native_tests,
+        )
+    except ImportError:
+        return "mcp"
     if check_playwright_installed() and discover_native_tests():
         return "native"
     return "mcp"
 
 
 def discover_e2e_tests() -> List[str]:
-    """Discover E2E test files (native .spec.ts preferred, MCP .md fallback)."""
-    from tools.testing.e2e_runner import discover_e2e_tests as _discover
-
+    try:
+        from tools.testing.e2e_runner import discover_e2e_tests as _discover
+    except ImportError:
+        return []
     return _discover(mode="auto")
 
 
 def run_e2e_tests(
     run_id: str,
-    logger,
+    logger: Optional[logging.Logger] = None,
     attempt: int = 1,
 ) -> List[E2ETestResult]:
-    """Run all E2E tests via native Playwright or MCP fallback.
-
-    Native mode: Invokes `npx playwright test` against tests/e2e/*.spec.ts.
-    MCP mode: Runs .claude/commands/e2e/*.md specs via Claude Code + Playwright MCP.
-    """
+    log = _logger_for(logger)
     mode = _detect_e2e_mode()
-    logger.info(f"E2E execution mode: {mode}")
+    log.info("orchestrator: E2E mode=%s", mode)
 
     if mode == "native":
         from tools.testing.e2e_runner import run_playwright_native
+        return run_playwright_native(run_id, log, project="chromium")
 
-        results = run_playwright_native(run_id, logger, project="chromium")
-        return results
-    else:
-        # MCP / validation fallback
-        from tools.testing.e2e_runner import discover_mcp_tests, execute_e2e_test
-
-        test_files = discover_mcp_tests()
-        logger.info(f"Found {len(test_files)} E2E test specs (MCP mode)")
-
-        if not test_files:
-            logger.info("No E2E test files found")
-            return []
-
-        results = []
-        for idx, test_file in enumerate(test_files):
-            result = execute_e2e_test(test_file, run_id, logger)
-            if result:
-                results.append(result)
-                if not result.passed:
-                    logger.info(f"E2E test failed: {result.test_name}, stopping (fail-fast)")
-                    break
-
-        return results
+    from tools.testing.e2e_runner import discover_mcp_tests, execute_e2e_test
+    test_files = discover_mcp_tests()
+    if not test_files:
+        log.info("orchestrator: no MCP E2E tests found")
+        return []
+    results: List[E2ETestResult] = []
+    for test_file in test_files:
+        result = execute_e2e_test(test_file, run_id, log)
+        if result is None:
+            continue
+        results.append(result)
+        if not result.passed:
+            log.info(
+                "orchestrator: E2E failed (%s), stopping fail-fast",
+                result.test_name,
+            )
+            break
+    return results
 
 
 def run_e2e_tests_with_resolution(
     run_id: str,
-    logger,
+    logger: Optional[logging.Logger] = None,
     max_attempts: int = MAX_E2E_TEST_RETRY_ATTEMPTS,
 ) -> Tuple[List[E2ETestResult], int, int]:
-    """Run E2E tests with retry logic.
+    log = _logger_for(logger)
+    results: List[E2ETestResult] = []
+    passed_n = 0
+    failed_n = 0
 
-    Uses native Playwright when available, falls back to MCP mode.
-    """
-    attempt = 0
-    results = []
-    passed_count = 0
-    failed_count = 0
-
-    while attempt < max_attempts:
-        attempt += 1
-        logger.info(f"\n=== E2E Test Run Attempt {attempt}/{max_attempts} ===")
-
-        results = run_e2e_tests(run_id, logger, attempt)
-
+    for attempt in range(1, max_attempts + 1):
+        log.info("\n=== E2E Attempt %d/%d ===", attempt, max_attempts)
+        results = run_e2e_tests(run_id, log, attempt)
         if not results:
             break
-
-        passed_count = sum(1 for r in results if r.passed)
-        failed_count = len(results) - passed_count
-
-        if failed_count == 0:
-            logger.info("All E2E tests passed!")
+        passed_n = sum(1 for r in results if r.passed)
+        failed_n = len(results) - passed_n
+        if failed_n == 0:
+            log.info("orchestrator: all E2E tests passed")
             break
-
         if attempt == max_attempts:
-            logger.info(f"Reached maximum E2E retry attempts ({max_attempts})")
+            log.info("orchestrator: max E2E attempts reached")
             break
-
-        # Log failures
-        failed = [r for r in results if not r.passed]
-        for ft in failed:
-            logger.info(f"  E2E FAILED: {ft.test_name} - {ft.error or 'unknown'}")
-
-        logger.info(f"Retrying E2E tests (attempt {attempt + 1}/{max_attempts})...")
-
-    return results, passed_count, failed_count
+        log.info("orchestrator: retrying E2E (attempt %d)", attempt + 1)
+    return results, passed_n, failed_n
 
 
-# --- Security & Compliance Gates ---
+# ────────────────────────────────────────────────────────────────────────────
+# Gates
+# ────────────────────────────────────────────────────────────────────────────
 
 
-def evaluate_security_gate(project_dir: str, logger) -> GateEvaluation:
-    """Evaluate security gate by running ICDEV™ security scans."""
-    logger.info("Evaluating security gate...")
-    gates = []
-
-    # SAST check
+def _gate_from_probe(
+    name: str,
+    severity: str,
+    nist_control: str,
+    probe: callable,  # type: ignore[valid-type]
+) -> GateResult:
     try:
+        return probe()
+    except Exception as exc:
+        return GateResult(
+            gate_name=name,
+            passed=False,
+            severity="warning",
+            details=f"{name} unavailable: {exc}",
+            nist_control=nist_control,
+        )
+
+
+def evaluate_security_gate(
+    project_dir: str,
+    logger: Optional[logging.Logger] = None,
+) -> GateEvaluation:
+    log = _logger_for(logger)
+    log.info("orchestrator: security gate")
+    gates: List[GateResult] = []
+
+    def _sast_probe() -> GateResult:
         from tools.security.sast_runner import run_sast
-
         sast_result = run_sast(project_dir)
-        high_findings = sast_result.get("high_count", 0) if isinstance(sast_result, dict) else 0
-        gates.append(
-            GateResult(
-                gate_name="SAST (Bandit)",
-                passed=high_findings == 0,
-                severity="blocking",
-                details=f"{high_findings} HIGH findings",
-                nist_control="SA-11",
-            )
+        high = (
+            sast_result.get("high_count", 0)
+            if isinstance(sast_result, dict) else 0
         )
-    except (ImportError, Exception) as e:
-        gates.append(
-            GateResult(
-                gate_name="SAST (Bandit)",
-                passed=False,
-                severity="warning",
-                details=f"SAST unavailable: {e}",
-                nist_control="SA-11",
-            )
+        return GateResult(
+            gate_name="SAST (Bandit)",
+            passed=high == 0,
+            severity="blocking",
+            details=f"{high} HIGH findings",
+            nist_control="SA-11",
         )
 
-    # Secret detection check
-    try:
+    gates.append(
+        _gate_from_probe("SAST (Bandit)", "blocking", "SA-11", _sast_probe)
+    )
+
+    def _secret_probe() -> GateResult:
         from tools.security.secret_detector import scan_directory
-
         secrets = scan_directory(project_dir)
-        secret_count = len(secrets) if isinstance(secrets, list) else 0
-        gates.append(
-            GateResult(
-                gate_name="Secret Detection",
-                passed=secret_count == 0,
-                severity="blocking",
-                details=f"{secret_count} secrets detected",
-                nist_control="IA-5",
-            )
-        )
-    except (ImportError, Exception) as e:
-        gates.append(
-            GateResult(
-                gate_name="Secret Detection",
-                passed=False,
-                severity="warning",
-                details=f"Secret detection unavailable: {e}",
-                nist_control="IA-5",
-            )
+        n = len(secrets) if isinstance(secrets, list) else 0
+        return GateResult(
+            gate_name="Secret Detection",
+            passed=n == 0,
+            severity="blocking",
+            details=f"{n} secrets detected",
+            nist_control="IA-5",
         )
 
-    # OpenClaw bridge gate (feature-flagged)
+    gates.append(
+        _gate_from_probe("Secret Detection", "blocking", "IA-5", _secret_probe)
+    )
+
     if os.environ.get("ICDEV_OPENCLAW_ENABLED", "").lower() in ("true", "1", "yes"):
-        try:
+        def _openclaw_probe() -> GateResult:
             from tools.marketplace.openclaw_bridge import gate_check
-
             oc_result = gate_check()
             oc_passed = oc_result.get("passed", False)
-            oc_failures = oc_result.get("blocking_failures", [])
-            gates.append(
-                GateResult(
-                    gate_name="OpenClaw Bridge",
-                    passed=oc_passed,
-                    severity="blocking",
-                    details=f"{'PASS' if oc_passed else 'FAIL'}: {', '.join(oc_failures) if oc_failures else 'all checks passed'}",
-                    nist_control="SA-12",
-                )
+            failures = oc_result.get("blocking_failures") or []
+            details = (
+                "PASS" if oc_passed
+                else f"FAIL: {', '.join(failures) if failures else 'no detail'}"
             )
-        except (ImportError, Exception) as e:
-            gates.append(
-                GateResult(
-                    gate_name="OpenClaw Bridge",
-                    passed=True,  # Don't block if bridge unavailable
-                    severity="warning",
-                    details=f"OpenClaw bridge unavailable: {e}",
-                    nist_control="SA-12",
-                )
+            return GateResult(
+                gate_name="OpenClaw Bridge",
+                passed=oc_passed,
+                severity="blocking",
+                details=details,
+                nist_control="SA-12",
             )
+
+        gates.append(
+            _gate_from_probe(
+                "OpenClaw Bridge", "blocking", "SA-12", _openclaw_probe,
+            )
+        )
 
     overall = all(g.passed for g in gates if g.severity == "blocking")
-
     return GateEvaluation(
         gate_type="code_review",
         overall_pass=overall,
@@ -802,39 +820,36 @@ def evaluate_security_gate(project_dir: str, logger) -> GateEvaluation:
     )
 
 
-def evaluate_compliance_gate(project_id: str, project_dir: str, logger) -> GateEvaluation:
-    """Evaluate compliance gate (STIG, CUI markings, SBOM)."""
-    logger.info("Evaluating compliance gate...")
-    gates = []
+def evaluate_compliance_gate(
+    project_id: str,
+    project_dir: Optional[str] = None,
+    logger: Optional[logging.Logger] = None,
+) -> GateEvaluation:
+    log = _logger_for(logger)
+    log.info("orchestrator: compliance gate")
+    gates: List[GateResult] = []
+    target_dir = project_dir or "."
 
-    # CUI marking check
-    try:
+    def _cui_probe() -> GateResult:
         from tools.compliance.cui_marker import verify_directory
+        cui_result = verify_directory(target_dir)
+        unmarked = (
+            cui_result.get("unmarked_count", 0)
+            if isinstance(cui_result, dict) else 0
+        )
+        return GateResult(
+            gate_name="CUI Markings",
+            passed=unmarked == 0,
+            severity="blocking",
+            details=f"{unmarked} files missing CUI markings",
+            nist_control="SC-16",
+        )
 
-        cui_result = verify_directory(project_dir)
-        unmarked = cui_result.get("unmarked_count", 0) if isinstance(cui_result, dict) else 0
-        gates.append(
-            GateResult(
-                gate_name="CUI Markings",
-                passed=unmarked == 0,
-                severity="blocking",
-                details=f"{unmarked} files missing CUI markings",
-                nist_control="SC-16",
-            )
-        )
-    except (ImportError, Exception) as e:
-        gates.append(
-            GateResult(
-                gate_name="CUI Markings",
-                passed=False,
-                severity="warning",
-                details=f"CUI checker unavailable: {e}",
-                nist_control="SC-16",
-            )
-        )
+    gates.append(
+        _gate_from_probe("CUI Markings", "blocking", "SC-16", _cui_probe)
+    )
 
     overall = all(g.passed for g in gates if g.severity == "blocking")
-
     return GateEvaluation(
         gate_type="merge",
         overall_pass=overall,
@@ -845,7 +860,9 @@ def evaluate_compliance_gate(project_id: str, project_dir: str, logger) -> GateE
     )
 
 
-# --- Summary Report ---
+# ────────────────────────────────────────────────────────────────────────────
+# Summary
+# ────────────────────────────────────────────────────────────────────────────
 
 
 def generate_summary(
@@ -854,12 +871,9 @@ def generate_summary(
     e2e_results: List[E2ETestResult],
     security_gate: Optional[GateEvaluation],
     compliance_gate: Optional[GateEvaluation],
-    logger,
+    logger: Optional[logging.Logger] = None,
 ) -> str:
-    """Generate comprehensive test summary report.
-
-    Follows ADW log_test_results pattern for structured reporting.
-    """
+    log = _logger_for(logger)
     unit_passed = sum(1 for r in unit_results if r.passed)
     unit_failed = len(unit_results) - unit_passed
     bdd_passed = sum(1 for r in bdd_results if r.passed)
@@ -867,7 +881,7 @@ def generate_summary(
     e2e_passed = sum(1 for r in e2e_results if r.passed)
     e2e_failed = len(e2e_results) - e2e_passed
 
-    lines = [
+    lines: List[str] = [
         "CUI // SP-CTI",
         "",
         "## ICDEV™ Test Run Summary",
@@ -887,16 +901,16 @@ def generate_summary(
         sg_status = "PASS" if security_gate.overall_pass else "FAIL"
         lines.append(f"### Security Gate: {sg_status}")
         for g in security_gate.gates:
-            g_status = "PASS" if g.passed else "FAIL"
-            lines.append(f"  [{g_status}] {g.gate_name}: {g.details}")
+            mark = "PASS" if g.passed else "FAIL"
+            lines.append(f"  [{mark}] {g.gate_name}: {g.details}")
         lines.append("")
 
     if compliance_gate:
         cg_status = "PASS" if compliance_gate.overall_pass else "FAIL"
         lines.append(f"### Compliance Gate: {cg_status}")
         for g in compliance_gate.gates:
-            g_status = "PASS" if g.passed else "FAIL"
-            lines.append(f"  [{g_status}] {g.gate_name}: {g.details}")
+            mark = "PASS" if g.passed else "FAIL"
+            lines.append(f"  [{mark}] {g.gate_name}: {g.details}")
         lines.append("")
 
     total_failures = unit_failed + bdd_failed + e2e_failed
@@ -904,40 +918,216 @@ def generate_summary(
     lines.append(f"### Overall: {overall}")
     lines.append("")
     lines.append("CUI // SP-CTI")
-
     summary = "\n".join(lines)
-    logger.info(summary)
+    log.info(summary)
     return summary
 
 
-# --- Main Entry Point ---
+# ────────────────────────────────────────────────────────────────────────────
+# Coherence + agentic helpers (CLI-only)
+# ────────────────────────────────────────────────────────────────────────────
 
 
-def main():
-    """Main entry point for the test orchestrator."""
+def _run_coherence_check(project_dir: str, log: logging.Logger) -> None:
+    cmd = [
+        sys.executable,
+        "tools/workflow/coherence_checker.py",
+        "--all", "--fix", "--gate", "--json",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=get_safe_subprocess_env(),
+            timeout=_COHERENCE_TIMEOUT_SECONDS,
+            cwd=project_dir,
+        )
+    except FileNotFoundError:
+        log.info("orchestrator: coherence checker not found")
+        return
+    except subprocess.TimeoutExpired:
+        log.warning("orchestrator: coherence check timed out")
+        return
+    except Exception as exc:
+        log.warning("orchestrator: coherence check error: %s", exc)
+        return
+
+    if proc.returncode == 0:
+        log.info("orchestrator: coherence PASS")
+        return
+    log.warning("orchestrator: coherence FAIL (exit %s)", proc.returncode)
+    try:
+        data = json.loads(proc.stdout or "{}")
+        log.warning(
+            "  %s failures, %s warnings",
+            data.get("failed_checks", 0), data.get("warned_checks", 0),
+        )
+    except (json.JSONDecodeError, ValueError):
+        if proc.stderr:
+            log.warning("  %s", proc.stderr[:300])
+
+
+def _run_agentic_tests(
+    project_dir: str, log: logging.Logger,
+) -> List[TestResult]:
+    project_path = Path(project_dir)
+    cards_dir = project_path / "tools" / "agent" / "cards"
+    if not cards_dir.exists():
+        log.info("orchestrator: no agent cards directory, skipping agentic")
+        return []
+
+    templates_dir = project_path / "tools" / "builder" / "agentic_test_templates"
+    if not templates_dir.exists():
+        log.info("orchestrator: no agentic templates dir, skipping")
+        return []
+
+    results: List[TestResult] = []
+    log.info("orchestrator: agentic templates dir found")
+
+    py_tests = list(templates_dir.glob("test_*.py"))
+    if py_tests:
+        cmd = [
+            sys.executable, "-m", "pytest",
+            str(templates_dir), "-v", "--tb=short", "--no-header",
+        ]
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=get_safe_subprocess_env(),
+                timeout=_AGENTIC_TIMEOUT_SECONDS,
+                cwd=project_dir,
+            )
+        except subprocess.TimeoutExpired:
+            log.warning("orchestrator: agentic tests timed out")
+            return results
+        except Exception as exc:
+            log.warning("orchestrator: agentic tests error: %s", exc)
+            return results
+
+        for line in (proc.stdout or "").splitlines():
+            if "PASSED" in line or "FAILED" in line:
+                passed_flag = "PASSED" in line
+                t_name = (
+                    line.split("::")[1].split(" ")[0]
+                    if "::" in line else line.strip()
+                )
+                results.append(TestResult(
+                    test_name=f"agentic:{t_name}",
+                    passed=passed_flag,
+                    execution_command=" ".join(cmd),
+                    test_purpose="Agentic infrastructure test",
+                    error=None if passed_flag else line.strip(),
+                    test_type="unit",
+                    nist_controls=["SA-11", "SC-7"],
+                ))
+        a_passed = sum(1 for r in results if r.passed)
+        log.info("orchestrator: agentic %d/%d passed", a_passed, len(results))
+
+    feature_files = list(templates_dir.glob("*.feature"))
+    if feature_files:
+        results.append(TestResult(
+            test_name="agentic_bdd_templates",
+            passed=True,
+            execution_command="glob agentic_test_templates/*.feature",
+            test_purpose="Agentic BDD test templates discovered",
+            test_type="bdd",
+            nist_controls=["SA-11"],
+        ))
+
+    return results
+
+
+def _run_acceptance_validation(
+    args: Any,
+    state: TestRunState,
+    run_dir: Path,
+    log: logging.Logger,
+) -> Optional[Any]:
+    try:
+        from tools.testing.acceptance_validator import validate_acceptance
+    except Exception as exc:
+        log.warning("orchestrator: acceptance validation unavailable: %s", exc)
+        return None
+
+    state_file = run_dir / "state.json"
+    try:
+        with open(state_file, "w", encoding="utf-8") as fh:
+            json.dump(state.model_dump(), fh, indent=2, default=str)
+    except OSError as exc:
+        log.warning("orchestrator: cannot persist interim state: %s", exc)
+
+    try:
+        report = validate_acceptance(
+            plan_path=args.plan,
+            test_results_path=str(state_file) if args.plan else None,
+            base_url=args.base_url,
+            pages=args.pages,
+        )
+    except Exception as exc:
+        log.warning("orchestrator: acceptance validator raised: %s", exc)
+        return None
+
+    if getattr(report, "overall_pass", False):
+        log.info(
+            "orchestrator: acceptance V&V PASS — %s criteria, %s pages",
+            getattr(report, "criteria_verified", 0),
+            getattr(report, "pages_checked", 0),
+        )
+    else:
+        log.warning(
+            "orchestrator: acceptance V&V FAIL — %s failures, %s page errors",
+            getattr(report, "criteria_failed", 0),
+            getattr(report, "pages_with_errors", 0),
+        )
+    return report
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# CLI
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="ICDEV™ Test Orchestrator")
-    parser.add_argument("--project-dir", required=True, help="Path to project under test")
+    parser.add_argument("--project-dir", required=True,
+                        help="Path to project under test")
     parser.add_argument("--project-id", help="ICDEV™ project UUID")
-    parser.add_argument("--skip-e2e", action="store_true", help="Skip E2E browser tests")
-    parser.add_argument("--skip-sandbox", action="store_true", help="Skip LLM sandbox isolation check")
-    parser.add_argument("--skip-security", action="store_true", help="Skip security gate")
-    parser.add_argument("--skip-compliance", action="store_true", help="Skip compliance gate")
-    parser.add_argument("--skip-acceptance", action="store_true", help="Skip acceptance V&V gate")
-    parser.add_argument("--plan", help="Plan file for acceptance criteria validation (V&V)")
-    parser.add_argument("--base-url", help="Base URL for page content checks (e.g., http://localhost:5000)")
-    parser.add_argument("--pages", nargs="*", help="Page paths to check for acceptance V&V")
-    parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    args = parser.parse_args()
+    parser.add_argument("--skip-e2e", action="store_true")
+    parser.add_argument("--skip-sandbox", action="store_true")
+    parser.add_argument("--skip-security", action="store_true")
+    parser.add_argument("--skip-compliance", action="store_true")
+    parser.add_argument("--skip-acceptance", action="store_true")
+    parser.add_argument("--plan", help="Plan file for acceptance V&V")
+    parser.add_argument("--base-url", help="Base URL for page checks")
+    parser.add_argument("--pages", nargs="*",
+                        help="Page paths to check for acceptance V&V")
+    parser.add_argument("--json", action="store_true")
+    return parser
 
-    # Initialize run
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = _build_parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit:
+        # argparse exits on missing required args; mirror that intent
+        # without bypassing the caller's exit handler in tests.
+        raise
+
     run_id = make_run_id()
     logger = setup_logger(run_id, "test_orchestrator")
     run_dir = ensure_run_dir(run_id)
 
-    logger.info(f"ICDEV™ Test Orchestrator starting — Run ID: {run_id}")
-    logger.info(f"Project directory: {args.project_dir}")
+    logger.info("ICDEV™ Test Orchestrator — run_id=%s", run_id)
+    logger.info("project_dir=%s", args.project_dir)
 
-    # Initialize state
     state = TestRunState(
         run_id=run_id,
         project_id=args.project_id,
@@ -945,251 +1135,129 @@ def main():
         started_at=timestamp_iso(),
     )
 
-    # Step 1: Health check
+    # Step 1 — health check (best-effort)
     logger.info("\n=== Step 1: Health Check ===")
-    from tools.testing.health_check import run_health_check
+    try:
+        from tools.testing.health_check import run_health_check
+        health = run_health_check()
+        if not health.success:
+            logger.warning("orchestrator: health warnings: %s", health.errors)
+    except Exception as exc:
+        logger.warning("orchestrator: health check raised: %s", exc)
 
-    health = run_health_check()
-    if not health.success:
-        logger.warning(f"Health check warnings: {health.errors}")
-        # Continue anyway — non-critical issues shouldn't block testing
-
-    # Step 2: Unit + BDD tests with retry
+    # Step 2 — unit + BDD
     logger.info("\n=== Step 2: Unit + BDD Tests ===")
-    all_results, total_passed, total_failed = run_tests_with_resolution(
+    all_results, _total_passed, total_failed = run_tests_with_resolution(
         args.project_dir,
-        run_id,
-        logger,
+        run_id=run_id,
+        logger=logger,
         skip_sandbox=args.skip_sandbox,
     )
-
     unit_results = [r for r in all_results if r.test_type == "unit"]
     bdd_results = [r for r in all_results if r.test_type == "bdd"]
-    [r for r in all_results if r.test_type == "security"]
-
     state.unit_passed = sum(1 for r in unit_results if r.passed)
     state.unit_failed = len(unit_results) - state.unit_passed
     state.bdd_passed = sum(1 for r in bdd_results if r.passed)
     state.bdd_failed = len(bdd_results) - state.bdd_passed
 
-    # Step 3: E2E tests (skip if unit tests failed or --skip-e2e)
-    e2e_results = []
+    # Step 3 — E2E
+    e2e_results: List[E2ETestResult] = []
     if total_failed > 0:
-        logger.info("Skipping E2E tests due to unit/BDD test failures")
+        logger.info("orchestrator: skipping E2E (unit/BDD failed)")
     elif args.skip_e2e:
-        logger.info("Skipping E2E tests (--skip-e2e flag)")
+        logger.info("orchestrator: skipping E2E (--skip-e2e)")
     else:
         logger.info("\n=== Step 3: E2E Tests ===")
-        e2e_results, e2e_passed, e2e_failed = run_e2e_tests_with_resolution(run_id, logger)
+        e2e_results, e2e_passed, e2e_failed = run_e2e_tests_with_resolution(
+            run_id, logger,
+        )
         state.e2e_passed = e2e_passed
         state.e2e_failed = e2e_failed
 
-    # Step 4: Security gate
-    security_gate = None
+    # Step 4 — security gate
+    security_gate: Optional[GateEvaluation] = None
     if not args.skip_security:
         logger.info("\n=== Step 4: Security Gate ===")
         security_gate = evaluate_security_gate(args.project_dir, logger)
         state.security_gate_passed = security_gate.overall_pass
 
-    # Step 5: Compliance gate
-    compliance_gate = None
+    # Step 5 — compliance gate
+    compliance_gate: Optional[GateEvaluation] = None
     if not args.skip_compliance and args.project_id:
         logger.info("\n=== Step 5: Compliance Gate ===")
-        compliance_gate = evaluate_compliance_gate(args.project_id, args.project_dir, logger)
+        compliance_gate = evaluate_compliance_gate(
+            args.project_id, args.project_dir, logger,
+        )
         state.compliance_gate_passed = compliance_gate.overall_pass
 
-    # Step 5b: Coherence check
+    # Step 5b — coherence
     logger.info("\n=== Step 5b: Coherence Check ===")
-    try:
-        coherence_cmd = [
-            sys.executable,
-            "tools/workflow/coherence_checker.py",
-            "--all",
-            "--fix",
-            "--gate",
-            "--json",
-        ]
-        coherence_proc = subprocess.run(
-            coherence_cmd,
-            capture_output=True,
-            text=True,
-            env=get_safe_subprocess_env(),
-            timeout=120,
-            cwd=args.project_dir,
-        )
-        if coherence_proc.returncode == 0:
-            logger.info("Coherence check: PASS")
-        else:
-            logger.warning(f"Coherence check: FAIL (exit {coherence_proc.returncode})")
-            try:
-                coherence_data = json.loads(coherence_proc.stdout)
-                failed = coherence_data.get("failed_checks", 0)
-                warned = coherence_data.get("warned_checks", 0)
-                logger.warning(f"  {failed} failures, {warned} warnings")
-            except (json.JSONDecodeError, ValueError):
-                if coherence_proc.stderr:
-                    logger.warning(f"  {coherence_proc.stderr[:300]}")
-    except FileNotFoundError:
-        logger.info("Coherence checker not found, skipping")
-    except subprocess.TimeoutExpired:
-        logger.warning("Coherence check timed out after 120 seconds")
-    except Exception as e:
-        logger.warning(f"Coherence check error: {e}")
+    _run_coherence_check(args.project_dir, logger)
 
-    # Step 6: Agentic tests (conditional — only if agent infrastructure exists)
-    agentic_results = []
-    project_dir_path = Path(args.project_dir)
-    if (project_dir_path / "tools" / "agent" / "cards").exists():
-        logger.info("\n=== Step 6: Agentic Tests ===")
-        agentic_tests_dir = project_dir_path / "tools" / "builder" / "agentic_test_templates"
-        if agentic_tests_dir.exists():
-            logger.info(f"Found agentic test templates: {agentic_tests_dir}")
-            # Run agentic pytest files
-            agentic_py_tests = list(agentic_tests_dir.glob("test_*.py"))
-            if agentic_py_tests:
-                try:
-                    cmd = [
-                        sys.executable,
-                        "-m",
-                        "pytest",
-                        str(agentic_tests_dir),
-                        "-v",
-                        "--tb=short",
-                        "--no-header",
-                    ]
-                    proc = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True,
-                        env=get_safe_subprocess_env(),
-                        timeout=120,
-                        cwd=args.project_dir,
-                    )
-                    for line in proc.stdout.splitlines():
-                        if "PASSED" in line or "FAILED" in line:
-                            passed_flag = "PASSED" in line
-                            t_name = line.split("::")[1].split(" ")[0] if "::" in line else line.strip()
-                            agentic_results.append(
-                                TestResult(
-                                    test_name=f"agentic:{t_name}",
-                                    passed=passed_flag,
-                                    execution_command=" ".join(cmd),
-                                    test_purpose="Agentic infrastructure test",
-                                    error=None if passed_flag else line.strip(),
-                                    test_type="unit",
-                                    nist_controls=["SA-11", "SC-7"],
-                                )
-                            )
-                    a_passed = sum(1 for r in agentic_results if r.passed)
-                    a_failed = len(agentic_results) - a_passed
-                    logger.info(f"Agentic tests: {a_passed} passed, {a_failed} failed")
-                except subprocess.TimeoutExpired:
-                    logger.warning("Agentic tests timed out after 120 seconds")
-                except Exception as e:
-                    logger.warning(f"Agentic tests error: {e}")
+    # Step 6 — agentic
+    logger.info("\n=== Step 6: Agentic Tests ===")
+    agentic_results = _run_agentic_tests(args.project_dir, logger)
 
-            # Discover agentic BDD feature files
-            agentic_features = list(agentic_tests_dir.glob("*.feature"))
-            if agentic_features:
-                logger.info(f"Found {len(agentic_features)} agentic BDD feature templates")
-                agentic_results.append(
-                    TestResult(
-                        test_name="agentic_bdd_templates",
-                        passed=True,
-                        execution_command="glob tools/builder/agentic_test_templates/*.feature",
-                        test_purpose="Agentic BDD test templates discovered",
-                        test_type="bdd",
-                        nist_controls=["SA-11"],
-                    )
-                )
-        else:
-            logger.info("No agentic test templates directory found, skipping")
-    else:
-        logger.info("No agent cards directory found, skipping agentic tests")
-
-    # Step 7: Acceptance Criteria Validation (V&V)
-    acceptance_report = None
+    # Step 7 — acceptance V&V
     if not args.skip_acceptance:
-        logger.info("\n=== Step 7: Acceptance Criteria Validation (V&V) ===")
-        try:
-            from tools.testing.acceptance_validator import validate_acceptance
-
-            state_file_for_vv = run_dir / "state.json"
-            # Save interim state so acceptance validator can reference it
-            with open(state_file_for_vv, "w") as f:
-                json.dump(state.model_dump(), f, indent=2, default=str)
-
-            acceptance_report = validate_acceptance(
-                plan_path=args.plan,
-                test_results_path=str(state_file_for_vv) if args.plan else None,
-                base_url=args.base_url,
-                pages=args.pages,
-            )
-            if acceptance_report.overall_pass:
-                logger.info(
-                    f"Acceptance V&V: PASS — {acceptance_report.criteria_verified} criteria verified, "
-                    f"{acceptance_report.pages_checked} pages checked"
-                )
-            else:
-                logger.warning(
-                    f"Acceptance V&V: FAIL — {acceptance_report.criteria_failed} criteria failed, "
-                    f"{acceptance_report.pages_with_errors} pages with errors"
-                )
-        except (ImportError, Exception) as e:
-            logger.warning(f"Acceptance validation unavailable: {e}")
+        logger.info("\n=== Step 7: Acceptance V&V ===")
+        _run_acceptance_validation(args, state, run_dir, logger)
     else:
-        logger.info("Skipping acceptance validation (--skip-acceptance flag)")
+        logger.info("orchestrator: skipping acceptance (--skip-acceptance)")
 
-    # Step 8: Summary
+    # Step 8 — summary
     logger.info("\n=== Step 8: Summary ===")
     state.completed_at = timestamp_iso()
 
-    # Merge agentic results into unit/bdd buckets for summary
     agentic_unit = [r for r in agentic_results if r.test_type == "unit"]
     agentic_bdd = [r for r in agentic_results if r.test_type == "bdd"]
-    all_unit_for_summary = unit_results + agentic_unit
-    all_bdd_for_summary = bdd_results + agentic_bdd
-
     summary = generate_summary(
-        all_unit_for_summary,
-        all_bdd_for_summary,
+        unit_results + agentic_unit,
+        bdd_results + agentic_bdd,
         e2e_results,
         security_gate,
         compliance_gate,
         logger,
     )
 
-    # Save state
     state_file = run_dir / "state.json"
-    with open(state_file, "w") as f:
-        json.dump(state.model_dump(), f, indent=2, default=str)
+    try:
+        with open(state_file, "w", encoding="utf-8") as fh:
+            json.dump(state.model_dump(), fh, indent=2, default=str)
+    except OSError as exc:
+        logger.warning("orchestrator: state save failed: %s", exc)
 
-    # Save summary
     summary_file = run_dir / "summary.md"
-    with open(summary_file, "w") as f:
-        f.write(summary)
+    try:
+        with open(summary_file, "w", encoding="utf-8") as fh:
+            fh.write(summary)
+    except OSError as exc:
+        logger.warning("orchestrator: summary save failed: %s", exc)
 
-    logger.info(f"\nResults saved to: {run_dir}")
+    logger.info("orchestrator: results saved to %s", run_dir)
 
-    # Record in audit trail
+    # Best-effort audit row
     try:
         from tools.audit.audit_logger import log_event
-
         log_event(
             event_type="test.complete",
             actor="test-orchestrator",
-            action=f"Test run {run_id}: {state.unit_passed + state.bdd_passed + state.e2e_passed} passed, "
-            f"{state.unit_failed + state.bdd_failed + state.e2e_failed} failed",
+            action=(
+                f"Test run {run_id}: "
+                f"{state.unit_passed + state.bdd_passed + state.e2e_passed} passed, "
+                f"{state.unit_failed + state.bdd_failed + state.e2e_failed} failed"
+            ),
             project_id=args.project_id,
         )
-    except (ImportError, Exception):
-        pass  # Audit logging is best-effort
+    except Exception:
+        pass
 
-    # Exit code (include agentic test failures)
     agentic_failed = sum(1 for r in agentic_results if not r.passed)
-    total_failures = state.unit_failed + state.bdd_failed + state.e2e_failed + agentic_failed
-    sys.exit(0 if total_failures == 0 else 1)
+    total_failures = (
+        state.unit_failed + state.bdd_failed + state.e2e_failed + agentic_failed
+    )
+    return 0 if total_failures == 0 else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
