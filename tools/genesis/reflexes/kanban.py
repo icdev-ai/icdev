@@ -323,12 +323,124 @@ def _create_worktree(task_id: str) -> Optional[str]:
     return None  # Fallback — caller uses BASE_DIR
 
 
+def _merge_worktree_to_main(task_id: str) -> bool:
+    """Fast-forward merge the kanban task branch into the parent branch
+    before cleanup so dependent tasks see each other's commits.
+
+    Returns True if merge succeeded (or branch had no commits to merge),
+    False if merge was non-fast-forward or encountered an error. On
+    failure, the branch is PRESERVED (not deleted) so the user can merge
+    manually.
+
+    Rationale: prior behavior hard-deleted the branch on cleanup, losing
+    all commits. This fix ensures successful task work is preserved on
+    main; dependent multi-phase work (e.g. Internal Awareness Engine
+    phases 1..6) now builds incrementally instead of each phase starting
+    from the same main HEAD.
+    """
+    import subprocess as _sp
+
+    branch_name = f"kanban/{task_id}"
+
+    # 1) Is there anything to merge?
+    try:
+        result = _sp.run(
+            ["git", "log", "main.." + branch_name, "--oneline"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            # Branch doesn't exist or main branch name is different —
+            # treat as no-op and let caller delete
+            return True
+        if not result.stdout.strip():
+            return True  # Nothing to merge
+    except Exception as exc:
+        logger.warning("Pre-merge commit check failed for %s: %s", task_id, exc)
+        return False
+
+    # 2) Determine current branch on main worktree so we can restore it
+    try:
+        cur_branch_proc = _sp.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        cur_branch = (cur_branch_proc.stdout or "main").strip() or "main"
+    except Exception:
+        cur_branch = "main"
+
+    # 3) Checkout main and fast-forward merge
+    try:
+        co = _sp.run(
+            ["git", "checkout", "main"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if co.returncode != 0:
+            logger.warning(
+                "Could not checkout main for merge of %s: %s",
+                task_id,
+                co.stderr[:200],
+            )
+            return False
+
+        merge = _sp.run(
+            ["git", "merge", "--ff-only", branch_name],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if merge.returncode != 0:
+            # Non-fast-forward — main moved ahead. Leave branch in place
+            # for manual merge, try to restore the original branch on
+            # main worktree, and report failure.
+            logger.warning(
+                "Non-fast-forward merge for %s: %s — branch preserved",
+                task_id,
+                merge.stderr[:200],
+            )
+            if cur_branch != "main":
+                _sp.run(
+                    ["git", "checkout", cur_branch],
+                    cwd=str(BASE_DIR),
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            return False
+
+        logger.info(
+            "Merged kanban/%s to main (fast-forward, %d commits)",
+            task_id,
+            len(result.stdout.strip().splitlines()),
+        )
+        return True
+    except Exception as exc:
+        logger.warning("Merge to main failed for %s: %s", task_id, exc)
+        return False
+
+
 def _cleanup_worktree(task_id: str):
-    """Remove the worktree and branch after task completion."""
+    """Merge the kanban task branch to main (fast-forward) then remove
+    the worktree. If merge fails, the branch is preserved for manual
+    review and the worktree is still cleaned up (disk hygiene).
+    """
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
     worktree_path = WORKTREE_BASE / task_id
+
+    # Attempt merge first — if this fails, the branch stays around so
+    # the user can merge manually (their commits are NOT lost).
+    merged_ok = _merge_worktree_to_main(task_id)
 
     try:
         if worktree_path.exists():
@@ -339,15 +451,22 @@ def _cleanup_worktree(task_id: str):
                 text=True,
                 timeout=30,
             )
-        # Delete the branch too
-        _sp.run(
-            ["git", "branch", "-D", branch_name],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        logger.info("Cleaned up worktree for %s", task_id)
+        # Only delete the branch if merge succeeded; otherwise PRESERVE
+        # it so the user doesn't lose commits.
+        if merged_ok:
+            _sp.run(
+                ["git", "branch", "-D", branch_name],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            logger.info("Cleaned up worktree + merged branch for %s", task_id)
+        else:
+            logger.warning(
+                "Worktree removed but branch kanban/%s PRESERVED for manual merge",
+                task_id,
+            )
     except Exception as exc:
         logger.warning("Worktree cleanup failed for %s: %s", task_id, exc)
 
