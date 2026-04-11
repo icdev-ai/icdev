@@ -8,6 +8,12 @@ migration files with dual-engine directives (@sqlite-only, @pg-only).
 
 D151: Baseline migration (001) extracted from init_icdev_db.py. The init
 script is preserved for backward compatibility.
+
+D152: Migration numbering is strictly sequential with no intentional gaps.
+Verified 2026-04-11: migrations 001–014 are all present and applied.
+The sequence 010, 011, 012, 013 (finding_approvals), 014 is continuous.
+Any apparent gap (e.g. 013 missing) indicates the observer's working copy
+predates when that migration was committed — not an intentional skip.
 """
 
 import hashlib
