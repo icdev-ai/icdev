@@ -37,6 +37,16 @@ python tools/dx/companion.py --sync --write --json
 
 # Coherence check
 python tools/workflow/coherence_checker.py --all --fix --gate
+
+# Internal Awareness Engine (Phase 1-6, D-AWARE)
+python tools/awareness/component_indexer.py --scan --json        # Refresh kg-icdev-self-awareness nodes
+python tools/awareness/health_prober.py --run-all --json         # Probe routes, imports, coherence
+python tools/awareness/drift_detector.py --detect --json         # Detect regressions vs baseline
+python tools/awareness/gap_detector.py --detect --json           # Surface structural gaps
+python tools/awareness/suggested_card_writer.py --write --json   # Promote predictions to kanban
+python -c "from tools.genesis.reflexes.awareness import run; run({}, None)"  # Full 5-phase cycle
+# UI: http://localhost:5050/components-map (visual map) + /ask-icdev (Q&A chat)
+# Config: args/awareness_config.yaml — 3h cadence, 7 gap rules, 0.7 threshold
 ```
 
 ### Python Dependencies
