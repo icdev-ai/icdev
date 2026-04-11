@@ -1,6 +1,6 @@
 ---
 name: icdev-review
-description: "Enforces pre-merge code review gates by running tests, security scans, STIG checks, CUI marking verification, SBOM currency, and lint, then recording the gate decision in the audit trail. Use when preparing a merge request, verifying all security and compliance gates before a merge, or running a structured code review for an ICDEV™ project."
+description: Enforce code review gates with security checks, compliance validation, and merge readiness assessment
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -76,6 +76,13 @@ Log review decision in audit trail with:
 - Decision rationale
 
 ### 10. Output Summary
+Display:
+- Gate results table
+- Overall PASS/FAIL
+- If FAIL: specific items to fix before re-review
+- If PASS: "Ready for merge. Proceed with /icdev-deploy"
+
+### 11. Output Summary
 Display:
 - Gate results table
 - Overall PASS/FAIL

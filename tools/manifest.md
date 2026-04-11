@@ -1809,3 +1809,9 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Adapter Base | tools\agents\adapter_base.py | Auto-registered: agents/adapter_base.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Promote Next Phase | tools\awareness\promote_next_phase.py | Auto-registered: awareness/promote_next_phase.py | --json | JSON |
