@@ -210,8 +210,14 @@ if _CANVAS_KG_ENABLED:
         _HAS_CANVAS_KG = True
     except ImportError:
         _HAS_CANVAS_KG = False
-# D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
-_GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
+# D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded.
+# Opt-in: default is OFF. Operators set ICDEV_GOVCON_ENABLED=true to enable.
+# Air-gap installs (ICDEV_AIRGAP=true) force this off regardless so the
+# GovCon Python modules are never imported, not just route-blocked.
+_GOVCON_ENABLED = (
+    os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() == "true"
+    and not _AIRGAP_MODE
+)
 _HAS_GOVCON = False
 if _GOVCON_ENABLED:
     try:
