@@ -473,6 +473,22 @@ reflexes:
     min_confidence_for_gkp: 0.4   # Only emit GKP for medium/high confidence predictions
     max_predictions_per_lens: 5
 
+  # ── Internal Awareness Engine (D-AWARE-1 through D-AWARE-5) ─────────────────
+
+  awareness:
+    enabled: true
+    risk_tier: green
+    schedule: "every 3h"
+    interval_seconds: 10800  # 3 hours — user-approved cadence
+    cooldown_minutes: 60     # Minimum gap between consecutive cycles
+    description: "Internal Awareness Engine — index components, probe health, detect drift, scan gaps, promote suggested kanban cards"
+    success_metric:
+      name: awareness_cycle_complete
+      threshold: 0
+      operator: gte  # 0 = cycle ran (always succeeds — findings are informational)
+    promotion_threshold: 0.7  # Oracle confidence threshold for kanban card creation
+    config_path: args/awareness_config.yaml  # Full config — probes, gaps, oracle, narrative
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

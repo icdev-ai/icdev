@@ -320,6 +320,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "oracle_convergence_events",
         "oracle_predictions",
         "oracle_remediation_proposals",
+        # Phase 4 (Internal Awareness) — Q&A messages are append-only (NIST AU)
+        "icdev_qa_messages",
+        # Awareness run log + health snapshots (NIST AU, append-only)
+        "awareness_run_log",
+        "awareness_component_health",
     ]
 
     if tool_name == "Bash":

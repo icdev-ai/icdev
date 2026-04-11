@@ -137,6 +137,22 @@ GenesisDaemon (tools/genesis/daemon.py)
 - **Metric:** `mttr_reduction < 0` (MTTR decreased)
 - **Rate limit:** Max 5 auto-heals/hour, 10-min cooldown per target
 
+#### (new) Awareness (every 3h)
+- **What:** Internal Awareness Engine — enumerate all ICDEV components, probe health, detect regressions, scan structural gaps, promote Suggested kanban cards
+- **Tools:** `component_indexer.py` → `health_prober.py` → `drift_detector.py` → `gap_detector.py` → `suggested_card_writer.py`
+- **Output:** 5 rows in `awareness_run_log` per cycle; `oracle_predictions` rows; `kanban_tasks` (status=suggested) for confidence ≥ 0.7
+- **Metric:** `awareness_cycle_complete >= 0` (always informational — never fails the daemon)
+- **LLM:** Zero in hot path. Optional narration (Scanner tier) only when `/components-map?narrate=true` is requested.
+- **Cadence:** 3 hours (10 800 s). 60-minute cooldown between cycles.
+- **Enablement:** Reads `.env` flags at cycle start. If flags changed since last cycle → full re-index. Disabled modules are indexed (dimmed) but not probed.
+- **Config:** `args/awareness_config.yaml` (probes, gaps, oracle, narrative settings)
+- **Run manually:**
+  ```bash
+  python tools/genesis/daemon.py --reflex awareness --json
+  ```
+
+### YELLOW Tier (reversible writes, sandbox + rollback)
+
 ### ORANGE Tier (code mutation, human review required)
 
 #### 12. Evolve (nightly 02:00)

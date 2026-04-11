@@ -4172,6 +4172,456 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    # ----------------------------------------------------------------
+    # /api/components-map/ask + /ask-icdev chat page (Phase 4)
+    # ----------------------------------------------------------------
+    # Unified Q&A endpoint. Parallel fetch from:
+    #   * RAG retriever (text hits from rag_chunks)
+    #   * GraphRAG (kg_nodes + kg_edges under internal_awareness profile)
+    #   * awareness_component_health (latest probe status for matching nodes)
+    #   * kanban_tasks + oracle_predictions (suggested_next_actions)
+    # Narration is opt-in via `narrate=true` — falls back to raw
+    # evidence if the LLM router is unavailable (air-gap safe).
+
+    def _cm_rag_search(query: str, top_k: int = 10):
+        """Run RAG search; return [] on failure (air-gap safe)."""
+        try:
+            from tools.rag.retriever import RAGRetriever
+            retriever = RAGRetriever()
+            results = retriever.search(query=query, top_k=top_k)
+            hits = []
+            for r in results:
+                if hasattr(r, "to_dict"):
+                    hits.append(r.to_dict())
+                elif isinstance(r, dict):
+                    hits.append(r)
+                else:
+                    hits.append({"content": str(r)[:400]})
+            return hits
+        except Exception as exc:
+            return [{"error": str(exc)[:200]}]
+
+    def _cm_kg_retrieve(query: str, top_k: int = 10):
+        """Run GraphRAG with the internal_awareness profile."""
+        try:
+            from tools.knowledge_graph.graph_rag import retrieve
+            return retrieve(
+                query=query,
+                profile="internal_awareness",
+                top_k=top_k,
+                compress=False,
+            )
+        except Exception as exc:
+            return {"error": str(exc)[:200], "nodes": [], "edges": []}
+
+    def _cm_health_hits(conn, query: str):
+        """Fetch recent failing health snapshots matching query tokens."""
+        try:
+            rows = conn.execute(
+                "SELECT node_id, probe_type, status, detail, probed_at "
+                "FROM awareness_component_health "
+                "WHERE status IN ('fail', 'error') "
+                "ORDER BY probed_at DESC LIMIT 20"
+            ).fetchall()
+        except Exception:
+            return []
+        results = []
+        q_lower = query.lower()
+        for r in rows:
+            d = dict(r)
+            # Include the hit if the query mentions any part of the
+            # node_id or probe type (loose match — LLM narration or
+            # the client can filter further)
+            hay = (d.get("node_id", "") + " " + d.get("probe_type", "") + " " + (d.get("detail") or "")).lower()
+            score = sum(1 for tok in q_lower.split() if tok in hay)
+            if score > 0 or len(results) < 5:
+                results.append({
+                    "node_id": d["node_id"],
+                    "probe_type": d["probe_type"],
+                    "status": d["status"],
+                    "probed_at": d["probed_at"].isoformat() if hasattr(d["probed_at"], "isoformat") else d["probed_at"],
+                    "detail": d.get("detail", "")[:300],
+                    "score": score,
+                })
+        return results[:10]
+
+    def _cm_suggested_next_actions(conn, query: str):
+        """Return the 10 most recent suggested kanban cards that
+        originated from the internal_awareness lens."""
+        try:
+            rows = conn.execute(
+                "SELECT kt.id, kt.title, kt.priority, kt.task_type, kt.created_at, "
+                "       op.confidence, op.prediction_type "
+                "FROM kanban_tasks kt "
+                "JOIN oracle_predictions op ON op.id = kt.source_prediction_id "
+                "WHERE op.lens_name = 'internal_awareness' AND kt.status = 'suggested' "
+                "ORDER BY kt.created_at DESC LIMIT 10"
+            ).fetchall()
+        except Exception:
+            return []
+        results = []
+        for r in rows:
+            d = dict(r)
+            created = d.get("created_at")
+            results.append({
+                "task_id": d["id"],
+                "title": d["title"],
+                "priority": d["priority"],
+                "task_type": d["task_type"],
+                "confidence": float(d.get("confidence") or 0),
+                "prediction_type": d.get("prediction_type", ""),
+                "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
+            })
+        return results
+
+    def _cm_llm_narrate(query: str, rag_hits, graph_hits, health_hits, suggested):
+        """OPT-IN narration. Uses LLMRouter.invoke() with function=
+        narrative_generation — portable across any Scanner-tier model
+        configured in args/llm_config.yaml. Graceful fallback: returns
+        None if the router is unavailable or the call fails, so the
+        caller can show raw evidence instead.
+        """
+        try:
+            from tools.llm.router import LLMRouter
+        except ImportError:
+            return None
+        try:
+            prompt = (
+                "Synthesize a concise answer (3-6 sentences) to the user's question "
+                "using only the evidence below. Cite sources by their type (rag/graph/health/suggested).\n\n"
+                f"QUESTION: {query}\n\n"
+                f"RAG HITS: {json.dumps(rag_hits, ensure_ascii=False)[:2000]}\n\n"
+                f"GRAPH HITS: {json.dumps(graph_hits, ensure_ascii=False)[:2000]}\n\n"
+                f"HEALTH HITS: {json.dumps(health_hits, ensure_ascii=False)[:1000]}\n\n"
+                f"SUGGESTED ACTIONS: {json.dumps(suggested, ensure_ascii=False)[:500]}\n"
+            )
+            router = LLMRouter()
+            response = router.invoke(
+                function="narrative_generation",
+                prompt=prompt,
+                max_tokens=400,
+            )
+            if isinstance(response, dict):
+                return response.get("content") or response.get("text") or str(response)
+            return str(response) if response else None
+        except Exception:
+            return None
+
+    @app.route("/api/components-map/ask", methods=["POST"])
+    def api_components_map_ask():
+        """Unified Q&A: parallel RAG + GraphRAG + health + suggested."""
+        data = flask_request.get_json(silent=True) or {}
+        query = (data.get("query") or "").strip()
+        narrate = bool(data.get("narrate", False))
+        top_k = int(data.get("top_k", 10))
+        if not query:
+            return jsonify({"error": "query is required"}), 400
+
+        import concurrent.futures as _f
+
+        conn = _get_db()
+        try:
+            with _f.ThreadPoolExecutor(max_workers=4) as ex:
+                rag_fut = ex.submit(_cm_rag_search, query, top_k)
+                kg_fut = ex.submit(_cm_kg_retrieve, query, top_k)
+                # Health + suggested run on the main conn (already open)
+                rag_hits = rag_fut.result(timeout=30)
+                kg_result = kg_fut.result(timeout=30)
+            health_hits = _cm_health_hits(conn, query)
+            suggested = _cm_suggested_next_actions(conn, query)
+        finally:
+            conn.close()
+
+        response = {
+            "query": query,
+            "rag_hits": rag_hits,
+            "graph_hits": {
+                "nodes": kg_result.get("nodes", []) if isinstance(kg_result, dict) else [],
+                "edges": kg_result.get("edges", []) if isinstance(kg_result, dict) else [],
+                "profile": kg_result.get("profile", "internal_awareness") if isinstance(kg_result, dict) else "internal_awareness",
+            },
+            "health_hits": health_hits,
+            "suggested_next_actions": suggested,
+            "narration": None,
+            "narrated": False,
+        }
+
+        if narrate:
+            narration = _cm_llm_narrate(query, rag_hits, response["graph_hits"]["nodes"], health_hits, suggested)
+            if narration:
+                response["narration"] = narration
+                response["narrated"] = True
+
+        # Sanitize any leftover non-JSON types (datetime etc.) by
+        # round-tripping through json with default=str.
+        safe = json.loads(json.dumps(response, default=str))
+        return jsonify(safe)
+
+    # ----------------------------------------------------------------
+    # /ask-icdev — dedicated chat page with persistent sessions
+    # ----------------------------------------------------------------
+
+    def _ensure_ask_icdev_tables(conn):
+        """Create icdev_qa_sessions + icdev_qa_messages on first use.
+
+        Uses ADD COLUMN IF NOT EXISTS for user_id so a previously-
+        created table (from an earlier experiment without this column)
+        gets upgraded in place.
+        """
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS icdev_qa_sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            # Backward-compat: add user_id if the table was created earlier
+            # without it. Postgres supports IF NOT EXISTS on ADD COLUMN;
+            # SQLite does not, so we try/ignore duplicate-column errors.
+            try:
+                conn.execute(
+                    "ALTER TABLE icdev_qa_sessions ADD COLUMN IF NOT EXISTS user_id TEXT"
+                )
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE icdev_qa_sessions ADD COLUMN user_id TEXT")
+                except Exception:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS icdev_qa_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    turn INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    citations_json TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_qa_messages_session ON icdev_qa_messages(session_id, turn)"
+            )
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+    @app.route("/ask-icdev")
+    def ask_icdev_page():
+        """Dedicated ICDEV Q&A chat page."""
+        return render_template("ask_icdev.html")
+
+    @app.route("/api/ask-icdev/sessions", methods=["GET"])
+    def api_ask_icdev_list_sessions():
+        conn = _get_db()
+        try:
+            _ensure_ask_icdev_tables(conn)
+            rows = conn.execute(
+                "SELECT id, title, created_at, updated_at FROM icdev_qa_sessions "
+                "ORDER BY updated_at DESC LIMIT 50"
+            ).fetchall()
+            return jsonify({"sessions": [dict(r) for r in rows]})
+        finally:
+            conn.close()
+
+    @app.route("/api/ask-icdev/sessions", methods=["POST"])
+    def api_ask_icdev_create_session():
+        data = flask_request.get_json(silent=True) or {}
+        import uuid as _uuid
+        session_id = f"qa-{_uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc).isoformat()
+        title = (data.get("title") or "New session")[:200]
+        conn = _get_db()
+        try:
+            _ensure_ask_icdev_tables(conn)
+            # Use only the baseline columns so this works whether the
+            # table is from a fresh create or a legacy version without
+            # user_id. Keep user_id out of the INSERT entirely.
+            conn.execute(
+                "INSERT INTO icdev_qa_sessions (id, title, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (session_id, title, now, now),
+            )
+            conn.commit()
+            return jsonify({"session_id": session_id, "title": title, "created_at": now}), 201
+        finally:
+            conn.close()
+
+    @app.route("/api/ask-icdev/sessions/<session_id>", methods=["GET"])
+    def api_ask_icdev_get_session(session_id):
+        conn = _get_db()
+        try:
+            _ensure_ask_icdev_tables(conn)
+            row = conn.execute(
+                "SELECT id, title, created_at, updated_at FROM icdev_qa_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "session not found"}), 404
+            session = dict(row)
+            rows = conn.execute(
+                "SELECT id, turn, role, content, citations_json, created_at "
+                "FROM icdev_qa_messages WHERE session_id = ? ORDER BY turn ASC",
+                (session_id,),
+            ).fetchall()
+            messages = []
+            for r in rows:
+                d = dict(r)
+                try:
+                    d["citations"] = json.loads(d.pop("citations_json") or "{}")
+                except Exception:
+                    d["citations"] = {}
+                messages.append(d)
+            session["messages"] = messages
+            return jsonify(session)
+        finally:
+            conn.close()
+
+    @app.route("/api/ask-icdev/sessions/<session_id>", methods=["DELETE"])
+    def api_ask_icdev_delete_session(session_id):
+        conn = _get_db()
+        try:
+            _ensure_ask_icdev_tables(conn)
+            conn.execute("DELETE FROM icdev_qa_messages WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM icdev_qa_sessions WHERE id = ?", (session_id,))
+            conn.commit()
+            return jsonify({"deleted": session_id})
+        finally:
+            conn.close()
+
+    @app.route("/api/ask-icdev/sessions/<session_id>/message", methods=["POST"])
+    def api_ask_icdev_post_message(session_id):
+        """Post a user message, run the unified Q&A, persist both turns."""
+        data = flask_request.get_json(silent=True) or {}
+        user_content = (data.get("content") or "").strip()
+        narrate = bool(data.get("narrate", False))
+        if not user_content:
+            return jsonify({"error": "content required"}), 400
+
+        import uuid as _uuid
+        conn = _get_db()
+        try:
+            _ensure_ask_icdev_tables(conn)
+            # Verify session exists
+            session_row = conn.execute(
+                "SELECT id, title FROM icdev_qa_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if not session_row:
+                return jsonify({"error": "session not found"}), 404
+
+            # Get next turn number
+            row = conn.execute(
+                "SELECT COALESCE(MAX(turn), -1) AS max_turn FROM icdev_qa_messages "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            next_turn = (dict(row).get("max_turn", -1) + 1) if row else 0
+
+            now = datetime.now(timezone.utc).isoformat()
+
+            # Persist user turn
+            user_msg_id = f"msg-{_uuid.uuid4().hex[:12]}"
+            conn.execute(
+                "INSERT INTO icdev_qa_messages "
+                "(id, session_id, turn, role, content, citations_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_msg_id, session_id, next_turn, "user", user_content, "{}", now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Run the unified Q&A endpoint internally
+        import concurrent.futures as _f
+        conn = _get_db()
+        try:
+            with _f.ThreadPoolExecutor(max_workers=2) as ex:
+                rag_fut = ex.submit(_cm_rag_search, user_content, 10)
+                kg_fut = ex.submit(_cm_kg_retrieve, user_content, 10)
+                rag_hits = rag_fut.result(timeout=30)
+                kg_result = kg_fut.result(timeout=30)
+            health_hits = _cm_health_hits(conn, user_content)
+            suggested = _cm_suggested_next_actions(conn, user_content)
+        finally:
+            conn.close()
+
+        graph_nodes = kg_result.get("nodes", []) if isinstance(kg_result, dict) else []
+
+        narration = None
+        if narrate:
+            narration = _cm_llm_narrate(user_content, rag_hits, graph_nodes, health_hits, suggested)
+
+        # Build the assistant response content
+        if narration:
+            assistant_content = narration
+        else:
+            # Raw evidence summary when LLM unavailable / disabled
+            parts = [f"Found {len(rag_hits)} text hits and {len(graph_nodes)} graph hits for: {user_content}"]
+            if health_hits:
+                parts.append(f"{len(health_hits)} relevant failing health snapshots.")
+            if suggested:
+                parts.append(f"{len(suggested)} suggested next actions on the kanban board.")
+            if not any([rag_hits, graph_nodes, health_hits, suggested]):
+                parts.append("No evidence found — try a more specific query.")
+            assistant_content = " ".join(parts)
+
+        citations = {
+            "rag_hits": rag_hits[:5],
+            "graph_nodes": graph_nodes[:5],
+            "health_hits": health_hits[:5],
+            "suggested": suggested[:3],
+            "narrated": narration is not None,
+        }
+
+        # Persist assistant turn. Use default=str on json.dumps so
+        # any datetime / unexpected types from the RAG/GraphRAG hits
+        # serialize as their string repr rather than raising.
+        conn = _get_db()
+        try:
+            assistant_msg_id = f"msg-{_uuid.uuid4().hex[:12]}"
+            conn.execute(
+                "INSERT INTO icdev_qa_messages "
+                "(id, session_id, turn, role, content, citations_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    assistant_msg_id,
+                    session_id,
+                    next_turn + 1,
+                    "assistant",
+                    assistant_content,
+                    json.dumps(citations, ensure_ascii=False, default=str),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.execute(
+                "UPDATE icdev_qa_sessions SET updated_at = ? WHERE id = ?",
+                (datetime.now(timezone.utc).isoformat(), session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({
+            "session_id": session_id,
+            "user_turn": next_turn,
+            "assistant_turn": next_turn + 1,
+            "assistant_content": assistant_content,
+            "citations": citations,
+            "narrated": narration is not None,
+        })
+
     @app.route("/api/knowledge-graph/compliance-build", methods=["POST"])
     def api_knowledge_graph_compliance_build():
         """Build compliance crosswalk knowledge graph."""
