@@ -815,16 +815,17 @@ CREATE INDEX IF NOT EXISTS idx_gkp_type ON genesis_gkp(artifact_type);
 CREATE INDEX IF NOT EXISTS idx_gkp_status ON genesis_gkp(promotion_status);
 
 CREATE TABLE IF NOT EXISTS kanban_tasks (
-    id                  TEXT PRIMARY KEY,
-    title               TEXT NOT NULL,
-    description         TEXT,
-    task_type           TEXT DEFAULT 'chore',
-    priority            TEXT DEFAULT 'low',
-    status              TEXT DEFAULT 'backlog',
-    scheduled_at        TEXT,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    depends_on_task_id  TEXT REFERENCES kanban_tasks(id)
+    id                   TEXT PRIMARY KEY,
+    title                TEXT NOT NULL,
+    description          TEXT,
+    task_type            TEXT DEFAULT 'chore',
+    priority             TEXT DEFAULT 'low',
+    status               TEXT DEFAULT 'backlog',
+    scheduled_at         TEXT,
+    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    source_prediction_id TEXT,
+    depends_on_task_id   TEXT REFERENCES kanban_tasks(id)
 );
 CREATE INDEX IF NOT EXISTS idx_kanban_depends ON kanban_tasks(depends_on_task_id);
 
