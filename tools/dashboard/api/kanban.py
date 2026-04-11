@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection
 from tools.dashboard.sse_manager import sse_manager
 
@@ -28,6 +29,14 @@ def list_tasks():
     confidence value and proposed_action from the originating prediction.
     """
     status_filter = request.args.get("status")
+    # Optional sort override. For the Suggested lane operators want to rank
+    # by oracle confidence or by the derived "value" score (confidence ×
+    # rule_weight × dedup_boost). `created_at` preserves the historical
+    # "most recent first" behavior. The sort applies after fetch for
+    # `value` and `confidence` because value is computed client-side by
+    # annotate_tasks_with_value, and confidence lives on the JOINed
+    # oracle_predictions row which SQL ORDER BY can't drive portably.
+    sort_param = (request.args.get("sort") or "").strip().lower()
     conn = get_connection()
     try:
         # Execution queue ordering: within the same priority, tasks that
@@ -94,6 +103,28 @@ def list_tasks():
                 t["is_blocked"] = t.get("depends_on_status") != "done"
             else:
                 t["is_blocked"] = False
+
+        # Annotate every row with oracle_value + oracle_dup_count. The
+        # scorer is safe on non-Oracle tasks (null confidence → value
+        # 0.0, dup_count 1), so the field is always present and the UI
+        # can sort without special-casing. Annotation is done across the
+        # full returned set so dedup counts are stable regardless of the
+        # status filter.
+        annotate_tasks_with_value(tasks)
+
+        # Apply sort override if requested. SQL-side ORDER BY can't drive
+        # these cleanly because value is computed in Python and
+        # confidence lives on the JOINed oracle_predictions row.
+        if sort_param == "value":
+            tasks.sort(
+                key=lambda t: (t.get("oracle_value") or 0.0),
+                reverse=True,
+            )
+        elif sort_param == "confidence":
+            tasks.sort(
+                key=lambda t: (t.get("oracle_confidence") or 0.0),
+                reverse=True,
+            )
         return jsonify({"tasks": tasks, "total": len(tasks)})
     finally:
         conn.close()
@@ -334,13 +365,150 @@ def inject_message(task_id):
     }), 200
 
 
+_VALID_STATUSES = (
+    "backlog",
+    "scheduled",
+    "in_progress",
+    "done",
+    "token_exhausted",
+    "suggested",
+)
+
+
+@kanban_api.route("/tasks/bulk-move", methods=["POST"])
+def bulk_move_tasks():
+    """Promote / dismiss many suggested cards in a single call.
+
+    Body:
+        {
+          "task_ids": ["task-...", ...],
+          "status":   "backlog" | "done" | other valid status
+        }
+
+    Used by the Suggested column's bulk-promote UI. Semantics:
+      * ``status="backlog"`` → promote to the execution queue
+      * ``status="done"``    → dismiss; additionally marks each task's
+        source oracle_prediction with ``outcome='dismissed'`` so the
+        suggested_card_writer will not re-create the same card on the
+        next awareness cycle (see tools/awareness/suggested_card_writer.py
+        filter — it already excludes outcome='dismissed').
+
+    Returns ``{"moved": N, "failed": [ids]}``. Per-row failures are
+    collected; the endpoint does not abort on the first error so that
+    large bulk operations can partially succeed. Broadcast fan-out is
+    emitted once per successfully moved task for SSE consumers.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    task_ids = data.get("task_ids") or []
+    new_status = data.get("status")
+
+    if not isinstance(task_ids, list) or not task_ids:
+        return jsonify({"error": "task_ids must be a non-empty list"}), 400
+    if new_status not in _VALID_STATUSES:
+        return jsonify({"error": "Invalid status"}), 400
+    # Hard cap — operators should never bulk-move more than this in one
+    # request. Prevents a runaway UI from nuking the board.
+    if len(task_ids) > 1000:
+        return jsonify({"error": "task_ids exceeds cap of 1000"}), 400
+
+    now = _utcnow()
+    moved = 0
+    failed = []
+    conn = get_connection()
+    try:
+        # Gather source_prediction_id for dismiss path before we
+        # UPDATE so we can mark the predictions in the same transaction.
+        rows = conn.execute(
+            "SELECT id, status, source_prediction_id FROM kanban_tasks "
+            f"WHERE id IN ({','.join(['?'] * len(task_ids))})",  # nosec B608 -- placeholders only
+            tuple(task_ids),
+        ).fetchall()
+        by_id = {dict(r)["id"]: dict(r) for r in rows}
+
+        for tid in task_ids:
+            existing = by_id.get(tid)
+            if not existing:
+                failed.append({"id": tid, "error": "not found"})
+                continue
+            try:
+                sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
+                vals = [new_status, now]
+                if new_status == "done" and existing["status"] != "done":
+                    sql += ", completed_at = ?"
+                    vals.append(now)
+                elif new_status != "done" and existing["status"] == "done":
+                    sql += ", completed_at = NULL"
+                sql += " WHERE id = ?"
+                vals.append(tid)
+                conn.execute(sql, tuple(vals))
+
+                # Dismiss path: also mark the originating oracle_prediction
+                # so it does not re-surface next awareness cycle. Best
+                # effort — prediction may not exist for manually-created
+                # suggested cards, that is fine.
+                if new_status == "done" and existing.get("source_prediction_id"):
+                    try:
+                        conn.execute(
+                            "UPDATE oracle_predictions "
+                            "SET outcome = 'dismissed' "
+                            "WHERE id = ? AND outcome IN ('pending', '', NULL)",
+                            (existing["source_prediction_id"],),
+                        )
+                    except Exception:
+                        # Postgres will reject `IN (..., NULL)`, fall back
+                        # to the portable form that treats NULL as pending.
+                        try:
+                            conn.execute(
+                                "UPDATE oracle_predictions "
+                                "SET outcome = 'dismissed' "
+                                "WHERE id = ? "
+                                "  AND (outcome IS NULL OR outcome = '' "
+                                "       OR outcome = 'pending')",
+                                (existing["source_prediction_id"],),
+                            )
+                        except Exception as exc:
+                            # Don't fail the bulk-move just because
+                            # prediction bookkeeping is unhappy.
+                            failed.append({"id": tid, "warning": str(exc)[:120]})
+                moved += 1
+            except Exception as exc:
+                failed.append({"id": tid, "error": str(exc)[:200]})
+
+        conn.commit()
+
+        # Broadcast per-task SSE events after commit so listeners only
+        # see committed state.
+        for tid in task_ids:
+            if any(f.get("id") == tid and "error" in f for f in failed):
+                continue
+            try:
+                sse_manager.broadcast(
+                    {
+                        "action": "task_updated",
+                        "task_id": tid,
+                        "changes": {"status": new_status},
+                    },
+                    "kanban",
+                )
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "bulk_moved",
+            "moved": moved,
+            "failed": failed,
+            "new_status": new_status,
+        })
+    finally:
+        conn.close()
+
+
 @kanban_api.route("/tasks/<task_id>/move", methods=["POST"])
 def move_task(task_id):
     """Move a task to a new status column."""
     data = request.get_json(force=True)
     new_status = data.get("status")
-    valid = ("backlog", "scheduled", "in_progress", "done", "token_exhausted", "suggested")
-    if new_status not in valid:
+    if new_status not in _VALID_STATUSES:
         return jsonify({"error": "Invalid status"}), 400
 
     now = _utcnow()

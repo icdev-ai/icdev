@@ -227,14 +227,99 @@ function deleteTask(taskId) {
 
 var _allTasks = [];
 
+// Suggested lane state — sort mode + bulk selection. Persisted in
+// localStorage so a refresh or a dashboard reload does not reset the
+// operator's preferred sort. Selection is deliberately NOT persisted;
+// a fresh page load starts with zero cards selected.
+var _suggestedSort = (function() {
+    try { return localStorage.getItem('icdev.kanban.suggestedSort') || 'value'; }
+    catch (e) { return 'value'; }
+})();
+var _selectedTaskIds = new Set();
+
 function refreshKanbanTasks() {
-    fetch('/api/kanban/tasks')
+    var url = '/api/kanban/tasks?sort=' + encodeURIComponent(_suggestedSort);
+    fetch(url)
         .then(function(r) { return r.json(); })
         .then(function(data) {
             _allTasks = data.tasks || [];
             renderTaskKanban(_allTasks);
         });
 }
+
+// Sort dropdown handler — persists to localStorage + refetches so
+// the server-side sort applies (value and confidence are computed
+// post-fetch in Python, but the API still returns tasks pre-sorted so
+// the client order matches the API order exactly).
+function onSuggestedSortChange(val) {
+    if (!val) return;
+    _suggestedSort = val;
+    try { localStorage.setItem('icdev.kanban.suggestedSort', val); } catch (e) {}
+    refreshKanbanTasks();
+}
+
+// Bulk select preset — clears current selection and reselects rows
+// matching the named threshold. Safe on tasks missing oracle_value
+// or oracle_confidence (both default to 0).
+function applySuggestedSelectPreset(preset) {
+    _selectedTaskIds.clear();
+    if (preset === 'none' || !preset) {
+        renderTaskKanban(_allTasks);
+        return;
+    }
+    var suggestedItems = _allTasks.filter(function(t) { return t.status === 'suggested'; });
+    suggestedItems.forEach(function(t) {
+        var conf = t.oracle_confidence || 0;
+        var val = t.oracle_value || 0;
+        var match = false;
+        switch (preset) {
+            case 'all':     match = true; break;
+            case 'conf95':  match = conf >= 0.95; break;
+            case 'conf90':  match = conf >= 0.90; break;
+            case 'value10': match = val >= 1.0; break;
+            case 'value08': match = val >= 0.8; break;
+        }
+        if (match) _selectedTaskIds.add(t.id);
+    });
+    renderTaskKanban(_allTasks);
+}
+
+function toggleTaskSelected(taskId, ev) {
+    if (ev) ev.stopPropagation();
+    if (_selectedTaskIds.has(taskId)) _selectedTaskIds.delete(taskId);
+    else _selectedTaskIds.add(taskId);
+    // Lightweight: update only the counter badges without full re-render.
+    var countEls = document.querySelectorAll('[data-bulk-count]');
+    for (var i = 0; i < countEls.length; i++) {
+        countEls[i].textContent = _selectedTaskIds.size;
+    }
+}
+
+function bulkMoveSuggested(newStatus, actionLabel) {
+    var ids = Array.from(_selectedTaskIds);
+    if (!ids.length) {
+        alert('No tasks selected. Use the "Select" dropdown to pick a threshold.');
+        return;
+    }
+    if (!confirm(actionLabel + ' ' + ids.length + ' suggested task(s)?')) return;
+    fetch('/api/kanban/tasks/bulk-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_ids: ids, status: newStatus })
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _selectedTaskIds.clear();
+            refreshKanbanTasks();
+            if (data && data.failed && data.failed.length) {
+                console.warn('bulk-move partial failures:', data.failed);
+            }
+        })
+        .catch(function(e) { alert('Bulk move failed: ' + e); });
+}
+
+function bulkPromoteSuggested() { bulkMoveSuggested('backlog', 'Promote to backlog'); }
+function bulkDismissSuggested() { bulkMoveSuggested('done',    'Dismiss'); }
 
 function renderTaskKanban(tasks) {
     var board = document.getElementById('kanban-board');
@@ -272,7 +357,45 @@ function renderTaskKanban(tasks) {
         }
 
         var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
-        bodyEl.innerHTML = items.map(function(t) {
+
+        // Suggested-lane toolbar: sort dropdown + bulk select preset +
+        // bulk promote/dismiss buttons. Rendered BEFORE the card list so
+        // it stays at the top of the column. Not rendered for any other
+        // status — the toolbar only makes sense for Oracle-backed
+        // suggestions that want triage.
+        var toolbarHtml = '';
+        if (status === 'suggested') {
+            var selectedCount = _selectedTaskIds.size;
+            toolbarHtml =
+                '<div id="suggested-bulk-bar" style="padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">'
+                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
+                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Sort:</label>'
+                + '<select onchange="onSuggestedSortChange(this.value)" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
+                + '<option value="value"' + (_suggestedSort==='value'?' selected':'') + '>Value (default)</option>'
+                + '<option value="confidence"' + (_suggestedSort==='confidence'?' selected':'') + '>Confidence</option>'
+                + '<option value="created_at"' + (_suggestedSort==='created_at'?' selected':'') + '>Newest first</option>'
+                + '</select>'
+                + '</div>'
+                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
+                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Select:</label>'
+                + '<select onchange="applySuggestedSelectPreset(this.value); this.value=\'\'" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
+                + '<option value="">Choose threshold…</option>'
+                + '<option value="all">All</option>'
+                + '<option value="conf95">Confidence ≥ 95%</option>'
+                + '<option value="conf90">Confidence ≥ 90%</option>'
+                + '<option value="value10">Value ≥ 1.0</option>'
+                + '<option value="value08">Value ≥ 0.8</option>'
+                + '<option value="none">None</option>'
+                + '</select>'
+                + '</div>'
+                + '<div style="display:flex; gap:6px;">'
+                + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 6px;" onclick="bulkPromoteSuggested()" title="Promote selected to backlog">\u2191 Promote <span data-bulk-count>' + selectedCount + '</span></button>'
+                + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 6px; color:#ef4444;" onclick="bulkDismissSuggested()" title="Dismiss selected (marks oracle_prediction dismissed)">\u2715 Dismiss <span data-bulk-count>' + selectedCount + '</span></button>'
+                + '</div>'
+                + '</div>';
+        }
+
+        bodyEl.innerHTML = toolbarHtml + items.map(function(t) {
             var icon = typeIcons[t.task_type] || '';
             var pColor = priorityColors[t.priority] || '#6b7280';
 
@@ -291,11 +414,24 @@ function renderTaskKanban(tasks) {
                     if (match) proposedAction = match[1].trim();
                 }
                 var lensLabel = t.oracle_lens ? ' \u00B7 ' + esc(t.oracle_lens) : '';
+                // Value score + duplicate count surfaced on every card
+                // so operators can see the bulk-select rationale at a
+                // glance. Value comes from tools/awareness/value_scorer.py.
+                var valueLabel = (t.oracle_value != null && !isNaN(t.oracle_value))
+                    ? ' \u00B7 value ' + Number(t.oracle_value).toFixed(2)
+                    : '';
+                var dupLabel = (t.oracle_dup_count && t.oracle_dup_count > 1)
+                    ? ' \u00B7 \u00D7' + t.oracle_dup_count
+                    : '';
+                var checked = _selectedTaskIds.has(t.id) ? ' checked' : '';
 
                 return '<div class="kanban-card" style="border-left:3px solid #8b5cf6; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
+                    + '<div style="display:flex; gap:6px; align-items:flex-start;">'
+                    + '<input type="checkbox" class="suggested-checkbox"' + checked + ' onclick="toggleTaskSelected(\'' + t.id + '\', event)" style="margin-top:3px; cursor:pointer;">'
+                    + '<div style="flex:1; min-width:0;">'
                     + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap;">'
                     + '<span style="font-size:11px; background:#8b5cf620; color:#8b5cf6; border-radius:4px; padding:1px 6px; font-weight:600;">\uD83D\uDD2E Oracle</span>'
-                    + (confLabel ? '<span style="font-size:11px; color:var(--text-dim);">confidence ' + confLabel + lensLabel + '</span>' : '')
+                    + (confLabel ? '<span style="font-size:11px; color:var(--text-dim);">conf ' + confLabel + valueLabel + dupLabel + lensLabel + '</span>' : '')
                     + '</div>'
                     + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                     + (proposedAction ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px; font-style:italic;">' + esc(proposedAction) + '</div>' : '')
@@ -306,6 +442,8 @@ function renderTaskKanban(tasks) {
                     + '<div style="display:flex; gap:6px; margin-top:8px;">'
                     + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 8px;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'backlog\')" title="Promote to Backlog">\u2191 Promote</button>'
                     + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 8px; color:#6b7280;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'done\')" title="Dismiss">\u2715 Dismiss</button>'
+                    + '</div>'
+                    + '</div>'
                     + '</div>'
                     + '</div>';
             }

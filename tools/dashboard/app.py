@@ -130,76 +130,14 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
         "/alphadesk",
     }
 )
-# Network Design Canvas: feature-flagged, air-gap compatible
-_NETWORK_ENABLED = os.environ.get("ICDEV_NETWORK_ENABLED", "false").lower() == "true"
-_HAS_NETWORK = False
-if _NETWORK_ENABLED:
-    try:
-        from tools.network.blueprint import create_network_blueprint
-
-        _HAS_NETWORK = True
-    except ImportError:
-        _HAS_NETWORK = False
-# Pipeline Design Canvas: feature-flagged, air-gap compatible
-_PIPELINE_ENABLED = os.environ.get("ICDEV_PIPELINE_ENABLED", "false").lower() == "true"
-_HAS_PIPELINE = False
-if _PIPELINE_ENABLED:
-    try:
-        from tools.pipeline.blueprint import create_pipeline_blueprint
-
-        _HAS_PIPELINE = True
-    except ImportError:
-        _HAS_PIPELINE = False
-# Security Design Canvas: feature-flagged, air-gap compatible
-_SECURITY_CANVAS_ENABLED = os.environ.get("ICDEV_SECURITY_ENABLED", "false").lower() in ("true", "1", "yes")
-_HAS_SECURITY_CANVAS = False
-if _SECURITY_CANVAS_ENABLED:
-    try:
-        from tools.security_canvas.blueprint import create_security_blueprint
-
-        _HAS_SECURITY_CANVAS = True
-    except ImportError:
-        _HAS_SECURITY_CANVAS = False
-# Infrastructure Design Canvas (IDC): feature-flagged
-_INFRA_CANVAS_ENABLED = os.environ.get("ICDEV_INFRA_ENABLED", "false").lower() in ("true", "1", "yes")
-_HAS_INFRA_CANVAS = False
-if _INFRA_CANVAS_ENABLED:
-    try:
-        from tools.infra_canvas.blueprint import infra_bp  # noqa: E402
-
-        _HAS_INFRA_CANVAS = True
-    except ImportError:
-        _HAS_INFRA_CANVAS = False
-# Data Design Canvas (DDC): feature-flagged
-_DATA_CANVAS_ENABLED = os.environ.get("ICDEV_DATA_CANVAS_ENABLED", "false").lower() in ("true", "1", "yes")
-_HAS_DATA_CANVAS = False
-if _DATA_CANVAS_ENABLED:
-    try:
-        from tools.data_canvas.blueprint import create_data_canvas_blueprint  # noqa: E402
-
-        _HAS_DATA_CANVAS = True
-    except ImportError:
-        _HAS_DATA_CANVAS = False
-# Boundary Design Canvas (BDC): feature-flagged
-_BOUNDARY_CANVAS_ENABLED = os.environ.get("ICDEV_BOUNDARY_ENABLED", "false").lower() in ("true", "1", "yes")
-_HAS_BOUNDARY_CANVAS = False
-if _BOUNDARY_CANVAS_ENABLED:
-    try:
-        from tools.boundary_canvas.blueprint import create_boundary_blueprint  # noqa: E402
-
-        _HAS_BOUNDARY_CANVAS = True
-    except ImportError:
-        _HAS_BOUNDARY_CANVAS = False
-# Observability Design Canvas (ODC): feature-flagged
-_OBSERVABILITY_CANVAS_ENABLED = os.environ.get("ICDEV_OBSERVABILITY_ENABLED", "false").lower() in ("true", "1", "yes")
-_HAS_OBSERVABILITY_CANVAS = False
-if _OBSERVABILITY_CANVAS_ENABLED:
-    try:
-        from tools.observability_canvas.blueprint import create_observability_blueprint  # noqa: E402
-
-        _HAS_OBSERVABILITY_CANVAS = True
-    except ImportError:
-        _HAS_OBSERVABILITY_CANVAS = False
+# Legacy canvas feature flags (derived from env — registration handled by _CANVAS_DEFS loop below)
+_HAS_NETWORK = os.environ.get("ICDEV_NETWORK_ENABLED", "false").lower() == "true"
+_HAS_PIPELINE = os.environ.get("ICDEV_PIPELINE_ENABLED", "false").lower() == "true"
+_HAS_SECURITY_CANVAS = os.environ.get("ICDEV_SECURITY_ENABLED", "false").lower() in ("true", "1", "yes")
+_HAS_INFRA_CANVAS = os.environ.get("ICDEV_INFRA_ENABLED", "false").lower() in ("true", "1", "yes")
+_HAS_DATA_CANVAS = os.environ.get("ICDEV_DATA_CANVAS_ENABLED", "false").lower() in ("true", "1", "yes")
+_HAS_BOUNDARY_CANVAS = os.environ.get("ICDEV_BOUNDARY_ENABLED", "false").lower() in ("true", "1", "yes")
+_HAS_OBSERVABILITY_CANVAS = os.environ.get("ICDEV_OBSERVABILITY_ENABLED", "false").lower() in ("true", "1", "yes")
 # Canvas Knowledge Graph: feature-flagged
 _CANVAS_KG_ENABLED = os.environ.get("ICDEV_CANVAS_KG_ENABLED", "false").lower() in ("true", "1", "yes")
 _HAS_CANVAS_KG = False
