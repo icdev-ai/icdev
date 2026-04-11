@@ -61,6 +61,7 @@ from tools.dashboard.api.compliance import compliance_api  # noqa: E402
 from tools.dashboard.api.poam import poam_api  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
+    close_canvas_connections as _close_canvas_connections,
     open_finding_count as _open_finding_count,
 )
 from tools.dashboard.api.audit import audit_api  # noqa: E402
@@ -1001,6 +1002,11 @@ def create_app() -> Flask:
     # Auto-reload templates on change (no server restart needed)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.jinja_env.auto_reload = True
+
+    # Release cached canvas DB connections after each request (OPT-06).
+    @app.teardown_appcontext
+    def _teardown_canvas_connections(exc):  # noqa: ANN001
+        _close_canvas_connections()
 
     # Register UX filters (glossary, timestamps, error recovery, quick paths)
     register_ux_filters(app)
