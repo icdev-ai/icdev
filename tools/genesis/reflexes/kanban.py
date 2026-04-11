@@ -590,16 +590,203 @@ def _poll_telegram():
 
 
 # ---------------------------------------------------------------------------
-# Claude CLI executor
+# Task executor — Claude Code CLI when available, LLMRouter otherwise (OPT-31)
 # ---------------------------------------------------------------------------
-CLAUDE_CLI = shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
+# Lazy resolution: don't pin the path at import time so a Claude install that
+# arrives mid-session is picked up automatically. The default home-dir fallback
+# is preserved for systems where Claude is installed but not on PATH.
+def _resolve_claude_cli() -> Optional[str]:
+    found = shutil.which("claude")
+    if found:
+        return found
+    fallback = Path.home() / ".local" / "bin" / "claude"
+    return str(fallback) if fallback.exists() else None
 
-# Track running subprocesses: {task_id: subprocess.Popen}
-_running: Dict[str, subprocess.Popen] = {}
+
+def _claude_code_available() -> bool:
+    """True if the `claude` CLI is invokable on this host."""
+    return _resolve_claude_cli() is not None
+
+
+# Track running task handles. Claude path stores subprocess.Popen, LLMRouter
+# path stores _LLMTaskHandle — both expose .poll() / .kill() / .wait() / .pid /
+# .returncode so the rest of the reflex (timeout sweeper, completion checker)
+# can treat them uniformly.
+_running: Dict[str, Any] = {}
+
+
+class _LLMTaskHandle:
+    """Popen-compatible handle around a threaded LLMRouter.invoke() call.
+
+    Used by LocalPythonTaskExecutor when Claude Code CLI is unavailable. The
+    LLM call runs in a daemon thread; .poll() returns None until the thread
+    finishes, then the integer return code (0=success, 1=failure). Output is
+    written to the same task log file the Claude path uses, so downstream
+    verification logic (_verify_task_completed, token-exhaustion detection)
+    works unchanged.
+    """
+
+    def __init__(self, task_id: str, log_path: Path):
+        self.task_id = task_id
+        self.log_path = log_path
+        self.pid = -1  # synthetic — no OS process
+        self.returncode: Optional[int] = None
+        self._thread: Optional[Any] = None
+        self._killed = False
+
+    def start(self, target, args=()):
+        import threading
+        self._thread = threading.Thread(
+            target=self._wrap, args=(target, args), name=f"kanban-llm-{self.task_id}", daemon=True,
+        )
+        self._thread.start()
+
+    def _wrap(self, target, args):
+        try:
+            target(*args)
+            self.returncode = 0
+        except Exception as exc:
+            try:
+                with open(self.log_path, "a", encoding="utf-8", errors="replace") as fh:
+                    fh.write(f"\n[LLMTaskHandle EXCEPTION] {type(exc).__name__}: {exc}\n")
+            except Exception:
+                pass
+            self.returncode = 1
+
+    def poll(self) -> Optional[int]:
+        if self._thread is None:
+            return None
+        if self._thread.is_alive():
+            return None
+        return self.returncode if self.returncode is not None else 0
+
+    def kill(self) -> None:
+        # Daemon threads cannot be force-killed in CPython; mark as killed and
+        # let the timeout sweeper move on. The thread will eventually exit.
+        self._killed = True
+        try:
+            with open(self.log_path, "a", encoding="utf-8", errors="replace") as fh:
+                fh.write("\n[LLMTaskHandle KILLED by timeout sweeper]\n")
+        except Exception:
+            pass
+
+    def wait(self, timeout: Optional[float] = None) -> int:
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
+        return self.returncode if self.returncode is not None else 0
+
+
+def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: str) -> str:
+    """Compose the full instruction text used by both executors."""
+    return (
+        f"{prompt_text}\n\n"
+        f"When complete:\n"
+        f"1. Move to done: POST http://localhost:5050/api/kanban/"
+        f'tasks/{task_id}/move with {{"status": "done"}}\n'
+        f'2. Notify: python -c "from tools.notifications.adapters.'
+        f"telegram import send; send('Task Completed', "
+        f"'{title} — done', severity='success')\"\n"
+        f"3. Delete prompt file: {prompt_path}\n"
+    )
+
+
+def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
+                             work_dir: str, task_log: Path) -> None:
+    """ClaudeCodeTaskExecutor — original behavior, isolated."""
+    task_id = task["id"]
+    claude_cli = _resolve_claude_cli()
+    if not claude_cli:
+        print("  Kanban: claude CLI not found — should have routed to LLM executor")
+        return
+    try:
+        log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
+        proc = subprocess.Popen(
+            [
+                claude_cli,
+                "--dangerously-skip-permissions",
+                "--max-turns",
+                "50",
+                "--output-format",
+                "text",
+                "-p",
+                instruction,
+            ],
+            cwd=work_dir,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+        )
+        _running[task_id] = proc
+        _dispatch_times[task_id] = datetime.now(timezone.utc)
+        print(f"  Kanban: dispatched {task_id} to claude CLI (PID {proc.pid})")
+    except FileNotFoundError:
+        print(f"  Kanban: claude CLI not found at {claude_cli}")
+    except Exception as e:
+        print(f"  Kanban: claude dispatch error for {task_id}: {e}")
+
+
+def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
+                             work_dir: str, task_log: Path) -> None:
+    """LocalPythonTaskExecutor — air-gap fallback that runs the prompt through
+    tools.llm.router.LLMRouter so Bedrock/Ollama/Vertex/etc. can serve tasks
+    without Claude Code CLI installed.
+
+    Note: LLM-only execution cannot perform real file mutations the way the
+    Claude CLI agent does. The LLM produces a written response (saved to the
+    task log) which a human or downstream tool then applies. For tasks that
+    require autonomous file editing, install Claude Code CLI or wait for the
+    OPT-42 anvil/* CLI wrappers.
+    """
+    task_id = task["id"]
+
+    def _runner():
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        # Open the log fresh — overwrite any prior partial content
+        with open(task_log, "w", encoding="utf-8", errors="replace") as fh:
+            fh.write(f"[LLMRouter dispatch — task {task_id}]\n")
+            fh.write(f"[work_dir {work_dir}]\n\n")
+
+            router = LLMRouter()
+            request = LLMRequest(
+                messages=[{"role": "user", "content": instruction}],
+                system_prompt=(
+                    "You are an autonomous task executor for the ICDEV™ "
+                    "kanban system. Read the task prompt, plan the work, and "
+                    "produce a detailed written plan + result. You cannot "
+                    "directly execute shell commands or edit files in this "
+                    "execution mode — describe exactly what should be done so "
+                    "a downstream tool or human can apply it."
+                ),
+                max_tokens=8192,
+                temperature=0.3,
+                agent_id="kanban-executor",
+                project_id="dashboard-kanban",
+            )
+            response = router.invoke("code_generation", request)
+
+            fh.write(response.content or "")
+            fh.write(
+                f"\n\n[LLM metadata] provider={response.provider} "
+                f"model={response.model_id} "
+                f"in_tokens={response.input_tokens} "
+                f"out_tokens={response.output_tokens} "
+                f"duration_ms={response.duration_ms}\n"
+            )
+
+    handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
+    handle.start(_runner)
+    _running[task_id] = handle
+    _dispatch_times[task_id] = datetime.now(timezone.utc)
+    print(f"  Kanban: dispatched {task_id} via LLMRouter (no Claude CLI)")
 
 
 def _dispatch_to_claude(task: dict, prompt_path: str):
-    """Launch claude CLI in background to execute the task.
+    """Dispatch a task to the appropriate executor.
+
+    Picks ClaudeCodeTaskExecutor when the `claude` CLI is available, otherwise
+    falls back to LocalPythonTaskExecutor (LLMRouter-backed). The function
+    name is preserved for backwards compatibility with existing call sites.
 
     Creates a git worktree for isolation so parallel tasks don't collide.
     Falls back to BASE_DIR if worktree creation fails.
@@ -618,45 +805,13 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     else:
         print(f"  Kanban: worktree unavailable, using BASE_DIR for {task_id}")
 
-    # Build the full instruction for Claude
-    instruction = (
-        f"{prompt_text}\n\n"
-        f"When complete:\n"
-        f"1. Move to done: POST http://localhost:5050/api/kanban/"
-        f'tasks/{task_id}/move with {{"status": "done"}}\n'
-        f'2. Notify: python -c "from tools.notifications.adapters.'
-        f"telegram import send; send('Task Completed', "
-        f"'{title} — done', severity='success')\"\n"
-        f"3. Delete prompt file: {prompt_path}\n"
-    )
-
-    # Output log for this task
+    instruction = _build_instruction(task_id, title, prompt_text, prompt_path)
     task_log = PROMPT_DIR / f"{task_id}.log"
 
-    try:
-        log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
-        proc = subprocess.Popen(
-            [
-                CLAUDE_CLI,
-                "--dangerously-skip-permissions",
-                "--max-turns",
-                "50",
-                "--output-format",
-                "text",
-                "-p",
-                instruction,
-            ],
-            cwd=work_dir,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-        )
-        _running[task_id] = proc
-        _dispatch_times[task_id] = datetime.now(timezone.utc)
-        print(f"  Kanban: dispatched {task_id} to claude (PID {proc.pid})")
-    except FileNotFoundError:
-        print(f"  Kanban: claude CLI not found at {CLAUDE_CLI}")
-    except Exception as e:
-        print(f"  Kanban: dispatch error for {task_id}: {e}")
+    if _claude_code_available():
+        _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
+    else:
+        _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
 
 
 def _verify_task_completed(task_id, claude_output):
