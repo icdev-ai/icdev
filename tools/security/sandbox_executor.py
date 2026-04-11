@@ -55,6 +55,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "cleanup_containers": True,
     "max_concurrent_sessions": 4,
     "audit_all_executions": True,
+    # OPT-63: auto-recreate on container failure
+    "auto_recreate": {
+        "enabled": True,
+        "max_retries": 2,
+        "backoff_seconds": 10,
+    },
 }
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -82,6 +88,9 @@ def _load_config() -> Dict[str, Any]:
             if "images" in loaded:
                 merged["images"] = dict(DEFAULT_CONFIG.get("images", {}))
                 merged["images"].update(loaded["images"])
+            if "auto_recreate" in loaded:
+                merged["auto_recreate"] = dict(DEFAULT_CONFIG.get("auto_recreate", {}))
+                merged["auto_recreate"].update(loaded["auto_recreate"])
             return merged
         except Exception as exc:
             logger.warning("Failed to load sandbox_config.yaml: %s — using defaults", exc)
@@ -247,50 +256,62 @@ class SandboxExecutor:
         code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
         result = SandboxResult()
 
-        try:
-            from llm_sandbox import SandboxSession  # type: ignore[import]
+        # OPT-63: auto-recreate config
+        _ar_cfg = self._config.get("auto_recreate", {})
+        _ar_enabled = _ar_cfg.get("enabled", True)
+        _ar_max_retries = int(_ar_cfg.get("max_retries", 2))
+        _ar_backoff = float(_ar_cfg.get("backoff_seconds", 10))
+        _rebuild_count = 0
 
-            start = time.time()
-            with SandboxSession(
-                lang=language,
-                image=image,
-                keep_template=not self._config.get("cleanup_containers", True),
-                verbose=False,
-            ) as session:
-                run_result = session.run(code, libraries=libraries or [])
+        while True:
+            try:
+                result = self._run_sandbox_once(
+                    code=code,
+                    language=language,
+                    image=image,
+                    libraries=libraries or [],
+                )
+                break  # success — exit retry loop
 
-            runtime_ms = int((time.time() - start) * 1000)
+            except TimeoutError:
+                result = SandboxResult(
+                    status="timeout",
+                    error=f"Execution timed out after {_timeout}s",
+                    exit_code=-1,
+                    runtime_ms=_timeout * 1000,
+                )
+                break  # no retry on timeout
 
-            # llm-sandbox returns an object with stdout/stderr/exit_code attrs
-            stdout = _safe_str(getattr(run_result, "stdout", ""))
-            stderr = _safe_str(getattr(run_result, "stderr", ""))
-            exit_code = int(getattr(run_result, "exit_code", 0))
-            container_id = _safe_str(getattr(run_result, "container_id", ""))
-
-            result = SandboxResult(
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
-                runtime_ms=runtime_ms,
-                artifacts=[],
-                container_id=container_id,
-                status="completed",
-                error="",
-            )
-
-        except TimeoutError:
-            result = SandboxResult(
-                status="timeout",
-                error=f"Execution timed out after {_timeout}s",
-                exit_code=-1,
-                runtime_ms=_timeout * 1000,
-            )
-        except Exception as exc:
-            result = SandboxResult(
-                status="failed",
-                error=str(exc),
-                exit_code=-1,
-            )
+            except Exception as exc:
+                if _ar_enabled and _rebuild_count < _ar_max_retries and self._is_container_error(exc):
+                    _rebuild_count += 1
+                    logger.warning(
+                        "Container failure (rebuild %d/%d): %s — recreating sandbox",
+                        _rebuild_count,
+                        _ar_max_retries,
+                        exc,
+                    )
+                    self._log_rebuild_event(
+                        exec_id=exec_id,
+                        language=language,
+                        code_hash=code_hash,
+                        reason=str(exc),
+                        retry_count=_rebuild_count,
+                        actor=actor,
+                        project_id=project_id,
+                        tenant_id=tenant_id,
+                    )
+                    self._rebuild_container(language=language, image=image)
+                    if _rebuild_count > 1:
+                        time.sleep(_ar_backoff)
+                    # continue retry loop
+                else:
+                    result = SandboxResult(
+                        status="failed",
+                        error=str(exc),
+                        exit_code=-1,
+                    )
+                    break
 
         if self._config.get("audit_all_executions", True):
             self._log_execution(
@@ -451,6 +472,156 @@ class SandboxExecutor:
             return False
 
         return True
+
+    def _run_sandbox_once(
+        self,
+        code: str,
+        language: str,
+        image: str,
+        libraries: List[str],
+    ) -> SandboxResult:
+        """Execute code once in a SandboxSession (no retry logic).
+
+        Raises any exception from llm_sandbox / Docker so the caller's retry
+        loop can decide whether to rebuild and retry.
+        """
+        from llm_sandbox import SandboxSession  # type: ignore[import]
+
+        start = time.time()
+        with SandboxSession(
+            lang=language,
+            image=image,
+            keep_template=not self._config.get("cleanup_containers", True),
+            verbose=False,
+        ) as session:
+            run_result = session.run(code, libraries=libraries)
+
+        runtime_ms = int((time.time() - start) * 1000)
+        # llm-sandbox returns an object with stdout/stderr/exit_code attrs
+        stdout = _safe_str(getattr(run_result, "stdout", ""))
+        stderr = _safe_str(getattr(run_result, "stderr", ""))
+        exit_code = int(getattr(run_result, "exit_code", 0))
+        container_id = _safe_str(getattr(run_result, "container_id", ""))
+
+        return SandboxResult(
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
+            runtime_ms=runtime_ms,
+            artifacts=[],
+            container_id=container_id,
+            status="completed",
+            error="",
+        )
+
+    def _is_container_error(self, exc: Exception) -> bool:
+        """Return True if exc indicates a container infrastructure failure worth retrying.
+
+        Matches: docker.errors.NotFound, ConnectionRefusedError, and
+        RuntimeError / generic exceptions whose message references Docker or
+        a missing container.
+        """
+        if isinstance(exc, ConnectionRefusedError):
+            return True
+        exc_msg = str(exc).lower()
+        if any(kw in exc_msg for kw in ("docker", "container", "no such container", "not found")):
+            return True
+        # Match by class name to avoid a hard docker-sdk import
+        exc_class = type(exc).__name__
+        if exc_class in ("NotFound", "APIError", "ContainerError", "ImageNotFound"):
+            return True
+        # Try direct isinstance check when docker SDK is present
+        try:
+            import docker  # type: ignore[import]
+
+            if isinstance(exc, (docker.errors.NotFound, docker.errors.APIError)):
+                return True
+        except ImportError:
+            pass
+        return False
+
+    def _rebuild_container(self, language: str, image: str) -> None:
+        """Pull the container image to recreate it after a detected failure.
+
+        Does NOT raise — if the pull itself fails, the subsequent execution
+        attempt will fail with the real error.
+        """
+        logger.info("Rebuilding sandbox container: language=%s image=%s", language, image)
+        try:
+            import docker  # type: ignore[import]
+
+            client = docker.from_env()
+            client.images.pull(image)
+            logger.info("Container image rebuilt successfully: %s", image)
+        except Exception as exc:
+            logger.warning(
+                "Container rebuild failed (%s / %s): %s — retry will proceed anyway",
+                language,
+                image,
+                exc,
+            )
+
+    def _log_rebuild_event(
+        self,
+        exec_id: str,
+        language: str,
+        code_hash: str,
+        reason: str,
+        retry_count: int,
+        actor: Optional[str],
+        project_id: Optional[str],
+        tenant_id: Optional[str],
+    ) -> None:
+        """Insert a sandbox_recreated audit event into sandbox_execution_log (append-only, D6).
+
+        Uses executor_type='sandbox_recreated' so the event is queryable.
+        Encodes the rebuild reason in stdout_preview and retry_count in artifact_count.
+        """
+        if not self._db_path.exists():
+            return
+        event_id = f"{exec_id}-rebuild-{retry_count}"
+        try:
+            conn = get_connection(db_path=str(self._db_path))
+            _ensure_tables(conn)
+            conn.execute(
+                """INSERT INTO sandbox_execution_log (
+                    id, executor_type, language, code_hash, runtime,
+                    exit_code, runtime_ms, stdout_preview, stderr_preview,
+                    network_enabled, memory_limit_mb, timeout_seconds,
+                    container_id, artifact_count, status,
+                    actor, project_id, tenant_id, classification, created_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?, 'CUI', ?
+                )""",
+                (
+                    event_id,
+                    "sandbox_recreated",
+                    language,
+                    code_hash,
+                    self._runtime,
+                    retry_count,       # exit_code — encodes rebuild number
+                    0,                 # runtime_ms — not applicable for events
+                    reason[:512],      # stdout_preview — human-readable reason
+                    "",                # stderr_preview
+                    0,                 # network_enabled
+                    0,                 # memory_limit_mb
+                    0,                 # timeout_seconds
+                    "",                # container_id
+                    retry_count,       # artifact_count — encodes rebuild number
+                    "failed",          # status — the attempt that triggered the rebuild
+                    actor,
+                    project_id,
+                    tenant_id,
+                    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                ),
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to log rebuild event %s: %s", event_id, exc)
 
     def _log_execution(
         self,

@@ -32,6 +32,15 @@ sandbox:
   # Audit
   audit_all_executions: true
 
+  # OPT-63: Auto-recreate sandbox on container failure
+  # On ContainerNotFoundError / ConnectionRefusedError / docker RuntimeError:
+  #   rebuild the container and retry.
+  # Backoff: immediate on 1st rebuild, backoff_seconds before 2nd, then fail.
+  auto_recreate:
+    enabled: true
+    max_retries: 2          # Maximum number of container rebuilds per execute() call
+    backoff_seconds: 10     # Seconds to wait before the 2nd rebuild attempt
+
   # --- Integration-specific overrides (Phase 72, D-SEC-11) ---
 
   # CodeLens / test_orchestrator: sandbox isolation step 2.5
