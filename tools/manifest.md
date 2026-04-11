@@ -1241,6 +1241,7 @@
 | Plagiarism Detector | tools/writing/plagiarism_detector.py | Thin wrapper re-exporting plagiarism check from analysis_engine (RAG similarity, 0.85 threshold) | (library) — `check_plagiarism(text)` | Similarity scores |
 | AI Content Detector | tools/writing/ai_content_detector.py | Deterministic AI detection — perplexity, burstiness, n-gram stats (D-WG-6, advisory-only) | (library) — `detect_ai_content(text)` | AI probability + signals |
 | LLM Judge | tools/writing/llm_judge.py | Rubric-based semantic evaluation using Prometheus-2 7B (local Ollama) — 5 dimensions per content type | --text, --rubric, --json | Color ratings + scores |
+| Ubiquitous Language | tools/writing/ubiquitous_language.py | DDD glossary extractor — noun-phrase extraction, synonym + ambiguity detection, optional LLM enrichment via LLMRouter. Adapted from mattpocock/skills/ubiquitous-language (MIT) | --input FILE, --out FILE, --llm-enrich, --append-to-memory, --json, --gate | UBIQUITOUS_LANGUAGE.md + JSON summary |
 
 ## Pulse AI Blog Engine
 | Tool | File | Description | Input | Output |
