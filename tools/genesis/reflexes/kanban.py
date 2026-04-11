@@ -814,14 +814,80 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
 
 
+# OPT-76 — phantom-completion guard. Regex matches plausible repo-relative
+# file paths in agent output. Covers tools/foo.py, args/foo.yaml, tests/
+# subdirs, docs/, goals/, and similar. Skips URLs, package names, and
+# arbitrary English phrases containing slashes.
+_PATH_MENTION_RE = re.compile(
+    r"(?:^|[\s`'\"(\[])"
+    r"((?:tools|tests|args|goals|docs|scripts|third_party_licenses|helm|k8s)/"
+    r"[A-Za-z0-9_\-./]+"
+    r"\.(?:py|yaml|yml|json|md|toml|txt|sh|sql|ini|cfg))"
+    r"(?=[\s`'\")\],.:;]|$)",
+    re.MULTILINE,
+)
+
+
+def _extract_claimed_file_paths(text: str, max_paths: int = 50) -> list[str]:
+    """Pull repo-relative file paths out of agent output.
+
+    Returns a deduplicated list of up to max_paths plausible repo paths
+    the agent claims to have created/modified. Used by the phantom-
+    completion guard — if the agent claims to write to these paths but
+    none of them exist on disk, the task is rejected.
+    """
+    if not text:
+        return []
+    seen: dict[str, None] = {}
+    for m in _PATH_MENTION_RE.finditer(text):
+        path = m.group(1).strip().rstrip(".,;:)")
+        # Skip obvious non-files (patterns / globs / "..." truncations)
+        if "*" in path or "..." in path or path.endswith("/"):
+            continue
+        if path not in seen:
+            seen[path] = None
+        if len(seen) >= max_paths:
+            break
+    return list(seen.keys())
+
+
+def _verify_claimed_files_exist(
+    paths: list[str], work_dir: Path | str
+) -> tuple[int, int, list[str]]:
+    """Check how many agent-claimed paths actually exist on disk.
+
+    Returns (existing_count, claimed_count, missing_paths[:5]).
+    Paths are resolved relative to work_dir AND BASE_DIR — the agent
+    may have run in a worktree OR the main checkout.
+    """
+    if not paths:
+        return 0, 0, []
+    work = Path(work_dir) if work_dir else BASE_DIR
+    existing = 0
+    missing: list[str] = []
+    for rel in paths:
+        # Try work_dir first (worktree), fall back to BASE_DIR
+        candidates = [work / rel, BASE_DIR / rel]
+        if any(c.exists() for c in candidates):
+            existing += 1
+        else:
+            missing.append(rel)
+    return existing, len(paths), missing[:5]
+
+
 def _verify_task_completed(task_id, claude_output):
     """Verify that a task actually produced results before marking done.
 
-    Checks:
+    Checks (order matters; early returns on failure):
     1. Claude output must be substantial (>200 chars)
     2. No obvious failure indicators in output
-    3. Git has new commits on the task's WORKTREE branch (not main)
-    4. Output must contain evidence of actual file changes
+    3. Output must contain evidence of actual file changes (keywords)
+    4. **Phantom-completion guard (OPT-76)**: if output claims specific
+       file paths, at least some must actually exist on disk. A
+       hallucinating agent that says "I created tools/X.py" without
+       actually creating the file fails here.
+    5. Git has new commits on the task's WORKTREE branch OR staged
+       changes visible in the work_dir.
 
     Returns: (verified: bool, reason: str)
     """
@@ -829,7 +895,8 @@ def _verify_task_completed(task_id, claude_output):
     if not claude_output or len(claude_output) < 200:
         return False, "Output too short — likely no work done"
 
-    # Check 2: Look for failure indicators (scan full output, not just first 500)
+    # Check 2: Look for failure indicators (scan first 1000 chars — the
+    # agent usually declares failure up front if it's going to)
     fail_markers = [
         "I cannot",
         "I'm unable",
@@ -873,12 +940,42 @@ def _verify_task_completed(task_id, claude_output):
     if not has_file_evidence:
         return False, "No evidence of file changes in output"
 
-    # Check 4: Git commit check on the WORKTREE branch (not main)
+    # Check 4 — OPT-76 phantom guard: extract every path the agent
+    # claims to have touched and verify at least SOME of them exist.
+    work_dir_for_check = _worktrees.get(task_id) or str(BASE_DIR)
+    claimed_paths = _extract_claimed_file_paths(claude_output)
+    if claimed_paths:
+        existing, claimed, missing = _verify_claimed_files_exist(
+            claimed_paths, work_dir_for_check
+        )
+        # If the agent mentioned paths AND none of them exist, it's
+        # phantom output. Fail regardless of how much prose it generated.
+        if existing == 0:
+            missing_preview = ", ".join(missing[:3])
+            return False, (
+                f"PHANTOM COMPLETION: agent claimed {claimed} file path(s) "
+                f"but NONE exist on disk (missing: {missing_preview}). "
+                f"Output was likely hallucinated — see agent log."
+            )
+        # Partial existence is acceptable — the agent may have
+        # referenced pre-existing files it read or mentioned neighbors.
+        # But log the ratio so the reviewer can spot drift.
+        phantom_ratio = (claimed - existing) / claimed
+        if phantom_ratio >= 0.8:
+            # 80%+ of claimed paths are missing — suspicious but not blocking
+            logger.warning(
+                "kanban %s: %d/%d claimed paths missing (%s, ...)",
+                task_id, claimed - existing, claimed, missing[:3],
+            )
+
+    # Check 5: Git commit check on the WORKTREE branch (not main) OR
+    # dirty working-directory check for non-worktree runs. Failures in
+    # git commands DO NOT fall through to a lenient pass — that was the
+    # original phantom path.
     try:
         import subprocess as _sp
 
         branch_name = f"kanban/{task_id}"
-        # Check if the worktree branch has commits ahead of HEAD
         result = _sp.run(
             ["git", "log", f"HEAD..{branch_name}", "--oneline"],
             capture_output=True,
@@ -892,8 +989,7 @@ def _verify_task_completed(task_id, claude_output):
         if worktree_commits:
             return True, f"Verified: worktree has commits: {worktree_commits[:100]}"
 
-        # Fallback: if no worktree branch (ran in BASE_DIR), check for
-        # commits mentioning this task ID or title
+        # Fallback: commits in the last 30 min mentioning this task id
         result = _sp.run(
             ["git", "log", "--oneline", "--since=30 minutes ago", "--all", "--grep", task_id[:12]],
             capture_output=True,
@@ -906,16 +1002,39 @@ def _verify_task_completed(task_id, claude_output):
         if result.stdout.strip():
             return True, "Verified: found commits referencing task"
 
-        # No task-specific commits found — output looked good but no proof
-        return False, "No git commits found on task branch — work may not have been saved"
-    except Exception:
-        pass  # Git check failed — don't block on this
+        # No commits found — but the agent may have left uncommitted
+        # changes in the work dir. Check for a dirty working tree.
+        dirty = _sp.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=work_dir_for_check,
+            timeout=10,
+        )
+        dirty_lines = [line for line in (dirty.stdout or "").splitlines() if line.strip()]
+        if dirty_lines:
+            return True, (
+                f"Verified: {len(dirty_lines)} uncommitted change(s) in work dir "
+                f"(agent didn't commit but produced files)"
+            )
 
-    # If git check failed but output has strong evidence, cautiously verify
-    if len(claude_output) > 500 and has_file_evidence:
-        return True, "Verified: strong output evidence (git check unavailable)"
-
-    return False, "Insufficient evidence of task completion"
+        # No commits AND no dirty state AND no strong claimed-file evidence
+        return False, (
+            "No git commits AND no uncommitted changes — "
+            "agent produced no file-level output"
+        )
+    except Exception as exc:
+        # OPT-76: do NOT fall through to a lenient pass. Git failures
+        # are the exact path the phantom-completion bug exploited.
+        # Require claimed-path verification instead.
+        if claimed_paths and existing > 0:
+            return True, (
+                f"Verified via claimed-path check: {existing}/{claimed} "
+                f"agent-referenced file(s) exist on disk (git check failed: {exc})"
+            )
+        return False, f"Git check failed ({exc}) and no claimed paths verified"
 
 
 # Track when each task was dispatched: {task_id: datetime}
