@@ -452,6 +452,17 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "filter": "status IN ('completed', 'discarded')",
         "description": "Autoresearch experiment candidate hypotheses",
     },
+    # --- Codebase Index (Phase 1b, D-AWARE-2) ---
+    "icdev_codebase_files": {
+        "table": "codebase_index",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["file_path", "module", "symbols"],
+        "metadata_cols": ["file_type", "chunk_count", "last_indexed_at"],
+        "priority": 2,
+        "mode": "batch",
+        "description": "ICDEV codebase (file metadata + AST-parsed symbols) — shallow metadata source for 'where is X defined' queries",
+    },
 }
 
 

@@ -149,7 +149,10 @@ def ingest_source(
         return {"error": f"Unknown source_type: {source_type}", "ingested": 0}
 
     db_path = _get_db_path(cfg["db"])
-    if not db_path.exists():
+    # Only check file existence for canvas/separate SQLite DBs.
+    # "icdev" and "memory" use get_connection() (Postgres) when the .db file is absent.
+    _is_separate_db = cfg["db"] not in ("icdev", "memory")
+    if _is_separate_db and not db_path.exists():
         return {"error": f"Database not found: {db_path}", "ingested": 0}
 
     # Get embedding provider
