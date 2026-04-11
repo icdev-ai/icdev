@@ -1446,22 +1446,22 @@ _BLOCKING_LICENSES = {
 # lands, to avoid blocking all development. Remove entries as each file
 # is rewritten clean-room.
 _REWRITE_IN_PROGRESS_ALLOWLIST: set[str] = {
-    "tools/ci/modules/agent.py",
+    # tools/ci/modules/agent.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 13/18)
     # tools/ci/modules/git_ops.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 2/18)
     # tools/ci/modules/state.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 1/18)
-    "tools/ci/modules/vcs.py",
-    "tools/ci/modules/workflow_ops.py",
+    # tools/ci/modules/vcs.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 14/18)
+    # tools/ci/modules/workflow_ops.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 12/18)
     # tools/ci/workflows/icdev_build.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 6/18)
     # tools/ci/workflows/icdev_document.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 7/18)
     # tools/ci/workflows/icdev_patch.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 8/18)
-    "tools/ci/workflows/icdev_plan.py",
+    # tools/ci/workflows/icdev_plan.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 10/18)
     # tools/ci/workflows/icdev_review.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 5/18)
-    "tools/ci/workflows/icdev_sdlc.py",
-    "tools/ci/workflows/icdev_test.py",
+    # tools/ci/workflows/icdev_sdlc.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 11/18)
+    # tools/ci/workflows/icdev_test.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 9/18)
     # tools/testing/data_types.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 4/18)
     "tools/testing/e2e_runner.py",
-    "tools/testing/health_check.py",
-    "tools/testing/test_agent_models.py",
+    # tools/testing/health_check.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 15/18)
+    # tools/testing/test_agent_models.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 16/18)
     "tools/testing/test_orchestrator.py",
     # tools/testing/utils.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 3/18)
 }
