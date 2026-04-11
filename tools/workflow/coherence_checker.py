@@ -935,6 +935,172 @@ def check_api_wiring(
 
 
 # ---------------------------------------------------------------------------
+# Route Uniqueness (F811) — catches duplicate Flask view-function names that
+# silently abort blueprint registration mid-flight.
+# ---------------------------------------------------------------------------
+#
+# Why an allowlist and not a full repo scan:
+#   Flask uses the Python function name as the endpoint identifier. Two
+#   @bp.route decorators with different URLs but the same function name
+#   raise "View function mapping is overwriting an existing endpoint" at
+#   app.register_blueprint() replay time — aborting the whole blueprint
+#   mid-flight and silently dropping every route defined after the duplicate.
+#
+# This check is narrowly scoped to the 2 files where hundreds of Flask
+# routes live in one module. Running a full ruff F811 pass repo-wide would
+# drag in unrelated noise (non-blueprint files, test fixtures with
+# intentional redefinitions, etc.).
+#
+# Regression history:
+#   - Commit 37f04055 (2026-04-09) "feat: consolidated import wizard with
+#     built-in validator" added a second nc_api_save_as_template in
+#     tools/network/blueprint.py that collided with an older one at
+#     line 7644. Silently broke /discovery, /intelligence, /runbooks,
+#     /ingestion on the next dashboard restart. 2 days later the user
+#     noticed and asked "how come most of those routes used to work?".
+#     This check exists to make that class of bug loud.
+
+# Files where Flask route duplicates cause the highest blast radius.
+# Expand this list as new multi-route modules are added (new child apps,
+# new canvas blueprints, etc.). Each file listed here will be passed to
+# `ruff check --select F811`.
+_ROUTE_UNIQUENESS_FILES: List[str] = [
+    "tools/network/blueprint.py",
+    "tools/dashboard/app.py",
+]
+
+
+def check_route_uniqueness(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Run `ruff check --select F811` on an allowlist of high-risk multi-route
+    files. F811 is ruff's 'redefined-while-unused' rule — it flags any Python
+    function/class that is redefined in the same scope. For Flask blueprints,
+    that means two @bp.route decorators pointing at the same function name.
+
+    Scope: files listed in _ROUTE_UNIQUENESS_FILES (currently 2).
+    Runs in <100ms. Always fires regardless of --changed-files so a
+    drive-by developer can't skip it by omitting the file from their PR.
+    """
+    import subprocess
+
+    # Resolve the allowlist to existing absolute paths
+    target_files: List[Path] = []
+    missing_files: List[str] = []
+    for rel in _ROUTE_UNIQUENESS_FILES:
+        path = PROJECT_ROOT / rel
+        if path.exists():
+            target_files.append(path)
+        else:
+            missing_files.append(rel)
+
+    if not target_files:
+        return CoherenceCheck(
+            check_id="route_uniqueness",
+            check_name="Route Uniqueness (F811)",
+            status="warn",
+            expected=_ROUTE_UNIQUENESS_FILES,
+            actual=[],
+            missing=missing_files,
+            extra=[],
+            message=(
+                f"None of the {len(_ROUTE_UNIQUENESS_FILES)} allowlisted "
+                f"files exist; check skipped"
+            ),
+        )
+
+    # Build the ruff command. --select F811 narrows to ONLY duplicate-
+    # definition errors, not the full ruff rule set, so we don't inherit
+    # unrelated F401/F841 noise.
+    cmd = [
+        sys.executable, "-m", "ruff", "check",
+        "--select", "F811",
+        "--output-format", "concise",
+        *[str(p) for p in target_files],
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except FileNotFoundError:
+        return CoherenceCheck(
+            check_id="route_uniqueness",
+            check_name="Route Uniqueness (F811)",
+            status="warn",
+            expected=_ROUTE_UNIQUENESS_FILES,
+            actual=["ruff not installed"],
+            missing=[],
+            extra=[],
+            message=(
+                "ruff not available — install with `pip install ruff` to "
+                "enable the F811 route-uniqueness gate"
+            ),
+        )
+    except subprocess.TimeoutExpired:
+        return CoherenceCheck(
+            check_id="route_uniqueness",
+            check_name="Route Uniqueness (F811)",
+            status="warn",
+            expected=_ROUTE_UNIQUENESS_FILES,
+            actual=["ruff timed out after 30s"],
+            missing=[],
+            extra=[],
+            message="ruff check --select F811 timed out",
+        )
+
+    stdout = (result.stdout or "").strip()
+    # ruff exit codes: 0 = no issues, 1 = issues found, other = error
+    if result.returncode == 0:
+        return CoherenceCheck(
+            check_id="route_uniqueness",
+            check_name="Route Uniqueness (F811)",
+            status="pass",
+            expected=_ROUTE_UNIQUENESS_FILES,
+            actual=[f"Scanned {len(target_files)} file(s), 0 duplicates"],
+            missing=[],
+            extra=[],
+            message=(
+                f"No duplicate Flask view functions in "
+                f"{len(target_files)} route module(s)"
+            ),
+        )
+
+    # returncode == 1 means duplicates were found. Parse the concise output.
+    duplicates = [line for line in stdout.splitlines() if "F811" in line]
+    if not duplicates:
+        # Non-F811 error from ruff itself (unlikely but be defensive)
+        return CoherenceCheck(
+            check_id="route_uniqueness",
+            check_name="Route Uniqueness (F811)",
+            status="fail",
+            expected=_ROUTE_UNIQUENESS_FILES,
+            actual=[f"ruff exit={result.returncode}"],
+            missing=[],
+            extra=[stdout[:500]],
+            message=f"ruff F811 check failed: {(result.stderr or stdout)[:200]}",
+        )
+
+    return CoherenceCheck(
+        check_id="route_uniqueness",
+        check_name="Route Uniqueness (F811)",
+        status="fail",
+        expected=["No duplicate view function names in Flask blueprints"],
+        actual=[f"{len(duplicates)} duplicate(s) found"],
+        missing=[],
+        extra=duplicates,
+        message=(
+            f"{len(duplicates)} duplicate view function name(s) detected — "
+            f"Flask blueprint registration will abort mid-flight. Rename one "
+            f"of each pair. Details in 'extra' field."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -947,6 +1113,7 @@ CHECK_REGISTRY = {
     "append_only": check_append_only,
     "import_usage": check_import_usage,
     "api_wiring": check_api_wiring,
+    "route_uniqueness": check_route_uniqueness,
 }
 
 
@@ -964,6 +1131,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "fixture_schema": "suggest",  # suggest test fixture DDL
     "signature_call": "skip",  # too risky to auto-modify call sites
     "api_wiring": "suggest",  # suggest DB integration for hardcoded APIs
+    "route_uniqueness": "skip",  # rename-one-of-two needs human judgment
 }
 
 
