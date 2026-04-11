@@ -273,6 +273,308 @@ def run_auto_commit(message: Optional[str] = None) -> Dict[str, Any]:
         return {"committed": False, "message": str(exc)}
 
 
+# ── OPT-61: Agent-loop middleware ────────────────────────────────────────
+#
+# Three deterministic middlewares that wrap the LLM agent loop with
+# cross-cutting behaviors. Inspired by langchain-ai/open-swe (MIT) —
+# see _ATTRIBUTION_REGISTRY in tools/workflow/coherence_checker.py.
+# ICDEV implementation is independent; no upstream runtime dep.
+#
+#   check_message_queue    — mid-run message injection (OPT-62 primitive)
+#   safety_net_pr          — after-agent commit + PR creation
+#   tool_error_middleware  — decorator that catches tool exceptions and
+#                            reports them structured instead of crashing
+#                            the loop
+
+# Queue directory for mid-run messages. Each task id gets a .jsonl file;
+# each line is one queued message. check_message_queue drains the file.
+MESSAGE_QUEUE_DIR = BASE_DIR / ".tmp" / "kanban" / "messages"
+
+
+def check_message_queue(task_id: str) -> list[dict]:
+    """Drain the pending-message queue for a task.
+
+    Returns a list of queued messages (most common shape: {"role": "user",
+    "content": str, "sender": str, "ts": str}) and deletes the file.
+
+    Used by the kanban LocalPythonExecutor to inject mid-run user
+    messages before the next LLM call. If the queue is empty OR the
+    file doesn't exist, returns []. Never raises — queue failures
+    are soft.
+
+    Args:
+        task_id: The kanban_tasks.id of the running task.
+
+    Returns:
+        List of message dicts in FIFO order.
+    """
+    if not task_id:
+        return []
+    queue_file = MESSAGE_QUEUE_DIR / f"{task_id}.jsonl"
+    if not queue_file.exists():
+        return []
+
+    messages: list[dict] = []
+    try:
+        with open(queue_file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    messages.append(json.loads(line))
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        "check_message_queue: malformed JSON in %s: %s",
+                        queue_file, exc,
+                    )
+    except OSError as exc:
+        logger.warning("check_message_queue: read failed for %s: %s", queue_file, exc)
+        return []
+
+    # Drain: delete the file so these messages aren't re-delivered next
+    # poll. If the rename fails (e.g. the agent is still writing to
+    # it), leave the file alone and return what we have.
+    try:
+        queue_file.unlink()
+    except OSError:
+        pass
+
+    return messages
+
+
+def queue_message(task_id: str, content: str, sender: str = "user") -> dict:
+    """Append a message to a task's mid-run queue.
+
+    Used by the dashboard /api/kanban/tasks/<id>/message POST endpoint
+    (OPT-62) and by any external orchestrator that wants to interrupt
+    a running task.
+
+    Args:
+        task_id: The kanban_tasks.id of the running task.
+        content: Text of the message.
+        sender: Who sent it (default 'user').
+
+    Returns:
+        Dict with: queued (bool), path (str), ts (ISO string).
+    """
+    from datetime import datetime, timezone
+    if not task_id or not content:
+        return {"queued": False, "path": "", "ts": "", "error": "task_id and content required"}
+
+    MESSAGE_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    queue_file = MESSAGE_QUEUE_DIR / f"{task_id}.jsonl"
+    ts = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "role": "user",
+        "content": content,
+        "sender": sender,
+        "ts": ts,
+    }
+    try:
+        with open(queue_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+        return {"queued": True, "path": str(queue_file), "ts": ts}
+    except OSError as exc:
+        return {"queued": False, "path": str(queue_file), "ts": ts, "error": str(exc)}
+
+
+def safety_net_pr(
+    work_dir: Path | str,
+    task: dict,
+    branch_prefix: str = "auto-remediate/",
+    auto_open_pr: bool = True,
+) -> dict:
+    """After-agent safety net: commit any uncommitted changes in work_dir
+    and (optionally) open a draft PR.
+
+    Catches the case where an agent finished producing files but didn't
+    run `git add + git commit` itself. Runs `git status --porcelain` in
+    work_dir, commits any dirty state with a task-referenced message,
+    and — when gh CLI is available — opens a draft PR.
+
+    Args:
+        work_dir: Working directory the agent ran in. Usually a git
+            worktree checked out under .tmp/worktrees/<task_id>/.
+        task: The kanban task dict (uses id + title for commit message).
+        branch_prefix: Prefix for the branch name if we need to create one.
+        auto_open_pr: If True AND `gh` CLI is on PATH AND the repo has
+            a github remote, open a draft PR. If False, just commit.
+
+    Returns:
+        Dict with: committed (bool), commit_sha (str), pr_created (bool),
+        pr_url (str), work_dir (str), reason (str).
+    """
+    import subprocess
+    from datetime import datetime, timezone
+
+    result = {
+        "committed": False,
+        "commit_sha": "",
+        "pr_created": False,
+        "pr_url": "",
+        "work_dir": str(work_dir) if work_dir else "",
+        "reason": "",
+    }
+
+    work = Path(work_dir) if work_dir else BASE_DIR
+    if not work.exists():
+        result["reason"] = f"work_dir does not exist: {work}"
+        return result
+
+    task_id = task.get("id", "unknown")
+    task_title = (task.get("title") or "untitled")[:60]
+
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", cwd=str(work), timeout=10,
+        )
+    except Exception as exc:
+        result["reason"] = f"git status failed: {exc}"
+        return result
+
+    dirty_lines = [line for line in (status.stdout or "").splitlines() if line.strip()]
+    if not dirty_lines:
+        result["reason"] = "work_dir is clean — agent already committed or did nothing"
+        return result
+
+    # Stage + commit
+    commit_msg = (
+        f"auto-commit: {task_title}\n\n"
+        f"Safety-net commit for task {task_id}. Agent produced files "
+        f"but did not commit them. See tools/airgap/hook_compat.safety_net_pr.\n\n"
+        f"Files changed:\n"
+        + "\n".join(f"  {line}" for line in dirty_lines[:20])
+        + (f"\n  ... and {len(dirty_lines) - 20} more" if len(dirty_lines) > 20 else "")
+    )
+    try:
+        subprocess.run(
+            ["git", "add", "-A"], cwd=str(work), timeout=30,
+            capture_output=True, text=True,
+        )
+        commit_proc = subprocess.run(
+            ["git", "commit", "-m", commit_msg],
+            cwd=str(work), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=30,
+        )
+        if commit_proc.returncode != 0:
+            result["reason"] = f"git commit failed: {(commit_proc.stderr or commit_proc.stdout)[:200]}"
+            return result
+        # Extract the short sha
+        sha_proc = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(work), capture_output=True, text=True, timeout=10,
+        )
+        result["commit_sha"] = (sha_proc.stdout or "").strip()
+        result["committed"] = True
+    except Exception as exc:
+        result["reason"] = f"git add/commit raised: {exc}"
+        return result
+
+    # Optionally open a PR via gh
+    if auto_open_pr:
+        import shutil
+        if shutil.which("gh"):
+            try:
+                pr_proc = subprocess.run(
+                    [
+                        "gh", "pr", "create",
+                        "--draft",
+                        "--title", f"[agent] {task_title}",
+                        "--body", f"Auto-generated PR from task {task_id} via "
+                                  f"safety_net_pr middleware. "
+                                  f"Commit {result['commit_sha']}.",
+                    ],
+                    cwd=str(work), capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=30,
+                )
+                if pr_proc.returncode == 0:
+                    result["pr_created"] = True
+                    result["pr_url"] = (pr_proc.stdout or "").strip().splitlines()[-1] if pr_proc.stdout else ""
+                else:
+                    result["reason"] = f"gh pr create warned: {(pr_proc.stderr or '')[:200]}"
+            except Exception as exc:
+                result["reason"] = f"gh pr create raised: {exc}"
+        else:
+            result["reason"] = "gh CLI not on PATH — commit succeeded but PR skipped"
+
+    # Audit trail
+    try:
+        store_event({
+            "event_type": "safety_net_pr",
+            "task_id": task_id,
+            "committed": result["committed"],
+            "commit_sha": result["commit_sha"],
+            "pr_created": result["pr_created"],
+            "pr_url": result["pr_url"],
+            "reason": result["reason"],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass
+
+    return result
+
+
+def tool_error_middleware(fn):
+    """Decorator: catches exceptions in a tool call and returns a
+    structured error dict instead of crashing the agent loop.
+
+    Used by tools/canvas/auto_remediator.py handlers and any other
+    agent-dispatched tool that benefits from loop-safe error handling.
+    The wrapped function's return value is passed through unchanged
+    on success.
+
+    Logs failures to audit_trail via store_event with
+    event_type='tool_error' — best-effort, never fails the call.
+
+    Example:
+        @tool_error_middleware
+        def risky_handler(graph, finding):
+            ...
+            return (graph, "done")
+
+        result = risky_handler(graph, finding)
+        if isinstance(result, dict) and result.get("error"):
+            # handler raised; result has error, error_type, tool_name
+            ...
+    """
+    import functools
+    import traceback
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            tb = traceback.format_exc(limit=5)
+            err = {
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "tool_name": getattr(fn, "__name__", "unknown"),
+                "traceback": tb,
+            }
+            try:
+                store_event({
+                    "event_type": "tool_error",
+                    "tool_name": err["tool_name"],
+                    "error_type": err["error_type"],
+                    "error_message": str(exc)[:500],
+                    "traceback_preview": tb[:1000],
+                })
+            except Exception:
+                pass
+            logger.warning(
+                "tool_error_middleware: %s raised %s: %s",
+                err["tool_name"], err["error_type"], exc,
+            )
+            return err
+
+    return wrapper
+
+
 # ── CLI ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"Session ID: {get_session_id()}")
