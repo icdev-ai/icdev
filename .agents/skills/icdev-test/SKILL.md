@@ -1,6 +1,6 @@
 ---
 name: icdev-test
-description: "Runs pytest unit tests and behave BDD tests with coverage measurement, reports pass/fail and coverage percentage, and maps execution to NIST 800-53 control SA-11(1). Use when verifying test results, checking coverage before a merge, or running the test suite after a code change on an ICDEV™ project."
+description: Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -42,6 +42,14 @@ Run the CLI command or use MCP tool `control_map` MCP tool from icdev-compliance
 - Map `test.execute` activity to NIST controls
 
 ### 6. Output Summary
+Display:
+- Unit tests: X passed, Y failed, Z skipped
+- BDD tests: X scenarios passed, Y failed
+- Coverage: XX% (PASS/WARN based on threshold)
+- Failed test details (if any)
+- Compliance: Controls satisfied by test execution
+
+### 7. Output Summary
 Display:
 - Unit tests: X passed, Y failed, Z skipped
 - BDD tests: X scenarios passed, Y failed

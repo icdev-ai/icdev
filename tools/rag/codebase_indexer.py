@@ -573,6 +573,26 @@ def scan_codebase(
     errors = 0
     total_chunks = 0
 
+    # Phase 1a resilience fix (2026-04-11): commit per file.
+    #
+    # Prior behavior issued a single final commit at loop end, so one
+    # bad file anywhere in the 7000+ file walk would abort the Postgres
+    # transaction and silently drop every row on the final commit
+    # (observed 2026-04-11: indexed_files=7262 reported but 0 rows
+    # persisted).
+    #
+    # First attempt at a fix used batch-commit-every-N with rollback on
+    # exception, but empirically that still persisted 0 rows on full
+    # scan even though a per-file-commit diagnostic of the same
+    # function successfully landed 4964 rows. Root cause of the batch
+    # variant failing is unclear — possibly a psycopg2 pool interaction
+    # where an intermediate commit followed by more work within the
+    # same connection gets retroactively rolled back.
+    #
+    # Per-file commit is ~2-3x slower than batch commit but REPRODUCIBLY
+    # correct. For a 7200-file full scan that's ~90s vs ~30s — acceptable
+    # for a tool that runs on-demand or in a 30-minute background
+    # interval. Reliability trumps speed here.
     for fp in files:
         try:
             file_hash = _get_file_hash(fp)
@@ -615,6 +635,17 @@ def scan_codebase(
                     symbols,
                     len(chunks),
                 )
+                # Per-file commit — see comment above for why.
+                try:
+                    conn.commit()
+                except Exception as commit_exc:
+                    LOG.warning("Commit failed at file %s: %s", fp, commit_exc)
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    errors += 1
+                    continue
 
             total_chunks += len(chunks)
             indexed += 1
@@ -622,10 +653,21 @@ def scan_codebase(
         except Exception as exc:
             LOG.error("Error indexing %s: %s", fp, exc)
             errors += 1
+            # CRITICAL: rollback immediately so the aborted transaction
+            # state does not contaminate the next iteration. Without
+            # this, a single psycopg2.errors.* leaves the connection
+            # in "transaction aborted" state and every subsequent
+            # conn.execute() silently fails.
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
+    # Close the connection cleanly.
     if conn is not None:
         try:
-            conn.commit()
+            conn.close()
         except Exception:
             pass
 

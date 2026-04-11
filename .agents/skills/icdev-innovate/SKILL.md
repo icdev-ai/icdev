@@ -1,6 +1,6 @@
 ---
 name: icdev-innovate
-description: "Runs the ICDEV™ Innovation Engine to scan the web, analyze the codebase introspectively, monitor competitors, and propose improvement signals for the next program increment. Use when triggering an autonomous self-improvement cycle, discovering new patterns from external sources, or generating innovation backlog items from introspective codebase analysis."
+description: "Run the ICDEV™ Innovation Engine — autonomous self-improvement through web intelligence, introspective analysis, competitive monitoring, and standards tracking."
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"]
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: icdev-market
-description: "Manages the ICDEV™ Federated FORGE Asset Marketplace — publishes, installs, searches, reviews, and syncs skills, goals, hardprompts, context, args, and compliance extensions across tenants. Use when publishing a new FORGE asset to the marketplace, installing a skill or extension from another tenant, searching for reusable components, or reviewing a pending marketplace submission."
+description: "Manage the ICDEV™ Federated FORGE Asset Marketplace — publish, install, search, review, and sync skills, goals, hardprompts, context, args, and compliance extensions across tenant organizations."
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"]
 ---
 

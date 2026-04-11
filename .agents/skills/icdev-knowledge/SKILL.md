@@ -1,6 +1,6 @@
 ---
 name: icdev-knowledge
-description: "Searches, adds, and analyzes entries in the ICDEV™ self-learning knowledge base that drives self-healing and improvement recommendations. Use when looking up a known error pattern, recording a newly discovered solution, requesting project-specific improvement recommendations, or analyzing a failure for root cause."
+description: Query, search, and update the ICDEV™ learning knowledge base for patterns, solutions, and recommendations
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
