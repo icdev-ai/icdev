@@ -30,9 +30,18 @@ def list_tasks():
     status_filter = request.args.get("status")
     conn = get_connection()
     try:
+        # Execution queue ordering: within the same priority, tasks that
+        # will run first appear first. For `backlog` (queued for
+        # execution) and `scheduled` (time-deferred), sort by created_at
+        # ASC so the next-to-run is at the top — matches the kanban
+        # reflex's _get_due_tasks() ordering in tools/genesis/reflexes/
+        # kanban.py. For all other statuses (in_progress, done,
+        # suggested, token_exhausted), DESC gives a "most recent first"
+        # activity feed which is what operators expect.
+        created_at_dir = "ASC" if status_filter in ("backlog", "scheduled") else "DESC"
         order = (
             "CASE kt.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
-            "WHEN 'medium' THEN 2 ELSE 3 END, kt.created_at DESC"
+            f"WHEN 'medium' THEN 2 ELSE 3 END, kt.created_at {created_at_dir}"
         )
         select = (
             "SELECT kt.*, "
@@ -49,9 +58,24 @@ def list_tasks():
                 (status_filter,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                f"{select}ORDER BY {order}"  # nosec B608
+            # No filter: client groups by status. For the queue-like
+            # statuses (backlog, scheduled) we want ASC so the
+            # next-to-run is at the top; for history-like statuses we
+            # want DESC. Use two queries and concatenate — avoids a
+            # DB-specific CASE in ORDER BY.
+            priority_case = (
+                "CASE kt.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+                "WHEN 'medium' THEN 2 ELSE 3 END"
+            )
+            queue_rows = conn.execute(
+                f"{select}WHERE kt.status IN ('backlog','scheduled') "
+                f"ORDER BY {priority_case}, kt.created_at ASC"  # nosec B608
             ).fetchall()
+            other_rows = conn.execute(
+                f"{select}WHERE kt.status NOT IN ('backlog','scheduled') "
+                f"ORDER BY {priority_case}, kt.created_at DESC"  # nosec B608
+            ).fetchall()
+            rows = list(queue_rows) + list(other_rows)
         tasks = [dict(r) for r in rows]
         # Stringify datetimes for JSON
         for t in tasks:
