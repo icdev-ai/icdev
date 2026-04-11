@@ -1032,6 +1032,17 @@
 | Coherence Checker | tools/workflow/coherence_checker.py | Implementation coherence validator — 12 checks + 2-tier auto-fix (D-WF-8). Checks: schema_code, config_code, signature_call, fixture_schema, manifest, append_only, import_usage, ruff_lint (OPT-49), api_wiring, route_uniqueness, attribution_claims, llm_injection_patterns. Whitelist: args/ruff_gate.yaml. Wired into: Genesis audit, GKP promotion, CI/CD, marketplace, test orchestrator, heartbeat, production audit | --all, --check, --changed-files, --fix, --json, --human, --gate | Coherence report + auto-fix results |
 | Impact Analyzer | tools/workflow/impact_analyzer.py | Cross-subsystem integration gap detection (D-WF-8f) | --analyze, --graph, --changed-files, --changed-tables, --json | Impact recommendations |
 
+## Internal Awareness Engine (Phase 1a-1g)
+Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `kg-icdev-self-awareness`. Provides the `/components-map` dashboard page (JointJS tree + graph + hover + detail drawer) and a post-tool hook that auto-reindexes on every Edit/Write/NotebookEdit. Enablement-aware: disabled modules are indexed but visually dimmed and excluded from probing. See docs/features/internal-awareness-engine.md for the full plan.
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Enablement Helper | tools/awareness/enablement.py | Parses .env (with .env.example fallback) for `*_ENABLED` flags, hashes the flag set for drift detection, resolves component-level enablement via the declarative mapping | (library) | load_enablement_flags, enabled_flags_signature, load_enablement_map, is_component_enabled |
+| Component Indexer | tools/awareness/component_indexer.py | Deterministic filesystem walker. 6 parsers: skill, mcp_server, canvas_module, goal, tool, reflex. Writes typed nodes + edges to kg_nodes/kg_edges. Per-file idempotent upsert_file() API used by the post-tool hook. | --scan, --scan --scope, --dry-run, --stats, --json | Node/edge counts + persistence summary |
+| Post-Tool Hook | tools/awareness/hooks.py | Phase 44 TOOL_EXECUTE_AFTER subscriber. Filters Edit/Write/NotebookEdit on tracked extensions (.py .md .html .jinja2 .j2 .yaml .yml .json). Synchronously calls component_indexer.upsert_file() so kg_nodes refresh on every code change. Registered via auto-import at module load; dispatched asynchronously by post_tool_use.py so tool calls are never blocked. | (auto-registered via import) | Background node refresh |
+| Phase Promoter | tools/awareness/promote_next_phase.py | Advances the next Internal Awareness Engine phase from `scheduled` to eligible. Canonical title-based sort (Phase Na/6 → Phase Nb/6 → Phase (N+1)/6). Used by each phase task's final step. | --after <task_id>, --phase <N>, --list | JSON promotion summary |
+| Enablement Map | args/awareness_enablement_map.yaml | Declarative entity_type + path_glob → required flags mapping. Seed covers 11 canvases + RAG/GovCon/FINETUNE/FileSync + dashboard routes + reflexes. | (data) | 23 mapping rules |
+
 ## Code Intelligence & Verification
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
