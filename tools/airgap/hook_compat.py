@@ -169,11 +169,59 @@ APPEND_ONLY_TABLES = [
 ]
 
 
+# OPT-51 — git destructive-command blocklist (adapted from
+# mattpocock/skills/git-guardrails-claude-code, MIT). See
+# _ATTRIBUTION_REGISTRY in tools/workflow/coherence_checker.py.
+#
+# These commands can silently destroy work in a non-recoverable way.
+# Hooked through run_pre_tool_check so any orchestrator (Claude Code,
+# LLMRouter, MCP gateway) gets the same protection that .claude/hooks/
+# pre_tool_use.py already gives the Claude-only path.
+_GIT_DANGER_PATTERNS = [
+    # Force push — direct or via shorthand
+    (r"\bgit\s+push\s+(?:[^\n]*\s)?(?:--force\b|--force-with-lease\b|-f\b)",
+     "git push --force is destructive — rewrites remote history"),
+    # Hard reset anything
+    (r"\bgit\s+reset\s+(?:[^\n]*\s)?--hard\b",
+     "git reset --hard discards uncommitted changes"),
+    # Force delete branches. -D is case-sensitive (distinct from safe -d).
+    (r"\bgit\s+branch\s+(?:[^\n]*\s)?(?-i:-D)\b",
+     "git branch -D force-deletes branches (use -d for safe delete)"),
+    (r"\bgit\s+branch\s+(?:[^\n]*\s)?--delete\s+--force\b",
+     "git branch --delete --force force-deletes branches"),
+    # Dangerous clean
+    (r"\bgit\s+clean\s+(?:[^\n]*\s)?-[a-zA-Z]*f[a-zA-Z]*\b",
+     "git clean -f permanently deletes untracked files"),
+    # Checkout/restore of working tree — can wipe uncommitted edits
+    (r"\bgit\s+checkout\s+(?:--\s*\.|\.\s*$|\.\s)",
+     "git checkout . discards uncommitted working-tree changes"),
+    (r"\bgit\s+restore\s+(?:[^\n]*\s)?(?:--\s*\.|\.\s*$|\.\s)",
+     "git restore . discards uncommitted working-tree changes"),
+    # Commit amend on already-pushed commits is risky (heuristic — block
+    # only when combined with no-edit or with --force elsewhere)
+    (r"\bgit\s+rebase\s+(?:[^\n]*\s)?-i\b",
+     "interactive git rebase requires manual approval (no automation)"),
+]
+
+
+def _check_git_danger(command: str) -> Optional[str]:
+    """Return a block reason if the command matches a destructive git
+    pattern, else None. Case-insensitive match on the raw command text."""
+    import re
+
+    text = command
+    for pattern, reason in _GIT_DANGER_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return reason
+    return None
+
+
 def run_pre_tool_check(
     tool_name: str,
     tool_input: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Run pre-tool-use safety checks (append-only table protection).
+    """Run pre-tool-use safety checks (append-only table protection +
+    git destructive-command blocklist).
 
     Equivalent to .claude/hooks/pre_tool_use.py but callable from any
     orchestrator (not just Claude Code).
@@ -202,6 +250,24 @@ def run_pre_tool_check(
         return {"allowed": True, "reason": "no command to check"}
 
     command_lower = command.lower()
+
+    # OPT-51: destructive git command blocklist
+    git_reason = _check_git_danger(command)
+    if git_reason:
+        reason = f"BLOCKED: {git_reason}"
+        logger.warning(reason)
+        store_event(
+            get_session_id(),
+            "pre_tool_use",
+            tool_name,
+            {
+                "blocked": True,
+                "reason": reason,
+                "command_snippet": command[:200],
+                "rule": "git_danger_blocklist",
+            },
+        )
+        return {"allowed": False, "reason": reason}
 
     # Check for destructive operations on append-only tables
     for table in APPEND_ONLY_TABLES:

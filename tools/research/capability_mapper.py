@@ -7,7 +7,8 @@
 """
 Capability Mapper — maps research challenges to ICDEV™ capability catalog (D-RES-7).
 
-Uses a keyword-overlap algorithm (adapted from govcon/capability_mapper.py) to match
+Uses a keyword-overlap algorithm (reuses the approach from ICDEV's own
+tools/govcon/capability_mapper.py internal module) to match
 research challenges against the ICDEV™ capability catalog. For each challenge, extracts
 keywords from title + description, computes overlap against each capability's keyword
 set, and stores mappings in research_capability_map (append-only, D6/D-RES-5).

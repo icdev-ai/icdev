@@ -4,7 +4,7 @@
 """
 Unified comment/message posting across GitHub, GitLab, Slack, and Mattermost.
 
-Routes response messages to the correct platform based on the EventEnvelope
+Routes response messages to the correct platform using the EventEnvelope
 that triggered the workflow. All responses include [ICDEV™-BOT] identifier
 for loop prevention.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV™ SaaS - PostgreSQL Schema (ported from SQLite).
+"""ICDEV™ SaaS - PostgreSQL Schema (translated from the ICDEV SQLite DDL).
 CUI // SP-CTI
 
 Complete port of all ICDEV™ tables from SQLite to PostgreSQL DDL.

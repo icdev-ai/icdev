@@ -8,7 +8,7 @@ Artifacts generated:
   1. System Boundary Diagram (RMF Step 1) -- SVG markup
   2. Data Flow Diagram -- structured JSON with flow classification
   3. Ports / Protocols / Services (PPS) Matrix -- tabular data
-  4. Pre-populated STIG Checklist -- derived from topology objects
+  4. Pre-populated STIG Checklist -- generated from topology objects
 
 Each function takes a graph dict (nodes/edges) plus optional metadata and
 returns a serialisable dict.
