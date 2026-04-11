@@ -1815,3 +1815,10 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Promote Next Phase | tools\awareness\promote_next_phase.py | Auto-registered: awareness/promote_next_phase.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Component Indexer | tools\awareness\component_indexer.py | Auto-registered: awareness/component_indexer.py | --json | JSON |
+| Enablement | tools\awareness\enablement.py | Auto-registered: awareness/enablement.py | --json | JSON |
