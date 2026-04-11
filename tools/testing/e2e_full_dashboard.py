@@ -78,7 +78,6 @@ def visit_page(url, name, screenshot_name=None, expect_title=None):
         time.sleep(1.5)
 
         title = driver.title
-        status_code = 200  # Selenium doesn't give HTTP status directly
         body = driver.page_source
 
         # Check for error pages

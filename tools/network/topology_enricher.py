@@ -69,8 +69,7 @@ def enrich_topology(
     graph = json.loads(row["graph_json"])
     topo_name = row["name"]
 
-    # Separate existing groups from devices
-    existing_groups = [n for n in graph["nodes"] if n.get("type") == "group-site"]
+    # Separate devices from existing groups
     devices = [n for n in graph["nodes"] if n.get("type") != "group-site"]
 
     infra_added = 0

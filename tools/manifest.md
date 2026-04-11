@@ -1029,7 +1029,7 @@
 | Handoff Generator | tools/workflow/handoff_generator.py | Structured session handoff documents (D-WF-5) | --generate, --list, --get, --project-id, --json | Handoff markdown + DB record |
 | Process Verifier | tools/workflow/process_verifier.py | Verify required processes were invoked (D-WF-6) | --verify, --check, --loop-id, --project-id, --json | Pass/fail per process |
 | Intake Bridge | tools/workflow/intake_bridge.py | Intake→workflow loop bridge (D-WF-1 + RICOAS) | --bridge, --check, --session-id, --json | Loop with seeded AC from BDD |
-| Coherence Checker | tools/workflow/coherence_checker.py | Implementation coherence validator — 7 checks + 2-tier auto-fix (D-WF-8). Wired into: Genesis audit, GKP promotion, CI/CD, marketplace, test orchestrator, heartbeat, production audit | --all, --check, --changed-files, --fix, --json, --human, --gate | Coherence report + auto-fix results |
+| Coherence Checker | tools/workflow/coherence_checker.py | Implementation coherence validator — 12 checks + 2-tier auto-fix (D-WF-8). Checks: schema_code, config_code, signature_call, fixture_schema, manifest, append_only, import_usage, ruff_lint (OPT-49), api_wiring, route_uniqueness, attribution_claims, llm_injection_patterns. Whitelist: args/ruff_gate.yaml. Wired into: Genesis audit, GKP promotion, CI/CD, marketplace, test orchestrator, heartbeat, production audit | --all, --check, --changed-files, --fix, --json, --human, --gate | Coherence report + auto-fix results |
 | Impact Analyzer | tools/workflow/impact_analyzer.py | Cross-subsystem integration gap detection (D-WF-8f) | --analyze, --graph, --changed-files, --changed-tables, --json | Impact recommendations |
 
 ## Code Intelligence & Verification

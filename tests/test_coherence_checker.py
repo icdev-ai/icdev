@@ -8,6 +8,7 @@ Tests the 7 coherence checks and cross-subsystem impact analysis.
 import textwrap
 
 from tools.workflow.coherence_checker import (
+    CHECK_REGISTRY,
     CoherenceCheck,
     CoherenceReport,
     _extract_function_calls,
@@ -15,10 +16,12 @@ from tools.workflow.coherence_checker import (
     _extract_imports,
     _extract_name_usage,
     _extract_sql_columns_from_python,
+    _load_ruff_gate_whitelist,
     _parse_create_tables,
     check_append_only,
     check_fixture_schema,
     check_import_usage,
+    check_ruff_lint,
     check_schema_code,
     check_signature_call,
     run_checks,
@@ -240,6 +243,91 @@ class TestImportUsageCheck:
         result = check_import_usage(changed_files=[py_file])
         # json is used
         assert result.check_id == "import_usage"
+
+
+# ---------------------------------------------------------------------------
+# Ruff Lint Gate (OPT-49)
+# ---------------------------------------------------------------------------
+
+
+class TestRuffLintGate:
+    """Tests for the OPT-49 authoritative ruff F401/F811/F841 gate."""
+
+    def test_registered_in_check_registry(self):
+        assert "ruff_lint" in CHECK_REGISTRY
+        assert CHECK_REGISTRY["ruff_lint"] is check_ruff_lint
+
+    def test_clean_file_passes(self, tmp_path):
+        py_file = tmp_path / "clean.py"
+        py_file.write_text(
+            "import json\n\nprint(json.dumps({'ok': 1}))\n",
+            encoding="utf-8",
+        )
+        result = check_ruff_lint(changed_files=[py_file])
+        assert result.check_id == "ruff_lint"
+        assert result.status == "pass", f"unexpected: {result.message}"
+
+    def test_unused_import_fails(self, tmp_path):
+        py_file = tmp_path / "dirty.py"
+        # `os` is imported but never referenced → F401
+        py_file.write_text(
+            "import os\nimport json\nprint(json.dumps({'a': 1}))\n",
+            encoding="utf-8",
+        )
+        result = check_ruff_lint(changed_files=[py_file])
+        assert result.status == "fail"
+        assert any("F401" in line for line in result.extra)
+
+    def test_unused_local_fails(self, tmp_path):
+        py_file = tmp_path / "unused_local.py"
+        py_file.write_text(
+            "def f():\n    x = 42\n    return 7\n",
+            encoding="utf-8",
+        )
+        result = check_ruff_lint(changed_files=[py_file])
+        assert result.status == "fail"
+        assert any("F841" in line for line in result.extra)
+
+    def test_non_python_files_ignored(self, tmp_path):
+        not_py = tmp_path / "config.yaml"
+        not_py.write_text("key: value\n", encoding="utf-8")
+        result = check_ruff_lint(changed_files=[not_py])
+        # No .py targets → pass
+        assert result.status == "pass"
+
+    def test_whitelist_loader_handles_missing_file(self, tmp_path, monkeypatch):
+        # Point at a non-existent file — loader must return empty dict, not raise
+        from tools.workflow import coherence_checker as cc
+
+        monkeypatch.setattr(cc, "_RUFF_GATE_CONFIG", tmp_path / "nonexistent.yaml")
+        assert _load_ruff_gate_whitelist() == {}
+
+    def test_whitelist_loader_parses_yaml(self, tmp_path, monkeypatch):
+        from tools.workflow import coherence_checker as cc
+
+        wl_file = tmp_path / "wl.yaml"
+        wl_file.write_text(
+            "whitelist:\n"
+            "  tools/legacy/foo.py:\n"
+            "    - F401\n"
+            "    - F841\n"
+            "  tools/legacy/bar.py:\n"
+            "    - F811\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(cc, "_RUFF_GATE_CONFIG", wl_file)
+        wl = _load_ruff_gate_whitelist()
+        assert wl["tools/legacy/foo.py"] == {"F401", "F841"}
+        assert wl["tools/legacy/bar.py"] == {"F811"}
+
+    def test_whitelist_loader_handles_malformed_yaml(self, tmp_path, monkeypatch):
+        from tools.workflow import coherence_checker as cc
+
+        wl_file = tmp_path / "bad.yaml"
+        wl_file.write_text("this is: : not: valid: yaml:", encoding="utf-8")
+        monkeypatch.setattr(cc, "_RUFF_GATE_CONFIG", wl_file)
+        # Malformed → empty dict (fail-safe: stricter gate, not looser)
+        assert _load_ruff_gate_whitelist() == {}
 
 
 # ---------------------------------------------------------------------------
