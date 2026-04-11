@@ -4,7 +4,7 @@
 
 Every channel adapter (Telegram, Slack, Teams, Mattermost, internal)
 implements this interface.  The gateway agent loads adapters dynamically
-based on the channel config in args/remote_gateway_config.yaml.
+using the channel config in args/remote_gateway_config.yaml.
 
 Decision D133: Channel adapters are ABC + implementations (D66 pattern).
 Decision D140: Mattermost uses REST API (no WebSocket), consistent with D20.
