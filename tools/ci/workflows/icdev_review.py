@@ -1,122 +1,193 @@
-# [TEMPLATE: CUI // SP-CTI]
-# ICDEV™ Review — Code review workflow
-# Adapted from ADW adw_review.py with dual platform support
+# CUI // SP-CTI
+"""ICDEV™ Review — automated code-review workflow.
 
+A short CI script that runs the ``icdev_reviewer`` agent against the
+spec/plan file recorded in the kanban run state, posts a comment on the
+linked issue, and finalises git operations.
+
+Implements the contract documented in
+``docs/rewrite/adw/specs/tools/ci/workflows/icdev_review.md`` (OPT-75
+Phase 3 clean-room rewrite).
 """
-ICDEV™ Review — Automated code review against spec with security checks.
-
-Usage:
-    python tools/ci/workflows/icdev_review.py <issue-number> <run-id>
-
-Workflow:
-    1. Load state and find spec/plan file
-    2. Run review against specification
-    3. Filter issues by severity (blocker/warning/info)
-    4. Create patches for blocker issues
-    5. Commit review results
-    6. Push and update PR/MR
-"""
+from __future__ import annotations
 
 import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState  # noqa: E402
-from tools.ci.modules.git_ops import commit_changes, finalize_git_operations  # noqa: E402
-from tools.ci.modules.vcs import VCS  # noqa: E402
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from tools.ci.modules.agent import execute_template  # noqa: E402
-from tools.ci.modules.workflow_ops import (  # noqa: E402
-    format_issue_message,
+from tools.ci.modules.git_ops import (  # noqa: E402
+    commit_changes,
+    finalize_git_operations,
 )
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.workflow_ops import format_issue_message  # noqa: E402
 from tools.testing.data_types import AgentTemplateRequest  # noqa: E402
 from tools.testing.utils import setup_logger  # noqa: E402
 
-AGENT_REVIEWER = "icdev_reviewer"
-MAX_REVIEW_RETRY = 3
+
+# ── Public constants (preserved for callers that import them) ─────────────
+AGENT_REVIEWER: str = "icdev_reviewer"
+MAX_REVIEW_RETRY: int = 3
+
+# Cap on how much agent output we embed in an issue comment so we don't
+# blow past GitHub/GitLab body limits or paste a wall of text.
+OUTPUT_PREVIEW_CHARS: int = 2000
 
 
-def run_review(plan_file: str, run_id: str, logger: logging.Logger) -> dict:
-    """Run code review against the spec/plan file."""
+# ────────────────────────────────────────────────────────────────────────────
+# Public API
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def run_review(
+    plan_file: str,
+    run_id: str,
+    logger: logging.Logger,
+) -> Dict[str, Any]:
+    """Invoke the reviewer agent against ``plan_file``.
+
+    Returns the canonical dict shape documented in the spec, regardless
+    of whether the underlying ``execute_template`` returns an object or
+    a dict.
+    """
     request = AgentTemplateRequest(
         agent_name=AGENT_REVIEWER,
         slash_command="/icdev-review",
         args=[plan_file],
         run_id=run_id,
     )
-
     response = execute_template(request)
-
     return {
-        "success": response.success,
-        "output": response.output,
-        "session_id": response.session_id,
+        "success": bool(getattr(response, "success", False)),
+        "output": getattr(response, "output", "") or "",
+        "session_id": getattr(response, "session_id", None),
     }
 
 
-def main():
-    """Main entry point."""
-    if len(sys.argv) < 3:
-        print("Usage: python tools/ci/workflows/icdev_review.py <issue-number> <run-id>")
-        sys.exit(1)
+# ────────────────────────────────────────────────────────────────────────────
+# CLI helpers
+# ────────────────────────────────────────────────────────────────────────────
 
-    issue_number = sys.argv[1]
-    run_id = sys.argv[2]
 
-    state = ICDevState.load(run_id)
+def _parse_args(argv: List[str]) -> Optional[Dict[str, str]]:
+    if len(argv) < 3:
+        return None
+    return {"issue_number": argv[1], "run_id": argv[2]}
+
+
+def _bot_envelope(run_id: str, message: str) -> str:
+    return format_issue_message(run_id, AGENT_REVIEWER, message)
+
+
+def _coerce_issue_number(value: str, logger: logging.Logger) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.error("icdev_review: issue number is not numeric: %r", value)
+        return None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(list(argv) if argv is not None else sys.argv)
+    if args is None:
+        sys.stdout.write(
+            "Usage: python tools/ci/workflows/icdev_review.py "
+            "<issue-number> <run-id>\n"
+        )
+        return 1
+
+    run_id = args["run_id"]
     logger = setup_logger(run_id, "icdev_review")
-    logger.info(f"ICDEV™ Review starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(
+        "ICDEV™ Review starting — run_id=%s issue=#%s",
+        run_id, args["issue_number"],
+    )
+
+    state = ICDevState.load(run_id, logger=logger)
 
     try:
         vcs = VCS()
-    except ValueError as e:
-        logger.error(f"VCS initialization failed: {e}")
-        sys.exit(1)
+    except ValueError as exc:
+        logger.error("icdev_review: VCS initialization failed: %s", exc)
+        return 1
 
-    # Find plan/spec file
+    issue_int = _coerce_issue_number(args["issue_number"], logger)
+
     plan_file = state.get("plan_file")
     if not plan_file or not os.path.exists(plan_file):
-        logger.error(f"Plan file not found: {plan_file}")
-        vcs.comment_on_issue(
-            int(issue_number),
-            format_issue_message(run_id, AGENT_REVIEWER, "No plan file found — cannot review"),
-        )
-        sys.exit(1)
+        logger.error("icdev_review: plan file not found: %s", plan_file)
+        if issue_int is not None:
+            try:
+                vcs.comment_on_issue(
+                    issue_int,
+                    _bot_envelope(run_id, "No plan file found — cannot review"),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "icdev_review: comment_on_issue raised: %s", exc
+                )
+        return 1
 
-    vcs.comment_on_issue(
-        int(issue_number),
-        format_issue_message(run_id, AGENT_REVIEWER, "Starting code review"),
-    )
+    if issue_int is not None:
+        try:
+            vcs.comment_on_issue(
+                issue_int,
+                _bot_envelope(run_id, "Starting code review"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "icdev_review: starting comment failed: %s", exc
+            )
 
-    # Run review
-    review_result = run_review(plan_file, run_id, logger)
+    review = run_review(plan_file, run_id, logger)
+    preview = (review.get("output") or "")[:OUTPUT_PREVIEW_CHARS]
 
-    if review_result["success"]:
-        logger.info("Review completed successfully")
-        vcs.comment_on_issue(
-            int(issue_number),
-            format_issue_message(
-                run_id, AGENT_REVIEWER, f"## Code Review Complete\n\n{review_result['output'][:2000]}"
-            ),
-        )
+    if review["success"]:
+        logger.info("icdev_review: agent reported success")
+        body = f"## Code Review Complete\n\n{preview}"
     else:
-        logger.warning(f"Review found issues: {review_result['output'][:500]}")
-        vcs.comment_on_issue(
-            int(issue_number),
-            format_issue_message(run_id, AGENT_REVIEWER, f"## Code Review Issues\n\n{review_result['output'][:2000]}"),
-        )
+        logger.warning("icdev_review: agent reported issues: %s", preview[:500])
+        body = f"## Code Review Issues\n\n{preview}"
 
-    # Commit review artifacts
-    success, _ = commit_changes(f"{AGENT_REVIEWER}: review results for issue #{issue_number}")
-    if success:
-        finalize_git_operations(state, logger, vcs)
+    if issue_int is not None:
+        try:
+            vcs.comment_on_issue(issue_int, _bot_envelope(run_id, body))
+        except Exception as exc:
+            logger.warning(
+                "icdev_review: result comment failed: %s", exc
+            )
 
-    logger.info("Review phase completed")
+    committed, commit_err = commit_changes(
+        f"{AGENT_REVIEWER}: review results for issue #{args['issue_number']}",
+    )
+    if committed:
+        try:
+            finalize_git_operations(state, logger, vcs=vcs)
+        except Exception as exc:
+            logger.warning(
+                "icdev_review: finalize_git_operations raised: %s", exc
+            )
+    else:
+        logger.warning("icdev_review: commit failed: %s", commit_err)
+
     state.save("icdev_review")
+    logger.info("icdev_review: phase complete")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
