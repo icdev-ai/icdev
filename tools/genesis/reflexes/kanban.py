@@ -512,19 +512,34 @@ def _get_due_tasks() -> list:
     """
     conn = get_connection()
     try:
+        # Native task dependency gating — a task with a non-NULL
+        # depends_on_task_id is invisible to the listener until its
+        # dependency has been marked `done`. This replaces the
+        # park-in-scheduled workaround previously handled by
+        # tools/awareness/promote_next_phase.py. Idempotent and
+        # backward compatible: rows with NULL depends_on_task_id behave
+        # exactly as before.
+        dep_clause = (
+            "(kt.depends_on_task_id IS NULL "
+            " OR EXISTS (SELECT 1 FROM kanban_tasks dep "
+            "            WHERE dep.id = kt.depends_on_task_id "
+            "              AND dep.status = 'done'))"
+        )
+
         # Always pick up scheduled-and-due tasks
         scheduled = conn.execute(
-            "SELECT * FROM kanban_tasks "
-            "WHERE status = 'scheduled' "
-            "  AND scheduled_at IS NOT NULL "
-            "  AND scheduled_at <= datetime('now') "
+            "SELECT kt.* FROM kanban_tasks kt "
+            "WHERE kt.status = 'scheduled' "
+            "  AND kt.scheduled_at IS NOT NULL "
+            "  AND kt.scheduled_at <= datetime('now') "
+            f"  AND {dep_clause} "  # nosec B608 -- internal constant
             "ORDER BY "
-            "CASE priority "
+            "CASE kt.priority "
             "  WHEN 'critical' THEN 0 "
             "  WHEN 'high' THEN 1 "
             "  WHEN 'medium' THEN 2 "
             "  ELSE 3 END, "
-            "created_at ASC"
+            "kt.created_at ASC"
         ).fetchall()
         result = [dict(r) for r in scheduled]
 
@@ -548,17 +563,18 @@ def _get_due_tasks() -> list:
         # Backlog cooldown: skip tasks updated in the last 10 minutes
         # (prevents rapid-fire retry of recently failed tasks)
         backlog = conn.execute(
-            "SELECT * FROM kanban_tasks "
-            "WHERE status = 'backlog' "
-            "  AND (updated_at IS NULL "
-            "       OR updated_at <= datetime('now', '-10 minutes')) "
+            "SELECT kt.* FROM kanban_tasks kt "
+            "WHERE kt.status = 'backlog' "
+            "  AND (kt.updated_at IS NULL "
+            "       OR kt.updated_at <= datetime('now', '-10 minutes')) "
+            f"  AND {dep_clause} "  # nosec B608 -- internal constant
             "ORDER BY "
-            "CASE priority "
+            "CASE kt.priority "
             "  WHEN 'critical' THEN 0 "
             "  WHEN 'high' THEN 1 "
             "  WHEN 'medium' THEN 2 "
             "  ELSE 3 END, "
-            "created_at ASC "
+            "kt.created_at ASC "
             "LIMIT ?",
             (slots,),
         ).fetchall()

@@ -47,10 +47,14 @@ def list_tasks():
             "SELECT kt.*, "
             "op.confidence AS oracle_confidence, "
             "op.prediction_text AS oracle_proposed_action, "
-            "op.lens_name AS oracle_lens "
+            "op.lens_name AS oracle_lens, "
+            "dep.title  AS depends_on_title, "
+            "dep.status AS depends_on_status "
             "FROM kanban_tasks kt "
             "LEFT JOIN oracle_predictions op "
             "ON kt.source_prediction_id = op.id "
+            "LEFT JOIN kanban_tasks dep "
+            "ON kt.depends_on_task_id = dep.id "
         )
         if status_filter:
             rows = conn.execute(
@@ -77,14 +81,49 @@ def list_tasks():
             ).fetchall()
             rows = list(queue_rows) + list(other_rows)
         tasks = [dict(r) for r in rows]
-        # Stringify datetimes for JSON
+        # Stringify datetimes for JSON + compute is_blocked
         for t in tasks:
             for k in ("scheduled_at", "completed_at", "created_at", "updated_at"):
                 if t.get(k) and hasattr(t[k], "isoformat"):
                     t[k] = t[k].isoformat()
+            # Native dependency: a task is blocked whenever it has a
+            # depends_on_task_id that is not yet `done`. NULL dependency
+            # (no parent) → is_blocked = False, matches the listener's
+            # _get_due_tasks gating exactly.
+            if t.get("depends_on_task_id"):
+                t["is_blocked"] = t.get("depends_on_status") != "done"
+            else:
+                t["is_blocked"] = False
         return jsonify({"tasks": tasks, "total": len(tasks)})
     finally:
         conn.close()
+
+
+def _validate_dependency(conn, task_id: str, depends_on: str):
+    """Validate a proposed depends_on_task_id.
+
+    Returns (ok: bool, error: str|None). Checks:
+      * target exists in kanban_tasks
+      * no self-reference
+      * no 2-hop cycle (A→B→A). A full graph walk would protect against
+        longer cycles, but the dashboard+listener only ever materialize
+        linear phase chains in practice — 2-hop is sufficient guard
+        against accidental misuse from the UI and keeps the check O(1).
+    """
+    if not depends_on:
+        return True, None
+    if depends_on == task_id:
+        return False, "task cannot depend on itself"
+    row = conn.execute(
+        "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?",
+        (depends_on,),
+    ).fetchone()
+    if not row:
+        return False, f"depends_on_task_id {depends_on!r} not found"
+    parent_dep = dict(row).get("depends_on_task_id")
+    if parent_dep == task_id:
+        return False, "dependency would form a 2-hop cycle"
+    return True, None
 
 
 @kanban_api.route("/tasks", methods=["POST"])
@@ -96,13 +135,18 @@ def create_task():
 
     task_id = _gen_id()
     now = _utcnow()
+    depends_on = data.get("depends_on_task_id") or None
     conn = get_connection()
     try:
+        ok, err = _validate_dependency(conn, task_id, depends_on)
+        if not ok:
+            return jsonify({"error": err}), 400
         conn.execute(
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, "
-            "status, scheduled_at, executor_type, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "status, scheduled_at, executor_type, depends_on_task_id, "
+            "created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 task_id,
                 data["title"],
@@ -112,6 +156,7 @@ def create_task():
                 data.get("status", "backlog"),
                 data.get("scheduled_at"),
                 data.get("executor_type", "claude_cli"),
+                depends_on,
                 now,
                 now,
             ),
@@ -156,7 +201,13 @@ def update_task(task_id):
             "status",
             "scheduled_at",
             "executor_type",
+            "depends_on_task_id",
         )
+        # Validate dependency change before staging the UPDATE
+        if "depends_on_task_id" in data:
+            ok, err = _validate_dependency(conn, task_id, data["depends_on_task_id"])
+            if not ok:
+                return jsonify({"error": err}), 400
         sets = []
         vals = []
         for field in allowed:
