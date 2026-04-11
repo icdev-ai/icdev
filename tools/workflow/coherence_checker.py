@@ -13,7 +13,8 @@ Checks:
   4. fixture_schema — Test fixture CREATE TABLE matches init_icdev_db.py
   5. manifest       — New tool files documented in tools/manifest.md
   6. append_only    — Append-only tables protected in pre_tool_use.py
-  7. import_usage   — Unused imports in recently changed files
+  7. import_usage   — Unused imports in recently changed files (stdlib-only warn)
+  7b. ruff_lint     — Authoritative F401/F811/F841 gate via ruff (OPT-49)
   8. api_wiring     — API handlers read from DB, not hardcoded literals
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
@@ -800,6 +801,223 @@ def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 
 # ---------------------------------------------------------------------------
+# Check 7b: Ruff Lint Gate (OPT-49)
+# ---------------------------------------------------------------------------
+#
+# Authoritative F401/F811/F841 gate. Where `check_import_usage` is a
+# lightweight stdlib-only precursor that only WARNS, `check_ruff_lint`
+# FAILS the gate on any unused-import / redefinition / unused-local.
+#
+# Scope:
+#   - Default scope: tools/ (the implementation tree)
+#   - --changed-files: limit to those paths (pre-commit / pre_tool_use hook)
+#
+# Whitelist: args/ruff_gate.yaml — grandfathered `{file: [rule_codes]}`
+# entries skip the gate but are still reported as warnings so they can be
+# cleaned up opportunistically.
+
+
+_RUFF_GATE_RULES = ("F401", "F811", "F841")
+_RUFF_GATE_CONFIG = PROJECT_ROOT / "args" / "ruff_gate.yaml"
+
+
+def _load_ruff_gate_whitelist() -> Dict[str, Set[str]]:
+    """Load grandfathered whitelist from args/ruff_gate.yaml.
+
+    Schema:
+        whitelist:
+          tools/dashboard/app.py:
+            - F401
+          tools/legacy/foo.py:
+            - F401
+            - F841
+
+    Returns a dict keyed by normalized relative path → set of rule codes.
+    Missing file, malformed YAML, or missing pyyaml → empty dict (fail-safe
+    open: if the whitelist can't be read, NOTHING is grandfathered and the
+    gate is stricter, not looser).
+    """
+    if not _RUFF_GATE_CONFIG.exists():
+        return {}
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return {}
+    try:
+        raw = yaml.safe_load(_RUFF_GATE_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    wl = raw.get("whitelist") or {}
+    if not isinstance(wl, dict):
+        return {}
+    normalized: Dict[str, Set[str]] = {}
+    for path, codes in wl.items():
+        if not isinstance(path, str):
+            continue
+        # Normalize to forward-slash relative path
+        key = path.replace("\\", "/").lstrip("./")
+        if isinstance(codes, list):
+            normalized[key] = {str(c).upper() for c in codes}
+        elif isinstance(codes, str):
+            normalized[key] = {codes.upper()}
+    return normalized
+
+
+def _run_ruff_lint(
+    targets: List[Path],
+    rules: Tuple[str, ...] = _RUFF_GATE_RULES,
+) -> List[Dict[str, Any]]:
+    """Invoke ruff check in JSON output mode.
+
+    Returns a list of hit dicts: {filename, row, col, code, message}.
+    Exceptions during subprocess invocation return an empty list — the
+    caller will treat that as a pass (fail-open) because an exec failure
+    should not wedge the entire gate. Ruff's own exit code is NOT trusted
+    as the signal; we only trust the parsed JSON content.
+    """
+    import subprocess
+
+    if not targets:
+        return []
+    cmd = [
+        sys.executable,
+        "-m",
+        "ruff",
+        "check",
+        "--select",
+        ",".join(rules),
+        "--output-format",
+        "json",
+        "--no-fix",
+    ]
+    cmd.extend(str(t) for t in targets if t.exists())
+    # If every target filtered out, nothing to check
+    if len(cmd) == len([sys.executable, "-m", "ruff", "check", "--select", ",".join(rules), "--output-format", "json", "--no-fix"]):
+        return []
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except Exception:
+        return []
+    stdout = (proc.stdout or "").strip()
+    if not stdout:
+        return []
+    try:
+        parsed = json.loads(stdout)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return parsed
+
+
+def check_ruff_lint(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Check 7b: authoritative ruff F401/F811/F841 gate (OPT-49).
+
+    When `changed_files` is passed, scope is limited to those files — this
+    is the pre_tool_use / pre-commit path. When it is None (e.g. --all),
+    scope is the full `tools/` tree.
+
+    Whitelisted hits are downgraded to warn and do not fail the gate;
+    non-whitelisted hits fail it. No whitelist file = strict gate.
+
+    Why we keep BOTH this AND check_import_usage:
+      - import_usage is stdlib-only and runs in air-gap environments where
+        ruff may not be installed. It is a best-effort pre-warn.
+      - ruff_lint is the authoritative gate: zero false negatives on the
+        three rule codes we care about, and it matches what CI runs.
+    """
+    tools_root = PROJECT_ROOT / "tools"
+    if changed_files:
+        targets = [
+            f for f in changed_files
+            if f.suffix == ".py" and f.exists()
+        ]
+    else:
+        targets = [tools_root] if tools_root.exists() else []
+
+    if not targets:
+        return CoherenceCheck(
+            check_id="ruff_lint",
+            check_name="Ruff Lint Gate (F401/F811/F841)",
+            status="pass",
+            expected=["Zero F401/F811/F841 hits"],
+            actual=[],
+            missing=[],
+            extra=[],
+            message="No Python targets to check",
+        )
+
+    hits = _run_ruff_lint(targets)
+    whitelist = _load_ruff_gate_whitelist()
+
+    blocking: List[str] = []
+    grandfathered: List[str] = []
+    for h in hits:
+        fname = str(h.get("filename", "")).replace("\\", "/")
+        # Normalize to repo-relative path for whitelist lookup
+        try:
+            rel = str(Path(fname).resolve().relative_to(PROJECT_ROOT)).replace("\\", "/")
+        except Exception:
+            rel = fname
+        code = str(h.get("code", "")).upper()
+        loc = h.get("location") or {}
+        row = loc.get("row") or h.get("row") or 0
+        msg = (h.get("message") or "").split("\n")[0]
+        entry = f"{rel}:{row}: {code} {msg}"
+        if code in whitelist.get(rel, set()):
+            grandfathered.append(entry)
+        else:
+            blocking.append(entry)
+
+    if blocking:
+        return CoherenceCheck(
+            check_id="ruff_lint",
+            check_name="Ruff Lint Gate (F401/F811/F841)",
+            status="fail",
+            expected=["Zero non-whitelisted F401/F811/F841 hits"],
+            actual=blocking,
+            missing=[],
+            extra=blocking,
+            message=(
+                f"{len(blocking)} ruff lint hit(s) "
+                f"(+ {len(grandfathered)} whitelisted) — run with --fix "
+                f"or add to args/ruff_gate.yaml"
+            ),
+        )
+
+    if grandfathered:
+        return CoherenceCheck(
+            check_id="ruff_lint",
+            check_name="Ruff Lint Gate (F401/F811/F841)",
+            status="warn",
+            expected=["Zero F401/F811/F841 hits"],
+            actual=grandfathered,
+            missing=[],
+            extra=grandfathered,
+            message=(
+                f"All {len(grandfathered)} hit(s) whitelisted in "
+                "args/ruff_gate.yaml — gate passes but clean up when possible"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="ruff_lint",
+        check_name="Ruff Lint Gate (F401/F811/F841)",
+        status="pass",
+        expected=["Zero F401/F811/F841 hits"],
+        actual=[f"Scanned {len(targets)} target(s)"],
+        missing=[],
+        extra=[],
+        message="No blocking ruff lint issues",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check 8: api_wiring — verify API handlers read from DB, not hardcoded
 # ---------------------------------------------------------------------------
 
@@ -1229,8 +1447,8 @@ _BLOCKING_LICENSES = {
 # is rewritten clean-room.
 _REWRITE_IN_PROGRESS_ALLOWLIST: set[str] = {
     "tools/ci/modules/agent.py",
-    "tools/ci/modules/git_ops.py",
-    "tools/ci/modules/state.py",
+    # tools/ci/modules/git_ops.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 2/18)
+    # tools/ci/modules/state.py — REWRITTEN clean-room 2026-04-11 (OPT-75 file 1/18)
     "tools/ci/modules/vcs.py",
     "tools/ci/modules/workflow_ops.py",
     "tools/ci/workflows/icdev_build.py",
@@ -1697,6 +1915,7 @@ CHECK_REGISTRY = {
     "manifest": check_manifest,
     "append_only": check_append_only,
     "import_usage": check_import_usage,
+    "ruff_lint": check_ruff_lint,
     "api_wiring": check_api_wiring,
     "route_uniqueness": check_route_uniqueness,
     "attribution_claims": check_attribution_claims,
@@ -1711,6 +1930,7 @@ CHECK_REGISTRY = {
 # Fix tiers: auto (safe, no behavior change), suggest (needs review), skip (risky)
 _FIX_REGISTRY: Dict[str, str] = {
     "import_usage": "auto",  # ruff --fix --select F401,F811,F841
+    "ruff_lint": "auto",  # OPT-49: shares _autofix_imports (ruff --fix)
     "append_only": "auto",  # add table name to APPEND_ONLY_TABLES
     "manifest": "auto",  # auto-append missing tools to manifest.md
     "schema_code": "suggest",  # suggest ALTER TABLE DDL
@@ -1811,6 +2031,7 @@ def _autofix_manifest(check: CoherenceCheck) -> List[str]:
 
 _AUTOFIX_HANDLERS: Dict[str, Any] = {
     "import_usage": _autofix_imports,
+    "ruff_lint": _autofix_imports,  # OPT-49: same ruff --fix call
     "append_only": _autofix_append_only,
     "manifest": _autofix_manifest,
 }

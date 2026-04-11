@@ -334,7 +334,6 @@ def _persist_to_knowledge_graph(graph: dict, project_id: str, topology_id: str) 
     # Detect backend: Postgres uses %s placeholders, SQLite uses ?
     is_pg = hasattr(conn, "_conn") and type(conn._conn).__module__.startswith("psycopg")
     ph = "%s" if is_pg else "?"
-    upsert_suffix = " ON CONFLICT (id) DO NOTHING" if is_pg else " OR IGNORE"
     props_col = "properties" if is_pg else "properties_json"
 
     try:
