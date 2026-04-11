@@ -16,6 +16,7 @@ Checks:
   7. import_usage   — Unused imports in recently changed files (stdlib-only warn)
   7b. ruff_lint     — Authoritative F401/F811/F841 gate via ruff (OPT-49)
   8. api_wiring     — API handlers read from DB, not hardcoded literals
+  9. skill_standard — .agents/skills/*/SKILL.md conform to mattpocock/skills convention
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 Follows claude_dir_validator.py pattern (dataclass results, check registry).
@@ -1905,6 +1906,138 @@ def check_llm_injection_patterns(
 
 
 # ---------------------------------------------------------------------------
+# Check: SKILL.md standard (OPT-56 — mattpocock/skills convention)
+# ---------------------------------------------------------------------------
+
+_SKILL_DIR = PROJECT_ROOT / ".agents" / "skills"
+_SKILL_MAX_DESC = 1024
+_SKILL_MAX_BODY_LINES = 100
+
+
+def _parse_frontmatter(text: str) -> tuple[dict, int]:
+    """Return (frontmatter_dict, end_line_index) from a SKILL.md string.
+
+    end_line_index is the 0-based line index of the closing '---'.
+    Returns ({}, 0) if no valid frontmatter block found.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, 0
+    end = 0
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end == 0:
+        return {}, 0
+    fm: dict = {}
+    current_key: str = ""
+    for line in lines[1:end]:
+        if ":" in line and not line.startswith(" "):
+            k, _, v = line.partition(":")
+            current_key = k.strip()
+            fm[current_key] = v.strip().strip('"').strip("'")
+        elif current_key and line.startswith(" "):
+            fm[current_key] = fm.get(current_key, "") + " " + line.strip()
+    return fm, end
+
+
+def check_skill_standard() -> CoherenceCheck:
+    """Verify all .agents/skills/*/SKILL.md files conform to the mattpocock/skills standard.
+
+    Rules enforced (OPT-56):
+      - description field must exist and be non-empty
+      - description must be <= 1024 characters
+      - description must contain 'Use when' (second-sentence trigger convention)
+      - SKILL.md body (lines after frontmatter) must be <= 100 lines
+    """
+    if not _SKILL_DIR.exists():
+        return CoherenceCheck(
+            check_id="skill_standard",
+            check_name="SKILL.md Standard (OPT-56)",
+            status="pass",
+            expected=["skills directory present"],
+            actual=["no .agents/skills directory — skipping"],
+            missing=[],
+            extra=[],
+            message="No .agents/skills directory found — check skipped",
+        )
+
+    skill_files = sorted(_SKILL_DIR.glob("*/SKILL.md"))
+    if not skill_files:
+        return CoherenceCheck(
+            check_id="skill_standard",
+            check_name="SKILL.md Standard (OPT-56)",
+            status="pass",
+            expected=["at least one SKILL.md"],
+            actual=["no SKILL.md files found"],
+            missing=[],
+            extra=[],
+            message="No SKILL.md files found in .agents/skills/",
+        )
+
+    findings: list[str] = []
+    checked = 0
+
+    for skill_path in skill_files:
+        skill_name = skill_path.parent.name
+        text = skill_path.read_text(encoding="utf-8", errors="replace")
+        fm, fm_end_line = _parse_frontmatter(text)
+
+        # --- description checks ---
+        desc = fm.get("description", "").strip()
+        if not desc:
+            findings.append(f"{skill_name}: description is empty")
+        else:
+            if len(desc) > _SKILL_MAX_DESC:
+                findings.append(
+                    f"{skill_name}: description {len(desc)} chars > {_SKILL_MAX_DESC} limit"
+                )
+            if "use when" not in desc.lower():
+                findings.append(
+                    f"{skill_name}: description missing 'Use when' trigger sentence"
+                )
+
+        # --- body length check ---
+        lines = text.splitlines()
+        body_lines = lines[fm_end_line + 1 :] if fm_end_line > 0 else lines
+        body_count = len([ln for ln in body_lines if ln.strip()])  # non-blank lines
+        if body_count > _SKILL_MAX_BODY_LINES:
+            findings.append(
+                f"{skill_name}: body has {body_count} non-blank lines > {_SKILL_MAX_BODY_LINES} limit"
+                " — split verbose steps into REFERENCE.md"
+            )
+
+        checked += 1
+
+    if not findings:
+        return CoherenceCheck(
+            check_id="skill_standard",
+            check_name="SKILL.md Standard (OPT-56)",
+            status="pass",
+            expected=[f"all {checked} SKILL.md files conform to mattpocock/skills standard"],
+            actual=[f"{checked} files checked, 0 violations"],
+            missing=[],
+            extra=[],
+            message=f"All {checked} SKILL.md files conform to the standard",
+        )
+
+    return CoherenceCheck(
+        check_id="skill_standard",
+        check_name="SKILL.md Standard (OPT-56)",
+        status="fail",
+        expected=["description non-empty, <= 1024 chars, contains 'Use when'; body <= 100 non-blank lines"],
+        actual=[f"{len(findings)} violation(s) across {checked} SKILL.md files"],
+        missing=findings,
+        extra=[],
+        message=(
+            f"{len(findings)} SKILL.md violation(s) in {checked} files — "
+            "fix descriptions and split oversize bodies into REFERENCE.md"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -1921,6 +2054,7 @@ CHECK_REGISTRY = {
     "route_uniqueness": check_route_uniqueness,
     "attribution_claims": check_attribution_claims,
     "llm_injection_patterns": check_llm_injection_patterns,
+    "skill_standard": check_skill_standard,
 }
 
 
@@ -1942,6 +2076,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "route_uniqueness": "skip",  # rename-one-of-two needs human judgment
     "attribution_claims": "skip",  # license audit requires human confirmation
     "llm_injection_patterns": "skip",  # WARN-tier; fixes need human review
+    "skill_standard": "suggest",  # description rewrites need human judgment
 }
 
 

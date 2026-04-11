@@ -1,6 +1,6 @@
 ---
 name: icdev-mbse
-description: MBSE integration — import SysML/DOORS, build digital thread, generate code, sync, assess DES compliance
+description: "Integrates MBSE into the ICDEV™ SDLC by importing SysML XMI models and DOORS NG ReqIF requirements, building a digital thread, generating code from model elements, and assessing DES compliance per DoDI 5000.87. Use when importing Cameo/DOORS artifacts, generating code stubs from model blocks, detecting model-to-code drift, or preparing a DES conformance report."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 

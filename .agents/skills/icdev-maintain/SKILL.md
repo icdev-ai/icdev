@@ -1,6 +1,6 @@
 ---
 name: icdev-maintain
-description: Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs
+description: "Runs the full dependency maintenance lifecycle: inventories packages across all languages, checks CVEs, computes a maintenance score, optionally auto-remediates, and generates a CUI-marked audit report. Use when auditing a project's dependencies for security vulnerabilities, checking SLA compliance for overdue patches, or auto-updating packages before a review gate."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 
@@ -58,20 +58,6 @@ python tools/maintenance/remediation_engine.py --project-id <id> [--auto] [--dry
 ```
 
 ### 5. Output Summary
-Display:
-- Languages detected and scanned
-- Total dependencies (by language)
-- Outdated dependencies count
-- Vulnerable dependencies (by severity)
-- SLA compliance percentage
-- Overdue SLA items (critical/high)
-- Maintenance score: XX/100
-- Gate status: PASS/WARN/FAIL
-- Remediation actions taken (if --auto)
-- Report file path
-- Next steps
-
-### 6. Output Summary
 Display:
 - Languages detected and scanned
 - Total dependencies (by language)
