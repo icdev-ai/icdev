@@ -251,6 +251,84 @@ was copied from these sources; they informed design patterns and approaches:
   https://owasp.org/www-project-top-10-for-large-language-model-applications/
 
 --------------------------------------------------------------------------------
+ARCHITECTURAL INSPIRATIONS — 2026-04 batch
+--------------------------------------------------------------------------------
+
+The following projects were analyzed during the 2026-04 external-repo
+adaptation review (see kanban tasks OPT-51 through OPT-72). No code was
+copied from any of these sources; they informed design patterns only. Each
+pattern's ICDEV implementation is independent, uses ICDEV's existing
+LLMRouter / hook_compat / kanban layers, and carries a per-file header
+comment citing the upstream source.
+
+  mattpocock/skills — SKILL.md description format, progressive disclosure,
+  1024-char rule, REFERENCE.md bundling, scripts/ directory convention.
+  https://github.com/mattpocock/skills
+  License: MIT (no code used — convention/format only)
+  Adopted in: OPT-56 (skill audit + standard adoption)
+
+  langchain-ai/open-swe — Agent-loop middleware pattern (check_message_queue,
+  safety_net_pr, tool_error_handler), mid-run message injection, per-task
+  sandbox isolation philosophy.
+  https://github.com/langchain-ai/open-swe
+  License: MIT (no code used — architectural inspiration only)
+  Adopted in: OPT-61 (middleware), OPT-62 (message injection), OPT-63
+  (sandbox auto-recreate)
+
+  promptfoo/promptfoo — Declarative LLM eval YAML, side-by-side provider
+  comparison harness, red-teaming attack catalog structure, prompt-injection
+  static code-scan patterns.
+  https://github.com/promptfoo/promptfoo
+  License: MIT (no code used — architectural inspiration only)
+  Adopted in: OPT-64 (eval runner), OPT-65 (red team runner), OPT-66
+  (injection static scan). NOTE: promptfoo is TypeScript; the ICDEV
+  implementation is a clean-room Python reimplementation using the
+  existing tools.llm.router.LLMRouter provider abstraction.
+
+  langchain-ai/deepagents — Builtin tool catalog composition pattern
+  (write_todos, read_file, write_file, edit_file, ls, glob, grep, execute,
+  task/subagent) and one-line create_deep_agent() composer ergonomics.
+  https://github.com/langchain-ai/deepagents
+  License: MIT (no code used — pattern only)
+  Adopted in: OPT-67 (tools/agent_toolkit). NOTE: ICDEV does NOT import
+  the deepagents PyPI package to avoid the transitive LangGraph +
+  langchain-core hard dependency. The pattern is re-implemented as pure
+  deterministic Python on top of LLMRouter.
+
+  marmelab/react-admin — UX patterns (filter-as-you-type, optimistic
+  rendering, undo toast, saved filter presets) and declarative
+  <Resource name=... list=... edit=... create=...> concept.
+  https://github.com/marmelab/react-admin
+  License: MIT (no code used — UX patterns only)
+  Adopted in: OPT-68 (dashboard UX enhancements), OPT-69 (CRUD resource
+  helper). NOTE: react-admin is React/TypeScript; ICDEV is Flask+Jinja+
+  vanilla JS. No framework migration — only pattern adoption.
+
+  jonwiggins/optio — Autonomous task→PR→merge feedback loop pattern:
+  PR watcher daemon, CI failure classifier, resume-on-failure with
+  injected context, task state machine with explicit transitions, agent
+  adapter registry.
+  https://github.com/jonwiggins/optio
+  License: MIT (no code used — workflow pattern only)
+  Adopted in: OPT-70 (PR watcher feedback loop), OPT-71 (agent adapter
+  registry), OPT-72 (kanban state machine + error classifier). NOTE:
+  optio is TypeScript/Fastify/BullMQ/Kubernetes; the ICDEV
+  implementation is clean-room Python reusing ICDEV's existing
+  kanban_tasks + scheduler daemon + git worktrees. The upstream's
+  Kubernetes pod-per-repo, Next.js dashboard, and Linear/Jira/Notion
+  integrations are intentionally NOT adopted.
+
+EXPLICITLY EXCLUDED during the 2026-04 review:
+
+  666ghj/MiroFish — Multi-agent swarm simulation / "rehearse the future"
+  engine. SKIPPED for licensing.
+  https://github.com/666ghj/MiroFish
+  License: AGPL-3.0 (VIRAL — ruled out for adoption as ICDEV operates as
+  a networked dashboard service under Apache-2.0). No code, no patterns,
+  no concepts copied. Mentioned here only for record-keeping of the
+  review decision.
+
+--------------------------------------------------------------------------------
 NODE.JS DEPENDENCIES (see package.json)
 --------------------------------------------------------------------------------
 
