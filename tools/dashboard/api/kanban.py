@@ -125,6 +125,24 @@ def list_tasks():
                 key=lambda t: (t.get("oracle_confidence") or 0.0),
                 reverse=True,
             )
+        elif sort_param == "priority":
+            # Priority sort: critical → high → medium → low. Within the
+            # same priority class, fall through to value DESC so
+            # high-priority + high-impact items always surface first.
+            # Unknown priorities land at the bottom (rank 99) so schema
+            # drift doesn't poison the ordering.
+            _priority_rank = {
+                "critical": 0,
+                "high": 1,
+                "medium": 2,
+                "low": 3,
+            }
+            tasks.sort(
+                key=lambda t: (
+                    _priority_rank.get(t.get("priority") or "low", 99),
+                    -(t.get("oracle_value") or 0.0),
+                )
+            )
         return jsonify({"tasks": tasks, "total": len(tasks)})
     finally:
         conn.close()
