@@ -883,6 +883,58 @@ CREATE TABLE IF NOT EXISTS canvas_kg_build_log (
     duration_ms REAL DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    type TEXT DEFAULT 'event',
+    importance INTEGER DEFAULT 5,
+    embedding BLOB,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    content_hash TEXT,
+    user_id TEXT,
+    tenant_id TEXT,
+    source TEXT DEFAULT 'manual'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user
+    ON memory_entries(content_hash, user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_user_id ON memory_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_tenant_id ON memory_entries(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_memory_created ON memory_entries(created_at);
+
+CREATE TABLE IF NOT EXISTS daily_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(date);
+
+CREATE TABLE IF NOT EXISTS memory_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT,
+    query TEXT,
+    results_count INTEGER,
+    search_type TEXT,
+    accessed_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mem_access_search ON memory_access_log(search_type);
+
+CREATE TABLE IF NOT EXISTS memory_consolidation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_entry_id INTEGER,
+    target_entry_id INTEGER,
+    action TEXT NOT NULL CHECK(action IN ('MERGE','REPLACE','KEEP_SEPARATE','UPDATE','SKIP')),
+    method TEXT CHECK(method IN ('llm','keyword')),
+    similarity_score REAL,
+    reasoning TEXT,
+    merged_content TEXT,
+    dry_run INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mem_consol_action ON memory_consolidation_log(action);
+CREATE INDEX IF NOT EXISTS idx_mem_consol_source ON memory_consolidation_log(source_entry_id);
 """
 
 # ---------------------------------------------------------------------------
