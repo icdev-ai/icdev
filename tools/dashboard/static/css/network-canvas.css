@@ -53,7 +53,9 @@ a:hover { text-decoration: underline; }
   height: 52px;
   position: sticky;
   top: 0;
-  z-index: 100;
+  /* Leaflet uses z-index 400-700 for map panes/controls/popups; bump nav
+     above 700 so the menu isn't covered by the /map page's Leaflet canvas. */
+  z-index: 1000;
 }
 
 .nav-brand { display: flex; align-items: center; gap: 8px; }
@@ -99,7 +101,9 @@ a:hover { text-decoration: underline; }
   border-radius: 8px;
   padding: 12px;
   min-width: 480px;
-  z-index: 200;
+  /* Must stay above the sticky nav bar (z-index: 1000) so dropdowns aren't
+     clipped by the nav's own stacking context. */
+  z-index: 1100;
   box-shadow: 0 8px 32px rgba(0,0,0,.5);
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;

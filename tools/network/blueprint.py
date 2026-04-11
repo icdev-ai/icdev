@@ -8707,6 +8707,45 @@ Output ONLY the JSON object. No other text."""
     def nc_design_rules():
         return render_template("network/design_rules.html")
 
+    @bp.route("/api/design-rules", methods=["GET"])
+    @nc_login_required
+    def nc_api_design_rules():
+        """Return args/network_design_rules.yaml as JSON for the design-rules page.
+
+        The page template at templates/network/design_rules.html expects a dict
+        with on_node_add, best_practices, and ipv6_rules top-level keys. The
+        YAML already contains those exact keys plus on_edge_add. Deterministic,
+        air-gap-safe, no LLM.
+        """
+        try:
+            import yaml as _yaml_dr
+            _dr_path = _ICDEV_ROOT / "args" / "network_design_rules.yaml"
+            if not _dr_path.exists():
+                return jsonify({
+                    "on_node_add": {},
+                    "best_practices": {},
+                    "ipv6_rules": {},
+                    "on_edge_add": {},
+                    "error": "network_design_rules.yaml not found",
+                }), 200
+            with open(_dr_path, encoding="utf-8") as _drf:
+                data = _yaml_dr.safe_load(_drf) or {}
+            return jsonify({
+                "on_node_add": data.get("on_node_add", {}),
+                "best_practices": data.get("best_practices", {}),
+                "ipv6_rules": data.get("ipv6_rules", {}),
+                "on_edge_add": data.get("on_edge_add", {}),
+            })
+        except Exception as exc:
+            logger.warning("nc_api_design_rules failed: %s", exc)
+            return jsonify({
+                "on_node_add": {},
+                "best_practices": {},
+                "ipv6_rules": {},
+                "on_edge_add": {},
+                "error": str(exc),
+            }), 500
+
     @bp.route("/device-profiles")
     @nc_login_required
     def nc_device_profiles_page():
@@ -8999,9 +9038,16 @@ Output ONLY the JSON object. No other text."""
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    # Renamed from nc_api_save_as_template to nc_api_save_template_enricher to
+    # disambiguate from the older nc_api_save_as_template at line 7644 (which
+    # handles /api/topologies/<topo_id>/save-as-template with direct SQL). This
+    # newer wrapper delegates to tools.network.topology_enricher and has its own
+    # URL path (/api/topology/<tid>/save-template). The Python name collision
+    # was aborting the network blueprint registration mid-flight, hiding all
+    # subsequent routes (/discovery, /intelligence, /runbooks, /ingestion).
     @bp.route("/api/topology/<tid>/save-template", methods=["POST"])
     @nc_login_required
-    def nc_api_save_as_template(tid):
+    def nc_api_save_template_enricher(tid):
         try:
             from tools.network.topology_enricher import save_as_template
             data = request.get_json(force=True, silent=True) or {}
