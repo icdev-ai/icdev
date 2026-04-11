@@ -70,6 +70,17 @@ SCORING_PROFILES: Dict[str, Dict[str, float]] = {
         "centrality": 0.4,
         "recency": 0.2,
     },
+    # Phase 4 (Internal Awareness Engine) — for Q&A over the
+    # kg-icdev-self-awareness component graph. Edge weight matters
+    # most (structural relationships: executes/uses_tool/owns_table),
+    # centrality next (hub components like canvases score higher),
+    # recency is lowest because component structure changes slowly
+    # vs. recent health snapshots.
+    "internal_awareness": {
+        "edge_weight": 0.4,
+        "centrality": 0.4,
+        "recency": 0.2,
+    },
 }
 
 # Keywords for auto-detecting profile from query text
@@ -184,6 +195,40 @@ PROFILE_KEYWORDS: Dict[str, List[str]] = {
         "vdi",
         "vendor risk",
         "config drift",
+    ],
+    # Phase 4 — Internal Awareness Engine Q&A
+    "internal_awareness": [
+        "icdev",
+        "component",
+        "components",
+        "skill",
+        "skills",
+        "mcp",
+        "mcp server",
+        "canvas",
+        "canvases",
+        "goal",
+        "goals",
+        "reflex",
+        "reflexes",
+        "break",
+        "broken",
+        "regress",
+        "regression",
+        "drift",
+        "dependency",
+        "dependencies",
+        "imports",
+        "import",
+        "how does",
+        "what does",
+        "where is",
+        "which tool",
+        "which skill",
+        "self",
+        "self-awareness",
+        "awareness",
+        "enablement",
     ],
 }
 

@@ -71,6 +71,7 @@ REFLEX_NAMES = [
     "oracle",
     "goal_learner",
     "remediation_lens",
+    "awareness",
 ]
 
 # Backward-compat aliases for module-level access used by other code
