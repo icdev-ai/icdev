@@ -1,6 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
 # Active Extension Hook Configuration (Phase 44 — D261-D264)
-# Adapted from Agent Zero's extension point architecture
+# Independent ICDEV implementation of pluggable extension hooks.
+# Category-level concept similar to Agent Zero's extension system (MIT)
+# but architectures differ — see OPT-73 audit for the full comparison.
 ---
 
 extensions:

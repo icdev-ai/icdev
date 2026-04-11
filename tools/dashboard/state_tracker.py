@@ -2,11 +2,15 @@
 # CUI // SP-CTI
 """Dirty-tracking state push for ICDEV™ dashboard (Phase 44 — D268-D270).
 
-Per-client dirty/pushed version counters with debounced coalescing.
-Adapted from Agent Zero's StateMonitor pattern.
+Per-client dirty/pushed version counters with debounced coalescing. Pull-with-
+versioning model designed for Flask long-polling: clients send ?since_version=N
+and server returns only changes since that version. SSE debounced at 25ms,
+HTTP polling preserved at 3s.
 
-Clients send ?since_version=N, server returns only changes since that version.
-SSE debounced at 25ms, HTTP polling preserved at 3s.
+Category-level concept of "debounced mark-dirty notifications" is shared with
+Agent Zero's StateMonitor (MIT), but ICDEV's implementation uses an explicit
+pull+ACK transport model while Agent Zero pushes via WebSocket on debounce
+fire. Zero class overlap, zero architectural overlap. See OPT-73 audit.
 """
 
 import threading

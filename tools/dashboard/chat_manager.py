@@ -2,7 +2,11 @@
 # CUI // SP-CTI
 """Multi-stream parallel chat manager (Phase 44 — D257-D260, D265-D267).
 
-Thread-per-context execution model adapted from Agent Zero's DeferredTask pattern.
+Thread-per-context execution model for parallel chat sessions. Built on
+threading + sqlite3 primitives. Category-level concept shared with Agent
+Zero's DeferredTask (MIT) but implemented independently — different
+concurrency model (threading vs asyncio+Future), different persistence
+(SQLite vs in-memory), zero class/method overlap. See OPT-73 audit report.
 Contexts scoped to (user_id, tenant_id). Max 5 concurrent per user.
 Intervention via atomic field, checked at 3 points per agent loop iteration.
 

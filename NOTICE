@@ -215,8 +215,18 @@ The following projects and research influenced ICDEV's architecture. No code
 was copied from these sources; they informed design patterns and approaches:
 
   Agent Zero — Multi-agent communication patterns, extension hook architecture
-  https://github.com/frdel/agent-zero
-  License: GPL-3.0 (no code used — architectural inspiration only)
+  https://github.com/agent0ai/agent-zero
+  License: MIT (Copyright (c) 2025 Agent Zero, s.r.o)
+  Status: Concepts only — no code derived. Verified by structural audit
+  2026-04-11 (see OPT-73). ICDEV's tools/dashboard/chat_manager.py,
+  tools/dashboard/state_tracker.py, and tools/extensions/extension_manager.py
+  are independent implementations that share category-level concepts
+  (parallel task execution, debounced state updates, pluggable hooks) but
+  have zero class, method, or architectural overlap with Agent Zero's
+  helpers/defer.py, helpers/state_monitor.py, and helpers/extension.py.
+  Historical note: this entry previously claimed GPL-3.0, which was
+  factually incorrect — both the current agent0ai/agent-zero and the
+  earlier frdel/agent-zero URL resolve to MIT license.
 
   Amazon CodeCatalyst / Oxidizer — Cross-language translation pipeline patterns
   (post-order dependency traversal, mock-and-continue, feature mapping rules)
