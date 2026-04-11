@@ -245,11 +245,18 @@
   </div>
 </div>
 
-<!-- ── Scripts ── -->
-<script src="/static/vendor/jquery/jquery.min.js"></script>
+<!-- ── Scripts ──
+     Load order is critical: Backbone depends on both jQuery AND
+     underscore/lodash, so lodash MUST come before backbone. JointJS
+     needs all three to be present at global scope. Original Phase 1f
+     load order (jquery → backbone → lodash → joint) caused a
+     "Cannot read properties of undefined (reading 'extend')" error
+     because backbone ran before lodash was available. Fixed 2026-04-11
+     (Phase 1g E2E regression). -->
 <link rel="stylesheet" href="/static/vendor/jointjs/joint.css">
-<script src="/static/vendor/backbone/backbone-min.js"></script>
+<script src="/static/vendor/jquery/jquery.min.js"></script>
 <script src="/static/vendor/lodash/lodash.min.js"></script>
+<script src="/static/vendor/backbone/backbone-min.js"></script>
 <script src="/static/vendor/jointjs/joint.js"></script>
 
 <script>
