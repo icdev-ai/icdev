@@ -201,6 +201,64 @@ def delete_task(task_id):
         conn.close()
 
 
+@kanban_api.route("/tasks/<task_id>/message", methods=["POST"])
+def inject_message(task_id):
+    """OPT-62: inject a mid-run message into a running kanban task.
+
+    Adapted from langchain-ai/open-swe (MIT) — the 'message it while it's
+    running' pattern. The message is appended to a JSONL queue that the
+    task's executor loop drains before each LLM call. Returns 409 Conflict
+    if the task is not currently running.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    content = (data.get("message") or "").strip()
+    sender = (data.get("sender") or "user").strip() or "user"
+    if not content:
+        return jsonify({"error": "message is required"}), 400
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "Task not found"}), 404
+
+    running_states = ("in_progress", "scheduled")
+    if row["status"] not in running_states:
+        return jsonify({
+            "error": "Task is not running",
+            "status": row["status"],
+        }), 409
+
+    try:
+        from tools.airgap.hook_compat import queue_message
+    except Exception as exc:  # pragma: no cover - defensive
+        return jsonify({"error": f"hook_compat unavailable: {exc}"}), 500
+
+    result = queue_message(task_id, content, sender=sender)
+    if not result.get("queued"):
+        return jsonify(result), 400
+
+    try:
+        sse_manager.broadcast({
+            "action": "message_queued",
+            "task_id": task_id,
+            "sender": sender,
+        }, "kanban")
+    except Exception:
+        pass  # best-effort
+
+    return jsonify({
+        "status": "queued",
+        "task_id": task_id,
+        "sender": sender,
+        "poll_at": _utcnow(),
+    }), 200
+
+
 @kanban_api.route("/tasks/<task_id>/move", methods=["POST"])
 def move_task(task_id):
     """Move a task to a new status column."""

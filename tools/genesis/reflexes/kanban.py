@@ -741,6 +741,11 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     def _runner():
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+        from tools.airgap import hook_compat
+
+        # OPT-62: cap the mid-run message-injection loop so a stuck queue
+        # can't spin forever. Each iteration is one LLMRouter.invoke() call.
+        MAX_ITERATIONS = 10
 
         # Open the log fresh — overwrite any prior partial content
         with open(task_log, "w", encoding="utf-8", errors="replace") as fh:
@@ -748,31 +753,71 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
             fh.write(f"[work_dir {work_dir}]\n\n")
 
             router = LLMRouter()
-            request = LLMRequest(
-                messages=[{"role": "user", "content": instruction}],
-                system_prompt=(
-                    "You are an autonomous task executor for the ICDEV™ "
-                    "kanban system. Read the task prompt, plan the work, and "
-                    "produce a detailed written plan + result. You cannot "
-                    "directly execute shell commands or edit files in this "
-                    "execution mode — describe exactly what should be done so "
-                    "a downstream tool or human can apply it."
-                ),
-                max_tokens=8192,
-                temperature=0.3,
-                agent_id="kanban-executor",
-                project_id="dashboard-kanban",
+            system_prompt = (
+                "You are an autonomous task executor for the ICDEV™ "
+                "kanban system. Read the task prompt, plan the work, and "
+                "produce a detailed written plan + result. You cannot "
+                "directly execute shell commands or edit files in this "
+                "execution mode — describe exactly what should be done so "
+                "a downstream tool or human can apply it."
             )
-            response = router.invoke("code_generation", request)
+            messages: list = [{"role": "user", "content": instruction}]
 
-            fh.write(response.content or "")
-            fh.write(
-                f"\n\n[LLM metadata] provider={response.provider} "
-                f"model={response.model_id} "
-                f"in_tokens={response.input_tokens} "
-                f"out_tokens={response.output_tokens} "
-                f"duration_ms={response.duration_ms}\n"
-            )
+            for iteration in range(1, MAX_ITERATIONS + 1):
+                fh.write(f"\n[iteration {iteration}/{MAX_ITERATIONS}]\n")
+                request = LLMRequest(
+                    messages=list(messages),
+                    system_prompt=system_prompt,
+                    max_tokens=8192,
+                    temperature=0.3,
+                    agent_id="kanban-executor",
+                    project_id="dashboard-kanban",
+                )
+                response = router.invoke("code_generation", request)
+
+                fh.write(response.content or "")
+                fh.write(
+                    f"\n[LLM metadata] provider={response.provider} "
+                    f"model={response.model_id} "
+                    f"in_tokens={response.input_tokens} "
+                    f"out_tokens={response.output_tokens} "
+                    f"duration_ms={response.duration_ms}\n"
+                )
+                try:
+                    fh.flush()
+                except Exception:
+                    pass
+
+                # OPT-62: drain the user message queue. If nothing was
+                # injected mid-run, the task is done — exit the loop.
+                try:
+                    queued = hook_compat.check_message_queue(task_id)
+                except Exception as exc:
+                    fh.write(f"[check_message_queue error] {exc}\n")
+                    queued = []
+
+                if not queued:
+                    break
+
+                fh.write(
+                    f"\n[OPT-62] injecting {len(queued)} queued "
+                    f"message(s) into iteration {iteration + 1}\n"
+                )
+                messages.append(
+                    {"role": "assistant", "content": response.content or ""}
+                )
+                for m in queued:
+                    sender = m.get("sender", "user") or "user"
+                    content_text = m.get("content", "") or ""
+                    messages.append({
+                        "role": "user",
+                        "content": f"[injected by {sender}] {content_text}",
+                    })
+            else:
+                fh.write(
+                    f"\n[OPT-62] hit MAX_ITERATIONS={MAX_ITERATIONS} "
+                    f"with pending messages — stopping\n"
+                )
 
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
