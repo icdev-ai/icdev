@@ -15,14 +15,32 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def dispatch_extension_hook(tool_name: str, tool_input: dict, tool_output: str):
-    """Best-effort dispatch of TOOL_EXECUTE_AFTER extension point (Phase 44 Feature 2)."""
+    """Best-effort dispatch of TOOL_EXECUTE_AFTER extension point (Phase 44 Feature 2).
+
+    Fixed 2026-04-11 (Phase 1e): the prior call used keyword args
+    ``context_id=``/``data=`` that do not match the dispatch signature
+    ``dispatch(hook_point, context: dict)``, so the call silently
+    raised TypeError and no handlers ever fired. Now passes a proper
+    context dict including the full tool_input so subscribers (like
+    the awareness component indexer) can extract file paths.
+    """
+    try:
+        import tools.awareness.hooks  # noqa: F401  — registers subscriber on first import
+    except Exception:
+        pass  # Awareness hook optional
+
     try:
         from tools.extensions.extension_manager import extension_manager, ExtensionPoint
-        extension_manager.dispatch(
+        # Fire-and-forget: observational hooks (like the awareness
+        # component indexer) run in a background daemon thread so
+        # tool execution is NEVER blocked waiting for them. The
+        # hook has a 30ms target but a 150ms p50 in practice —
+        # moving to async dispatch makes that invisible to users.
+        extension_manager.dispatch_async(
             ExtensionPoint.TOOL_EXECUTE_AFTER,
-            context_id=f"hook_{tool_name}",
-            data={
+            {
                 "tool_name": tool_name,
+                "tool_input": tool_input if isinstance(tool_input, dict) else {},
                 "tool_input_keys": list(tool_input.keys()) if isinstance(tool_input, dict) else [],
                 "output_length": len(str(tool_output)) if tool_output else 0,
             },
