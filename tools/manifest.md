@@ -5,6 +5,7 @@
 ## Memory System
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Init Memory DB | tools/memory/init_memory_db.py | Initialize data/memory.db with all memory tables (memory_entries, daily_logs, memory_access_log, memory_consolidation_log, memory_buffer) | --db-path, --json | Table list + status |
 | Memory Read | tools/memory/memory_read.py | Load all memory (MEMORY.md + recent logs) | --format markdown | Formatted memory context |
 | Memory Write | tools/memory/memory_write.py | Write to daily log + DB | --content, --type, --importance | Confirmation |
 | Memory DB | tools/memory/memory_db.py | Keyword search on memory database | --action search, --query | Search results |
