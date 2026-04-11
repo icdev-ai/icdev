@@ -1476,6 +1476,36 @@ def create_app() -> Flask:
             canvas_compliance = []
             overall_scores = []
 
+            # OPT-47 — latest-per-design scoring. Old code averaged every
+            # assessment row ever written, which let stale failed assessments
+            # from days or weeks ago drag scores down forever (e.g. Infra was
+            # pinned at 61.5 for 18 identical rows from 2026-04-03 even after
+            # new 100.0 rows landed). The subquery below picks the most recent
+            # assessment per design_id, then averages across designs. That
+            # reflects the *current* state of the canvas, not historical noise.
+            #
+            # Network and Pipeline canvases are unchanged — they use
+            # status-based open/closed counts on a direct findings table, not
+            # historical assessment rows.
+            def _latest_per_design_avg(cc, table: str, score_col: str = "score") -> float:
+                """Average of the latest score per design_id. Works on SQLite
+                and on the Postgres storage layer (correlated subquery form)."""
+                q = (
+                    f"SELECT AVG({score_col}) FROM {table} a1 "  # nosec B608
+                    f"WHERE created_at = ("
+                    f"  SELECT MAX(created_at) FROM {table} a2 "  # nosec B608
+                    f"  WHERE a2.design_id = a1.design_id"
+                    f")"
+                )
+                try:
+                    r = cc.execute(q).fetchone()
+                    return float(r[0] or 0)
+                except Exception:
+                    # Fall back to historical average if the subquery form isn't
+                    # supported by this backend.
+                    fallback = cc.execute(f"SELECT AVG({score_col}) FROM {table}").fetchone()  # nosec B608
+                    return float(fallback[0] or 0)
+
             for canvas_name, db_path in _CANVAS_DBS:
                 if not db_path.exists():
                     continue
@@ -1484,41 +1514,61 @@ def create_app() -> Flask:
                     cconn.row_factory = _sqlite3.Row
                     try:
                         if canvas_name == "Security":
-                            row = cconn.execute(
-                                "SELECT AVG(risk_score) as avg_score, COUNT(*) as total_threats FROM sc_assessments"
-                            ).fetchone()
-                            score = round(max(0.0, 100.0 - float(row["avg_score"] or 0)), 1)
-                            open_f = int(row["total_threats"] or 0)
+                            # Security stores risk_score (inverted) in sc_assessments.
+                            # Pick the latest risk_score per design_id, invert, average.
+                            try:
+                                r = cconn.execute(
+                                    "SELECT AVG(risk_score) FROM sc_assessments a1 "
+                                    "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id)"
+                                ).fetchone()
+                                avg_risk = float(r[0] or 0)
+                            except Exception:
+                                avg_risk = float(cconn.execute(
+                                    "SELECT AVG(risk_score) FROM sc_assessments"
+                                ).fetchone()[0] or 0)
+                            total_threats = int(cconn.execute(
+                                "SELECT COUNT(*) FROM sc_assessments"
+                            ).fetchone()[0] or 0)
+                            score = round(max(0.0, 100.0 - avg_risk), 1)
+                            open_f = total_threats
                             closed_f = 0
                         elif canvas_name in ("Network", "Pipeline"):
                             tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
                             open_f = cconn.execute(
-                                f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status = 'open'"
+                                f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status = 'open'"  # nosec B608
                             ).fetchone()["cnt"]
                             closed_f = cconn.execute(
-                                f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status != 'open'"
+                                f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status != 'open'"  # nosec B608
                             ).fetchone()["cnt"]
                             total_f = open_f + closed_f
                             score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
                         elif canvas_name in ("Infra", "Data"):
                             tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
-                            row = cconn.execute(f"SELECT AVG(score) as avg_score FROM {tbl}").fetchone()
-                            score = round(float(row["avg_score"] or 0), 1)
+                            score = round(_latest_per_design_avg(cconn, tbl), 1)
                             open_f = 0
                             closed_f = 0
                         elif canvas_name == "Boundary":
-                            row = cconn.execute(
-                                "SELECT SUM(cat1_findings) as cat1, "
-                                "SUM(cat2_findings) as cat2, "
-                                "SUM(cat3_findings) as cat3, "
-                                "AVG(score) as avg_score FROM bd_assessments"
-                            ).fetchone()
-                            open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
+                            # Latest-per-design score; sum the cat counts across the latest rows
+                            try:
+                                score = round(_latest_per_design_avg(cconn, "bd_assessments"), 1)
+                                cat_row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
+                                    "SUM(cat3_findings) as c3 FROM bd_assessments a1 "
+                                    "WHERE created_at = (SELECT MAX(created_at) FROM bd_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id)"
+                                ).fetchone()
+                                open_f = int((cat_row["c1"] or 0) + (cat_row["c2"] or 0) + (cat_row["c3"] or 0))
+                            except Exception:
+                                row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
+                                    "SUM(cat3_findings) as cat3, AVG(score) as avg_score FROM bd_assessments"
+                                ).fetchone()
+                                score = round(float(row["avg_score"] or 0), 1)
+                                open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
                             closed_f = 0
-                            score = round(float(row["avg_score"] or 0), 1)
                         elif canvas_name == "Observability":
-                            row = cconn.execute("SELECT AVG(score) as avg_score FROM od_assessments").fetchone()
-                            score = round(float(row["avg_score"] or 0), 1)
+                            score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
                             open_f = 0
                             closed_f = 0
                         else:
