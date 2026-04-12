@@ -1823,10 +1823,10 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Topology Validator | tools\network\topology_validator.py | Auto-registered: network/topology_validator.py | --json | JSON |
 
 
-## Auto-Registered (Coherence Fix)
+## Canvas Auto-Remediation
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Auto Remediator | tools\canvas\auto_remediator.py | Auto-registered: canvas/auto_remediator.py | --json | JSON |
+| Canvas Auto-Remediator | tools\canvas\auto_remediator.py | POA&M auto-remediation CLI — applies vendor-neutral design-completeness fixes to approved/pending findings across all 9 canvases (security, observability, boundary, infra, data, network, pipeline, QDC, migration). Pipeline per finding: backup canvas DB → mutate graph_json with per-rule handler → re-run assessment to verify fix → mark finding_approvals.decision='remediated' → append audit_trail row (event_type='vulnerability_resolved'). Supports --dry-run, --list-handlers, --canvas filter. | --finding-hash \<hash\>, --all-pending, --all-approved, --canvas \<name\>, --list-handlers, --dry-run, --gate, --json | JSON remediation report (status, findings processed, remediated count, skipped, errors) |
 
 
 ## Auto-Registered (Coherence Fix)
