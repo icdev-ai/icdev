@@ -1232,13 +1232,13 @@ def generate_migration_tests(plan_id, output_dir="."):
 
             @pytest.fixture
             def legacy_conn():
-                conn = sqlite3.connect("legacy.db")
+                conn = sqlite3.connect("legacy.db")  # sqlite3-ok — template code generated for legacy migration tests
                 yield conn
                 conn.close()
 
             @pytest.fixture
             def modern_conn():
-                conn = sqlite3.connect("modern.db")
+                conn = sqlite3.connect("modern.db")  # sqlite3-ok — template code generated for modern migration tests
                 yield conn
                 conn.close()
 

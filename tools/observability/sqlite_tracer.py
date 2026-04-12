@@ -256,7 +256,7 @@ class SQLiteTracer(Tracer):
             return
 
         try:
-            conn = sqlite3.connect(str(self._db_path), timeout=5)
+            conn = get_connection(str(self._db_path))
             for span in spans_to_write:
                 try:
                     conn.execute(

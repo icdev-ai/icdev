@@ -69,7 +69,7 @@ def get_memory_db_path(explicit: Optional[Union[str, Path]] = None) -> Path:
     Memory tables (memory_entries, daily_logs, memory_access_log,
     memory_consolidation_log, memory_buffer) are consolidated into the main
     icdev.db / PostgreSQL backend.  This function returns the main DB path so
-    existing callers that use the returned path for sqlite3.connect() still
+    existing callers that use the returned path for sqlite3.connect() still  # sqlite3-ok — docstring reference, not a call
     work on SQLite deployments.
 
     Fallback: ICDEV_MEMORY_DB_PATH env var > main icdev DB path
