@@ -9,9 +9,18 @@ Connects to ICDEV™'s WriteGuard tools via direct Python imports for:
 - Tone profiling (thought-leadership + educational)
 - Plagiarism detection (RAG similarity)
 - AI content detection (deterministic)
+
+v6b additions:
+- compute_composites(): 5 named composite scores (Correctness, Clarity,
+  Delivery, Originality, Engagement) mapped from base checks + inline metrics
+- score_sections(): section-level scoring split by markdown headings,
+  flags the weakest section with targeted recommendations
+- Color badge on WriteGuard Score: Green ≥80, Yellow 60-79, Red <60
 """
 
 import logging
+import math
+import re
 import sys
 from pathlib import Path
 
@@ -230,6 +239,382 @@ def check_ai_detection(text: str) -> dict:
         return {"status": "error", "score": 50, "error": str(e)}
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# Inline text-metric helpers (pure Python, no external deps)
+# ────────────────────────────────────────────────────────────────────────────
+
+# Passive voice: "is/are/was/were/be/been/being + past participle"
+_PASSIVE_RE = re.compile(
+    r"\b(?:is|are|was|were|be|been|being)\s+\w+ed\b",
+    re.IGNORECASE,
+)
+
+# Words that weaken delivery through vagueness or uncertainty
+_HEDGING_WORDS = frozenset(
+    {
+        "maybe",
+        "perhaps",
+        "possibly",
+        "probably",
+        "apparently",
+        "seemingly",
+        "could",
+        "might",
+        "may",
+        "seem",
+        "seems",
+        "appears",
+        "generally",
+        "usually",
+        "often",
+        "sometimes",
+        "typically",
+        "relatively",
+        "fairly",
+        "somewhat",
+        "rather",
+        "approximately",
+        "around",
+    }
+)
+
+# Common tech-content clichés to penalize
+_CLICHES = (
+    "at the end of the day",
+    "think outside the box",
+    "low-hanging fruit",
+    "move the needle",
+    "circle back",
+    "deep dive",
+    "game changer",
+    "paradigm shift",
+    "best practices",
+    "cutting edge",
+    "bleeding edge",
+    "state of the art",
+    "mission critical",
+    "value add",
+    "actionable insights",
+    "going forward",
+    "in this day and age",
+    "it is what it is",
+    "hit the ground running",
+    "take it to the next level",
+    "boil the ocean",
+    "reinvent the wheel",
+    "get on the same page",
+    "delve into",
+    "in the realm of",
+    "in today's fast-paced",
+    "in today's digital age",
+    "it's worth noting",
+    "it should be noted",
+    "it is important to note",
+    "as mentioned earlier",
+    "as we can see",
+)
+
+# AI-generated text phrase patterns used in section-level originality scoring
+_AI_PHRASES = (
+    "in conclusion",
+    "to summarize",
+    "it is important to note",
+    "it is worth noting",
+    "it should be noted",
+    "as mentioned",
+    "as discussed",
+    "in summary",
+    "in today's",
+    "in the realm of",
+    "the world of",
+    "at its core",
+    "delve into",
+    "dive deep",
+    "navigating",
+    "transformative",
+    "harnessing the power",
+)
+
+
+def _tokenize_words(text: str) -> list:
+    """Return lowercase alphabetic words from text."""
+    return re.findall(r"\b[a-z]+\b", text.lower())
+
+
+def _tokenize_sentences(text: str) -> list:
+    """Return sentences with 3+ words from text."""
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [s for s in parts if len(s.split()) >= 3]
+
+
+def _passive_voice_ratio(text: str) -> float:
+    """Fraction of sentences that contain passive voice (0–1)."""
+    sentences = _tokenize_sentences(text)
+    if not sentences:
+        return 0.0
+    passive = sum(1 for s in sentences if _PASSIVE_RE.search(s))
+    return passive / len(sentences)
+
+
+def _hedging_ratio(text: str) -> float:
+    """Hedging-word density normalized to 0–1 (0.10 density = max 1.0)."""
+    words = _tokenize_words(text)
+    if not words:
+        return 0.0
+    count = sum(1 for w in words if w in _HEDGING_WORDS)
+    return min(1.0, (count / len(words)) / 0.10)
+
+
+def _sentence_variety_score(text: str) -> float:
+    """Sentence-length std-dev normalized to 0–1 (std ≥ 8 words = 1.0)."""
+    sentences = _tokenize_sentences(text)
+    if len(sentences) < 3:
+        return 0.5
+    lengths = [len(s.split()) for s in sentences]
+    mean = sum(lengths) / len(lengths)
+    std = math.sqrt(sum((ln - mean) ** 2 for ln in lengths) / len(lengths))
+    return min(1.0, std / 8.0)
+
+
+def _vocabulary_richness(text: str) -> float:
+    """Type-token ratio on first 200 words (unique / total, 0–1)."""
+    words = _tokenize_words(text)
+    if not words:
+        return 0.5
+    sample = words[:200]
+    return len(set(sample)) / len(sample)
+
+
+def _cliche_density(text: str) -> float:
+    """Cliché count per 100 words, normalized 0–1 (1.0 = very clichéd)."""
+    tl = text.lower()
+    count = sum(1 for c in _CLICHES if c in tl)
+    words = max(len(_tokenize_words(text)), 1)
+    return min(1.0, count / max(words / 100.0, 1.0))
+
+
+def _inline_flesch(text: str) -> float:
+    """Compute Flesch reading ease inline (no external deps, 0–100)."""
+    sentences = _tokenize_sentences(text)
+    words = _tokenize_words(text)
+    if not sentences or not words:
+        return 50.0
+
+    def _syllables(word: str) -> int:
+        return max(1, len(re.findall(r"[aeiou]+", word.rstrip("e"))))
+
+    total_syl = sum(_syllables(w) for w in words)
+    avg_sent = len(words) / len(sentences)
+    avg_syl = total_syl / len(words)
+    return max(0.0, min(100.0, 206.835 - 1.015 * avg_sent - 84.6 * avg_syl))
+
+
+def _flesch_to_score(flesch: float) -> float:
+    """Map Flesch ease to quality score using govtech calibration curve."""
+    if flesch >= 60:
+        return min(100.0, 95.0 + (flesch - 60) * 0.125)
+    elif flesch >= 40:
+        return 85.0 + (flesch - 40) * 0.5
+    elif flesch >= 20:
+        return 75.0 + (flesch - 20) * 0.5
+    else:
+        return max(60.0, 65.0 + flesch * 0.5)
+
+
+def _color_badge(score: float) -> str:
+    """Return color badge string: 'green' ≥80, 'yellow' 60-79, 'red' <60."""
+    if score >= 80:
+        return "green"
+    elif score >= 60:
+        return "yellow"
+    return "red"
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Named Composite Scoring (v6b)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def compute_composites(text: str, details: dict) -> dict:
+    """Map WriteGuard base check details to 5 named composites.
+
+    Composites
+    ----------
+    Correctness : grammar (grammar score maps 1-to-1)
+    Clarity     : readability + paragraph-structure bonus (up to +5 pts)
+    Delivery    : tone − passive penalty (max 20 pts) − hedging penalty (max 15 pts)
+    Originality : average of plagiarism + AI-detection scores
+    Engagement  : sentence variety (40%) + vocabulary TTR (40%) + cliché-free (20%)
+
+    Color badge on overall WriteGuard Score: Green ≥80, Yellow 60-79, Red <60.
+
+    Args:
+        text: Raw markdown/plain text (used for inline metric computation).
+        details: ``details`` sub-dict from :func:`run_full_quality_check`.
+
+    Returns:
+        dict with keys: correctness, clarity, delivery, originality, engagement,
+        overall_score (0-100), color_badge, _metrics.
+    """
+    grammar_s = float(details.get("grammar", {}).get("score", 70.0))
+    readability_s = float(details.get("readability", {}).get("score", 70.0))
+    tone_s = float(details.get("tone", {}).get("score", 70.0))
+    plagiarism_s = float(details.get("plagiarism", {}).get("score", 100.0))
+    ai_s = float(details.get("ai_detection", {}).get("score", 70.0))
+
+    # Inline metrics (pure Python)
+    passive = _passive_voice_ratio(text)
+    hedging = _hedging_ratio(text)
+    variety = _sentence_variety_score(text)
+    vocab = _vocabulary_richness(text)
+    cliche = _cliche_density(text)
+
+    # Structure bonus: reward well-sized paragraphs (50–150 words ideal)
+    paragraphs = [p.strip() for p in text.split("\n\n") if len(p.split()) >= 5]
+    if paragraphs:
+        avg_para = sum(len(p.split()) for p in paragraphs) / len(paragraphs)
+        structure_bonus = 5.0 if 50 <= avg_para <= 150 else (2.5 if 30 <= avg_para <= 200 else 0.0)
+    else:
+        structure_bonus = 0.0
+
+    correctness = round(max(0.0, min(100.0, grammar_s)), 1)
+    clarity = round(max(0.0, min(100.0, readability_s + structure_bonus)), 1)
+    delivery = round(max(0.0, min(100.0, tone_s - passive * 20.0 - hedging * 15.0)), 1)
+    originality = round((plagiarism_s + ai_s) / 2.0, 1)
+    engagement = round(
+        max(0.0, min(100.0, variety * 100.0 * 0.40 + vocab * 100.0 * 0.40 + (1.0 - cliche) * 100.0 * 0.20)),
+        1,
+    )
+
+    overall = round((correctness + clarity + delivery + originality + engagement) / 5.0, 1)
+
+    return {
+        "correctness": correctness,
+        "clarity": clarity,
+        "delivery": delivery,
+        "originality": originality,
+        "engagement": engagement,
+        "overall_score": overall,
+        "color_badge": _color_badge(overall),
+        "_metrics": {
+            "passive_ratio": round(passive, 3),
+            "hedging_ratio": round(hedging, 3),
+            "variety": round(variety, 3),
+            "vocab_richness": round(vocab, 3),
+            "cliche_density": round(cliche, 3),
+            "structure_bonus": structure_bonus,
+        },
+    }
+
+
+def score_sections(text: str) -> dict:
+    """Score each markdown heading-section independently.
+
+    Splits the text at ``## …`` / ``### …`` (up to H4) boundaries. Sections
+    with fewer than 30 words are skipped. Each section is scored on all 5
+    composites using inline (no-external-dep) methods.  The weakest section
+    is flagged with targeted recommendations.
+
+    Args:
+        text: Full markdown or plain-text article body.
+
+    Returns:
+        dict:
+          sections – list of {heading, word_count, scores, avg, badge}
+          weakest  – {heading, avg, badge, recommendations} or None
+    """
+    heading_re = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
+    headings = [(m.start(), m.group(2).strip()) for m in heading_re.finditer(text)]
+
+    if not headings:
+        segments = [("(Full Document)", text)]
+    else:
+        segments = []
+        for i, (pos, title) in enumerate(headings):
+            end = headings[i + 1][0] if i + 1 < len(headings) else len(text)
+            body = "\n".join(text[pos:end].split("\n")[1:]).strip()
+            if body:
+                segments.append((title, body))
+
+    scored = []
+    for heading, body in segments:
+        words = _tokenize_words(body)
+        if len(words) < 30:
+            continue
+
+        # Correctness: penalize double-spaces and likely comma splices
+        dbl = len(re.findall(r"  +", body))
+        splice = len(re.findall(r",\s+[a-z]{5,}\s+[a-z]{5,}", body))
+        penalty = (dbl + splice * 2) / max(len(words) / 1000.0, 0.1)
+        correctness = max(50.0, round(100.0 - penalty * 5.0, 1))
+
+        # Clarity: inline Flesch → quality score
+        clarity = round(_flesch_to_score(_inline_flesch(body)), 1)
+
+        # Delivery: passive + hedging (baseline 75 — no tone profiler for sections)
+        passive = _passive_voice_ratio(body)
+        hedging = _hedging_ratio(body)
+        delivery = round(max(40.0, min(100.0, 75.0 - passive * 20.0 - hedging * 15.0)), 1)
+
+        # Originality: AI phrase detection (simplified, no RAG per section)
+        body_lower = body.lower()
+        ai_hits = sum(1 for p in _AI_PHRASES if p in body_lower)
+        originality = round(max(40.0, min(100.0, 90.0 - ai_hits * 8.0)), 1)
+
+        # Engagement: variety + vocab + cliché-free
+        variety = _sentence_variety_score(body)
+        vocab = _vocabulary_richness(body)
+        cliche = _cliche_density(body)
+        engagement = round(
+            max(30.0, min(100.0, variety * 100.0 * 0.40 + vocab * 100.0 * 0.40 + (1.0 - cliche) * 100.0 * 0.20)),
+            1,
+        )
+
+        avg = round((correctness + clarity + delivery + originality + engagement) / 5.0, 1)
+        scored.append(
+            {
+                "heading": heading,
+                "word_count": len(words),
+                "scores": {
+                    "correctness": correctness,
+                    "clarity": clarity,
+                    "delivery": delivery,
+                    "originality": originality,
+                    "engagement": engagement,
+                },
+                "avg": avg,
+                "badge": _color_badge(avg),
+            }
+        )
+
+    if not scored:
+        return {"sections": [], "weakest": None}
+
+    weakest = min(scored, key=lambda s: s["avg"])
+    ws = weakest["scores"]
+    recs = []
+    if ws["correctness"] < 70:
+        recs.append("Fix grammar and formatting issues (double spaces, run-on sentences).")
+    if ws["clarity"] < 70:
+        recs.append("Break up long sentences; aim for a Flesch ease score above 30.")
+    if ws["delivery"] < 70:
+        recs.append("Reduce passive voice and hedging words for stronger, clearer delivery.")
+    if ws["originality"] < 70:
+        recs.append("Rewrite AI-sounding phrases; add specific examples and data points.")
+    if ws["engagement"] < 70:
+        recs.append("Vary sentence lengths, use richer vocabulary, and avoid clichés.")
+
+    return {
+        "sections": scored,
+        "weakest": {
+            "heading": weakest["heading"],
+            "avg": weakest["avg"],
+            "badge": weakest["badge"],
+            "recommendations": recs or ["This section meets quality standards."],
+        },
+    }
+
+
 def run_full_quality_check(text: str) -> dict:
     """Run all WriteGuard checks and return consolidated results.
 
@@ -264,11 +649,17 @@ def run_full_quality_check(text: str) -> dict:
     plagiarism_quality = results["plagiarism"].get("score", 100)
     passed = overall_score >= 60 and (plagiarism_quality > 15 if isinstance(plagiarism_quality, (int, float)) else True)
 
+    composites = compute_composites(text, results)
+    section_data = score_sections(text)
+
     return {
         "passed": passed,
         "overall_score": round(overall_score, 1),
         "details": results,
         "recommendations": _generate_recommendations(results),
+        # v6b: named composites + section-level breakdown
+        "composites": composites,
+        "section_scores": section_data,
     }
 
 
