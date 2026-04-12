@@ -12,52 +12,14 @@ Provides 5 MCP tools for managing remote command access:
 Transport: stdio (Claude Code integration)
 """
 
-import json
-import logging
 import sys
-from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.mcp.gateway")
-
-
-# MCP protocol helpers (reuse pattern from other MCP servers)
-def _read_message():
-    """Read a JSON-RPC message from stdin."""
-    headers = {}
-    while True:
-        line = sys.stdin.readline()
-        if not line or line.strip() == "":
-            break
-        if ":" in line:
-            key, val = line.split(":", 1)
-            headers[key.strip()] = val.strip()
-    content_length = int(headers.get("Content-Length", 0))
-    if content_length > 0:
-        body = sys.stdin.read(content_length)
-        return json.loads(body)
-    return None
-
-
-def _write_message(msg):
-    """Write a JSON-RPC message to stdout."""
-    body = json.dumps(msg)
-    sys.stdout.write(f"Content-Length: {len(body)}\r\n\r\n{body}")
-    sys.stdout.flush()
-
-
-def _result(id, result):
-    """Build a JSON-RPC result."""
-    return {"jsonrpc": "2.0", "id": id, "result": result}
-
-
-def _error(id, code, message):
-    """Build a JSON-RPC error."""
-    return {"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +111,7 @@ def handle_send_command(params):
     config_path = BASE_DIR / "args" / "remote_gateway_config.yaml"
     config = {}
     if config_path.exists():
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
 
     channel_config = config.get("channels", {}).get(channel, {"max_il": "IL5"})
@@ -167,17 +129,17 @@ def handle_send_command(params):
 def handle_gateway_status(params):
     """Show gateway status: active channels, recent commands."""
     import yaml
+    from tools.db.storage import get_connection
 
     config_path = BASE_DIR / "args" / "remote_gateway_config.yaml"
     config = {}
     if config_path.exists():
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
 
     env_mode = config.get("environment", {}).get("mode", "connected")
     channels = config.get("channels", {})
 
-    # Get active channels
     active = []
     for name, ch_config in channels.items():
         enabled = ch_config.get("enabled", False)
@@ -192,9 +154,7 @@ def handle_gateway_status(params):
             }
         )
 
-    # Recent commands
     recent = []
-    BASE_DIR / "data" / "icdev.db"
     try:
         conn = get_connection()
         rows = conn.execute(
@@ -215,14 +175,18 @@ def handle_gateway_status(params):
 
 
 # ---------------------------------------------------------------------------
-# MCP Server Main Loop
+# Server Entry Point
 # ---------------------------------------------------------------------------
 
-TOOLS = {
-    "bind_user": {
-        "description": "Initiate or complete a user binding ceremony for remote command access",
-        "handler": handle_bind_user,
-        "inputSchema": {
+
+def main():
+    """Build and run the Gateway MCP server."""
+    server = MCPServer(name="icdev-gateway", version="1.0.0")
+
+    server.register_tool(
+        name="bind_user",
+        description="Initiate or complete a user binding ceremony for remote command access",
+        input_schema={
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["initiate", "verify", "provision"]},
@@ -233,22 +197,26 @@ TOOLS = {
                 "tenant_id": {"type": "string"},
             },
         },
-    },
-    "list_bindings": {
-        "description": "List remote user bindings (active, pending, revoked)",
-        "handler": handle_list_bindings,
-        "inputSchema": {
+        handler=handle_bind_user,
+    )
+
+    server.register_tool(
+        name="list_bindings",
+        description="List remote user bindings (active, pending, revoked)",
+        input_schema={
             "type": "object",
             "properties": {
                 "channel": {"type": "string"},
                 "status": {"type": "string"},
             },
         },
-    },
-    "revoke_binding": {
-        "description": "Revoke an active remote user binding",
-        "handler": handle_revoke_binding,
-        "inputSchema": {
+        handler=handle_list_bindings,
+    )
+
+    server.register_tool(
+        name="revoke_binding",
+        description="Revoke an active remote user binding",
+        input_schema={
             "type": "object",
             "properties": {
                 "binding_id": {"type": "string"},
@@ -256,11 +224,13 @@ TOOLS = {
             },
             "required": ["binding_id"],
         },
-    },
-    "send_command": {
-        "description": "Execute an ICDEV™ command via the remote gateway (for testing/admin)",
-        "handler": handle_send_command,
-        "inputSchema": {
+        handler=handle_revoke_binding,
+    )
+
+    server.register_tool(
+        name="send_command",
+        description="Execute an ICDEV™ command via the remote gateway (for testing/admin)",
+        input_schema={
             "type": "object",
             "properties": {
                 "command": {"type": "string"},
@@ -269,84 +239,20 @@ TOOLS = {
             },
             "required": ["command"],
         },
-    },
-    "gateway_status": {
-        "description": "Show remote gateway status: active channels, environment mode, recent commands",
-        "handler": handle_gateway_status,
-        "inputSchema": {
+        handler=handle_send_command,
+    )
+
+    server.register_tool(
+        name="gateway_status",
+        description="Show remote gateway status: active channels, environment mode, recent commands",
+        input_schema={
             "type": "object",
             "properties": {},
         },
-    },
-}
+        handler=handle_gateway_status,
+    )
 
-
-def main():
-    """MCP stdio server main loop."""
-    logging.basicConfig(level=logging.WARNING)
-
-    while True:
-        msg = _read_message()
-        if msg is None:
-            break
-
-        method = msg.get("method", "")
-        id = msg.get("id")
-        params = msg.get("params", {})
-
-        if method == "initialize":
-            _write_message(
-                _result(
-                    id,
-                    {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {"tools": {"listChanged": False}},
-                        "serverInfo": {
-                            "name": "icdev-gateway",
-                            "version": "1.0.0",
-                        },
-                    },
-                )
-            )
-
-        elif method == "tools/list":
-            tool_list = []
-            for name, info in TOOLS.items():
-                tool_list.append(
-                    {
-                        "name": name,
-                        "description": info["description"],
-                        "inputSchema": info["inputSchema"],
-                    }
-                )
-            _write_message(_result(id, {"tools": tool_list}))
-
-        elif method == "tools/call":
-            tool_name = params.get("name", "")
-            tool_args = params.get("arguments", {})
-
-            if tool_name in TOOLS:
-                try:
-                    result = TOOLS[tool_name]["handler"](tool_args)
-                    _write_message(
-                        _result(
-                            id,
-                            {
-                                "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}],
-                            },
-                        )
-                    )
-                except Exception as e:
-                    _write_message(_error(id, -32000, str(e)))
-            else:
-                _write_message(_error(id, -32601, f"Unknown tool: {tool_name}"))
-
-        elif method == "notifications/initialized":
-            pass  # Acknowledgment, no response needed
-
-        else:
-            if id is not None:
-                _write_message(_error(id, -32601, f"Unknown method: {method}"))
+    server.run()
 
 
 if __name__ == "__main__":
