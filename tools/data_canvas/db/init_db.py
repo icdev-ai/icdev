@@ -10,7 +10,6 @@ SQLite is the default for dev, air-gap, and single-user deployments.
 
 import json
 import os
-import sqlite3
 import uuid
 from pathlib import Path
 
@@ -40,10 +39,7 @@ def get_connection():
         except ImportError:
             pass  # Fall through to SQLite
     # SQLite (default)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn = get_connection(str(DB_PATH))
     return conn
 
 

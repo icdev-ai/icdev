@@ -27,6 +27,7 @@ import json
 import logging
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -126,9 +127,7 @@ def _classify_text_content(file_path: Path) -> str:
 def _get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Get SQLite connection to network_canvas.db."""
     path = db_path or str(_DEFAULT_DB)
-    conn = sqlite3.connect(path)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(str(path))
     return conn
 
 

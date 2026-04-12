@@ -7,8 +7,8 @@ Uses SQLite-backed session tracking (air-gap safe, no WebSocket required).
 
 from __future__ import annotations
 
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 
 
@@ -50,8 +50,7 @@ class CanvasCollabManager:
         self.collab_table = collab_table or f"{canvas_key}_collab_sessions"
 
     def _get_conn(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(str(self.db_path))
         return conn
 
     def _now(self):

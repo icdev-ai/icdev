@@ -17,6 +17,7 @@ import json
 import logging
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -70,8 +71,7 @@ def _load_findings_from_db(canvas_key: str, design_id: str) -> list[dict[str, An
         return []
 
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(str(db_path))
         row = conn.execute(
             f"SELECT findings_json FROM {table_name} WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",  # noqa: S608
             (design_id,),

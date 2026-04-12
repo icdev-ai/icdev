@@ -20,9 +20,9 @@ CLI:
 
 import argparse
 import json
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -334,8 +334,7 @@ def main():
 
     elif args.topology_id:
         db_path = BASE_DIR / "data" / "network_canvas.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(str(db_path))
         row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (args.topology_id,)).fetchone()
         if not row:
             print(f"Topology {args.topology_id} not found")

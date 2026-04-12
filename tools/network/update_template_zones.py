@@ -9,8 +9,8 @@ Usage:
 """
 
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "network_canvas.db"
@@ -510,8 +510,7 @@ def main() -> None:
         print(f"ERROR: Database not found at {DB_PATH}")
         sys.exit(1)
 
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = get_connection(str(DB_PATH))
     cur = conn.cursor()
 
     updated = 0

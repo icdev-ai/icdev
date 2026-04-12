@@ -53,8 +53,7 @@ class QualityLens(BaseLens):
         # UQS history from QDC canvas DB
         if QDC_DB.exists():
             try:
-                conn = sqlite3.connect(str(QDC_DB))
-                conn.row_factory = sqlite3.Row
+                conn = get_connection(str(QDC_DB))
                 rows = conn.execute(
                     "SELECT uqs_score, dimension_scores, computed_at "
                     "FROM qdc_uqs_history ORDER BY computed_at DESC LIMIT 20"
@@ -73,8 +72,7 @@ class QualityLens(BaseLens):
         # Genesis quality snapshots
         if GENESIS_QDB.exists():
             try:
-                conn = sqlite3.connect(str(GENESIS_QDB))
-                conn.row_factory = sqlite3.Row
+                conn = get_connection(str(GENESIS_QDB))
                 rows = conn.execute(
                     "SELECT uqs_score, grade, total_findings, auto_fixed, snapshot_at "
                     "FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT 10"

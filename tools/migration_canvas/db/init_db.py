@@ -9,7 +9,6 @@ Set MC_STORAGE_BACKEND=postgresql + MC_PG_* env vars to use PostgreSQL.
 
 import json
 import os
-import sqlite3
 from pathlib import Path
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -35,10 +34,7 @@ def get_connection():
             return conn
         except ImportError:
             pass
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn = get_connection(str(DB_PATH))
     return conn
 
 
