@@ -256,6 +256,31 @@ def stage_academic(session_id, db_path=None):
     return result
 
 
+def stage_video(session_id, db_path=None):
+    """Stage 5b: VIDEO — Scan YouTube channels, search, and manual URLs (D-RES-14)."""
+    result = {"stage": "VIDEO", "started_at": _now()}
+
+    run_scan = _try_import("tools.research.source_scanner", "run_scan")
+    if run_scan:
+        try:
+            result["video"] = run_scan(session_id, source="video", db_path=db_path)
+        except Exception as e:
+            result["video"] = {"error": str(e)}
+    else:
+        result["scan"] = {"error": "source_scanner not available"}
+
+    advance = _try_import("tools.research.session_manager", "advance_stage")
+    if advance:
+        try:
+            result["advance"] = advance(session_id, db_path=db_path)
+        except Exception as e:
+            result["advance"] = {"error": str(e)}
+
+    result["completed_at"] = _now()
+    _audit("research.video", f"Video scan complete for {session_id}", result)
+    return result
+
+
 def stage_build_buy(session_id, db_path=None):
     """Stage 6: BUILD_BUY — Cluster signals, score challenges, run build/buy analysis."""
     result = {"stage": "BUILD_BUY", "started_at": _now()}
@@ -401,6 +426,7 @@ STAGE_FUNCTIONS = {
     "REGULATE": stage_regulate,
     "COMMUNITY": stage_community,
     "ACADEMIC": stage_academic,
+    "VIDEO": stage_video,
     "BUILD_BUY": stage_build_buy,
     "SYNTHESIZE": stage_synthesize,
     "FORECAST": stage_forecast,
