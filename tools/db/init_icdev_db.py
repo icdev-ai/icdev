@@ -192,6 +192,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_trail(project_id);
 CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_trail(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_trail(actor);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_trail(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_actor_action ON audit_trail(actor, action);
 
 -- ============================================================
 -- CONTINUOUS COMPLIANCE EVIDENCE CHAIN (D-CHAIN-1)
