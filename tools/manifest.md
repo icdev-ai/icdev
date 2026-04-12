@@ -1580,6 +1580,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 |------|------|-------------|-------|--------|
 | Air-Gap CLI | tools/airgap/cli.py | Detect, activate, validate, and report air-gap status; patches LLM routing to local-only when air-gapped | --detect, --activate, --health, --full, --json | Environment/health/activation JSON or formatted report |
 | Config Patcher | tools\airgap\config_patcher.py | Auto-registered: airgap/config_patcher.py | --json | JSON |
+| Health Check | tools\airgap\health_check.py | Air-gap-aware health check — replaces cloud-dependent checks with local equivalents; reports local LLM servers, DB, Python deps, LLM routing, hooks, PDF extraction, git, and cloud reachability status | --json | JSON (overall + per-check statuses) |
 | Hook Compat | tools\airgap\hook_compat.py | Auto-registered: airgap/hook_compat.py | --json | JSON |
 | Pdf Fallback | tools\airgap\pdf_fallback.py | Auto-registered: airgap/pdf_fallback.py | --json | JSON |
 | Session Compat | tools/airgap/session_compat.py | Session management for non-Claude-Code environments: SessionManager class mimics Claude Code lifecycle (session IDs, prompt/tool-use logging to activity_log, transcript capture to .tmp/, SSE events) | (library) SessionManager.start(), .log_prompt(), .log_tool_use(), .end() |  Session dict with session_id, duration_seconds, event_count |
