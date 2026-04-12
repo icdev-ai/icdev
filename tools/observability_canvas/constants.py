@@ -359,6 +359,20 @@ OBSERVABILITY_COMPLIANCE_RULES = [
         "category": "response",
         "description": "SOAR/alert chain should connect to a ticket system for incident tracking and SLA compliance (NIST IR-5, IR-6).",
     },
+    # ── Cross-Canvas Rules (ODC ↔ NDC) ───────────────────────────────────────
+    {
+        "id": "ODC-NDC-001",
+        "rule_id": "ODC-NDC-001",
+        "title": "All NDC topologies must have matching nc_audit forwarder reaching SIEM",
+        "name": "All NDC topologies must have matching nc_audit forwarder reaching SIEM",
+        "severity": "HIGH",
+        "category": "cross_canvas",
+        "description": "Every Network Design Canvas topology in a canvas_project must have a matching nc_audit forwarder path to a SIEM node in this ODC design. Unforwarded network audit logs violate NIST 800-53 AU-2 and AU-6.",
+        "source_canvas": "NDC",
+        "target_canvas": "ODC",
+        "check_function": "check_nc_audit_to_siem_forwarder",
+        "framework_refs": ["NIST SP 800-53 AU-2", "NIST SP 800-53 AU-6", "NIST SP 800-53 SI-4"],
+    },
 ]
 
 # ── Recommended source types for coverage scoring ────────────────────────────
