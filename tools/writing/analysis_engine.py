@@ -175,26 +175,142 @@ def _tone_check(text: str) -> Dict[str, Any]:
 
 
 def _ai_detection(text: str) -> Dict[str, Any]:
-    """Deterministic AI-content detection via burstiness proxy (D-WG-6)."""
+    """Deterministic AI-content detection — multi-signal (D-WG-6).
+
+    Five signals combined into a weighted score (0 = human, 1 = AI-like):
+
+    burstiness       : sentence-length CoV — AI produces uniform lengths
+    ttr              : type-token ratio (unique_words / total_words) — AI reuses vocab
+    hapax_ratio      : hapax legomena / unique_words — AI repeats words more
+    trigram_entropy  : normalised character-trigram Shannon entropy — AI produces
+                       repetitive character patterns → lower normalised entropy
+    start_diversity  : unique sentence-start words / sentence count — AI repeats
+                       opening words (e.g. "The", "This", "In")
+
+    Calibration data: context/writeguard/calibration/ai_detection_calibration.yaml
+    """
     sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
     if len(sentences) < 3:
-        return {"score": 0.8, "burstiness": 0}
+        return {
+            "score": 0.8,
+            "burstiness": 0.0,
+            "ttr": 0.0,
+            "hapax_ratio": 0.0,
+            "trigram_entropy": 0.0,
+            "start_diversity": 0.0,
+            "issues": [],
+        }
 
+    # ── Signal 1: Burstiness (sentence-length coefficient of variation) ──
     lengths = [len(s.split()) for s in sentences]
     mean_len = sum(lengths) / len(lengths)
-    variance = sum((length - mean_len) ** 2 for length in lengths) / len(lengths)
-    burstiness = (variance**0.5) / mean_len if mean_len > 0 else 0
+    variance = sum((ln - mean_len) ** 2 for ln in lengths) / len(lengths)
+    burstiness = (variance ** 0.5) / mean_len if mean_len > 0 else 0.0
 
-    # Higher burstiness = more sentence length variation = more human-like
-    # Lower burstiness = uniform sentence lengths = more AI-like
-    if burstiness >= 0.5:
-        score = 0.3  # High variation — likely human
-    elif burstiness >= 0.3:
-        score = 0.5  # Moderate variation — uncertain
+    # ── Signal 2: Type-token ratio + hapax legomena ratio ───────────────
+    words_raw = re.findall(r"[a-z0-9]+", text.lower())
+    if words_raw:
+        freq: Dict[str, int] = {}
+        for w in words_raw:
+            freq[w] = freq.get(w, 0) + 1
+        ttr = len(freq) / len(words_raw)
+        hapax_ratio = (
+            sum(1 for v in freq.values() if v == 1) / len(freq) if freq else 0.0
+        )
     else:
-        score = 0.8  # Low variation — likely AI
+        ttr = 0.0
+        hapax_ratio = 0.0
 
-    return {"score": round(score, 2), "burstiness": round(burstiness, 3)}
+    # ── Signal 3: Character trigram entropy ─────────────────────────────
+    clean = re.sub(r"\s+", " ", text.lower())
+    tg_freq: Dict[str, int] = {}
+    for i in range(len(clean) - 2):
+        tg = clean[i : i + 3]
+        tg_freq[tg] = tg_freq.get(tg, 0) + 1
+    if len(tg_freq) > 1:
+        total_tg = sum(tg_freq.values())
+        raw_entropy = -sum(
+            (v / total_tg) * math.log2(v / total_tg) for v in tg_freq.values()
+        )
+        max_entropy = math.log2(len(tg_freq))
+        trigram_entropy = raw_entropy / max_entropy
+    else:
+        trigram_entropy = 0.0
+
+    # ── Signal 4: Sentence-start diversity ──────────────────────────────
+    starts = []
+    for s in sentences:
+        ws = s.split()
+        starts.append(ws[0].lower().rstrip(".,!?;:") if ws else "")
+    unique_starts = len(set(w for w in starts if w))
+    start_diversity = unique_starts / len(sentences) if sentences else 0.0
+
+    # ── Sub-scores (0.0 = human-like, 1.0 = AI-like) ────────────────────
+    # Burstiness: low variance → uniform → AI
+    if burstiness >= 0.50:
+        burst_sub = 0.20
+    elif burstiness >= 0.30:
+        burst_sub = 0.50
+    else:
+        burst_sub = 0.85
+
+    # TTR: low lexical diversity → AI
+    if ttr >= 0.65:
+        ttr_sub = 0.20
+    elif ttr >= 0.45:
+        ttr_sub = 0.50
+    else:
+        ttr_sub = 0.80
+
+    # Hapax ratio: fewer once-only words → AI repeating vocabulary
+    if hapax_ratio >= 0.50:
+        hapax_sub = 0.20
+    elif hapax_ratio >= 0.30:
+        hapax_sub = 0.50
+    else:
+        hapax_sub = 0.80
+
+    # Trigram entropy: low normalised entropy → repetitive char patterns → AI
+    # Typical prose range: 0.78-0.92 (normalised)
+    if trigram_entropy >= 0.88:
+        entropy_sub = 0.20  # high diversity → human
+    elif trigram_entropy >= 0.78:
+        entropy_sub = 0.50  # mid range → uncertain
+    else:
+        entropy_sub = 0.80  # low entropy → AI-like repetition
+
+    # Start-word diversity: low variety → AI repeating sentence openers
+    if start_diversity >= 0.65:
+        start_sub = 0.20
+    elif start_diversity >= 0.45:
+        start_sub = 0.50
+    else:
+        start_sub = 0.80
+
+    # ── Weighted combination ─────────────────────────────────────────────
+    score = (
+        burst_sub * 0.30
+        + ttr_sub * 0.20
+        + hapax_sub * 0.15
+        + entropy_sub * 0.20
+        + start_sub * 0.15
+    )
+
+    issues: List[str] = []
+    if score >= 0.65:
+        issues.append("likely AI-generated content")
+    elif score >= 0.50:
+        issues.append("possible AI-generated content")
+
+    return {
+        "score": round(score, 3),
+        "burstiness": round(burstiness, 3),
+        "ttr": round(ttr, 3),
+        "hapax_ratio": round(hapax_ratio, 3),
+        "trigram_entropy": round(trigram_entropy, 3),
+        "start_diversity": round(start_diversity, 3),
+        "issues": issues,
+    }
 
 
 def _plagiarism_check(text: str, opportunity_id: str = "") -> Dict[str, Any]:
