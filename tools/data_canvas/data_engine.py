@@ -14,6 +14,15 @@ from pathlib import Path
 from tools.data_canvas.constants import (
     DATA_COMPLIANCE_RULES,
     DATA_NIST_FAMILIES,
+    EDGE_TYPE_COLUMN_LINEAGE,
+)
+from tools.data_canvas.lineage import (
+    build_column_lineage_dag,
+    compute_downstream_impact,
+    compute_upstream_provenance,
+    generate_contract_assertions,
+    summarize_lineage,
+    validate_lineage_edge,
 )
 
 try:
@@ -723,3 +732,104 @@ def compute_nist_coverage(graph_data):
         "total_families": total_families,
         "covered_families": covered,
     }
+
+
+# ── Column-Level Lineage Analysis ─────────────────────────────────────────────
+
+
+def analyze_column_lineage(
+    design_id: str,
+    graph_data: dict,
+    lineage_records: list[dict],
+) -> dict:
+    """Run full column-level lineage analysis for a data design.
+
+    Combines the lineage DAG, summary metrics, and data contract assertions
+    into a single result dict suitable for API responses and impact reports.
+
+    Args:
+        design_id: UUID of the data design.
+        graph_data: Dict with "nodes", "edges", and "boundaries".
+        lineage_records: Rows from the ``dd_lineage`` table for this design.
+
+    Returns:
+        Dict with:
+            ``design_id``           — echoed for correlation
+            ``summary``             — output of :func:`summarize_lineage`
+            ``dag``                 — output of :func:`build_column_lineage_dag`
+            ``contract_assertions`` — list from :func:`generate_contract_assertions`
+            ``assertion_count``     — total number of assertions
+            ``cat1_assertions``     — CAT1 (blocking) assertion count
+            ``analyzed_at``         — ISO-8601 timestamp
+    """
+    dag = build_column_lineage_dag(lineage_records)
+    summary = summarize_lineage(lineage_records, graph_data)
+    assertions = generate_contract_assertions(lineage_records, graph_data)
+
+    cat1_count = sum(1 for a in assertions if a.get("severity") == "CAT1")
+
+    return {
+        "design_id": design_id,
+        "summary": summary,
+        "dag": dag,
+        "contract_assertions": assertions,
+        "assertion_count": len(assertions),
+        "cat1_assertions": cat1_count,
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def get_column_impact(
+    design_id: str,
+    source_entity_id: str,
+    column_name: str,
+    lineage_records: list[dict],
+    direction: str = "downstream",
+    max_depth: int = 20,
+) -> dict:
+    """Return downstream or upstream impact for a single column.
+
+    Thin wrapper over :func:`compute_downstream_impact` and
+    :func:`compute_upstream_provenance` that adds design metadata and validates
+    inputs before traversal.
+
+    Args:
+        design_id: UUID of the data design.
+        source_entity_id: Entity node ID that owns the column.
+        column_name: Column name to trace.
+        lineage_records: Rows from ``dd_lineage`` for this design.
+        direction: ``"downstream"`` (default) or ``"upstream"``.
+        max_depth: Maximum hops to traverse.
+
+    Returns:
+        Impact result dict with ``design_id`` and ``direction`` added.
+    """
+    if direction == "upstream":
+        result = compute_upstream_provenance(source_entity_id, column_name, lineage_records, max_depth)
+    else:
+        result = compute_downstream_impact(source_entity_id, column_name, lineage_records, max_depth)
+
+    result["design_id"] = design_id
+    result["direction"] = direction
+    return result
+
+
+# Re-export lineage primitives so callers only need to import data_engine.
+__all__ = [
+    # assessment
+    "assess_data_design",
+    "compute_classification_coverage",
+    "detect_data_gaps",
+    "compute_nist_coverage",
+    # column lineage
+    "analyze_column_lineage",
+    "get_column_impact",
+    "build_column_lineage_dag",
+    "compute_downstream_impact",
+    "compute_upstream_provenance",
+    "validate_lineage_edge",
+    "summarize_lineage",
+    "generate_contract_assertions",
+    # constants re-exported for convenience
+    "EDGE_TYPE_COLUMN_LINEAGE",
+]
