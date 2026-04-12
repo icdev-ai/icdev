@@ -838,6 +838,69 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
     return result
 
 
+MAX_FAILURES_BEFORE_DECOMPOSITION = 3
+
+
+def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
+    """guard-18: Increment failure_count; flag for decomposition after N fails.
+
+    When a task fails verification, we increment its failure_count. If the
+    count reaches MAX_FAILURES_BEFORE_DECOMPOSITION (default 3), the task is
+    moved to 'needs_decomposition' status instead of plain 'backlog'. This
+    signals that the task is probably too big for a single Claude CLI session
+    and should be split into smaller sub-tasks (either by a human reviewer or
+    by a future LLM-powered decomposer).
+
+    Returns the new status to move the task to: 'needs_decomposition' or 'backlog'.
+    """
+    now = _utcnow_iso()
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT failure_count FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            prev = 0
+            if row:
+                prev_val = dict(row).get("failure_count")
+                prev = int(prev_val) if prev_val is not None else 0
+            new_count = prev + 1
+
+            reason_short = (reason or "")[:500]
+            conn.execute(
+                "UPDATE kanban_tasks SET failure_count = ?, "
+                "last_failure_reason = ?, last_failure_at = ? WHERE id = ?",
+                (new_count, reason_short, now, task_id),
+            )
+            conn.commit()
+
+            if new_count >= MAX_FAILURES_BEFORE_DECOMPOSITION:
+                logger.warning(
+                    "Task %s failed %d times — flagging for decomposition",
+                    task_id, new_count,
+                )
+                # Notify via Telegram so someone can decompose it
+                try:
+                    from tools.notifications.adapters.telegram import send as tg_send
+                    tg_send(
+                        f"DECOMPOSITION NEEDED: {task_id[:24]}",
+                        f"Task failed {new_count} verification attempts. "
+                        f"It is likely too big for one Claude CLI session. "
+                        f"Please split it into smaller sub-tasks.\n"
+                        f"Latest reason: {reason_short[:200]}",
+                        severity="warning",
+                    )
+                except Exception:
+                    pass
+                return "needs_decomposition"
+            return "backlog"
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("failure-count tracking failed for %s: %s", task_id, exc)
+        return "backlog"
+
+
 def _move_task(task_id: str, new_status: str):
     """Update task status in the database."""
     conn = get_connection()

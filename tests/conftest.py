@@ -840,12 +840,49 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     priority             TEXT DEFAULT 'low',
     status               TEXT DEFAULT 'backlog',
     scheduled_at         TEXT,
+    completed_at         TEXT,
     created_at           TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
     source_prediction_id TEXT,
-    depends_on_task_id   TEXT REFERENCES kanban_tasks(id)
+    executor_type        TEXT DEFAULT 'claude_cli',
+    execution_id         TEXT,
+    executor_url         TEXT,
+    depends_on_task_id   TEXT REFERENCES kanban_tasks(id),
+    failure_count        INTEGER DEFAULT 0,
+    last_failure_reason  TEXT,
+    last_failure_at      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_kanban_depends ON kanban_tasks(depends_on_task_id);
+CREATE INDEX IF NOT EXISTS idx_kanban_failure_count ON kanban_tasks(failure_count);
+
+CREATE TABLE IF NOT EXISTS kanban_verifications (
+    id                    TEXT PRIMARY KEY,
+    task_id               TEXT NOT NULL,
+    verified_at           TEXT NOT NULL,
+    result                TEXT NOT NULL,
+    reason                TEXT,
+    output_length         INTEGER DEFAULT 0,
+    fail_markers_found    TEXT,
+    claimed_paths         INTEGER DEFAULT 0,
+    existing_paths        INTEGER DEFAULT 0,
+    phantom_ratio         REAL DEFAULT 0,
+    git_commits           INTEGER DEFAULT 0,
+    specific_checks       TEXT,
+    codelens_passed       INTEGER,
+    ruff_issues           INTEGER,
+    bandit_issues         INTEGER,
+    pytest_passed         INTEGER,
+    failed_tests          TEXT,
+    coherence_passed      INTEGER,
+    coherence_violations  TEXT,
+    e2e_ran               INTEGER,
+    e2e_passed            INTEGER,
+    e2e_errors            TEXT,
+    companion_synced      INTEGER,
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_kv_task_id ON kanban_verifications (task_id);
+CREATE INDEX IF NOT EXISTS idx_kv_result ON kanban_verifications (result);
 
 CREATE TABLE IF NOT EXISTS scoped_memory_entries (
     id           TEXT PRIMARY KEY,
