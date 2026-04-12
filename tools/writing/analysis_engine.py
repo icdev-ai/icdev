@@ -777,6 +777,10 @@ def analyze(
     grammar = _grammar_check(text)
     readability = _readability_check(text)
     tone = _tone_check(text)
+    passive = _passive_voice_check(text)
+    overused = _overused_words_check(text)
+    cliches = _cliche_check(text)
+    consistency = _consistency_check(text)
     plagiarism = _plagiarism_check(text, opportunity_id)
     ai_det = _ai_detection(text)
     sentence_structure = _sentence_structure(text)
@@ -785,16 +789,24 @@ def analyze(
         "grammar": grammar,
         "readability": readability,
         "tone": tone,
+        "passive_voice": passive,
+        "overused_words": overused,
+        "cliches": cliches,
+        "consistency": consistency,
         "plagiarism": plagiarism,
         "ai_detection": ai_det,
         "sentence_structure": sentence_structure,
     }
 
-    # Weighted composite (same weights as polish.py)
+    # Weighted composite — 10 dimensions
     weights = {
-        "grammar": 0.20,
-        "readability": 0.25,
-        "tone": 0.25,
+        "grammar": 0.15,
+        "readability": 0.15,
+        "tone": 0.15,
+        "passive_voice": 0.08,
+        "overused_words": 0.07,
+        "cliches": 0.05,
+        "consistency": 0.05,
         "plagiarism": 0.15,
         "ai_detection": 0.15,
     }
