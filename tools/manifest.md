@@ -1795,7 +1795,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Sops | tools\boundary_canvas\sops.py | Auto-registered: boundary_canvas/sops.py | --json | JSON |
+| BDC SOPs | tools/boundary_canvas/sops.py | CRUD and approval workflow for Boundary Design Canvas SOPs (ISA renewal, boundary change approval, cross-domain transfer, interconnection decommission). Lifecycle: draft → pending_review → approved/rejected. Functions: get_all_sops, get_sop_by_id, create_sop, update_sop, delete_sop, submit_for_review, approve_sop, reject_sop, seed_sops. NIST control tagging per SOP (CA-3, CM-3, SC-7, etc.). | (library — called by BDC blueprint) | SOP dict / list |
 | Sops | tools\observability_canvas\sops.py | Auto-registered: observability_canvas/sops.py | --json | JSON |
 | Sops | tools\pipeline\sops.py | Auto-registered: pipeline/sops.py | --json | JSON |
 | Gate Executor | tools\qdc_canvas\gate_executor.py | Auto-registered: qdc_canvas/gate_executor.py | --json | JSON |
