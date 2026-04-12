@@ -654,6 +654,25 @@ def run_full_quality_check(text: str) -> dict:
         "portion_marking": pm_result,
     }
 
+    # Add new analysis_engine dimensions (passive voice, cliches, etc.)
+    try:
+        from tools.writing.analysis_engine import (
+            _passive_voice_check,
+            _overused_words_check,
+            _cliche_check,
+            _consistency_check,
+        )
+        pv = _passive_voice_check(text)
+        results["passive_voice"] = {"status": "ok", "score": pv["score"] * 100, "findings": pv.get("issues", [])}
+        ow = _overused_words_check(text)
+        results["overused_words"] = {"status": "ok", "score": ow["score"] * 100, "findings": ow.get("issues", [])}
+        cl = _cliche_check(text)
+        results["cliches"] = {"status": "ok", "score": cl["score"] * 100, "findings": cl.get("issues", [])}
+        co = _consistency_check(text)
+        results["consistency"] = {"status": "ok", "score": co["score"] * 100, "findings": co.get("issues", [])}
+    except Exception as exc:
+        logger.warning("Extended analysis checks failed: %s", exc)
+
     # Calculate overall score.
     # Portion marking is only included when marks are present — a plain article
     # with no portion marks should not be penalized for missing them.
