@@ -320,7 +320,17 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         flags=re.IGNORECASE,
     )
 
-    # 18. strftime(format, col) → to_char(col::timestamp, pg_format)
+    # 18. DEFAULT (strftime(..., 'now')) in DDL → DEFAULT NOW()
+    #     Must run BEFORE the general strftime rule so DDL defaults
+    #     get simplified to NOW() instead of to_char(NOW(), ...).
+    sql = re.sub(
+        r"DEFAULT\s+\(strftime\([^)]+,\s*'now'\)\)",
+        "DEFAULT NOW()",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 19. strftime(format, col) → to_char(col::timestamp, pg_format)
     #     SQLite strftime uses %Y, %m, %d, %H, %M, %S, %W, %w, %j
     #     PG to_char uses YYYY, MM, DD, HH24, MI, SS, IW, D, DDD
     _STRFTIME_MAP = {
@@ -350,15 +360,6 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     sql = re.sub(
         r"\bstrftime\(\s*(['\"][^'\"]+['\"])\s*,\s*(.+?)\s*\)",
         _replace_strftime,
-        sql,
-        flags=re.IGNORECASE,
-    )
-
-    # 19. DEFAULT (strftime(..., 'now')) in DDL → DEFAULT NOW()
-    #     Catches DDL defaults that use strftime for timestamp defaults
-    sql = re.sub(
-        r"DEFAULT\s+\(strftime\([^)]+,\s*'now'\)\)",
-        "DEFAULT NOW()",
         sql,
         flags=re.IGNORECASE,
     )
