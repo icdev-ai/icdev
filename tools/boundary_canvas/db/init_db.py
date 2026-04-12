@@ -202,6 +202,28 @@ CREATE TABLE IF NOT EXISTS bdc_sops (
 
 CREATE INDEX IF NOT EXISTS idx_bdc_sops_type ON bdc_sops(sop_type);
 CREATE INDEX IF NOT EXISTS idx_bdc_sops_status ON bdc_sops(approval_status);
+
+CREATE TABLE IF NOT EXISTS bd_authorized_components (
+    id              TEXT PRIMARY KEY,
+    component_type  TEXT NOT NULL DEFAULT 'airgap_bundle',
+    name            TEXT NOT NULL,
+    version         TEXT DEFAULT '',
+    bundle_path     TEXT DEFAULT '',
+    sha256_manifest TEXT DEFAULT '',
+    sbom_path       TEXT DEFAULT '',
+    impact_levels   TEXT DEFAULT '[]',
+    file_count      INTEGER DEFAULT 0,
+    sbom_count      INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    registered_by   TEXT DEFAULT 'icdev-airgap-engine',
+    status          TEXT DEFAULT 'authorized' CHECK (status IN ('authorized', 'revoked', 'pending')),
+    notes           TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_bd_auth_comp_type ON bd_authorized_components(component_type);
+CREATE INDEX IF NOT EXISTS idx_bd_auth_comp_status ON bd_authorized_components(status);
 """
 
 
