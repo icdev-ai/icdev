@@ -128,16 +128,25 @@ def _current_branch(run) -> str:
 
 
 def _auto_commit_and_push():
-    """Stage modified/new files, commit, and conditionally push.
+    """Stage, commit locally, validate, then push ONLY if validation passes.
 
-    For interactive sessions (cwd = main checkout): commit + push as before.
-    For kanban-dispatched sessions (cwd = worktree): commit locally to the
-    kanban branch but DO NOT push. The scheduler handles the merge to main +
-    push ONLY after full validation (CodeLens + Coherence + E2E + companion)
-    passes. This prevents unverified agent work from landing on origin/main.
+    Unified flow for all Claude sessions (interactive and kanban):
+      1. Stage + commit locally (preserves work even if validation fails)
+      2. Run validation suite: CodeLens + Coherence + E2E + companion sync
+      3. Push ONLY if all gates pass
+
+    Kanban-dispatched sessions: the scheduler handles merge-to-main + push
+    after its own verification passes (which includes this same validation
+    suite), so the stop hook commits locally and exits.
+
+    Interactive sessions: stop hook runs validation itself and pushes only
+    on green.
+
+    Rationale: nothing lands on origin/main without passing all 4 gates.
     """
     # For kanban worktrees, work in the worktree cwd; for interactive, main.
-    cwd = os.getcwd() if _is_kanban_worktree() else str(PROJECT_ROOT)
+    is_kanban = _is_kanban_worktree()
+    cwd = os.getcwd() if is_kanban else str(PROJECT_ROOT)
     run = lambda cmd: subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, timeout=60
     )
@@ -150,12 +159,11 @@ def _auto_commit_and_push():
     # Stage tracked (modified) files only — skip untracked to avoid committing junk
     run(["git", "add", "-u"])
 
-    # Check if anything is staged
     staged = run(["git", "diff", "--cached", "--quiet"])
     if staged.returncode == 0:
         return  # Nothing staged
 
-    # Commit
+    # Commit locally (work preserved even if validation later fails)
     result = run([
         "git", "commit", "-m",
         "chore: auto-commit from Claude Code session\n\n"
@@ -168,14 +176,38 @@ def _auto_commit_and_push():
     if not branch_name:
         return  # Detached HEAD — don't push
 
-    # KANBAN GATE: if this is a scheduler-dispatched session, commit stays
-    # local on the kanban branch. The scheduler will validate and then merge +
-    # push to main only if all gates pass. This prevents unverified work from
-    # ever reaching origin/main.
-    if _is_kanban_worktree() or branch_name.startswith("kanban/"):
-        return  # Do NOT push; scheduler controls the merge+push
+    # KANBAN SESSIONS: scheduler owns the merge+push after its own validation.
+    # Commit stays local on the kanban branch.
+    if is_kanban or branch_name.startswith("kanban/"):
+        return
 
-    # Interactive sessions: push as before
+    # INTERACTIVE SESSIONS: run the unified validation suite, push only if green
+    try:
+        from tools.workflow.validated_commit import validate_working_tree
+
+        ok, reason, _metrics = validate_working_tree(
+            cwd=cwd,
+            compare_to_main=False,  # interactive session IS main
+            run_e2e=True,
+            run_companion=True,
+        )
+        if not ok:
+            print(
+                f"[stop-hook] Commit created locally but NOT pushed.\n"
+                f"[stop-hook] Validation FAILED: {reason}\n"
+                f"[stop-hook] Fix the issue and push manually with: "
+                f"git push origin {branch_name}",
+                file=sys.stderr,
+            )
+            return
+    except Exception as exc:
+        print(
+            f"[stop-hook] Validation error: {exc}. Commit kept local, NOT pushed.",
+            file=sys.stderr,
+        )
+        return
+
+    # All gates passed — safe to push
     run(["git", "push", "origin", branch_name])
 
 

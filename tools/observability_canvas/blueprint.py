@@ -1105,4 +1105,75 @@ def create_observability_blueprint():
         _audit("sop_reject", details=sop_id)
         return jsonify(sop)
 
+    # ====================================================================
+    # RUNBOOK ROUTES
+    # ====================================================================
+
+    from tools.observability_canvas import runbooks as _runbooks_mod
+
+    @bp.route("/runbooks")
+    @oc_login_required
+    def oc_runbooks_page():
+        """Render the runbooks management page."""
+        category = request.args.get("category")
+        severity = request.args.get("severity")
+        runbooks_list = _runbooks_mod.get_all_runbooks(category=category, severity=severity)
+        return render_template(
+            "observability_canvas/runbooks.html",
+            runbooks=runbooks_list,
+            active_page="observability",
+        )
+
+    @bp.route("/api/runbooks", methods=["GET"])
+    @oc_login_required
+    def oc_api_runbooks_list():
+        category = request.args.get("category")
+        severity = request.args.get("severity")
+        return jsonify(_runbooks_mod.get_all_runbooks(category=category, severity=severity))
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["GET"])
+    @oc_login_required
+    def oc_api_runbook_get(runbook_id):
+        rb = _runbooks_mod.get_runbook_by_id(runbook_id)
+        if not rb:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(rb)
+
+    @bp.route("/api/runbooks", methods=["POST"])
+    @oc_login_required
+    def oc_api_runbook_create():
+        data = request.get_json(silent=True) or {}
+        rb = _runbooks_mod.create_runbook(data)
+        _audit("runbook_create", details=rb.get("title", ""))
+        return jsonify(rb), 201
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["PUT"])
+    @oc_login_required
+    def oc_api_runbook_update(runbook_id):
+        data = request.get_json(silent=True) or {}
+        rb = _runbooks_mod.update_runbook(runbook_id, data)
+        if not rb:
+            return jsonify({"error": "Not found"}), 404
+        _audit("runbook_update", details=runbook_id)
+        return jsonify(rb)
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["DELETE"])
+    @oc_login_required
+    def oc_api_runbook_delete(runbook_id):
+        deleted = _runbooks_mod.delete_runbook(runbook_id)
+        if not deleted:
+            return jsonify({"error": "Not found"}), 404
+        _audit("runbook_delete", details=runbook_id)
+        return jsonify({"deleted": True})
+
+    @bp.route("/api/runbooks/<runbook_id>/execute", methods=["POST"])
+    @oc_login_required
+    def oc_api_runbook_execute(runbook_id):
+        """Record that a runbook was executed."""
+        rb = _runbooks_mod.record_execution(runbook_id)
+        if not rb:
+            return jsonify({"error": "Not found"}), 404
+        _audit("runbook_execute", details=runbook_id)
+        return jsonify(rb)
+
     return bp

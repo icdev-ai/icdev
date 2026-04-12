@@ -6,8 +6,13 @@
     <p class="subtitle">Manage scheduled and planned tasks — drag across columns or use arrow buttons to move.</p>
 </div>
 
-<div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
-    <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
+<div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+    <input type="text" id="kanban-filter-input" placeholder="Filter by title, id, priority..." aria-label="Filter tasks"
+           style="flex:1; max-width:420px; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+    <span id="kanban-filter-count" style="font-size:12px; color:var(--text-dim);"></span>
+    <div style="margin-left:auto;">
+        <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
+    </div>
 </div>
 
 <div class="kanban-board" id="kanban-board">
@@ -204,20 +209,81 @@ function saveTask() {
         .catch(function(e) { alert('Error: ' + e); });
 }
 
+// OPT-68: optimistic move — reflect the change immediately, rollback on failure
 function moveTask(taskId, newStatus) {
+    var card = document.querySelector('[data-task-id="' + taskId + '"]');
+    var originalStatus = null;
+    var originalParent = null;
+    if (card) {
+        originalParent = card.parentElement;
+        originalStatus = card.getAttribute('data-status');
+        var newColBody = document.querySelector('.kanban-column[data-status="' + newStatus + '"] .kanban-column-body');
+        if (newColBody) {
+            var empty = newColBody.querySelector('.kanban-empty');
+            if (empty) empty.remove();
+            newColBody.insertBefore(card, newColBody.firstChild);
+            card.setAttribute('data-status', newStatus);
+        }
+    }
+
     fetch('/api/kanban/tasks/' + taskId + '/move', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ status: newStatus })
     })
-    .then(function(r) { return r.json(); })
-    .then(function() { refreshKanbanTasks(); });
+    .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    })
+    .then(function() {
+        // OPT-68 Pattern 3: undo toast for a reversible move
+        if (window.ICDEV && ICDEV.undoToast && originalStatus && originalStatus !== newStatus) {
+            ICDEV.undoToast.show({
+                message: 'Task moved to ' + newStatus,
+                undoCallback: function () {
+                    return fetch('/api/kanban/tasks/' + taskId + '/move', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ status: originalStatus })
+                    }).then(function() { refreshKanbanTasks(); });
+                },
+                durationMs: 5000
+            });
+        }
+    })
+    .catch(function(err) {
+        // Rollback optimistic update
+        if (card && originalParent && originalStatus) {
+            originalParent.insertBefore(card, originalParent.firstChild);
+            card.setAttribute('data-status', originalStatus);
+        }
+        alert('Move failed: ' + err + '. Reverted.');
+    });
 }
 
 function deleteTask(taskId) {
     if (!confirm('Delete this task?')) return;
+    // Capture task snapshot BEFORE deletion so we can offer undo
+    var card = document.querySelector('[data-task-id="' + taskId + '"]');
+    var snapshot = null;
+    if (card && card.dataset.snapshot) {
+        try { snapshot = JSON.parse(card.dataset.snapshot); } catch (e) { snapshot = null; }
+    }
     fetch('/api/kanban/tasks/' + taskId, { method: 'DELETE' })
         .then(function(r) { return r.json(); })
-        .then(function() { refreshKanbanTasks(); });
+        .then(function() {
+            refreshKanbanTasks();
+            if (window.ICDEV && ICDEV.undoToast && snapshot) {
+                ICDEV.undoToast.show({
+                    message: 'Task deleted',
+                    undoCallback: function () {
+                        return fetch('/api/kanban/tasks', {
+                            method: 'POST', headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(snapshot)
+                        }).then(function() { refreshKanbanTasks(); });
+                    },
+                    durationMs: 5000
+                });
+            }
+        });
 }
 
 function refreshKanbanTasks() {
@@ -326,7 +392,8 @@ function renderTaskKanban(tasks) {
                 msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">\uD83D\uDCAC</button>';
             }
 
-            return '<div class="kanban-card" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
+            var snapAttr = JSON.stringify(t).replace(/"/g, '&quot;');
+            return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + snapAttr + ')">'
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                 + '<div class="kanban-card-meta">'
                 + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
@@ -396,8 +463,38 @@ function submitMessage() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
+// OPT-68 Pattern 1: filter-as-you-type across all visible kanban cards
+function applyKanbanFilter(query) {
+    var q = (query || '').trim().toLowerCase();
+    var matched = 0;
+    document.querySelectorAll('.kanban-card').forEach(function(card) {
+        var text = (card.textContent || '').toLowerCase();
+        var tid = (card.getAttribute('data-task-id') || '').toLowerCase();
+        var show = !q || text.indexOf(q) !== -1 || tid.indexOf(q) !== -1;
+        card.style.display = show ? '' : 'none';
+        if (show) matched++;
+    });
+    var countEl = document.getElementById('kanban-filter-count');
+    if (countEl) countEl.textContent = q ? matched + ' match' + (matched === 1 ? '' : 'es') : '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    refreshKanbanTasks();
+    // Wire filter input once debounce_filter.js is ready
+    var input = document.getElementById('kanban-filter-input');
+    if (input && window.ICDEV && ICDEV.debounceFilter) {
+        ICDEV.debounceFilter.bind(input, {
+            delayMs: 200,
+            onFilter: applyKanbanFilter,
+        });
+    } else if (input) {
+        // Fallback: plain listener (no debounce)
+        input.addEventListener('input', function() { applyKanbanFilter(input.value); });
+    }
+});
 </script>
+<script src="{{ url_for('static', filename='js/debounce_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='js/undo_toast.js') }}"></script>
 
 <style>
 .kanban-move-btn {

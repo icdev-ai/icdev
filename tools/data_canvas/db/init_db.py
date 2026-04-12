@@ -39,7 +39,11 @@ def get_connection():
         except ImportError:
             pass  # Fall through to SQLite
     # SQLite (default)
-    conn = get_connection(str(DB_PATH))
+    import sqlite3 as _sqlite3
+    conn = _sqlite3.connect(str(DB_PATH))
+    conn.row_factory = _sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -1098,7 +1102,6 @@ def init_db():
         except Exception:
             rb_count = 0
         rb_added = 0
-        now_ts = "CURRENT_TIMESTAMP"
         for rb in RUNBOOKS:
             cur.execute("SELECT 1 FROM ddc_runbooks WHERE id=?", (rb["id"],))
             if not cur.fetchone():

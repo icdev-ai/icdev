@@ -147,6 +147,29 @@ CREATE TABLE IF NOT EXISTS odc_sops (
 
 CREATE INDEX IF NOT EXISTS idx_odc_sops_status ON odc_sops(approval_status);
 CREATE INDEX IF NOT EXISTS idx_odc_sops_type ON odc_sops(sop_type);
+
+CREATE TABLE IF NOT EXISTS odc_runbooks (
+    id                      TEXT PRIMARY KEY,
+    title                   TEXT NOT NULL,
+    category                TEXT NOT NULL DEFAULT 'general',
+    trigger_condition       TEXT DEFAULT '',
+    severity                TEXT NOT NULL DEFAULT 'medium'
+                                CHECK (severity IN ('critical','high','medium','low')),
+    description             TEXT DEFAULT '',
+    steps                   TEXT DEFAULT '[]',
+    nist_controls           TEXT DEFAULT '[]',
+    tags                    TEXT DEFAULT '[]',
+    owner                   TEXT DEFAULT '',
+    estimated_duration_min  INTEGER DEFAULT 30,
+    last_executed_at        TEXT DEFAULT '',
+    execution_count         INTEGER DEFAULT 0,
+    classification          TEXT DEFAULT 'CUI',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_runbooks_category ON odc_runbooks(category);
+CREATE INDEX IF NOT EXISTS idx_odc_runbooks_severity ON odc_runbooks(severity);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -691,6 +714,13 @@ def init_db():
     try:
         from tools.observability_canvas.sops import seed_sops
         seed_sops()
+    except Exception:
+        pass
+
+    # Seed runbooks
+    try:
+        from tools.observability_canvas.runbooks import seed_runbooks
+        seed_runbooks()
     except Exception:
         pass
 

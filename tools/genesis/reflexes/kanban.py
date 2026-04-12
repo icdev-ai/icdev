@@ -1651,36 +1651,19 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
 
 
 def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
-    """guard-7: Run full validation suite in the AGENT'S WORKTREE.
+    """guard-7: Run the unified validation suite on the agent's worktree.
 
-    Runs from the worktree (not BASE_DIR) so the checks validate the agent's
-    work, not pre-existing issues in main. Only fails the task if the agent's
-    modified files have issues — pre-existing issues elsewhere don't reject
-    the agent's work.
-
-    Runs (each gated on success of the previous):
-    1. CodeLens: py_compile + ruff + bandit on MODIFIED files only
-    2. Coherence: coherence_checker.py --all --gate (worktree cwd)
-    3. E2E: Selenium full-lifecycle test if UI files were modified
-    4. Companion sync: best-effort (never fails task — runs on main)
-
-    FAIL if any gate fails on the agent's ACTUAL changes.
-    Pre-existing issues unrelated to the task are NOT cause for rejection.
+    Delegates to tools/workflow/validated_commit.validate_working_tree() so
+    kanban and interactive sessions share the exact same pipeline:
+      1. CodeLens (py_compile + ruff + bandit)
+      2. Coherence (compared to main baseline — pre-existing issues ignored)
+      3. E2E (Selenium, if UI files touched AND dashboard running)
+      4. Companion sync (best-effort)
 
     Returns: (passed: bool, reason: str, metrics: dict)
     """
     import subprocess as _sp
-
-    metrics: Dict[str, Any] = {
-        "codelens_passed": None,
-        "ruff_issues": 0,
-        "bandit_issues": 0,
-        "pytest_passed": None,
-        "coherence_passed": None,
-        "e2e_ran": False,
-        "e2e_passed": None,
-        "companion_synced": False,
-    }
+    from tools.workflow.validated_commit import validate_working_tree
 
     # Resolve the task's worktree — validation runs here, not in main.
     work_dir = _worktrees.get(task_id)
@@ -1689,7 +1672,7 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     else:
         cwd = str(BASE_DIR)
 
-    # Identify modified files on the task's worktree branch (vs main)
+    # Identify files changed by the agent (branch vs main)
     branch_name = f"kanban/{task_id}"
     try:
         result = _sp.run(
@@ -1701,146 +1684,13 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     except Exception:
         modified = []
 
-    # Filter to .py files that exist in the worktree (agent actually touched them)
-    modified_py = [
-        f for f in modified
-        if f.endswith(".py") and (Path(cwd) / f).exists()
-    ]
-
-    # ─── 1. CodeLens (on agent's modified files ONLY, in worktree) ──
-    if modified_py:
-        # py_compile: if the agent wrote broken syntax, reject
-        try:
-            compile_result = _sp.run(
-                ["python", "-m", "py_compile"] + modified_py,
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                cwd=cwd, timeout=60,
-            )
-            if compile_result.returncode != 0:
-                metrics["codelens_passed"] = False
-                return False, f"py_compile failed on agent's files: {compile_result.stderr[:200]}", metrics
-        except Exception as exc:
-            logger.warning("guard-7: py_compile skipped: %s", exc)
-
-        # ruff: only on agent's modified files
-        try:
-            ruff_result = _sp.run(
-                ["python", "-m", "ruff", "check"] + modified_py,
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                cwd=cwd, timeout=60,
-            )
-            if ruff_result.returncode != 0:
-                issue_count = len([ln for ln in ruff_result.stdout.splitlines() if ": " in ln])
-                metrics["ruff_issues"] = issue_count
-                if issue_count > 0:
-                    metrics["codelens_passed"] = False
-                    return False, f"ruff found {issue_count} issues in agent's files", metrics
-        except Exception as exc:
-            logger.warning("guard-7: ruff skipped: %s", exc)
-
-        # bandit: only on agent's modified files, medium+ severity
-        try:
-            bandit_result = _sp.run(
-                ["python", "-m", "bandit", "-r"] + modified_py + ["--severity-level", "medium"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                cwd=cwd, timeout=60,
-            )
-            if bandit_result.returncode == 1:
-                mh_count = bandit_result.stdout.count(">> Issue:")
-                metrics["bandit_issues"] = mh_count
-                if mh_count > 0:
-                    metrics["codelens_passed"] = False
-                    return False, f"bandit found {mh_count} medium+ issues in agent's files", metrics
-        except Exception as exc:
-            logger.warning("guard-7: bandit skipped: %s", exc)
-
-        metrics["codelens_passed"] = True
-
-    # ─── 2. Coherence (run in worktree — validates agent's state) ───
-    # Only FAIL if the coherence issue is NEW vs main (caused by agent's work).
-    try:
-        coh_worktree = _sp.run(
-            ["python", "tools/workflow/coherence_checker.py", "--all", "--gate"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=cwd, timeout=120,
-        )
-        worktree_ok = coh_worktree.returncode == 0
-
-        if worktree_ok:
-            metrics["coherence_passed"] = True
-        else:
-            # Check if main ALSO has this failure — if so, it's pre-existing
-            # and not the agent's fault.
-            coh_main = _sp.run(
-                ["python", "tools/workflow/coherence_checker.py", "--all", "--gate"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                cwd=str(BASE_DIR), timeout=120,
-            )
-            main_ok = coh_main.returncode == 0
-            if main_ok:
-                # Main passes, worktree fails → agent broke coherence
-                metrics["coherence_passed"] = False
-                return False, (
-                    f"coherence gate FAILED in worktree (exit {coh_worktree.returncode}) "
-                    f"but PASSED in main — agent's changes broke coherence"
-                ), metrics
-            else:
-                # Both fail → pre-existing issue, not the agent's fault
-                metrics["coherence_passed"] = True  # pre-existing, pass agent
-                logger.info(
-                    "guard-7: coherence fails in both main and worktree — "
-                    "pre-existing issue, not blocking agent %s", task_id
-                )
-    except Exception as exc:
-        logger.warning("guard-7: coherence skipped: %s", exc)
-
-    # ─── 3. E2E (only if UI/dashboard files modified) ───────────────
-    ui_touched = any(
-        f.startswith(("tools/dashboard/", "tools/saas/portal/"))
-        for f in modified
+    return validate_working_tree(
+        cwd=cwd,
+        modified_files=modified,
+        compare_to_main=True,
+        run_e2e=True,
+        run_companion=True,
     )
-    if ui_touched:
-        try:
-            import urllib.request as _ul
-            _ul.urlopen("http://localhost:5050/health", timeout=2)  # nosec B310 -- localhost health check
-            dashboard_up = True
-        except Exception:
-            dashboard_up = False
-
-        if dashboard_up:
-            metrics["e2e_ran"] = True
-            try:
-                # E2E runs against the live dashboard (which is on main),
-                # not the worktree. Purpose: ensure agent's committed changes
-                # don't break the running dashboard after merge.
-                e2e_result = _sp.run(
-                    ["python", "tests/e2e_kanban_depends_on.py"],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace",
-                    cwd=str(BASE_DIR), timeout=180,
-                )
-                metrics["e2e_passed"] = e2e_result.returncode == 0
-                if e2e_result.returncode != 0:
-                    return False, f"E2E test failed: {e2e_result.stdout[-200:]}", metrics
-            except Exception as exc:
-                logger.warning("guard-7: E2E error: %s", exc)
-                metrics["e2e_passed"] = False
-        else:
-            logger.info("guard-7: dashboard not running, skipping E2E")
-
-    # ─── 4. Companion sync (best-effort, NEVER fails the task) ──────
-    # Runs on main because it syncs repo-wide config to other AI platforms.
-    # Sync failure is not the agent's fault.
-    try:
-        sync_result = _sp.run(
-            ["python", "tools/dx/companion.py", "--sync", "--write", "--json"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(BASE_DIR), timeout=60,
-        )
-        metrics["companion_synced"] = (sync_result.returncode == 0)
-    except Exception as exc:
-        logger.warning("guard-7: companion sync skipped: %s", exc)
-
-    return True, "All validation gates passed (validated in worktree)", metrics
 
 
 def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
@@ -2077,8 +1927,11 @@ def _check_completed():
                     _clear_resume_at(task_id)
                 else:
                     print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
+                    # guard-18: track failure count; flag for decomposition
+                    # after repeated failures (task is probably too big).
+                    new_status = _record_failure_and_maybe_flag(task_id, reason)
                     try:
-                        _move_task(task_id, "backlog")
+                        _move_task(task_id, new_status)
                     except Exception:
                         pass
 
