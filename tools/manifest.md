@@ -1797,6 +1797,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| DDC Introspector | tools/data_canvas/introspector.py | Reverse-engineer live PostgreSQL/SQLite/MySQL/SQL Server into DDC graph nodes (entities + columns + FK edges) — closes idealized-vs-prod gap | --dsn DSN [--db-type auto\|sqlite\|postgresql\|mysql\|sqlserver] [--schema SCHEMA] [--json] [--meta-only] | DDC graph JSON or metadata summary |
 | Pii Detector | tools\data_canvas\pii_detector.py | Auto-registered: data_canvas/pii_detector.py | --json | JSON |
 | Cloud Import | tools\infra_canvas\cloud_import.py | Auto-registered: infra_canvas/cloud_import.py | --json | JSON |
 | Sigma Generator | tools\observability_canvas\sigma_generator.py | Auto-registered: observability_canvas/sigma_generator.py | --json | JSON |
