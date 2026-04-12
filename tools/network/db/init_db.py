@@ -46,7 +46,10 @@ def get_connection():
         except ImportError:
             pass  # Fall through to SQLite
     # SQLite (default)
-    conn = get_connection(str(DB_PATH))
+    import sqlite3 as _sqlite3
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = _sqlite3.connect(str(DB_PATH))
+    conn.row_factory = _sqlite3.Row
     return conn
 
 
@@ -1553,6 +1556,73 @@ CREATE TABLE IF NOT EXISTS nc_packet_captures (
 );
 CREATE INDEX IF NOT EXISTS idx_nc_captures_link ON nc_packet_captures(link_id);
 CREATE INDEX IF NOT EXISTS idx_nc_captures_run  ON nc_packet_captures(lab_run_id);
+
+-- ── Design Snapshots ────────────────────────────────────────────────────────
+-- Frozen, restorable point-in-time captures of a design (topology + configs).
+CREATE TABLE IF NOT EXISTS nc_design_snapshots (
+    snap_id TEXT PRIMARY KEY,
+    design_id TEXT NOT NULL,
+    lab_run_id TEXT,                  -- optional: lab execution that produced snapshot
+    manifest_json TEXT NOT NULL,      -- JSON: topology + device configs + lineage
+    blob_uri TEXT,                    -- optional: path to .gns3project tarball
+    sha256 TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI',
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    description TEXT,
+    size_bytes INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_nc_snapshots_design ON nc_design_snapshots(design_id);
+CREATE INDEX IF NOT EXISTS idx_nc_snapshots_created ON nc_design_snapshots(created_at);
+
+-- ── Sanitize → Lab Mode Clones ──────────────────────────────────────────────
+-- Redacted clones of production designs for safe lab execution.
+CREATE TABLE IF NOT EXISTS nc_lab_clones (
+    clone_id TEXT PRIMARY KEY,
+    parent_design_id TEXT NOT NULL,
+    lineage TEXT NOT NULL,            -- JSON array of parent chain
+    redaction_log TEXT NOT NULL,      -- JSON list of redactions
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'UNCLASSIFIED',
+    lab_backend TEXT,                 -- gns3, containerlab, etc.
+    lab_project_id TEXT               -- foreign lab system project ID
+);
+CREATE INDEX IF NOT EXISTS idx_nc_lab_clones_parent ON nc_lab_clones(parent_design_id);
+
+-- ── NDC Standard Operating Procedures (SOPs) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS ndc_sops (
+    sop_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,              -- change_window, provisioning, firewall, dns, failover, etc.
+    version INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'draft',         -- draft, review, approved, deprecated
+    description TEXT,
+    prerequisites TEXT,                   -- JSON list
+    steps TEXT NOT NULL,                  -- JSON list of {number, action, verify, rollback, time_est}
+    validation TEXT,                      -- JSON list of validation checks
+    rollback TEXT,                        -- JSON rollback plan
+    escalation TEXT,                      -- JSON escalation contacts
+    classification TEXT DEFAULT 'CUI',
+    author TEXT,
+    reviewer TEXT,
+    approver TEXT,
+    approved_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ndc_sops_category ON ndc_sops(category);
+CREATE INDEX IF NOT EXISTS idx_ndc_sops_status ON ndc_sops(status);
+
+CREATE TABLE IF NOT EXISTS ndc_sop_approval_log (
+    id TEXT PRIMARY KEY,
+    sop_id TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,                 -- submitted, reviewed, approved, rejected, deprecated
+    comment TEXT,
+    timestamp TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ndc_sop_log_sop ON ndc_sop_approval_log(sop_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -13821,6 +13891,178 @@ def init_db():
                 )
             conn.commit()
             print(f"[init_db] Seeded {len(_conventions)} naming conventions.")
+
+        # ── Seed NDC SOPs ──────────────────────────────────────────────
+        sop_count = conn.execute("SELECT COUNT(*) FROM ndc_sops").fetchone()[0]
+        if sop_count == 0:
+            _sops = [
+                {
+                    "sop_id": "sop-change-window-001",
+                    "title": "Network Change Window Execution",
+                    "category": "change_window",
+                    "description": "Standard procedure for executing approved network changes within a scheduled maintenance window.",
+                    "prerequisites": [
+                        "Approved CAB change ticket",
+                        "Pre-change configuration backup stored",
+                        "Stakeholders notified ≥ 24h in advance",
+                        "Rollback plan reviewed and signed off",
+                    ],
+                    "steps": [
+                        {"number": 1, "action": "Announce window start in #netops-change channel", "verify": "Post timestamped; acknowledgement from on-call SRE", "rollback": "N/A", "time_est": "5m"},
+                        {"number": 2, "action": "Verify pre-change baseline (ping, BGP sessions, SNMP up)", "verify": "All target devices respond; baseline captured to runbook log", "rollback": "Abort if baseline unhealthy", "time_est": "10m"},
+                        {"number": 3, "action": "Apply change per approved config diff", "verify": "Commit confirmed on device; syslog shows no errors", "rollback": "`rollback` / `configure replace` to prior config", "time_est": "15m"},
+                        {"number": 4, "action": "Post-change validation checks", "verify": "Validation list passes 100%", "rollback": "Rollback if any critical check fails", "time_est": "15m"},
+                        {"number": 5, "action": "Close window; update ticket with outcome", "verify": "Ticket status = Implemented; window closed in calendar", "rollback": "N/A", "time_est": "5m"},
+                    ],
+                    "validation": [
+                        "All affected BGP/OSPF neighbors re-established",
+                        "End-to-end ping between representative endpoints < 5ms loss",
+                        "Monitoring dashboards show no new alarms for 15 minutes",
+                        "Traffic volume returned to ±10% of baseline",
+                    ],
+                    "rollback": {
+                        "trigger": "Any critical validation check fails OR unplanned outage > 2 minutes",
+                        "procedure": "Execute `configure replace <backup>` on affected devices, verify baseline restored, open P1 incident.",
+                        "max_duration": "10m",
+                    },
+                    "escalation": [
+                        {"tier": 1, "role": "On-call Network Engineer", "contact": "netops-oncall@agency.gov"},
+                        {"tier": 2, "role": "Network Operations Manager", "contact": "netops-mgr@agency.gov"},
+                        {"tier": 3, "role": "CIO / Authorizing Official", "contact": "ao@agency.gov"},
+                    ],
+                },
+                {
+                    "sop_id": "sop-circuit-provision-001",
+                    "title": "WAN Circuit Provisioning",
+                    "category": "provisioning",
+                    "description": "End-to-end procedure to provision, test, and accept a new WAN circuit from carrier.",
+                    "prerequisites": [
+                        "Signed carrier service order with LOA-CFA",
+                        "Demarc location and rack space confirmed",
+                        "IP addressing assigned in IPAM",
+                        "Router port reserved and labeled",
+                    ],
+                    "steps": [
+                        {"number": 1, "action": "Verify physical demarc (fiber/copper tested by carrier)", "verify": "Carrier light levels within spec; LOS alarm clear", "rollback": "Reject turn-up; carrier re-dispatch", "time_est": "30m"},
+                        {"number": 2, "action": "Cross-connect from demarc to CE router port", "verify": "Layer-1 link up, correct optics, no CRC errors", "rollback": "Re-seat / replace SFP; open ticket", "time_est": "20m"},
+                        {"number": 3, "action": "Apply interface and routing config (BGP peering)", "verify": "BGP session Established; prefixes received == expected", "rollback": "Shut interface; restore prior config", "time_est": "30m"},
+                        {"number": 4, "action": "Carrier handoff testing (RFC 2544 or Y.1564)", "verify": "Throughput ≥ CIR, latency/jitter within SLA", "rollback": "Carrier re-turn-up if out of spec", "time_est": "60m"},
+                        {"number": 5, "action": "Update CMDB, IPAM, and monitoring", "verify": "Circuit visible in NMS, asset record complete, alerts wired", "rollback": "N/A", "time_est": "20m"},
+                    ],
+                    "validation": [
+                        "BGP session UP and exchanging expected prefix count",
+                        "RFC 2544 or Y.1564 test results at or above SLA",
+                        "No interface errors for 24h soak period",
+                        "Monitoring receives SNMP/flow data",
+                    ],
+                    "rollback": {
+                        "trigger": "Acceptance test fails OR > 0.1% packet loss sustained",
+                        "procedure": "Shutdown interface, remove BGP config, notify carrier, document failure mode.",
+                        "max_duration": "30m",
+                    },
+                    "escalation": [
+                        {"tier": 1, "role": "Provisioning Engineer", "contact": "provisioning@agency.gov"},
+                        {"tier": 2, "role": "Carrier NOC", "contact": "noc@carrier.example"},
+                        {"tier": 3, "role": "Network Architect", "contact": "net-arch@agency.gov"},
+                    ],
+                },
+                {
+                    "sop_id": "sop-firewall-rule-001",
+                    "title": "Firewall Rule Change",
+                    "category": "firewall",
+                    "description": "Procedure to add, modify, or remove a firewall rule with compliance review and validation.",
+                    "prerequisites": [
+                        "Approved firewall change request with business justification",
+                        "Security review sign-off (least privilege verified)",
+                        "Current ruleset backup exported",
+                        "Test traffic source/destination identified",
+                    ],
+                    "steps": [
+                        {"number": 1, "action": "Backup current firewall configuration", "verify": "Backup file hash recorded and stored off-device", "rollback": "N/A", "time_est": "5m"},
+                        {"number": 2, "action": "Stage rule change in candidate config (do not commit)", "verify": "Syntax check passes; no shadowed/redundant rules flagged", "rollback": "Discard candidate", "time_est": "10m"},
+                        {"number": 3, "action": "Peer review of rule (source, dest, port, action, logging)", "verify": "Reviewer signs off in ticket; least privilege confirmed", "rollback": "Return to staging if changes required", "time_est": "15m"},
+                        {"number": 4, "action": "Commit change to active policy", "verify": "Commit ID captured; policy version incremented", "rollback": "`rollback` to last-known-good commit", "time_est": "5m"},
+                        {"number": 5, "action": "Validate permitted and denied flows", "verify": "Expected traffic flows; denied traffic blocked and logged", "rollback": "Rollback if validation fails", "time_est": "15m"},
+                    ],
+                    "validation": [
+                        "Permit test: packet reaches destination from approved source",
+                        "Deny test: unauthorized source is blocked and logged",
+                        "Hit counter on new rule > 0 within 1h of production traffic",
+                        "No spike in drops on adjacent rules (rule placement correct)",
+                    ],
+                    "rollback": {
+                        "trigger": "Legitimate traffic blocked OR unauthorized traffic permitted",
+                        "procedure": "Rollback firewall commit to backup; open incident; re-review rule.",
+                        "max_duration": "10m",
+                    },
+                    "escalation": [
+                        {"tier": 1, "role": "Firewall Administrator", "contact": "fw-admin@agency.gov"},
+                        {"tier": 2, "role": "Security Operations Center", "contact": "soc@agency.gov"},
+                        {"tier": 3, "role": "ISSO", "contact": "isso@agency.gov"},
+                    ],
+                },
+                {
+                    "sop_id": "sop-dns-update-001",
+                    "title": "DNS Record Update",
+                    "category": "dns",
+                    "description": "Procedure to add, modify, or remove an authoritative DNS record with TTL management and propagation verification.",
+                    "prerequisites": [
+                        "Approved DNS change ticket with record details",
+                        "Current zone file exported / version tagged",
+                        "TTL reduction applied ≥ 2x previous TTL before change (for modifies)",
+                        "Downstream systems (certs, SPF, DMARC) reviewed for impact",
+                    ],
+                    "steps": [
+                        {"number": 1, "action": "Export current zone file and commit to version control", "verify": "Zone serial captured; git commit hash recorded", "rollback": "N/A", "time_est": "5m"},
+                        {"number": 2, "action": "Edit record (add/modify/delete) and bump SOA serial", "verify": "Zone file validates (`named-checkzone`); serial incremented", "rollback": "Revert file; re-load prior zone", "time_est": "10m"},
+                        {"number": 3, "action": "Reload zone on primary authoritative server", "verify": "Reload succeeds; log shows new serial loaded", "rollback": "Reload prior zone; confirm old serial active", "time_est": "5m"},
+                        {"number": 4, "action": "Verify NOTIFY/AXFR to secondaries", "verify": "All secondaries show new serial within 60s", "rollback": "Force AXFR if needed; escalate if mismatched", "time_est": "10m"},
+                        {"number": 5, "action": "External resolution check from multiple resolvers", "verify": "`dig @8.8.8.8`, `@1.1.1.1`, and internal resolvers all return expected record", "rollback": "Rollback zone if resolution incorrect", "time_est": "15m"},
+                    ],
+                    "validation": [
+                        "Record resolves correctly from ≥ 3 external resolvers",
+                        "All authoritative secondaries on matching serial",
+                        "Dependent services (HTTPS cert SNI, mail, API) functional",
+                        "No increase in NXDOMAIN / SERVFAIL rate in DNS telemetry",
+                    ],
+                    "rollback": {
+                        "trigger": "Dependent service outage OR resolution returns wrong value",
+                        "procedure": "Restore prior zone file, bump serial, reload, notify secondaries, verify resolution.",
+                        "max_duration": "15m (plus TTL expiry window)",
+                    },
+                    "escalation": [
+                        {"tier": 1, "role": "DNS Administrator", "contact": "dns-admin@agency.gov"},
+                        {"tier": 2, "role": "Infrastructure Lead", "contact": "infra-lead@agency.gov"},
+                        {"tier": 3, "role": "CISO", "contact": "ciso@agency.gov"},
+                    ],
+                },
+            ]
+            _now_iso = datetime.now(timezone.utc).isoformat()
+            for s in _sops:
+                conn.execute(
+                    "INSERT OR IGNORE INTO ndc_sops "
+                    "(sop_id, title, category, version, status, description, "
+                    " prerequisites, steps, validation, rollback, escalation, "
+                    " classification, author, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 1, 'draft', ?, ?, ?, ?, ?, ?, 'CUI', 'seed', ?, ?)",
+                    (
+                        s["sop_id"], s["title"], s["category"], s["description"],
+                        json.dumps(s["prerequisites"]),
+                        json.dumps(s["steps"]),
+                        json.dumps(s["validation"]),
+                        json.dumps(s["rollback"]),
+                        json.dumps(s["escalation"]),
+                        _now_iso, _now_iso,
+                    ),
+                )
+                conn.execute(
+                    "INSERT OR IGNORE INTO ndc_sop_approval_log "
+                    "(id, sop_id, actor, action, comment, timestamp) "
+                    "VALUES (?, ?, 'seed', 'created', 'Seeded example SOP', ?)",
+                    (f"log-seed-{s['sop_id']}", s["sop_id"], _now_iso),
+                )
+            conn.commit()
+            print(f"[init_db] Seeded {len(_sops)} NDC SOPs.")
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",

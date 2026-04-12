@@ -97,6 +97,8 @@ from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
 from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
 from tools.dashboard.api.oracle import oracle_api  # noqa: E402
 from tools.dashboard.api.analytics import analytics_api  # noqa: E402
+from tools.dashboard.api.ndc_labs import ndc_labs_api  # noqa: E402
+from tools.dashboard.api.ndc_sops import ndc_sops_api  # noqa: E402
 from tools.dashboard.api.canvas_projects import canvas_projects_api  # noqa: E402
 from tools.dashboard.api.writeguard import writeguard_api  # noqa: E402
 
@@ -1150,6 +1152,8 @@ def create_app() -> Flask:
     app.register_blueprint(ato_package_api)
     app.register_blueprint(oracle_api)
     app.register_blueprint(analytics_api)
+    app.register_blueprint(ndc_labs_api)
+    app.register_blueprint(ndc_sops_api)
     app.register_blueprint(canvas_projects_api)
     app.register_blueprint(writeguard_api)
     if _HAS_FINETUNE_API:
@@ -1180,6 +1184,11 @@ def create_app() -> Flask:
     @app.route("/sre")
     def sre_dashboard_page():
         return render_template("sre/dashboard.html")
+
+    # ---- NDC SOPs Dashboard Page ----
+    @app.route("/ndc/sops")
+    def ndc_sops_page():
+        return render_template("ndc_sops.html")
 
     # ---- Canvas Knowledge Graph Blueprint ----
     if _HAS_CANVAS_KG:
@@ -2775,6 +2784,13 @@ def create_app() -> Flask:
     def orchestration_dashboard():
         """Real-time multi-agent orchestration dashboard — agent grid, DAG, mailbox (Phase 61)."""
         return render_template("orchestration/dashboard.html")
+
+    # ---- NDC Lab Backend Health ----
+
+    @app.route("/network/labs")
+    def network_labs_page():
+        """NDC — Lab backend health (GNS3, Containerlab, EVE-NG)."""
+        return render_template("network_labs.html")
 
     # ---- Digital Program Twin — Simulation Dashboard ----
 
