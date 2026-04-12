@@ -140,6 +140,12 @@ DATA_OBJECTS = {
             "icon": "CDS",
             "desc": "Cross-domain data transfer (CDS/guard/diode) between classification levels",
         },
+        {
+            "type": "flow-column-lineage",
+            "label": "Column Lineage",
+            "icon": "CLN",
+            "desc": "Column-to-column lineage edge — tracks how a specific column flows and transforms between entities",
+        },
     ],
     "controls": [
         {
@@ -327,6 +333,22 @@ DATA_COMPLIANCE_RULES = [
         "description": "Data export and API flows leaving a classification zone should have DLP policy control.",
         "check": "dlp_on_egress",
     },
+]
+
+# ── Edge Type Constants ───────────────────────────────────────────────────────
+# Column-to-column lineage edge type (used in lineage.py and data_engine.py)
+EDGE_TYPE_COLUMN_LINEAGE = "flow-column-lineage"
+
+# All recognized column-level lineage transformation types stored in dd_lineage.lineage_type
+COLUMN_LINEAGE_TYPES = [
+    "flow-column-lineage",  # Generic column-to-column flow (default)
+    "col-derive",           # Computed / derived expression (e.g. full_name = first || ' ' || last)
+    "col-join",             # Column participates in a JOIN predicate
+    "col-filter",           # Column used in WHERE / HAVING clause
+    "col-aggregate",        # Column produced by GROUP BY / SUM / COUNT / AVG
+    "col-union",            # Column merged via UNION / INTERSECT / EXCEPT
+    "col-cast",             # Type-cast or format conversion (e.g. VARCHAR → DATE)
+    "col-passthrough",      # Column copied unchanged (SELECT col FROM ...)
 ]
 
 # NIST 800-53 control families relevant to data design
