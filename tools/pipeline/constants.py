@@ -1848,6 +1848,34 @@ PIPELINE_OBJECTS = {
             "desc": "Image version tracking, retention policy, and deprecation schedule",
         },
     ],
+    "config_testing": [
+        # Ansible role / playbook testing
+        {
+            "type": "test-molecule",
+            "label": "Ansible Molecule",
+            "icon": "ML",
+            "desc": "Ansible-native test framework — provision, verify, and destroy role scenarios",
+            "stage": "test",
+            "license": "MIT",
+        },
+        {
+            "type": "test-ansible-navigator",
+            "label": "Ansible Navigator",
+            "icon": "AN",
+            "desc": "Ansible Navigator TUI — interactive execution environment validation for playbooks and collections",
+            "stage": "test",
+            "license": "Apache-2.0",
+        },
+        # Jenkinsfile unit testing
+        {
+            "type": "test-jenkins-pipeline-unit",
+            "label": "Jenkins Pipeline Unit",
+            "icon": "JP",
+            "desc": "Jenkinsci/JenkinsPipelineUnit — unit tests for Declarative and Scripted Jenkinsfiles",
+            "stage": "test",
+            "license": "Apache-2.0",
+        },
+    ],
 }
 
 # ── CSP Service Equivalence (maps generic concepts across CSPs) ──────────────
