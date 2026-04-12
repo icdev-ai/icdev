@@ -22,6 +22,31 @@ Implement features using strict Test-Driven Development: write tests FIRST, watc
 
 ## Process
 
+### Step 0: Pre-RED Reflection (Karpathy Gate)
+
+Before writing a single test, apply `hardprompts/karpathy_principles.md`. This takes < 5 minutes and prevents the most common TDD failure — writing tests against a misunderstood requirement.
+
+> **Partial:** `{% include 'hardprompts/karpathy_principles.md' %}` with `task_description` set to the requirement text.
+
+Work through each check:
+
+1. **State your assumptions** about the requirement:
+   - What data structures exist that this feature will read or write?
+   - What external systems, if any, does this touch?
+   - What does the test environment already have bootstrapped?
+
+2. **Enumerate interpretations** of the requirement. If the requirement can be read two ways, list both and select one before writing scenarios. Log the chosen interpretation as a comment in the feature file.
+
+3. **Prefer the simpler test design** — favour direct assertions over mocks; integration tests over elaborate fixtures when the overhead is low.
+
+4. **Bound the edit scope** — list which existing modules, tables, or routes will NOT be changed by this feature. A test that accidentally covers something out of scope will give false confidence.
+
+5. **Write success criteria first** — before the Gherkin file, write two to four plain-English sentences that describe what "done" looks like. These become the Scenario outlines in Step 1 and the acceptance criteria checked in Step 5.
+
+**Gate:** Do not advance to Step 1 until every check is answered, even if the answer is "not applicable because…". An empty answer is not acceptable.
+
+---
+
 ### Step 1: Write Gherkin Feature File (Specification)
 
 **Tool:** `python tools/builder/test_writer.py --project <name> --requirement "<requirement text>"`
@@ -394,7 +419,7 @@ sequenceDiagram
 
 - **Tools:** `tools/builder/test_writer.py`, `tools/builder/code_generator.py`, `tools/builder/linter.py`, `tools/builder/formatter.py`
 - **Context:** `context/coding_standards.md` (if exists)
-- **Hard Prompts:** `hardprompts/test_generation.md`, `hardprompts/code_generation.md`
+- **Hard Prompts:** `hardprompts/karpathy_principles.md` (pre-RED reflection gate), `hardprompts/builder/test_generation.md`, `hardprompts/builder/code_generation.md`
 
 ---
 
