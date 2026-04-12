@@ -1,16 +1,28 @@
+#!/usr/bin/env python3
 # CUI // SP-CTI
-"""RAG MCP server handlers — 9 tool handlers for RAG subsystem (Phase 64).
+"""RAG MCP server — 9 tools for the RAG subsystem (Phase 64).
 
-Each handler is called from the unified MCP gateway via tool_registry.py.
+Each tool is registered via MCPServer.register_tool() and is also callable
+from the unified MCP gateway via tool_registry.py.
+
+Usage:
+    python tools/mcp/rag_server.py          # Start MCP server (stdio)
+    python tools/mcp/rag_server.py --help   # Show help
 """
 
 from __future__ import annotations
 
-from tools.db.storage import get_connection
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
+
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
 
@@ -282,3 +294,167 @@ def handle_rag_providers(arguments: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# MCPServer — register all 9 RAG tools
+# ---------------------------------------------------------------------------
+
+
+def build_server() -> MCPServer:
+    """Build and return a configured RAG MCP server."""
+    server = MCPServer(name="icdev-rag", version="1.0.0")
+
+    server.register_tool(
+        name="rag_search",
+        description=(
+            "Search ICDEV™ RAG knowledge base with natural language query. "
+            "Returns ranked results from all indexed sources (innovation signals, "
+            "compliance artifacts, research dossiers, etc.)."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language search query"},
+                "top_k": {"type": "integer", "description": "Number of results to return (default 5)", "default": 5},
+                "source_type": {"type": "string", "description": "Filter by source type (optional)"},
+                "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant isolation"},
+                "child_id": {"type": "string", "description": "Child app ID for federated queries"},
+            },
+            "required": ["query"],
+        },
+        handler=handle_rag_search,
+    )
+
+    server.register_tool(
+        name="rag_ingest",
+        description=(
+            "Ingest a source type into the RAG vector store. "
+            "Chunks content, embeds via Ollama nomic-embed-text, and stores with dedup."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "source_type": {
+                    "type": "string",
+                    "description": "Source type key (e.g., innovation_signals, creative_pain_points)",
+                },
+                "tenant_id": {"type": "string"},
+                "project_id": {"type": "string"},
+                "limit": {"type": "integer", "description": "Max rows to process (0 = all)", "default": 0},
+            },
+            "required": ["source_type"],
+        },
+        handler=handle_rag_ingest,
+    )
+
+    server.register_tool(
+        name="rag_status",
+        description="Get RAG ingestion and vector store status including chunk counts by source type and tier.",
+        input_schema={
+            "type": "object",
+            "properties": {"tenant_id": {"type": "string", "description": "Tenant ID (optional)"}},
+            "required": [],
+        },
+        handler=handle_rag_status,
+    )
+
+    server.register_tool(
+        name="rag_chunk_info",
+        description="Get detailed info about a specific RAG chunk by ID or content hash.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "chunk_id": {"type": "string", "description": "Chunk ID"},
+                "content_hash": {"type": "string", "description": "Content SHA-256 hash"},
+                "tenant_id": {"type": "string"},
+            },
+            "required": [],
+        },
+        handler=handle_rag_chunk_info,
+    )
+
+    server.register_tool(
+        name="rag_delete_source",
+        description="Delete all chunks from a specific source type in the vector store.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "source_type": {"type": "string", "description": "Source type to delete"},
+                "tenant_id": {"type": "string"},
+            },
+            "required": ["source_type"],
+        },
+        handler=handle_rag_delete_source,
+    )
+
+    server.register_tool(
+        name="rag_retention_migrate",
+        description=(
+            "Run tier migration: hot→warm (float16 compression) and warm→cold "
+            "(metadata only) based on age thresholds."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "tenant_id": {"type": "string"},
+                "dry_run": {"type": "boolean", "description": "Report candidates without migrating", "default": False},
+            },
+            "required": [],
+        },
+        handler=handle_rag_retention_migrate,
+    )
+
+    server.register_tool(
+        name="rag_reindex",
+        description="Re-index all or specified sources by running a full ingestion sweep.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "tenant_id": {"type": "string"},
+                "sources": {
+                    "type": "string",
+                    "description": "Comma-separated source types to re-index (default: all)",
+                },
+            },
+            "required": [],
+        },
+        handler=handle_rag_reindex,
+    )
+
+    server.register_tool(
+        name="rag_retrieval_history",
+        description="Get recent retrieval history from the RAG retrieval log (NIST AU-3 compliant).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max results (default 20)", "default": 20},
+                "tenant_id": {"type": "string"},
+            },
+            "required": [],
+        },
+        handler=handle_rag_retrieval_history,
+    )
+
+    server.register_tool(
+        name="rag_providers",
+        description="List available vector store backends (SQLite, ChromaDB, FAISS) and embedding provider status.",
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=handle_rag_providers,
+    )
+
+    return server
+
+
+# ---------------------------------------------------------------------------
+# CLI / entry point
+# ---------------------------------------------------------------------------
+
+
+def main():
+    """Build and run the RAG MCP server over stdio."""
+    build_server().run()
+
+
+if __name__ == "__main__":
+    main()
