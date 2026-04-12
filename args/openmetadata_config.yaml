@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+# DDC → OpenMetadata Sync Adapter Configuration
+# Override any value with environment variables:
+#   ICDEV_OM_URL, ICDEV_OM_TOKEN, ICDEV_OM_TIMEOUT
+
+openmetadata:
+  # OpenMetadata REST API base URL
+  url: "http://localhost:8585"
+
+  # JWT bearer token (required for non-public OpenMetadata instances)
+  token: ""
+
+  # HTTP request timeout in seconds
+  timeout: 15
