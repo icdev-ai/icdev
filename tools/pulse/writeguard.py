@@ -689,6 +689,79 @@ def run_full_quality_check(text: str) -> dict:
     except Exception as exc:
         logger.warning("Transition analysis failed: %s", exc)
 
+    # ─── Extended dimensions (WG 14, 15, 16, 17, 22, 24, 26, 27) ───
+    # These run deterministically and add findings; modes 19, 25, 28 run on-demand.
+    def _safe(name, fn, score_key="score", multiplier=1):
+        try:
+            r = fn(text)
+            s = r.get(score_key, r.get("overall_coverage_score", r.get("evidence_score", 70)))
+            if isinstance(s, (int, float)) and s <= 1.0 and multiplier == 100:
+                s = s * 100
+            elif isinstance(s, (int, float)) and multiplier == 100 and s <= 100:
+                pass  # already 0-100
+            findings = r.get("issues", []) or r.get("findings", [])
+            results[name] = {"status": "ok", "score": s, "findings": findings[:10], "raw": r}
+        except Exception as exc:
+            logger.debug("%s check failed: %s", name, exc)
+
+    try:
+        from tools.writing.structure_enforcer import enforce_structure
+        r = enforce_structure(text)
+        if r.get("is_decision_doc") or r.get("template"):
+            results["structure"] = {"status": "ok", "score": r.get("score", 100), "findings": r.get("issues", [])[:10]}
+    except Exception as exc:
+        logger.debug("structure check failed: %s", exc)
+
+    try:
+        from tools.writing.claim_validator import score_evidence_density
+        r = score_evidence_density(text)
+        results["evidence"] = {"status": "ok", "score": r.get("evidence_score", 70), "findings": r.get("issues", [])[:10]}
+    except Exception as exc:
+        logger.debug("evidence check failed: %s", exc)
+
+    try:
+        from tools.writing.numeric_validator import validate_numerics
+        r = validate_numerics(text)
+        results["numeric_integrity"] = {"status": "ok", "score": r.get("score", 100), "findings": [i.get("message", str(i)) for i in r.get("issues", [])][:10]}
+    except Exception as exc:
+        logger.debug("numeric check failed: %s", exc)
+
+    try:
+        from tools.writing.bias_detector import detect_bias
+        r = detect_bias(text, context="general")
+        results["bias"] = {"status": "ok", "score": r.get("score", 100), "findings": [i.get("word", "") + ": " + i.get("suggestion", "") for i in r.get("issues", [])][:10]}
+    except Exception as exc:
+        logger.debug("bias check failed: %s", exc)
+
+    try:
+        from tools.writing.standards_validator import validate_citations
+        r = validate_citations(text)
+        results["standards"] = {"status": "ok", "score": r.get("score", 100), "findings": r.get("issues", [])[:10]}
+    except Exception as exc:
+        logger.debug("standards check failed: %s", exc)
+
+    try:
+        from tools.writing.alternatives_enforcer import enforce_alternatives
+        r = enforce_alternatives(text)
+        if r.get("is_decision_doc"):
+            results["alternatives"] = {"status": "ok", "score": r.get("trade_off_quality_score", 100), "findings": r.get("issues", [])[:10]}
+    except Exception as exc:
+        logger.debug("alternatives check failed: %s", exc)
+
+    try:
+        from tools.writing.reproducibility_validator import validate_reproducibility
+        r = validate_reproducibility(text)
+        results["reproducibility"] = {"status": "ok", "score": r.get("reproducibility_score", 100), "findings": [str(i.get("message", i)) for i in r.get("issues", [])][:10]}
+    except Exception as exc:
+        logger.debug("reproducibility check failed: %s", exc)
+
+    try:
+        from tools.writing.neutrality_scorer import score_neutrality
+        r = score_neutrality(text)
+        results["neutrality"] = {"status": "ok", "score": r.get("score", 100), "findings": r.get("issues", [])[:10]}
+    except Exception as exc:
+        logger.debug("neutrality check failed: %s", exc)
+
     # Calculate overall score.
     # Portion marking is only included when marks are present — a plain article
     # with no portion marks should not be penalized for missing them.
