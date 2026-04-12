@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS idc_assessments (
 CREATE TABLE IF NOT EXISTS idc_audit (
     id              TEXT PRIMARY KEY,
     design_id       TEXT,
-    user            TEXT,
+    "user"          TEXT,
     action          TEXT,
     detail          TEXT,
     classification  TEXT DEFAULT 'CUI',
