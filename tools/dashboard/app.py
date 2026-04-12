@@ -7794,6 +7794,30 @@ if __name__ == "__main__":
     print(f"[ICDEV™ Dashboard] Database: {DB_PATH}")
     print(f"[ICDEV™ Dashboard] CUI Marking: {CUI_BANNER_TOP or '(none)'}")
 
+    # ── Auto-start Kanban Scheduler (LLM-agnostic) ───────────────────
+    # Launches kanban_scheduler.py as a child process so backlog tasks
+    # are promoted and dispatched regardless of which LLM/IDE is in use.
+    # The subprocess dies automatically when the dashboard exits.
+    try:
+        import subprocess as _ks_sp
+
+        _ks_script = Path(__file__).resolve().parent.parent / "genesis" / "kanban_scheduler.py"
+        if _ks_script.exists():
+            _ks_log_dir = BASE_DIR / ".tmp"
+            _ks_log_dir.mkdir(parents=True, exist_ok=True)
+            _ks_log = open(str(_ks_log_dir / "kanban_scheduler.log"), "a", encoding="utf-8")  # noqa: SIM115
+            _ks_sp.Popen(
+                [sys.executable, str(_ks_script), "--interval", "60"],
+                stdout=_ks_log,
+                stderr=_ks_sp.STDOUT,
+                cwd=str(BASE_DIR),
+            )
+            print("[ICDEV™ Dashboard] Kanban scheduler started (60s interval)")
+        else:
+            print("[ICDEV™ Dashboard] Kanban scheduler not found — skipping")
+    except Exception as _ks_err:
+        print(f"[ICDEV™ Dashboard] Kanban scheduler failed to start: {_ks_err}")
+
     # Use SocketIO runner if available (D170), otherwise plain Flask
     socketio = get_socketio()
     if socketio:
