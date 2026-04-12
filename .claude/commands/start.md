@@ -62,7 +62,20 @@ PORTAL_PORT: 8443
    nohup python tools/ci/triggers/poll_trigger.py > .tmp/poll_trigger.log 2>&1 &
    ```
 
-8. Report to the user:
+8. Start the Kanban Scheduler (promotes backlog tasks, dispatches to Claude CLI, monitors completion):
+   ```bash
+   python -c "import subprocess, sys; subprocess.Popen([sys.executable, '-c', 'import urllib.request; urllib.request.urlopen(\"http://localhost:5050/api/kanban/tasks\", timeout=2)'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).wait() == 0 and print('DB_OK') or print('DB_OK')" 2>/dev/null
+   ```
+   Check if already running:
+   ```bash
+   python -c "import subprocess; r=subprocess.run(['tasklist'], capture_output=True, text=True); print('RUNNING' if 'kanban_scheduler' in r.stdout else 'NOT_RUNNING')" 2>/dev/null || ps aux | grep kanban_scheduler | grep -v grep > /dev/null 2>&1 && echo "RUNNING" || echo "NOT_RUNNING"
+   ```
+   If **NOT_RUNNING**:
+   ```bash
+   nohup python tools/genesis/kanban_scheduler.py --interval 60 > .tmp/kanban_scheduler.log 2>&1 &
+   ```
+
+9. Report to the user:
    - **Dashboard**: `http://localhost:DASHBOARD_PORT`
      - Pages: `/`, `/projects`, `/projects/<id>`, `/agents`, `/orchestration`, `/monitoring`, `/events`, `/activity`, `/usage`, `/wizard`, `/query`, `/chat`, `/chat/<id>`, `/quick-paths`, `/batch`, `/simulation`, `/diagrams`, `/cicd`, `/gateway`, `/phases`, `/dev-profiles`, `/children`, `/profile`, `/translations`, `/translations/<id>`, `/traces`, `/provenance`, `/xai`, `/oscal`, `/prod-audit`, `/ai-transparency`, `/ai-accountability`, `/code-quality`, `/fedramp-20x`, `/evidence`, `/lineage`, `/poam`, `/proposals`, `/proposals/<id>`, `/proposals/<id>/sections/<id>`, `/govcon`, `/govcon/requirements`, `/govcon/capabilities`, `/cpmp`, `/cpmp/<id>`, `/cpmp/<id>/deliverables/<did>`, `/cpmp/cor`, `/cpmp/cor/<id>`, `/research`, `/autoresearch`, `/knowledge-search`, `/knowledge-graph`, `/components-map`, `/ask-icdev`, `/finetune`, `/finetune/datasets`, `/finetune/datasets/<id>`, `/finetune/label`, `/finetune/jobs`, `/finetune/jobs/<id>`, `/finetune/models`, `/finetune/models/<id>`, `/finetune/evaluate`, `/proposal-genesis`, `/filesync`, `/clawhub`, `/studio/app-builder`, `/studio/workflows`, `/studio/forms`, `/studio/cases`, `/studio/automations`, `/studio/dashboards`, `/studio/marketplace`, `/notifications`, `/login`, `/logout`
      - Log: `.tmp/dashboard.log`
@@ -71,10 +84,11 @@ PORTAL_PORT: 8443
      - Health: `http://localhost:PORTAL_PORT/health`
      - Log: `.tmp/api_gateway.log`
    - **Poll Trigger**: `.tmp/poll_trigger.log`
+   - **Kanban Scheduler**: `.tmp/kanban_scheduler.log` (promotes backlog → in_progress, dispatches to Claude CLI every 60s)
    - To stop dashboard: `kill $(lsof -ti:$DASHBOARD_PORT)` or `pkill -f "tools/dashboard/app.py"`
-
    - To stop portal: `kill $(lsof -ti:8443)` or `pkill -f "tools/saas/api_gateway.py"`
    - To stop poll trigger: `pkill -f "tools/ci/triggers/poll_trigger.py"`
+   - To stop kanban scheduler: `pkill -f "tools/genesis/kanban_scheduler.py"`
 
 ## Kanban Auto-Pickup
 
