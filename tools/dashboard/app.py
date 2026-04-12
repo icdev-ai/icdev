@@ -3824,6 +3824,8 @@ def create_app() -> Flask:
         """Return a connection for components-map queries (PG or SQLite)."""
         return get_connection("icdev")
 
+    _cmap_pg = _cmap_conn  # backward-compat alias used by API routes
+
     @app.route("/components-map")
     def components_map_page():
         """Components Map — interactive JointJS graph of all ICDEV(TM) components."""
@@ -3997,7 +3999,7 @@ def create_app() -> Flask:
                 neighbor_ids.add(e["target_id"])
             placeholders = ",".join(["%s"] * len(neighbor_ids))
             cur.execute(
-                f"SELECT id, label, entity_type, properties, centrality FROM kg_nodes "  # noqa: S608
+                f"SELECT id, label, entity_type, properties, centrality FROM kg_nodes "  # noqa: S608  # nosec B608
                 f"WHERE graph_id=%s AND id IN ({placeholders})",
                 [_COMPONENTS_MAP_GRAPH_ID] + list(neighbor_ids),
             )

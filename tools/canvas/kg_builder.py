@@ -91,10 +91,11 @@ def _read_graph_json(canvas_key: str, design_id: str) -> dict:
     if not db_path.exists():
         raise FileNotFoundError(f"Canvas DB not found: {db_path}")
 
-    conn = get_connection(str(db_path))
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
     try:
         row = conn.execute(
-            f"SELECT graph_json FROM [{table}] WHERE id = ?",  # noqa: S608
+            f"SELECT graph_json FROM [{table}] WHERE id = ?",  # noqa: S608  # nosec B608
             (design_id,),
         ).fetchone()
         if row is None:

@@ -1895,3 +1895,11 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Enablement | tools\awareness\enablement.py | Auto-registered: awareness/enablement.py | --json | JSON |
 
 
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Glossary Engine | tools\writing\glossary_engine.py | Auto-registered: writing/glossary_engine.py | --json | JSON |
+| Rewriter | tools\writing\rewriter.py | Auto-registered: writing/rewriter.py | --json | JSON |
+| Style Guide | tools\writing\style_guide.py | Auto-registered: writing/style_guide.py | --json | JSON |

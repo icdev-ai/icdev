@@ -103,7 +103,7 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
                 "edge_id": e.get("id", ""),
                 "source": src,
                 "target": tgt,
-                "message": f"Edge references missing node(s)",
+                "message": "Edge references missing node(s)",
             })
 
     if fix and orphan_edges:
