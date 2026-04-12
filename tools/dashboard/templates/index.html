@@ -268,21 +268,38 @@ function applySuggestedSelectPreset(preset) {
         return;
     }
     var suggestedItems = _allTasks.filter(function(t) { return t.status === 'suggested'; });
+
+    // Rule-based preset — format: "rule::<oracle_lens>". Added 2026-04-11
+    // to let operators bulk-select every card from a noisy rule (e.g.
+    // route_not_listed's 360 false positives) in one click and dismiss
+    // them without touching the real-work rules.
+    if (preset.indexOf('rule::') === 0) {
+        var targetRule = preset.slice(6);
+        suggestedItems.forEach(function(t) {
+            if ((t.oracle_lens || '') === targetRule) {
+                _selectedTaskIds.add(t.id);
+            }
+        });
+        renderTaskKanban(_allTasks);
+        return;
+    }
+
     suggestedItems.forEach(function(t) {
         var conf = t.oracle_confidence || 0;
         var val = t.oracle_value || 0;
         var prio = (t.priority || '').toLowerCase();
         var match = false;
         switch (preset) {
-            case 'all':      match = true; break;
-            case 'conf95':   match = conf >= 0.95; break;
-            case 'conf90':   match = conf >= 0.90; break;
-            case 'value10':  match = val >= 1.0; break;
-            case 'value08':  match = val >= 0.8; break;
-            case 'pri_crit': match = prio === 'critical'; break;
-            case 'pri_high': match = prio === 'high'; break;
-            case 'pri_med':  match = prio === 'medium'; break;
-            case 'pri_low':  match = prio === 'low'; break;
+            case 'all':       match = true; break;
+            case 'conf95':    match = conf >= 0.95; break;
+            case 'conf90':    match = conf >= 0.90; break;
+            case 'value10':   match = val >= 1.0; break;
+            case 'value08':   match = val >= 0.8; break;
+            case 'value_lo':  match = val < 0.6; break;   // noise → dismiss
+            case 'pri_crit':  match = prio === 'critical'; break;
+            case 'pri_high':  match = prio === 'high'; break;
+            case 'pri_med':   match = prio === 'medium'; break;
+            case 'pri_low':   match = prio === 'low'; break;
         }
         if (match) _selectedTaskIds.add(t.id);
     });
@@ -371,6 +388,21 @@ function renderTaskKanban(tasks) {
         var toolbarHtml = '';
         if (status === 'suggested') {
             var selectedCount = _selectedTaskIds.size;
+            // Build the dynamic "Rule: <name> (<count>)" preset options
+            // from whatever rules are currently present in the Suggested
+            // lane. Sorted by count DESC so the noisiest rules surface
+            // first — operators usually want to dismiss those in bulk.
+            var ruleCounts = {};
+            items.forEach(function(t) {
+                var r = t.oracle_lens || '(none)';
+                ruleCounts[r] = (ruleCounts[r] || 0) + 1;
+            });
+            var ruleList = Object.keys(ruleCounts).map(function(r) {
+                return { rule: r, count: ruleCounts[r] };
+            }).sort(function(a, b) { return b.count - a.count; });
+            var ruleOptionsHtml = ruleList.map(function(r) {
+                return '<option value="rule::' + esc(r.rule) + '">Rule: ' + esc(r.rule) + ' (' + r.count + ')</option>';
+            }).join('');
             toolbarHtml =
                 '<div id="suggested-bulk-bar" style="padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">'
                 + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
@@ -387,14 +419,22 @@ function renderTaskKanban(tasks) {
                 + '<select onchange="applySuggestedSelectPreset(this.value); this.value=\'\'" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
                 + '<option value="">Choose threshold…</option>'
                 + '<option value="all">All</option>'
+                + '<optgroup label="By confidence">'
                 + '<option value="conf95">Confidence ≥ 95%</option>'
                 + '<option value="conf90">Confidence ≥ 90%</option>'
-                + '<option value="value10">Value ≥ 1.0</option>'
+                + '</optgroup>'
+                + '<optgroup label="By value">'
+                + '<option value="value10">Value ≥ 1.0  (real work)</option>'
                 + '<option value="value08">Value ≥ 0.8</option>'
+                + '<option value="value_lo">Value < 0.6  (noise → dismiss)</option>'
+                + '</optgroup>'
+                + '<optgroup label="By priority">'
                 + '<option value="pri_crit">Priority: CRITICAL</option>'
                 + '<option value="pri_high">Priority: HIGH</option>'
                 + '<option value="pri_med">Priority: MEDIUM</option>'
                 + '<option value="pri_low">Priority: LOW</option>'
+                + '</optgroup>'
+                + (ruleOptionsHtml ? '<optgroup label="By rule (live counts)">' + ruleOptionsHtml + '</optgroup>' : '')
                 + '<option value="none">None</option>'
                 + '</select>'
                 + '</div>'
