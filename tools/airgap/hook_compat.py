@@ -32,6 +32,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from tools.db.storage import get_connection
+
 logger = logging.getLogger("icdev.airgap.hook_compat")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -107,7 +109,7 @@ def store_event(
     try:
         if not DB_PATH.exists():
             return -1
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO hook_events

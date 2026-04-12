@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+
+from tools.db.storage import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,7 @@ def _utcnow() -> str:
 def _get_db():
     """Get or create the genesis quality tracking DB."""
     GENESIS_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(GENESIS_DB))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(GENESIS_DB))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS quality_snapshots (

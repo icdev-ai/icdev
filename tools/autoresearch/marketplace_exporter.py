@@ -29,17 +29,9 @@ def _gen_id(prefix="mke"):
 
 def _get_db():
     """Get database connection via storage abstraction."""
-    try:
-        from tools.db.storage import get_connection
+    from tools.db.storage import get_connection
 
-        return get_connection()
-    except ImportError:
-        import sqlite3
-
-        db_path = _ROOT / "data" / "icdev.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+    return get_connection()
 
 
 def list_exportable(min_improvement: float = 0.005) -> dict:

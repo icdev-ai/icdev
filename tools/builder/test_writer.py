@@ -15,9 +15,10 @@ Implements:
 import argparse
 import json
 import re
-import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -843,7 +844,7 @@ def generate_steps(
 def _log_audit(project_path: str, file_path: str, event_type: str, action: str) -> None:
     """Log an audit trail event for test generation."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, affected_files, classification)
