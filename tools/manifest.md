@@ -1298,6 +1298,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Portion Marking Checker | tools/writing/portion_marking_checker.py | DoDM 5200.01 portion marking validator: all-or-nothing rule, high-water mark banner derivation, designation indicator block, contradiction detection | --file, --text, --json, --gate | Violations list, derived banner, designation block, compliance score 0-100 |
 | LLM Judge | tools/writing/llm_judge.py | Rubric-based semantic evaluation using Prometheus-2 7B (local Ollama) — 5 dimensions per content type | --text, --rubric, --json | Color ratings + scores |
 | Ubiquitous Language | tools/writing/ubiquitous_language.py | DDD glossary extractor — noun-phrase extraction, synonym + ambiguity detection, optional LLM enrichment via LLMRouter. Adapted from mattpocock/skills/ubiquitous-language (MIT) | --input FILE, --out FILE, --llm-enrich, --append-to-memory, --json, --gate | UBIQUITOUS_LANGUAGE.md + JSON summary |
+| Style Profiler | tools/writing/style_profiler.py | Deterministic 28-feature writer fingerprint: sentence stats (5), vocabulary (4), paragraph (4), structure (3), voice (4), tone (3), connective (2), punctuation (3). Min 1500 words. Zero LLM. | (library) — `extract_profile(text, name) -> StyleProfile`; CLI: --file, --name, --json, --gate | StyleProfile dataclass with feature_vector() + compare() |
 
 ## Pulse AI Blog Engine
 | Tool | File | Description | Input | Output |
