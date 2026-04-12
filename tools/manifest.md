@@ -1575,15 +1575,16 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Govcon Scan | tools\genesis\reflexes\govcon_scan.py | Auto-registered: reflexes/govcon_scan.py | --json | JSON |
 
 
-## Auto-Registered (Coherence Fix)
+## Air-Gap Mode (OPT-51/OPT-61)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Air-Gap CLI | tools/airgap/cli.py | Detect, activate, validate, and report air-gap status; patches LLM routing to local-only when air-gapped | --detect, --activate, --health, --full, --json | Environment/health/activation JSON or formatted report |
-| Config Patcher | tools\airgap\config_patcher.py | Auto-registered: airgap/config_patcher.py | --json | JSON |
-| Health Check | tools\airgap\health_check.py | Air-gap-aware health check — replaces cloud-dependent checks with local equivalents; reports local LLM servers, DB, Python deps, LLM routing, hooks, PDF extraction, git, and cloud reachability status | --json | JSON (overall + per-check statuses) |
-| Hook Compat | tools\airgap\hook_compat.py | Auto-registered: airgap/hook_compat.py | --json | JSON |
-| Pdf Fallback | tools\airgap\pdf_fallback.py | Auto-registered: airgap/pdf_fallback.py | --json | JSON |
-| Session Compat | tools/airgap/session_compat.py | Session management for non-Claude-Code environments: SessionManager class mimics Claude Code lifecycle (session IDs, prompt/tool-use logging to activity_log, transcript capture to .tmp/, SSE events) | (library) SessionManager.start(), .log_prompt(), .log_tool_use(), .end() |  Session dict with session_id, duration_seconds, event_count |
+| Air-Gap CLI | tools/airgap/cli.py | ICDEV air-gap orchestrator — detect environment, activate local-only routing, run health check, full report | --detect, --activate, --deactivate, --health, --full, --json | Status + report JSON |
+| Detector | tools/airgap/detector.py | Probe network connectivity, cloud provider availability, and local LLM server presence to determine air-gap status | (library) | is_airgap(), detect_environment() |
+| Config Patcher | tools/airgap/config_patcher.py | In-memory LLM routing patcher — disables cloud tier2, sets prefer_local, patches hook env vars for non-Claude-Code sessions | (library) | activate_airgap(), deactivate_airgap() |
+| Hook Compat | tools/airgap/hook_compat.py | Claude Code hook compatibility layer for non-Claude-Code orchestrators: session ID generation, pre-tool append-only table guard, git destructive-command blocklist (OPT-51), auto-commit, mid-run message queue (OPT-62), safety-net PR, tool-error middleware (OPT-61) | (library) | get_session_id(), run_pre_tool_check(), check_message_queue(), queue_message(), safety_net_pr(), tool_error_middleware() |
+| PDF Fallback | tools/airgap/pdf_fallback.py | Local-only PDF extraction — pypdf text extraction + LLaVA vision OCR fallback; registers into RAG pipeline pdf_provider chain | (library) | LocalPDFProvider, register_local_fallback() |
+| Session Compat | tools/airgap/session_compat.py | Session management for non-Claude-Code environments — transcript capture, event correlation, session lifecycle without Claude Code CLI | (library) SessionManager.start(), .log_prompt(), .log_tool_use(), .end() | Session dict with session_id, duration_seconds, event_count |
+| Health Check | tools/airgap/health_check.py | Air-gap-aware health check — replaces cloud-dependent checks with local equivalents, reports degraded vs. functional capabilities | --json | Health status dict |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1848,6 +1849,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Canvas Auto-Remediator | tools\canvas\auto_remediator.py | POA&M auto-remediation CLI — applies vendor-neutral design-completeness fixes to approved/pending findings across all 9 canvases (security, observability, boundary, infra, data, network, pipeline, QDC, migration). Pipeline per finding: backup canvas DB → mutate graph_json with per-rule handler → re-run assessment to verify fix → mark finding_approvals.decision='remediated' → append audit_trail row (event_type='vulnerability_resolved'). Supports --dry-run, --list-handlers, --canvas filter. | --finding-hash \<hash\>, --all-pending, --all-approved, --canvas \<name\>, --list-handlers, --dry-run, --gate, --json | JSON remediation report (status, findings processed, remediated count, skipped, errors) |
+| Collaboration Manager | tools\canvas\collaboration.py | Session-based multi-user canvas collaboration (join/leave/push/poll); SQLite-backed, air-gap safe, no WebSocket required | canvas_key, db_path, collab_table | dict |
 
 
 ## Agent Adapters (OPT-71)
