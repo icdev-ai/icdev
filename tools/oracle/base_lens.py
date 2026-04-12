@@ -11,34 +11,13 @@ Lenses produce OraclePrediction instances with confidence scores.
 
 from __future__ import annotations
 
-import json
-import uuid
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
-
-@dataclass
-class OraclePrediction:
-    """A single prediction from an Oracle lens."""
-
-    id: str = field(default_factory=lambda: f"pred-{uuid.uuid4().hex[:10]}")
-    lens: str = ""
-    title: str = ""
-    description: str = ""
-    confidence: float = 0.0  # 0.0 - 1.0
-    severity: str = "info"  # info, warning, critical
-    category: str = ""
-    recommendations: list[str] = field(default_factory=list)
-    data: dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), indent=2, default=str)
+# OraclePrediction is the canonical dataclass — re-exported here so all
+# existing lens imports (from tools.oracle.base_lens import OraclePrediction)
+# continue to work without modification.
+from tools.oracle.prediction import OraclePrediction  # noqa: F401
 
 
 class BaseLens(ABC):
