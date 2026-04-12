@@ -842,3 +842,68 @@ def idc_import_cloud():
             "warnings": result["warnings"],
         }
     ), 201
+
+
+# ── Runbooks ──────────────────────────────────────────────────────────────────
+
+@infra_bp.route("/runbooks")
+def runbooks_page():
+    """Runbooks management page."""
+    from tools.infra_canvas.runbooks import get_all_runbooks
+    runbooks = get_all_runbooks()
+    return render_template("infra_canvas/runbooks.html", runbooks=runbooks)
+
+
+@infra_bp.route("/api/runbooks", methods=["GET"])
+def api_runbooks_list():
+    """List runbooks with optional category/severity filters."""
+    from tools.infra_canvas.runbooks import get_all_runbooks
+    category = request.args.get("category")
+    severity = request.args.get("severity")
+    return jsonify(get_all_runbooks(category=category, severity=severity))
+
+
+@infra_bp.route("/api/runbooks/<runbook_id>", methods=["GET"])
+def api_runbook_get(runbook_id):
+    """Get a single runbook by ID."""
+    from tools.infra_canvas.runbooks import get_runbook_by_id
+    rb = get_runbook_by_id(runbook_id)
+    if not rb:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(rb)
+
+
+@infra_bp.route("/api/runbooks", methods=["POST"])
+def api_runbook_create():
+    """Create a new runbook."""
+    from tools.infra_canvas.runbooks import create_runbook
+    rb = create_runbook(request.get_json() or {})
+    return jsonify(rb), 201
+
+
+@infra_bp.route("/api/runbooks/<runbook_id>", methods=["PUT"])
+def api_runbook_update(runbook_id):
+    """Update an existing runbook."""
+    from tools.infra_canvas.runbooks import update_runbook
+    rb = update_runbook(runbook_id, request.get_json() or {})
+    if not rb:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(rb)
+
+
+@infra_bp.route("/api/runbooks/<runbook_id>", methods=["DELETE"])
+def api_runbook_delete(runbook_id):
+    """Delete a runbook."""
+    from tools.infra_canvas.runbooks import delete_runbook
+    deleted = delete_runbook(runbook_id)
+    return jsonify({"deleted": deleted})
+
+
+@infra_bp.route("/api/runbooks/<runbook_id>/execute", methods=["POST"])
+def api_runbook_execute(runbook_id):
+    """Record a runbook execution (increment counter, update timestamp)."""
+    from tools.infra_canvas.runbooks import record_execution
+    rb = record_execution(runbook_id)
+    if not rb:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(rb)

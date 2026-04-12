@@ -357,3 +357,143 @@ def batch_label(dataset_id):
         return jsonify({"ok": True, "labeled_count": len(example_ids)})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ── Trajectories (D-FT-TRAJ) ──────────────────────────────────
+
+
+@finetune_api.route("/trajectories", methods=["GET"])
+def list_trajectories():
+    """List captured trajectories with optional filters."""
+    outcome = request.args.get("outcome")
+    workflow_type = request.args.get("workflow_type")
+    finalized_only = request.args.get("finalized_only", "false").lower() == "true"
+    min_reward = request.args.get("min_reward", type=float)
+    limit = min(int(request.args.get("limit", 50)), 200)
+
+    try:
+        conn = _get_db()
+        where: list = []
+        params: list = []
+        if outcome:
+            where.append("outcome = ?")
+            params.append(outcome)
+        if workflow_type:
+            where.append("workflow_type = ?")
+            params.append(workflow_type)
+        if finalized_only:
+            where.append("captured_at IS NOT NULL")
+        if min_reward is not None:
+            where.append("reward >= ?")
+            params.append(min_reward)
+
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        rows = conn.execute(
+            f"""
+            SELECT id, trace_id, workflow_type, source, outcome, reward,
+                   step_count, dataset_id, project_id, classification,
+                   captured_at, created_at
+            FROM ft_trajectories
+            {where_sql}
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            params + [limit],
+        ).fetchall()
+        conn.close()
+        return jsonify({"trajectories": [dict(r) for r in rows], "total": len(rows)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@finetune_api.route("/trajectories/<traj_id>", methods=["GET"])
+def get_trajectory(traj_id):
+    """Get trajectory detail including steps and ShareGPT JSON."""
+    try:
+        conn = _get_db()
+        row = conn.execute(
+            "SELECT * FROM ft_trajectories WHERE id = ?", (traj_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "trajectory not found"}), 404
+
+        steps = conn.execute(
+            """SELECT step_index, tool_name, tool_input, tool_output,
+                      status, duration_ms, span_id, created_at
+               FROM ft_trajectory_steps
+               WHERE trajectory_id = ?
+               ORDER BY step_index ASC""",
+            (traj_id,),
+        ).fetchall()
+        conn.close()
+
+        traj = dict(row)
+        traj["steps"] = [dict(s) for s in steps]
+        if traj.get("sharegpt_json"):
+            traj["sharegpt"] = _safe_json(traj["sharegpt_json"])
+        return jsonify(traj)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@finetune_api.route("/trajectories/stats", methods=["GET"])
+def trajectory_stats():
+    """Aggregate statistics for the trajectory pipeline."""
+    try:
+        from tools.finetune.trajectory_capture import get_stats
+        return jsonify(get_stats())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@finetune_api.route("/trajectories/export", methods=["POST"])
+def export_trajectories():
+    """Export finalized successful trajectories as ShareGPT JSONL.
+
+    Body (JSON, all optional):
+      output_path  — path to write JSONL (default: data/finetune/trajectories.jsonl)
+      min_reward   — minimum reward threshold (default: 0.7)
+      workflow_types — list of workflow type strings to filter
+    """
+    data = request.get_json(silent=True) or {}
+    output_path = data.get("output_path", "data/finetune/trajectories.jsonl")
+    min_reward = float(data.get("min_reward", 0.7))
+    workflow_types = data.get("workflow_types") or None
+
+    try:
+        from tools.finetune.trajectory_capture import export_jsonl
+        result = export_jsonl(
+            output_path=output_path,
+            min_reward=min_reward,
+            workflow_types=workflow_types,
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@finetune_api.route("/trajectories/<traj_id>/ingest", methods=["POST"])
+def ingest_trajectory(traj_id):
+    """Ingest a finalized successful trajectory into an ft_dataset.
+
+    Body (JSON):
+      dataset_id   — required: target dataset ID
+      project_id   — optional
+    """
+    data = request.get_json(silent=True) or {}
+    dataset_id = data.get("dataset_id", "")
+    if not dataset_id:
+        return jsonify({"error": "dataset_id is required"}), 400
+
+    try:
+        from tools.finetune.trajectory_capture import ingest_to_dataset
+        result = ingest_to_dataset(
+            session_id=traj_id,
+            dataset_id=dataset_id,
+            project_id=data.get("project_id", ""),
+        )
+        status = 200 if result.get("success") else 400
+        return jsonify(result), status
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
