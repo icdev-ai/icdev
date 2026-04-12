@@ -1064,6 +1064,12 @@ python tools/supply_chain/scrm_assessor.py --project-id "proj-123" --vendor-id "
 python tools/supply_chain/scrm_assessor.py --project-id "proj-123" --aggregate --json                                                                   # Project-wide SCRM
 python tools/supply_chain/cve_triager.py --project-id "proj-123" --triage --cve-id CVE-2025-1234 --component openssl --cvss 9.8 --severity critical --json
 python tools/supply_chain/cve_triager.py --project-id "proj-123" --sla-check --json                                                                     # CVE SLA compliance
+python tools/supply_chain/cve_passive_watcher.py --project-id "proj-123" --scan --json                                                                    # Passive ATO CVE scan (audit log)
+python tools/supply_chain/cve_passive_watcher.py --project-id "proj-123" --scan --since-id 0 --json                                                       # Full audit rescan from id=0
+python tools/supply_chain/cve_passive_watcher.py --project-id "proj-123" --scan --no-triage --json                                                        # Detection-only (no auto-triage)
+python tools/supply_chain/cve_passive_watcher.py --project-id "proj-123" --scan --gate --json                                                             # CI gate — exit 1 on critical/high ATO CVEs
+python tools/supply_chain/cve_passive_watcher.py --project-id "proj-123" --status --json                                                                  # Watcher high-watermark & stats
+python tools/supply_chain/cve_passive_watcher.py --project-id "proj-123" --watch --interval 60 --json                                                     # Continuous polling (60s)
 
 # Digital Program Twin Simulation (RICOAS Phase 3)
 python tools/simulation/simulation_engine.py --project-id "proj-123" --create-scenario --scenario-name "Add auth module" --scenario-type what_if --modifications '{"add_requirements": 3}' --json
@@ -2164,4 +2170,43 @@ python tools/canvas/kg_builder.py --canvas idc --design-id xxx --json
 # POST   /api/canvas-projects/<id>/unlink                                         # Unlink canvas design
 # GET    /api/canvas-projects/compliance?project_id=<id>                          # Compliance summary
 # GET    /api/canvas-projects/<id>/readiness                                      # Readiness score
+```
+
+## DDC External Catalog Sync Commands
+
+```bash
+# ── DataHub Sync (DDC → DataHub GMS REST API v2) ─────────────────────────────
+# Config: args/datahub_config.yaml  |  Env: ICDEV_DATAHUB_URL, ICDEV_DATAHUB_TOKEN
+
+# Dry-run single design (no writes to DataHub)
+python tools/data_canvas/sync/datahub_sync.py --design-id <id> --dry-run --json
+
+# Push single design to DataHub
+python tools/data_canvas/sync/datahub_sync.py --design-id <id> --json
+
+# Push all designs to DataHub
+python tools/data_canvas/sync/datahub_sync.py --all --json
+
+# Push all designs — exit 1 if any errors (CI gate)
+python tools/data_canvas/sync/datahub_sync.py --all --gate --json
+
+# ── OpenMetadata Sync (DDC → OpenMetadata REST API v1) ───────────────────────
+# Config: args/openmetadata_config.yaml  |  Env: ICDEV_OM_URL, ICDEV_OM_TOKEN
+
+# Dry-run single design (no writes to OpenMetadata)
+python tools/data_canvas/sync/openmetadata_sync.py --design-id <id> --dry-run --json
+
+# Push single design to OpenMetadata
+python tools/data_canvas/sync/openmetadata_sync.py --design-id <id> --json
+
+# Push all designs to OpenMetadata
+python tools/data_canvas/sync/openmetadata_sync.py --all --json
+
+# Push all designs — exit 1 if any errors (CI gate)
+python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
+
+# ── Dashboard API (via DDC blueprint at /data/) ───────────────────────────────
+# POST /data/api/sync/datahub        {"design_id": "<id>", "dry_run": false}    # Trigger DataHub sync
+# POST /data/api/sync/openmetadata   {"design_id": "<id>", "dry_run": false}    # Trigger OpenMetadata sync
+# Omit design_id to sync all designs. dry_run=true for validation without writes.
 ```

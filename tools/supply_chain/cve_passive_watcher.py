@@ -23,6 +23,7 @@ CLI:
   python tools/supply_chain/cve_passive_watcher.py --project-id <id> --scan --json
   python tools/supply_chain/cve_passive_watcher.py --project-id <id> --scan --since-id 0 --json
   python tools/supply_chain/cve_passive_watcher.py --project-id <id> --scan --ato-only --json
+  python tools/supply_chain/cve_passive_watcher.py --project-id <id> --scan --gate --json
   python tools/supply_chain/cve_passive_watcher.py --project-id <id> --status --json
   python tools/supply_chain/cve_passive_watcher.py --project-id <id> --watch --interval 60 --json
 """
@@ -641,6 +642,13 @@ def main():
         help="Only report CVEs tagged ato_relevant=True (impact_radius >= threshold)",
     )
 
+    # Gate mode (CI/CD): exit 1 if any critical/high ATO-relevant CVEs discovered
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="Exit 1 if scan discovers critical or high ATO-relevant CVEs (CI gate)",
+    )
+
     # Status mode
     parser.add_argument("--status", action="store_true", help="Show watcher statistics")
 
@@ -673,6 +681,24 @@ def main():
                 print(json.dumps(result, indent=2))
             else:
                 _print_scan_human(result)
+
+            # --gate: block CI if critical/high ATO-relevant CVEs were discovered
+            if args.gate:
+                blocking = [
+                    r for r in result.get("results", [])
+                    if r.get("ato_relevant")
+                    and r.get("severity") in ("critical", "high")
+                    and r.get("status") in ("triaged", "detected")
+                ]
+                if blocking:
+                    severities = ", ".join(
+                        f"{r['cve_id']}({r.get('severity','?')})" for r in blocking
+                    )
+                    print(
+                        f"GATE FAIL: {len(blocking)} critical/high ATO-relevant CVE(s) discovered: {severities}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
 
         elif args.status:
             result = get_status(args.project_id)
