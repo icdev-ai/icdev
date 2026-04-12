@@ -236,6 +236,15 @@ VALID_EVENT_TYPES = (
     "workflow_replay_failed",
     "workflow_step_skipped",
     "workflow_resume_point_identified",
+    # POA&M finding triage & bulk operations (Phase 73)
+    "finding_approval",
+    "poam.bulk_revert",
+    "poam.bulk_remediate",
+    "poam.bulk_file_github_issues",
+    "poam.auto_remediate.remediated",
+    "poam.auto_remediate.approved",
+    "poam.auto_remediate.skipped",
+    "poam.auto_remediate.failed",
 )
 
 
