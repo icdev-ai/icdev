@@ -962,6 +962,43 @@ Execute this task as described above. When complete:
     return str(prompt_path)
 
 
+def _fetch_verification_details(task_id: str) -> Dict[str, Any]:
+    """Load the most recent kanban_verifications row for a task.
+
+    Returns dict of validation gate outcomes (codelens/coherence/e2e/companion)
+    plus the reason text. Used to enrich Telegram notifications so users can
+    see at a glance which gates passed or failed.
+    """
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT result, reason, codelens_passed, ruff_issues, "
+                "bandit_issues, coherence_passed, e2e_ran, e2e_passed, "
+                "companion_synced, claimed_paths, existing_paths, git_commits "
+                "FROM kanban_verifications "
+                "WHERE task_id = ? ORDER BY verified_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            return dict(row) if row else {}
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug("kanban: fetch verification details skipped: %s", exc)
+        return {}
+
+
+def _format_gate_status(val: Any) -> str:
+    """Render a gate metric as a check/cross/dash."""
+    if val is None or val == "":
+        return "-"
+    if val in (1, True, "1", "true", "True"):
+        return "[OK]"
+    if val in (0, False, "0", "false", "False"):
+        return "[FAIL]"
+    return str(val)
+
+
 def _send_notification(task: dict, event: str = "in_progress"):
     """Send notification via dashboard DB + Telegram.
 
@@ -981,6 +1018,37 @@ def _send_notification(task: dict, event: str = "in_progress"):
     body = (
         f"Kanban task '{task['title']}' ({task.get('task_type', 'build')}/{task.get('priority', 'medium')}) is {label}."
     )
+
+    # guard-19: enrich done/failed notifications with validation gate results
+    # so users see at a glance which checks passed or failed.
+    if event in ("done", "failed"):
+        details = _fetch_verification_details(task.get("id", ""))
+        if details:
+            codelens = _format_gate_status(details.get("codelens_passed"))
+            coherence = _format_gate_status(details.get("coherence_passed"))
+            companion = _format_gate_status(details.get("companion_synced"))
+            if details.get("e2e_ran"):
+                e2e = _format_gate_status(details.get("e2e_passed"))
+            else:
+                e2e = "skipped"
+            ruff = details.get("ruff_issues") or 0
+            bandit = details.get("bandit_issues") or 0
+            commits = details.get("git_commits") or 0
+            result_enum = details.get("result") or "unknown"
+            reason_text = (details.get("reason") or "")[:300]
+
+            gate_lines = [
+                "",
+                "Validation gates:",
+                f"  CodeLens:  {codelens}  (ruff={ruff}, bandit={bandit})",
+                f"  Coherence: {coherence}",
+                f"  E2E:       {e2e}",
+                f"  Companion: {companion}",
+                f"  Result:    {result_enum}  (commits={commits})",
+            ]
+            if event == "failed" and reason_text:
+                gate_lines.append(f"  Reason:    {reason_text}")
+            body = body + "\n" + "\n".join(gate_lines)
 
     # Dashboard notification
     try:

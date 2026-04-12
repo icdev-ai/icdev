@@ -185,6 +185,7 @@ Audit trail is **append-only/immutable** (NIST AU). Full schema: [docs/reference
 - **V&V before handoff** — if change affects UI, verify with Playwright MCP before reporting
 - **Playwright E2E after dashboard changes** — mandatory post-implementation verification
 - **Feature docs** — create `docs/features/phase-{N}-{slug}.md` after each phase
+- **Sandbox coverage (OPT-58)** — any new `tools/` module that ingests user-provided content MUST land a decision in [docs/security/sandbox-coverage.md](docs/security/sandbox-coverage.md) (sandboxed / trusted-first-party / sandboxed-on-demand / bypass-documented). Canvas templates are first-party; canvas design JSON is data only. `.tmp/*.py` scripts are dev-scratch only — productize under `tools/` before merge. Enforced by `coherence_checker.py:check_sandbox_coverage`.
 
 ---
 

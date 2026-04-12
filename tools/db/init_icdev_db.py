@@ -1702,6 +1702,22 @@ CREATE TABLE IF NOT EXISTS cve_triage (
 CREATE INDEX IF NOT EXISTS idx_cve_triage_project ON cve_triage(project_id);
 CREATE INDEX IF NOT EXISTS idx_cve_triage_severity ON cve_triage(severity);
 
+-- Passive CVE Watcher — append-only processing log (NIST AU, SI-4, CA-7)
+CREATE TABLE IF NOT EXISTS cve_passive_watch_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_trail_id INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    cve_id TEXT NOT NULL,
+    component TEXT,
+    triage_id INTEGER,
+    skipped INTEGER DEFAULT 0,
+    source_event_type TEXT,
+    processed_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cpwl_audit ON cve_passive_watch_log(audit_trail_id);
+CREATE INDEX IF NOT EXISTS idx_cpwl_cve ON cve_passive_watch_log(cve_id);
+CREATE INDEX IF NOT EXISTS idx_cpwl_project ON cve_passive_watch_log(project_id);
+
 -- ============================================================
 -- RICOAS: SIMULATION & COAs (Phase 20C)
 -- ============================================================
