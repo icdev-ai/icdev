@@ -75,42 +75,74 @@
     </div>
 </div>
 
-<!-- Quality Stats Panel -->
-<div class="card" style="margin-bottom: 16px; border-left: 3px solid {{ '#22c55e' if post.writeguard_passed else '#f59e0b' }};">
-    <h3 style="margin: 0 0 8px 0; font-size: 14px;">WriteGuard Quality Stats</h3>
+<!-- WriteGuard Quality Stats Panel (v6b: named composites + color badge) -->
+{% set _wg_overall = post.readability_score or 0 %}
+{% set _wg_badge = 'green' if _wg_overall >= 80 else ('yellow' if _wg_overall >= 60 else 'red') %}
+{% set _wg_border = '#22c55e' if _wg_overall >= 80 else ('#f59e0b' if _wg_overall >= 60 else '#ef4444') %}
+<div class="card" style="margin-bottom: 16px; border-left: 3px solid {{ _wg_border }};">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <h3 style="margin: 0; font-size: 14px;">WriteGuard Score</h3>
+        <div style="display:flex;align-items:center;gap:8px;">
+            {% if _wg_overall %}
+            <span style="font-size:28px;font-weight:700;color:{{ _wg_border }};">{{ _wg_overall|round(0)|int }}</span>
+            <span class="badge badge-{{ _wg_badge }}" style="font-size:11px;">
+                {{ 'GREEN' if _wg_badge == 'green' else ('YELLOW' if _wg_badge == 'yellow' else 'RED') }}
+            </span>
+            {% else %}
+            <span style="color:var(--text-dim);font-size:13px;">Not yet scored</span>
+            {% endif %}
+        </div>
+    </div>
+    <!-- 5 named composite cards -->
     <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
         <div class="stat-card mini">
-            <div class="label">Grammar</div>
+            <div class="label">Correctness</div>
+            <div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">grammar · spelling</div>
             <div class="value {{ 'green' if (post.grammar_score or 0) >= 80 else 'orange' if (post.grammar_score or 0) >= 60 else 'red' }}">
-                {{ '%.0f'|format(post.grammar_score) if post.grammar_score else '—' }}
+                {{ (post.grammar_score|round(0)|int) if post.grammar_score else '—' }}
             </div>
         </div>
         <div class="stat-card mini">
-            <div class="label">Readability</div>
-            <div class="value {{ 'green' if (post.readability_score or 0) >= 80 else 'orange' if (post.readability_score or 0) >= 60 else 'red' }}">
-                {{ '%.0f'|format(post.readability_score) if post.readability_score else '—' }}
+            <div class="label">Clarity</div>
+            <div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">readability · structure</div>
+            <div class="value" style="color:var(--text-dim);font-size:14px;">
+                <span style="font-size:10px;">run re-check</span>
             </div>
         </div>
         <div class="stat-card mini">
-            <div class="label">Plagiarism</div>
+            <div class="label">Delivery</div>
+            <div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">tone · passive · hedging</div>
+            <div class="value {{ 'green' if (post.tone_score or 0) >= 80 else 'orange' if (post.tone_score or 0) >= 60 else 'red' }}">
+                {{ (post.tone_score|round(0)|int) if post.tone_score else '—' }}
+            </div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Originality</div>
+            <div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">plagiarism · AI detection</div>
             <div class="value {{ 'green' if (post.plagiarism_score or 0) >= 80 else 'orange' if (post.plagiarism_score or 0) >= 60 else 'red' }}">
-                {{ '%.0f'|format(post.plagiarism_score) if post.plagiarism_score else '—' }}
+                {{ (post.plagiarism_score|round(0)|int) if post.plagiarism_score else '—' }}
             </div>
         </div>
         <div class="stat-card mini">
-            <div class="label">AI Detection</div>
-            <div class="value {{ 'green' if (post.ai_detection_score or 0) >= 60 else 'orange' if (post.ai_detection_score or 0) >= 40 else 'red' }}">
-                {{ '%.0f'|format(post.ai_detection_score) if post.ai_detection_score else '—' }}
-            </div>
-        </div>
-        <div class="stat-card mini">
-            <div class="label">Overall</div>
-            <div class="value {{ 'green' if (post.readability_score or 0) >= 80 else 'orange' if (post.readability_score or 0) >= 60 else 'red' }}" style="font-size: 20px;">
-                {{ '%.0f'|format(post.readability_score) if post.readability_score else '—' }}
+            <div class="label">Engagement</div>
+            <div style="font-size:9px;color:var(--text-dim);margin-bottom:2px;">variety · vocab · clichés</div>
+            <div class="value {{ 'green' if (post.ai_detection_score or 0) >= 80 else 'orange' if (post.ai_detection_score or 0) >= 60 else 'red' }}">
+                {{ (post.ai_detection_score|round(0)|int) if post.ai_detection_score else '—' }}
             </div>
         </div>
     </div>
     <div id="rewrite-status" style="font-size: 12px; color: var(--text-dim); margin-top: 8px;"></div>
+</div>
+
+<!-- Section-Level Analysis Panel -->
+<div class="card" id="section-panel" style="margin-bottom:16px;">
+    <div class="card-header">
+        <h3 style="margin:0;font-size:14px;">Section-Level Analysis</h3>
+        <button class="btn btn-sm" onclick="loadSections('{{ post.id }}')" id="btn-sections">Analyze Sections</button>
+    </div>
+    <div id="section-content" style="font-size:13px;color:var(--text-dim);padding:4px 0;">
+        Click "Analyze Sections" to score each markdown section independently.
+    </div>
 </div>
 
 <!-- SEO Score Panel -->
@@ -214,6 +246,7 @@
 <style>
     .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
     .badge-green { background: rgba(34,197,94,.15); color: #22c55e; }
+    .badge-yellow { background: rgba(245,158,11,.15); color: #f59e0b; }
     .badge-orange { background: rgba(245,158,11,.15); color: #f59e0b; }
     .badge-red { background: rgba(239,68,68,.15); color: #ef4444; }
     .badge-blue { background: rgba(14,165,233,.15); color: var(--accent); }
@@ -229,6 +262,13 @@
     .stat-card.mini { padding: 8px 12px; }
     .stat-card.mini .label { font-size: 11px; }
     .stat-card.mini .value { font-size: 16px; }
+    /* Section analysis table */
+    .sec-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .sec-table th { color:var(--text-dim); padding:5px 4px; text-align:center; border-bottom:1px solid #1e2d45; }
+    .sec-table th:first-child { text-align:left; }
+    .sec-table td { padding:5px 4px; border-bottom:1px solid #111827; text-align:center; }
+    .sec-table td:first-child { text-align:left; font-weight:500; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sc-green { color:#22c55e; } .sc-yellow { color:#f59e0b; } .sc-red { color:#ef4444; }
 </style>
 
 <script>
@@ -391,6 +431,77 @@ document.querySelectorAll('.cap-cell').forEach(cell => {
         }
     } catch(e) { /* leave default text */ }
 });
+
+// ── WriteGuard section-level analysis ──────────────────────────
+function _scClass(v) { return v >= 80 ? 'sc-green' : v >= 60 ? 'sc-yellow' : 'sc-red'; }
+
+async function loadSections(postId) {
+    const btn = document.getElementById('btn-sections');
+    const panel = document.getElementById('section-content');
+    btn.disabled = true; btn.textContent = 'Analyzing…';
+    panel.innerHTML = '<span style="color:var(--text-dim);">Running section analysis…</span>';
+
+    try {
+        const res = await fetch('/api/pulse/posts/' + postId + '/writeguard-sections');
+        const data = await res.json();
+
+        if (data.error && !data.sections) {
+            panel.innerHTML = '<span style="color:#ef4444;">' + data.error + '</span>';
+            btn.disabled = false; btn.textContent = 'Retry';
+            return;
+        }
+
+        const sections = data.sections || [];
+        if (!sections.length) {
+            panel.innerHTML = '<span style="color:var(--text-dim);">No scorable sections found (need ≥30 words per section).</span>';
+            btn.disabled = false; btn.textContent = 'Analyze Sections';
+            return;
+        }
+
+        let html = '';
+        // Weakest section alert
+        const w = data.weakest;
+        if (w) {
+            const wc = w.badge === 'green' ? '#22c55e' : w.badge === 'yellow' ? '#f59e0b' : '#ef4444';
+            html += `<div style="margin-bottom:12px;padding:10px 14px;border-radius:6px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);">
+                <div style="font-size:11px;font-weight:600;color:#ef4444;text-transform:uppercase;letter-spacing:.05em;">Weakest Section</div>
+                <div style="font-size:13px;font-weight:600;margin:3px 0;color:${wc};">"${w.heading}" — avg ${Math.round(w.avg)}</div>
+                <ul style="margin:4px 0 0;padding-left:16px;font-size:12px;color:var(--text-dim);line-height:1.8;">
+                    ${(w.recommendations||[]).map(r => '<li>'+r+'</li>').join('')}
+                </ul>
+            </div>`;
+        }
+
+        // Sections table
+        html += `<div style="overflow-x:auto;"><table class="sec-table">
+            <thead><tr>
+                <th style="min-width:140px;">Section</th>
+                <th>Words</th><th>Corr</th><th>Clar</th><th>Delv</th><th>Orig</th><th>Eng</th><th>Avg</th>
+            </tr></thead><tbody>`;
+
+        sections.forEach(s => {
+            const sc = s.scores || {};
+            const bg = s.badge === 'green' ? 'rgba(34,197,94,.05)' : s.badge === 'yellow' ? 'rgba(245,158,11,.05)' : 'rgba(239,68,68,.05)';
+            html += `<tr style="background:${bg};">
+                <td title="${s.heading}">${s.heading}</td>
+                <td style="color:var(--text-dim);">${s.word_count}</td>
+                <td class="${_scClass(sc.correctness)}">${Math.round(sc.correctness||0)}</td>
+                <td class="${_scClass(sc.clarity)}">${Math.round(sc.clarity||0)}</td>
+                <td class="${_scClass(sc.delivery)}">${Math.round(sc.delivery||0)}</td>
+                <td class="${_scClass(sc.originality)}">${Math.round(sc.originality||0)}</td>
+                <td class="${_scClass(sc.engagement)}">${Math.round(sc.engagement||0)}</td>
+                <td style="font-weight:700;" class="${_scClass(s.avg)}">${Math.round(s.avg||0)}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+
+        panel.innerHTML = html;
+    } catch(e) {
+        panel.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
+    } finally {
+        btn.disabled = false; btn.textContent = 'Re-Analyze';
+    }
+}
 
 // ── Enrich single post ──────────────────────────────────────────
 async function enrichThisPost(postId) {

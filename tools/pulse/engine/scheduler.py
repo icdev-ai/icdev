@@ -797,33 +797,46 @@ def _run_llm_judge(run_id: str, post_id: str, body: str, quality: dict) -> dict 
 
 
 def _run_quality_check(run_id: str, post_id: str, body: str) -> dict:
-    """Run WriteGuard and update post with scores."""
+    """Run WriteGuard and update post with scores.
+
+    v6b: Stores named composite scores (Correctness, Clarity, Delivery,
+    Originality, Engagement) mapped to existing DB columns:
+      readability_score  → overall WriteGuard Score (0-100)
+      grammar_score      → Correctness composite
+      tone_score         → Delivery composite
+      plagiarism_score   → Originality composite
+      ai_detection_score → Engagement composite
+    """
     try:
         quality = run_full_quality_check(body)
+        composites = quality.get("composites", {})
         stats = _extract_quality_stats(quality)
         update_row(
             "posts",
             post_id,
             {
                 "writeguard_passed": 1 if quality["passed"] else 0,
+                # overall WriteGuard Score stored in readability_score column
                 "readability_score": quality.get("overall_score", 0),
-                "grammar_score": stats.get("grammar", 0),
-                "plagiarism_score": stats.get("plagiarism", 0),
-                "ai_detection_score": stats.get("ai_detection", 0),
-                "tone_score": stats.get("tone", 0),
+                # Named composites stored in existing score columns
+                "grammar_score": composites.get("correctness", stats.get("grammar", 0)),
+                "tone_score": composites.get("delivery", stats.get("tone", 0)),
+                "plagiarism_score": composites.get("originality", stats.get("plagiarism", 0)),
+                "ai_detection_score": composites.get("engagement", stats.get("ai_detection", 0)),
             },
         )
         logger.info(
-            "[%s] WriteGuard: %s (score: %.1f, grammar: %.0f, readability: %.0f, "
-            "plagiarism: %.0f, ai: %.0f, tone: %.0f)",
+            "[%s] WriteGuard: %s (overall: %.1f, correctness: %.0f, clarity: %.0f, "
+            "delivery: %.0f, originality: %.0f, engagement: %.0f, badge: %s)",
             run_id,
             "PASSED" if quality["passed"] else "NEEDS REVIEW",
             quality["overall_score"],
-            stats.get("grammar", 0),
-            stats.get("readability", 0),
-            stats.get("plagiarism", 0),
-            stats.get("ai_detection", 0),
-            stats.get("tone", 0),
+            composites.get("correctness", 0),
+            composites.get("clarity", 0),
+            composites.get("delivery", 0),
+            composites.get("originality", 0),
+            composites.get("engagement", 0),
+            composites.get("color_badge", "?"),
         )
         return quality
     except Exception as e:
@@ -909,16 +922,21 @@ def _auto_rewrite(run_id: str, post_id: str, body: str, quality: dict) -> dict:
 def _extract_quality_stats(quality: dict) -> dict:
     """Extract per-dimension quality stats for dashboard display.
 
-    Returns dict with: grammar, readability, plagiarism, ai_detection,
-    tone, overall, grade_level.
+    v6b: Prefers named composite scores when available; falls back to raw
+    base-dimension scores for backward compatibility.
+
+    Returns dict with: grammar (→ correctness), readability (→ clarity),
+    plagiarism (→ originality), ai_detection (→ engagement), tone (→ delivery),
+    overall, grade_level.
     """
     details = quality.get("details", {})
+    composites = quality.get("composites", {})
     return {
-        "grammar": details.get("grammar", {}).get("score", 0),
-        "readability": details.get("readability", {}).get("score", 0),
-        "plagiarism": details.get("plagiarism", {}).get("score", 0),
-        "ai_detection": details.get("ai_detection", {}).get("score", 0),
-        "tone": details.get("tone", {}).get("score", 0),
+        "grammar": composites.get("correctness", details.get("grammar", {}).get("score", 0)),
+        "readability": composites.get("clarity", details.get("readability", {}).get("score", 0)),
+        "plagiarism": composites.get("originality", details.get("plagiarism", {}).get("score", 0)),
+        "ai_detection": composites.get("engagement", details.get("ai_detection", {}).get("score", 0)),
+        "tone": composites.get("delivery", details.get("tone", {}).get("score", 0)),
         "overall": quality.get("overall_score", 0),
         "grade_level": details.get("readability", {}).get("grade_level", 0),
         "grammar_issues": details.get("grammar", {}).get("issue_count", 0),
