@@ -6821,6 +6821,38 @@ CREATE TABLE IF NOT EXISTS wg_batch_runs (
     completed_at TIMESTAMP
 );
 
+-- 7. Glossary — unified terminology management (D-WG-4c)
+CREATE TABLE IF NOT EXISTS wg_glossary (
+    id TEXT PRIMARY KEY,
+    term TEXT NOT NULL,
+    term_type TEXT NOT NULL CHECK(term_type IN (
+        'acronym','preferred','deprecated','banned','custom_spell'
+    )),
+    expansion TEXT NOT NULL DEFAULT '',      -- full form for acronyms
+    replacement TEXT NOT NULL DEFAULT '',    -- what to use instead (deprecated/banned)
+    definition TEXT NOT NULL DEFAULT '',     -- hover tooltip text
+    domain TEXT NOT NULL DEFAULT 'general'
+        CHECK(domain IN ('general','far','nist','cyber','project')),
+    scope TEXT NOT NULL DEFAULT 'platform'
+        CHECK(scope IN ('platform','tenant','program','project','user')),
+    scope_id TEXT NOT NULL DEFAULT '',       -- tenant/program/project/user ID
+    case_sensitive INTEGER NOT NULL DEFAULT 1,
+    enforcement TEXT NOT NULL DEFAULT 'suggest'
+        CHECK(enforcement IN ('suggest','warn','block')),
+    source TEXT NOT NULL DEFAULT 'admin'
+        CHECK(source IN ('builtin','admin','user','import:far','import:nist','import:cui')),
+    approved_by TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    classification TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_term   ON wg_glossary(term);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_type   ON wg_glossary(term_type);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_scope  ON wg_glossary(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_domain ON wg_glossary(domain);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_active ON wg_glossary(is_active);
+
 -- Phase 68: Draft generation batch job tracking (D-P68-3)
 CREATE TABLE IF NOT EXISTS draft_generation_jobs (
     id TEXT PRIMARY KEY,
