@@ -27,6 +27,7 @@ Configuration:
     ICDEV_PG_PASSWORD=...
     ICDEV_PG_DATABASE=icdev
     ICDEV_DB_PATH=data/icdev.db  (SQLite path)
+    ICDEV_PG_NO_FALLBACK=true  (optional: crash instead of falling back to SQLite)
 
 Usage:
     from tools.db.storage import get_connection
@@ -626,10 +627,17 @@ def get_connection(db_path: str = None) -> StorageConnection:
 
     if backend == "postgresql":
         db_url = os.environ.get("ICDEV_DATABASE_URL")
+        no_fallback = os.environ.get("ICDEV_PG_NO_FALLBACK", "").lower() in ("true", "1")
         try:
             raw_conn = _get_pg_connection(db_url)
             return StorageConnection(raw_conn, "postgresql")
         except Exception as exc:
+            if no_fallback:
+                raise ConnectionError(
+                    f"PostgreSQL unavailable and ICDEV_PG_NO_FALLBACK=true — "
+                    f"refusing to fall back to SQLite. Fix PG or unset the flag. "
+                    f"Original error: {exc}"
+                ) from exc
             import logging
 
             logging.getLogger(__name__).warning(
