@@ -300,12 +300,22 @@ def create_pipeline_blueprint():
         conn.close()
         _audit("UPDATE", "pipeline", pipe_id, data.get("name", ""))
         # Hook: notify Security Design Canvas of pipeline change
+        sdc_assessment = None
         try:
             from tools.security_canvas.agent import on_pdc_pipeline_saved
 
             graph_raw = data.get("graph_json", "{}")
             graph = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
-            on_pdc_pipeline_saved(pipe_id, graph)
+            result = on_pdc_pipeline_saved(pipe_id, graph)
+            if result and result.get("status") != "error":
+                sdc_assessment = {
+                    "risk_score": result.get("risk_score"),
+                    "posture_grade": result.get("posture_grade"),
+                    "cat1_count": result.get("cat1_count", 0),
+                    "cat2_count": result.get("cat2_count", 0),
+                    "cat3_count": result.get("cat3_count", 0),
+                    "total_findings": result.get("total_findings", 0),
+                }
         except Exception:
             pass  # Security Canvas is optional
         # Incremental KG update: re-extract only if graph_json changed
@@ -315,7 +325,10 @@ def create_pipeline_blueprint():
             rebuild_canvas_kg("pdc", pipe_id)
         except Exception:
             pass
-        return jsonify({"updated": True})
+        resp = {"updated": True}
+        if sdc_assessment is not None:
+            resp["sdc_assessment"] = sdc_assessment
+        return jsonify(resp)
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["DELETE"])
     @pc_login_required
