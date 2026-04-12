@@ -435,9 +435,27 @@ def assess_data_design(design_id, graph_data, rules=None):
 
     Returns:
         Dict with findings, scores by category, risk_score, and posture_grade.
+        When auto_detect_pii is enabled the result also contains a
+        ``pii_scan`` key with the raw output from ``pii_scanner.scan_graph``.
     """
     if rules is None:
         rules = DATA_COMPLIANCE_RULES
+
+    # ── PII auto-detection ──────────────────────────────────────────────────
+    pii_scan: dict = {}
+    auto_detect_pii = _DDC_CONFIG.get("classification", {}).get("auto_detect_pii", False)
+    if auto_detect_pii:
+        try:
+            from tools.data_canvas.pii_scanner import scan_graph as _scan_pii
+
+            pii_scan = _scan_pii(graph_data)
+            # Use the auto-tagged node list so downstream checks see col-pii
+            # on columns the scanner promoted (non-mutating — pii_scanner
+            # returns a fresh list, original graph_data is unchanged).
+            if pii_scan.get("auto_tagged_nodes"):
+                graph_data = dict(graph_data, nodes=pii_scan["auto_tagged_nodes"])
+        except Exception:  # noqa: BLE001
+            pass  # scanner unavailable — degrade gracefully
 
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", [])
@@ -480,23 +498,37 @@ def assess_data_design(design_id, graph_data, rules=None):
             "failed": cat_failed_rules,
         }
 
+    # Merge PII scanner compliance findings (if any) into the findings list.
+    # These are appended after rule-based findings so they don't affect
+    # per-rule pass/fail scoring — they are informational auto-detections.
+    pii_findings = pii_scan.get("compliance_findings", [])
+    all_findings = findings + pii_findings
+
     # Risk score: 100 - (weighted findings penalty)
     severity_weights = {"CAT1": 10, "CAT2": 5, "CAT3": 2}
-    penalty = sum(severity_weights.get(f["severity"], 2) for f in findings)
+    penalty = sum(severity_weights.get(f["severity"], 2) for f in all_findings)
     risk_score = max(0.0, min(100.0, 100.0 - penalty))
 
-    return {
+    result = {
         "design_id": design_id,
-        "findings": findings,
+        "findings": all_findings,
         "total_rules": total_rules,
         "passed": total_rules - len({f["rule_id"] for f in findings}),
         "failed": len({f["rule_id"] for f in findings}),
-        "finding_count": len(findings),
+        "finding_count": len(all_findings),
         "scores": scores,
         "risk_score": round(risk_score, 1),
         "posture_grade": _posture_grade(risk_score),
         "assessed_at": datetime.now(timezone.utc).isoformat(),
     }
+    if pii_scan:
+        result["pii_scan"] = {
+            "total_scanned": pii_scan.get("total_scanned", 0),
+            "pii_detected": pii_scan.get("pii_detected", 0),
+            "tagged_columns": pii_scan.get("tagged_columns", []),
+            "scanned_at": pii_scan.get("scanned_at", ""),
+        }
+    return result
 
 
 # ── Classification Coverage ──────────────────────────────────────────────────
