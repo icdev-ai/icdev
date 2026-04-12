@@ -327,6 +327,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Awareness run log + health snapshots (NIST AU, append-only)
         "awareness_run_log",
         "awareness_component_health",
+        # Observability Canvas integration (D-OC audit trail, NIST AU)
+        "od_audit",
+        "nc_audit",
     ]
 
     if tool_name == "Bash":
