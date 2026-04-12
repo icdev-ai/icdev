@@ -762,6 +762,8 @@ def analyze(
         The content to analyse (plain text or markdown).
     mode : str
         ``"inline"`` for single-text analysis, ``"batch"`` for bulk.
+        ``"perf_review"`` activates the bias dimension (gender + ability coding).
+        ``"job_description"`` activates the bias dimension (gender + age + job-word coding).
     opportunity_id : str
         Optional proposal opportunity ID for plagiarism cross-check.
     skip_llm : bool
@@ -801,6 +803,15 @@ def analyze(
     ai_det = _ai_detection(text)
     sentence_structure = _sentence_structure(text)
 
+    # Bias dimension — active for perf_review and job_description modes
+    bias: Dict[str, Any] = {}
+    if mode in ("perf_review", "job_description"):
+        try:
+            from tools.writing.bias_detector import _bias_check  # noqa: PLC0415
+            bias = _bias_check(text, context=mode)
+        except ImportError:
+            pass
+
     checks = {
         "grammar": grammar,
         "readability": readability,
@@ -814,8 +825,12 @@ def analyze(
         "ai_detection": ai_det,
         "sentence_structure": sentence_structure,
     }
+    if bias:
+        checks["bias"] = bias
 
-    # Weighted composite — 11 dimensions
+    # Weighted composite — 11 dimensions (12 when bias is active)
+    # When bias is present, tone weight is reduced to accommodate the new dimension;
+    # total weights always sum to 1.0.
     weights = {
         "grammar": 0.14,
         "readability": 0.14,
@@ -828,6 +843,9 @@ def analyze(
         "plagiarism": 0.15,
         "ai_detection": 0.15,
     }
+    if bias:
+        weights["tone"] = 0.09   # reduced from 0.14 to make room for bias
+        weights["bias"] = 0.05   # total remains 1.0
     quality_score = round(sum(checks[k]["score"] * w for k, w in weights.items()), 3)
 
     # Collect findings
