@@ -1148,19 +1148,21 @@ def _verify_claimed_files_exist(
     return existing, len(paths), missing[:5]
 
 
-def _verify_task_completed(task_id, claude_output):
-    """Verify that a task actually produced results before marking done.
+def _run_verify_checks(task_id, claude_output):
+    """Inner check implementation — called only by _verify_task_completed.
 
     Checks (order matters; early returns on failure):
     1. Claude output must be substantial (>200 chars)
     2. No obvious failure indicators in output
     3. Output must contain evidence of actual file changes (keywords)
-    4. **Phantom-completion guard (OPT-76)**: if output claims specific
-       file paths, at least some must actually exist on disk. A
-       hallucinating agent that says "I created tools/X.py" without
-       actually creating the file fails here.
-    5. Git has new commits on the task's WORKTREE branch OR staged
-       changes visible in the work_dir.
+    4a. **Zero-path guard**: if task description mentions file creation
+        but the output claims 0 paths, FAIL.
+    4b. **Phantom-completion guard (OPT-76)**: if output claims specific
+        file paths, at least some must actually exist on disk, AND no
+        more than 50% may be missing (threshold lowered from 80%).
+    5. Git has new commits on the task's WORKTREE branch.
+       Dirty-working-tree fallback removed — uncommitted changes alone
+       are NOT evidence of completion.
 
     Returns: (verified: bool, reason: str)
     """
@@ -1217,6 +1219,26 @@ def _verify_task_completed(task_id, claude_output):
     # claims to have touched and verify at least SOME of them exist.
     work_dir_for_check = _worktrees.get(task_id) or str(BASE_DIR)
     claimed_paths = _extract_claimed_file_paths(claude_output)
+
+    # Check 4a: If the task description mentions file creation but the
+    # output claims zero paths, the agent likely hallucinated.
+    if not claimed_paths:
+        try:
+            _c = get_connection()
+            _row = _c.execute(
+                "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            _c.close()
+            task_desc = (_row["description"] or "").lower() if _row else ""
+        except Exception:
+            task_desc = ""
+        _creation_kws = ["creat", "generat", "add ", "implement", "write ", "build "]
+        if any(kw in task_desc for kw in _creation_kws):
+            return False, (
+                "Task description indicates file creation but agent claimed "
+                "0 file paths in output — likely phantom completion"
+            )
+
     if claimed_paths:
         existing, claimed, missing = _verify_claimed_files_exist(
             claimed_paths, work_dir_for_check
@@ -1230,21 +1252,19 @@ def _verify_task_completed(task_id, claude_output):
                 f"but NONE exist on disk (missing: {missing_preview}). "
                 f"Output was likely hallucinated — see agent log."
             )
-        # Partial existence is acceptable — the agent may have
-        # referenced pre-existing files it read or mentioned neighbors.
-        # But log the ratio so the reviewer can spot drift.
+        # If 50%+ of claimed paths are missing, treat as phantom completion.
         phantom_ratio = (claimed - existing) / claimed
-        if phantom_ratio >= 0.8:
-            # 80%+ of claimed paths are missing — suspicious but not blocking
-            logger.warning(
-                "kanban %s: %d/%d claimed paths missing (%s, ...)",
-                task_id, claimed - existing, claimed, missing[:3],
+        if phantom_ratio >= 0.5:
+            missing_preview = ", ".join(missing[:3])
+            return False, (
+                f"PHANTOM COMPLETION: {claimed - existing}/{claimed} claimed paths "
+                f"missing ({missing_preview}). "
+                f"Ratio {phantom_ratio:.0%} >= 50% threshold — failing."
             )
 
-    # Check 5: Git commit check on the WORKTREE branch (not main) OR
-    # dirty working-directory check for non-worktree runs. Failures in
-    # git commands DO NOT fall through to a lenient pass — that was the
-    # original phantom path.
+    # Check 5: Git commit check on the WORKTREE branch (not main).
+    # Failures in git commands DO NOT fall through to a lenient pass —
+    # that was the original phantom path.
     try:
         import subprocess as _sp
 
@@ -1275,28 +1295,11 @@ def _verify_task_completed(task_id, claude_output):
         if result.stdout.strip():
             return True, "Verified: found commits referencing task"
 
-        # No commits found — but the agent may have left uncommitted
-        # changes in the work dir. Check for a dirty working tree.
-        dirty = _sp.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            cwd=work_dir_for_check,
-            timeout=10,
-        )
-        dirty_lines = [line for line in (dirty.stdout or "").splitlines() if line.strip()]
-        if dirty_lines:
-            return True, (
-                f"Verified: {len(dirty_lines)} uncommitted change(s) in work dir "
-                f"(agent didn't commit but produced files)"
-            )
-
-        # No commits AND no dirty state AND no strong claimed-file evidence
+        # No commits on the task branch — uncommitted changes are NOT
+        # sufficient evidence of completion (dirty-tree fallback removed).
         return False, (
-            "No git commits AND no uncommitted changes — "
-            "agent produced no file-level output"
+            "No git commits found on task branch — "
+            "agent produced no committed file-level output"
         )
     except Exception as exc:
         # OPT-76: do NOT fall through to a lenient pass. Git failures
@@ -1308,6 +1311,44 @@ def _verify_task_completed(task_id, claude_output):
                 f"agent-referenced file(s) exist on disk (git check failed: {exc})"
             )
         return False, f"Git check failed ({exc}) and no claimed paths verified"
+
+
+def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
+    """Persist verification result to .tmp/kanban/{task_id}.verification.json."""
+    try:
+        import json as _json
+        log_dir = BASE_DIR / ".tmp" / "kanban"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{task_id}.verification.json"
+        log_path.write_text(
+            _json.dumps(
+                {
+                    "task_id": task_id,
+                    "verified": verified,
+                    "reason": reason,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning(
+            "kanban: failed to write verification log for %s: %s", task_id, exc
+        )
+
+
+def _verify_task_completed(task_id, claude_output):
+    """Verify that a task actually produced results before marking done.
+
+    Delegates to _run_verify_checks for the actual logic, then logs the
+    result to .tmp/kanban/{task_id}.verification.json regardless of outcome.
+
+    Returns: (verified: bool, reason: str)
+    """
+    verified, reason = _run_verify_checks(task_id, claude_output)
+    _write_verification_log(task_id, verified, reason)
+    return verified, reason
 
 
 # Track when each task was dispatched: {task_id: datetime}
