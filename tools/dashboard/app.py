@@ -1878,7 +1878,7 @@ def create_app() -> Flask:
             if agent_ids:
                 placeholders = ",".join("?" * len(agent_ids))
                 tc_rows = conn.execute(
-                    f"SELECT target_agent_id, COUNT(*) as cnt FROM a2a_tasks "
+                    f"SELECT target_agent_id, COUNT(*) as cnt FROM a2a_tasks "  # nosec B608 — placeholders contains only "?" bind params, no user input
                     f"WHERE target_agent_id IN ({placeholders}) "
                     f"AND status IN ('submitted', 'working') "
                     f"GROUP BY target_agent_id",
