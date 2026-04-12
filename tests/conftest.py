@@ -879,6 +879,9 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
     e2e_passed            INTEGER,
     e2e_errors            TEXT,
     companion_synced      INTEGER,
+    remediation_attempted INTEGER DEFAULT 0,
+    remediation_success   INTEGER,
+    remediation_type      TEXT,
     created_at            TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_kv_task_id ON kanban_verifications (task_id);

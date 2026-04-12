@@ -1195,10 +1195,111 @@ class _LLMTaskHandle:
         return self.returncode if self.returncode is not None else 0
 
 
+_FAILURE_COACHING = {
+    "no_commits": (
+        "Previous run produced NO git commits. The verification requires "
+        "committed file changes. Make sure to actually edit files and the "
+        "stop hook will commit them. If you believe the task requires no "
+        "changes, say so explicitly in your output."
+    ),
+    "phantom_paths": (
+        "Previous run mentioned file paths in output that DID NOT EXIST on "
+        "disk. Only reference files you actually created or modified. Do "
+        "not hallucinate paths. Use Read to confirm before mentioning a file."
+    ),
+    "ruff_issues": (
+        "Previous run left ruff lint errors (F401 unused imports, etc). "
+        "Before finishing, run: python -m ruff check --fix <modified_files> "
+        "and remove any remaining unused imports/variables."
+    ),
+    "bandit_security": (
+        "Previous run introduced a medium+ security issue (bandit). Avoid: "
+        "eval/exec, subprocess shell=True, unvalidated paths, hardcoded "
+        "credentials. If a pattern is safe in context, add a '# nosec B###' "
+        "comment with justification."
+    ),
+    "coherence_broken": (
+        "Previous run broke coherence (likely a new tool missing from "
+        "tools/manifest.md, or a ruff issue). Before finishing: add any "
+        "new tools to tools/manifest.md AND run ruff check --fix on all "
+        "modified .py files."
+    ),
+    "stale_baseline": (
+        "Previous run was on a stale branch baseline. Rebase onto latest "
+        "main before making changes: git rebase main. Then re-apply your "
+        "work on top of current code."
+    ),
+    "e2e_regression": (
+        "Previous run passed code checks but broke an E2E test. Verify UI/API "
+        "routes still work after your change. Run tests/e2e_kanban_depends_on.py "
+        "locally before finishing."
+    ),
+}
+
+
+def _get_retry_coaching(task_id: str) -> str:
+    """Build a coaching preamble for the next run based on last failure.
+
+    Reads failure_count + last_failure_reason from kanban_tasks, classifies
+    the failure, and returns advice text to prepend to the agent prompt.
+    Empty string on first run or if info unavailable.
+    """
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT failure_count, last_failure_reason, last_failure_at "
+                "FROM kanban_tasks WHERE id = ?", (task_id,),
+            ).fetchone()
+            if not row:
+                return ""
+            d = dict(row)
+            count = d.get("failure_count") or 0
+            reason = (d.get("last_failure_reason") or "").strip()
+            if not count or not reason:
+                return ""
+        finally:
+            conn.close()
+    except Exception:
+        return ""
+
+    try:
+        from tools.workflow.auto_remediate import classify_failure
+        failure_type = classify_failure(reason)
+    except Exception:
+        failure_type = "unknown"
+
+    coaching = _FAILURE_COACHING.get(failure_type, "")
+    preamble = (
+        "IMPORTANT — THIS IS RETRY ATTEMPT #" + str(count + 1) + ".\n"
+        "The previous attempt failed verification. Do NOT repeat the same\n"
+        "mistake. Here is what went wrong and how to avoid it:\n\n"
+        f"  Failure type: {failure_type}\n"
+        f"  Reason:       {reason[:300]}\n"
+    )
+    if coaching:
+        preamble += f"\nCoaching: {coaching}\n"
+    preamble += (
+        "\nAdditional requirements for this retry:\n"
+        "  - Actually modify files on disk; don't just describe changes.\n"
+        "  - Keep the scope small and focused on the task title.\n"
+        "  - If the task seems too large for one session, state so in your\n"
+        "    output and make whatever partial progress you can — the\n"
+        "    scheduler will flag it for decomposition after 3 failures.\n"
+        "\n---\n\n"
+    )
+    return preamble
+
+
 def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: str) -> str:
-    """Compose the full instruction text used by both executors."""
+    """Compose the full instruction text used by both executors.
+
+    Injects retry coaching if the task has prior failures (guard-22), so the
+    agent knows what went wrong last time and how to avoid repeating it.
+    """
+    coaching = _get_retry_coaching(task_id)
     return (
-        f"{prompt_text}\n\n"
+        f"{coaching}{prompt_text}\n\n"
         f"When complete:\n"
         f"1. Move to done: POST http://localhost:5050/api/kanban/"
         f'tasks/{task_id}/move with {{"status": "done"}}\n'
@@ -1857,14 +1958,68 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
 def _verify_task_completed(task_id, claude_output):
     """Verify that a task actually produced results before marking done.
 
-    Runs generic checks (_run_verify_checks), task-type-specific checks
-    (_verify_task_specific), then post-task validation suite
-    (_run_post_task_validation: CodeLens + Coherence + E2E + companion).
+    Pipeline:
+      1. _run_verify_checks — generic guards (OPT-76 phantom detection, commits)
+      2. _verify_task_specific — manifest/route/table/template checks
+      3. _run_post_task_validation — CodeLens + Coherence + E2E + companion
+      4. (guard-21) On failure: attempt auto-remediation ONCE. If it succeeds,
+         re-run the full validation pipeline. If still failing, or the
+         failure type is not auto-remediable, return to caller so the task
+         goes to backlog.
+
     Logs every result to kanban_verifications table.
 
     Returns: (verified: bool, reason: str)
     """
+    verified, reason, metrics = _run_full_verification(task_id, claude_output)
+
+    # guard-21: try to auto-remediate common, safe failures before giving up.
+    # Only one attempt — if it doesn't work, backlog is the answer.
+    if not verified:
+        try:
+            from tools.workflow.auto_remediate import attempt_remediation
+            work_dir = _worktrees.get(task_id) or str(BASE_DIR)
+            # Get the list of files the agent touched (for targeted ruff/manifest)
+            import subprocess as _sp
+            diff = _sp.run(
+                ["git", "diff", "--name-only", f"main...kanban/{task_id}"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(BASE_DIR), timeout=15,
+            )
+            modified_files = [ln.strip() for ln in diff.stdout.splitlines() if ln.strip()]
+
+            remediated, rem_msg, rem_info = attempt_remediation(
+                cwd=work_dir, task_id=task_id,
+                reason=reason, metrics=metrics,
+                modified_files=modified_files,
+            )
+
+            if remediated:
+                # Re-run full verification after fix was applied
+                logger.info(
+                    "guard-21: remediation succeeded for %s (%s) — re-verifying",
+                    task_id, rem_info.get("failure_type", "?"),
+                )
+                verified, reason, metrics = _run_full_verification(task_id, claude_output)
+                reason = f"AUTO-REMEDIATED ({rem_info.get('failure_type', '?')}): {rem_msg} | {reason}"
+            else:
+                reason = f"{reason} | REMEDIATION={rem_info.get('failure_type', '?')}: {rem_msg}"
+        except Exception as exc:
+            logger.warning("guard-21: remediation error for %s: %s", task_id, exc)
+
+    _write_verification_log(task_id, verified, reason)
+    if metrics:
+        _update_verification_metrics(task_id, metrics)
+    return verified, reason
+
+
+def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str, Dict[str, Any]]:
+    """Run all 3 verification layers. Returns (verified, reason, metrics).
+
+    Extracted as its own function so it can be re-invoked after remediation.
+    """
     verified, reason = _run_verify_checks(task_id, claude_output)
+    metrics: Dict[str, Any] = {}
     if verified:
         specific_ok, specific_reason = _verify_task_specific(task_id)
         if not specific_ok:
@@ -1872,9 +2027,6 @@ def _verify_task_completed(task_id, claude_output):
             reason = f"{reason} | {specific_reason}"
         else:
             reason = f"{reason} | {specific_reason}"
-
-    # guard-7: full validation suite (only if prior gates passed)
-    metrics: Dict[str, Any] = {}
     if verified:
         validation_ok, validation_reason, metrics = _run_post_task_validation(task_id)
         if not validation_ok:
@@ -1882,11 +2034,7 @@ def _verify_task_completed(task_id, claude_output):
             reason = f"{reason} | VALIDATION FAILED: {validation_reason}"
         else:
             reason = f"{reason} | {validation_reason}"
-
-    _write_verification_log(task_id, verified, reason)
-    if metrics:
-        _update_verification_metrics(task_id, metrics)
-    return verified, reason
+    return verified, reason, metrics
 
 
 # Track when each task was dispatched: {task_id: datetime}
