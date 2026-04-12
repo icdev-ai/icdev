@@ -17,6 +17,8 @@ Checks:
   7b. ruff_lint     — Authoritative F401/F811/F841 gate via ruff (OPT-49)
   8. api_wiring     — API handlers read from DB, not hardcoded literals
   9. skill_standard — .agents/skills/*/SKILL.md conform to mattpocock/skills convention
+ 10. sandbox_coverage — docs/security/sandbox-coverage.md references all ingress gap files
+ 11. direct_anthropic_import — no direct `import anthropic` outside tools/llm/anthropic_provider.py (OPT-44)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 Follows claude_dir_validator.py pattern (dataclass results, check registry).
@@ -2096,6 +2098,85 @@ def check_sandbox_coverage() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: Direct Anthropic Import (OPT-44)
+# ---------------------------------------------------------------------------
+
+
+def check_direct_anthropic_import() -> CoherenceCheck:
+    """OPT-44 — ban direct `import anthropic` / `from anthropic` outside
+    tools/llm/anthropic_provider.py.
+
+    Rule: all Anthropic SDK usage MUST flow through LLMRouter /
+    AnthropicLLMProvider.  The one permitted file is the provider itself.
+    Any other file that imports anthropic directly bypasses the provider
+    abstraction and will break air-gap / Bedrock / multi-cloud routing.
+
+    Detection uses AST so only real import statements are flagged — string
+    literals in docstrings or regex patterns are ignored.
+    """
+    allowed = Path("tools") / "llm" / "anthropic_provider.py"
+
+    def _has_direct_anthropic_import(source: str) -> List[Tuple[int, str]]:
+        """Return (lineno, stmt_text) for every direct anthropic import in source."""
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
+        hits: List[Tuple[int, str]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "anthropic" or alias.name.startswith("anthropic."):
+                        hits.append((node.lineno, f"import {alias.name}"))
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and (
+                    node.module == "anthropic" or node.module.startswith("anthropic.")
+                ):
+                    hits.append((node.lineno, f"from {node.module} import ..."))
+        return hits
+
+    violations: List[str] = []
+    tools_root = PROJECT_ROOT / "tools"
+    if tools_root.exists():
+        for py_file in sorted(tools_root.rglob("*.py")):
+            try:
+                rel = py_file.relative_to(PROJECT_ROOT)
+            except ValueError:
+                rel = py_file
+            if rel == allowed:
+                continue  # the one permitted file
+            text = _read_text(py_file)
+            for lineno, stmt in _has_direct_anthropic_import(text):
+                violations.append(f"{rel}:{lineno}: {stmt}")
+
+    if violations:
+        return CoherenceCheck(
+            check_id="direct_anthropic_import",
+            check_name="Direct Anthropic Import (OPT-44)",
+            status="fail",
+            expected=[f"only {allowed} may import anthropic SDK directly"],
+            actual=violations,
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} disallowed direct anthropic import(s) found — "
+                "route through tools.llm.anthropic_provider.AnthropicLLMProvider"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="direct_anthropic_import",
+        check_name="Direct Anthropic Import (OPT-44)",
+        status="pass",
+        expected=[f"only {allowed} may import anthropic SDK directly"],
+        actual=[f"0 violations — sole allowed file: {allowed}"],
+        missing=[],
+        extra=[],
+        message="No disallowed direct anthropic imports detected",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -2114,6 +2195,7 @@ CHECK_REGISTRY = {
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
+    "direct_anthropic_import": check_direct_anthropic_import,
 }
 
 
@@ -2137,6 +2219,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "llm_injection_patterns": "skip",  # WARN-tier; fixes need human review
     "skill_standard": "suggest",  # description rewrites need human judgment
     "sandbox_coverage": "skip",  # doc/decision — requires human judgment
+    "direct_anthropic_import": "skip",  # violations require code routing fix
 }
 
 

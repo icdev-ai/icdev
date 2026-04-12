@@ -91,13 +91,12 @@ class AnthropicPDFProvider(PDFProvider):
         self._model = model
 
     def check_availability(self) -> bool:
-        try:
-            import anthropic  # noqa: F401
+        import importlib.util
 
-            key = self._resolve_key()
-            return bool(key)
-        except ImportError:
+        if importlib.util.find_spec("anthropic") is None:
             return False
+        key = self._resolve_key()
+        return bool(key)
 
     def _resolve_key(self) -> str:
         if self._api_key:
@@ -113,8 +112,9 @@ class AnthropicPDFProvider(PDFProvider):
         return os.environ.get("ANTHROPIC_API_KEY", "")
 
     def extract(self, pdf_path: Path, max_pages: int = 200) -> List[PDFPage]:
-        import anthropic
         import base64
+
+        from tools.llm.anthropic_provider import AnthropicLLMProvider
 
         key = self._resolve_key()
         if not key:
@@ -123,7 +123,7 @@ class AnthropicPDFProvider(PDFProvider):
         pdf_data = pdf_path.read_bytes()
         b64 = base64.standard_b64encode(pdf_data).decode("utf-8")
 
-        client = anthropic.Anthropic(api_key=key)
+        client = AnthropicLLMProvider(api_key=key)._get_client()
         message = client.messages.create(
             model=self._model,
             max_tokens=4096,
@@ -428,9 +428,9 @@ def _diagnose_provider_unavailable(name: str, config: Optional[dict] = None) -> 
     """
     cfg = config or {}
     if name == "anthropic":
-        try:
-            import anthropic  # noqa: F401
-        except ImportError:
+        import importlib.util
+
+        if importlib.util.find_spec("anthropic") is None:
             return "anthropic SDK not installed (pip install anthropic)"
         import os as _os
         if not (cfg.get("anthropic", {}).get("api_key") or _os.environ.get("ANTHROPIC_API_KEY")):
