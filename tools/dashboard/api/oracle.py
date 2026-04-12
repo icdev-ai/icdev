@@ -1,11 +1,28 @@
 # CUI // SP-CTI
-"""Oracle API — anticipatory intelligence predictions endpoint."""
+"""Oracle API — anticipatory intelligence predictions and remediation history."""
 
-from flask import Blueprint, jsonify
+from __future__ import annotations
+
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+from flask import Blueprint, jsonify, request
+
+BASE_DIR = Path(__file__).resolve().parents[3]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
 
 oracle_api = Blueprint("oracle_api", __name__)
 
 
+# ---------------------------------------------------------------------------
+# Predictions
+# ---------------------------------------------------------------------------
 @oracle_api.route("/api/oracle/predictions", methods=["GET"])
 def list_predictions():
     """List Oracle predictions."""
@@ -19,19 +36,177 @@ def list_predictions():
         return jsonify({"predictions": [], "count": 0, "error": str(exc)})
 
 
-@oracle_api.route("/api/oracle/proposals/stats", methods=["GET"])
-def oracle_proposals_stats():
-    """Oracle proposal stats (stub — populated as proposals accumulate)."""
-    return jsonify({"total": 0, "pending": 0, "approved": 0, "rejected": 0})
+# ---------------------------------------------------------------------------
+# Shared: parse audit_trail rows into proposal/history items
+# ---------------------------------------------------------------------------
+_REMEDIATION_ACTION_PATTERNS = (
+    "poam.%remediat%",
+    "canvas.%remediat%",
+    "poam.close%",
+    "kanban.%",  # bulk-close + ship events
+)
 
 
-@oracle_api.route("/api/oracle/proposals/unified", methods=["GET"])
-def oracle_proposals_unified():
-    """Oracle unified proposal view (stub)."""
-    return jsonify({"proposals": [], "total": 0})
+def _parse_details(raw: Any) -> dict:
+    """Audit_trail.details is TEXT, often double-JSON-encoded. Return a dict
+    regardless of input shape (empty dict on failure)."""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    # Double-encoded: outer json.loads returned another JSON string
+    if isinstance(parsed, str):
+        try:
+            parsed = json.loads(parsed)
+        except Exception:
+            return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
+def _row_to_item(row: dict) -> dict:
+    """Map an audit_trail row to the UI item shape expected by index.html."""
+    details = _parse_details(row.get("details"))
+    event_type = row.get("event_type") or ""
+    action = row.get("action") or ""
+    verified = bool(details.get("verified_gone"))
+
+    if event_type == "vulnerability_resolved":
+        status = "approved"
+    elif event_type == "decision_made" and action.startswith("poam."):
+        status = "pending"
+    else:
+        status = "approved" if verified else "pending"
+
+    rule_id = details.get("rule_id") or details.get("task_id") or action
+    diff = details.get("diff") or details.get("decision") or ""
+    first_line = str(diff).splitlines()[0] if diff else ""
+    title = f"{rule_id}: {first_line}"[:160] if first_line else str(rule_id)[:160]
+
+    canvas = (details.get("canvas") or "").lower()
+    current_score = details.get("old_avg_score")
+    projected_score = details.get("projected_score")
+    new_score = details.get("new_avg_score")
+
+    created = row.get("created_at")
+    created_iso = created.isoformat() if hasattr(created, "isoformat") else str(created or "")
+
+    item = {
+        "id": str(row.get("id") or ""),
+        "status": status,
+        "title": title or f"{canvas or 'audit'} event",
+        "canvas": canvas,
+        "canvas_label": canvas,
+        "created_at": created_iso,
+        "action": action,
+        "actor": row.get("actor") or "",
+    }
+    if isinstance(current_score, (int, float)):
+        item["current_score"] = float(current_score)
+    if isinstance(projected_score, (int, float)):
+        item["projected_score"] = float(projected_score)
+    if isinstance(new_score, (int, float)) and status == "approved":
+        item["actual_new_score"] = float(new_score)
+    return item
+
+
+def _fetch_remediation_rows(limit: int, canvas: str | None, since_iso: str | None) -> list[dict]:
+    conn = get_connection()
+    cur = conn.cursor()
+    like_clause = " OR ".join(["action LIKE %s"] * len(_REMEDIATION_ACTION_PATTERNS))
+    sql = f"""
+        SELECT id, event_type, actor, action, details, created_at
+        FROM audit_trail
+        WHERE (event_type = 'vulnerability_resolved'
+               OR (event_type = 'decision_made' AND action LIKE 'poam.%%')
+               OR {like_clause})
+          AND created_at >= %s
+        ORDER BY created_at DESC, id DESC
+        LIMIT %s
+    """  # nosec B608 — only literal %s placeholders; values bound via params
+    since_dt = _parse_since(since_iso)
+    params: tuple = tuple(_REMEDIATION_ACTION_PATTERNS) + (since_dt, limit * 4 if canvas else limit)
+    cur.execute(sql, params)
+    rows = [dict(r) for r in cur.fetchall()]
+    items = [_row_to_item(r) for r in rows]
+    if canvas:
+        items = [it for it in items if it.get("canvas") == canvas.lower()]
+    return items[:limit]
+
+
+def _parse_since(since_iso: str | None) -> datetime:
+    """Accept ISO date/time. Default: 30 days ago."""
+    if since_iso:
+        try:
+            return datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
+        except Exception:
+            pass
+    return datetime.now(timezone.utc) - timedelta(days=30)
+
+
+# ---------------------------------------------------------------------------
+# /api/oracle/proposals/history
+# ---------------------------------------------------------------------------
 @oracle_api.route("/api/oracle/proposals/history", methods=["GET"])
 def oracle_proposals_history():
-    """Oracle proposal history (stub)."""
-    return jsonify({"history": [], "total": 0})
+    """Remediation history — reads from audit_trail.
+
+    Query params:
+      limit  (int, default 10, cap 100)
+      canvas (str, optional — case-insensitive match on details.canvas)
+      since  (ISO date, default: 30 days ago)
+    """
+    try:
+        limit = max(1, min(int(request.args.get("limit", 10)), 100))
+    except (TypeError, ValueError):
+        limit = 10
+    canvas = request.args.get("canvas")
+    since_iso = request.args.get("since")
+
+    try:
+        items = _fetch_remediation_rows(limit, canvas, since_iso)
+        return jsonify({"history": items, "total": len(items)})
+    except Exception as exc:
+        return jsonify({"history": [], "total": 0, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# /api/oracle/proposals/stats
+# ---------------------------------------------------------------------------
+@oracle_api.route("/api/oracle/proposals/stats", methods=["GET"])
+def oracle_proposals_stats():
+    """Counts of proposal statuses derived from audit_trail."""
+    try:
+        items = _fetch_remediation_rows(limit=1000, canvas=None, since_iso=None)
+        counts = {"total": len(items), "pending": 0, "approved": 0, "rejected": 0, "failed": 0}
+        for it in items:
+            s = it.get("status", "")
+            if s in counts:
+                counts[s] += 1
+        return jsonify(counts)
+    except Exception as exc:
+        return jsonify({"total": 0, "pending": 0, "approved": 0, "rejected": 0, "failed": 0, "error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# /api/oracle/proposals/unified
+# ---------------------------------------------------------------------------
+@oracle_api.route("/api/oracle/proposals/unified", methods=["GET"])
+def oracle_proposals_unified():
+    """Unified recent-proposals view — same source as /history with a different
+    envelope. TODO: extend with oracle_predictions join when lens pipeline
+    produces proposal-ready artifacts."""
+    try:
+        limit = max(1, min(int(request.args.get("limit", 20)), 200))
+    except (TypeError, ValueError):
+        limit = 20
+    try:
+        items = _fetch_remediation_rows(limit, None, None)
+        return jsonify({"proposals": items, "total": len(items)})
+    except Exception as exc:
+        return jsonify({"proposals": [], "total": 0, "error": str(exc)})

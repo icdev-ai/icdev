@@ -1091,4 +1091,234 @@ def create_data_canvas_blueprint():
             }
         )
 
+    # ══════════════════════════════════════════════════════════════════════
+    # RUNBOOKS — Page Routes
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/runbooks")
+    @dc_login_required
+    def dc_runbooks():
+        """Runbook list page — all DDC incident response runbooks."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, title, category, severity, description, status, created_at "
+            "FROM ddc_runbooks ORDER BY severity DESC, category, title"
+        ).fetchall()
+        conn.close()
+        runbooks = [row_to_dict(r) for r in rows]
+        return render_template("data_canvas/runbooks.html", runbooks=runbooks)
+
+    @bp.route("/runbooks/<runbook_id>")
+    @dc_login_required
+    def dc_runbook_detail(runbook_id):
+        """Runbook detail page — view steps and execution history."""
+        conn = get_connection()
+        rb_row = conn.execute("SELECT * FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+        if not rb_row:
+            conn.close()
+            return redirect("/data/runbooks")
+        runbook = row_to_dict(rb_row)
+        try:
+            import json as _json
+            runbook["steps"] = _json.loads(runbook.get("steps_json") or "[]")
+        except Exception:
+            runbook["steps"] = []
+        execs = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, triggered_by, status, notes, started_at, completed_at "
+                "FROM ddc_runbook_executions WHERE runbook_id=? ORDER BY started_at DESC LIMIT 20",
+                (runbook_id,),
+            ).fetchall()
+        ]
+        conn.close()
+        return render_template("data_canvas/runbooks.html", runbook=runbook, executions=execs, detail=True)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # RUNBOOKS — API
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/runbooks", methods=["GET"])
+    @dc_login_required
+    def dc_api_runbooks_list():
+        """List all runbooks, optionally filtered by category or severity."""
+        category = request.args.get("category")
+        severity = request.args.get("severity")
+        conn = get_connection()
+        if category and severity:
+            rows = conn.execute(
+                "SELECT * FROM ddc_runbooks WHERE category=? AND severity=? ORDER BY title",
+                (category, severity),
+            ).fetchall()
+        elif category:
+            rows = conn.execute(
+                "SELECT * FROM ddc_runbooks WHERE category=? ORDER BY title", (category,)
+            ).fetchall()
+        elif severity:
+            rows = conn.execute(
+                "SELECT * FROM ddc_runbooks WHERE severity=? ORDER BY title", (severity,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM ddc_runbooks ORDER BY severity DESC, category, title"
+            ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows])
+
+    @bp.route("/api/runbooks", methods=["POST"])
+    @dc_login_required
+    def dc_api_runbooks_create():
+        """Create a new runbook."""
+        data = request.get_json(force=True, silent=True) or {}
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "title is required"}), 400
+        rb_id = f"rb-ddc-{_uuid.uuid4().hex[:10]}"
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO ddc_runbooks "
+            "(id, title, category, severity, description, trigger_condition, steps_json, "
+            "classification, status, linked_design_id, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                rb_id,
+                title[:200],
+                data.get("category", "general")[:50],
+                data.get("severity", "medium")[:20],
+                data.get("description", ""),
+                data.get("trigger_condition", ""),
+                json.dumps(data.get("steps", [])),
+                data.get("classification", "CUI // SP-CTI"),
+                data.get("status", "active"),
+                data.get("linked_design_id"),
+                now_isoformat(),
+                now_isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+        _audit(rb_id, session.get("user_id", "system"), "RUNBOOK_CREATE", title)
+        return jsonify({"id": rb_id, "title": title}), 201
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["GET"])
+    @dc_login_required
+    def dc_api_runbooks_get(runbook_id):
+        """Get a single runbook by ID."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        rb = row_to_dict(row)
+        try:
+            rb["steps"] = json.loads(rb.get("steps_json") or "[]")
+        except Exception:
+            rb["steps"] = []
+        return jsonify(rb)
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["PUT"])
+    @dc_login_required
+    def dc_api_runbooks_update(runbook_id):
+        """Update an existing runbook."""
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        conn.execute(
+            "UPDATE ddc_runbooks SET title=?, category=?, severity=?, description=?, "
+            "trigger_condition=?, steps_json=?, classification=?, status=?, "
+            "linked_design_id=?, updated_at=? WHERE id=?",
+            (
+                data.get("title", "")[:200],
+                data.get("category", "general")[:50],
+                data.get("severity", "medium")[:20],
+                data.get("description", ""),
+                data.get("trigger_condition", ""),
+                json.dumps(data.get("steps", [])),
+                data.get("classification", "CUI // SP-CTI"),
+                data.get("status", "active"),
+                data.get("linked_design_id"),
+                now_isoformat(),
+                runbook_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        _audit(runbook_id, session.get("user_id", "system"), "RUNBOOK_UPDATE", data.get("title", ""))
+        return jsonify({"updated": True})
+
+    @bp.route("/api/runbooks/<runbook_id>", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_runbooks_delete(runbook_id):
+        """Delete a runbook and its execution history."""
+        conn = get_connection()
+        conn.execute("DELETE FROM ddc_runbook_executions WHERE runbook_id=?", (runbook_id,))
+        conn.execute("DELETE FROM ddc_runbooks WHERE id=?", (runbook_id,))
+        conn.commit()
+        conn.close()
+        _audit(runbook_id, session.get("user_id", "system"), "RUNBOOK_DELETE", "")
+        return jsonify({"deleted": True})
+
+    @bp.route("/api/runbooks/<runbook_id>/execute", methods=["POST"])
+    @dc_login_required
+    def dc_api_runbooks_execute(runbook_id):
+        """Log the start of a runbook execution."""
+        conn = get_connection()
+        rb_row = conn.execute("SELECT id, title FROM ddc_runbooks WHERE id=?", (runbook_id,)).fetchone()
+        if not rb_row:
+            conn.close()
+            return jsonify({"error": "Runbook not found"}), 404
+        data = request.get_json(force=True, silent=True) or {}
+        exec_id = f"exec-{_uuid.uuid4().hex[:12]}"
+        triggered_by = data.get("triggered_by") or session.get("user_id", "system")
+        conn.execute(
+            "INSERT INTO ddc_runbook_executions "
+            "(id, runbook_id, triggered_by, status, notes, started_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (exec_id, runbook_id, triggered_by, "in_progress", data.get("notes", ""), now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        _audit(runbook_id, session.get("user_id", "system"), "RUNBOOK_EXECUTE", f"exec_id={exec_id}")
+        return jsonify({"execution_id": exec_id, "status": "in_progress"}), 201
+
+    @bp.route("/api/runbooks/<runbook_id>/execute/<exec_id>", methods=["PUT"])
+    @dc_login_required
+    def dc_api_runbooks_execution_complete(runbook_id, exec_id):
+        """Mark a runbook execution as completed or failed."""
+        data = request.get_json(force=True, silent=True) or {}
+        status = data.get("status", "completed")
+        if status not in ("completed", "failed", "in_progress"):
+            return jsonify({"error": "status must be completed, failed, or in_progress"}), 400
+        conn = get_connection()
+        conn.execute(
+            "UPDATE ddc_runbook_executions SET status=?, notes=?, completed_at=? "
+            "WHERE id=? AND runbook_id=?",
+            (
+                status,
+                data.get("notes", ""),
+                now_isoformat() if status != "in_progress" else None,
+                exec_id,
+                runbook_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"updated": True, "status": status})
+
+    @bp.route("/api/runbooks/<runbook_id>/executions", methods=["GET"])
+    @dc_login_required
+    def dc_api_runbooks_execution_list(runbook_id):
+        """List execution history for a runbook."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, triggered_by, status, notes, started_at, completed_at "
+            "FROM ddc_runbook_executions WHERE runbook_id=? ORDER BY started_at DESC",
+            (runbook_id,),
+        ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows])
+
     return bp
