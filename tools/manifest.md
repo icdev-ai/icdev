@@ -712,7 +712,7 @@
 | Tool Curator | tools/workflow/tool_curator.py | Phase-level tool curation enforcement — restrict available tools per goal phase (Agent Harness pattern) | --goal, --phase, --tool, --validate, --list-goals, --json | Allowed/blocked + reason |
 | Handoff Generator | tools/workflow/handoff_generator.py | Session handoff document generation for cross-session context transfers (D-WF-4) | --generate, --loop-id, --json | Handoff markdown |
 | Reconciler | tools/workflow/reconciler.py | UNIFY phase reconciliation: planned-vs-actual delta tracking with deviation classification (D-WF-5) | --reconcile, --loop-id, --json | Reconciliation record |
-| Replay Engine | tools/workflow/replay_engine.py | Event-sourced ANVIL pipeline recovery — reconstructs exact workflow state from append-only audit trail, identifies resume point, skips completed steps without re-executing side effects (NIST AU extension) | --inspect/--replay/--simulate/--verify/--list-failed, --loop-id, --project-id, --gate, --json | Resume plan + idempotency tokens |
+| Replay Engine | tools/workflow/replay_engine.py | Event-sourced ANVIL pipeline recovery — reconstructs workflow state from append-only audit trail, skips completed steps without re-executing side effects (D-REPLAY-1..7, NIST AU extension) | --list-events, --resume-point, --begin, --complete, --fail, --status, --list-sessions, --workflow-id, --project-id, --session-id, --gate, --json | Resume point + session record |
 
 ## Cloud-Agnostic Architecture (Phase 38 — D223-D231)
 | Tool | File | Description | Input | Output |
@@ -1054,6 +1054,7 @@
 | Intake Bridge | tools/workflow/intake_bridge.py | Intake→workflow loop bridge (D-WF-1 + RICOAS) | --bridge, --check, --session-id, --json | Loop with seeded AC from BDD |
 | Coherence Checker | tools/workflow/coherence_checker.py | Implementation coherence validator — 12 checks + 2-tier auto-fix (D-WF-8). Checks: schema_code, config_code, signature_call, fixture_schema, manifest, append_only, import_usage, ruff_lint (OPT-49), api_wiring, route_uniqueness, attribution_claims, llm_injection_patterns. Whitelist: args/ruff_gate.yaml. Wired into: Genesis audit, GKP promotion, CI/CD, marketplace, test orchestrator, heartbeat, production audit | --all, --check, --changed-files, --fix, --json, --human, --gate | Coherence report + auto-fix results |
 | Impact Analyzer | tools/workflow/impact_analyzer.py | Cross-subsystem integration gap detection (D-WF-8f) | --analyze, --graph, --changed-files, --changed-tables, --json | Impact recommendations |
+| Replay Engine | tools/workflow/replay_engine.py | Event-sourced ANVIL pipeline recovery — deterministic state reconstruction from audit trail, resume-from-last-step (D-REPLAY-1..7) | --list-events, --resume-point, --begin, --complete, --fail, --status, --list-sessions, --workflow-id, --session-id, --gate, --json | Session record + resume point |
 
 ## Internal Awareness Engine (Phase 1a-1g)
 Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `kg-icdev-self-awareness`. Provides the `/components-map` dashboard page (JointJS tree + graph + hover + detail drawer) and a post-tool hook that auto-reindexes on every Edit/Write/NotebookEdit. Enablement-aware: disabled modules are indexed but visually dimmed and excluded from probing. See docs/features/internal-awareness-engine.md for the full plan.

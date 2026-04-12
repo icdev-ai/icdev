@@ -220,6 +220,24 @@ CREATE TABLE IF NOT EXISTS workflow_handoffs (
     FOREIGN KEY (loop_id) REFERENCES workflow_loops(id)
 );
 
+-- Event-Sourced Workflow Replay (D-REPLAY-1 through D-REPLAY-7)
+CREATE TABLE IF NOT EXISTS workflow_replay_sessions (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    project_id TEXT,
+    status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','completed','failed')),
+    resume_step TEXT,
+    completed_steps_snapshot TEXT DEFAULT '[]',
+    total_steps INTEGER DEFAULT 0,
+    skipped_steps INTEGER DEFAULT 0,
+    replayed_steps INTEGER DEFAULT 0,
+    error_message TEXT,
+    triggered_by TEXT DEFAULT 'replay-engine',
+    classification TEXT DEFAULT 'CUI',
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+
 -- NemoClaw Sandboxing (D-NC-1 through D-NC-6)
 CREATE TABLE IF NOT EXISTS credential_broker_log (
     id TEXT PRIMARY KEY,

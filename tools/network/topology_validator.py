@@ -37,7 +37,6 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
 
     Returns dict with issues found and fixes applied.
     """
-    import sqlite3
 
     from tools.network.network_ingester import _classify_device_type
 
@@ -154,7 +153,6 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
 
 def validate_all(fix: bool = False) -> dict[str, Any]:
     """Validate all topologies."""
-    import sqlite3
 
     conn = get_connection(str(BASE_DIR / "data" / "network_canvas.db"))
     rows = conn.execute("SELECT id FROM topologies ORDER BY created_at DESC").fetchall()

@@ -94,7 +94,6 @@ def _get_canvas_assessment_score(canvas_key, design_id):
         return 0.0
     db_name, table = info
     try:
-        import sqlite3
         from pathlib import Path
 
         db_path = Path(__file__).resolve().parents[2] / "data" / f"{db_name}.db"

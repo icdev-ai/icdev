@@ -9130,6 +9130,35 @@ CREATE TABLE IF NOT EXISTS workflow_handoffs (
 CREATE INDEX IF NOT EXISTS idx_wh_project ON workflow_handoffs(project_id);
 
 -- ============================================================
+-- EVENT-SOURCED WORKFLOW REPLAY (NIST AU extension, D-REPLAY-1 through D-REPLAY-7)
+-- Deterministic ANVIL pipeline replay from immutable audit trail
+-- ============================================================
+
+-- Replay sessions — mutable status tracking (NOT append-only).
+-- Immutable event log lives in audit_trail (workflow_replay_* event types).
+CREATE TABLE IF NOT EXISTS workflow_replay_sessions (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    project_id TEXT,
+    status TEXT NOT NULL DEFAULT 'running' CHECK(status IN (
+        'running', 'completed', 'failed'
+    )),
+    resume_step TEXT,
+    completed_steps_snapshot TEXT DEFAULT '[]',
+    total_steps INTEGER DEFAULT 0,
+    skipped_steps INTEGER DEFAULT 0,
+    replayed_steps INTEGER DEFAULT 0,
+    error_message TEXT,
+    triggered_by TEXT DEFAULT 'replay-engine',
+    classification TEXT DEFAULT 'CUI',
+    started_at TEXT NOT NULL,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wrs_workflow ON workflow_replay_sessions(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_wrs_project ON workflow_replay_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_wrs_status ON workflow_replay_sessions(status);
+
+-- ============================================================
 -- ENGINEERING REVIEW BOARD (Phase 67, D-RB-1 through D-RB-7)
 -- Continuous multi-persona code analysis daemon
 -- ============================================================
