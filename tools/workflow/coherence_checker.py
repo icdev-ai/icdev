@@ -2037,6 +2037,64 @@ def check_skill_standard() -> CoherenceCheck:
     )
 
 
+def check_sandbox_coverage() -> CoherenceCheck:
+    """OPT-58 — verify docs/security/sandbox-coverage.md exists and
+    documents all 4 tracked ingress-point gap files.
+
+    Rule: any new tools/ module that ingests user-provided content MUST
+    land a decision in docs/security/sandbox-coverage.md before merge.
+    This check currently validates that the doc exists and references the
+    4 baseline gap files (auto_remediator, kanban dispatch, pdf_provider,
+    .tmp/ policy).
+    """
+    doc = PROJECT_ROOT / "docs" / "security" / "sandbox-coverage.md"
+    if not doc.exists():
+        return CoherenceCheck(
+            check_id="sandbox_coverage",
+            check_name="Sandbox Coverage (OPT-58, D-SEC-11)",
+            status="fail",
+            expected=["docs/security/sandbox-coverage.md"],
+            actual=["(missing)"],
+            missing=["docs/security/sandbox-coverage.md"],
+            extra=[],
+            message="docs/security/sandbox-coverage.md is missing — required "
+                    "by OPT-58. Create it with decisions for each tools/ "
+                    "module that ingests user content.",
+        )
+
+    required = [
+        "auto_remediator.py",
+        "_dispatch_via_llm_router",
+        "pdf_provider.py",
+        ".tmp/",
+    ]
+    body = doc.read_text(encoding="utf-8", errors="replace")
+    missing = [tag for tag in required if tag not in body]
+
+    if missing:
+        return CoherenceCheck(
+            check_id="sandbox_coverage",
+            check_name="Sandbox Coverage (OPT-58, D-SEC-11)",
+            status="fail",
+            expected=required,
+            actual=[tag for tag in required if tag not in missing],
+            missing=missing,
+            extra=[],
+            message=f"sandbox-coverage.md is missing gap references: {missing}",
+        )
+
+    return CoherenceCheck(
+        check_id="sandbox_coverage",
+        check_name="Sandbox Coverage (OPT-58, D-SEC-11)",
+        status="pass",
+        expected=required,
+        actual=required,
+        missing=[],
+        extra=[],
+        message=f"All {len(required)} gap references present in sandbox-coverage.md",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
@@ -2055,6 +2113,7 @@ CHECK_REGISTRY = {
     "attribution_claims": check_attribution_claims,
     "llm_injection_patterns": check_llm_injection_patterns,
     "skill_standard": check_skill_standard,
+    "sandbox_coverage": check_sandbox_coverage,
 }
 
 
@@ -2077,6 +2136,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "attribution_claims": "skip",  # license audit requires human confirmation
     "llm_injection_patterns": "skip",  # WARN-tier; fixes need human review
     "skill_standard": "suggest",  # description rewrites need human judgment
+    "sandbox_coverage": "skip",  # doc/decision — requires human judgment
 }
 
 
