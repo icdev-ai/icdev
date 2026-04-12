@@ -38,7 +38,7 @@ def _ensure_versions_table(conn):
             version_path TEXT,
             action TEXT NOT NULL DEFAULT 'auto',
             created_by TEXT DEFAULT 'filesync-engine',
-            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (job_id) REFERENCES sync_jobs(id)
         )
     """)

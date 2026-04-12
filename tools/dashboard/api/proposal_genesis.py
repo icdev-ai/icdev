@@ -968,8 +968,10 @@ def api_pg_trend_win_rate():
     """GET /api/proposal-genesis/trends/win-rate — Win rate over time (monthly)."""
     conn = _get_db()
     try:
-        rows = conn.execute("""
-            SELECT strftime('%Y-%m', bdo.created_at) AS month,
+        _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+        _mfmt = "to_char(bdo.created_at::timestamp, 'YYYY-MM')" if _pg else "strftime('%Y-%m', bdo.created_at)"
+        rows = conn.execute(f"""
+            SELECT {_mfmt} AS month,
                    COUNT(*) AS total,
                    SUM(CASE WHEN bdo.outcome = 'won' THEN 1 ELSE 0 END) AS wins
             FROM pg_bid_decision_outcomes bdo
@@ -1001,8 +1003,10 @@ def api_pg_trend_quality():
     """GET /api/proposal-genesis/trends/quality-scores — Avg quality score over time (weekly)."""
     conn = _get_db()
     try:
-        rows = conn.execute("""
-            SELECT strftime('%Y-W%W', created_at) AS week,
+        _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+        _wfmt = "to_char(created_at::timestamp, 'YYYY-\"W\"IW')" if _pg else "strftime('%Y-W%W', created_at)"
+        rows = conn.execute(f"""
+            SELECT {_wfmt} AS week,
                    ROUND(AVG(composite_score), 2) AS avg_score,
                    COUNT(*) AS count
             FROM pg_proposal_quality_scores
@@ -1023,8 +1027,10 @@ def api_pg_trend_training_pairs():
     """GET /api/proposal-genesis/trends/training-pairs — Cumulative training pair growth (weekly)."""
     conn = _get_db()
     try:
-        rows = conn.execute("""
-            SELECT strftime('%Y-W%W', created_at) AS week,
+        _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+        _wfmt = "to_char(created_at::timestamp, 'YYYY-\"W\"IW')" if _pg else "strftime('%Y-W%W', created_at)"
+        rows = conn.execute(f"""
+            SELECT {_wfmt} AS week,
                    SUM(pair_count) AS pairs_added
             FROM pg_training_pair_sources
             GROUP BY week
