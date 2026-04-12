@@ -186,6 +186,7 @@ def ingest_source(
     else:
         conn = get_connection()
         try:
+            conn.execute("PRAGMA busy_timeout=5000")
         except Exception:
             pass  # Postgres doesn't support PRAGMA
         _canvas_conn = False

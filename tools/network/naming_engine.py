@@ -176,9 +176,9 @@ def validate_name(name: str, convention_id: str) -> dict[str, Any]:
     max_length = conv.get("max_length", 63)
 
     if case_rule == "upper" and name != name.upper():
-        errors.append(f"Name must be uppercase (convention rule)")
+        errors.append("Name must be uppercase (convention rule)")
     elif case_rule == "lower" and name != name.lower():
-        errors.append(f"Name must be lowercase (convention rule)")
+        errors.append("Name must be lowercase (convention rule)")
 
     if len(name) > max_length:
         errors.append(f"Name exceeds max length {max_length}")
