@@ -232,7 +232,8 @@
     <div id="content-preview" style="padding: 8px 0; font-size: 14px; line-height: 1.7; max-height: 600px; overflow-y: auto;">
         {{ post.body_html|safe if post.body_html else (post.body_markdown or 'No content yet.')|e }}
     </div>
-    <textarea id="content-editor" style="display: none; width: 100%; min-height: 500px; padding: 12px;
+    <textarea id="content-editor" data-writeguard data-writeguard-label="Article Body"
+              style="display: none; width: 100%; min-height: 500px; padding: 12px;
               border-radius: 6px; border: 1px solid #1e2d45; background: #0a0f1a; color: #e2e8f0;
               font-family: monospace; font-size: 13px; line-height: 1.6; resize: vertical;">{{ post.body_markdown or '' }}</textarea>
 </div>
@@ -527,4 +528,5 @@ async function enrichThisPost(postId) {
     }
 }
 </script>
+<script defer src="{{ url_for('static', filename='js/writeguard-inline.js') }}"></script>
 {% endblock %}
