@@ -12,6 +12,7 @@ Tools:
     manage_isa             - ISA/MOU lifecycle management
     assess_scrm            - NIST 800-161 SCRM assessment
     triage_cve             - CVE triage with blast radius
+    watch_passive_cve      - Passive CVE watcher — scan/status/watch audit trail (NIST SI-4, CA-7)
 
 Runs as an MCP server over stdio with Content-Length framing.
 """
@@ -308,6 +309,40 @@ def handle_triage_cve(args: dict) -> dict:
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+def handle_watch_passive_cve(args: dict) -> dict:
+    """Passive CVE watcher — scan/status/watch audit trail without re-scanning (NIST SI-4, CA-7)."""
+    action = args.get("action", "scan")
+    project_id = args.get("project_id")
+    if not project_id:
+        return {"error": "project_id is required"}
+
+    if action == "scan":
+        watch_scan = _import_tool("tools.supply_chain.cve_passive_watcher", "watch_scan")
+        if not watch_scan:
+            return {"error": "cve_passive_watcher module not available", "status": "pending"}
+        try:
+            return watch_scan(
+                project_id=project_id,
+                since_id=args.get("since_id"),
+                db_path=str(DB_PATH),
+                auto_triage=not args.get("no_triage", False),
+            )
+        except Exception as e:
+            return {"error": str(e), "traceback": traceback.format_exc()}
+
+    elif action == "status":
+        get_status = _import_tool("tools.supply_chain.cve_passive_watcher", "get_status")
+        if not get_status:
+            return {"error": "cve_passive_watcher module not available", "status": "pending"}
+        try:
+            return get_status(project_id=project_id, db_path=str(DB_PATH))
+        except Exception as e:
+            return {"error": str(e), "traceback": traceback.format_exc()}
+
+    else:
+        return {"error": f"Unknown action '{action}'. Use 'scan' or 'status'."}
+
+
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
@@ -525,6 +560,34 @@ def create_server() -> MCPServer:
             "required": ["project_id", "cve_id", "component", "severity"],
         },
         handler=handle_triage_cve,
+    )
+
+    server.register_tool(
+        name="watch_passive_cve",
+        description="Passive CVE watcher — streams immutable audit trail for ATO-relevant CVE signals without re-scanning (NIST SI-4, CA-7)",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
+                "action": {
+                    "type": "string",
+                    "default": "scan",
+                    "enum": ["scan", "status"],
+                    "description": "'scan' — process new audit entries; 'status' — show watcher statistics",
+                },
+                "since_id": {
+                    "type": "number",
+                    "description": "Scan audit entries with id > N (default: auto from high-watermark)",
+                },
+                "no_triage": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, detect CVEs without auto-triaging them",
+                },
+            },
+            "required": ["project_id"],
+        },
+        handler=handle_watch_passive_cve,
     )
 
     return server

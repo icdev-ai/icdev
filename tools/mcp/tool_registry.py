@@ -2102,6 +2102,34 @@ TOOL_REGISTRY = {
             "required": ["project_id", "cve_id", "component", "severity"],
         },
     },
+    "watch_passive_cve": {
+        "category": "supply_chain",
+        "module": "tools.mcp.supply_chain_server",
+        "handler": "handle_watch_passive_cve",
+        "description": "Passive CVE watcher — streams immutable audit trail for ATO-relevant CVE signals without re-scanning (NIST SI-4, CA-7)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
+                "action": {
+                    "type": "string",
+                    "default": "scan",
+                    "enum": ["scan", "status"],
+                    "description": "'scan' — process new audit entries; 'status' — show watcher statistics",
+                },
+                "since_id": {
+                    "type": "number",
+                    "description": "Scan audit entries with id > N (default: auto from high-watermark)",
+                },
+                "no_triage": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, detect CVEs without auto-triaging them",
+                },
+            },
+            "required": ["project_id"],
+        },
+    },
     # ============================================================
     # SIMULATION (8 tools)
     # ============================================================
