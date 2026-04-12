@@ -118,11 +118,13 @@ _FLOW_SUBTYPES: dict[str, str] = {
 # ── Config loader ─────────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
+    # Start with hardcoded defaults, then layer YAML on top, then env vars
+    # (env vars always win — highest priority).
     defaults: dict = {
-        "url": os.environ.get("ICDEV_DATAHUB_URL", "http://localhost:8080"),
-        "token": os.environ.get("ICDEV_DATAHUB_TOKEN", ""),
-        "env": os.environ.get("ICDEV_DATAHUB_ENV", "DEV"),
-        "timeout": int(os.environ.get("ICDEV_DATAHUB_TIMEOUT", "15")),
+        "url": "http://localhost:8080",
+        "token": "",
+        "env": "DEV",
+        "timeout": 15,
         "verify_ssl": True,
     }
     if _CONFIG_PATH.exists():
@@ -131,12 +133,25 @@ def _load_config() -> dict:
             with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
                 data = yaml.safe_load(fh) or {}
             cfg = data.get("datahub", {})
-            defaults["url"] = cfg.get("url", defaults["url"])
-            defaults["token"] = cfg.get("token", defaults["token"])
-            defaults["env"] = cfg.get("env", defaults["env"])
-            defaults["timeout"] = int(cfg.get("timeout", defaults["timeout"]))
+            if cfg.get("url"):
+                defaults["url"] = cfg["url"]
+            if cfg.get("token") is not None:
+                defaults["token"] = cfg["token"]
+            if cfg.get("env"):
+                defaults["env"] = cfg["env"]
+            if cfg.get("timeout"):
+                defaults["timeout"] = int(cfg["timeout"])
         except Exception:
             pass
+    # Env vars override YAML and hardcoded defaults
+    if os.environ.get("ICDEV_DATAHUB_URL"):
+        defaults["url"] = os.environ["ICDEV_DATAHUB_URL"]
+    if os.environ.get("ICDEV_DATAHUB_TOKEN") is not None:
+        defaults["token"] = os.environ.get("ICDEV_DATAHUB_TOKEN", defaults["token"])
+    if os.environ.get("ICDEV_DATAHUB_ENV"):
+        defaults["env"] = os.environ["ICDEV_DATAHUB_ENV"]
+    if os.environ.get("ICDEV_DATAHUB_TIMEOUT"):
+        defaults["timeout"] = int(os.environ["ICDEV_DATAHUB_TIMEOUT"])
     defaults["env"] = defaults["env"].upper()
     if defaults["env"] not in _VALID_ENVS:
         defaults["env"] = "DEV"
