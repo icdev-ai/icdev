@@ -891,6 +891,49 @@ def create_data_canvas_blueprint():
         filename = f"{d['name'].replace(' ', '_')}_odps.yaml"
         return jsonify({"format": "odps", "filename": filename, "data": data})
 
+    @bp.route("/api/export/<design_id>/dbt", methods=["POST"])
+    @dc_login_required
+    def dc_api_export_dbt(design_id):
+        """Export data design as dbt sources.yml + model.yml (ZIP archive)."""
+        import base64
+        import io
+        import zipfile
+
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT name, graph_json, classification FROM data_designs WHERE id=?",
+            (design_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        d = row_to_dict(row)
+        gj = d["graph_json"]
+        graph = json.loads(gj) if isinstance(gj, str) else gj
+        from tools.data_canvas.exporters.dbt import export_dbt
+
+        sources_bytes, model_bytes = export_dbt(
+            d["name"],
+            graph,
+            design_id=design_id,
+            classification=d.get("classification") or "CUI",
+        )
+        # Bundle both YAML files into a single ZIP for download
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("sources.yml", sources_bytes)
+            zf.writestr("model.yml", model_bytes)
+        zip_bytes = buf.getvalue()
+        slug = d["name"].replace(" ", "_")
+        return jsonify(
+            {
+                "format": "dbt",
+                "filename": f"{slug}_dbt.zip",
+                "data": base64.b64encode(zip_bytes).decode("ascii"),
+                "files": ["sources.yml", "model.yml"],
+            }
+        )
+
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _DDCCollabMgr
