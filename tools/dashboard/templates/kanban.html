@@ -23,6 +23,9 @@
         <div class="kanban-column-header">
             <h3>{{ status_label }}</h3>
             <span class="kanban-column-count">0</span>
+            {% if status_key == "suggested" %}
+            <button class="btn btn-sm" id="btn-promote-all" onclick="promoteAllSuggested()" title="Promote all suggested cards to backlog" style="margin-left:auto; padding:2px 8px; font-size:11px; background:var(--accent-primary); color:#fff; border:none; border-radius:4px; cursor:pointer; display:none;">Promote All</button>
+            {% endif %}
         </div>
         <div class="kanban-column-body">
             <div class="kanban-empty">Loading...</div>
@@ -223,6 +226,23 @@ function refreshKanbanTasks() {
         .then(function(data) { renderTaskKanban(data.tasks || []); });
 }
 
+function promoteAllSuggested() {
+    if (!confirm('Promote ALL suggested cards to backlog?')) return;
+    var btn = document.getElementById('btn-promote-all');
+    if (btn) { btn.disabled = true; btn.textContent = 'Promoting...'; }
+    fetch('/api/kanban/tasks/promote-all', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Promote All'; }
+            if (data.error) { alert('Error: ' + data.error); return; }
+            refreshKanbanTasks();
+        })
+        .catch(function() {
+            if (btn) { btn.disabled = false; btn.textContent = 'Promote All'; }
+            alert('Promote all failed');
+        });
+}
+
 function renderTaskKanban(tasks) {
     var board = document.getElementById('kanban-board');
     if (!board) return;
@@ -252,6 +272,12 @@ function renderTaskKanban(tasks) {
 
         var countEl = colEl.querySelector('.kanban-column-count');
         if (countEl) countEl.textContent = items.length;
+
+        // Show/hide the Promote All button based on suggested card count
+        if (status === 'suggested') {
+            var promBtn = document.getElementById('btn-promote-all');
+            if (promBtn) promBtn.style.display = items.length > 0 ? 'inline-block' : 'none';
+        }
 
         var bodyEl = colEl.querySelector('.kanban-column-body');
         if (!bodyEl) return;
