@@ -545,6 +545,44 @@ def bulk_move_tasks():
         conn.close()
 
 
+@kanban_api.route("/tasks/promote-all", methods=["POST"])
+def promote_all_suggested():
+    """Move ALL suggested cards to backlog in one shot.
+
+    No request body needed.  Returns ``{"promoted": N}``.
+    Used by the "Promote All" button on the Suggested column header.
+    """
+    now = _utcnow()
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE status = 'suggested'"
+        ).fetchall()
+        count = len(rows)
+        if count == 0:
+            return jsonify({"promoted": 0, "message": "No suggested cards to promote"})
+
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "
+            "WHERE status = 'suggested'",
+            (now,),
+        )
+        conn.commit()
+
+        try:
+            sse_manager.broadcast(
+                {"action": "bulk_promoted", "count": count},
+                "kanban",
+            )
+        except Exception:
+            pass
+        return jsonify({"promoted": count, "new_status": "backlog"})
+    except Exception as exc:
+        return jsonify({"error": str(exc)[:200]}), 500
+    finally:
+        conn.close()
+
+
 @kanban_api.route("/tasks/<task_id>/move", methods=["POST"])
 def move_task(task_id):
     """Move a task to a new status column."""
