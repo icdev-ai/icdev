@@ -764,6 +764,10 @@ def analyze(
         ``"inline"`` for single-text analysis, ``"batch"`` for bulk.
         ``"perf_review"`` activates the bias dimension (gender + ability coding).
         ``"job_description"`` activates the bias dimension (gender + age + job-word coding).
+        ``"runbook"`` activates the runbook structure linter (numbered steps,
+        imperative verbs, verification/rollback per step, prerequisites section,
+        rollback section, no pronouns, no ambiguous modals, commands in backticks,
+        time estimates).
     opportunity_id : str
         Optional proposal opportunity ID for plagiarism cross-check.
     skip_llm : bool
@@ -812,6 +816,15 @@ def analyze(
         except ImportError:
             pass
 
+    # Runbook dimension — active when mode="runbook"
+    runbook: Dict[str, Any] = {}
+    if mode == "runbook":
+        try:
+            from tools.writing.runbook_linter import _runbook_check  # noqa: PLC0415
+            runbook = _runbook_check(text)
+        except ImportError:
+            pass
+
     checks = {
         "grammar": grammar,
         "readability": readability,
@@ -827,10 +840,13 @@ def analyze(
     }
     if bias:
         checks["bias"] = bias
+    if runbook:
+        checks["runbook"] = runbook
 
-    # Weighted composite — 11 dimensions (12 when bias is active)
-    # When bias is present, tone weight is reduced to accommodate the new dimension;
-    # total weights always sum to 1.0.
+    # Weighted composite — 11 dimensions (12 when bias/runbook active)
+    # When bias is present, tone weight is reduced to accommodate the new dimension.
+    # When runbook is present, plagiarism+ai_detection weights are reduced to make
+    # room for structural quality; total weights always sum to 1.0.
     weights = {
         "grammar": 0.14,
         "readability": 0.14,
@@ -846,6 +862,10 @@ def analyze(
     if bias:
         weights["tone"] = 0.09   # reduced from 0.14 to make room for bias
         weights["bias"] = 0.05   # total remains 1.0
+    if runbook:
+        weights["plagiarism"] = 0.08   # reduced from 0.15
+        weights["ai_detection"] = 0.08  # reduced from 0.15
+        weights["runbook"] = 0.14       # structural quality; total remains 1.0
     quality_score = round(sum(checks[k]["score"] * w for k, w in weights.items()), 3)
 
     # Collect findings
