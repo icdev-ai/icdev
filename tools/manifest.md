@@ -79,6 +79,8 @@
 | Competitive Intel | tools/innovation/competitive_intel.py | Competitor feature monitoring (D205) — gap analysis against ICDEV™ capabilities | --scan, --gap-analysis, --report, --json | Competitive gaps |
 | Standards Monitor | tools/innovation/standards_monitor.py | Standards body change tracking (D204) — NIST, CISA, DoD, FedRAMP, ISO | --check, --body, --report, --assess, --json | Standards updates |
 | Innovation Config | args/innovation_config.yaml | Configuration: sources, scoring weights, triage rules, scheduling, competitive intel, standards monitoring | (data) | YAML config |
+| Kanban Promoter | tools/innovation/kanban_promoter.py | Promote approved/suggested innovation signals into kanban_tasks (status=suggested) with source_prediction_id provenance (OPT-60) | --triage-result, --limit, --min-innovation-score, --dry-run, --list, --promote-id, --json | Summary JSON + inserted task ids |
+| Innovation Promoter Config | args/innovation_promoter.yaml | Config for kanban_promoter: triage states, score gate, priority thresholds | (data) | YAML config |
 
 ## A2A Protocol
 | Tool | File | Description | Input | Output |

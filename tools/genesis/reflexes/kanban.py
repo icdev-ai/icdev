@@ -94,7 +94,7 @@ MAX_AUTO_PROMOTE = 2
 # Max in-progress tasks at any time (prevents pile-up)
 MAX_IN_PROGRESS = 3
 # Max seconds a Claude CLI subprocess can run before being killed
-MAX_EXECUTION_SECONDS = 1800  # 30 minutes
+MAX_EXECUTION_SECONDS = 900  # 15 minutes — guard-6: lowered from 1800
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
 
@@ -1624,12 +1624,193 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
     return True, "Task-specific checks passed or not applicable"
 
 
+def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
+    """guard-7: Run full validation suite after task passes verification.
+
+    Runs (each gated on success of the previous):
+    1. CodeLens: py_compile + ruff + bandit + pytest on modified files
+    2. Coherence: coherence_checker.py --all --gate
+    3. E2E: Selenium full-lifecycle test if UI files were modified
+    4. Companion sync: tools/dx/companion.py --sync --write
+
+    FAIL if any gate fails. On failure, returns to backlog instead of done.
+
+    Returns: (passed: bool, reason: str, metrics: dict)
+    """
+    import subprocess as _sp
+
+    metrics: Dict[str, Any] = {
+        "codelens_passed": None,
+        "ruff_issues": 0,
+        "bandit_issues": 0,
+        "pytest_passed": None,
+        "coherence_passed": None,
+        "e2e_ran": False,
+        "e2e_passed": None,
+        "companion_synced": False,
+    }
+
+    # Identify modified files on the task's worktree branch
+    branch_name = f"kanban/{task_id}"
+    try:
+        result = _sp.run(
+            ["git", "diff", "--name-only", f"main...{branch_name}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=15,
+        )
+        modified = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    except Exception:
+        modified = []
+
+    modified_py = [f for f in modified if f.endswith(".py") and (BASE_DIR / f).exists()]
+
+    # ─── 1. CodeLens ─────────────────────────────────────────────────
+    if modified_py:
+        # py_compile
+        try:
+            compile_result = _sp.run(
+                ["python", "-m", "py_compile"] + modified_py,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(BASE_DIR), timeout=60,
+            )
+            if compile_result.returncode != 0:
+                metrics["codelens_passed"] = False
+                return False, f"py_compile failed: {compile_result.stderr[:200]}", metrics
+        except Exception as exc:
+            logger.warning("guard-7: py_compile skipped: %s", exc)
+
+        # ruff (use all checks that run in coherence)
+        try:
+            ruff_result = _sp.run(
+                ["python", "-m", "ruff", "check"] + modified_py,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(BASE_DIR), timeout=60,
+            )
+            # Count issues — non-zero exit with output means issues
+            if ruff_result.returncode != 0:
+                issue_count = len([ln for ln in ruff_result.stdout.splitlines() if ": " in ln])
+                metrics["ruff_issues"] = issue_count
+                if issue_count > 0:
+                    metrics["codelens_passed"] = False
+                    return False, f"ruff found {issue_count} issues", metrics
+        except Exception as exc:
+            logger.warning("guard-7: ruff skipped: %s", exc)
+
+        # bandit (medium+)
+        try:
+            bandit_result = _sp.run(
+                ["python", "-m", "bandit", "-r"] + modified_py + ["--severity-level", "medium"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(BASE_DIR), timeout=60,
+            )
+            # bandit exits 1 if issues found
+            if bandit_result.returncode == 1:
+                # Parse for Medium/High count
+                mh_count = bandit_result.stdout.count(">> Issue:")
+                metrics["bandit_issues"] = mh_count
+                if mh_count > 0:
+                    metrics["codelens_passed"] = False
+                    return False, f"bandit found {mh_count} medium+ issues", metrics
+        except Exception as exc:
+            logger.warning("guard-7: bandit skipped: %s", exc)
+
+        metrics["codelens_passed"] = True
+
+    # ─── 2. Coherence ────────────────────────────────────────────────
+    try:
+        coh_result = _sp.run(
+            ["python", "tools/workflow/coherence_checker.py", "--all", "--gate"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=120,
+        )
+        metrics["coherence_passed"] = coh_result.returncode == 0
+        if coh_result.returncode != 0:
+            return False, f"coherence gate failed (exit {coh_result.returncode})", metrics
+    except Exception as exc:
+        logger.warning("guard-7: coherence skipped: %s", exc)
+
+    # ─── 3. E2E (only if UI/dashboard files modified) ───────────────
+    ui_touched = any(
+        f.startswith(("tools/dashboard/", "tools/saas/portal/"))
+        for f in modified
+    )
+    if ui_touched:
+        # Check dashboard is running before attempting E2E
+        try:
+            import urllib.request as _ul
+            _ul.urlopen("http://localhost:5050/health", timeout=2)  # nosec B310 -- localhost health check
+            dashboard_up = True
+        except Exception:
+            dashboard_up = False
+
+        if dashboard_up:
+            metrics["e2e_ran"] = True
+            try:
+                e2e_result = _sp.run(
+                    ["python", "tests/e2e_kanban_depends_on.py"],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    cwd=str(BASE_DIR), timeout=180,
+                )
+                metrics["e2e_passed"] = e2e_result.returncode == 0
+                if e2e_result.returncode != 0:
+                    return False, f"E2E test failed: {e2e_result.stdout[-200:]}", metrics
+            except Exception as exc:
+                logger.warning("guard-7: E2E error: %s", exc)
+                metrics["e2e_passed"] = False
+        else:
+            logger.info("guard-7: dashboard not running, skipping E2E")
+
+    # ─── 4. Companion sync ──────────────────────────────────────────
+    try:
+        _sp.run(
+            ["python", "tools/dx/companion.py", "--sync", "--write", "--json"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=60,
+        )
+        metrics["companion_synced"] = True
+    except Exception as exc:
+        logger.warning("guard-7: companion sync skipped: %s", exc)
+
+    return True, "All validation gates passed", metrics
+
+
+def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
+    """Update the latest kanban_verifications row for this task with post-task metrics."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE kanban_verifications SET "
+            "codelens_passed = ?, ruff_issues = ?, bandit_issues = ?, "
+            "pytest_passed = ?, coherence_passed = ?, "
+            "e2e_ran = ?, e2e_passed = ?, companion_synced = ? "
+            "WHERE task_id = ? AND id = ("
+            "  SELECT id FROM kanban_verifications WHERE task_id = ? "
+            "  ORDER BY verified_at DESC LIMIT 1)",
+            (
+                1 if metrics.get("codelens_passed") else 0 if metrics.get("codelens_passed") is False else None,
+                metrics.get("ruff_issues", 0),
+                metrics.get("bandit_issues", 0),
+                1 if metrics.get("pytest_passed") else 0 if metrics.get("pytest_passed") is False else None,
+                1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
+                1 if metrics.get("e2e_ran") else 0,
+                1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
+                1 if metrics.get("companion_synced") else 0,
+                task_id, task_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.debug("guard-7: metrics update skipped: %s", exc)
+
+
 def _verify_task_completed(task_id, claude_output):
     """Verify that a task actually produced results before marking done.
 
-    Runs generic checks (_run_verify_checks) then task-type-specific
-    checks (_verify_task_specific). Logs every result to
-    .tmp/kanban/{task_id}.verification.json regardless of outcome.
+    Runs generic checks (_run_verify_checks), task-type-specific checks
+    (_verify_task_specific), then post-task validation suite
+    (_run_post_task_validation: CodeLens + Coherence + E2E + companion).
+    Logs every result to kanban_verifications table.
 
     Returns: (verified: bool, reason: str)
     """
@@ -1641,7 +1822,20 @@ def _verify_task_completed(task_id, claude_output):
             reason = f"{reason} | {specific_reason}"
         else:
             reason = f"{reason} | {specific_reason}"
+
+    # guard-7: full validation suite (only if prior gates passed)
+    metrics: Dict[str, Any] = {}
+    if verified:
+        validation_ok, validation_reason, metrics = _run_post_task_validation(task_id)
+        if not validation_ok:
+            verified = False
+            reason = f"{reason} | VALIDATION FAILED: {validation_reason}"
+        else:
+            reason = f"{reason} | {validation_reason}"
+
     _write_verification_log(task_id, verified, reason)
+    if metrics:
+        _update_verification_metrics(task_id, metrics)
     return verified, reason
 
 

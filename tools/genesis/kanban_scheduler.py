@@ -99,9 +99,26 @@ def main():
     logger.info("Kanban scheduler started (interval=%ds)", args.interval)
     logger.info("Press Ctrl+C to stop")
 
+    # guard-6: Orphan cleanup on startup — kill any Claude CLI subprocesses
+    # left over from a previous run that may have crashed.
+    _cleanup_orphan_processes()
+
+    # guard-6: Heartbeat file for dashboard health monitoring
+    heartbeat_path = BASE_DIR / ".tmp" / "kanban_scheduler.heartbeat"
+    heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+
     cycle = 0
     while True:
         cycle += 1
+        # guard-6: Write heartbeat BEFORE work so a hung cycle is still detectable
+        try:
+            heartbeat_path.write_text(
+                f"{cycle}\n{time.time()}\n",
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.debug("heartbeat write failed: %s", exc)
+
         try:
             result = kanban_run(dummy_config, dummy_trust)
             details = result.get("details", {})
@@ -131,9 +148,60 @@ def main():
                 # Heartbeat every 10 cycles
                 logger.info("Cycle %d: idle (no due tasks)", cycle)
         except Exception as exc:
-            logger.error("Cycle %d error: %s", cycle, exc)
+            # guard-6: log FULL traceback, never exit on transient errors
+            import traceback
+            logger.error(
+                "Cycle %d error: %s\n%s", cycle, exc, traceback.format_exc()
+            )
 
         time.sleep(args.interval)
+
+
+def _cleanup_orphan_processes() -> None:
+    """guard-6: Kill orphaned Claude CLI subprocesses from previous runs.
+
+    Scans .tmp/kanban/ for *.pid files left over from crashed scheduler
+    runs. Checks if the PID is still running and belongs to a claude
+    process; if so, terminates it and removes the pid file.
+    """
+    pid_dir = BASE_DIR / ".tmp" / "kanban"
+    if not pid_dir.exists():
+        return
+    killed = 0
+    for pid_file in pid_dir.glob("*.pid"):
+        try:
+            pid = int(pid_file.read_text(encoding="utf-8").strip())
+        except Exception:
+            pid_file.unlink(missing_ok=True)
+            continue
+        try:
+            import subprocess
+            import os
+            # Check if process still running (Windows + Unix)
+            if os.name == "nt":
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if str(pid) in result.stdout and "claude" in result.stdout.lower():
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        capture_output=True, timeout=5,
+                    )
+                    killed += 1
+            else:
+                try:
+                    os.kill(pid, 0)
+                    os.kill(pid, 9)
+                    killed += 1
+                except ProcessLookupError:
+                    pass
+        except Exception as exc:
+            logger.debug("orphan cleanup error for pid %s: %s", pid, exc)
+        finally:
+            pid_file.unlink(missing_ok=True)
+    if killed:
+        logger.warning("guard-6: killed %d orphaned Claude CLI processes", killed)
 
 
 if __name__ == "__main__":

@@ -6649,13 +6649,16 @@ CREATE INDEX IF NOT EXISTS idx_ft_hp_search
 -- TRAJECTORY-TO-TRAINING PIPELINE (D-FT-TRAJ)
 -- ============================================================
 
--- 10. Trajectory metadata — mutable until captured/finalized
+-- 10. Trajectory metadata — mutable until finalized (captured_at set)
 CREATE TABLE IF NOT EXISTS ft_trajectories (
     id TEXT PRIMARY KEY,
     trace_id TEXT DEFAULT '',
-    workflow_type TEXT NOT NULL DEFAULT 'general',
-    source TEXT DEFAULT '',
-    outcome TEXT DEFAULT 'pending' CHECK(outcome IN ('pending','success','failure')),
+    workflow_type TEXT NOT NULL DEFAULT 'general'
+        CHECK(workflow_type IN ('compliance','build','proposal','test','general')),
+    source TEXT NOT NULL DEFAULT 'manual'
+        CHECK(source IN ('otel_spans','a2a_tasks','manual')),
+    outcome TEXT NOT NULL DEFAULT 'partial'
+        CHECK(outcome IN ('success','partial','failed')),
     reward REAL DEFAULT 0.0,
     step_count INTEGER DEFAULT 0,
     dataset_id TEXT DEFAULT '',
@@ -6678,7 +6681,8 @@ CREATE TABLE IF NOT EXISTS ft_trajectory_steps (
     tool_name TEXT DEFAULT '',
     tool_input TEXT DEFAULT '{}',
     tool_output TEXT DEFAULT '{}',
-    status TEXT DEFAULT 'success' CHECK(status IN ('success','error','skipped')),
+    status TEXT NOT NULL DEFAULT 'success'
+        CHECK(status IN ('success','error','skipped')),
     duration_ms INTEGER DEFAULT 0,
     span_id TEXT DEFAULT '',
     classification TEXT DEFAULT 'CUI',
