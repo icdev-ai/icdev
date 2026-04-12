@@ -1559,6 +1559,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Air-Gap CLI | tools/airgap/cli.py | Detect, activate, validate, and report air-gap status; patches LLM routing to local-only when air-gapped | --detect, --activate, --health, --full, --json | Environment/health/activation JSON or formatted report |
 | Config Patcher | tools\airgap\config_patcher.py | Auto-registered: airgap/config_patcher.py | --json | JSON |
 | Hook Compat | tools\airgap\hook_compat.py | Auto-registered: airgap/hook_compat.py | --json | JSON |
 | Pdf Fallback | tools\airgap\pdf_fallback.py | Auto-registered: airgap/pdf_fallback.py | --json | JSON |
