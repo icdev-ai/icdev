@@ -1691,7 +1691,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Boundary Engine | tools\boundary_canvas\boundary_engine.py | Auto-registered: boundary_canvas/boundary_engine.py | --json | JSON |
+| Boundary Engine | tools\boundary_canvas\boundary_engine.py | Pure deterministic assessment engine for the BDC Boundary Design Canvas. Functions: boundary compliance checking (NIST 800-53 controls), ISA lifecycle validation (warning 60d / critical 30d expiry), PPS matrix generation, boundary gap detection, SCIF/ATO/FedRAMP posture scoring. No Flask or LLM dependency — callable as a library from the BDC blueprint. | (library — imported by boundary_canvas/blueprint.py) | dict / JSON |
 | Code Gen Agentic | tools\builder\code_gen_agentic.py | Auto-registered: builder/code_gen_agentic.py | --json | JSON |
 | Code Gen Core | tools\builder\code_gen_core.py | Auto-registered: builder/code_gen_core.py | --json | JSON |
 | Code Gen Multilang | tools\builder\code_gen_multilang.py | Auto-registered: builder/code_gen_multilang.py | --json | JSON |
