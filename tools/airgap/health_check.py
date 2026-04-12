@@ -88,9 +88,9 @@ def check_database() -> Dict[str, Any]:
         return {"status": "fail", "error": f"Database not found: {db_path}"}
 
     try:
-        import sqlite3
+        from tools.db.storage import get_connection
 
-        with sqlite3.connect(str(db_path)) as conn:
+        with get_connection() as conn:
             tables = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
         return {"status": "pass", "table_count": tables}
     except Exception as exc:

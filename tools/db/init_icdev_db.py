@@ -4175,6 +4175,22 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
 
 -- ============================================================
+-- Migration 018: Activity task tracking (consolidated from activity.db)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS activity_tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    title        TEXT NOT NULL,
+    description  TEXT,
+    status       TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','in_progress','completed','cancelled')),
+    priority     INTEGER DEFAULT 5,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_activity_tasks_status ON activity_tasks(status);
+
+-- ============================================================
 -- Phase 45: OWASP Agentic AI Security (D257-D264)
 -- ============================================================
 

@@ -25,6 +25,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from tools.db.storage import get_connection
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -56,10 +58,7 @@ def enrich_topology(
     Returns:
         Dict with enrichment stats.
     """
-    import sqlite3
-
-    conn = sqlite3.connect(str(BASE_DIR / "data" / "network_canvas.db"))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(BASE_DIR / "data" / "network_canvas.db"))
 
     row = conn.execute("SELECT graph_json, name FROM topologies WHERE id = ?", (topology_id,)).fetchone()
     if not row:
@@ -319,10 +318,9 @@ def enrich_topology(
 
 def save_as_template(topology_id: str, name: str, description: str = "") -> dict:
     """Save an enriched topology as a reusable template."""
-    import sqlite3
     import uuid
 
-    conn = sqlite3.connect(str(BASE_DIR / "data" / "network_canvas.db"))
+    conn = get_connection(db_path=str(BASE_DIR / "data" / "network_canvas.db"))
     row = conn.execute("SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)).fetchone()
     if not row:
         conn.close()
