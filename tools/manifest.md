@@ -284,6 +284,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Web Dashboard | tools/dashboard/app.py | Flask web dashboard with role-based views, wizard, quick paths | --port, --debug | Web UI on port 5000 |
+| Dashboard Config | tools/dashboard/config.py | Loads dashboard settings from args/monitoring_config.yaml and args/cui_markings.yaml with env-var overrides; exposes DB_PATH, PORT, DEBUG, CUI banners, BYOK, auth secret, classification | Environment variables (ICDEV_DB_PATH, ICDEV_DASHBOARD_PORT, etc.) | Module-level constants |
 | Platform Health | tools/dashboard/platform_health.py | Aggregate health scoring across 10 ICDEV™ domains (database, agents, compliance, security, infrastructure, canvases, LLM, monitoring, CI/CD, marketplace); 60s in-process cache; bands: ≥90 healthy, ≥70 degraded, <70 critical | get_platform_health(), get_domain_health(domain), _invalidate_cache() | Composite + per-domain score/status/findings JSON |
 | UX Helpers | tools/dashboard/ux_helpers.py | Jinja2 filters (friendly_time, glossary), error recovery dict, quick paths, wizard steps | register_ux_filters(app) | Template filters + globals |
 | UX JavaScript | tools/dashboard/static/js/ux.js | Client-side glossary tooltips, timestamp formatting, accessibility, notifications, progress pipeline | Auto-init on DOMContentLoaded | ICDEV™ namespace |
