@@ -91,8 +91,8 @@ def _read_graph_json(canvas_key: str, design_id: str) -> dict:
     if not db_path.exists():
         raise FileNotFoundError(f"Canvas DB not found: {db_path}")
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    from tools.db.storage import get_connection
+    conn = get_connection(str(db_path))
     try:
         row = conn.execute(
             f"SELECT graph_json FROM [{table}] WHERE id = ?",  # noqa: S608  # nosec B608

@@ -145,10 +145,15 @@ _ICDEV_EVENT_MAP: Dict[str, tuple[list[str], str, str]] = {
 
 
 def _open_sqlite(path: Path) -> Optional[sqlite3.Connection]:
-    """Open SQLite connection if file exists, else return None."""
+    """Open SQLite connection if file exists, else return None.
+
+    NOTE: Uses direct sqlite3 because canvas DBs (PDC/NDC/SDC) are isolated
+    SQLite files and _table_exists() below relies on sqlite_master (SQLite-only).
+    Migrating to get_connection() is deferred pending canvas PG migration.
+    """
     if not path.exists():
         return None
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path))  # sqlite3-ok — isolated canvas SQLite DB, sqlite_master dependency
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -195,7 +200,7 @@ def _get_icdev_conn(db_path: Optional[Path] = None) -> sqlite3.Connection:
             pass
         return conn
     except ImportError:
-        conn = sqlite3.connect(target, timeout=30)
+        conn = sqlite3.connect(target, timeout=30)  # sqlite3-ok — ImportError fallback when storage module unavailable
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         return conn

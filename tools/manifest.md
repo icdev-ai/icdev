@@ -1302,6 +1302,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | LLM Judge | tools/writing/llm_judge.py | Rubric-based semantic evaluation using Prometheus-2 7B (local Ollama) — 5 dimensions per content type | --text, --rubric, --json | Color ratings + scores |
 | Ubiquitous Language | tools/writing/ubiquitous_language.py | DDD glossary extractor — noun-phrase extraction, synonym + ambiguity detection, optional LLM enrichment via LLMRouter. Adapted from mattpocock/skills/ubiquitous-language (MIT) | --input FILE, --out FILE, --llm-enrich, --append-to-memory, --json, --gate | UBIQUITOUS_LANGUAGE.md + JSON summary |
 | Style Profiler | tools/writing/style_profiler.py | Deterministic 28-feature writer fingerprint: sentence stats (5), vocabulary (4), paragraph (4), structure (3), voice (4), tone (3), connective (2), punctuation (3). Min 1500 words. Zero LLM. | (library) — `extract_profile(text, name) -> StyleProfile`; CLI: --file, --name, --json, --gate | StyleProfile dataclass with feature_vector() + compare() |
+| Word Limit | tools/writing/word_limit.py | Per-section word cap checker for WriteGuard. Parses YAML config, splits markdown by heading, checks counts against limits with warn (80%) / over (100%) thresholds. Zero LLM. | (library) — `parse_limits(yaml_str)`, `count_by_section(text)`, `check_limits(text, limits)`; CLI: --json | {sections, violations, total_words, passed} |
 
 ## Pulse AI Blog Engine
 | Tool | File | Description | Input | Output |
