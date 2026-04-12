@@ -3332,3 +3332,37 @@ IBM_SECURITY_COMPLIANCE_RULES = [
         "check": "has_vuln_scanning",
     },
 ]
+
+# ── NDC Container Node Type (Feature 1) ───────────────────────────────────────
+# Docker containers as first-class topology nodes. Used by the NDC palette and
+# by tools/network/container_node.py for validation.
+NODE_TYPE_CONTAINER = "container"
+
+CONTAINER_IMAGE_WHITELIST = [
+    # Routing & switching
+    "quay.io/frrouting/frr:latest",
+    "quay.io/frrouting/frr:9.1",
+    "nicolaka/netshoot:latest",
+    # Sensors / DPI
+    "jasonish/suricata:latest",
+    "cyberreboot/zeek:latest",
+    # Proxies / gateways
+    "nginx:alpine",
+    "haproxy:lts-alpine",
+    "envoyproxy/envoy:v1.28-latest",
+    # DNS / pihole
+    "pihole/pihole:latest",
+    "coredns/coredns:1.11.1",
+    # Generic tools
+    "alpine:3.19",
+    "debian:12-slim",
+]
+
+CONTAINER_PROPERTIES_SCHEMA = {
+    "image": {"type": "str", "required": True, "whitelist": CONTAINER_IMAGE_WHITELIST},
+    "cmd": {"type": "list", "required": False},
+    "environment": {"type": "dict", "required": False},
+    "volumes": {"type": "list", "required": False},
+    "network_mode": {"type": "str", "default": "bridge"},
+    "privileged": {"type": "bool", "default": False},
+}
