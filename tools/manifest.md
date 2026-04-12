@@ -1683,6 +1683,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Canvas Orchestrator | tools\canvas\orchestrator.py | Cross-Canvas Integration Engine — links all 9 design canvases (IDC/NDC/SDC/BDC/PDC/ODC/DDC/QDC/MDC) via canvas_projects entity in icdev.db; CRUD for design projects, link/unlink designs, aggregate compliance summary, compute 4-dimension readiness score (completeness/compliance/coverage/risk) | create --name / list / summary --json | JSON |
 | Canvas KG Builder | tools\canvas\kg_builder.py | Incremental Knowledge Graph builder for all 9 design canvases. rebuild_canvas_kg(canvas, design_id) for targeted on-save upsert; stores nodes/edges to canvas_kg_nodes and canvas_kg_edges in icdev.db; logs every build to canvas_kg_build_log (append-only — NIST AU). | --build-all / --build-canvas idc --design-id \<id\> / --stats --json | JSON |
 | Canvas Projects API | tools\dashboard\api\canvas_projects.py | REST API Blueprint for canvas_projects: GET/POST/PUT/DELETE /api/canvas-projects, link/unlink canvas designs, GET /api/canvas-projects/compliance for 7-canvas posture summary | (blueprint) | JSON |
+| Canvas Export Utils | tools\canvas\export_utils.py | Unified multi-format export for all 9 design canvases. 5 functions: export_json, export_markdown, export_csv, export_drawio (mxGraphModel XML), export_svg. CUI banner included in all formats. Stdlib only — no external dependencies. | (library — called by canvas blueprints) | JSON / Markdown / CSV / DrawIO XML / SVG |
 
 
 ## Design Canvases (7-Canvas Suite)
@@ -1738,7 +1739,6 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Canvas Export Utils | tools\canvas\export_utils.py | Unified multi-format export for all 9 design canvases. 5 functions: export_json, export_markdown, export_csv, export_drawio (mxGraphModel XML), export_svg. CUI banner included in all formats. | (library — called by canvas blueprints) | JSON / Markdown / CSV / DrawIO XML / SVG |
 | Iac Generator | tools\infra_canvas\iac_generator.py | Auto-registered: infra_canvas/iac_generator.py | --json | JSON |
 | E2E Bdc Canvas | tools\testing\e2e_bdc_canvas.py | Auto-registered: testing/e2e_bdc_canvas.py | --json | JSON |
 | E2E Ddc Canvas | tools\testing\e2e_ddc_canvas.py | Auto-registered: testing/e2e_ddc_canvas.py | --json | JSON |
