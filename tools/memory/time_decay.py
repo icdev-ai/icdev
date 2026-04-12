@@ -13,7 +13,6 @@ CLI:
 import argparse
 import json
 import math
-import sqlite3
 import sys
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -21,7 +20,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
 # ---------------------------------------------------------------------------
@@ -195,11 +193,9 @@ def compute_time_aware_score(
 # ---------------------------------------------------------------------------
 
 
-def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Get a DB connection with Row factory."""
-    path = db_path or DB_PATH
-    conn = get_connection(db_path=str(path))
-    return conn
+def _get_connection(db_path: Optional[Path] = None):
+    """Get a DB connection."""
+    return get_connection()
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +279,7 @@ def rank_with_decay(
             sql += " AND (tenant_id = ? OR tenant_id IS NULL)"
             params.append(tenant_id)
         rows = conn.execute(sql, params).fetchall()
-    except sqlite3.OperationalError:
+    except Exception:
         conn.close()
         return []
     conn.close()
@@ -379,7 +375,7 @@ def main() -> None:
     parser.add_argument("--config", type=Path, help="Override config path")
     args = parser.parse_args()
 
-    db = args.db_path or DB_PATH
+    db = args.db_path
     cfg = load_decay_config(args.config)
 
     if args.score:

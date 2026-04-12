@@ -59,8 +59,7 @@ def _load_config() -> dict:
             "databases": {
                 "icdev": {"path": _ICDEV_DB, "schedule": "daily"},
                 "platform": {"path": _PLATFORM_DB, "schedule": "daily"},
-                "memory": {"path": _MEMORY_DB, "schedule": "weekly"},
-                "activity": {"path": str(BASE_DIR / "data" / "activity.db"), "schedule": "weekly"},
+                # memory and activity tables consolidated into icdev.db / PostgreSQL
             },
             "tenants": {
                 "backup_on_provision": True,

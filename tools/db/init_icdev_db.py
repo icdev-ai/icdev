@@ -4128,6 +4128,52 @@ CREATE TABLE IF NOT EXISTS memory_consolidation_log (
 CREATE INDEX IF NOT EXISTS idx_mem_consol_action ON memory_consolidation_log(action);
 CREATE INDEX IF NOT EXISTS idx_mem_consol_source ON memory_consolidation_log(source_entry_id);
 
+-- Phase 44: Auto-capture buffer (D181) — migrated from memory.db
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_buffer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    type TEXT DEFAULT 'event',
+    importance INTEGER DEFAULT 3,
+    source TEXT NOT NULL DEFAULT 'hook'
+        CHECK(source IN ('hook', 'manual', 'thinking', 'auto')),
+    user_id TEXT,
+    tenant_id TEXT,
+    session_id TEXT,
+    tool_name TEXT,
+    metadata TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_buffer_created ON memory_buffer(created_at);
+CREATE INDEX IF NOT EXISTS idx_buffer_source ON memory_buffer(source);
+CREATE INDEX IF NOT EXISTS idx_buffer_user ON memory_buffer(user_id);
+
+-- ============================================================
+-- Activity / Task Tracking — migrated from activity.db
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled', 'blocked')),
+    priority TEXT DEFAULT 'medium'
+        CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+    project_id TEXT,
+    agent_id TEXT,
+    session_id TEXT,
+    parent_task_id INTEGER REFERENCES tasks(id),
+    metadata TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
+
 -- ============================================================
 -- Phase 45: OWASP Agentic AI Security (D257-D264)
 -- ============================================================

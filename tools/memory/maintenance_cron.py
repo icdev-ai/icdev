@@ -26,7 +26,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "memory.db"
 
 sys.path.insert(0, str(BASE_DIR))
 
@@ -68,8 +67,7 @@ def flush_buffer(db_path=None):
 
 def embed_unembedded(db_path=None):
     """Generate embeddings for entries missing them (D72 compliant)."""
-    path = db_path or DB_PATH
-    conn = get_connection(db_path=str(path))
+    conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT id, content FROM memory_entries WHERE embedding IS NULL")
     rows = c.fetchall()
@@ -169,8 +167,7 @@ def prune_stale(days=None, db_path=None):
     min_importance = cfg.get("prune_min_importance", 3)
     prune_types = cfg.get("prune_types", ["event", "thinking"])
 
-    path = db_path or DB_PATH
-    conn = get_connection(db_path=str(path))
+    conn = get_connection()
     c = conn.cursor()
 
     placeholders = ",".join("?" * len(prune_types))
@@ -193,12 +190,13 @@ def prune_stale(days=None, db_path=None):
 
 
 def backup_memory(db_path=None):
-    """Backup memory.db using the backup manager."""
+    """Backup the main DB (memory tables consolidated into icdev.db)."""
     try:
         from tools.db.backup_manager import BackupManager
 
         mgr = BackupManager()
-        result = mgr.backup_sqlite(db_path or DB_PATH)
+        icdev_db = BASE_DIR / "data" / "icdev.db"
+        result = mgr.backup_sqlite(db_path or icdev_db)
         return {"status": "ok", "backup_path": str(result.get("backup_path", ""))}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}

@@ -11,7 +11,6 @@ from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
 def search(query, limit=10, user_id=None, tenant_id=None):

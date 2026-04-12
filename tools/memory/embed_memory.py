@@ -13,7 +13,6 @@ from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
 def get_embedding_client():
@@ -62,7 +61,7 @@ def embed_all(user_id=None, json_output=False):
             print(json.dumps({"error": "no_provider", "embedded": 0}))
         return
 
-    conn = get_connection(db_path=str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT id, content FROM memory_entries WHERE embedding IS NULL"
