@@ -100,6 +100,98 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 
 ---
 
+## Running ICDEV Outside Claude Code
+
+ICDEV™ is fully operable without the Claude Code CLI. Use `tools/airgap/` as the runtime shim — it replicates hooks, session management, and safety gates as plain Python.
+
+### Quick Start
+
+```bash
+# Detect environment (cloud vs air-gap)
+python -m tools.airgap --detect --json
+
+# Activate local-only LLM routing (air-gap mode)
+python -m tools.airgap --activate
+
+# Health check before any risky operation
+python tools/testing/health_check.py --json
+```
+
+### Cron Job Setup
+
+```bash
+# /etc/cron.d/icdev-audit — nightly compliance scan
+0 2 * * * icdev-user cd /opt/icdev && \
+  python -c "
+from tools.airgap.hook_compat import get_session_id, run_auto_commit
+get_session_id()   # sets CLAUDE_SESSION_ID + ICDEV_SESSION_ID for audit trail
+# ... invoke tools here (health_check, bandit, etc.) ...
+run_auto_commit('chore: nightly audit auto-commit')
+" >> /var/log/icdev/cron.log 2>&1
+```
+
+### CI/CD Pipeline (GitLab Stage End)
+
+```yaml
+# .gitlab-ci.yml — security gate + auto-commit at stage end
+security-scan:
+  stage: validate
+  script:
+    - export ICDEV_AUTO_COMMIT=true
+    - python tools/testing/health_check.py --json
+    - python -m bandit -r tools/ --severity-level medium
+    - python -c "from tools.airgap.hook_compat import run_pre_tool_check; \
+        r = run_pre_tool_check('Bash', {'command': 'git push'}); \
+        exit(0 if r['allowed'] else 1)"
+    - python -c "from tools.airgap.hook_compat import run_auto_commit; \
+        run_auto_commit('ci: post-scan auto-commit')"
+```
+
+### Headless ANVIL Workflow
+
+> **Requires OPT-42** (`tools/anvil/*.py` — not yet merged)
+
+```bash
+python tools/anvil/run_workflow.py --goal goals/build_app.md --headless --json
+```
+
+### Skill Invocation (Headless)
+
+> **Requires OPT-41** (`tools/skills/invoke.py` — not yet merged)
+
+```bash
+python tools/skills/invoke.py --skill icdev-secure --args "--scan tools/ --json"
+```
+
+### Air-Gap LLM Routing (Ollama-only)
+
+```bash
+# .env — forces all routing through local Ollama, no cloud fallback
+OLLAMA_BASE_URL=http://localhost:11434
+ICDEV_LLM_PROVIDER=ollama
+# Also set in args/llm_config.yaml: two_tier.enabled: false
+```
+
+```python
+# Programmatic activation
+from tools.airgap import is_airgap, activate_airgap
+if is_airgap():
+    activate_airgap()   # patches llm_config.yaml routing to local-only
+```
+
+### Validation in Air-Gap Mode
+
+```bash
+python tools/testing/health_check.py --json                            # env + DB + deps
+python tools/testing/e2e_runner.py --run-all --mode native --json      # UI lifecycle tests
+python -m bandit -r tools/ --severity-level medium                     # security scan
+python tools/workflow/coherence_checker.py --all --gate                # coherence gate
+```
+
+> **Long-form reference:** [docs/ops/airgap-runbook.md](docs/ops/airgap-runbook.md)
+
+---
+
 ## Guardrails
 
 - Always check `tools/manifest.md` before writing a new script
@@ -211,6 +303,7 @@ Detailed reference material (read on-demand, not loaded automatically):
 | [goals.md](docs/reference/goals.md) | All existing goal workflows with descriptions |
 | [testing.md](docs/reference/testing.md) | Testing framework, test commands, E2E specs |
 | [databases.md](docs/reference/databases.md) | Database tables, schemas, migration commands |
+| [ops/airgap-runbook.md](docs/ops/airgap-runbook.md) | Running ICDEV™ outside Claude Code — cron, CI/CD, air-gap LLM, headless ANVIL |
 
 ---
 
