@@ -114,7 +114,7 @@ def enrich_topology(
                 continue
 
             # Check if infra already exists for this rack
-            existing_infra = [d for d in devices if d.get("id", "").startswith(f"infra-") and rname.lower().replace(" ", "").replace("-", "") in d.get("id", "")]
+            existing_infra = [d for d in devices if d.get("id", "").startswith("infra-") and rname.lower().replace(" ", "").replace("-", "") in d.get("id", "")]
             if existing_infra:
                 continue
 
