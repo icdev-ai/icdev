@@ -75,6 +75,18 @@ ivv:
     - bdd_feature_coverage_low
     - pipeline_security_stages_missing
 
+# DB abstraction lint gate — blocks merges that introduce bare sqlite3.connect()
+# outside the approved DB-layer files.
+# Run: python tools/lint/sqlite3_connect_linter.py --json --gate
+db_abstraction_lint:
+  blocking:
+    - sqlite3_connect_violation   # bare sqlite3.connect() in tools/ without # sqlite3-ok
+  note: >
+    Violations are detected by tools/lint/sqlite3_connect_linter.py.
+    Exempt files: tools/db/storage.py, init_icdev_db.py, migration_runner.py,
+    backup_manager.py, */init_db.py.  Suppress a single line with # sqlite3-ok
+    only when a direct connection genuinely cannot be avoided.
+
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:
   blocking:
