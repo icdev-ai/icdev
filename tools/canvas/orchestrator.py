@@ -238,8 +238,7 @@ def _read_canvas_score(
         logger.debug("Canvas DB not found: %s", db_path)
         return None
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn = get_connection(str(db_path))
         # Check table exists
         cur = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -311,8 +310,7 @@ def _count_cat1_findings(canvas_key: str) -> int:
     if not db_path.exists():
         return 0
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn = get_connection(str(db_path))
         # Look for findings table with severity column
         tables = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%findings%'",

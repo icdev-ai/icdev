@@ -66,6 +66,7 @@ import math
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -534,8 +535,7 @@ def score_quality(
 
 def _get_db(db_path: str | Path | None = None) -> sqlite3.Connection:
     path = Path(db_path) if db_path else _ICDEV_DB
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(str(path))
     return conn
 
 

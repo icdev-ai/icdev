@@ -1387,8 +1387,7 @@ def create_app() -> Flask:
                 if not db_path.exists():
                     continue
                 try:
-                    cconn = _sqlite3.connect(str(db_path))
-                    cconn.row_factory = _sqlite3.Row
+                    cconn = get_connection(str(db_path))
                     try:
                         if canvas_name == "Security":
                             # Security stores risk_score (inverted) in sc_assessments.
@@ -1527,8 +1526,7 @@ def create_app() -> Flask:
                 results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
                 continue
             try:
-                cconn = _sqlite3.connect(str(db_path))
-                cconn.row_factory = _sqlite3.Row
+                cconn = get_connection(str(db_path))
                 try:
                     # score_col/ts_col/table come from _TREND_CANVASES constant
                     # defined above — a module-internal whitelist of 7-tuples,
@@ -3006,8 +3004,7 @@ def create_app() -> Flask:
         sdc_db = BASE_DIR / "data" / "security_canvas.db"
         if sdc_db.exists():
             try:
-                with _sqlite3.connect(str(sdc_db)) as sc:
-                    sc.row_factory = _sqlite3.Row
+                with get_connection(str(sdc_db)) as sc:
                     result["sdc"]["design_count"] = sc.execute("SELECT COUNT(*) FROM security_designs").fetchone()[0]
                     result["sdc"]["available"] = result["sdc"]["design_count"] > 0
                     row = sc.execute(
@@ -3041,8 +3038,7 @@ def create_app() -> Flask:
         ndc_db = BASE_DIR / "data" / "network_canvas.db"
         if ndc_db.exists():
             try:
-                with _sqlite3.connect(str(ndc_db)) as nc:
-                    nc.row_factory = _sqlite3.Row
+                with get_connection(str(ndc_db)) as nc:
                     result["ndc"]["topology_count"] = nc.execute("SELECT COUNT(*) FROM topologies").fetchone()[0]
                     result["ndc"]["available"] = result["ndc"]["topology_count"] > 0
                     result["ndc"]["cat1_open"] = nc.execute(
@@ -3067,8 +3063,7 @@ def create_app() -> Flask:
         pdc_db = BASE_DIR / "data" / "pipeline_canvas.db"
         if pdc_db.exists():
             try:
-                with _sqlite3.connect(str(pdc_db)) as pc:
-                    pc.row_factory = _sqlite3.Row
+                with get_connection(str(pdc_db)) as pc:
                     result["pdc"]["pipeline_count"] = pc.execute("SELECT COUNT(*) FROM pipelines").fetchone()[0]
                     result["pdc"]["available"] = result["pdc"]["pipeline_count"] > 0
                     slsa_row = pc.execute(

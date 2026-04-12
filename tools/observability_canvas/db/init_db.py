@@ -10,7 +10,6 @@ Set OC_STORAGE_BACKEND=postgresql + OC_PG_* env vars to use PostgreSQL.
 
 import json
 import os
-import sqlite3
 import sys
 import uuid
 from pathlib import Path
@@ -42,11 +41,7 @@ def get_connection():
         except ImportError:
             pass
     # SQLite (default)
-    conn = sqlite3.connect(str(DB_PATH), timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=10000")
+    conn = get_connection(str(DB_PATH))
     return conn
 
 

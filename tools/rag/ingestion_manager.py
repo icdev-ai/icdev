@@ -100,7 +100,6 @@ def _log_ingestion(
 ):
     """Log ingestion event to rag_ingestion_log (append-only, D-RAG-11, D-RAG-18)."""
     conn = get_connection()
-    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute(
         """INSERT INTO rag_ingestion_log
            (source_type, source_id, source_table, chunks_created, chunks_skipped,
@@ -182,14 +181,11 @@ def ingest_source(
 
     # Canvas databases are separate SQLite files; main DB may be Postgres
     if cfg["db"] != "icdev" and db_path.suffix == ".db" and db_path.exists():
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn = get_connection(str(db_path))
         _canvas_conn = True
     else:
         conn = get_connection()
         try:
-            conn.execute("PRAGMA busy_timeout=5000")
         except Exception:
             pass  # Postgres doesn't support PRAGMA
         _canvas_conn = False
@@ -370,7 +366,6 @@ def get_status(tenant_id: str = "") -> Dict[str, Any]:
     if ICDEV_DB.exists():
         try:
             conn = get_connection()
-            conn.execute("PRAGMA busy_timeout=5000")
             row = conn.execute("SELECT MAX(created_at) FROM rag_ingestion_log").fetchone()
             if row and row[0]:
                 last_ingestion = row[0]

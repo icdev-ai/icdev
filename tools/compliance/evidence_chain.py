@@ -148,8 +148,7 @@ def _open_sqlite(path: Path) -> Optional[sqlite3.Connection]:
     """Open SQLite connection if file exists, else return None."""
     if not path.exists():
         return None
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(str(path))
     return conn
 
 
@@ -189,16 +188,11 @@ def _get_icdev_conn(db_path: Optional[Path] = None) -> sqlite3.Connection:
         conn = get_connection(db_path=target)
         # Apply busy timeout so concurrent writers don't immediately fail
         try:
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.execute("PRAGMA journal_mode=WAL")
         except Exception:
             pass
         return conn
     except ImportError:
-        conn = sqlite3.connect(target, timeout=30)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=30000")
+        conn = get_connection(str(target))
         return conn
 
 
@@ -596,9 +590,7 @@ def _persist_chain(
     # Use direct sqlite3 with generous timeout so WAL writers don't block reads
     target = str(db_path or ICDEV_DB)
     try:
-        conn = sqlite3.connect(target, timeout=15)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn = get_connection(str(target))
     except Exception:  # pragma: no cover
         return False
 

@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any
 
@@ -40,8 +41,7 @@ def validate_topology(topology_id: str, fix: bool = False) -> dict[str, Any]:
 
     from tools.network.network_ingester import _classify_device_type
 
-    conn = sqlite3.connect(str(BASE_DIR / "data" / "network_canvas.db"))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(str(BASE_DIR / "data" / "network_canvas.db"))
 
     row = conn.execute("SELECT graph_json, name FROM topologies WHERE id = ?", (topology_id,)).fetchone()
     if not row:
@@ -156,7 +156,7 @@ def validate_all(fix: bool = False) -> dict[str, Any]:
     """Validate all topologies."""
     import sqlite3
 
-    conn = sqlite3.connect(str(BASE_DIR / "data" / "network_canvas.db"))
+    conn = get_connection(str(BASE_DIR / "data" / "network_canvas.db"))
     rows = conn.execute("SELECT id FROM topologies ORDER BY created_at DESC").fetchall()
     conn.close()
 

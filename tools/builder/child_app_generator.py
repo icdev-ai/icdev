@@ -3037,7 +3037,7 @@ def step_16_db_execution(child_root: Path, blueprint: dict) -> dict:
         if db_path.exists():
             import sqlite3
 
-            conn = sqlite3.connect(str(db_path))
+            conn = get_connection(str(db_path))
             tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
             conn.close()
 

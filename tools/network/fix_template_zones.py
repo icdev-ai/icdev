@@ -4,7 +4,7 @@ the devices they're meant to contain. Also fix headings/badges positioning.
 """
 
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "network_canvas.db"
@@ -493,10 +493,7 @@ def fix_template(conn, tpl_id, spec):
 
 
 def main():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn = get_connection(str(DB_PATH))
 
     updated = 0
     for tpl_id, spec in TEMPLATE_ZONES.items():

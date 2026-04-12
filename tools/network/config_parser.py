@@ -24,8 +24,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -360,8 +360,7 @@ def ingest_config(
         db_path = str(_ICDEV_ROOT / "data" / "network_canvas.db")
 
     try:
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn = get_connection(str(db_path))
         conn.execute(
             "INSERT INTO ni_device_configs (id, device_id, config_type, "
             "config_text, config_hash, source, version) "

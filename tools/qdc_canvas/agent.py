@@ -6,6 +6,7 @@ Re-assesses quality gates and updates cross-canvas links.
 """
 
 import logging
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def _get_canvas_assessment_score(canvas_key, design_id):
         db_path = Path(__file__).resolve().parents[2] / "data" / f"{db_name}.db"
         if not db_path.exists():
             return 0.0
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection(str(db_path))
         try:
             row = conn.execute(
                 f"SELECT score FROM [{table}] "  # noqa: S608

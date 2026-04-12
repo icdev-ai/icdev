@@ -1,8 +1,8 @@
 """Add HPC section to AI/ML Network Fabric template."""
 
 import json
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "network_canvas.db"
@@ -13,9 +13,7 @@ def eid():
 
 
 def main():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    conn = get_connection(str(DB_PATH))
 
     gj = json.loads(conn.execute("SELECT graph_json FROM nc_templates WHERE id=?", ("tpl-aiml-fabric",)).fetchone()[0])
     nodes = gj["nodes"]

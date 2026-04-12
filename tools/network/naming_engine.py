@@ -21,6 +21,7 @@ import json
 import re
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any
 
@@ -32,8 +33,7 @@ DB_PATH = BASE_DIR / "data" / "network_canvas.db"
 
 
 def _get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(str(DB_PATH))
     return conn
 
 

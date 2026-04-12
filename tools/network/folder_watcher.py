@@ -19,8 +19,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import sqlite3
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -67,7 +67,7 @@ class FolderWatcher:
     def _load_processed_hashes(self) -> None:
         """Load hashes of already-processed files from nc_ingestion_log."""
         try:
-            conn = sqlite3.connect(self._db_path)
+            conn = get_connection(str(self._db_path))
             rows = conn.execute(
                 "SELECT file_hash FROM nc_ingestion_log "
                 "WHERE channel='folder_watch' AND status='completed'"

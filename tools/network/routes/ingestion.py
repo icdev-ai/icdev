@@ -10,6 +10,7 @@ Registered on the NDC Flask blueprint via ``register_ingestion_routes(bp)``.
 from __future__ import annotations
 
 import logging
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -205,8 +206,7 @@ def register_ingestion_routes(bp: Blueprint) -> None:
 
         db_path = str(_ICDEV_ROOT / "data" / "network_canvas.db")
         try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(str(db_path))
 
             sql = "SELECT * FROM nc_ingestion_log"
             params = []  # type: list
@@ -239,8 +239,7 @@ def register_ingestion_routes(bp: Blueprint) -> None:
 
         db_path = str(_ICDEV_ROOT / "data" / "network_canvas.db")
         try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(str(db_path))
 
             total = conn.execute("SELECT COUNT(*) as c FROM nc_ingestion_log").fetchone()["c"]
             by_status = conn.execute(
