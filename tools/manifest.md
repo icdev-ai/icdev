@@ -1408,6 +1408,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Kanban Plan API | tools/dashboard/api/kanban_plan.py | Flask Blueprint: kanban task decomposition and scheduling endpoints | GET /api/kanban/plans | JSON plan list |
 | PR Intel API | tools/dashboard/api/pr_intel.py | Flask Blueprint: PR intelligence and compliance drift — aggregate stats, paginated report list/detail, compliance drift by control family, PR analysis trigger | GET /api/pr-intel/stats, /api/pr-intel/reports, /api/pr-intel/reports/<id>, /api/pr-intel/drift; POST /api/pr-intel/analyze | JSON responses |
 | STIG Manager API | tools/dashboard/api/stig_manager.py | Flask Blueprint: STIG benchmark management — overall stats, benchmark list, paginated findings, finding detail, coverage heatmap by target/severity, open CAT1 blockers, and finding status assessment | GET /api/stig-manager/stats, /benchmarks, /findings, /findings/<id>, /coverage, /cat1; POST /api/stig-manager/assess | JSON responses |
+| ATO Package API | tools/dashboard/api/ato_package.py | Flask Blueprint: ATO package readiness status, SSP documents, controls summary, POAM summary, pre-submission checklist, and package generation across 10 package steps | GET /api/ato-package/status, /ssp, /controls-summary, /poam-summary, /checklist; POST /api/ato-package/generate | JSON responses |
 
 ## DataBridge (Additional)
 | Tool | File | Description | Input | Output |
