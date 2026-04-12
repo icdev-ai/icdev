@@ -9134,8 +9134,8 @@ CREATE INDEX IF NOT EXISTS idx_wh_project ON workflow_handoffs(project_id);
 -- Deterministic ANVIL pipeline replay from immutable audit trail
 -- ============================================================
 
--- Replay sessions — mutable status tracking (NOT append-only).
--- Immutable event log lives in audit_trail (workflow_replay_* event types).
+-- Replay sessions — mutable status tracking (rows are updated on completion).
+-- Durable event log lives in audit_trail (workflow_replay_* event types).
 CREATE TABLE IF NOT EXISTS workflow_replay_sessions (
     id TEXT PRIMARY KEY,
     workflow_id TEXT NOT NULL,
