@@ -833,6 +833,35 @@ def create_data_canvas_blueprint():
         data = base64.b64encode(export_svg(name, graph, "DDC")).decode("ascii")
         return jsonify({"format": "svg", "filename": f"{name.replace(' ', '_')}.svg", "data": data})
 
+    @bp.route("/api/export/<design_id>/odcs", methods=["POST"])
+    @dc_login_required
+    def dc_api_export_odcs(design_id):
+        """Export data design as Open Data Contract Standard (ODCS) v3 YAML."""
+        import base64
+
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT name, graph_json, classification FROM data_designs WHERE id=?",
+            (design_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        d = row_to_dict(row)
+        gj = d["graph_json"]
+        graph = json.loads(gj) if isinstance(gj, str) else gj
+        from tools.data_canvas.exporters.odcs import export_odcs
+
+        yaml_bytes = export_odcs(
+            d["name"],
+            graph,
+            design_id=design_id,
+            classification=d.get("classification") or "CUI",
+        )
+        data = base64.b64encode(yaml_bytes).decode("ascii")
+        filename = f"{d['name'].replace(' ', '_')}_odcs.yaml"
+        return jsonify({"format": "odcs", "filename": filename, "data": data})
+
     # ── Collaboration (Task 18) ───────────────────────────────────────────────
     import uuid as _uuid_mod
     from tools.canvas.collaboration import CanvasCollabManager as _DDCCollabMgr
