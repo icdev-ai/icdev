@@ -81,7 +81,7 @@
 
             <!-- Intelligence -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/knowledge-search', '/code-quality'] or (not airgap_mode and request.path in ['/research', '/autoresearch', '/pulse', '/clawhub']) %}active{% endif %}">Intelligence</a>
+                <a href="#" class="{% if request.path in ['/knowledge-search', '/code-quality', '/writeguard'] or (not airgap_mode and request.path in ['/research', '/autoresearch', '/pulse', '/clawhub']) %}active{% endif %}">Intelligence</a>
                 <ul class="nav-dropdown-menu">
                     {% if not airgap_mode %}
                     <li><a href="/research">Research</a></li>
@@ -89,6 +89,7 @@
                     {% endif %}
                     <li><a href="/knowledge-search">Knowledge</a></li>
                     <li><a href="/code-quality">Code Quality</a></li>
+                    <li><a href="/writeguard">WriteGuard</a></li>
                     {% if not airgap_mode %}
                     <li><a href="/pulse">Pulse Blog</a></li>
                     <li><a href="/clawhub">ClawHub Skills</a></li>
