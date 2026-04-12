@@ -806,6 +806,9 @@ def _run_quality_check(run_id: str, post_id: str, body: str) -> dict:
       tone_score         → Delivery composite
       plagiarism_score   → Originality composite
       ai_detection_score → Engagement composite
+
+    Also persists results to wg_analysis_results via shared API layer so
+    the /writeguard dashboard History tab shows all Pulse analyses.
     """
     try:
         quality = run_full_quality_check(body)
@@ -838,6 +841,17 @@ def _run_quality_check(run_id: str, post_id: str, body: str) -> dict:
             composites.get("engagement", 0),
             composites.get("color_badge", "?"),
         )
+        # Persist to shared wg_analysis_results for history/trend dashboard
+        try:
+            from tools.dashboard.api.writeguard import save_analysis_result
+            save_analysis_result(
+                body,
+                quality,
+                mode="inline",
+                document_name=f"pulse:{post_id}",
+            )
+        except Exception as _persist_err:
+            logger.debug("[%s] WriteGuard persist to wg_analysis_results skipped: %s", run_id, _persist_err)
         return quality
     except Exception as e:
         logger.warning("[%s] WriteGuard check failed: %s", run_id, e)

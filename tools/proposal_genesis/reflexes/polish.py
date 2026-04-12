@@ -439,6 +439,9 @@ def _run_writeguard(text: str, opportunity_id: str = "") -> Dict[str, Any]:
 
     Returns WriteGuard results if available, else empty dict.
     WriteGuard integration is additive — Polish's own 6 checks always run.
+
+    Also persists results to wg_analysis_results via shared API layer so
+    the /writeguard dashboard History tab shows all ProposalAI analyses.
     """
     try:
         from tools.writing.analysis_engine import analyze
@@ -449,6 +452,20 @@ def _run_writeguard(text: str, opportunity_id: str = "") -> Dict[str, Any]:
             opportunity_id=opportunity_id,
             skip_llm=True,  # scanner-tier only, zero Claude tokens
         )
+        # Persist to shared wg_analysis_results for history/trend dashboard
+        try:
+            from tools.dashboard.api.writeguard import save_analysis_result
+            from tools.pulse.writeguard import run_full_quality_check
+            wg_full = run_full_quality_check(text)
+            save_analysis_result(
+                text,
+                wg_full,
+                mode="inline",
+                opportunity_id=opportunity_id,
+                document_name=f"proposal:{opportunity_id}" if opportunity_id else "proposal",
+            )
+        except Exception:
+            pass  # persistence is non-blocking
         return {
             "writeguard_score": result.get("quality_score", 0),
             "writeguard_findings": len(result.get("findings", [])),
