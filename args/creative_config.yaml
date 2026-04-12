@@ -205,6 +205,38 @@ knowledge_graph:
     - entity resolution
     - relationship extraction
 
+# Trading / AlphaDesk domain — market intelligence, algo trading, fintech
+trading:
+  name: "trading platforms"
+  g2_category_url: "https://www.g2.com/categories/trading-platforms"
+  capterra_category_url: "https://www.capterra.com/trading-software/"
+  trustradius_category_url: "https://www.trustradius.com/trading-platforms"
+  producthunt_topic: "fintech"
+  keywords:
+    - algorithmic trading
+    - trading platform
+    - market intelligence
+    - portfolio analytics
+    - risk management
+    - order management
+    - market data
+    - backtest
+    - execution management
+    - FIX protocol
+    - trading dashboard
+    - market scanner
+    - stock screener
+    - options analytics
+    - futures trading
+    - crypto trading
+    - sentiment analysis
+    - knowledge graph finance
+    - scenario analysis
+    - cascade analysis
+    - economic calendar
+    - AI trading
+    - quant trading
+
 # =========================================================================
 # Source Adapters
 # =========================================================================
@@ -266,6 +298,11 @@ sources:
           - dataarchitect
           - datascience
           - GovIT
+          - algotrading
+          - quant
+          - futures
+          - options
+          - Trading
         sort: hot
         max_results: 50
         min_upvotes: 10

@@ -176,7 +176,7 @@ sources:
 
   # YouTube video scanning — 9th source stream (D-RES-14, D-RES-15)
   video:
-    enabled: false                       # opt-in per deployment
+    enabled: true                        # enabled for AlphaDesk trading research
     scan_interval_hours: 24
     platforms:
       - name: youtube_search

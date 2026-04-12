@@ -134,11 +134,15 @@
     "SEC_15c3_5"
   ],
   "video_sources": {
-    "youtube_channels": [],
+    "youtube_channels": [
+      "https://www.youtube.com/@AIPathwaysChannel"
+    ],
     "youtube_search_queries": [
       "algorithmic trading",
       "market microstructure",
-      "quantitative finance"
+      "quantitative finance",
+      "AI trading strategies",
+      "machine learning finance"
     ],
     "manual_urls": []
   }
