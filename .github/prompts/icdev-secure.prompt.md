@@ -64,11 +64,6 @@ Display:
 - SAST: X findings (H/M/L breakdown)
 - Dependencies: X CVEs (critical/high/medium/low)
 
-11. **Output Summary**
-Display:
-- SAST: X findings (H/M/L breakdown)
-- Dependencies: X CVEs (critical/high/medium/low)
-
 ## Example
 ```
 #prompt:icdev-secure --project-dir projects/my-webapp --scan all --fix

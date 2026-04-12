@@ -84,15 +84,6 @@ Display:
 - Gate: PASS/FAIL
 - Compliance controls satisfied
 
-### 11. Output Summary
-Display:
-- SAST: X findings (H/M/L breakdown)
-- Dependencies: X CVEs (critical/high/medium/low)
-- Secrets: X detected (MUST be 0 to pass)
-- Container: X issues
-- Gate: PASS/FAIL
-- Compliance controls satisfied
-
 ## Example
 ```
 $icdev-secure --project-dir projects/my-webapp --scan all --fix

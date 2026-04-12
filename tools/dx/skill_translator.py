@@ -82,6 +82,8 @@ def parse_claude_skill(skill_dir):
             if current_step:
                 steps.append({"title": current_step, "body": "\n".join(step_lines).strip()})
             in_steps = False
+            current_step = None
+            step_lines = []
             continue
         if in_steps:
             m = step_pattern.match(line)
@@ -95,9 +97,26 @@ def parse_claude_skill(skill_dir):
     if current_step:
         steps.append({"title": current_step, "body": "\n".join(step_lines).strip()})
 
+    # Derive description: frontmatter > ## Description section > first intro paragraph
+    _desc = frontmatter.get("description", "").strip()
+    if not _desc:
+        _raw = sections.get("description", "").replace("\n", " ").strip()
+        if not _raw:
+            for _ln in sections.get("intro", "").split("\n"):
+                _ln = _ln.strip()
+                if _ln and not _ln.startswith("#"):
+                    _raw = _ln
+                    break
+        if _raw:
+            if len(_raw) > 800:
+                _raw = _raw[:797] + "..."
+            if "Use when" not in _raw:
+                _raw += f" Use when invoking /{Path(skill_dir).name}."
+            _desc = _raw
+
     return {
         "name": frontmatter.get("name", Path(skill_dir).name),
-        "description": frontmatter.get("description", ""),
+        "description": _desc,
         "context": frontmatter.get("context", "fork"),
         "allowed_tools": frontmatter.get("allowed-tools", ""),
         "usage": sections.get("usage", ""),

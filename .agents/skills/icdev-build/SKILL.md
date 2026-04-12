@@ -62,14 +62,6 @@ Display:
 - Lint results (issues found/fixed)
 - Next steps
 
-### 7. Output Summary
-Display:
-- Tests written (count, types)
-- Code generated (files, lines)
-- Test results (pass/fail, coverage %)
-- Lint results (issues found/fixed)
-- Next steps
-
 ## Example
 ```
 $icdev-build "User authentication with JWT tokens, login/logout endpoints, password hashing with bcrypt"

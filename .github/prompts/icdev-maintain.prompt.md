@@ -42,11 +42,6 @@ Display:
 - Languages detected and scanned
 - Total dependencies (by language)
 
-6. **Output Summary**
-Display:
-- Languages detected and scanned
-- Total dependencies (by language)
-
 ## Example
 ```
 #prompt:icdev-maintain abc123-uuid --auto

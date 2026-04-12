@@ -70,13 +70,6 @@ Display:
 - Compliance status (controls mapped)
 - Next steps: "Run /icdev-build to start TDD development"
 
-### 9. Output Summary
-Display:
-- Project UUID
-- Directory location
-- Compliance status (controls mapped)
-- Next steps: "Run /icdev-build to start TDD development"
-
 ## Example
 ```
 $icdev-init my-webapp --type webapp --tech-stack backend=flask,frontend=react,database=postgresql

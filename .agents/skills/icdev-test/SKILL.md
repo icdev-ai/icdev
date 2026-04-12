@@ -49,14 +49,6 @@ Display:
 - Failed test details (if any)
 - Compliance: Controls satisfied by test execution
 
-### 7. Output Summary
-Display:
-- Unit tests: X passed, Y failed, Z skipped
-- BDD tests: X scenarios passed, Y failed
-- Coverage: XX% (PASS/WARN based on threshold)
-- Failed test details (if any)
-- Compliance: Controls satisfied by test execution
-
 ## Example
 ```
 $icdev-test --project-dir projects/my-webapp --type all --verbose

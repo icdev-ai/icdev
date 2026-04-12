@@ -404,6 +404,7 @@
 | Migration Report Generator | tools/modernization/migration_report_generator.py | CUI-marked reports — assessment, progress, ATO impact, executive summary | --app-id, --plan-id, --pi, --output-dir, --type, --json | Report paths |
 | Migration Tracker | tools/modernization/migration_tracker.py | SAFe PI-cadenced tracking — snapshots, velocity, burndown, compliance gates | --plan-id, --snapshot, --velocity, --burndown, --gate, --dashboard, --json | PI metrics |
 | MCP Modernization Server | tools/mcp/modernization_server.py | MCP server for modernization tools (10 tools: register, analyze, assess, plan, generate, track, migrate) | stdio | JSON-RPC responses |
+| Migration Cost API | tools/dashboard/api/migration_cost.py | Flask Blueprint: migration cost estimation — per-app breakdown, 7R strategy comparison, portfolio summary, ROI projection, custom calculator | GET /api/migration-cost/estimate, /comparison, /portfolio, /roi; POST /api/migration-cost/calculate | JSON cost/ROI data |
 
 ## Requirements Intake (RICOAS Phase 1)
 | Tool | File | Description | Input | Output |
