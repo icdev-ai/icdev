@@ -77,14 +77,14 @@ def check_grammar(text: str) -> dict:
 
 
 def check_readability(text: str) -> dict:
-    """Analyze readability metrics (Flesch-Kincaid)."""
+    """Analyze readability metrics (Flesch-Kincaid, Gunning Fog, SMOG, Coleman-Liau, composite)."""
     fn = _safe_import("readability_scorer.score_readability")
     if not fn:
         return {"status": "unavailable", "score": 70}
 
     try:
         result = fn(text)
-        # score_readability returns dict with grade_level, flesch_ease, etc.
+        # score_readability returns dict with grade_level, flesch_ease, and multi-metric fields.
         grade = result.get("grade_level", 12)
         flesch = result.get("flesch_reading_ease", result.get("flesch_ease", 50))
         avg_sentence = result.get("avg_sentence_length", 20)
@@ -116,7 +116,15 @@ def check_readability(text: str) -> dict:
             "grade_level": grade,
             "flesch_ease": flesch,
             "avg_sentence_length": avg_sentence,
-            **{k: v for k, v in result.items() if k not in ("grade_level", "flesch_ease", "avg_sentence_length")},
+            "flesch_kincaid": result.get("flesch_kincaid"),
+            "gunning_fog": result.get("gunning_fog"),
+            "smog_index": result.get("smog_index"),
+            "coleman_liau": result.get("coleman_liau"),
+            "composite_grade": result.get("composite_grade"),
+            **{k: v for k, v in result.items() if k not in (
+                "grade_level", "flesch_ease", "avg_sentence_length",
+                "flesch_kincaid", "gunning_fog", "smog_index", "coleman_liau", "composite_grade",
+            )},
         }
     except Exception as e:
         logger.error("Readability check error: %s", e)

@@ -10,6 +10,7 @@ Scanner-tier only when ``skip_llm=True`` (zero Claude tokens, D-WG-2).
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Dict, List
 
@@ -35,6 +36,11 @@ def _count_syllables(word: str) -> int:
     return max(1, count)
 
 
+def _count_complex_words(words: list) -> int:
+    """Count polysyllabic words (3 or more syllables) for Fog/SMOG."""
+    return sum(1 for w in words if _count_syllables(w) >= 3)
+
+
 def _grammar_check(text: str) -> Dict[str, Any]:
     """Deterministic grammar analysis."""
     issues: List[str] = []
@@ -57,30 +63,71 @@ def _grammar_check(text: str) -> Dict[str, Any]:
 
 
 def _readability_check(text: str) -> Dict[str, Any]:
-    """Flesch-Kincaid readability approximation."""
+    """Multi-metric readability: Flesch-Kincaid, Gunning Fog, SMOG, Coleman-Liau + composite."""
     sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
     words = text.split()
     if not sentences or not words:
-        return {"score": 0.5, "grade_level": 0, "avg_sentence_length": 0}
+        return {
+            "score": 0.5,
+            "grade_level": 0,
+            "avg_sentence_length": 0,
+            "flesch_kincaid": 0.0,
+            "gunning_fog": 0.0,
+            "smog_index": 0.0,
+            "coleman_liau": 0.0,
+            "composite_grade": 0.0,
+        }
 
-    syllables = sum(_count_syllables(w) for w in words)
-    avg_sent = len(words) / len(sentences)
-    avg_syl = syllables / len(words)
-    grade = 0.39 * avg_sent + 11.8 * avg_syl - 15.59
-    grade = max(0, min(20, grade))
+    n_sentences = len(sentences)
+    n_words = len(words)
+    syl_per_word = [_count_syllables(w) for w in words]
+    total_syllables = sum(syl_per_word)
 
-    # Proposal ideal: grade 10-14
-    if 10 <= grade <= 14:
+    avg_sent = n_words / n_sentences
+    avg_syl = total_syllables / n_words
+
+    # Flesch-Kincaid Grade Level
+    fk_grade = 0.39 * avg_sent + 11.8 * avg_syl - 15.59
+    fk_grade = max(0.0, min(20.0, fk_grade))
+
+    # Gunning Fog Index: 0.4 × (avg_words/sentence + 100 × complex_ratio)
+    # Complex = 3+ syllables
+    complex_count = sum(1 for s in syl_per_word if s >= 3)
+    fog = 0.4 * (avg_sent + 100.0 * complex_count / n_words)
+    fog = max(0.0, min(20.0, fog))
+
+    # SMOG Index: 3 + √(polysyllables × 30 / n_sentences)
+    smog = 3.0 + math.sqrt(complex_count * 30.0 / n_sentences)
+    smog = max(0.0, min(20.0, smog))
+
+    # Coleman-Liau Index: 0.0588·L − 0.296·S − 15.8
+    # L = avg letters per 100 words; S = avg sentences per 100 words
+    letter_count = sum(len(re.sub(r"[^a-zA-Z]", "", w)) for w in words)
+    L = (letter_count / n_words) * 100.0
+    S = (n_sentences / n_words) * 100.0
+    cli = 0.0588 * L - 0.296 * S - 15.8
+    cli = max(0.0, min(20.0, cli))
+
+    # Composite: equal-weight average of all four indices
+    composite_grade = (fk_grade + fog + smog + cli) / 4.0
+
+    # Quality score from composite (proposal ideal: grade 10-14)
+    if 10 <= composite_grade <= 14:
         score = 1.0
-    elif 8 <= grade < 10 or 14 < grade <= 16:
+    elif 8 <= composite_grade < 10 or 14 < composite_grade <= 16:
         score = 0.8
     else:
-        score = max(0.3, 1.0 - abs(grade - 12) * 0.05)
+        score = max(0.3, 1.0 - abs(composite_grade - 12) * 0.05)
 
     return {
         "score": round(score, 2),
-        "grade_level": round(grade, 1),
+        "grade_level": round(composite_grade, 1),
         "avg_sentence_length": round(avg_sent, 1),
+        "flesch_kincaid": round(fk_grade, 1),
+        "gunning_fog": round(fog, 1),
+        "smog_index": round(smog, 1),
+        "coleman_liau": round(cli, 1),
+        "composite_grade": round(composite_grade, 1),
     }
 
 
