@@ -19,15 +19,13 @@ _IDC_BACKEND = os.environ.get("IDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVA
 
 def get_connection():
     """Get a database connection — SQLite or PostgreSQL."""
+    from tools.db.storage import get_connection as _storage_conn
     if _IDC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
-
-            return _icdev_conn(db_path=os.environ.get("IDC_PG_DATABASE", "infra_canvas"))
-        except ImportError:
+            return _storage_conn(db_path=os.environ.get("IDC_PG_DATABASE", "infra_canvas"))
+        except Exception:
             pass
-    conn = get_connection(str(DB_PATH))
-    return conn
+    return _storage_conn(db_path=str(DB_PATH))
 
 
 SCHEMA = """
