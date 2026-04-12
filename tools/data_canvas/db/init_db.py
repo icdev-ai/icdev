@@ -145,6 +145,36 @@ CREATE TRIGGER IF NOT EXISTS dd_audit_no_delete
     BEGIN
         SELECT RAISE(ABORT, 'Audit records cannot be deleted');
     END;
+
+CREATE TABLE IF NOT EXISTS ddc_runbooks (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    severity            TEXT DEFAULT 'medium',
+    description         TEXT DEFAULT '',
+    trigger_condition   TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    status              TEXT DEFAULT 'active',
+    linked_design_id    TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ddc_runbooks_category ON ddc_runbooks(category);
+CREATE INDEX IF NOT EXISTS idx_ddc_runbooks_severity ON ddc_runbooks(severity);
+
+CREATE TABLE IF NOT EXISTS ddc_runbook_executions (
+    id              TEXT PRIMARY KEY,
+    runbook_id      TEXT REFERENCES ddc_runbooks(id) ON DELETE CASCADE,
+    triggered_by    TEXT DEFAULT '',
+    status          TEXT DEFAULT 'in_progress',
+    notes           TEXT DEFAULT '',
+    started_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ddc_runbook_exec_runbook ON ddc_runbook_executions(runbook_id);
 """
 
 
@@ -904,6 +934,82 @@ SNIPPETS = [
 ]
 
 
+RUNBOOKS = [
+    {
+        "id": "rb-ddc-pii-exposure",
+        "title": "PII Exposure Response",
+        "category": "pii",
+        "severity": "critical",
+        "description": "Incident response runbook for detecting, containing, and remediating unauthorized PII exposure in a data design.",
+        "trigger_condition": "PII scan finds unmasked PII columns outside approved classification zones, or a data breach notification is received.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Detect & Scope", "description": "Run PII scan on all active data designs. Identify exposed columns (email, SSN, clearance level, DOB). Note design IDs, node IDs, and estimated record count.", "owner": "Data Steward", "sla_minutes": 30},
+            {"order": 2, "title": "Immediate Containment", "description": "Revoke read permissions on affected tables/views. Disable API endpoints serving the PII fields. Apply emergency RBAC policy restricting access to data owners only.", "owner": "Security Engineer", "sla_minutes": 60},
+            {"order": 3, "title": "Impact Assessment", "description": "Determine number of records exposed, time window, and downstream consumers. Classify severity: <100 records = Low, 100–10k = Medium, >10k = High/Critical.", "owner": "Data Steward", "sla_minutes": 120},
+            {"order": 4, "title": "Notify Stakeholders", "description": "If >500 records or classified CUI: notify ISSO/ISSM within 1 hour. If PII of federal employees: notify Agency Privacy Officer. Document in POA&M.", "owner": "ISSO", "sla_minutes": 60},
+            {"order": 5, "title": "Remediate Design", "description": "Update data design: add PII Masking control node, connect to all PII columns. Set classification to CUI on all PII fields. Re-run assessment and verify score >= 80.", "owner": "Developer", "sla_minutes": 240},
+            {"order": 6, "title": "Verify & Close", "description": "Re-run PII scan — confirm 0 unmasked PII columns outside CUI zone. Re-enable access. Document root cause and lessons learned in audit log.", "owner": "Data Steward", "sla_minutes": 60},
+        ]),
+        "classification": "CUI // SP-CTI",
+        "status": "active",
+    },
+    {
+        "id": "rb-ddc-lineage-break",
+        "title": "Data Lineage Break",
+        "category": "lineage",
+        "severity": "high",
+        "description": "Runbook for investigating and restoring a broken data lineage chain in a data design (missing source-to-target edge, orphaned transformation node).",
+        "trigger_condition": "Automated lineage check fails, or a downstream consumer reports unexpected NULL values / missing records tracing back to a broken lineage edge.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Identify Broken Edge", "description": "Open the affected data design in DDC. Review the lineage graph for orphaned nodes (no source or no target). Use /api/designs/{id}/lineage to list all edges and find gaps.", "owner": "Data Engineer", "sla_minutes": 30},
+            {"order": 2, "title": "Trace Upstream Impact", "description": "Walk upstream from the break point: which source tables feed into the broken node? Verify those sources are still active and accessible.", "owner": "Data Engineer", "sla_minutes": 60},
+            {"order": 3, "title": "Trace Downstream Impact", "description": "Walk downstream from the break: which reports, pipelines, or APIs depend on data past the broken node? Flag affected consumers for temporary fallback.", "owner": "Data Engineer", "sla_minutes": 60},
+            {"order": 4, "title": "Restore Lineage", "description": "Add the missing lineage edge via POST /api/designs/{id}/lineage with correct source_node_id, target_node_id, and lineage_type. If transformation logic changed, update transform_desc.", "owner": "Developer", "sla_minutes": 120},
+            {"order": 5, "title": "Validate End-to-End", "description": "Run an end-to-end data flow test from the upstream source through to the final consumer. Confirm record counts match expectations within tolerance.", "owner": "QA Engineer", "sla_minutes": 90},
+            {"order": 6, "title": "Document & Prevent", "description": "Add a version snapshot (POST /api/versions/{id}) with change summary noting the break and fix. Add a lineage validation gate to CI/CD pipeline to detect future breaks before deployment.", "owner": "Data Engineer", "sla_minutes": 60},
+        ]),
+        "classification": "CUI // SP-CTI",
+        "status": "active",
+    },
+    {
+        "id": "rb-ddc-classification-mismatch",
+        "title": "Classification Mismatch",
+        "category": "classification",
+        "severity": "high",
+        "description": "Runbook for resolving a data classification mismatch — when a node's classification level is inconsistent with its classification zone boundary or connected nodes.",
+        "trigger_condition": "DDC assessment detects a CUI node outside a CUI boundary, a SECRET node in an unclassified zone, or classification coverage score drops below 70%.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Run Classification Assessment", "description": "POST /api/designs/{id}/assess to get classification_coverage report. Note mismatched nodes: their IDs, current classification, and expected classification based on zone.", "owner": "Data Steward", "sla_minutes": 15},
+            {"order": 2, "title": "Categorize Mismatches", "description": "Group mismatches by type: (a) node classified too low (e.g., CUI data in UNCLASSIFIED zone), (b) node classified too high (over-classification), (c) missing classification. Prioritize type (a).", "owner": "ISSO", "sla_minutes": 30},
+            {"order": 3, "title": "Correct Node Classifications", "description": "For each mismatch: update node classification attribute in the graph to match the enclosing boundary. Move nodes into the correct classification boundary if needed.", "owner": "Developer", "sla_minutes": 120},
+            {"order": 4, "title": "Update Boundary Definitions", "description": "If a boundary needs to expand/contract to cover correct nodes, update the boundary's contained_nodes list. Ensure no unclassified nodes exist inside CUI or SECRET boundaries.", "owner": "Data Steward", "sla_minutes": 60},
+            {"order": 5, "title": "Re-assess & Verify", "description": "Re-run assessment. Confirm classification_coverage >= 0.9 (90% of nodes classified). Verify posture_grade is B or better. Fix any remaining findings.", "owner": "ISSO", "sla_minutes": 60},
+            {"order": 6, "title": "Record in POA&M", "description": "If root cause was a process gap (e.g., developer not trained on classification requirements), open a POA&M item. Document corrective action and expected closure date.", "owner": "ISSO", "sla_minutes": 30},
+        ]),
+        "classification": "CUI // SP-CTI",
+        "status": "active",
+    },
+    {
+        "id": "rb-ddc-retention-violation",
+        "title": "Retention Policy Violation",
+        "category": "retention",
+        "severity": "medium",
+        "description": "Runbook for identifying and remediating data retention policy violations — data held beyond policy limits, or no retention control defined on a design.",
+        "trigger_condition": "Compliance assessment finds data_designs with no retention control node, or an automated retention scanner reports records older than the defined policy window.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Identify Missing Controls", "description": "Run POST /api/designs/{id}/assess. Check findings for 'No retention policy found' or 'Retention control disconnected'. List all data_designs missing a ctrl-retention node.", "owner": "Data Steward", "sla_minutes": 30},
+            {"order": 2, "title": "Determine Policy Requirements", "description": "For each design, identify the governing retention policy: NIST 800-53 AU-11 (3 years for audit), FISMA (varies by data type), DoD 5015.02 (DoD records). Document required retention window.", "owner": "Compliance Officer", "sla_minutes": 60},
+            {"order": 3, "title": "Add Retention Control Nodes", "description": "In DDC, add a ctrl-retention node with the correct label (e.g., '3-Year Retention per AU-11'). Connect it to all entity nodes in the design (tables, lakes, collections).", "owner": "Developer", "sla_minutes": 90},
+            {"order": 4, "title": "Purge Overdue Records", "description": "For records already past retention window: generate list of tables and row counts. Submit purge job through approved data destruction workflow. Obtain signed Certificate of Destruction.", "owner": "Data Steward", "sla_minutes": 480},
+            {"order": 5, "title": "Configure Automated Enforcement", "description": "Enable automated retention enforcement in the data pipeline: set TTL policies, S3 lifecycle rules, or DB partition pruning jobs. Test with a non-production data set.", "owner": "Data Engineer", "sla_minutes": 240},
+            {"order": 6, "title": "Verify & Document", "description": "Re-run assessment to confirm retention findings resolved. Score >= 75. Update the data design with retention details. File Certificate of Destruction in the ATO evidence package.", "owner": "ISSO", "sla_minutes": 60},
+        ]),
+        "classification": "CUI // SP-CTI",
+        "status": "active",
+    },
+]
+
+
 def init_db():
     """Initialize the Data Design Canvas database — create tables and seed templates and snippets."""
     conn = get_connection()
@@ -984,6 +1090,40 @@ def init_db():
             print(f"[init_db] Seeded {snp_added} new DDC snippets (total: {snp_count + snp_added}).")
         else:
             print(f"[init_db] All {snp_count} DDC snippets up to date.")
+
+        # Seed runbooks (upsert)
+        try:
+            cur.execute("SELECT COUNT(*) FROM ddc_runbooks")
+            rb_count = cur.fetchone()[0]
+        except Exception:
+            rb_count = 0
+        rb_added = 0
+        now_ts = "CURRENT_TIMESTAMP"
+        for rb in RUNBOOKS:
+            cur.execute("SELECT 1 FROM ddc_runbooks WHERE id=?", (rb["id"],))
+            if not cur.fetchone():
+                conn.execute(
+                    "INSERT INTO ddc_runbooks "
+                    "(id, title, category, severity, description, trigger_condition, steps_json, classification, status) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        rb["id"],
+                        rb["title"],
+                        rb["category"],
+                        rb["severity"],
+                        rb["description"],
+                        rb["trigger_condition"],
+                        rb["steps_json"],
+                        rb["classification"],
+                        rb["status"],
+                    ),
+                )
+                rb_added += 1
+        if rb_added:
+            conn.commit()
+            print(f"[init_db] Seeded {rb_added} new DDC runbooks (total: {rb_count + rb_added}).")
+        else:
+            print(f"[init_db] All {rb_count} DDC runbooks up to date.")
 
     finally:
         conn.close()
