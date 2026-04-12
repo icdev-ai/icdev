@@ -6853,6 +6853,26 @@ CREATE INDEX IF NOT EXISTS idx_wg_glossary_scope  ON wg_glossary(scope, scope_id
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_domain ON wg_glossary(domain);
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_active ON wg_glossary(is_active);
 
+-- 8. Style profiles — per-user/project writing style snapshots (D-WG-10b)
+CREATE TABLE IF NOT EXISTS wg_style_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    profile_json TEXT NOT NULL DEFAULT '{}',
+    scope TEXT NOT NULL CHECK(scope IN ('platform','tenant','program','project','user')) DEFAULT 'user',
+    scope_id TEXT NOT NULL DEFAULT '',
+    tone TEXT DEFAULT '',
+    voice TEXT DEFAULT '',
+    formality TEXT CHECK(formality IN ('formal','semi-formal','informal','')) DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    classification TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_wg_style_profiles_scope  ON wg_style_profiles(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_wg_style_profiles_active ON wg_style_profiles(is_active);
+
 -- Phase 68: Draft generation batch job tracking (D-P68-3)
 CREATE TABLE IF NOT EXISTS draft_generation_jobs (
     id TEXT PRIMARY KEY,
