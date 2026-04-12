@@ -935,6 +935,58 @@ CREATE TABLE IF NOT EXISTS memory_consolidation_log (
 );
 CREATE INDEX IF NOT EXISTS idx_mem_consol_action ON memory_consolidation_log(action);
 CREATE INDEX IF NOT EXISTS idx_mem_consol_source ON memory_consolidation_log(source_entry_id);
+
+-- AlphaDesk: fundamental metrics (migration 011)
+CREATE TABLE IF NOT EXISTS ad_fundamental_metrics (
+    id                      TEXT PRIMARY KEY,
+    ticker                  TEXT NOT NULL,
+    as_of_date              TEXT NOT NULL,
+    pe_ratio                REAL,
+    pb_ratio                REAL,
+    fcf_yield               REAL,
+    roe                     REAL,
+    roa                     REAL,
+    roic                    REAL,
+    gross_margin            REAL,
+    operating_margin        REAL,
+    net_margin              REAL,
+    eps_ttm                 REAL,
+    eps_growth_3y           REAL,
+    dividend_yield          REAL,
+    payout_ratio            REAL,
+    dividend_growth_5y      REAL,
+    debt_to_equity          REAL,
+    accruals_ratio          REAL,
+    insider_buy_ratio       REAL,
+    source                  TEXT DEFAULT 'manual',
+    classification          TEXT DEFAULT 'CUI // SP-CTI',
+    created_at              TEXT DEFAULT (datetime('now')),
+    updated_at              TEXT DEFAULT (datetime('now')),
+    UNIQUE(ticker, as_of_date)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_fm_ticker_date ON ad_fundamental_metrics(ticker, as_of_date);
+
+-- AlphaDesk: quality scores (migration 011)
+CREATE TABLE IF NOT EXISTS ad_quality_scores (
+    id                              TEXT PRIMARY KEY,
+    ticker                          TEXT NOT NULL,
+    as_of_date                      TEXT NOT NULL,
+    value_quality                   REAL,
+    growth_quality                  REAL,
+    profitability_quality           REAL,
+    balance_sheet_quality           REAL,
+    capital_allocation_quality      REAL,
+    moat_score                      REAL,
+    composite_quality_score         REAL,
+    stagflation_quality_adjustment  REAL DEFAULT 0,
+    model_version                   TEXT DEFAULT 'v1',
+    classification                  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at                      TEXT DEFAULT (datetime('now')),
+    updated_at                      TEXT DEFAULT (datetime('now')),
+    UNIQUE(ticker, as_of_date)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_qs_ticker_date ON ad_quality_scores(ticker, as_of_date);
+CREATE INDEX IF NOT EXISTS idx_ad_qs_composite ON ad_quality_scores(composite_quality_score);
 """
 
 # ---------------------------------------------------------------------------
