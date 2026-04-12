@@ -416,6 +416,30 @@ def _merge_worktree_to_main(task_id: str) -> bool:
                 timeout=10,
             )
 
+    def _push_main():
+        """Push merged main to origin. Called only after full validation passed.
+
+        The stop hook no longer pushes kanban branches — this is the ONLY
+        point where validated work reaches origin/main.
+        """
+        try:
+            push = _sp.run(
+                ["git", "push", "origin", "main"],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if push.returncode == 0:
+                logger.info("Pushed main to origin after merging %s", task_id)
+            else:
+                logger.warning(
+                    "Push main failed after merging %s: %s",
+                    task_id, push.stderr[:200],
+                )
+        except Exception as exc:
+            logger.warning("Push main error for %s: %s", task_id, exc)
+
     # 4) Checkout main and attempt fast-forward merge
     try:
         co = _sp.run(
@@ -447,6 +471,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
                 task_id,
                 len(result.stdout.strip().splitlines()),
             )
+            _push_main()
             _restore()
             return True
 
@@ -505,6 +530,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             logger.info(
                 "Merged kanban/%s to main (rebase + fast-forward)", task_id
             )
+            _push_main()
             _restore()
             return True
 

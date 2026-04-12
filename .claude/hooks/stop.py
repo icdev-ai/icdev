@@ -105,9 +105,39 @@ def main():
     sys.exit(0)
 
 
+def _is_kanban_worktree() -> bool:
+    """Return True if the current process is running inside a kanban worktree.
+
+    Kanban worktrees live under PROJECT_ROOT/.tmp/worktrees/ and have branches
+    named kanban/task-*. Scheduler-dispatched Claude CLI sessions run with
+    cwd set to the worktree path.
+    """
+    try:
+        cwd = Path(os.getcwd()).resolve()
+        worktrees_base = (PROJECT_ROOT / ".tmp" / "worktrees").resolve()
+        return str(cwd).startswith(str(worktrees_base))
+    except Exception:
+        return False
+
+
+def _current_branch(run) -> str:
+    """Get the current git branch (or empty string if detached)."""
+    branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    name = branch.stdout.strip()
+    return "" if not name or name == "HEAD" else name
+
+
 def _auto_commit_and_push():
-    """Stage modified/new files, commit, and push to current branch."""
-    cwd = str(PROJECT_ROOT)
+    """Stage modified/new files, commit, and conditionally push.
+
+    For interactive sessions (cwd = main checkout): commit + push as before.
+    For kanban-dispatched sessions (cwd = worktree): commit locally to the
+    kanban branch but DO NOT push. The scheduler handles the merge to main +
+    push ONLY after full validation (CodeLens + Coherence + E2E + companion)
+    passes. This prevents unverified agent work from landing on origin/main.
+    """
+    # For kanban worktrees, work in the worktree cwd; for interactive, main.
+    cwd = os.getcwd() if _is_kanban_worktree() else str(PROJECT_ROOT)
     run = lambda cmd: subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, timeout=60
     )
@@ -134,13 +164,18 @@ def _auto_commit_and_push():
     if result.returncode != 0:
         return
 
-    # Get current branch
-    branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    branch_name = branch.stdout.strip()
-    if not branch_name or branch_name == "HEAD":
+    branch_name = _current_branch(run)
+    if not branch_name:
         return  # Detached HEAD — don't push
 
-    # Push
+    # KANBAN GATE: if this is a scheduler-dispatched session, commit stays
+    # local on the kanban branch. The scheduler will validate and then merge +
+    # push to main only if all gates pass. This prevents unverified work from
+    # ever reaching origin/main.
+    if _is_kanban_worktree() or branch_name.startswith("kanban/"):
+        return  # Do NOT push; scheduler controls the merge+push
+
+    # Interactive sessions: push as before
     run(["git", "push", "origin", branch_name])
 
 
