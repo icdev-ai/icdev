@@ -67,15 +67,6 @@ Display:
   - If `--generate-only`: "Review and commit IaC files, push to trigger pipeline"
   - If deploying: "Pipeline triggered, monitor at <GitLab URL>"
 
-### 9. Output Summary
-Display:
-- Generated files (Terraform, Ansible, K8s, CI/CD)
-- Target environment
-- Security gates status
-- Next steps:
-  - If `--generate-only`: "Review and commit IaC files, push to trigger pipeline"
-  - If deploying: "Pipeline triggered, monitor at <GitLab URL>"
-
 ## Example
 ```
 $icdev-deploy abc123-uuid --target staging --modules vpc,ecr,rds

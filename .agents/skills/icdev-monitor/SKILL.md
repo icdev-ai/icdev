@@ -88,21 +88,6 @@ Patterns Detected: X
 Self-Heal Actions: X executed, Y suggested, Z escalated
 ```
 
-### 10. Output Summary
-Display:
-```
-Monitoring Report — <project-name>
-Since: <timeframe>
-───────────────────────────────
-Health:  ● All checks passing / ○ X failing
-Logs:    X errors, Y warnings detected
-Metrics: CPU XX%, Memory XX%, Latency p95 XXms
-Alerts:  X active (Y critical)
-
-Patterns Detected: X
-Self-Heal Actions: X executed, Y suggested, Z escalated
-```
-
 ## Example
 ```
 $icdev-monitor abc123-uuid --check all --self-heal --since 24h

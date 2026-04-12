@@ -82,13 +82,6 @@ Display:
 - If FAIL: specific items to fix before re-review
 - If PASS: "Ready for merge. Proceed with /icdev-deploy"
 
-### 11. Output Summary
-Display:
-- Gate results table
-- Overall PASS/FAIL
-- If FAIL: specific items to fix before re-review
-- If PASS: "Ready for merge. Proceed with /icdev-deploy"
-
 ## Example
 ```
 $icdev-review --project-dir projects/my-webapp --project-id abc123-uuid

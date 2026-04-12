@@ -60,11 +60,6 @@ Display:
 - Project UUID
 - Directory location
 
-9. **Output Summary**
-Display:
-- Project UUID
-- Directory location
-
 ## Example
 ```
 #prompt:icdev-init my-webapp --type webapp --tech-stack backend=flask,frontend=react,database=postgresql

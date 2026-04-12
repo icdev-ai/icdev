@@ -43,11 +43,6 @@ Display:
 - Unit tests: X passed, Y failed, Z skipped
 - BDD tests: X scenarios passed, Y failed
 
-7. **Output Summary**
-Display:
-- Unit tests: X passed, Y failed, Z skipped
-- BDD tests: X scenarios passed, Y failed
-
 ## Example
 ```
 #prompt:icdev-test --project-dir projects/my-webapp --type all --verbose

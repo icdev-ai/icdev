@@ -73,11 +73,6 @@ Display:
 - Gate results table
 - Overall PASS/FAIL
 
-11. **Output Summary**
-Display:
-- Gate results table
-- Overall PASS/FAIL
-
 ## Example
 ```
 #prompt:icdev-review --project-dir projects/my-webapp --project-id abc123-uuid

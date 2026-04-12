@@ -71,20 +71,6 @@ Display:
 - Report file path
 - Next steps
 
-### 6. Output Summary
-Display:
-- Languages detected and scanned
-- Total dependencies (by language)
-- Outdated dependencies count
-- Vulnerable dependencies (by severity)
-- SLA compliance percentage
-- Overdue SLA items (critical/high)
-- Maintenance score: XX/100
-- Gate status: PASS/WARN/FAIL
-- Remediation actions taken (if --auto)
-- Report file path
-- Next steps
-
 ## Example
 ```
 $icdev-maintain abc123-uuid --auto

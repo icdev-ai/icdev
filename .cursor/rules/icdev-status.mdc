@@ -144,17 +144,3 @@ When the user asks to "display comprehensive project status including compliance
    ```bash
    2024-01-15 10:20 - code.commit by developer
    ```
-
-10. **Recent Audit Trail**
-   ```bash
-   Recent Activity:
-   ```
-   ```bash
-   2024-01-15 10:30 - security.scan completed
-   ```
-   ```bash
-   2024-01-15 10:25 - test.execute passed
-   ```
-   ```bash
-   2024-01-15 10:20 - code.commit by developer
-   ```

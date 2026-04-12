@@ -45,11 +45,6 @@ Display:
 - Tests written (count, types)
 - Code generated (files, lines)
 
-7. **Output Summary**
-Display:
-- Tests written (count, types)
-- Code generated (files, lines)
-
 ## Example
 ```
 #prompt:icdev-build "User authentication with JWT tokens, login/logout endpoints, password hashing with bcrypt"

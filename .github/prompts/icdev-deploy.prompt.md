@@ -56,11 +56,6 @@ Display:
 - Generated files (Terraform, Ansible, K8s, CI/CD)
 - Target environment
 
-9. **Output Summary**
-Display:
-- Generated files (Terraform, Ansible, K8s, CI/CD)
-- Target environment
-
 ## Example
 ```
 #prompt:icdev-deploy abc123-uuid --target staging --modules vpc,ecr,rds
