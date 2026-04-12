@@ -1364,6 +1364,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Prod Audit API | tools/dashboard/api/prod_audit.py | Production audit API endpoints | REST endpoints | JSON responses |
 | Proposals API | tools/dashboard/api/proposals.py | Proposal management API endpoints | REST endpoints | JSON responses |
 | Control Inheritance API | tools/dashboard/api/control_inheritance.py | Flask Blueprint: FedRAMP control inheritance visualizer — CSP profiles (AWS GovCloud, Azure Gov, GCP, OCI, IBM, on-prem), responsibility model (inherited/shared/customer) per NIST 800-53 family, gap analysis for customer-owned controls | GET /api/control-inheritance/csps, /model?csp=, /summary?csp=&project_id=, /controls?csp=&family=&responsibility=, /gap?project_id=&csp= | JSON |
+| Kanban Plan API | tools/dashboard/api/kanban_plan.py | Flask Blueprint: kanban task decomposition and scheduling endpoints | GET /api/kanban/plans | JSON plan list |
 
 ## DataBridge (Additional)
 | Tool | File | Description | Input | Output |
