@@ -16,8 +16,6 @@ from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
-DB_PATH = BASE_DIR / "data" / "memory.db"
-
 VALID_TYPES = ("fact", "preference", "event", "insight", "task", "relationship", "thinking")
 VALID_SOURCES = ("manual", "hook", "thinking", "auto")
 MEMORY_SECTIONS = (

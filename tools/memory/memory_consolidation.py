@@ -17,7 +17,6 @@ Usage:
 import json
 import logging
 import re
-import sqlite3
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,8 +25,6 @@ from typing import List, Optional
 logger = logging.getLogger("icdev.memory_consolidation")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "memory.db"
-ICDEV_DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Consolidation actions
 ACTIONS = ("MERGE", "REPLACE", "KEEP_SEPARATE", "UPDATE", "SKIP")
@@ -158,7 +155,7 @@ class MemoryConsolidator:
             similar.sort(key=lambda x: x["similarity"], reverse=True)
             return similar[:max_candidates]
 
-        except (sqlite3.OperationalError, Exception) as exc:
+        except Exception as exc:
             logger.debug("Keyword search failed: %s", exc)
             return []
 
@@ -323,7 +320,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
                 conn.commit()
                 conn.close()
                 return {"status": "replaced", "action": action, "target_id": target_id}
-            except sqlite3.OperationalError as exc:
+            except Exception as exc:
                 logger.error("Replace failed: %s", exc)
 
         if action in ("MERGE", "UPDATE") and target_id and merged_content:
@@ -336,7 +333,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
                 conn.commit()
                 conn.close()
                 return {"status": "merged", "action": action, "target_id": target_id}
-            except sqlite3.OperationalError as exc:
+            except Exception as exc:
                 logger.error("Merge/Update failed: %s", exc)
 
         return {"status": "no_action", "action": action}
@@ -356,7 +353,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
                 (batch_size,),
             ).fetchall()
             conn.close()
-        except sqlite3.OperationalError:
+        except Exception:
             return {"processed": 0, "actions": actions}
 
         for row in rows:
@@ -391,7 +388,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
             ).fetchall()
             conn.close()
             return {"stats": [dict(r) for r in rows]}
-        except sqlite3.OperationalError:
+        except Exception:
             return {"stats": []}
 
     # ------------------------------------------------------------------
@@ -474,5 +471,5 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
             )
             conn.commit()
             conn.close()
-        except sqlite3.OperationalError as exc:
+        except Exception as exc:
             logger.debug("Consolidation log write skipped: %s", exc)

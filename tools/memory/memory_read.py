@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
-DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
 def read_memory_file():
@@ -31,8 +30,6 @@ def read_recent_logs(days=2):
 
 
 def read_db_recent(limit=10, user_id=None, tenant_id=None):
-    if not DB_PATH.exists():
-        return []
     conn = get_connection()
     c = conn.cursor()
 

@@ -19,7 +19,6 @@ from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "memory.db"
 
 VALID_SOURCES = ("hook", "manual", "thinking", "auto")
 VALID_TYPES = ("fact", "preference", "event", "insight", "task", "relationship", "thinking")
@@ -54,11 +53,8 @@ def compute_content_hash(content):
 
 
 def _get_connection(db_path=None):
-    """Get a DB connection with WAL mode for concurrent safety."""
-    path = db_path or DB_PATH
-    conn = get_connection(db_path=str(path))
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    """Get a DB connection. db_path is ignored; uses the main DB via get_connection()."""
+    return get_connection()
 
 
 def _ensure_buffer_table(conn):
