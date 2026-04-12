@@ -673,9 +673,143 @@ def _get_due_tasks() -> list:
         ).fetchall()
         result.extend(dict(r) for r in backlog)
 
+        # Decompose batch tasks into individual children before returning
+        # (guard-3). Batch cards have 96-100% phantom completion rate, so
+        # we never dispatch them directly.
+        result = _decompose_batch_tasks(result, conn)
+
         return result
     finally:
         conn.close()
+
+
+def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
+    """Detect and decompose batch tasks into individual sub-tasks.
+
+    A batch task is identified by:
+    - Title starting with "[Batch]"
+    - Description containing "Subjects:" followed by a list
+
+    For each batch task found:
+    1. Parse subjects from the description
+    2. Create a new kanban_task for each subject (status=backlog)
+    3. Mark the parent batch task as "decomposed" (non-dispatchable)
+    4. Remove the batch task from the returned list — dispatch the children instead
+
+    The children inherit priority, task_type, source_prediction_id from the parent.
+    Returns a new list with batch parents replaced by their children.
+    """
+    import uuid as _uuid
+
+    result: list = []
+    for task in tasks:
+        title = (task.get("title") or "").strip()
+        description = (task.get("description") or "").strip()
+
+        # Not a batch — keep as-is
+        if not title.startswith("[Batch]"):
+            result.append(task)
+            continue
+
+        # Parse "Subjects:" block from description
+        subjects: list[str] = []
+        if "Subjects:" in description:
+            after = description.split("Subjects:", 1)[1]
+            for line in after.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("-"):
+                    line = line[1:].strip()
+                if line.startswith("*"):
+                    line = line[1:].strip()
+                # Stop at next section header
+                if line.endswith(":") and not line.startswith("/"):
+                    break
+                # Only accept identifier-like subjects
+                if line and len(line) < 200:
+                    subjects.append(line)
+
+        if not subjects:
+            # Batch card with no parseable subjects — mark decomposed
+            # but don't dispatch (prevents phantom completion)
+            try:
+                conn.execute(
+                    "UPDATE kanban_tasks SET status = ?, updated_at = ? WHERE id = ?",
+                    ("decomposed", _utcnow_iso(), task["id"]),
+                )
+                conn.commit()
+                print(
+                    f"  Kanban: batch {task['id']} has no parseable subjects — "
+                    f"marked 'decomposed' (not dispatching)"
+                )
+            except Exception:
+                pass
+            continue
+
+        # Extract gap rule from title if present: "[Batch] rule_name: ..."
+        rule = ""
+        m = re.search(r"\[Batch\]\s*(\w+):", title)
+        if m:
+            rule = m.group(1)
+
+        parent_priority = task.get("priority") or "medium"
+        parent_type = task.get("task_type") or "chore"
+        source_pred = task.get("source_prediction_id")
+
+        created_children: list = []
+        for subj in subjects:
+            child_id = f"task-{_uuid.uuid4().hex[:10]}"
+            child_title = f"{rule} gap: {subj}" if rule else f"Batch child: {subj}"
+            child_desc = (
+                f"AUTO-DECOMPOSED from batch task {task['id']}\n"
+                f"Rule: {rule or 'unknown'}\n"
+                f"Subject: {subj}\n"
+                f"Parent: {task.get('title', '')}"
+            )
+            now = _utcnow_iso()
+            try:
+                conn.execute(
+                    "INSERT INTO kanban_tasks "
+                    "(id, title, description, task_type, priority, status, "
+                    " executor_type, source_prediction_id, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        child_id, child_title, child_desc, parent_type,
+                        parent_priority, "backlog", "claude_cli",
+                        source_pred, now, now,
+                    ),
+                )
+                child_task = {
+                    **task,
+                    "id": child_id,
+                    "title": child_title,
+                    "description": child_desc,
+                    "status": "backlog",
+                    "source_prediction_id": source_pred,
+                }
+                created_children.append(child_task)
+            except Exception as exc:
+                print(f"  Kanban: failed to create child for '{subj}': {exc}")
+
+        # Mark parent batch as decomposed (never dispatch)
+        try:
+            conn.execute(
+                "UPDATE kanban_tasks SET status = ?, updated_at = ? WHERE id = ?",
+                ("decomposed", _utcnow_iso(), task["id"]),
+            )
+            conn.commit()
+            print(
+                f"  Kanban: decomposed batch {task['id']} into "
+                f"{len(created_children)} children ({rule or 'unknown'} rule)"
+            )
+        except Exception as exc:
+            print(f"  Kanban: failed to mark batch decomposed: {exc}")
+
+        # Add children to the dispatch queue (up to MAX_AUTO_PROMOTE)
+        result.extend(created_children[:MAX_AUTO_PROMOTE])
+
+    return result
 
 
 def _move_task(task_id: str, new_status: str):
@@ -1336,17 +1470,177 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
         logger.warning(
             "kanban: failed to write verification log for %s: %s", task_id, exc
         )
+    # Also write to kanban_verifications table (guard-5) for dashboard visibility
+    try:
+        import uuid as _uuid
+        conn = get_connection()
+        verification_id = f"kv-{_uuid.uuid4().hex[:10]}"
+        result_enum = "passed" if verified else "failed"
+        if "PHANTOM" in (reason or "").upper():
+            result_enum = "phantom"
+        conn.execute(
+            "INSERT INTO kanban_verifications "
+            "(id, task_id, verified_at, result, reason) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                verification_id, task_id,
+                datetime.now(timezone.utc).isoformat(),
+                result_enum, reason,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        # Don't fail verification just because audit log is missing
+        logger.debug("kanban: kanban_verifications write skipped: %s", exc)
+
+
+def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
+    """Task-type-specific verification based on description keywords.
+
+    Parses the task description and runs targeted checks:
+    - "manifest" / "tool_not_in_manifest" → grep tools/manifest.md for the tool path
+    - "route" / "page" / "start.md Pages" → grep start.md Pages line
+    - "table" / "schema" / "migration" → query DB for table existence
+    - "template" / ".html" → check template file exists
+    - "[Batch]" title → reject — batch cards must be decomposed first
+
+    Returns (True, reason) if specific checks pass or don't apply.
+    Returns (False, reason) if a targeted check fails.
+    """
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT title, description FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return True, "Task row not found — skipping specific checks"
+    except Exception as exc:
+        return True, f"DB read failed ({exc}) — skipping specific checks"
+
+    title = (row["title"] or "").strip()
+    description = (row["description"] or "").strip()
+    desc_lower = description.lower()
+
+    # Batch card — reject if not decomposed (guard-3 provides decomposition)
+    if title.startswith("[Batch]"):
+        return False, (
+            "Batch cards must be decomposed into individual tasks before dispatch "
+            "(see guard-3 auto-decompose). Reject to prevent phantom completion."
+        )
+
+    # Manifest check: task mentions adding a tool to the manifest
+    if "tool_not_in_manifest" in desc_lower or (
+        "manifest" in desc_lower and "tools/" in description
+    ):
+        tool_match = re.search(r"(tools/[A-Za-z0-9_/\-]+\.py)", description)
+        if tool_match:
+            tool_path = tool_match.group(1)
+            try:
+                manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(
+                    encoding="utf-8"
+                )
+                if tool_path not in manifest_text:
+                    return False, (
+                        f"SPECIFIC CHECK FAILED: task mentions {tool_path} "
+                        f"but it is NOT in tools/manifest.md"
+                    )
+            except Exception as exc:
+                return True, f"Manifest read failed ({exc}) — skipping manifest check"
+
+    # Route/Pages check: task about dashboard routes
+    if "route_not_listed" in desc_lower or (
+        "route" in desc_lower and "start.md" in desc_lower
+    ):
+        route_match = re.search(r"route_not_listed gap: (/[A-Za-z0-9_<>/\-]+)", title)
+        if not route_match:
+            route_match = re.search(r"gap: (/[A-Za-z0-9_<>/\-]+)", title)
+        if route_match:
+            route = route_match.group(1)
+            # API routes don't need to be in Pages list
+            if not route.startswith("/api/"):
+                try:
+                    start_md = (BASE_DIR / ".claude" / "commands" / "start.md").read_text(
+                        encoding="utf-8"
+                    )
+                    # Look for the route in the Pages: line
+                    pages_match = re.search(r"Pages:\s*(.+?)(?=\n-|\n\n|$)", start_md, re.DOTALL)
+                    pages_line = pages_match.group(1) if pages_match else ""
+                    if route not in pages_line:
+                        return False, (
+                            f"SPECIFIC CHECK FAILED: task mentions route {route} "
+                            f"but it is NOT in .claude/commands/start.md Pages list"
+                        )
+                except Exception as exc:
+                    return True, f"start.md read failed ({exc}) — skipping route check"
+
+    # Table/schema check: task creates a DB table
+    table_match = re.search(
+        r"(?:create\s+table|add\s+(?:table|DB\s+table|schema))\s+(\w+)",
+        description,
+        re.IGNORECASE,
+    )
+    if table_match:
+        table_name = table_match.group(1)
+        try:
+            conn = get_connection()
+            _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+            if _pg:
+                check = conn.execute(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = ?",
+                    (table_name,),
+                ).fetchone()
+            else:
+                check = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    (table_name,),
+                ).fetchone()
+            conn.close()
+            if not check:
+                return False, (
+                    f"SPECIFIC CHECK FAILED: task says create table '{table_name}' "
+                    f"but it does NOT exist in the database"
+                )
+        except Exception as exc:
+            return True, f"DB table check failed ({exc}) — skipping"
+
+    # Template check: task creates an HTML template
+    template_match = re.search(
+        r"(?:create|add)\s+(?:template\s+)?([a-z_]+\.html)", description, re.IGNORECASE
+    )
+    if template_match:
+        template_name = template_match.group(1)
+        template_dir = BASE_DIR / "tools" / "dashboard" / "templates"
+        matches = list(template_dir.rglob(template_name))
+        if not matches:
+            return False, (
+                f"SPECIFIC CHECK FAILED: task says create template '{template_name}' "
+                f"but file does NOT exist under tools/dashboard/templates/"
+            )
+
+    return True, "Task-specific checks passed or not applicable"
 
 
 def _verify_task_completed(task_id, claude_output):
     """Verify that a task actually produced results before marking done.
 
-    Delegates to _run_verify_checks for the actual logic, then logs the
-    result to .tmp/kanban/{task_id}.verification.json regardless of outcome.
+    Runs generic checks (_run_verify_checks) then task-type-specific
+    checks (_verify_task_specific). Logs every result to
+    .tmp/kanban/{task_id}.verification.json regardless of outcome.
 
     Returns: (verified: bool, reason: str)
     """
     verified, reason = _run_verify_checks(task_id, claude_output)
+    if verified:
+        specific_ok, specific_reason = _verify_task_specific(task_id)
+        if not specific_ok:
+            verified = False
+            reason = f"{reason} | {specific_reason}"
+        else:
+            reason = f"{reason} | {specific_reason}"
     _write_verification_log(task_id, verified, reason)
     return verified, reason
 
