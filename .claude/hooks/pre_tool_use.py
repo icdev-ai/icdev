@@ -440,6 +440,71 @@ def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
     return None
 
 
+def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
+    """Block direct sqlite3.connect() usage that bypasses the storage layer.
+
+    Production backend is PostgreSQL. Writing to sqlite3 directly means the
+    data is invisible to the dashboard and API. This has caused repeated
+    confusion — data written to SQLite never appears in the UI.
+
+    ALWAYS use: from tools.db.storage import get_connection
+
+    Exemptions (files that legitimately need raw sqlite3):
+        - tools/db/storage.py — IS the storage layer
+        - tools/db/init_icdev_db.py — DDL/schema initialization
+        - tools/db/migration_runner.py — schema migrations
+        - tools/db/backup_manager.py — backup/restore with sqlite3 API
+        - tools/db/pg_init.py — PG initialization
+        - tools/db/migrate_to_storage.py — one-time migration script
+        - */init_db.py — child app/canvas isolated DB initialization
+        - tools/saas/* — tenant-isolated DBs (separate SQLite per tenant)
+        - tools/compat/db_utils.py — path resolution utilities
+    """
+    EXEMPT_PATTERNS = [
+        "tools/db/storage.py",
+        "tools/db/init_icdev_db.py",
+        "tools/db/migration_runner.py",
+        "tools/db/backup_manager.py",
+        "tools/db/pg_init.py",
+        "tools/db/migrate_to_storage.py",
+        "tools/db/migrate_add_missing_columns.py",
+        "tools/compat/db_utils.py",
+        "tools/saas/",
+    ]
+
+    if tool_name in ("Edit", "Write"):
+        file_path = tool_input.get("file_path", "").replace("\\", "/")
+        new_content = tool_input.get("new_string", "") or tool_input.get("content", "")
+
+        # Only check files under tools/ (handle both absolute and relative paths)
+        if "/tools/" not in file_path and not file_path.startswith("tools/"):
+            return False
+
+        # Check exemptions
+        for exempt in EXEMPT_PATTERNS:
+            if exempt in file_path:
+                return False
+
+        # Allow init_db.py files (canvas/child app isolated DBs)
+        if file_path.endswith("/init_db.py"):
+            return False
+
+        # Block if introducing sqlite3.connect(
+        if "sqlite3.connect(" in new_content:
+            return True
+
+    elif tool_name == "Bash":
+        command = tool_input.get("command", "")
+        # Block ad-hoc sqlite3.connect to icdev.db in python one-liners
+        if "sqlite3.connect" in command and "icdev.db" in command:
+            # Allow if it's running a migration or init script
+            if any(x in command for x in ["init_icdev_db", "migration_runner", "migrate_to_storage", "backup"]):
+                return False
+            return True
+
+    return False
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -461,6 +526,16 @@ def main():
         # Block modification of all append-only tables (NIST 800-53 AU, D6)
         if is_append_only_table_modification(tool_name, tool_input):
             print("BLOCKED: Append-only table (D6, NIST 800-53 AU). No UPDATE/DELETE/DROP/TRUNCATE allowed.", file=sys.stderr)
+            sys.exit(2)
+
+        # Block direct sqlite3.connect() — use get_connection() instead
+        if is_direct_sqlite_usage(tool_name, tool_input):
+            print(
+                "BLOCKED: Direct sqlite3.connect() bypasses the storage layer. "
+                "Production backend is PostgreSQL. Use: from tools.db.storage import get_connection; "
+                "conn = get_connection(). See MEMORY: feedback_always_use_get_connection.md",
+                file=sys.stderr,
+            )
             sys.exit(2)
 
         # Check tiered file access control (D-ORCH-8)

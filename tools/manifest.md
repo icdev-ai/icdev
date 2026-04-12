@@ -1274,6 +1274,11 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Endpoint Security Scanner | tools/security/endpoint_security_scanner.py | API endpoint security assessment | --scan, --json | Scan results |
 | Sandbox Executor | tools/security/sandbox_executor.py | Container-isolated code execution with resource limits, network isolation, and audit logging (D-SEC-10) | --execute --code, --execute-file --path, --health, --gate, --language, --timeout, --memory, --json | SandboxResult JSON |
 
+## Linting
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| SQLite3 Connect Linter | tools/lint/sqlite3_connect_linter.py | Scans tools/ for bare sqlite3.connect() calls that bypass get_connection(); exempt files: tools/db/storage.py, init_icdev_db.py, migration_runner.py, backup_manager.py, */init_db.py; lines with # sqlite3-ok are skipped | --path, --json, --gate | Violation list; exit 1 on --gate + violations |
+
 ## Testing (Additional)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
