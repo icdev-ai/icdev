@@ -320,6 +320,52 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         flags=re.IGNORECASE,
     )
 
+    # 18. strftime(format, col) → to_char(col::timestamp, pg_format)
+    #     SQLite strftime uses %Y, %m, %d, %H, %M, %S, %W, %w, %j
+    #     PG to_char uses YYYY, MM, DD, HH24, MI, SS, IW, D, DDD
+    _STRFTIME_MAP = {
+        "%Y": "YYYY", "%m": "MM", "%d": "DD",
+        "%H": "HH24", "%M": "MI", "%S": "SS",
+        "%W": "IW", "%w": "D", "%j": "DDD",
+        "%s": "epoch",
+    }
+
+    def _replace_strftime(m):
+        fmt = m.group(1).strip().strip("'\"")
+        col = m.group(2).strip()
+        # Handle strftime('%s', col) → EXTRACT(EPOCH FROM col::timestamp)
+        if fmt == "%s":
+            if col.lower() in ("'now'", '"now"'):
+                return "EXTRACT(EPOCH FROM NOW())"
+            return f"EXTRACT(EPOCH FROM ({col})::timestamp)"
+        # Handle 'now' as column
+        if col.lower() in ("'now'", '"now"'):
+            col = "NOW()"
+        # Convert format string
+        pg_fmt = fmt
+        for sqlite_tok, pg_tok in _STRFTIME_MAP.items():
+            pg_fmt = pg_fmt.replace(sqlite_tok, pg_tok)
+        return f"to_char(({col})::timestamp, '{pg_fmt}')"
+
+    sql = re.sub(
+        r"\bstrftime\(\s*(['\"][^'\"]+['\"])\s*,\s*(.+?)\s*\)",
+        _replace_strftime,
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 19. DEFAULT (strftime(..., 'now')) in DDL → DEFAULT NOW()
+    #     Catches DDL defaults that use strftime for timestamp defaults
+    sql = re.sub(
+        r"DEFAULT\s+\(strftime\([^)]+,\s*'now'\)\)",
+        "DEFAULT NOW()",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 20. IFNULL(a, b) → COALESCE(a, b) (PG has no IFNULL)
+    sql = re.sub(r"\bIFNULL\(", "COALESCE(", sql, flags=re.IGNORECASE)
+
     return sql
 
 
@@ -599,6 +645,82 @@ def get_connection(db_path: str = None) -> StorageConnection:
 def get_backend() -> str:
     """Return the current storage backend name."""
     return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+
+
+def is_pg(conn=None) -> bool:
+    """Check if the current backend is PostgreSQL.
+
+    Works with or without a connection object:
+        - ``is_pg(conn)`` — checks the connection's ``_backend`` attribute
+        - ``is_pg()`` — checks the ``ICDEV_STORAGE_BACKEND`` env var
+
+    Use this instead of ad-hoc ``getattr(conn, '_backend', 'sqlite')`` checks.
+    """
+    if conn is not None:
+        return getattr(conn, "_backend", "sqlite") == "postgresql"
+    return get_backend() == "postgresql"
+
+
+def sql_placeholder(conn=None) -> str:
+    """Return the correct SQL placeholder for the current backend.
+
+    PostgreSQL uses ``%s``, SQLite uses ``?``.
+    """
+    return "%s" if is_pg(conn) else "?"
+
+
+def sql_now(conn=None) -> str:
+    """Return the SQL expression for current timestamp per backend.
+
+    PostgreSQL: ``NOW()``, SQLite: ``datetime('now')``.
+    """
+    return "NOW()" if is_pg(conn) else "datetime('now')"
+
+
+def sql_date_sub(conn, days: int = 0, hours: int = 0, minutes: int = 0) -> str:
+    """Return SQL expression for 'now minus offset' per backend.
+
+    Examples:
+        sql_date_sub(conn, days=7)     → "NOW() - INTERVAL '7 days'" (PG)
+                                        → "datetime('now', '-7 days')" (SQLite)
+        sql_date_sub(conn, minutes=10) → "NOW() - INTERVAL '10 minutes'" (PG)
+                                        → "datetime('now', '-10 minutes')" (SQLite)
+    """
+    if days:
+        unit, val = "days", days
+    elif hours:
+        unit, val = "hours", hours
+    elif minutes:
+        unit, val = "minutes", minutes
+    else:
+        return sql_now(conn)
+
+    if is_pg(conn):
+        return f"NOW() - INTERVAL '{val} {unit}'"
+    return f"datetime('now', '-{val} {unit}')"
+
+
+def sql_strftime(conn, fmt: str, col: str) -> str:
+    """Return SQL expression for date formatting per backend.
+
+    ``fmt`` uses SQLite-style format tokens (``%Y``, ``%m``, ``%d``, etc.).
+
+    Examples:
+        sql_strftime(conn, '%Y-%m', 'created_at')
+        → "to_char((created_at)::timestamp, 'YYYY-MM')" (PG)
+        → "strftime('%Y-%m', created_at)" (SQLite)
+    """
+    if is_pg(conn):
+        _map = {
+            "%Y": "YYYY", "%m": "MM", "%d": "DD",
+            "%H": "HH24", "%M": "MI", "%S": "SS",
+            "%W": "IW", "%w": "D", "%j": "DDD",
+        }
+        pg_fmt = fmt
+        for s_tok, p_tok in _map.items():
+            pg_fmt = pg_fmt.replace(s_tok, p_tok)
+        return f"to_char(({col})::timestamp, '{pg_fmt}')"
+    return f"strftime('{fmt}', {col})"
 
 
 # ---------------------------------------------------------------------------
