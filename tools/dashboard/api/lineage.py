@@ -27,11 +27,26 @@ def _get_db():
 
 
 def _table_exists(conn, table_name):
-    row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,),
-    ).fetchone()
-    return row[0] > 0
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+        return row[0] > 0
+    except Exception:
+        # PostgreSQL: fall back to information_schema
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name=%s",
+                (table_name,),
+            ).fetchone()
+            return row[0] > 0
+        except Exception:
+            return False
 
 
 @lineage_api.route("/graph", methods=["GET"])
@@ -74,7 +89,7 @@ def lineage_graph():
         # --- Provenance entities (W3C PROV) ---
         if _table_exists(conn, "prov_entities") and _table_exists(conn, "prov_relations"):
             entities = conn.execute(
-                "SELECT entity_id, entity_type, label FROM prov_entities WHERE project_id = ?",
+                "SELECT id AS entity_id, entity_type, label FROM prov_entities WHERE project_id = ?",
                 (project_id,),
             ).fetchall()
             for e in entities:
@@ -89,7 +104,7 @@ def lineage_graph():
                 )
 
             relations = conn.execute(
-                "SELECT source_id, target_id, relation_type FROM prov_relations WHERE project_id = ?",
+                "SELECT subject_id AS source_id, object_id AS target_id, relation_type FROM prov_relations WHERE project_id = ?",
                 (project_id,),
             ).fetchall()
             for r in relations:
@@ -124,17 +139,18 @@ def lineage_graph():
         # --- SBOM components ---
         if _table_exists(conn, "sbom_records"):
             sbom_rows = conn.execute(
-                "SELECT id, component_name, component_version FROM sbom_records WHERE project_id = ? LIMIT 100",
+                "SELECT id, file_path, version FROM sbom_records WHERE project_id = ? LIMIT 100",
                 (project_id,),
             ).fetchall()
             for s in sbom_rows:
                 node_id = f"sbom:{s['id']}"
-                version = s["component_version"] if "component_version" in s.keys() and s["component_version"] else ""
+                version = s["version"] or ""
+                label = s["file_path"] or str(s["id"])
                 nodes.append(
                     {
                         "id": node_id,
                         "type": "sbom_component",
-                        "label": f"{s['component_name']}@{version}" if version else s["component_name"],
+                        "label": f"{label}@{version}" if version else label,
                         "source": "sbom",
                     }
                 )
