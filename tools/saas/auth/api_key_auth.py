@@ -21,13 +21,11 @@ PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data"
 
 
 def _get_platform_conn():
-    """Get platform DB connection (always SQLite)."""
-    import sqlite3 as _sqlite3
+    """Get platform DB connection (supports both PostgreSQL and SQLite)."""
+    from tools.db.storage import get_connection
 
     db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB_PATH)))
-    conn = _sqlite3.connect(str(db_path))
-    conn.row_factory = _sqlite3.Row
-    return conn
+    return get_connection(str(db_path))
 
 
 def _hash_key(key: str) -> str:

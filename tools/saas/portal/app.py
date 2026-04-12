@@ -206,15 +206,11 @@ def _inject_cui_banner():
 # Database Helpers
 # ---------------------------------------------------------------------------
 def _get_platform_conn():
-    """Get a connection to the platform database (always SQLite)."""
-    import sqlite3 as _sqlite3
+    """Get a connection to the platform database (supports both PostgreSQL and SQLite)."""
+    from tools.db.storage import get_connection
 
     db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB)))
-    conn = _sqlite3.connect(str(db_path))
-    conn.row_factory = _sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return get_connection(str(db_path))
 
 
 def _get_tenant_conn(tenant_id):

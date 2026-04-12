@@ -213,7 +213,7 @@ RUNBOOKS = [
             {"action": "shell", "command": "df -h /data || echo 'Cannot check disk'", "timeout_seconds": 15},
             {
                 "action": "shell",
-                "command": "python -c \"import sqlite3; conn=sqlite3.connect('data/icdev.db'); conn.execute('VACUUM'); print('VACUUM OK')\" || echo 'SQLite VACUUM failed'",
+                "command": "python -c \"import sqlite3; conn=sqlite3.connect('data/icdev.db'); conn.execute('VACUUM'); print('VACUUM OK')\" || echo 'SQLite VACUUM failed'",  # sqlite3-ok — shell command string, not a Python DB call
                 "timeout_seconds": 120,
             },
             {

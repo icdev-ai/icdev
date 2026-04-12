@@ -132,46 +132,69 @@ def _readability_check(text: str) -> Dict[str, Any]:
 
 
 def _tone_check(text: str) -> Dict[str, Any]:
-    """Professional tone analysis via keyword matching."""
+    """Professional tone analysis — 60+ patterns across 4 categories (D-WG-2b)."""
     issues: List[str] = []
     text_lower = text.lower()
 
+    # --- Informal language (20 patterns) ---
     informal = [
-        "gonna",
-        "wanna",
-        "gotta",
-        "kinda",
-        "sorta",
-        "ain't",
-        "stuff",
-        "things",
-        "basically",
-        "obviously",
-        "super",
-        "pretty much",
-        "a lot of",
-        "tons of",
+        "gonna", "wanna", "gotta", "kinda", "sorta", "ain't", "y'all",
+        "stuff", "things", "basically", "obviously", "literally", "actually",
+        "super", "pretty much", "a lot of", "tons of", "kind of", "sort of",
+        "no brainer", "cool", "awesome", "guys", "dude", "okay so",
+        "right?", "you know", "i mean", "like,",
     ]
-    found = [w for w in informal if w in text_lower]
-    if found:
-        issues.append(f"informal language: {', '.join(found[:5])}")
+    found_informal = [w for w in informal if w in text_lower]
+    if found_informal:
+        issues.append(f"informal language: {', '.join(found_informal[:5])}")
 
-    weak = [
-        "we think",
-        "we believe",
-        "we hope",
-        "we feel",
-        "maybe",
-        "perhaps",
-        "possibly",
-        "try to",
+    # --- Hedging / weak language (20 patterns) ---
+    hedging = [
+        "we think", "we believe", "we hope", "we feel", "we assume",
+        "maybe", "perhaps", "possibly", "probably", "might be",
+        "try to", "attempt to", "in our opinion", "it seems",
+        "it appears", "to some extent", "more or less", "somewhat",
+        "arguably", "it could be argued", "it is possible that",
+        "we would suggest", "it may be", "one could say",
     ]
-    found_weak = [w for w in weak if w in text_lower]
-    if found_weak:
-        issues.append(f"weak language: {', '.join(found_weak[:5])}")
+    found_hedging = [w for w in hedging if w in text_lower]
+    if found_hedging:
+        issues.append(f"hedging/weak: {', '.join(found_hedging[:5])}")
 
-    score = max(0.0, 1.0 - (len(found) + len(found_weak)) * 0.10)
-    return {"score": round(score, 2), "issues": issues}
+    # --- Vague/filler (15 patterns) ---
+    vague = [
+        "very", "really", "quite", "rather", "fairly",
+        "in general", "generally speaking", "as a whole",
+        "all things considered", "it is important to note",
+        "it should be noted", "needless to say",
+        "it goes without saying", "as previously mentioned",
+        "as stated above",
+    ]
+    found_vague = [w for w in vague if w in text_lower]
+    if found_vague:
+        issues.append(f"vague/filler: {', '.join(found_vague[:5])}")
+
+    # --- Overpromising / superlatives (10 patterns) ---
+    superlatives = [
+        "guaranteed", "absolutely", "completely", "totally",
+        "never fails", "always delivers", "100%", "zero risk",
+        "no risk", "flawless",
+    ]
+    found_super = [w for w in superlatives if w in text_lower]
+    if found_super:
+        issues.append(f"overpromising: {', '.join(found_super[:5])}")
+
+    total_hits = len(found_informal) + len(found_hedging) + len(found_vague) + len(found_super)
+    score = max(0.0, 1.0 - total_hits * 0.06)
+    return {
+        "score": round(score, 2),
+        "informal_count": len(found_informal),
+        "hedging_count": len(found_hedging),
+        "vague_count": len(found_vague),
+        "superlative_count": len(found_super),
+        "total_hits": total_hits,
+        "issues": issues,
+    }
 
 
 def _ai_detection(text: str) -> Dict[str, Any]:
@@ -359,6 +382,248 @@ def _ngrams(text: str, n: int) -> set:
     if len(text) < n:
         return set()
     return {text[i : i + n] for i in range(len(text) - n + 1)}
+
+
+def _passive_voice_check(text: str) -> Dict[str, Any]:
+    """Detect passive voice constructions and sentence fragments (D-WG-2a)."""
+    sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+    if not sentences:
+        return {"score": 1.0, "passive_count": 0, "fragment_count": 0, "issues": []}
+
+    # Passive voice: "was/were/is/are/been/being/be" + past participle (-ed, -en, -t)
+    passive_re = re.compile(
+        r"\b(is|are|was|were|been|being|be|get|gets|got|gotten)\s+"
+        r"(\w+(?:ed|en|t|wn|ng))\b",
+        re.IGNORECASE,
+    )
+    passive_count = 0
+    passive_examples: List[str] = []
+    for s in sentences:
+        matches = passive_re.findall(s)
+        if matches:
+            passive_count += 1
+            if len(passive_examples) < 3:
+                passive_examples.append(s[:80])
+
+    # Sentence fragments: very short (< 4 words) and no verb indicators
+    verb_re = re.compile(r"\b(is|are|was|were|has|have|had|do|does|did|will|shall|can|could|would|should|may|might|must)\b", re.IGNORECASE)
+    fragment_count = 0
+    for s in sentences:
+        words = s.split()
+        if len(words) < 4 and not verb_re.search(s):
+            fragment_count += 1
+
+    issues: List[str] = []
+    passive_pct = (passive_count / len(sentences) * 100) if sentences else 0
+    if passive_count > 0:
+        issues.append(f"{passive_count} passive voice ({passive_pct:.0f}% of sentences)")
+    if fragment_count > 0:
+        issues.append(f"{fragment_count} sentence fragment(s)")
+
+    # Score: penalise heavy passive (>30% = bad) and fragments
+    score = max(0.0, 1.0 - passive_pct / 100 * 0.6 - fragment_count * 0.08)
+    return {
+        "score": round(score, 2),
+        "passive_count": passive_count,
+        "passive_pct": round(passive_pct, 1),
+        "fragment_count": fragment_count,
+        "examples": passive_examples,
+        "issues": issues,
+    }
+
+
+def _overused_words_check(text: str) -> Dict[str, Any]:
+    """Detect overused words, adverb density, and sticky (glue) sentences (D-WG-4a)."""
+    words = re.findall(r"[a-z]+", text.lower())
+    if not words:
+        return {"score": 1.0, "overused": [], "adverb_density": 0, "sticky_pct": 0, "issues": []}
+
+    # --- Overused words (appear > 0.5% of total, min 3 times) ---
+    freq: Dict[str, int] = {}
+    for w in words:
+        freq[w] = freq.get(w, 0) + 1
+    # Skip common stop words
+    stop = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+            "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+            "being", "have", "has", "had", "do", "does", "did", "will", "would",
+            "shall", "should", "may", "might", "must", "can", "could", "it", "its",
+            "this", "that", "these", "those", "i", "we", "you", "he", "she", "they",
+            "not", "no", "as", "if", "so", "than", "then", "also", "into", "all"}
+    threshold = max(3, len(words) * 0.005)
+    overused = [(w, c) for w, c in sorted(freq.items(), key=lambda x: -x[1])
+                if w not in stop and len(w) > 2 and c >= threshold][:10]
+
+    # --- Adverb density (words ending in -ly) ---
+    adverbs = [w for w in words if w.endswith("ly") and len(w) > 3]
+    adverb_density = len(adverbs) / len(words) * 100 if words else 0
+
+    # --- Sticky sentences (>40% glue/function words) ---
+    glue_words = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+                  "for", "of", "with", "by", "from", "is", "are", "was", "were",
+                  "be", "been", "have", "has", "had", "do", "does", "did", "it",
+                  "its", "this", "that", "as", "if", "so", "not", "no", "will",
+                  "would", "can", "could", "should", "may", "up", "out", "just",
+                  "about", "into", "over", "also", "than", "then", "very", "too"}
+    sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+    sticky_count = 0
+    for s in sentences:
+        s_words = re.findall(r"[a-z]+", s.lower())
+        if len(s_words) >= 5:
+            glue_pct = sum(1 for w in s_words if w in glue_words) / len(s_words)
+            if glue_pct > 0.40:
+                sticky_count += 1
+    sticky_pct = (sticky_count / len(sentences) * 100) if sentences else 0
+
+    issues: List[str] = []
+    if overused:
+        top3 = ", ".join(f"'{w}' ({c}x)" for w, c in overused[:3])
+        issues.append(f"overused words: {top3}")
+    if adverb_density > 5.0:
+        issues.append(f"high adverb density ({adverb_density:.1f}%) — consider stronger verbs")
+    if sticky_pct > 40:
+        issues.append(f"{sticky_pct:.0f}% sticky sentences (>40% glue words)")
+
+    score = 1.0
+    if overused:
+        score -= min(0.3, len(overused) * 0.03)
+    if adverb_density > 5.0:
+        score -= min(0.2, (adverb_density - 5) * 0.04)
+    if sticky_pct > 40:
+        score -= min(0.2, (sticky_pct - 40) * 0.005)
+    score = max(0.0, round(score, 2))
+
+    return {
+        "score": score,
+        "overused": overused,
+        "adverb_density": round(adverb_density, 1),
+        "adverb_count": len(adverbs),
+        "sticky_count": sticky_count,
+        "sticky_pct": round(sticky_pct, 1),
+        "issues": issues,
+    }
+
+
+def _cliche_check(text: str) -> Dict[str, Any]:
+    """Detect cliches and overused phrases (~200 common cliches) (D-WG-4b)."""
+    # Common cliches grouped by category
+    cliches = [
+        # Business/corporate
+        "at the end of the day", "move the needle", "low-hanging fruit", "think outside the box",
+        "synergy", "paradigm shift", "value-added", "best practices", "core competency",
+        "circle back", "touch base", "drill down", "deep dive", "leverage", "pivot",
+        "game changer", "win-win", "bandwidth", "scalable", "actionable", "robust",
+        "streamline", "bottom line", "stakeholder buy-in", "on the same page",
+        "take it to the next level", "hit the ground running", "push the envelope",
+        "raise the bar", "best of breed", "cutting edge", "bleeding edge",
+        "mission critical", "value proposition", "pain point", "deliverables",
+        "take offline", "double down", "lean in", "disrupt", "innovative solution",
+        # General
+        "at this point in time", "in this day and age", "each and every",
+        "first and foremost", "last but not least", "few and far between",
+        "tried and true", "tried and tested", "above and beyond", "one and only",
+        "all walks of life", "crystal clear", "easier said than done",
+        "going forward", "in terms of", "in the final analysis",
+        "it goes without saying", "needless to say", "the fact of the matter",
+        "when all is said and done", "to make a long story short",
+        "by and large", "for all intents and purposes", "time will tell",
+        "only time will tell", "food for thought", "in light of",
+        "at the present time", "due to the fact that", "in order to",
+        "on a daily basis", "in the near future", "in the process of",
+        "take into consideration", "a wide variety of", "a large number of",
+        # Proposal/government specific
+        "second to none", "state of the art", "world class", "industry leading",
+        "proven track record", "unparalleled", "unprecedented", "best in class",
+        "unique ability", "uniquely qualified", "uniquely positioned",
+        "vast experience", "extensive experience", "seasoned professional",
+        "comprehensive solution", "holistic approach", "one-stop shop",
+        "turnkey solution", "end-to-end", "soup to nuts",
+        "bring to bear", "force multiplier", "mission success",
+        # Filler
+        "it is important to note", "it should be noted", "it is worth noting",
+        "as a matter of fact", "in point of fact", "the bottom line is",
+        "at the end of the day", "to be honest", "to tell the truth",
+        "to be perfectly honest", "in my humble opinion", "in my opinion",
+        "i think that", "i believe that", "i feel that",
+        # Metaphors
+        "tip of the iceberg", "slippery slope", "perfect storm",
+        "level playing field", "across the board", "back to the drawing board",
+        "ballpark figure", "behind the curve", "get the ball rolling",
+        "keep your eye on the ball", "move the goalposts", "play hardball",
+        "step up to the plate", "throw a curveball", "whole nine yards",
+        "24/7", "110 percent", "give 110%", "on the radar",
+        "under the radar", "fly under the radar", "in the pipeline",
+        "on the back burner", "front burner", "burning platform",
+        "silver bullet", "magic bullet", "holy grail", "elephant in the room",
+        "low hanging fruit",
+    ]
+
+    text_lower = text.lower()
+    found: List[str] = []
+    for c in cliches:
+        if c in text_lower:
+            found.append(c)
+
+    issues: List[str] = []
+    if found:
+        preview = ", ".join(f"'{c}'" for c in found[:5])
+        issues.append(f"{len(found)} cliche(s) found: {preview}")
+
+    score = max(0.0, 1.0 - len(found) * 0.08)
+    return {"score": round(score, 2), "count": len(found), "found": found, "issues": issues}
+
+
+def _consistency_check(text: str) -> Dict[str, Any]:
+    """Check spelling consistency and acronym usage (D-WG-4c)."""
+    issues: List[str] = []
+
+    # --- Spelling variant consistency (US vs UK) ---
+    variant_pairs = [
+        ("color", "colour"), ("favor", "favour"), ("honor", "honour"),
+        ("analyze", "analyse"), ("organize", "organise"), ("realize", "realise"),
+        ("authorize", "authorise"), ("minimize", "minimise"), ("optimize", "optimise"),
+        ("center", "centre"), ("defense", "defence"), ("offense", "offence"),
+        ("license", "licence"), ("practice", "practise"), ("catalog", "catalogue"),
+        ("program", "programme"), ("modeling", "modelling"), ("traveling", "travelling"),
+    ]
+    text_lower = text.lower()
+    for us, uk in variant_pairs:
+        has_us = us in text_lower
+        has_uk = uk in text_lower
+        if has_us and has_uk:
+            issues.append(f"mixed spelling: '{us}' and '{uk}' both used")
+
+    # --- Acronym consistency: defined on first use? ---
+    # Find all-caps tokens (2+ letters, not common words)
+    common_caps = {"US", "UK", "EU", "UN", "AI", "IT", "OR", "AND", "THE", "FOR",
+                   "NOT", "BUT", "NOR", "YET", "SO", "IF", "AS", "AT", "BY", "IN",
+                   "OF", "ON", "TO", "UP", "IS", "AM", "AN", "DO", "NO", "OK", "VS"}
+    acronyms_found = set(re.findall(r"\b([A-Z]{2,6})\b", text))
+    acronyms_found -= common_caps
+
+    # Check if acronym is defined: look for pattern "(ACRONYM)" preceded by words
+    undefined: List[str] = []
+    for acr in sorted(acronyms_found):
+        # Look for "Full Name (ACRONYM)" pattern
+        define_re = re.compile(r"[a-zA-Z\s]+\(" + re.escape(acr) + r"\)", re.IGNORECASE)
+        if not define_re.search(text):
+            undefined.append(acr)
+
+    if undefined:
+        issues.append(f"undefined acronyms: {', '.join(undefined[:5])}")
+
+    # --- Number format consistency (1000 vs 1,000) ---
+    has_comma_nums = bool(re.search(r"\b\d{1,3}(,\d{3})+\b", text))
+    has_plain_nums = bool(re.search(r"\b\d{4,}\b", text))
+    if has_comma_nums and has_plain_nums:
+        issues.append("mixed number formats: some with commas, some without")
+
+    score = max(0.0, 1.0 - len(issues) * 0.15)
+    return {
+        "score": round(score, 2),
+        "issue_count": len(issues),
+        "undefined_acronyms": undefined,
+        "issues": issues,
+    }
 
 
 def _sentence_structure(text: str) -> Dict[str, Any]:
