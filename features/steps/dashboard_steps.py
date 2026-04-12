@@ -13,10 +13,9 @@ sys.path.insert(0, os.getcwd())
 @given('the dashboard Flask app is configured')
 def step_dashboard_configured(context):
     """Configure the Flask test client with an authenticated session."""
-    import sqlite3
     from tools.dashboard.app import create_app
     from tools.dashboard.auth import create_user
-    from tools.dashboard.config import DB_PATH
+    from tools.db.storage import get_connection
     app = create_app()
     app.config['TESTING'] = True
     context.client = app.test_client()
@@ -27,8 +26,7 @@ def step_dashboard_configured(context):
         user_id = user["id"]
     except Exception:
         # User already exists — look up by email
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         try:
             row = conn.execute(
                 "SELECT id FROM dashboard_users WHERE email = ?",
