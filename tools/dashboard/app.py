@@ -1311,7 +1311,6 @@ def create_app() -> Flask:
     @app.route("/api/charts/overview", methods=["GET"])
     def api_charts_overview():
         """Aggregate chart data for the home dashboard."""
-        import sqlite3 as _sqlite3
 
         conn = _get_db()
         try:
@@ -1494,7 +1493,6 @@ def create_app() -> Flask:
     @app.route("/api/charts/compliance-trend", methods=["GET"])
     def api_charts_compliance_trend():
         """Return 30-day score history per canvas for sparkline overlays."""
-        import sqlite3 as _sqlite3
 
         _TREND_CANVASES = [
             (
@@ -2941,7 +2939,6 @@ def create_app() -> Flask:
     @app.route("/api/compliance/unified-posture")
     def api_compliance_unified_posture():
         """Unified compliance posture from PDC + NDC + SDC with NIST 800-53 heatmap."""
-        import sqlite3 as _sqlite3
 
         NIST_FAMILIES = [
             ("AC", "Access Control"),

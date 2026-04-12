@@ -198,7 +198,6 @@ def register_ingestion_routes(bp: Blueprint) -> None:
             channel: Filter by channel
             status: Filter by status
         """
-        import sqlite3
 
         limit = request.args.get("limit", "50", type=str)
         channel = request.args.get("channel", "")
@@ -235,7 +234,6 @@ def register_ingestion_routes(bp: Blueprint) -> None:
     @bp.route("/api/network/ingest/status", methods=["GET"])
     def nc_api_ingestion_status():
         """Summary of ingestion activity."""
-        import sqlite3
 
         db_path = str(_ICDEV_ROOT / "data" / "network_canvas.db")
         try:
