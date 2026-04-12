@@ -25,6 +25,7 @@
 | Migrate CLI | tools/db/migrate.py | CLI wrapper for migration runner | --status, --up, --down, --create, --validate, --mark-applied, --all-tenants | Status / results |
 | Backup Manager | tools/db/backup_manager.py | Database backup/restore with WAL-safe sqlite3.backup() API (D152) | (library) | BackupManager class |
 | Backup CLI | tools/db/backup.py | CLI wrapper for backup manager | --backup, --restore, --verify, --list, --prune, --all, --tenants | Backup metadata / results |
+| Storage | tools/db/storage.py | Dual-backend storage abstraction (PostgreSQL primary, SQLite fallback) with transparent SQL translation | (library) | get_connection() |
 
 ## Resilience (D146-D149)
 | Tool | File | Description | Input | Output |
@@ -938,19 +939,19 @@
 
 ## File Sync (`tools/filesync/`)
 
-| Tool | Purpose | CLI |
-|------|---------|-----|
-| `sync_engine.py` | Main orchestrator — job CRUD, sync execution, daemon mode, health | `--create/--list/--run/--daemon/--health --json` |
-| `providers/base.py` | `SyncTargetProvider` ABC — list_files, read_file, write_file, delete_file, get_file_info | N/A (imported) |
-| `providers/local.py` | Local filesystem provider (stdlib Path/os.walk) | N/A (imported) |
-| `providers/sftp.py` | SFTP provider (paramiko + subprocess ssh/scp fallback) | N/A (imported) |
-| `providers/cloud.py` | Cloud provider wrapping existing `StorageProvider` ABC | N/A (imported) |
-| `ignore_parser.py` | `.syncignore` parser using stdlib `fnmatch` | N/A (imported) |
-| `scanner.py` | File tree scanner — SHA-256 manifests with fast-skip (mtime+size) | N/A (imported) |
-| `change_detector.py` | Manifest diffing → action plans (push + bidirectional) | N/A (imported) |
-| `conflict_resolver.py` | Strategy pattern: last_write_wins, rename_both, source_wins, skip | N/A (imported) |
-| `transfer.py` | ThreadPoolExecutor file transfer with bandwidth throttling | N/A (imported) |
-| `watcher.py` | File watcher — optional watchdog + periodic scan fallback | N/A (imported) |
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Sync Engine | tools/filesync/sync_engine.py | Main orchestrator — job CRUD, sync execution, daemon mode, health | --create, --list, --run, --daemon, --health, --json | Job records / sync status |
+| Sync Provider Base | tools/filesync/providers/base.py | `SyncTargetProvider` ABC — list_files, read_file, write_file, delete_file, get_file_info | (library) | SyncTargetProvider ABC |
+| Local Provider | tools/filesync/providers/local.py | Local filesystem provider (stdlib Path/os.walk) | (library) | LocalProvider |
+| SFTP Provider | tools/filesync/providers/sftp.py | SFTP provider (paramiko + subprocess ssh/scp fallback) | (library) | SFTPProvider |
+| Cloud Provider | tools/filesync/providers/cloud.py | Cloud provider wrapping existing `StorageProvider` ABC | (library) | CloudProvider |
+| Ignore Parser | tools/filesync/ignore_parser.py | `.syncignore` parser using stdlib `fnmatch` for gitignore-subset glob patterns | (library) | load_ignore_patterns(), filter_files() |
+| Scanner | tools/filesync/scanner.py | File tree scanner — SHA-256 manifests with fast-skip (mtime+size) and FIPS 140-2 hash mode | (library) | File manifests |
+| Change Detector | tools/filesync/change_detector.py | Manifest diffing → sync action plans (push + bidirectional modes) | (library) | detect_changes_push() |
+| Conflict Resolver | tools/filesync/conflict_resolver.py | Strategy pattern for sync conflicts: last_write_wins, rename_both, source_wins, skip | (library) | ConflictResolver |
+| Transfer | tools/filesync/transfer.py | ThreadPoolExecutor file transfer with bandwidth throttling and pre-transfer zlib/gzip compression | (library) | Transfer executor |
+| Watcher | tools/filesync/watcher.py | File watcher — optional watchdog library with periodic scan fallback | (library) | FileWatcher |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |
@@ -975,6 +976,7 @@
 | promoter | `tools/genesis/promoter.py` | Knowledge Bridge: GKP export/import, dedup, auto-promote, human review gateway (D-GEN-4) |
 | feedback_collector | `tools/genesis/feedback_collector.py` | Pull v1.x telemetry (failures, quality, coverage, heals) for v2.0 consumption (D-GEN-11) |
 | reporter | `tools/genesis/reporter.py` | Weekly autonomous markdown report: reflex activity, promotions, circuit breakers (D-GEN-12) |
+| pattern_detector | `tools/genesis/pattern_detector.py` | Deterministic tool-chain mining from telemetry; scans hook_events and ai_telemetry for recurring multi-tool sequences with frequency/diversity/failure-avoidance scoring | --json, --lookback-days, --min-frequency | Detected patterns |
 
 ### 14 Reflexes (tools/genesis/reflexes/)
 
@@ -1114,10 +1116,13 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Pain Extractor | tools/creative/pain_extractor.py | Deterministic keyword-based pain point extraction (D354) | --extract-all, --json | Pain points |
 | Spec Generator | tools/creative/spec_generator.py | Template-based feature spec generation (D356) | --generate-all, --list, --json | Feature specs |
 | Trend Tracker | tools/creative/trend_tracker.py | Velocity/acceleration trend detection | --detect, --report, --json | Trend data |
+| Source Scanner | tools/creative/source_scanner.py | Scan customer pain points from G2, Capterra, TrustRadius, Reddit, GitHub Issues, Product Hunt, and GovCon blogs; store normalized signals | --scan, --source, --all, --list-sources, --history, --days, --json | Signal records |
 
 ## DataBridge
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Connector ABC | tools/databridge/connector.py | DataConnector ABC, request/response dataclasses, connector capabilities, and schema definitions for all connector implementations | (library) | DataConnector ABC |
+| Connector Registry | tools/databridge/registry.py | Central registration and lookup for DataBridge connectors via decorator pattern; bulk-loads FORGE connectors from database | (library) | register_connector() decorator, get_connector_instance() |
 | Connection Manager | tools/databridge/connection_manager.py | DataBridge connection lifecycle management | --create, --list, --test, --json | Connection records |
 | Schema Engine | tools/databridge/schema_engine.py | DataBridge schema discovery and mapping | --discover, --map, --json | Schema maps |
 | Health Base | tools/databridge/connectors/health_base.py | Base class for health-check connectors (D-CF-5) | (library) | HealthConnector ABC |
@@ -1163,6 +1168,11 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Quality Monitor | tools/finetune/quality_monitor.py | RAG eval feedback loop with retrain triggers (D-KARL-8) | --check, --status, --json | Quality status |
 | HP Search | tools/finetune/hp_search.py | Hyperparameter search orchestrator for fine-tuning (grid/random search over LoRA params) | --create, --run-next, --record, --status, --list, --json | Search/trial results |
 | Trajectory Capture | tools/finetune/trajectory_capture.py | Auto-capture successful agent tool-call traces as ShareGPT JSONL training data; compliance/build workflows → RL trajectories | --capture, --loop-id, --export, --stats, --gate, --workflow-type, --include-events, --json | Captured trajectories + JSONL export |
+| Provider ABC | tools/finetune/provider.py | FineTuneProvider ABC and supporting dataclasses (FineTuneRequest, FineTuneStatus) — base interface for all fine-tune provider implementations | (library) | FineTuneProvider ABC |
+| Provider Factory | tools/finetune/provider_factory.py | FineTuneProvider factory with GPU auto-detection; selects Unsloth (GPU), OpenAI/Bedrock/Azure (cloud), or CPU-only Ollama | (library) | get_provider() |
+| OpenAI Provider | tools/finetune/openai_provider.py | OpenAI fine-tuning provider using /v1/fine_tuning/jobs API with long-running poll pattern | (library) | OpenAIFineTuneProvider |
+| Bedrock Provider | tools/finetune/bedrock_provider.py | AWS Bedrock fine-tuning provider using create_model_customization_job API; enforces CUI boundary constraints on cloud training | (library) | BedrockFineTuneProvider |
+| Evaluator | tools/finetune/evaluator.py | Automated model evaluator with BLEU, ROUGE-L, and perplexity scoring (pure Python, air-gap safe); optional LLM-as-judge | --evaluate, --model-version-id, --get, --eval-id, --list, --json | Evaluation scores |
 
 ## Remote Command Gateway (Phase 28)
 | Tool | File | Description | Input | Output |
@@ -1721,6 +1731,12 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | **ODC** Observability | tools\observability_canvas\blueprint.py | tools\observability_canvas\observability_engine.py | args\observability_canvas_config.yaml | observability_canvas.db | /observability | ICDEV_OBSERVABILITY_ENABLED | SIEM/SOAR/log stack design, MITRE ATT&CK detection coverage, source type weighting, NIST AU/SI control assessment, log retention policy |
 | **DDC** Data | tools\data_canvas\blueprint.py | tools\data_canvas\data_engine.py | args\data_canvas_config.yaml | data_canvas.db | /data | ICDEV_DATA_CANVAS_ENABLED | Data model design with PII/PHI/CUI/SECRET classification, retention policy enforcement, Privacy Act/HIPAA/GDPR assessment, ER diagram export |
 
+## Migration Canvas
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Blueprint | tools/migration_canvas/blueprint.py | Flask Blueprint for ICDEV™ Migration Design Canvas; self-contained at /migration-canvas/ with separate database and ICDEV_MIGRATION_CANVAS_ENABLED feature flag | (library) | create_migration_blueprint() |
+| SOPs | tools/migration_canvas/sops.py | Standard Operating Procedures CRUD and approval workflow for Migration Design Canvas (readiness assessment, cutover planning, rollback, validation) | (library) | SOP CRUD functions |
 
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
