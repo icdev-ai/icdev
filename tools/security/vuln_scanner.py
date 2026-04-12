@@ -37,6 +37,9 @@ from tools.security.container_scanner import (  # noqa: E402
     scan_dockerfile,
     evaluate_gate as container_gate,
 )
+from tools.security.boundary_tagger import (  # noqa: E402
+    process_scan_result as _apply_boundary_tagging,
+)
 
 
 def _detect_project_languages(project_path: str) -> List[str]:
@@ -77,6 +80,7 @@ def run_all_scans(
     image_name: Optional[str] = None,
     skip_container: bool = False,
     output_dir: Optional[str] = None,
+    system_id: Optional[str] = None,
 ) -> Dict:
     """Run all security scans and aggregate results.
 
@@ -92,9 +96,10 @@ def run_all_scans(
         image_name: Optional Docker image name for container scanning.
         skip_container: Skip container scanning.
         output_dir: Optional directory for scan reports.
+        system_id: Optional ATO system ID for boundary assessment records.
 
     Returns:
-        Aggregated scan results dict.
+        Aggregated scan results dict including boundary_impact_summary.
     """
     root = Path(project_path)
     languages = _detect_project_languages(project_path)
@@ -238,10 +243,27 @@ def run_all_scans(
     # ── Store findings in failure_log ──────────────────────────────
     _store_findings_in_db(aggregated, project_id)
 
+    # ── Boundary tier tagging ──────────────────────────────────────
+    print("=== Tagging findings with boundary tier impact ===")
+    _apply_boundary_tagging(
+        aggregated,
+        project_id=project_id,
+        system_id=system_id,
+        create_assessments=True,
+    )
+    boundary_summary = aggregated.get("boundary_impact_summary", {})
+    boundary_assessments = boundary_summary.get("assessments", [])
+    aggregated["boundary_assessments_created"] = boundary_assessments
+
     # ── Log audit trail ────────────────────────────────────────────
     _log_audit(project_id, aggregated)
 
     print(f"\n=== Scan complete: {aggregated['total_findings']} total findings ===")
+    print(f"=== Boundary impact: {boundary_summary['highest_tier']} "
+          f"(RED:{boundary_summary['tier_counts']['RED']} "
+          f"ORANGE:{boundary_summary['tier_counts']['ORANGE']} "
+          f"YELLOW:{boundary_summary['tier_counts']['YELLOW']} "
+          f"GREEN:{boundary_summary['tier_counts']['GREEN']}) ===")
     return aggregated
 
 
@@ -414,6 +436,7 @@ def _log_audit(project_id: Optional[str], aggregated: Dict) -> None:
     try:
         conn = get_connection()
         c = conn.cursor()
+        boundary = aggregated.get("boundary_impact_summary", {})
         c.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
@@ -428,11 +451,42 @@ def _log_audit(project_id: Optional[str], aggregated: Dict) -> None:
                         "severity_summary": aggregated["severity_summary"],
                         "languages": aggregated["languages_detected"],
                         "scan_timestamp": aggregated["scan_timestamp"],
+                        "boundary_highest_tier": boundary.get("highest_tier", "GREEN"),
+                        "boundary_tier_counts": boundary.get("tier_counts", {}),
+                        "boundary_assessments_created": len(
+                            aggregated.get("boundary_assessments_created", [])
+                        ),
+                        "requires_ato_action": boundary.get("requires_ato_action", False),
                     }
                 ),
                 "CUI",
             ),
         )
+        # Log a separate boundary impact event when ATO action is required
+        if boundary.get("requires_ato_action"):
+            highest = boundary.get("highest_tier", "ORANGE")
+            event_type = "boundary_impact_red" if highest == "RED" else "boundary_assessed"
+            c.execute(
+                """INSERT INTO audit_trail
+                   (project_id, event_type, actor, action, details, classification)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    project_id,
+                    event_type,
+                    "security/boundary_tagger",
+                    f"Security scan produced {highest}-tier boundary impact",
+                    json.dumps(
+                        {
+                            "tier": highest,
+                            "tier_counts": boundary.get("tier_counts", {}),
+                            "assessments_created": len(
+                                aggregated.get("boundary_assessments_created", [])
+                            ),
+                        }
+                    ),
+                    "CUI",
+                ),
+            )
         conn.commit()
         conn.close()
     except Exception as e:
@@ -443,6 +497,7 @@ def main():
     parser = argparse.ArgumentParser(description="Orchestrate all security scans")
     parser.add_argument("--project-path", required=True, help="Project path to scan")
     parser.add_argument("--project-id", help="Project ID for audit trail")
+    parser.add_argument("--system-id", help="ATO system ID for boundary assessment records")
     parser.add_argument("--image", help="Docker image name for container scanning")
     parser.add_argument("--skip-container", action="store_true", help="Skip container scanning")
     parser.add_argument("--output-dir", help="Directory for scan reports")
@@ -457,6 +512,7 @@ def main():
         image_name=args.image,
         skip_container=args.skip_container,
         output_dir=args.output_dir,
+        system_id=args.system_id,
     )
 
     # Evaluate gates if requested
@@ -527,6 +583,22 @@ def _print_summary(aggregated: Dict) -> None:
             if isinstance(res, dict) and "summary" in res:
                 total = res["summary"].get("total", 0)
                 print(f"  Container ({key}): {total} issues")
+
+    # Boundary impact summary
+    if "boundary_impact_summary" in aggregated:
+        bi = aggregated["boundary_impact_summary"]
+        tc = bi.get("tier_counts", {})
+        print()
+        print("  BOUNDARY TIER IMPACT:")
+        print(f"    RED:    {tc.get('RED', 0)}")
+        print(f"    ORANGE: {tc.get('ORANGE', 0)}")
+        print(f"    YELLOW: {tc.get('YELLOW', 0)}")
+        print(f"    GREEN:  {tc.get('GREEN', 0)}")
+        print(f"    Highest tier: {bi.get('highest_tier', 'GREEN')}")
+        print(f"    ATO action required: {bi.get('requires_ato_action', False)}")
+        n_assessments = len(aggregated.get("boundary_assessments_created", []))
+        if n_assessments:
+            print(f"    Assessments written to DB: {n_assessments}")
 
     # Gate results
     if "gates" in aggregated:
