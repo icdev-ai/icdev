@@ -1060,6 +1060,7 @@
 | Coherence Checker | tools/workflow/coherence_checker.py | Implementation coherence validator — 12 checks + 2-tier auto-fix (D-WF-8). Checks: schema_code, config_code, signature_call, fixture_schema, manifest, append_only, import_usage, ruff_lint (OPT-49), api_wiring, route_uniqueness, attribution_claims, llm_injection_patterns. Whitelist: args/ruff_gate.yaml. Wired into: Genesis audit, GKP promotion, CI/CD, marketplace, test orchestrator, heartbeat, production audit | --all, --check, --changed-files, --fix, --json, --human, --gate | Coherence report + auto-fix results |
 | Impact Analyzer | tools/workflow/impact_analyzer.py | Cross-subsystem integration gap detection (D-WF-8f) | --analyze, --graph, --changed-files, --changed-tables, --json | Impact recommendations |
 | Replay Engine | tools/workflow/replay_engine.py | Event-sourced ANVIL pipeline recovery — deterministic state reconstruction from audit trail, resume-from-last-step (D-REPLAY-1..7) | --list-events, --resume-point, --begin, --complete, --fail, --status, --list-sessions, --workflow-id, --session-id, --gate, --json | Session record + resume point |
+| Validated Commit | tools/workflow/validated_commit.py | Unified commit/validate/push pipeline (guard-7 shared module) — runs CodeLens (py_compile + ruff + bandit) + Coherence (w/ main baseline comparison) + E2E + companion sync. Used by stop hook and kanban scheduler. Commit+push only after all gates pass. | (library: validate_working_tree(cwd, modified_files, compare_to_main, run_e2e, run_companion)) | (bool, reason, metrics) tuple |
 
 ## Internal Awareness Engine (Phase 1a-1g)
 Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `kg-icdev-self-awareness`. Provides the `/components-map` dashboard page (JointJS tree + graph + hover + detail drawer) and a post-tool hook that auto-reindexes on every Edit/Write/NotebookEdit. Enablement-aware: disabled modules are indexed but visually dimmed and excluded from probing. See docs/features/internal-awareness-engine.md for the full plan.
@@ -1939,6 +1940,13 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Glossary Engine | tools\writing\glossary_engine.py | Auto-registered: writing/glossary_engine.py | --json | JSON |
 | Rewriter | tools\writing\rewriter.py | Auto-registered: writing/rewriter.py | --json | JSON |
 | Style Guide | tools\writing\style_guide.py | Auto-registered: writing/style_guide.py | --json | JSON |
+
+## Dashboard UX Enhancements (OPT-68, 2026-04-12)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Debounce Filter JS | tools/dashboard/static/js/debounce_filter.js | Filter-as-you-type helper (react-admin useListFilter pattern, MIT). Binds input to onFilter with 250ms debounce | ICDEV.debounceFilter.bind / bindForm | Live DOM updates |
+| Undo Toast JS | tools/dashboard/static/js/undo_toast.js | 5-second Snackbar with Undo callback (react-admin undoable mutation pattern, MIT) | ICDEV.undoToast.show({message, undoCallback, durationMs}) | DOM toast element |
+| Filter Presets JS | tools/dashboard/static/js/filter_presets.js | Save/load named filter presets to localStorage, per-page namespace (react-admin saved queries pattern, MIT) | ICDEV.filterPresets.init({key, getCurrent, onApply, selectEl}) | {save, deleteCurrent, applyByName, list, refresh} |
 
 ## Manifest Gap Fill (2026-04-12)
 | Tool | File | Description | Input | Output |
