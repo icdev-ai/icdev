@@ -135,7 +135,7 @@
   ],
   "video_sources": {
     "youtube_channels": [
-      "https://www.youtube.com/@AIPathwaysChannel"
+      "UCJ-KJeHzrnZkGX7qAM2V74Q"
     ],
     "youtube_search_queries": [
       "algorithmic trading",
@@ -144,6 +144,15 @@
       "AI trading strategies",
       "machine learning finance"
     ],
-    "manual_urls": []
+    "manual_urls": [
+      "https://www.youtube.com/watch?v=y_bsjZThP0o",
+      "https://www.youtube.com/watch?v=lIMu8ysJW68",
+      "https://www.youtube.com/watch?v=EUSXhJNwRqI",
+      "https://www.youtube.com/watch?v=Bxs9QmdOLoI",
+      "https://www.youtube.com/watch?v=uFmexDIhRM4",
+      "https://www.youtube.com/watch?v=cyLQYYsZRoA",
+      "https://www.youtube.com/watch?v=rDf3TfHlGmk",
+      "https://www.youtube.com/watch?v=GaXly2we238"
+    ]
   }
 }
