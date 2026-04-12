@@ -6646,6 +6646,48 @@ CREATE INDEX IF NOT EXISTS idx_ft_hp_search
     ON ft_hyperparam_results(search_id);
 
 -- ============================================================
+-- TRAJECTORY-TO-TRAINING PIPELINE (D-FT-TRAJ)
+-- ============================================================
+
+-- 10. Trajectory metadata — mutable until captured/finalized
+CREATE TABLE IF NOT EXISTS ft_trajectories (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT DEFAULT '',
+    workflow_type TEXT NOT NULL DEFAULT 'general',
+    source TEXT DEFAULT '',
+    outcome TEXT DEFAULT 'pending' CHECK(outcome IN ('pending','success','failure')),
+    reward REAL DEFAULT 0.0,
+    step_count INTEGER DEFAULT 0,
+    dataset_id TEXT DEFAULT '',
+    sharegpt_json TEXT DEFAULT '{}',
+    project_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    captured_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ft_traj_workflow
+    ON ft_trajectories(workflow_type, outcome);
+CREATE INDEX IF NOT EXISTS idx_ft_traj_reward
+    ON ft_trajectories(reward, outcome);
+
+-- 11. Trajectory steps — APPEND-ONLY (D6, D-FT-TRAJ)
+CREATE TABLE IF NOT EXISTS ft_trajectory_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trajectory_id TEXT NOT NULL REFERENCES ft_trajectories(id),
+    step_index INTEGER NOT NULL,
+    tool_name TEXT DEFAULT '',
+    tool_input TEXT DEFAULT '{}',
+    tool_output TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'success' CHECK(status IN ('success','error','skipped')),
+    duration_ms INTEGER DEFAULT 0,
+    span_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ft_traj_steps_traj
+    ON ft_trajectory_steps(trajectory_id, step_index);
+
+-- ============================================================
 -- RAG-TO-FT PIPELINE (D-KARL-5)
 -- ============================================================
 

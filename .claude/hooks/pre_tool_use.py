@@ -171,6 +171,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ft_evaluations",
         "ft_promotion_log",
         "ft_hyperparam_results",
+        # Trajectory-to-Training Pipeline (D-FT-TRAJ)
+        "ft_trajectory_steps",
         # === PARENT-ONLY (excluded from child apps — D-CHILD-3) ===
         # Proposal Lifecycle (D-PROP-3 — reviews, findings, status history are immutable)
         "proposal_reviews",
