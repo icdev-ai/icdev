@@ -324,19 +324,20 @@ def _create_worktree(task_id: str) -> Optional[str]:
 
 
 def _merge_worktree_to_main(task_id: str) -> bool:
-    """Fast-forward merge the kanban task branch into the parent branch
-    before cleanup so dependent tasks see each other's commits.
+    """Merge the kanban task branch into the parent branch before cleanup
+    so dependent tasks see each other's commits.
+
+    Strategy (in order):
+      1. Fast-forward merge (``--ff-only``) — cheapest, no merge commit.
+      2. If ff fails because main diverged, rebase the branch onto main
+         and retry ff.  This handles the common case where the scheduler
+         or another session committed to main while the task was running.
+      3. If the working tree is dirty (uncommitted edits on main), stash
+         before checkout and pop after merge so dirty files never block.
 
     Returns True if merge succeeded (or branch had no commits to merge),
-    False if merge was non-fast-forward or encountered an error. On
-    failure, the branch is PRESERVED (not deleted) so the user can merge
-    manually.
-
-    Rationale: prior behavior hard-deleted the branch on cleanup, losing
-    all commits. This fix ensures successful task work is preserved on
-    main; dependent multi-phase work (e.g. Internal Awareness Engine
-    phases 1..6) now builds incrementally instead of each phase starting
-    from the same main HEAD.
+    False on unrecoverable conflict.  On failure the branch is PRESERVED
+    (not deleted) so the user can merge manually.
     """
     import subprocess as _sp
 
@@ -352,8 +353,6 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             timeout=10,
         )
         if result.returncode != 0:
-            # Branch doesn't exist or main branch name is different —
-            # treat as no-op and let caller delete
             return True
         if not result.stdout.strip():
             return True  # Nothing to merge
@@ -374,7 +373,50 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     except Exception:
         cur_branch = "main"
 
-    # 3) Checkout main and fast-forward merge
+    # 3) Stash dirty working tree if needed
+    stashed = False
+    try:
+        dirty = _sp.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if dirty.stdout.strip():
+            stash = _sp.run(
+                ["git", "stash", "push", "-m", f"kanban-merge-{task_id}"],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if stash.returncode == 0 and "No local changes" not in stash.stdout:
+                stashed = True
+                logger.info("Stashed dirty working tree for merge of %s", task_id)
+    except Exception:
+        pass  # Best-effort — proceed anyway
+
+    def _restore():
+        """Restore original branch and pop stash."""
+        if cur_branch != "main":
+            _sp.run(
+                ["git", "checkout", cur_branch],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        if stashed:
+            _sp.run(
+                ["git", "stash", "pop"],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+    # 4) Checkout main and attempt fast-forward merge
     try:
         co = _sp.run(
             ["git", "checkout", "main"],
@@ -389,6 +431,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
                 task_id,
                 co.stderr[:200],
             )
+            _restore()
             return False
 
         merge = _sp.run(
@@ -398,33 +441,83 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             text=True,
             timeout=30,
         )
-        if merge.returncode != 0:
-            # Non-fast-forward — main moved ahead. Leave branch in place
-            # for manual merge, try to restore the original branch on
-            # main worktree, and report failure.
-            logger.warning(
-                "Non-fast-forward merge for %s: %s — branch preserved",
+        if merge.returncode == 0:
+            logger.info(
+                "Merged kanban/%s to main (fast-forward, %d commits)",
                 task_id,
-                merge.stderr[:200],
+                len(result.stdout.strip().splitlines()),
             )
-            if cur_branch != "main":
-                _sp.run(
-                    ["git", "checkout", cur_branch],
-                    cwd=str(BASE_DIR),
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
+            _restore()
+            return True
+
+        # 5) FF failed — try rebase-then-ff
+        logger.info(
+            "FF merge failed for %s, attempting rebase onto main", task_id
+        )
+        rebase = _sp.run(
+            ["git", "rebase", "main", branch_name],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if rebase.returncode != 0:
+            # Rebase conflict — abort and preserve branch
+            _sp.run(
+                ["git", "rebase", "--abort"],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            logger.warning(
+                "Rebase conflict for %s: %s — branch preserved",
+                task_id,
+                rebase.stderr[:200],
+            )
+            # Rebase leaves us on the branch — go back to main
+            _sp.run(
+                ["git", "checkout", "main"],
+                cwd=str(BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            _restore()
             return False
 
-        logger.info(
-            "Merged kanban/%s to main (fast-forward, %d commits)",
-            task_id,
-            len(result.stdout.strip().splitlines()),
+        # Rebase succeeded — now on the rebased branch, switch to main and ff
+        _sp.run(
+            ["git", "checkout", "main"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
-        return True
+        merge2 = _sp.run(
+            ["git", "merge", "--ff-only", branch_name],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if merge2.returncode == 0:
+            logger.info(
+                "Merged kanban/%s to main (rebase + fast-forward)", task_id
+            )
+            _restore()
+            return True
+
+        logger.warning(
+            "Post-rebase FF merge still failed for %s: %s — branch preserved",
+            task_id,
+            merge2.stderr[:200],
+        )
+        _restore()
+        return False
     except Exception as exc:
         logger.warning("Merge to main failed for %s: %s", task_id, exc)
+        _restore()
         return False
 
 
