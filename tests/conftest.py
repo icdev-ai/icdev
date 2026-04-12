@@ -1335,6 +1335,93 @@ CREATE TABLE IF NOT EXISTS studio_dashboards (
     updated_at TEXT DEFAULT (datetime('now')),
     shared INTEGER DEFAULT 0
 );
+
+-- Supply Chain / CVE Triage / Passive Watcher (Phase task-f8a39b1e48, NIST SI-4, CA-7)
+CREATE TABLE IF NOT EXISTS supply_chain_vendors (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    vendor_name TEXT NOT NULL,
+    vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),
+    country_of_origin TEXT,
+    scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')),
+    section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')),
+    dod_approved INTEGER DEFAULT 0,
+    contact_info TEXT,
+    isa_required INTEGER DEFAULT 0,
+    last_assessed TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, vendor_name)
+);
+CREATE TABLE IF NOT EXISTS supply_chain_dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    source_type TEXT NOT NULL
+        CHECK(source_type IN ('project', 'system', 'component', 'vendor', 'package')),
+    source_id TEXT NOT NULL,
+    target_type TEXT NOT NULL
+        CHECK(target_type IN ('project', 'system', 'component', 'vendor', 'package')),
+    target_id TEXT NOT NULL,
+    dependency_type TEXT NOT NULL
+        CHECK(dependency_type IN ('depends_on', 'supplies', 'integrates_with',
+            'data_flows_to', 'inherits_ato', 'shares_boundary')),
+    criticality TEXT DEFAULT 'medium'
+        CHECK(criticality IN ('critical', 'high', 'medium', 'low')),
+    isa_id TEXT,
+    metadata TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, source_type, source_id, target_type, target_id, dependency_type)
+);
+CREATE TABLE IF NOT EXISTS isa_agreements (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    agreement_type TEXT NOT NULL CHECK(agreement_type IN ('isa', 'mou', 'moa', 'sla', 'ila')),
+    partner_system TEXT NOT NULL,
+    partner_org TEXT,
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft', 'review', 'signed', 'active', 'expiring', 'expired', 'terminated')),
+    signed_date TEXT,
+    expiry_date TEXT,
+    data_types_shared TEXT,
+    ports_protocols TEXT,
+    security_controls TEXT,
+    poc_name TEXT,
+    poc_email TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS cve_triage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    cve_id TEXT NOT NULL,
+    package_name TEXT NOT NULL,
+    package_version TEXT,
+    severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+    cvss_score REAL,
+    exploitability TEXT CHECK(exploitability IN ('active', 'poc', 'theoretical', 'none_known')),
+    triage_decision TEXT CHECK(triage_decision IN ('remediate', 'mitigate', 'accept_risk', 'defer', 'false_positive', 'not_applicable')),
+    triage_rationale TEXT,
+    upstream_impact TEXT,
+    downstream_impact TEXT,
+    sla_deadline TEXT,
+    triaged_by TEXT,
+    triaged_at TEXT DEFAULT (datetime('now')),
+    remediated_at TEXT,
+    UNIQUE(project_id, cve_id, package_name)
+);
+CREATE TABLE IF NOT EXISTS cve_passive_watch_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_trail_id INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    cve_id TEXT NOT NULL,
+    component TEXT,
+    triage_id INTEGER,
+    skipped INTEGER DEFAULT 0,
+    source_event_type TEXT,
+    processed_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
