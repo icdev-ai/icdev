@@ -1529,10 +1529,19 @@ def create_network_blueprint():
         conn.close()
         _audit("UPDATE", "topology", topo_id)
         # Hook: notify Security Design Canvas of topology change
+        sdc_assessment = None
         try:
             from tools.security_canvas.agent import on_ndc_topology_saved
 
-            on_ndc_topology_saved(topo_id)
+            result = on_ndc_topology_saved(topo_id)
+            if result and result.get("status") == "assessed":
+                sdc_assessment = {
+                    "design_id": result.get("design_id"),
+                    "risk_score": result.get("risk_score"),
+                    "posture_grade": result.get("posture_grade"),
+                    "cat1_count": result.get("cat1_count", 0),
+                    "total_findings": result.get("total_findings", 0),
+                }
         except Exception:
             pass  # Security Canvas is optional
         # Incremental KG update: re-extract only if graph_json changed
@@ -1542,7 +1551,10 @@ def create_network_blueprint():
             rebuild_canvas_kg("ndc", topo_id)
         except Exception:
             pass
-        return jsonify({"ok": True})
+        resp = {"ok": True}
+        if sdc_assessment is not None:
+            resp["sdc_assessment"] = sdc_assessment
+        return jsonify(resp)
 
     @bp.route("/api/topologies/<topo_id>", methods=["DELETE"])
     @nc_login_required

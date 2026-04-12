@@ -97,12 +97,16 @@ def on_ndc_topology_saved(topology_id: str) -> dict:
             assessment.get("risk_score"),
             assessment.get("posture_grade"),
         )
+        findings = assessment.get("findings", [])
+        cat1_count = sum(1 for f in findings if f.get("severity") == "CAT1")
         return {
             "status": "assessed",
             "design_id": design_id,
             "assessment_id": assess_id,
             "risk_score": assessment.get("risk_score"),
             "posture_grade": assessment.get("posture_grade"),
+            "cat1_count": cat1_count,
+            "total_findings": len(findings),
         }
     except Exception as exc:
         logger.warning("Security agent error on NDC save: %s", exc)

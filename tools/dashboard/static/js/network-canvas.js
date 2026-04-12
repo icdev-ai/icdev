@@ -1827,11 +1827,15 @@ async function saveTopology() {
         window.history.replaceState({}, '', NC_BASE + `/canvas/${data.id}`);
       }
     } else {
-      await fetch(NC_BASE + `/api/topologies/${currentTopoId}`, {
+      const putResp = await fetch(NC_BASE + `/api/topologies/${currentTopoId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ graph_json: gj })
       });
+      const putData = await putResp.json().catch(() => ({}));
+      if (putData.sdc_assessment) {
+        _showSdcToast(putData.sdc_assessment, 'NDC');
+      }
     }
     isDirty = false;
     const now = new Date().toLocaleTimeString();
@@ -1840,6 +1844,42 @@ async function saveTopology() {
   } catch (err) {
     setStatus('Save failed: ' + err.message);
   }
+}
+
+function _showSdcToast(sdc, source) {
+  const cat1 = sdc.cat1_count || 0;
+  const grade = sdc.posture_grade || '?';
+  const score = sdc.risk_score != null ? sdc.risk_score.toFixed(1) : '—';
+  const gradeColor = grade <= 'B' ? '#27ae60' : grade === 'C' ? '#f39c12' : '#e74c3c';
+  const cat1Text = cat1 > 0
+    ? `<span style="color:#e74c3c;font-weight:bold;">&#9888; ${cat1} CAT1</span>`
+    : `<span style="color:#27ae60;">&#10003; 0 CAT1</span>`;
+
+  const existing = document.getElementById('sdc-cross-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'sdc-cross-toast';
+  toast.style.cssText = [
+    'position:fixed', 'bottom:24px', 'right:24px', 'z-index:9999',
+    'background:#0f1e35', 'border:1px solid ' + (cat1 > 0 ? '#c0392b' : '#1e3a6e'),
+    'border-radius:8px', 'padding:12px 16px', 'min-width:260px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.5)', 'font-family:sans-serif',
+  ].join(';');
+  toast.innerHTML = `
+    <div style="font-size:11px;color:#7a8cb0;margin-bottom:4px;">SDC Re-assessed (triggered by ${source} save)</div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="font-size:2rem;font-weight:bold;color:${gradeColor};">${grade}</div>
+      <div>
+        <div style="font-size:13px;color:#eaeaea;">Score: ${score}</div>
+        <div style="font-size:13px;">${cat1Text}</div>
+      </div>
+    </div>
+    ${cat1 > 0 ? '<div style="margin-top:8px;font-size:11px;color:#e74c3c;">View findings on <a href="/security/posture" style="color:#e74c3c;text-decoration:underline;">Security Posture</a></div>' : ''}
+    <button onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">&#10005;</button>
+  `;
+  document.body.appendChild(toast);
+  setTimeout(() => { if (toast.parentElement) toast.remove(); }, 8000);
 }
 
 /* ── API: Load ────────────────────────────────────────────────────────────────── */

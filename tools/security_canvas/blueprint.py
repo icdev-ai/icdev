@@ -1206,7 +1206,7 @@ def create_security_blueprint():
         else:
             overall_posture = "critical"
 
-        # Aggregate CAT1 counts from pipeline-level assessments (design_id IS NULL)
+        # Aggregate CAT1 counts from pipeline-level assessments (design_id IS NULL, PDC-triggered)
         with get_connection() as conn:
             pipeline_rows = conn.execute(
                 "SELECT source_entity_id, findings_json, ran_at "
@@ -1237,6 +1237,38 @@ def create_security_blueprint():
                 }
             )
 
+        # Aggregate NDC-triggered design assessments (design_id IS NOT NULL, ndc_save)
+        with get_connection() as conn:
+            ndc_rows = conn.execute(
+                "SELECT design_id, source_entity_id, risk_score, posture_grade, "
+                "findings_json, ran_at "
+                "FROM sc_assessments WHERE trigger_source='ndc_save' "
+                "ORDER BY ran_at DESC"
+            ).fetchall()
+
+        seen_ndc: set = set()
+        ndc_assessments = []
+        for nr in ndc_rows:
+            did = nr["design_id"] or nr[0]
+            if did in seen_ndc:
+                continue
+            seen_ndc.add(did)
+            try:
+                findings = json.loads(nr["findings_json"] or "[]")
+                cat1 = sum(1 for f in findings if f.get("severity") == "CAT1")
+            except Exception:
+                cat1 = 0
+            ndc_assessments.append(
+                {
+                    "topology_id": nr["source_entity_id"],
+                    "design_id": did,
+                    "risk_score": nr["risk_score"],
+                    "posture_grade": nr["posture_grade"],
+                    "cat1_count": cat1,
+                    "last_assessed": nr["ran_at"],
+                }
+            )
+
         return jsonify(
             {
                 "total_designs": total_designs,
@@ -1249,6 +1281,7 @@ def create_security_blueprint():
                 "overall_posture": overall_posture,
                 "total_cat1_findings": total_cat1,
                 "pipeline_assessments": pipeline_assessments,
+                "ndc_assessments": ndc_assessments,
             }
         )
 

@@ -64,7 +64,7 @@ fetch('/security/api/posture-summary').then(r => r.json()).then(d => {
   });
   html += '</tbody></table>';
 
-  // Pipeline assessments section
+  // Pipeline assessments section (PDC-triggered)
   const pipes = d.pipeline_assessments || [];
   if (pipes.length > 0) {
     html += '<h3 style="color:var(--text);margin-top:24px;margin-bottom:8px;">Pipeline Security (PDC)</h3>';
@@ -76,6 +76,27 @@ fetch('/security/api/posture-summary').then(r => r.json()).then(d => {
       html += '<tr><td style="font-family:monospace;font-size:11px;">' + (p.pipeline_id||'—') + '</td>';
       html += '<td>' + pc2 + '</td>';
       html += '<td style="font-size:11px;color:var(--text-dim);">' + (p.last_assessed||'—') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  // NDC-triggered assessments section
+  const ndcItems = d.ndc_assessments || [];
+  if (ndcItems.length > 0) {
+    html += '<h3 style="color:var(--text);margin-top:24px;margin-bottom:8px;">Network Topology Security (NDC)</h3>';
+    html += '<table class="data-table"><thead><tr><th>Topology ID</th><th>Design</th><th>Grade</th><th>CAT1</th><th>Last Assessed</th></tr></thead><tbody>';
+    ndcItems.forEach(n => {
+      const gc3 = n.posture_grade && n.posture_grade <= 'B' ? '#27ae60' : n.posture_grade === 'C' ? '#f39c12' : '#e74c3c';
+      const cat1n = n.cat1_count > 0
+        ? '<span style="background:#c0392b;color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:bold;">' + n.cat1_count + ' CAT1</span>'
+        : '<span style="color:#27ae60;font-size:11px;">Clean</span>';
+      html += '<tr>';
+      html += '<td style="font-family:monospace;font-size:11px;">' + (n.topology_id||'—') + '</td>';
+      html += '<td style="font-size:11px;"><a href="/security/canvas/' + n.design_id + '" style="color:var(--accent);">' + (n.design_id||'—') + '</a></td>';
+      html += '<td style="color:' + gc3 + ';font-weight:bold;">' + (n.posture_grade||'N/A') + '</td>';
+      html += '<td>' + cat1n + '</td>';
+      html += '<td style="font-size:11px;color:var(--text-dim);">' + (n.last_assessed||'—') + '</td>';
+      html += '</tr>';
     });
     html += '</tbody></table>';
   }
