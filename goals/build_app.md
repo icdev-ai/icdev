@@ -84,14 +84,30 @@ See `context/agentic/fitness_rubric.md` for the scoring rubric.
    - Time (MVP vs full build)
    - Technical (must use Supabase, must integrate with X)
 
+### Karpathy Principles Check (Pre-Design Gate)
+
+Before proceeding to Trace, apply `hardprompts/karpathy_principles.md`:
+
+1. **State assumptions** — What are you assuming about the users, data, integrations, and constraints?
+2. **Enumerate interpretations** — If the problem statement is ambiguous, list every valid reading and select one explicitly.
+3. **Prefer simpler approach** — Compare at least two architecture options; choose the simpler one unless there is a written reason not to.
+4. **Bound your edit scope** — List what this architect phase will **not** touch (existing tables, services, auth flows, etc.).
+5. **Success criteria** — Rewrite each goal from the App Brief as a testable assertion (e.g., "Given a logged-in user, when they open the dashboard, then HTTP 200 and <10 JS errors in console").
+
+> **Partial:** `{% include 'hardprompts/karpathy_principles.md' %}` with `task_description` set to the problem statement.
+
+This gate runs **once** at the Architect phase. Do not repeat it at Assemble — the criteria defined here become the Stress-test acceptance criteria.
+
 ### Output
 
 ```markdown
 ## App Brief
 - **Problem:** [One sentence]
 - **User:** [Who specifically]
-- **Success:** [Measurable outcome]
+- **Success:** [Measurable outcome — expressed as testable criteria]
 - **Constraints:** [List]
+- **Assumptions:** [Explicit list]
+- **Interpretation chosen:** [Which reading of the requirement and why]
 ```
 
 ---
@@ -564,7 +580,7 @@ These are the mistakes "vibe coders" make:
 
 - **Args:** `args/app_defaults.yaml` (if created)
 - **Context:** `context/ui_patterns/` (design references)
-- **Hard Prompts:** `hardprompts/app_building/` (generation templates)
+- **Hard Prompts:** `hardprompts/app_building/` (generation templates), `hardprompts/karpathy_principles.md` (pre-design engineering gate)
 
 ---
 
