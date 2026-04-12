@@ -916,4 +916,179 @@ def create_data_canvas_blueprint():
         """Return current participants in a DDC collaborative session."""
         return jsonify({"participants": _ddc_collab.get_participants(design_id)})
 
+    # ====================================================================
+    # API ROUTES — Schema Introspection (reverse-engineer live DB)
+    # ====================================================================
+
+    @bp.route("/api/introspect", methods=["POST"])
+    @dc_login_required
+    def dc_api_introspect():
+        """Introspect a live database and return a Data Canvas graph.
+
+        POST body (JSON):
+            dsn         — DB connection string (required)
+            db_type     — "auto"|"sqlite"|"postgresql"|"mysql"|"sqlserver"
+            schema      — optional schema/database filter
+            design_id   — if provided, merge result into this design
+            design_name — if creating a new design, use this name
+
+        Returns (200):
+            {
+              "nodes": [...],
+              "edges": [...],
+              "boundaries": [],
+              "meta": {"db_type":..., "db_name":..., "table_count":...,
+                        "column_count":..., "fk_count":...},
+              "design_id": "<uuid|null>"
+            }
+
+        Returns (400) if dsn is missing.
+        Returns (500) if introspection fails (driver not installed, auth error, etc.).
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        dsn = body.get("dsn", "").strip()
+        if not dsn:
+            return jsonify({"error": "dsn is required"}), 400
+
+        db_type = body.get("db_type", "auto")
+        schema_filter = body.get("schema") or None
+        design_id_param = body.get("design_id") or None
+        design_name = body.get("design_name") or None
+
+        try:
+            from tools.data_canvas.introspector import introspect as _ddc_introspect
+
+            graph = _ddc_introspect(dsn, db_type=db_type, schema_filter=schema_filter)
+        except (FileNotFoundError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc)}), 422
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Introspection failed for dsn=%r", dsn)
+            return jsonify({"error": f"Introspection failed: {exc}"}), 500
+
+        meta = graph.pop("_meta", {})
+        graph_clean = {k: v for k, v in graph.items() if not k.startswith("_")}
+
+        result_design_id = None
+
+        # Optionally persist as a new design or merge into existing one
+        if design_id_param:
+            # Merge into existing design
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT graph_json FROM data_designs WHERE id=?", (design_id_param,)
+            ).fetchone()
+            if row:
+                try:
+                    existing = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+                except Exception:
+                    existing = {"nodes": [], "edges": [], "boundaries": []}
+                # Merge: add introspected nodes/edges that aren't already present
+                existing_node_ids = {n["id"] for n in existing.get("nodes", [])}
+                existing_edge_ids = {e.get("id") for e in existing.get("edges", [])}
+                new_nodes = [n for n in graph_clean.get("nodes", []) if n["id"] not in existing_node_ids]
+                new_edges = [e for e in graph_clean.get("edges", []) if e.get("id") not in existing_edge_ids]
+                existing["nodes"] = existing.get("nodes", []) + new_nodes
+                existing["edges"] = existing.get("edges", []) + new_edges
+                merged_json = json.dumps(existing)
+                conn.execute(
+                    "UPDATE data_designs SET graph_json=?, updated_at=? WHERE id=?",
+                    (merged_json, now_isoformat(), design_id_param),
+                )
+                conn.commit()
+                conn.close()
+                _audit(
+                    design_id_param,
+                    session.get("user_id", "system"),
+                    "INTROSPECT_MERGE",
+                    f"db={meta.get('db_name','?')} tables={meta.get('table_count',0)}",
+                )
+                result_design_id = design_id_param
+            else:
+                conn.close()
+        elif design_name:
+            # Create a new design from the introspected graph
+            new_id = str(_uuid.uuid4())
+            conn = get_connection()
+            conn.execute(
+                "INSERT INTO data_designs (id, name, description, graph_json, classification, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    new_id,
+                    design_name,
+                    f"Auto-generated from {meta.get('db_type', 'db')}:{meta.get('db_name', '?')}",
+                    json.dumps(graph_clean),
+                    "CUI",
+                    now_isoformat(),
+                    now_isoformat(),
+                ),
+            )
+            conn.commit()
+            conn.close()
+            _audit(
+                new_id,
+                session.get("user_id", "system"),
+                "INTROSPECT_CREATE",
+                f"db={meta.get('db_name','?')} tables={meta.get('table_count',0)}",
+            )
+            result_design_id = new_id
+
+        return jsonify(
+            {
+                "nodes": graph_clean.get("nodes", []),
+                "edges": graph_clean.get("edges", []),
+                "boundaries": graph_clean.get("boundaries", []),
+                "meta": meta,
+                "design_id": result_design_id,
+            }
+        )
+
+    @bp.route("/api/introspect/preview", methods=["POST"])
+    @dc_login_required
+    def dc_api_introspect_preview():
+        """Return schema metadata without generating full graph nodes.
+
+        Lightweight endpoint for pre-flight checks — shows table/column
+        counts before committing to a full introspection import.
+
+        POST body: same as /api/introspect (dsn, db_type, schema)
+        Returns: {"db_type":..., "db_name":..., "table_count":...,
+                   "column_count":..., "fk_count":...}
+        """
+        body = request.get_json(force=True, silent=True) or {}
+        dsn = body.get("dsn", "").strip()
+        if not dsn:
+            return jsonify({"error": "dsn is required"}), 400
+
+        db_type = body.get("db_type", "auto")
+        schema_filter = body.get("schema") or None
+
+        try:
+            from tools.data_canvas.introspector import read_schema
+
+            schema = read_schema(dsn, db_type=db_type, schema_filter=schema_filter)
+        except Exception as exc:
+            logger.exception("Schema preview failed for dsn=%r", dsn)
+            return jsonify({"error": f"Schema preview failed: {exc}"}), 500
+
+        return jsonify(
+            {
+                "db_type": schema["db_type"],
+                "db_name": schema["db_name"],
+                "table_count": len(schema["tables"]),
+                "column_count": sum(len(t["columns"]) for t in schema["tables"]),
+                "fk_count": len(schema["foreign_keys"]),
+                "tables": [
+                    {
+                        "schema": t["schema"],
+                        "name": t["name"],
+                        "type": t["type"],
+                        "column_count": len(t["columns"]),
+                    }
+                    for t in schema["tables"]
+                ],
+            }
+        )
+
     return bp

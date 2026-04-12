@@ -814,6 +814,56 @@ def get_column_impact(
     return result
 
 
+# ── Schema Introspection Integration ─────────────────────────────────────────
+
+
+def generate_graph_from_schema(
+    dsn: str,
+    db_type: str = "auto",
+    schema_filter: str | None = None,
+) -> dict:
+    """Introspect a live database and return a Data Canvas graph dict.
+
+    Thin wrapper over :mod:`tools.data_canvas.introspector` that keeps
+    callers within the data_engine API surface.  The returned dict is
+    ready to be stored as ``graph_json`` in a ``data_designs`` row.
+
+    Parameters
+    ----------
+    dsn:
+        Database connection string.  Examples:
+
+        * ``/path/to/file.db``  (SQLite)
+        * ``sqlite:///path/to/file.db``  (SQLite, explicit prefix)
+        * ``postgresql://user:pw@host:5432/dbname``  (PostgreSQL)
+        * ``mysql://user:pw@host:3306/dbname``  (MySQL / MariaDB)
+        * ``mssql://user:pw@host/dbname``  (SQL Server)
+    db_type:
+        ``"auto"`` (default, infer from DSN), or one of ``"sqlite"``,
+        ``"postgresql"``, ``"mysql"``, ``"sqlserver"``.
+    schema_filter:
+        Restrict introspection to a specific schema/database (e.g.
+        ``"public"`` for PostgreSQL, ``"dbo"`` for SQL Server).
+
+    Returns
+    -------
+    dict
+        Keys: ``nodes``, ``edges``, ``boundaries`` (graph_json-compatible),
+        plus ``_meta`` with ``db_type``, ``db_name``, ``table_count``,
+        ``column_count``, ``fk_count``.
+
+    Raises
+    ------
+    ValueError
+        For unsupported ``db_type`` values or malformed DSNs.
+    RuntimeError
+        If the required driver library is not installed.
+    """
+    from tools.data_canvas.introspector import introspect as _introspect
+
+    return _introspect(dsn, db_type=db_type, schema_filter=schema_filter)
+
+
 # Re-export lineage primitives so callers only need to import data_engine.
 __all__ = [
     # assessment
@@ -821,6 +871,8 @@ __all__ = [
     "compute_classification_coverage",
     "detect_data_gaps",
     "compute_nist_coverage",
+    # schema introspection
+    "generate_graph_from_schema",
     # column lineage
     "analyze_column_lineage",
     "get_column_impact",
