@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Production monitoring with log analysis, metric collection, alerting, and self-healing trigger"
+description: "ICDEV™ workflow: "Production monitoring with log analysis, metric collection, alerting, and self-healing trigger. Use when setting up monitoring or investigating a production issue.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-monitor
 
-When the user asks to production monitoring with log analysis, metric collection, alerting, and self-healing trigger, follow these steps:
+When the user asks to "production monitoring with log analysis, metric collection, alerting, and self-healing trigger. use when setting up monitoring or investigating a production issue.", follow these steps:
 
 1. **Load Monitoring Configuration**
    ```bash

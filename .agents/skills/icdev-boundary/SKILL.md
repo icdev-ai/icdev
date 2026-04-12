@@ -1,6 +1,6 @@
 ---
 name: icdev-boundary
-description: Assess ATO boundary impact and manage supply chain risk for requirements
+description: "Assess ATO boundary impact and manage supply chain risk for requirements. Use when analyzing how a requirement change affects the ATO boundary or supply chain."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 

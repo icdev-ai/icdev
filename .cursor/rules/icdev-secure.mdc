@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan)"
+description: "ICDEV™ workflow: "Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan). Use when scanning code or containers for security vulnerabilities before deployment.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-secure
 
-When the user asks to run comprehensive security scanning (sast, dependency audit, secret detection, container scan), follow these steps:
+When the user asks to "run comprehensive security scanning (sast, dependency audit, secret detection, container scan). use when scanning code or containers for security vulnerabilities before deployment.", follow these steps:
 
 1. **Load Security Configuration**
    ```bash

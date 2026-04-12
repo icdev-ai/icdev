@@ -1,6 +1,6 @@
 ---
 name: icdev-test
-description: Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking
+description: "Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking. Use when validating code quality and coverage before a release."
 context: fork
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---

@@ -1,6 +1,6 @@
 ---
 name: icdev-maintain
-description: Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs
+description: "Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs. Use when performing routine dependency audits or remediating vulnerabilities."
 context: fork
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---

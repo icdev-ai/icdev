@@ -1,6 +1,6 @@
 ---
 name: icdev-mbse
-description: MBSE integration — import SysML/DOORS, build digital thread, generate code, sync, assess DES compliance
+description: "MBSE integration — import SysML/DOORS, build digital thread, generate code, sync, assess DES compliance. Use when integrating a model-based systems engineering artifact into ICDEV™."
 context: fork
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---

@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "MBSE integration — import SysML/DOORS, build digital thread, generate code, sync, assess DES compliance"
+description: ""MBSE integration — import SysML/DOORS, build digital thread, generate code, sync, assess DES compliance. Use when integrating a model-based systems engineering artifact into ICDEV™.""
 tools:
   - terminal
   - file_search

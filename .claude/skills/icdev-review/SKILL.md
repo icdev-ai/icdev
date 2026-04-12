@@ -1,6 +1,6 @@
 ---
 name: icdev-review
-description: Enforce code review gates with security checks, compliance validation, and merge readiness assessment
+description: "Enforce code review gates with security checks, compliance validation, and merge readiness assessment. Use when running a pre-merge code review or checking merge readiness."
 context: fork
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---

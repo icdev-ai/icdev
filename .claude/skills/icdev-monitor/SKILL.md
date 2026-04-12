@@ -1,6 +1,6 @@
 ---
 name: icdev-monitor
-description: Production monitoring with log analysis, metric collection, alerting, and self-healing trigger
+description: "Production monitoring with log analysis, metric collection, alerting, and self-healing trigger. Use when setting up monitoring or investigating a production issue."
 context: fork
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---

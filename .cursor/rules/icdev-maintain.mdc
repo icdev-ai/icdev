@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs"
+description: "ICDEV™ workflow: "Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs. Use when performing routine dependency audits or remediating vulnerabilities.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-maintain
 
-When the user asks to run maintenance audit — scan dependencies, check cves, compute score, remediate, track slas, follow these steps:
+When the user asks to "run maintenance audit — scan dependencies, check cves, compute score, remediate, track slas. use when performing routine dependency audits or remediating vulnerabilities.", follow these steps:
 
 1. **Scan Dependencies**
    ```bash

@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Display comprehensive project status including compliance, security, deployment, and agent health"
+description: ""Display comprehensive project status including compliance, security, deployment, and agent health. Use when checking overall project health or preparing a status report.""
 tools:
   - terminal
   - file_search

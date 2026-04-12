@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Initialize a new ICDEV™ project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline"
+description: ""Initialize a new ICDEV™ project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline. Use when starting a new government or DoD application project.""
 tools:
   - terminal
   - file_search

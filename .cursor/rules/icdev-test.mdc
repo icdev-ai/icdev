@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking"
+description: "ICDEV™ workflow: "Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking. Use when validating code quality and coverage before a release.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-test
 
-When the user asks to run the full test suite (pytest unit + behave bdd) with coverage reporting and compliance tracking, follow these steps:
+When the user asks to "run the full test suite (pytest unit + behave bdd) with coverage reporting and compliance tracking. use when validating code quality and coverage before a release.", follow these steps:
 
 1. **Detect Project Directory**
    If `--project-dir` not specified, look for nearest project directory with tests/ folder.

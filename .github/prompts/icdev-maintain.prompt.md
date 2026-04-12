@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs"
+description: ""Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs. Use when performing routine dependency audits or remediating vulnerabilities.""
 tools:
   - terminal
   - file_search

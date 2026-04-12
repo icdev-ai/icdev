@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Enforce code review gates with security checks, compliance validation, and merge readiness assessment"
+description: "ICDEV™ workflow: "Enforce code review gates with security checks, compliance validation, and merge readiness assessment. Use when running a pre-merge code review or checking merge readiness.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-review
 
-When the user asks to enforce code review gates with security checks, compliance validation, and merge readiness assessment, follow these steps:
+When the user asks to "enforce code review gates with security checks, compliance validation, and merge readiness assessment. use when running a pre-merge code review or checking merge readiness.", follow these steps:
 
 1. **Load Gate Configuration**
    ```bash

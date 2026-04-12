@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Start or resume an AI-driven requirements intake session with conversational guidance, gap detection, readiness scoring, and SAFe decomposition"
+description: "ICDEV™ workflow: "Start or resume an AI-driven requirements intake session with conversational guidance, gap detection, readiness scoring, and SAFe decomposition. Use when capturing new requirements from stakeholders.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,4 +7,4 @@ globs:
 
 # icdev-intake
 
-When the user asks to start or resume an ai-driven requirements intake session with conversational guidance, gap detection, readiness scoring, and safe decomposition, follow these steps:
+When the user asks to "start or resume an ai-driven requirements intake session with conversational guidance, gap detection, readiness scoring, and safe decomposition. use when capturing new requirements from stakeholders.", follow these steps:
