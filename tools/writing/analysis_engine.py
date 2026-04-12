@@ -245,6 +245,107 @@ def _ngrams(text: str, n: int) -> set:
     return {text[i : i + n] for i in range(len(text) - n + 1)}
 
 
+def _sentence_structure(text: str) -> Dict[str, Any]:
+    """Sentence structure variety analysis (D-WG-3b).
+
+    Returns:
+        sentence_lengths  : list[int] — word count per sentence (histogram source)
+        length_distribution: dict with keys short/medium/long (count + ratio)
+        start_word_runs   : list[dict] — consecutive same-start-word runs > 3
+        start_diversity   : float — unique start words / total sentences (0-1)
+        variety_score     : int — 0-100 composite variety score
+        findings          : list[str] — human-readable flags
+    """
+    sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+    if not sentences:
+        return {
+            "sentence_lengths": [],
+            "length_distribution": {"short": 0, "medium": 0, "long": 0},
+            "short_ratio": 0.0,
+            "medium_ratio": 0.0,
+            "long_ratio": 0.0,
+            "start_word_runs": [],
+            "start_diversity": 0.0,
+            "variety_score": 0,
+            "findings": [],
+        }
+
+    # ── Sentence length distribution ──────────────────────────────
+    lengths = [len(s.split()) for s in sentences]
+    short = sum(1 for l in lengths if l <= 10)
+    medium = sum(1 for l in lengths if 11 <= l <= 20)
+    long_ = sum(1 for l in lengths if l > 20)
+    total = len(sentences)
+
+    short_ratio = round(short / total, 3)
+    medium_ratio = round(medium / total, 3)
+    long_ratio = round(long_ / total, 3)
+
+    # ── Start-word diversity ───────────────────────────────────────
+    start_words = []
+    for s in sentences:
+        words = s.split()
+        start_words.append(words[0].lower().rstrip(".,!?;:") if words else "")
+
+    unique_starts = len(set(w for w in start_words if w))
+    start_diversity = round(unique_starts / total, 3) if total else 0.0
+
+    # Detect runs of >3 consecutive same start word
+    runs: List[Dict[str, Any]] = []
+    i = 0
+    while i < len(start_words):
+        j = i + 1
+        while j < len(start_words) and start_words[j] == start_words[i]:
+            j += 1
+        run_len = j - i
+        if run_len > 3:
+            runs.append({"word": start_words[i], "count": run_len, "start_index": i})
+        i = j
+
+    # ── Variety score (0-100) ──────────────────────────────────────
+    # Component 1: length variety — penalise extreme ratios
+    # Ideal: some mix of short/medium/long. Score 100 when no bucket > 70%.
+    max_ratio = max(short_ratio, medium_ratio, long_ratio)
+    if max_ratio <= 0.50:
+        length_score = 100
+    elif max_ratio <= 0.70:
+        length_score = 75
+    elif max_ratio <= 0.85:
+        length_score = 50
+    else:
+        length_score = 25
+
+    # Component 2: start-word diversity (0-1 → 0-100)
+    diversity_score = round(start_diversity * 100)
+
+    # Component 3: penalty for long same-start runs
+    run_penalty = min(50, sum(r["count"] - 3 for r in runs) * 10)
+
+    variety_score = max(0, round((length_score * 0.5 + diversity_score * 0.5) - run_penalty))
+
+    # ── Findings ──────────────────────────────────────────────────
+    findings: List[str] = []
+    if max_ratio > 0.70:
+        dominant = "short" if short_ratio == max_ratio else ("medium" if medium_ratio == max_ratio else "long")
+        findings.append(f"{round(max_ratio * 100)}% of sentences are {dominant} — vary sentence length")
+    if start_diversity < 0.40:
+        findings.append(f"low start-word diversity ({round(start_diversity * 100)}%) — avoid repeating opening words")
+    for r in runs:
+        findings.append(f"{r['count']} consecutive sentences start with '{r['word']}'")
+
+    return {
+        "sentence_lengths": lengths,
+        "length_distribution": {"short": short, "medium": medium, "long": long_},
+        "short_ratio": short_ratio,
+        "medium_ratio": medium_ratio,
+        "long_ratio": long_ratio,
+        "start_word_runs": runs,
+        "start_diversity": start_diversity,
+        "variety_score": variety_score,
+        "findings": findings,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -297,6 +398,7 @@ def analyze(
     tone = _tone_check(text)
     plagiarism = _plagiarism_check(text, opportunity_id)
     ai_det = _ai_detection(text)
+    sentence_structure = _sentence_structure(text)
 
     checks = {
         "grammar": grammar,
@@ -304,6 +406,7 @@ def analyze(
         "tone": tone,
         "plagiarism": plagiarism,
         "ai_detection": ai_det,
+        "sentence_structure": sentence_structure,
     }
 
     # Weighted composite (same weights as polish.py)
@@ -328,5 +431,6 @@ def analyze(
         "readability": readability,
         "grammar_error_count": grammar.get("error_count", 0),
         "ai_content_score": ai_det.get("score"),
+        "sentence_structure": sentence_structure,
         "checks": checks,
     }
