@@ -98,6 +98,7 @@ from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
 from tools.dashboard.api.oracle import oracle_api  # noqa: E402
 from tools.dashboard.api.analytics import analytics_api  # noqa: E402
 from tools.dashboard.api.canvas_projects import canvas_projects_api  # noqa: E402
+from tools.dashboard.api.writeguard import writeguard_api  # noqa: E402
 
 try:
     from tools.dashboard.api.finetune import finetune_api  # noqa: E402
@@ -1150,6 +1151,7 @@ def create_app() -> Flask:
     app.register_blueprint(oracle_api)
     app.register_blueprint(analytics_api)
     app.register_blueprint(canvas_projects_api)
+    app.register_blueprint(writeguard_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
     if _HAS_RAG_EVAL_API:
@@ -2278,6 +2280,13 @@ def create_app() -> Flask:
         if not success:
             return jsonify({"error": "Key not found"}), 404
         return jsonify({"status": "revoked"})
+
+    # ---- WriteGuard route (Phase 1 — Content Quality Dashboard) ----
+
+    @app.route("/writeguard")
+    def writeguard_page():
+        """WriteGuard — content quality & AI detection dashboard."""
+        return render_template("writeguard.html")
 
     # ---- Phase roadmap route ----
 
