@@ -3828,8 +3828,8 @@ def create_app() -> Flask:
 
     _COMPONENTS_MAP_GRAPH_ID = "kg-icdev-self-awareness"
 
-    def _cmap_pg():
-        """Return a PostgreSQL connection for components-map queries."""
+    def _cmap_conn():
+        """Return a connection for components-map queries (PG or SQLite)."""
         return get_connection("icdev")
 
     @app.route("/components-map")
@@ -3837,21 +3837,28 @@ def create_app() -> Flask:
         """Components Map — interactive JointJS graph of all ICDEV(TM) components."""
         stats = {"total": 0, "enabled": 0, "disabled": 0}
         try:
-            conn = _cmap_pg()
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id=%s",
+            conn = _cmap_conn()
+            _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+            stats["total"] = (conn.execute(
+                "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id = ?",
                 (_COMPONENTS_MAP_GRAPH_ID,),
-            )
-            stats["total"] = (cur.fetchone() or {}).get("n", 0)
-            cur.execute(
-                """SELECT
-                       SUM(CASE WHEN (properties::jsonb)->>'enabled' = 'false' THEN 1 ELSE 0 END) AS dis,
-                       SUM(CASE WHEN (properties::jsonb)->>'enabled' != 'false' THEN 1 ELSE 0 END) AS en
-                   FROM kg_nodes WHERE graph_id=%s""",
-                (_COMPONENTS_MAP_GRAPH_ID,),
-            )
-            row = cur.fetchone() or {}
+            ).fetchone() or {}).get("n", 0)
+            if _pg:
+                row = conn.execute(
+                    "SELECT "
+                    "SUM(CASE WHEN (properties::jsonb)->>'enabled' = 'false' THEN 1 ELSE 0 END) AS dis, "
+                    "SUM(CASE WHEN (properties::jsonb)->>'enabled' != 'false' THEN 1 ELSE 0 END) AS en "
+                    "FROM kg_nodes WHERE graph_id = ?",
+                    (_COMPONENTS_MAP_GRAPH_ID,),
+                ).fetchone() or {}
+            else:
+                row = conn.execute(
+                    "SELECT "
+                    "SUM(CASE WHEN json_extract(properties, '$.enabled') = 'false' THEN 1 ELSE 0 END) AS dis, "
+                    "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "
+                    "FROM kg_nodes WHERE graph_id = ?",
+                    (_COMPONENTS_MAP_GRAPH_ID,),
+                ).fetchone() or {}
             stats["enabled"] = int(row.get("en") or stats["total"])
             stats["disabled"] = int(row.get("dis") or 0)
             conn.close()
