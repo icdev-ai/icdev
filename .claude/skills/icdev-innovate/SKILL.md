@@ -1,6 +1,6 @@
 ---
 name: icdev-innovate
-description: "Run the ICDEV™ Innovation Engine — autonomous self-improvement through web intelligence, introspective analysis, competitive monitoring, and standards tracking."
+description: "Run the ICDEV™ Innovation Engine for autonomous self-improvement through web intelligence and competitive monitoring. Use when triggering an innovation or self-improvement cycle."
 context: fork
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"]
 ---

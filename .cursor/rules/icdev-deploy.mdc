@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment"
+description: "ICDEV™ workflow: "Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment. Use when deploying or updating infrastructure on AWS GovCloud.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-deploy
 
-When the user asks to generate iac (terraform, ansible, k8s) and gitlab ci/cd pipeline for aws govcloud deployment, follow these steps:
+When the user asks to "generate iac (terraform, ansible, k8s) and gitlab ci/cd pipeline for aws govcloud deployment. use when deploying or updating infrastructure on aws govcloud.", follow these steps:
 
 1. **Load Infrastructure Configuration**
    ```bash

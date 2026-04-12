@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Display comprehensive project status including compliance, security, deployment, and agent health"
+description: "ICDEV™ workflow: "Display comprehensive project status including compliance, security, deployment, and agent health. Use when checking overall project health or preparing a status report.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-status
 
-When the user asks to display comprehensive project status including compliance, security, deployment, and agent health, follow these steps:
+When the user asks to "display comprehensive project status including compliance, security, deployment, and agent health. use when checking overall project health or preparing a status report.", follow these steps:
 
 1. **Load Session Context (Auto-Detect)**
    ```bash

@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Enforce code review gates with security checks, compliance validation, and merge readiness assessment"
+description: ""Enforce code review gates with security checks, compliance validation, and merge readiness assessment. Use when running a pre-merge code review or checking merge readiness.""
 tools:
   - terminal
   - file_search

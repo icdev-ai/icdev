@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan)"
+description: ""Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan). Use when scanning code or containers for security vulnerabilities before deployment.""
 tools:
   - terminal
   - file_search

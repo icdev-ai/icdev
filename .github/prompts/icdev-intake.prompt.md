@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Start or resume an AI-driven requirements intake session with conversational guidance, gap detection, readiness scoring, and SAFe decomposition"
+description: ""Start or resume an AI-driven requirements intake session with conversational guidance, gap detection, readiness scoring, and SAFe decomposition. Use when capturing new requirements from stakeholders.""
 tools:
   - terminal
   - file_search

@@ -1,6 +1,6 @@
 ---
 name: icdev-knowledge
-description: Query, search, and update the ICDEV™ learning knowledge base for patterns, solutions, and recommendations
+description: "Query, search, and update the ICDEV™ learning knowledge base for patterns, solutions, and recommendations. Use when looking up past solutions or storing new insights."
 context: fork
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---

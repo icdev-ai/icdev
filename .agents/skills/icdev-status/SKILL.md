@@ -1,6 +1,6 @@
 ---
 name: icdev-status
-description: Display comprehensive project status including compliance, security, deployment, and agent health
+description: "Display comprehensive project status including compliance, security, deployment, and agent health. Use when checking overall project health or preparing a status report."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 

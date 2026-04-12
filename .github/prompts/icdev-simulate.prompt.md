@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: ""Run Digital Program Twin simulations and generate COAs for requirements""
+description: ""Run Digital Program Twin simulations and generate COAs for requirements. Use when simulating program scenarios or generating courses of action.""
 tools:
   - terminal
   - file_search

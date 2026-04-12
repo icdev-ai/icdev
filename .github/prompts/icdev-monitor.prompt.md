@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Production monitoring with log analysis, metric collection, alerting, and self-healing trigger"
+description: ""Production monitoring with log analysis, metric collection, alerting, and self-healing trigger. Use when setting up monitoring or investigating a production issue.""
 tools:
   - terminal
   - file_search

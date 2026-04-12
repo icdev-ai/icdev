@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking"
+description: ""Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking. Use when implementing new features or bug fixes that require test-driven development.""
 tools:
   - terminal
   - file_search

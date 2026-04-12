@@ -1,6 +1,6 @@
 ---
 name: icdev-deploy
-description: Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment
+description: "Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment. Use when deploying or updating infrastructure on AWS GovCloud."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
 

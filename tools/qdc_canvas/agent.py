@@ -102,7 +102,7 @@ def _get_canvas_assessment_score(canvas_key, design_id):
         conn = get_connection(str(db_path))
         try:
             row = conn.execute(
-                f"SELECT score FROM [{table}] "  # noqa: S608
+                f"SELECT score FROM [{table}] "  # noqa: S608  # nosec B608
                 f"WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",
                 (design_id,),
             ).fetchone()

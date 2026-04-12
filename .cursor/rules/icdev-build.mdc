@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking"
+description: "ICDEV™ workflow: "Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking. Use when implementing new features or bug fixes that require test-driven development.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,7 +7,7 @@ globs:
 
 # icdev-build
 
-When the user asks to build code using true tdd (red → green → refactor) with automatic test generation and compliance tracking, follow these steps:
+When the user asks to "build code using true tdd (red → green → refactor) with automatic test generation and compliance tracking. use when implementing new features or bug fixes that require test-driven development.", follow these steps:
 
 1. **Load Project Context**
    ```bash

@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking"
+description: ""Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking. Use when validating code quality and coverage before a release.""
 tools:
   - terminal
   - file_search

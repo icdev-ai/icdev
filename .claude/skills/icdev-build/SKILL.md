@@ -1,6 +1,6 @@
 ---
 name: icdev-build
-description: Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking
+description: "Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking. Use when implementing new features or bug fixes that require test-driven development."
 context: fork
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ---
