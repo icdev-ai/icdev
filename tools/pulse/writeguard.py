@@ -673,6 +673,22 @@ def run_full_quality_check(text: str) -> dict:
     except Exception as exc:
         logger.warning("Extended analysis checks failed: %s", exc)
 
+    # Style guide + content type compliance
+    try:
+        from tools.writing.style_guide import check_style_guide
+        sg = check_style_guide(text)
+        results["style_guide"] = {"status": "ok", "score": sg["score"] * 100, "findings": sg.get("issues", [])}
+    except Exception as exc:
+        logger.warning("Style guide check failed: %s", exc)
+
+    # Transitions / pacing analysis
+    try:
+        from tools.writing.rewriter import analyze_transitions
+        tr = analyze_transitions(text)
+        results["pacing"] = {"status": "ok", "score": tr.get("pacing_score", 70), "findings": tr.get("findings", [])}
+    except Exception as exc:
+        logger.warning("Transition analysis failed: %s", exc)
+
     # Calculate overall score.
     # Portion marking is only included when marks are present — a plain article
     # with no portion marks should not be penalized for missing them.

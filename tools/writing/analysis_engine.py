@@ -572,6 +572,21 @@ def _cliche_check(text: str) -> Dict[str, Any]:
     return {"score": round(score, 2), "count": len(found), "found": found, "issues": issues}
 
 
+def _glossary_check(text: str) -> Dict[str, Any]:
+    """Glossary, acronym, and terminology validation (D-WG-4c-gloss).
+
+    Delegates to ``tools.writing.glossary_engine.check_glossary``.
+    Falls back gracefully if the glossary engine or YAML is unavailable.
+    """
+    try:
+        from tools.writing.glossary_engine import check_glossary
+
+        return check_glossary(text)
+    except Exception:
+        return {"score": 1.0, "undefined_acronyms": [], "forbidden_hits": [],
+                "misused_terms": [], "suggestions": [], "issues": []}
+
+
 def _consistency_check(text: str) -> Dict[str, Any]:
     """Check spelling consistency and acronym usage (D-WG-4c)."""
     issues: List[str] = []
@@ -781,6 +796,7 @@ def analyze(
     overused = _overused_words_check(text)
     cliches = _cliche_check(text)
     consistency = _consistency_check(text)
+    glossary = _glossary_check(text)
     plagiarism = _plagiarism_check(text, opportunity_id)
     ai_det = _ai_detection(text)
     sentence_structure = _sentence_structure(text)
@@ -793,20 +809,22 @@ def analyze(
         "overused_words": overused,
         "cliches": cliches,
         "consistency": consistency,
+        "glossary": glossary,
         "plagiarism": plagiarism,
         "ai_detection": ai_det,
         "sentence_structure": sentence_structure,
     }
 
-    # Weighted composite — 10 dimensions
+    # Weighted composite — 11 dimensions
     weights = {
-        "grammar": 0.15,
-        "readability": 0.15,
-        "tone": 0.15,
-        "passive_voice": 0.08,
-        "overused_words": 0.07,
+        "grammar": 0.14,
+        "readability": 0.14,
+        "tone": 0.14,
+        "passive_voice": 0.07,
+        "overused_words": 0.06,
         "cliches": 0.05,
         "consistency": 0.05,
+        "glossary": 0.05,
         "plagiarism": 0.15,
         "ai_detection": 0.15,
     }
