@@ -36,6 +36,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # LSP Server Registry (all local, air-gap safe)
@@ -502,106 +506,109 @@ def _detect_language(file_path: str, language: str = "") -> str:
     return _EXT_TO_LANG.get(ext, "")
 
 
-def handle_tool_call(tool_name: str, arguments: Dict) -> Any:
-    """Handle an MCP tool call."""
-    if tool_name == "lsp_check_servers":
-        return check_available_servers()
-
-    elif tool_name == "lsp_diagnostics":
-        file_path = arguments.get("file_path", "")
-        language = _detect_language(file_path, arguments.get("language", ""))
-        return _run_diagnostics(file_path, language)
-
-    elif tool_name == "lsp_hover":
-        file_path = arguments.get("file_path", "")
-        line = arguments.get("line", 1)
-        column = arguments.get("column", 0)
-        language = _detect_language(file_path, arguments.get("language", ""))
-        return _get_hover_info(file_path, line, column, language)
-
-    elif tool_name == "lsp_find_definition":
-        file_path = arguments.get("file_path", "")
-        symbol = arguments.get("symbol", "")
-        language = _detect_language(file_path, arguments.get("language", ""))
-        project_dir = arguments.get("project_dir", "")
-        return _find_definitions(file_path, symbol, language, project_dir)
-
-    elif tool_name == "lsp_verify_loop":
-        file_path = arguments.get("file_path", "")
-        language = _detect_language(file_path, arguments.get("language", ""))
-        repair = arguments.get("repair", False)
-        project_dir = arguments.get("project_dir", "")
-        from tools.analysis.verify_loop import verify_file
-
-        return verify_file(file_path, language, repair=repair, project_dir=project_dir)
-
-    return {"error": f"Unknown tool: {tool_name}"}
-
-
 # ---------------------------------------------------------------------------
-# MCP Stdio Server
+# MCP Server (MCPServer base class with register_tool)
 # ---------------------------------------------------------------------------
 
 
-def _mcp_server():
-    """Run MCP server over stdio (JSON-RPC 2.0)."""
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            request = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+def build_server() -> MCPServer:
+    """Build and return a configured LSP MCP server."""
+    server = MCPServer(name="icdev-lsp", version="1.0.0")
 
-        method = request.get("method", "")
-        req_id = request.get("id")
+    server.register_tool(
+        name="lsp_check_servers",
+        description="Check which LSP servers are installed and available for each language",
+        input_schema={"type": "object", "properties": {}, "required": []},
+        handler=lambda args: check_available_servers(),
+    )
 
-        if method == "tools/list":
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {"tools": MCP_TOOLS},
-            }
-        elif method == "tools/call":
-            params = request.get("params", {})
-            tool_name = params.get("name", "")
-            arguments = params.get("arguments", {})
-            try:
-                result = handle_tool_call(tool_name, arguments)
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}],
-                    },
-                }
-            except Exception as e:
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "error": {"code": -1, "message": str(e)},
-                }
-        elif method == "initialize":
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": "icdev-lsp", "version": "1.0.0"},
-                },
-            }
-        elif method == "notifications/initialized":
-            continue
-        else:
-            response = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": {},
-            }
+    server.register_tool(
+        name="lsp_diagnostics",
+        description="Run diagnostics (errors, warnings, type checks) on a source file using language-specific tools",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to the source file"},
+                "language": {"type": "string", "description": "Language (auto-detected if omitted)"},
+            },
+            "required": ["file_path"],
+        },
+        handler=lambda args: _run_diagnostics(
+            args.get("file_path", ""),
+            _detect_language(args.get("file_path", ""), args.get("language", "")),
+        ),
+    )
 
-        print(json.dumps(response), flush=True)
+    server.register_tool(
+        name="lsp_hover",
+        description="Get type information and documentation at a specific position in a file",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to the source file"},
+                "line": {"type": "integer", "description": "Line number (1-based)"},
+                "column": {"type": "integer", "description": "Column number (0-based)"},
+                "language": {"type": "string", "description": "Language"},
+            },
+            "required": ["file_path", "line"],
+        },
+        handler=lambda args: _get_hover_info(
+            args.get("file_path", ""),
+            args.get("line", 1),
+            args.get("column", 0),
+            _detect_language(args.get("file_path", ""), args.get("language", "")),
+        ),
+    )
+
+    server.register_tool(
+        name="lsp_find_definition",
+        description="Find all definitions of a symbol in the project",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Source file for context"},
+                "symbol": {"type": "string", "description": "Symbol name to find"},
+                "language": {"type": "string", "description": "Language"},
+                "project_dir": {"type": "string", "description": "Project root directory"},
+            },
+            "required": ["file_path", "symbol"],
+        },
+        handler=lambda args: _find_definitions(
+            args.get("file_path", ""),
+            args.get("symbol", ""),
+            _detect_language(args.get("file_path", ""), args.get("language", "")),
+            args.get("project_dir", ""),
+        ),
+    )
+
+    server.register_tool(
+        name="lsp_verify_loop",
+        description="Run compiler-in-the-loop verification on a file with optional LLM repair",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to the source file"},
+                "language": {"type": "string", "description": "Language (auto-detected if omitted)"},
+                "repair": {"type": "boolean", "description": "Enable LLM-based repair loop"},
+                "project_dir": {"type": "string", "description": "Project root directory"},
+            },
+            "required": ["file_path"],
+        },
+        handler=_handle_verify_loop,
+    )
+
+    return server
+
+
+def _handle_verify_loop(args: Dict) -> Any:
+    """Handler for lsp_verify_loop tool."""
+    file_path = args.get("file_path", "")
+    language = _detect_language(file_path, args.get("language", ""))
+    repair = args.get("repair", False)
+    project_dir = args.get("project_dir", "")
+    from tools.analysis.verify_loop import verify_file
+
+    return verify_file(file_path, language, repair=repair, project_dir=project_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +638,7 @@ def main():
         return
 
     # Default: run MCP server over stdio
-    _mcp_server()
+    build_server().run()
 
 
 if __name__ == "__main__":
