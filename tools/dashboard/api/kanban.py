@@ -57,6 +57,7 @@ def list_tasks():
             "op.confidence AS oracle_confidence, "
             "op.prediction_text AS oracle_proposed_action, "
             "op.lens_name AS oracle_lens, "
+            "op.prediction_type AS oracle_prediction_type, "
             "dep.title  AS depends_on_title, "
             "dep.status AS depends_on_status "
             "FROM kanban_tasks kt "
@@ -90,7 +91,8 @@ def list_tasks():
             ).fetchall()
             rows = list(queue_rows) + list(other_rows)
         tasks = [dict(r) for r in rows]
-        # Stringify datetimes for JSON + compute is_blocked
+        # Stringify datetimes for JSON + compute is_blocked + derive
+        # a stable oracle_rule label.
         for t in tasks:
             for k in ("scheduled_at", "completed_at", "created_at", "updated_at"):
                 if t.get(k) and hasattr(t[k], "isoformat"):
@@ -103,6 +105,28 @@ def list_tasks():
                 t["is_blocked"] = t.get("depends_on_status") != "done"
             else:
                 t["is_blocked"] = False
+            # Two prediction shapes coexist on the board:
+            #   Legacy:  lens_name = '<rule>'   prediction_type = 'regression::<probe>' or 'gap::<rule>'
+            #   New:     lens_name = 'internal_awareness'   prediction_type = 'gap::<rule>'
+            # Normalize into a single ``oracle_rule`` field so the UI's
+            # by-rule grouping is stable across both shapes. Strips the
+            # ``gap::`` / ``regression::`` prefix so the rule name alone
+            # is exposed.
+            ptype = (t.get("oracle_prediction_type") or "")
+            lens = (t.get("oracle_lens") or "")
+            if ptype.startswith("gap::"):
+                t["oracle_rule"] = ptype.split("::", 1)[1]
+            elif ptype.startswith("regression::"):
+                t["oracle_rule"] = ptype.split("::", 1)[1]
+            elif lens and lens != "internal_awareness":
+                t["oracle_rule"] = lens
+            else:
+                t["oracle_rule"] = lens or ""
+            # Also keep the old oracle_lens field pointing at the rule
+            # (not the lens name) for backward compat with existing UI
+            # code that reads oracle_lens as the "group-by" key.
+            if t["oracle_rule"] and t["oracle_rule"] != "internal_awareness":
+                t["oracle_lens"] = t["oracle_rule"]
 
         # Annotate every row with oracle_value + oracle_dup_count. The
         # scorer is safe on non-Oracle tasks (null confidence → value
