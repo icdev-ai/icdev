@@ -209,6 +209,26 @@ def check_plagiarism(text: str) -> dict:
         return {"status": "error", "score": 100, "error": str(e)}
 
 
+def check_portion_marking(text: str) -> dict:
+    """Run DoDM 5200.01 portion marking validation.
+
+    Checks:
+    - All-or-nothing rule: if any paragraph is marked, ALL must be marked
+    - High-water mark banner derivation
+    - Contradiction detection (e.g. (U) paragraph referencing SECRET content)
+    - Returns designation indicator block for classified documents
+    """
+    fn = _safe_import("portion_marking_checker.check_portion_markings")
+    if not fn:
+        return {"status": "unavailable", "score": 100, "findings": [], "has_marks": False}
+
+    try:
+        return fn(text)
+    except Exception as e:
+        logger.error("Portion marking check error: %s", e)
+        return {"status": "error", "score": 100, "findings": [], "has_marks": False, "error": str(e)}
+
+
 def check_ai_detection(text: str) -> dict:
     """Run AI content detection (deterministic advisory)."""
     fn = _safe_import("ai_content_detector.detect_ai_content")
@@ -624,20 +644,26 @@ def run_full_quality_check(text: str) -> dict:
     """
     logger.info("Running full WriteGuard quality check...")
 
+    pm_result = check_portion_marking(text)
     results = {
         "grammar": check_grammar(text),
         "readability": check_readability(text),
         "tone": check_tone(text),
         "plagiarism": check_plagiarism(text),
         "ai_detection": check_ai_detection(text),
+        "portion_marking": pm_result,
     }
 
-    # Calculate overall score
+    # Calculate overall score.
+    # Portion marking is only included when marks are present — a plain article
+    # with no portion marks should not be penalized for missing them.
     scores = []
     for key, result in results.items():
         if result.get("status") == "unavailable":
             logger.warning("WriteGuard %s unavailable, skipping", key)
             continue
+        if key == "portion_marking" and not result.get("has_marks", False):
+            continue  # Skip score contribution when document has no marks
         score = result.get("score", result.get("overall_score", 70))
         if isinstance(score, (int, float)):
             scores.append(score)
