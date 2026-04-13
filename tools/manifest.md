@@ -2249,3 +2249,10 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 |------|------|-------------|-------|--------|
 | Prebuild Bootstrap | tools\installer\prebuild_bootstrap.py | Auto-registered: installer/prebuild_bootstrap.py | --json | JSON |
 | Sync Package Tree | tools\installer\sync_package_tree.py | Auto-registered: installer/sync_package_tree.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Build Release | tools\installer\build_release.py | Auto-registered: installer/build_release.py | --json | JSON |
+| Validate Package Config | tools\installer\validate_package_config.py | Auto-registered: installer/validate_package_config.py | --json | JSON |
