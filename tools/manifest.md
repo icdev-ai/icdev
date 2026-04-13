@@ -1030,7 +1030,7 @@
 |------|------|---------|
 | daemon | `tools/proposal_genesis/daemon.py` | Autonomous proposal intelligence daemon: 14 Reflexes across 4 phases (CAPTURE, PROPOSE, DELIVER, LEARN). Subclass of DaemonBase (D-PG-1) |
 
-### 14 Reflexes (tools/proposal_genesis/reflexes/)
+### 19 Reflexes (tools/proposal_genesis/reflexes/)
 
 | Reflex | Phase | Risk Tier | Purpose |
 |--------|-------|-----------|---------|
@@ -1043,11 +1043,38 @@
 | draft | PROPOSE | GREEN | Generate proposal section drafts |
 | polish | PROPOSE | GREEN | Grammar, readability, tone, AI detection quality checks |
 | decide | PROPOSE | YELLOW | Bid/no-bid decision with scoring |
+| review | PROPOSE | GREEN | AI Color Team Review Simulator (Shipley color teams: Pink/Red/Gold/White/Black/Green) |
+| trace | PROPOSE | GREEN | Compliance traceability — bidirectional L/M/C to proposal section mapping |
 | monitor | DELIVER | GREEN | Track awarded contract performance |
 | fulfill | DELIVER | GREEN | CDRL delivery tracking |
 | publish | DELIVER | GREEN | Knowledge base article generation from wins |
+| team | DELIVER | GREEN | Teaming partner scoring, workshare tracking, TA lifecycle management |
+| bridge | DELIVER | GREEN | Proposal-to-Program Knowledge Bridge — transition packages on bid win |
 | analyze | LEARN | GREEN | Win/loss analysis, lesson extraction |
 | train | LEARN | GREEN | Generate fine-tuning pairs from approved content |
+| adapt | LEARN | GREEN | Lightweight Shipley Process Adaptation — team size + complexity → process recommendation |
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Discover Reflex | tools/proposal_genesis/reflexes/discover.py | R01: Scan SAM.gov and internal signals for new opportunities | --json | Opportunity list |
+| Scout Reflex | tools/proposal_genesis/reflexes/scout.py | R02: Competitive intelligence and market analysis | --json | Intel report |
+| Shape Reflex | tools/proposal_genesis/reflexes/shape.py | R03: Win strategy, discriminators, partner fit assessment | --json | Strategy recommendations |
+| Engage Reflex | tools/proposal_genesis/reflexes/engage.py | R04: CRM account/contact/engagement tracking | --json | Engagement records |
+| Extract Reflex | tools/proposal_genesis/reflexes/extract.py | R05: Extract requirements from opportunity documents | --json | Requirements list |
+| Map Reflex | tools/proposal_genesis/reflexes/map.py | R06: Map requirements to ICDEV™ capabilities | --json | Capability map |
+| Draft Reflex | tools/proposal_genesis/reflexes/draft.py | R07: Generate proposal section drafts | --json | Draft sections |
+| Polish Reflex | tools/proposal_genesis/reflexes/polish.py | R08: Grammar, readability, tone, AI detection quality checks | --json | Quality report |
+| Decide Reflex | tools/proposal_genesis/reflexes/decide.py | R09: Bid/no-bid decision with scoring | --json | Decision + score |
+| Review Reflex | tools/proposal_genesis/reflexes/review.py | R15: AI Color Team Review Simulator — simulates Shipley color team reviews using deterministic scoring | --json | Review report |
+| Trace Reflex | tools/proposal_genesis/reflexes/trace.py | R22: Compliance traceability — bidirectional L/M/C to proposal section mapping | --json | Traceability matrix |
+| Monitor Reflex | tools/proposal_genesis/reflexes/monitor.py | R10: Track awarded contract performance | --json | Performance metrics |
+| Fulfill Reflex | tools/proposal_genesis/reflexes/fulfill.py | R11: CDRL delivery tracking | --json | Delivery status |
+| Publish Reflex | tools/proposal_genesis/reflexes/publish.py | R12: Knowledge base article generation from wins | --json | KB articles |
+| Team Reflex | tools/proposal_genesis/reflexes/team.py | R23: Teaming partner scoring, workshare tracking, TA lifecycle management | --json | Teaming recommendations |
+| Bridge Reflex | tools/proposal_genesis/reflexes/bridge.py | R24: Proposal-to-Program Knowledge Bridge — auto-generates transition packages on bid win | --json | Transition package |
+| Analyze Reflex | tools/proposal_genesis/reflexes/analyze.py | R13: Win/loss analysis, lesson extraction | --json | Analysis report |
+| Train Reflex | tools/proposal_genesis/reflexes/train.py | R14: Generate fine-tuning pairs from approved content | --json | Training pairs |
+| Adapt Reflex | tools/proposal_genesis/reflexes/adapt.py | R21: Lightweight Shipley Process Adaptation — team size + opportunity complexity → process recommendation | --json | Adaptation plan |
 
 ## AppForge — Autonomous Vertical App Builder
 
@@ -1461,6 +1488,9 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | ATO Package API | tools/dashboard/api/ato_package.py | Flask Blueprint: ATO package readiness status, SSP documents, controls summary, POAM summary, pre-submission checklist, and package generation across 10 package steps | GET /api/ato-package/status, /ssp, /controls-summary, /poam-summary, /checklist; POST /api/ato-package/generate | JSON responses |
 | Migration Cost API | tools/dashboard/api/migration_cost.py | Flask Blueprint: 7R migration cost estimator — per-app cost breakdown, all-strategy comparison, portfolio summary, ROI projection with breakeven analysis, and custom calculation with role-based itemization | GET /api/migration-cost/estimate, /comparison, /portfolio, /roi; POST /api/migration-cost/calculate | JSON cost/ROI data |
 | Findings Aggregator | tools/dashboard/findings_aggregator.py | Aggregates compliance findings from 7 canvas SQLite DBs, normalizes them, hashes identities, and joins with approval records for dashboard POA&M counter | (library) — `aggregate_findings()` | Normalized findings list |
+| NDC Lab Health API | tools/dashboard/api/ndc_labs.py | Flask Blueprint: NDC lab backend health endpoints — GET /api/ndc/labs/health (all labs) and /api/ndc/labs/<name>/health (single lab) for the /network/labs dashboard page | GET /api/ndc/labs/health, /api/ndc/labs/<name>/health | JSON health status |
+| NDC SOPs API | tools/dashboard/api/ndc_sops.py | Flask Blueprint: NDC Standard Operating Procedures CRUD + approval workflow — create, read, update, delete, submit for review, approve, reject SOPs for Network Design Canvas | REST CRUD endpoints | JSON SOP records |
+| POAM API | tools/dashboard/api/poam.py | Flask Blueprint: Canvas findings (POA&M) approval API — aggregates open findings from all canvas SQLite DBs and exposes reviewer decision endpoints for the /poam dashboard page | GET /api/poam/findings; POST /api/poam/findings/<hash>/approve, /reject | JSON findings + approval records |
 
 ## DataBridge (Additional)
 | Tool | File | Description | Input | Output |
@@ -1922,6 +1952,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Canvas Health Scanner | tools\canvas\canvas_health_scanner.py | Auto-registered: canvas/canvas_health_scanner.py | --json | JSON |
 | Proposal Generator | tools\oracle\proposal_generator.py | Auto-registered: oracle/proposal_generator.py | --json | JSON |
 | Remediation Lens | tools\oracle\lenses\remediation_lens.py | Auto-registered: lenses/remediation_lens.py | --json | JSON |
+| Workflow Pattern Lens | tools/oracle/lenses/lens_workflow_patterns.py | Oracle sub-lens: mine frequent 3–5 step sequential event patterns from audit_trail + kanban_tasks; tool-pair co-occurrence (>80% rate = composition candidate); self-heal detection (backlog→in_progress→backlog→done cycles). Called by lens_workflow_patterns.py at root oracle/ level. | --json / --gate | JSON pattern report |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -2063,5 +2094,111 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Review Board Escalation | tools/review_board/escalation.py | Escalation workflow — auto-create GitHub/GitLab issues for escalated findings (D-RB-14) | --escalate, --finding-id, --json | Issue URL + status |
 | IDC Runbooks | tools/infra_canvas/runbooks.py | Infrastructure Design Canvas — operational runbooks for common infra incidents (server provisioning failure, capacity threshold breach, cloud drift, patch rollback). CRUD + seed for idc_runbooks table; no LLM dependency. | (library) get_all_runbooks(category, severity) / get_runbook_by_id(id) / create_runbook(data) / record_execution(id) / seed_runbooks() | Runbook dict / list |
 | ODC Runbooks | tools/observability_canvas/runbooks.py | Observability Design Canvas — operational runbooks for common observability incidents (alert storm triage, log pipeline failure, SIEM gap detected, metric collection outage). CRUD + seed for odc_runbooks table; no LLM dependency. | (library) get_all_runbooks(category, severity) / get_runbook_by_id(id) / create_runbook(data) / record_execution(id) / seed_runbooks() | Runbook dict / list |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Slack Adapter | tools/notifications/adapters/slack.py | Slack webhook notification adapter — delivers messages to Slack channels via incoming webhooks | --json | Delivery status |
+| Teams Adapter | tools/notifications/adapters/teams.py | Microsoft Teams webhook notification adapter — delivers messages to Teams channels via connectors | --json | Delivery status |
+| Telegram Adapter | tools/notifications/adapters/telegram.py | Telegram Bot API notification adapter — sends messages via bot token | --json | Delivery status |
+| Webhook Adapter | tools/notifications/adapters/webhook.py | Generic webhook notification adapter — HTTP POST to arbitrary endpoints | --json | Delivery status |
+| NDC Analysis Routes | tools/network/routes/analysis.py | Network Design Canvas — Analysis routes (compliance assessment, simulation, NL query dispatch) | (blueprint) | Flask routes |
+| NDC Governance Routes | tools/network/routes/governance.py | Network Design Canvas — Governance routes (change requests, CAB approvals) | (blueprint) | Flask routes |
+| NDC Ingestion Routes | tools/network/routes/ingestion.py | Network Canvas — Ingestion API Routes (file upload, config ingestion, NMS adapter management, audit log) | (blueprint) | Flask routes |
+| NDC Intelligence Routes | tools/network/routes/intelligence.py | Network Infrastructure Intelligence — 16 endpoints for diagram ingestion, device management, 13 analysis dimensions, NL query | (blueprint) | Flask routes |
+| NDC Projects Routes | tools/network/routes/projects.py | Network Design Canvas — Project management routes (CRUD for topology projects) | (blueprint) | Flask routes |
+| MCP Standalone Builder | tools/mcp/standalone/builder.py | Standalone MCP server wrapper for Builder — resolves install dir, sets sys.path, starts Builder MCP server | (entrypoint) | MCP server process |
+| MCP Standalone Compliance | tools/mcp/standalone/compliance.py | Standalone MCP server wrapper for Compliance — resolves install dir, sets sys.path, starts Compliance MCP server | (entrypoint) | MCP server process |
+| MCP Standalone Core | tools/mcp/standalone/core.py | Standalone MCP server wrapper for Core — resolves install dir, sets sys.path, starts Core MCP server | (entrypoint) | MCP server process |
+| MCP Standalone Knowledge | tools/mcp/standalone/knowledge.py | Standalone MCP server wrapper for Knowledge — resolves install dir, sets sys.path, starts Knowledge MCP server | (entrypoint) | MCP server process |
+| MCP Standalone Maintenance | tools/mcp/standalone/maintenance.py | Standalone MCP server wrapper for Maintenance — resolves install dir, sets sys.path, starts Maintenance MCP server | (entrypoint) | MCP server process |
+| Audit Reflex | tools/genesis/reflexes/audit.py | Genesis Audit Reflex — daily self-scan: code quality + SAST via existing ICDEV™ analysis tools; aggregates findings into an audit report (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Awareness Reflex | tools/genesis/reflexes/awareness.py | Genesis Awareness Reflex — 3-hour internal self-observation cycle: component graph refresh, health probe, drift detection, gap detection (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Comply Reflex | tools/genesis/reflexes/comply.py | Genesis Comply Reflex — daily cATO evidence freshness check, stale SSP regeneration, crosswalk sync (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Evolve Reflex | tools/genesis/reflexes/evolve.py | Genesis Evolve Reflex — nightly code quality mutation: picks worst-quality file, proposes improvement via phi4-reasoning, exports GKP code_patch for human review (ORANGE tier) | config dict, trust kernel | Reflex results + GKP export |
+| Heal Reflex | tools/genesis/reflexes/heal.py | Genesis Heal Reflex — continuous pattern-based auto-remediation: monitors audit trail errors, matches known healing patterns, applies fixes with confidence gating (YELLOW tier, max 5/hour) | config dict, trust kernel | Reflex results + GKP export |
+| Ingest Reflex | tools/genesis/reflexes/ingest.py | Genesis Ingest Reflex — every 4h feed ingestion: NIST NVD, CISA KEV, FedRAMP updates → knowledge graph via knowledge_graph ingester (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Kanban Reflex | tools/genesis/reflexes/kanban.py | Genesis Kanban Executor Reflex — polls kanban_tasks for due scheduled tasks and dispatches them (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Learn Reflex | tools/genesis/reflexes/learn.py | Genesis Learn Reflex — generate training pairs and fine-tune local Ollama from approved outputs (YELLOW tier) | config dict, trust kernel | Reflex results + GKP export |
+| Market Reflex | tools/genesis/reflexes/market.py | Genesis Market Reflex — track marketplace module usage and suggest improvements (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Quality Reflex | tools/genesis/reflexes/quality.py | Genesis Quality Reflex — self-learning QA/QC improvement cycle (YELLOW tier) | config dict, trust kernel | Reflex results + GKP export |
+| Research Reflex | tools/genesis/reflexes/research.py | Genesis Research Reflex — scrape NIST/CISA/DoD feeds and GitHub trending; export GKP research signals (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Test Reflex | tools/genesis/reflexes/test.py | Genesis Test Reflex — identify under-tested tools, generate real test stubs, run and keep passing (YELLOW tier) | config dict, trust kernel | Reflex results + GKP export |
+| Docs Reflex | tools/genesis/reflexes/docs.py | Genesis Docs Reflex — documentation drift detection and automated repair (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Report Reflex | tools/genesis/reflexes/report.py | Genesis Report Reflex — weekly autonomous status report with promotions, circuit breakers, and reflex activity (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Scout Reflex | tools/genesis/reflexes/scout.py | Genesis Scout Reflex — monitor competitor and adjacent GitHub repos for intelligence briefs (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Publish Reflex | tools/genesis/reflexes/publish.py | Genesis Publish Reflex — end-to-end Pulse article pipeline from demand topic to WriteGuard staging (YELLOW tier) | config dict, trust kernel | Reflex results + GKP export |
+| GovCon Scan Reflex | tools/genesis/reflexes/govcon_scan.py | Genesis GovCon Scan Reflex — daily SAM.gov incremental scan and demand signal extraction (GREEN tier) | config dict, trust kernel | Reflex results + GKP export |
+| Internal Chat Adapter | tools/gateway/adapters/internal.py | Internal Chat adapter — bridges ICDEV™ /chat page to the Remote Command Gateway | (library) | Adapter API |
+| Mattermost Adapter | tools/gateway/adapters/mattermost.py | Mattermost adapter for the Remote Command Gateway (air-gapped environments) | (library) | Adapter API |
+| DDC ODPS Exporter | tools/data_canvas/exporters/odps.py | Open Data Product Standard (ODPS) v3 exporter for Data Design Canvas graphs | --export, --json | ODPS JSON artifact |
+| DataBridge Code Generator | tools/databridge/forge/code_generator.py | Connector Forge Stage 3 — code generation from connector spec (D-CF-1) | (library) | Generated connector code |
+| DataBridge Promoter | tools/databridge/forge/promoter.py | Connector Forge — Sandbox-to-Production promotion workflow (D-CF-6) | (library) | Promotion result |
+| DataBridge Connection Pool | tools/databridge/scale/connection_pool.py | Scale Connection Pool — per-connector-type reusable connection pools (D-SC-2) | (library) | Pool handles |
+| DataBridge Scale Engine | tools/databridge/scale/engine.py | DataBridge Scale Engine — horizontal scaling orchestrator for connector execution (D-SC-1) | (library) | Scaling metrics |
+| Dashboard Agents API | tools/dashboard/api/agents.py | Dashboard API Blueprint — agent status and control endpoints | (blueprint) | Flask routes |
+| AI Accountability API | tools/dashboard/api/ai_accountability.py | AI Accountability API Blueprint — REST endpoints for Phase 49 dashboard | (blueprint) | Flask routes |
+| AI Transparency API | tools/dashboard/api/ai_transparency.py | AI Transparency API Blueprint — REST endpoints for Phase 48 dashboard | (blueprint) | Flask routes |
+| Analytics API | tools/dashboard/api/analytics.py | Dashboard Analytics API — funnel analytics and conversion metrics | (blueprint) | Flask routes |
+| Dashboard Audit API | tools/dashboard/api/audit.py | Dashboard API Blueprint — audit trail query endpoints | (blueprint) | Flask routes |
+| Dashboard cATO API | tools/dashboard/api/cato.py | Dashboard API Blueprint — Continuous ATO (cATO) endpoints | (blueprint) | Flask routes |
+| Dashboard Compliance API | tools/dashboard/api/compliance.py | Dashboard API Blueprint — compliance status and control mapping endpoints | (blueprint) | Flask routes |
+| Activity API | tools/dashboard/api/activity.py | Merged activity feed with filters and pagination | (blueprint) | Flask routes |
+| Admin API | tools/dashboard/api/admin.py | Admin user management page | (blueprint) | Flask routes |
+| ATO Package API | tools/dashboard/api/ato_package.py | Dashboard API: ATO Package Builder | (blueprint) | Flask routes |
+| Batch API | tools/dashboard/api/batch.py | Batch task history and management endpoints | (blueprint) | Flask routes |
+| Canvas Projects API | tools/dashboard/api/canvas_projects.py | Canvas Projects API — cross-canvas project management | (blueprint) | Flask routes |
+| Chat Multi-Stream API | tools/dashboard/api/chat.py | Flask Blueprint for multi-stream parallel chat API (Phase 44) | (blueprint) | Flask routes |
+| CI/CD API | tools/dashboard/api/cicd.py | Dashboard API — CI/CD pipeline status endpoints | (blueprint) | Flask routes |
+| Code Quality API | tools/dashboard/api/code_quality.py | Code Quality API Blueprint — REST endpoints for code intelligence dashboard (Phase 52) | (blueprint) | Flask routes |
+| Compliance Debt API | tools/dashboard/api/compliance_debt.py | Dashboard API: Compliance Debt Burndown | (blueprint) | Flask routes |
+| Control Inheritance API | tools/dashboard/api/control_inheritance.py | Dashboard API: Control Inheritance Visualizer | (blueprint) | Flask routes |
+| CPMP API | tools/dashboard/api/cpmp.py | Dashboard API: Contract Performance Management Portal (Phase 60) | (blueprint) | Flask routes |
+| Diagrams API | tools/dashboard/api/diagrams.py | Diagrams API Blueprint — serves Mermaid diagram catalog and definitions | (blueprint) | Flask routes |
+| Events API | tools/dashboard/api/events.py | Events API blueprint — HTTP poll transport, recent events, event ingest | (blueprint) | Flask routes |
+| Evidence API | tools/dashboard/api/evidence.py | Dashboard API: Evidence Collection (Phase 56) | (blueprint) | Flask routes |
+| FedRAMP 20x API | tools/dashboard/api/fedramp_20x.py | FedRAMP 20x KSI Dashboard API (Phase 53) | (blueprint) | Flask routes |
+| FileSync API | tools/dashboard/api/filesync.py | Dashboard API: File Sync Module (D-SYNC-1 through D-SYNC-12) | (blueprint) | Flask routes |
+| Fine-Tune API | tools/dashboard/api/finetune.py | Fine-Tuning API Blueprint — REST endpoints for fine-tuning dashboard (Phase 64) | (blueprint) | Flask routes |
+| GovCon API | tools/dashboard/api/govcon.py | Dashboard API: GovCon Intelligence — SAM.gov, requirement extraction, opportunity management | (blueprint) | Flask routes |
+| IaC Gallery API | tools/dashboard/api/iac.py | Dashboard API: Infrastructure as Code Gallery | (blueprint) | Flask routes |
+| Intake API | tools/dashboard/api/intake.py | AI-driven requirements intake session endpoints | (blueprint) | Flask routes |
+| Kanban API | tools/dashboard/api/kanban.py | Kanban Task Board API — CRUD for task cards on the dashboard Kanban | (blueprint) | Flask routes |
+| Kanban Plan API | tools/dashboard/api/kanban_plan.py | Kanban Plan API — task decomposition and scheduling endpoints | (blueprint) | Flask routes |
+| Lineage API | tools/dashboard/api/lineage.py | Dashboard API: Artifact Lineage (Phase 56) | (blueprint) | Flask routes |
+| Metrics API | tools/dashboard/api/metrics.py | Return recent metric snapshots, optionally filtered by project_id | (blueprint) | Flask routes |
+| Migration API | tools/dashboard/api/migration.py | Dashboard API: Migration Tracker (7R Assessment, Plans, Tasks, Artifacts, Progress) | (blueprint) | Flask routes |
+| Migration Cost API | tools/dashboard/api/migration_cost.py | Dashboard API: Migration Cost Estimator | (blueprint) | Flask routes |
+| NDC Labs API | tools/dashboard/api/ndc_labs.py | NDC Lab Backend Health API | (blueprint) | Flask routes |
+| NDC SOPs Dashboard API | tools/dashboard/api/ndc_sops.py | NDC SOPs API — CRUD + approval workflow endpoints | (blueprint) | Flask routes |
+| NLQ API | tools/dashboard/api/nlq.py | NLQ (Natural Language Query) API blueprint — compliance database queries | (blueprint) | Flask routes |
+| Oracle Dashboard API | tools/dashboard/api/oracle.py | Oracle API — anticipatory intelligence predictions and remediation history | (blueprint) | Flask routes |
+| Orchestration API | tools/dashboard/api/orchestration.py | Dashboard API: Real-Time Orchestration Dashboard (Phase 61) | (blueprint) | Flask routes |
+| OSCAL API | tools/dashboard/api/oscal.py | OSCAL API Blueprint — REST endpoints for OSCAL ecosystem (D302-D306) | (blueprint) | Flask routes |
+| POAM API | tools/dashboard/api/poam.py | ICDEV Canvas Findings (POA&M) approval API | (blueprint) | Flask routes |
+| PR Intel API | tools/dashboard/api/pr_intel.py | Dashboard API: PR Intelligence / Compliance Drift | (blueprint) | Flask routes |
+| Prod Audit API | tools/dashboard/api/prod_audit.py | Production Audit API Blueprint — REST endpoints for audit and remediation (D291-D300) | (blueprint) | Flask routes |
+| Projects API | tools/dashboard/api/projects.py | Dashboard projects listing and management API | (blueprint) | Flask routes |
+| Proposal Genesis Dashboard API | tools/dashboard/api/proposal_genesis.py | Dashboard API: Proposal Genesis — autonomous capture-to-delivery daemon | (blueprint) | Flask routes |
+| Proposals API | tools/dashboard/api/proposals.py | Dashboard API: Proposal Writing Lifecycle Tracker | (blueprint) | Flask routes |
+| RAG Eval API | tools/dashboard/api/rag_eval.py | RAG Evaluation Dashboard API — campaign listing, quality status, dataset balance | (blueprint) | Flask routes |
+| Sandbox API | tools/dashboard/api/sandbox.py | OPT-57 Sandbox liveness API | (blueprint) | Flask routes |
+| SbD API | tools/dashboard/api/sbd.py | Dashboard API: Secure by Design Assessment (CISA SbD) | (blueprint) | Flask routes |
+| Security Scan API | tools/dashboard/api/security_scan.py | Dashboard API: Security Scan Results | (blueprint) | Flask routes |
+| SRE API | tools/dashboard/api/sre.py | SRE API Blueprint — SLO, incident, runbook, DORA, and chaos endpoints | (blueprint) | Flask routes |
+| STIG Manager API | tools/dashboard/api/stig_manager.py | Dashboard API: STIG Benchmark Manager | (blueprint) | Flask routes |
+| Studio API | tools/dashboard/api/studio.py | ICDEV Studio API Blueprint | (blueprint) | Flask routes |
+| Traces API | tools/dashboard/api/traces.py | Traces API Blueprint — REST endpoints for observability (Phase 46) | (blueprint) | Flask routes |
+| Usage API | tools/dashboard/api/usage.py | Dashboard usage tracking and user activity API | (blueprint) | Flask routes |
+| WriteGuard API | tools/dashboard/api/writeguard.py | Dashboard API: WriteGuard — Content Quality Analysis, Export and History | (blueprint) | Flask routes |
+| CI Event Envelope | tools/ci/core/event_envelope.py | Unified event envelope for all CI/CD trigger sources (D132) — normalizes GitHub, GitLab, and webhook events | (library) | EventEnvelope dataclass |
+| AppForge Architect Reflex | tools/appforge/reflexes/architect.py | AppForge Architect Reflex — generate app blueprint from selected challenge | config dict | Blueprint artifact |
+| AppForge Build Reflex | tools/appforge/reflexes/build.py | AppForge Build Reflex — create standalone child app from blueprint | config dict | Build result |
+| AppForge Evaluate Reflex | tools/appforge/reflexes/evaluate.py | AppForge Evaluate Reflex — score and select the best challenge to build next | config dict | Evaluation scores |
+| Claude CLI Adapter | tools/agents/adapters/claude_cli.py | OPT-71: Claude Code CLI adapter — bridges Claude Code CLI to the ICDEV™ agent adapter API | (library) | Adapter API |
+| Codex CLI Adapter | tools/agents/adapters/codex_cli.py | OPT-71: OpenAI Codex CLI adapter stub — placeholder for Codex CLI integration | (library) | Adapter API |
+| Copilot CLI Adapter | tools/agents/adapters/copilot_cli.py | OPT-71: GitHub Copilot CLI adapter stub — placeholder for Copilot CLI integration | (library) | Adapter API |
+| Local LLM Router Adapter | tools/agents/adapters/local_llm_router.py | OPT-71: Local LLMRouter adapter — routes agent requests to local Ollama models | (library) | Adapter API |
 
 
