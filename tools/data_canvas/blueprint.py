@@ -1393,4 +1393,78 @@ def create_data_canvas_blueprint():
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
 
+    # ── External Catalog Sync ──────────────────────────────────────────────────
+
+    @bp.route("/api/sync/datahub", methods=["POST"])
+    @dc_login_required
+    def dc_api_sync_datahub():
+        """Trigger a one-way DDC → DataHub sync.
+
+        Body (JSON, all optional):
+            design_id  str   Sync a single design; omit to sync all designs.
+            dry_run    bool  Parse only — no writes to DataHub (default false).
+
+        Returns JSON sync report from DDCDataHubSync.
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        design_id = data.get("design_id")
+        dry_run = bool(data.get("dry_run", False))
+
+        try:
+            from tools.data_canvas.sync.datahub_sync import DDCDataHubSync
+        except ImportError as exc:
+            return jsonify({"status": "error", "message": f"datahub_sync import failed: {exc}"}), 500
+
+        syncer = DDCDataHubSync(dry_run=dry_run)
+
+        if not dry_run and not syncer.client.ping():
+            return jsonify({
+                "status": "error",
+                "message": f"DataHub GMS not reachable at {syncer.cfg['url']}",
+            }), 503
+
+        if design_id:
+            result = syncer.sync_design(design_id)
+        else:
+            result = syncer.sync_all()
+
+        status_code = 200 if result.get("status") == "ok" else 207
+        return jsonify(result), status_code
+
+    @bp.route("/api/sync/openmetadata", methods=["POST"])
+    @dc_login_required
+    def dc_api_sync_openmetadata():
+        """Trigger a one-way DDC → OpenMetadata sync.
+
+        Body (JSON, all optional):
+            design_id  str   Sync a single design; omit to sync all designs.
+            dry_run    bool  Parse only — no writes to OpenMetadata (default false).
+
+        Returns JSON sync report from DDCOpenMetadataSync.
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        design_id = data.get("design_id")
+        dry_run = bool(data.get("dry_run", False))
+
+        try:
+            from tools.data_canvas.sync.openmetadata_sync import DDCOpenMetadataSync
+        except ImportError as exc:
+            return jsonify({"status": "error", "message": f"openmetadata_sync import failed: {exc}"}), 500
+
+        syncer = DDCOpenMetadataSync(dry_run=dry_run)
+
+        if not dry_run and not syncer.client.ping():
+            return jsonify({
+                "status": "error",
+                "message": f"OpenMetadata not reachable at {syncer.cfg['url']}",
+            }), 503
+
+        if design_id:
+            result = syncer.sync_design(design_id)
+        else:
+            result = syncer.sync_all()
+
+        status_code = 200 if result.get("status") == "ok" else 207
+        return jsonify(result), status_code
+
     return bp

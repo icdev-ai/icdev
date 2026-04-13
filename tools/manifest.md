@@ -973,6 +973,12 @@
 | ReflexStateBase | `tools/daemon/base.py` | Thread-safe DB-backed reflex state management parameterized by `state_table` class attribute |
 | TrustKernelBase | `tools/daemon/base.py` | Risk tier enforcement (GREEN=auto, YELLOW=sandbox, ORANGE=human review) |
 
+## Scheduler
+
+| Tool | Path | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Companion Sync Daemon | `tools/scheduler/companion_sync_daemon.py` | Schedule-driven companion config regeneration — runs `companion.py --sync --write` every 30 min (configurable via `args/scheduler_config.yaml`). Ensures headless and air-gap deployments stay current without a dashboard event trigger. Supports daemon mode, `--once` for cron/Task Scheduler, and `--reflex sync` for CI/CD pipeline use. | --once, --status, --reflex sync, --json | Audit trail + companion sync result |
+
 ## Genesis v2.0 — Autonomous Research Lab
 
 ### Core Engine
@@ -1945,6 +1951,12 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Glossary Engine | tools\writing\glossary_engine.py | Auto-registered: writing/glossary_engine.py | --json | JSON |
 | Rewriter | tools\writing\rewriter.py | Auto-registered: writing/rewriter.py | --json | JSON |
 | Style Guide | tools\writing\style_guide.py | Auto-registered: writing/style_guide.py | --json | JSON |
+
+## Skill Invocation (OPT-41, 2026-04-12)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Skill Registry | tools/skills/registry.py | Parses .agents/skills/icdev-*/SKILL.md — frontmatter, commands, MCP refs — into tools/skills/registry.json | --rebuild, --list, --get SKILL, --json | Registry JSON |
+| Skill Invoker | tools/skills/invoke.py | Headless CLI invoker — runs documented commands for each skill; allowlisted to `python tools/`, `python -m tools`, `python -c` only | --list, --show SKILL, --dry-run SKILL, --exec SKILL [-- ARGS...], --keep-going, --timeout, --json | Per-step stdout/stderr/rc + summary |
 
 ## Dashboard UX Enhancements (OPT-68, 2026-04-12)
 | Tool | File | Description | Input | Output |
