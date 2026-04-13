@@ -2236,3 +2236,10 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Local LLM Router Adapter | tools/agents/adapters/local_llm_router.py | OPT-71: Local LLMRouter adapter — routes agent requests to local Ollama models | (library) | Adapter API |
 
 
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Prebuild Bootstrap | tools\installer\prebuild_bootstrap.py | Auto-registered: installer/prebuild_bootstrap.py | --json | JSON |
+| Sync Package Tree | tools\installer\sync_package_tree.py | Auto-registered: installer/sync_package_tree.py | --json | JSON |
