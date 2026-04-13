@@ -87,6 +87,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # AlphaDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",
+        "ad_decision_snapshots",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
