@@ -1699,7 +1699,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Kg Seeder | tools\trading\market_intel\kg_seeder.py | Auto-registered: market_intel/kg_seeder.py | --json | JSON |
 | Scenario Engine | tools\trading\market_intel\scenario_engine.py | Auto-registered: market_intel/scenario_engine.py | --json | JSON |
 | Universe | tools\trading\market_intel\universe.py | Auto-registered: market_intel/universe.py | --json | JSON |
-| Market Intel Daemon | tools/trading/market_intel/daemon.py | AlphaDesk autonomous trading daemon with schedule-driven reflexes for market scanning, macro watching, and knowledge graph enrichment | --start, --once, --json | Daemon run results |
+| Market Intel Daemon | tools/trading/market_intel/daemon.py | AlphaDesk autonomous trading daemon — 11 schedule-driven reflexes (market_scanner, approved_monitor, macro_watcher, alert_detector, kg_enricher, gap_detector, scenario_analyzer, expert_advisor, exit_executor, daily_brief, portfolio_strategist). Circuit breakers, trust kernel, audit trail (trading_daemon_reflex_state, trading_daemon_audit). Config: args/trading_daemon_config.yaml | --start, --once REFLEX, --status, --reset REFLEX, --json | Daemon run results / reflex status JSON |
 | Market Intel Gap Detector | tools/trading/market_intel/gap_detector.py | Structural gap detector for AlphaDesk knowledge graph using modularity-based community detection to identify blind spots in market pricing | --detect, --json | Gap findings |
 | Market Intel Judge | tools/trading/market_intel/judge.py | LLM-as-a-Judge for AlphaDesk with Socratic feedback loop; uses qwen3.5 for expert challenges and Claude for synthesis | --judge, --json | Judgment results |
 
