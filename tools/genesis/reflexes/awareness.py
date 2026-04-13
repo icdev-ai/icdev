@@ -221,7 +221,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             current_sig = enabled_flags_signature()
             last_sig = _get_last_sig(config)
             if current_sig != last_sig:
-                print(f"  [awareness] enablement flags changed — forcing full re-index")
+                print("  [awareness] enablement flags changed — forcing full re-index")
                 incremental = False
                 _set_last_sig(config, current_sig)
         except Exception as exc:
