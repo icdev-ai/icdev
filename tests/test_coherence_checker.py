@@ -97,6 +97,17 @@ conn.execute(
         assert "loads" in names
         assert "Path" in names
 
+    def test_extract_name_usage_syntax_error(self):
+        # Graceful handling: returns empty set when source has a SyntaxError.
+        # Mirrors the pattern for _extract_function_sigs (see test_extract_function_sigs_syntax_error).
+        names = _extract_name_usage("def bad(:\n    pass\n")
+        assert names == set()
+
+    def test_extract_name_usage_empty_source(self):
+        # Empty source and comment-only source produce no Name nodes — no false positives.
+        assert _extract_name_usage("") == set()
+        assert _extract_name_usage("# just a comment\n") == set()
+
     def test_extract_function_sigs(self):
         source = textwrap.dedent("""
         def foo(a, b, c, db_path=None):
