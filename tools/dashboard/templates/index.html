@@ -895,8 +895,11 @@ window._loadCharts = function() {
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            // Compliance posture — multi-canvas bar chart
+            // Compliance posture — multi-canvas bar chart (7 canvas scores + Oracle count)
             if (d.compliance && d.compliance.canvases && d.compliance.canvases.length > 0) {
+                // Separate Oracle entry from canvas entries for per-entry handling
+                var _oracleEntry = null;
+                d.compliance.canvases.forEach(function(c) { if (c.is_oracle) _oracleEntry = c; });
                 ICDEV.barChart('chart-compliance', {
                     labels: d.compliance.canvases.map(function(c) { return c.name; }),
                     series: [
@@ -904,7 +907,7 @@ window._loadCharts = function() {
                     ],
                     height: 160, showLegend: false, showValues: true,
                 });
-                // Fetch and render sparkline trend indicators
+                // Fetch and render sparkline trend indicators + Oracle CAT breakdown
                 fetch('/api/charts/compliance-trend')
                     .then(function(r) { return r.json(); })
                     .then(function(td) {
@@ -921,6 +924,15 @@ window._loadCharts = function() {
                                 arrow + (deltaStr ? ' ' + deltaStr : '') +
                                 '</span>';
                         });
+                        // Oracle CAT indicator (forward-looking; high count = more risk)
+                        if (_oracleEntry) {
+                            var _oc = (_oracleEntry.cat1 > 0) ? '#dc3545' : (_oracleEntry.cat2 > 0) ? '#ffc107' : '#28a745';
+                            var _otip = 'Oracle pending compliance-risk predictions — CAT1(critical/high): ' + _oracleEntry.cat1 + ', CAT2(medium): ' + _oracleEntry.cat2 + ', CAT3(low/info): ' + _oracleEntry.cat3;
+                            html += '<span style="font-size:11px;color:' + _oc + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + _otip + '">' +
+                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">Oracle</span>' +
+                                'C1:' + _oracleEntry.cat1 + ' C2:' + _oracleEntry.cat2 + ' C3:' + _oracleEntry.cat3 +
+                                '</span>';
+                        }
                         trendEl.innerHTML = html || '';
                     })
                     .catch(function() {});
