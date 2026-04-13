@@ -10,11 +10,21 @@ recursive-include icdev *.sql *.md *.txt *.LICENSE *.feature *.j2 *.toml *.ini
 # into user projects.
 recursive-include icdev/data/claude_bootstrap *
 
-recursive-exclude icdev/tools/saas *
+# Keep in sync with tools/installer/sync_package_tree.py PARENT_ONLY_DIRS
+# and pyproject.toml [tool.setuptools.packages.find] exclude.
+# Owner-operated child apps — NOT shipped:
+recursive-exclude icdev/tools/pulse *
+recursive-exclude icdev/tools/proposal_genesis *
 recursive-exclude icdev/tools/govcon *
 recursive-exclude icdev/tools/rfx *
-recursive-exclude icdev/tools/marketplace *
+recursive-exclude icdev/tools/autoresearch *
+recursive-exclude icdev/tools/scout *
 recursive-exclude icdev/tools/creative *
+recursive-exclude icdev/tools/trading *
+recursive-exclude icdev/tools/market_intel *
+# Parent-platform services — NOT shipped:
+recursive-exclude icdev/tools/saas *
+recursive-exclude icdev/tools/marketplace *
 recursive-exclude icdev/tools/gateway *
 recursive-exclude icdev/tools/playground *
 

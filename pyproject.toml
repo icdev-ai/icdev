@@ -200,14 +200,28 @@ icdev-setup = "icdev.tools.installer.setup_wizard:main"
 
 [tool.setuptools.packages.find]
 include = ["icdev*"]
+# Keep this list in sync with PARENT_ONLY_DIRS in
+# tools/installer/sync_package_tree.py. These are owner-operated child apps
+# and parent-platform services — NOT shipped in the public wheel.
+# Framework/core subsystems (WriteGuard, canvases, genesis, oracle, etc.)
+# ARE shipped.
 exclude = [
-    "icdev.tools.saas*",
+    # Owner-operated child apps
+    "icdev.tools.pulse*",
+    "icdev.tools.proposal_genesis*",
     "icdev.tools.govcon*",
     "icdev.tools.rfx*",
-    "icdev.tools.marketplace*",
+    "icdev.tools.autoresearch*",
+    "icdev.tools.scout*",
     "icdev.tools.creative*",
+    "icdev.tools.trading*",
+    "icdev.tools.market_intel*",
+    # Parent-platform services
+    "icdev.tools.saas*",
+    "icdev.tools.marketplace*",
     "icdev.tools.gateway*",
     "icdev.tools.playground*",
+    # Tests
     "tests*",
 ]
 
