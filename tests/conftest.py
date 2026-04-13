@@ -850,10 +850,12 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     depends_on_task_id   TEXT REFERENCES kanban_tasks(id),
     failure_count        INTEGER DEFAULT 0,
     last_failure_reason  TEXT,
-    last_failure_at      TEXT
+    last_failure_at      TEXT,
+    dispatch_source      TEXT DEFAULT 'unknown'
 );
 CREATE INDEX IF NOT EXISTS idx_kanban_depends ON kanban_tasks(depends_on_task_id);
 CREATE INDEX IF NOT EXISTS idx_kanban_failure_count ON kanban_tasks(failure_count);
+CREATE INDEX IF NOT EXISTS idx_kanban_dispatch_source ON kanban_tasks(dispatch_source);
 
 CREATE TABLE IF NOT EXISTS kanban_verifications (
     id                    TEXT PRIMARY KEY,
@@ -882,10 +884,12 @@ CREATE TABLE IF NOT EXISTS kanban_verifications (
     remediation_attempted INTEGER DEFAULT 0,
     remediation_success   INTEGER,
     remediation_type      TEXT,
+    dispatch_source       TEXT DEFAULT 'unknown',
     created_at            TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_kv_task_id ON kanban_verifications (task_id);
 CREATE INDEX IF NOT EXISTS idx_kv_result ON kanban_verifications (result);
+CREATE INDEX IF NOT EXISTS idx_kv_dispatch_source ON kanban_verifications (dispatch_source);
 
 CREATE TABLE IF NOT EXISTS scoped_memory_entries (
     id           TEXT PRIMARY KEY,
