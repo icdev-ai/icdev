@@ -97,6 +97,7 @@ from tools.dashboard.api.compliance_debt import compliance_debt_api  # noqa: E40
 from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
 from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
 from tools.dashboard.api.oracle import oracle_api  # noqa: E402
+from tools.dashboard.api.sandbox import sandbox_api  # noqa: E402 (OPT-57)
 from tools.dashboard.api.analytics import analytics_api  # noqa: E402
 from tools.dashboard.api.ndc_labs import ndc_labs_api  # noqa: E402
 from tools.dashboard.api.ndc_sops import ndc_sops_api  # noqa: E402
@@ -1161,6 +1162,7 @@ def create_app() -> Flask:
     app.register_blueprint(stig_manager_api)
     app.register_blueprint(ato_package_api)
     app.register_blueprint(oracle_api)
+    app.register_blueprint(sandbox_api)  # OPT-57
     app.register_blueprint(analytics_api)
     app.register_blueprint(ndc_labs_api)
     app.register_blueprint(ndc_sops_api)
