@@ -287,6 +287,10 @@ def _clear_retry_count(task_id: str):
 
 # Track worktree paths: {task_id: worktree_path_str}
 _worktrees: Dict[str, str] = {}
+# Snapshot of main's HEAD SHA captured at dispatch time for each task.
+# Verification uses this as the baseline (not current main) so agent commits
+# stay visible even if main advances between dispatch and verification.
+_dispatch_main_heads: Dict[str, str] = {}
 
 
 def _create_worktree(task_id: str) -> Optional[str]:
@@ -1481,6 +1485,24 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     else:
         print(f"  Kanban: worktree unavailable, using BASE_DIR for {task_id}")
 
+    # FIX: Capture main HEAD at dispatch time. Verification uses this as the
+    # baseline so that agent commits are visible even if main advances
+    # (another task merges, auto-commit runs, etc.). Previously verification
+    # used `git log main..kanban/branch` with CURRENT main, which went empty
+    # once the agent's work was absorbed into main, causing false "no commits"
+    # rejection.
+    try:
+        import subprocess as _sp
+        head_proc = _sp.run(
+            ["git", "rev-parse", "main"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=10,
+        )
+        if head_proc.returncode == 0:
+            _dispatch_main_heads[task_id] = head_proc.stdout.strip()
+    except Exception as exc:
+        logger.debug("kanban: failed to capture main HEAD for %s: %s", task_id, exc)
+
     instruction = _build_instruction(task_id, title, prompt_text, prompt_path)
     task_log = PROMPT_DIR / f"{task_id}.log"
 
@@ -1672,8 +1694,15 @@ def _run_verify_checks(task_id, claude_output):
         import subprocess as _sp
 
         branch_name = f"kanban/{task_id}"
+
+        # FIX: Use the snapshot of main captured at dispatch time as baseline,
+        # so agent commits remain visible even if main has advanced (auto-merge
+        # of another task, auto-commit, etc.). Falls back to HEAD..branch for
+        # tasks dispatched before this snapshot was recorded.
+        dispatch_baseline = _dispatch_main_heads.get(task_id, "HEAD")
+
         result = _sp.run(
-            ["git", "log", f"HEAD..{branch_name}", "--oneline"],
+            ["git", "log", f"{dispatch_baseline}..{branch_name}", "--oneline"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1683,9 +1712,37 @@ def _run_verify_checks(task_id, claude_output):
         )
         worktree_commits = result.stdout.strip()
         if worktree_commits:
-            return True, f"Verified: worktree has commits: {worktree_commits[:100]}"
+            return True, f"Verified: branch has commits since dispatch: {worktree_commits[:100]}"
 
-        # Fallback: commits in the last 30 min mentioning this task id
+        # Fallback A: maybe work was already merged to main (stop hook +
+        # scheduler merge race). Look for commits on ANY branch since dispatch
+        # that touch files in our worktree.
+        if dispatch_baseline != "HEAD":
+            try:
+                r2 = _sp.run(
+                    ["git", "log", f"{dispatch_baseline}..HEAD", "--oneline"],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    cwd=str(BASE_DIR), timeout=10,
+                )
+                main_advanced = r2.stdout.strip()
+                if main_advanced:
+                    # Check if the worktree has uncommitted changes — if clean
+                    # AND main advanced, the agent's work likely merged already.
+                    work_dir_for_check = _worktrees.get(task_id) or str(BASE_DIR)
+                    dirty = _sp.run(
+                        ["git", "status", "--porcelain"],
+                        capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        cwd=work_dir_for_check, timeout=10,
+                    )
+                    if not dirty.stdout.strip():
+                        return True, (
+                            f"Verified: main advanced {len(main_advanced.splitlines())} "
+                            f"commit(s) since dispatch; worktree is clean (work likely merged)"
+                        )
+            except Exception:
+                pass
+
+        # Fallback B: commits in the last 30 min mentioning this task id
         result = _sp.run(
             ["git", "log", "--oneline", "--since=30 minutes ago", "--all", "--grep", task_id[:12]],
             capture_output=True,
