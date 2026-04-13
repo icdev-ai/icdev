@@ -787,6 +787,7 @@
 | Shared Schemas | tools/schemas/ | stdlib dataclass models (ProjectStatus, AgentHealth, AuditEvent, etc.) with validate_output() and wrap_mcp_response() (D275) | (library) | Schema classes |
 | Innovation Signal Schema | tools/schemas/innovation.py | InnovationSignal dataclass — innovation pipeline signal model (source, scoring, triage result, FORGE layer, boundary tier, effort) (D275/Phase 44) | (library) | InnovationSignal class |
 | Chat Schemas | tools/schemas/chat.py | ChatMessage and ChatContext dataclass models for multi-stream parallel chat (D257/D275). Used by dashboard API and SaaS portal. Supports compression tiers (current/historical/bulk), CUI classification, role types (user/assistant/system/intervention). | (library) | ChatMessage, ChatContext |
+| Schema Validation | tools/schemas/validation.py | Schema validation utilities (Phase 44 — D275). Validates tool output dicts against shared dataclass models via validate_output(); backward compatible with plain dict returns. | (library) | SchemaValidationError, validate_output() |
 | Context Indexer | tools/mcp/context_indexer.py | CLAUDE.md section indexer by ## headers for semantic layer MCP delivery (D277) | (library) | Section index |
 
 ## Observability, Traceability & Explainable AI (Phase 46)
@@ -1554,6 +1555,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | SRE Fixer | tools/review_board/fixers/sre_fixes.py | Auto-fix engine for SRE findings | --json | Fix results |
 | Health Scorer | tools/review_board/health_scorer.py | Aggregate health scoring across reflexes | --json | Health scores |
 | Notifier | tools/review_board/notifier.py | Review board notification dispatcher | --json | Notification status |
+| Remediation Engine | tools/review_board/remediation_engine.py | Auto-fix findings pipeline — 3-tier confidence model (auto/suggest/escalate), rate limiting, declarative fix registry, NIST AU audit log (D-RB-4,8,9,10) | --run, --dry-run, --pending, --history, --stats, --json | Remediation results |
 
 ## SaaS (Additional)
 | Tool | File | Description | Input | Output |
