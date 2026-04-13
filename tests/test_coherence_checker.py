@@ -368,6 +368,38 @@ class TestRuffLintGate:
         # Malformed → empty dict (fail-safe: stricter gate, not looser)
         assert _load_ruff_gate_whitelist() == {}
 
+    def test_whitelist_loader_handles_string_code(self, tmp_path, monkeypatch):
+        # YAML allows a bare string instead of a list for a single code.
+        from tools.workflow import coherence_checker as cc
+
+        wl_file = tmp_path / "wl_str.yaml"
+        wl_file.write_text(
+            "whitelist:\n"
+            "  tools/legacy/foo.py: F401\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(cc, "_RUFF_GATE_CONFIG", wl_file)
+        wl = _load_ruff_gate_whitelist()
+        assert wl["tools/legacy/foo.py"] == {"F401"}
+
+    def test_whitelist_loader_normalizes_backslash_paths(self, tmp_path, monkeypatch):
+        # Windows-style paths in the YAML should be normalized to forward slashes.
+        # In YAML plain scalars a single \ is a literal backslash, so we write
+        # "tools\legacy\bar.py" by putting one backslash in the file (Python \\).
+        from tools.workflow import coherence_checker as cc
+
+        wl_file = tmp_path / "wl_win.yaml"
+        wl_file.write_text(
+            "whitelist:\n"
+            "  tools\\legacy\\bar.py:\n"
+            "    - F811\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(cc, "_RUFF_GATE_CONFIG", wl_file)
+        wl = _load_ruff_gate_whitelist()
+        assert "tools/legacy/bar.py" in wl
+        assert wl["tools/legacy/bar.py"] == {"F811"}
+
 
 # ---------------------------------------------------------------------------
 # Report-level tests
