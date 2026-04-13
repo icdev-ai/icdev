@@ -1566,6 +1566,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 ## Scout
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Daemon | tools/scout/daemon.py | Daily autonomous self-improvement scanner (introspect/trending/competitive pillars) | --once --json, --status --json, --pillar <name> --json | Scan results / digest |
 | Config Updater | tools/scout/config_updater.py | Scout configuration auto-updater | --json | Updated config |
 | Genesis Trigger | tools/scout/genesis_trigger.py | Trigger Genesis from Scout findings | --json | Trigger results |
 | Install Scheduler | tools/scout/install_scheduler.py | Scout installation scheduler | --json | Schedule status |
@@ -1759,9 +1760,11 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Security Canvas Agent | tools\security_canvas\agent.py | ICDEV™ Security Design Canvas intelligent agent — auto-triggers STRIDE assessments on NDC topology save, IaC scan on IaC generation, CI/CD security on pipeline save, and SDC posture scoring. Pure deterministic Python, no LLM. | (library — imported by security_canvas/blueprint.py) | dict / JSON |
 | Security Engine | tools\security_canvas\security_engine.py | Auto-registered: security_canvas/security_engine.py | --json | JSON |
 | SDC Compliance KG | tools\security_canvas\compliance_kg.py | Builds sdc-compliance-kg: STRIDE→NIST→framework traversable graph | --build / --node-info / --path-from / --stride-coverage / --sdc-ctrl-coverage --json | JSON |
 | SDC NL Query | tools\security_canvas\nl_query.py | Natural language query engine for SDC compliance graph; auto-builds KG if missing | --query "..." --build --json | JSON |
+| SDC ATO Artifacts | tools/security_canvas/artifacts.py | Generates SSP, SAR, and POA&M ATO artifacts as Markdown from security design assessment data; no LLM dependency | generate_artifact_bundle(design_id, design_name, graph_data) | dict {ssp, sar, poam, metadata} |
 
 
 ## Auto-Registered (Coherence Fix)
