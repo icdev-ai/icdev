@@ -1,0 +1,7 @@
+{
+  "id": "015",
+  "name": "kanban_depends_on",
+  "description": "Add depends_on_task_id column + index to kanban_tasks for native task dependency support. Enables listener-level gating of blocked tasks, removes the need for park-in-scheduled workarounds, and surfaces blocked-by badges in the dashboard kanban UI.",
+  "created_at": "2026-04-11",
+  "phase": "Phase 68"
+}

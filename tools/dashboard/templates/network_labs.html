@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}NDC Lab Backends — ICDEV™{% endblock %}
+
+{% block extra_css %}
+<style>
+  .lab-status-badge { display:inline-block; padding:2px 10px; border-radius:10px;
+    font-weight:600; font-size:12px; color:#fff; text-transform:uppercase; }
+  .lab-status-green  { background:#2d7a46; }
+  .lab-status-yellow { background:#b38600; }
+  .lab-status-red    { background:#a1251b; }
+  .lab-summary { display:flex; gap:12px; margin-bottom:12px; }
+  .lab-summary .pill { padding:6px 12px; border-radius:6px; border:1px solid #334;
+    background:#111a2a; color:#cde; font-size:13px; }
+  .lab-table { width:100%; border-collapse:collapse; }
+  .lab-table th, .lab-table td { padding:8px 10px; border-bottom:1px solid #223;
+    text-align:left; font-size:13px; }
+  .lab-table th { background:#0e1726; color:#cfe; }
+  .lab-err { color:#e88; font-size:12px; }
+  .lab-muted { color:#789; }
+</style>
+{% endblock %}
+
+{% block content %}
+<main id="main-content" class="container">
+  <h1>NDC — Lab Backend Health</h1>
+  <p class="lab-muted">
+    Live status of every lab orchestrator registered in
+    <code>args/network_lab_backends.yaml</code>. Auto-refresh every 30s.
+    Data source: <code>/api/ndc/labs/health</code>.
+  </p>
+
+  <div class="lab-summary" id="lab-summary">
+    <span class="pill">Green: <b id="sum-green">-</b></span>
+    <span class="pill">Yellow: <b id="sum-yellow">-</b></span>
+    <span class="pill">Red: <b id="sum-red">-</b></span>
+    <span class="pill">Last refresh: <b id="sum-ts">-</b></span>
+  </div>
+
+  <table class="lab-table" id="lab-backends">
+    <thead>
+      <tr>
+        <th>Name</th><th>Type</th><th>URL</th><th>Status</th>
+        <th>Free RAM</th><th>Running Labs</th><th>Queue</th>
+        <th>Last Error</th><th>Last Probed</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td colspan="9" class="lab-muted">Loading backends…</td></tr>
+    </tbody>
+  </table>
+</main>
+
+<script>
+(function () {
+  const tbody   = document.querySelector('#lab-backends tbody');
+  const sumG    = document.getElementById('sum-green');
+  const sumY    = document.getElementById('sum-yellow');
+  const sumR    = document.getElementById('sum-red');
+  const sumTs   = document.getElementById('sum-ts');
+  const REFRESH = 30000;
+
+  function fmtRam(mb) {
+    if (!mb) return '<span class="lab-muted">–</span>';
+    return mb >= 1024 ? (mb/1024).toFixed(1) + ' GB' : mb + ' MB';
+  }
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>\"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/api/ndc/labs/health', {cache: 'no-store'});
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'probe failed');
+
+      sumG.textContent = j.summary.green;
+      sumY.textContent = j.summary.yellow;
+      sumR.textContent = j.summary.red;
+      sumTs.textContent = new Date().toLocaleTimeString();
+
+      if (!j.backends.length) {
+        tbody.innerHTML =
+          '<tr><td colspan="9" class="lab-muted">No backends registered.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = j.backends.map(b => `
+        <tr>
+          <td>${esc(b.name)}</td>
+          <td>${esc(b.type)}</td>
+          <td><code>${esc(b.url)}</code></td>
+          <td><span class="lab-status-badge lab-status-${esc(b.status)}">${esc(b.status)}</span></td>
+          <td>${fmtRam(b.free_ram_mb)}</td>
+          <td>${b.running_labs || 0}</td>
+          <td>${b.queue_depth || 0}</td>
+          <td class="lab-err">${esc(b.last_error || '')}</td>
+          <td class="lab-muted">${esc(b.last_probed || '')}</td>
+        </tr>`).join('');
+    } catch (e) {
+      tbody.innerHTML =
+        `<tr><td colspan="9" class="lab-err">Error: ${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  refresh();
+  setInterval(refresh, REFRESH);
+})();
+</script>
+{% endblock %}
