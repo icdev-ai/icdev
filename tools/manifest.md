@@ -1573,6 +1573,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | LLM Summarizer | tools/scout/llm_summarizer.py | LLM-powered Scout finding summarizer | --json | Summaries |
 | Trending Pillar | tools/scout/pillars/trending.py | Trending topic detection pillar | --json | Trending topics |
 | Preflight | tools/scout/preflight.py | Scout preflight validation | --json | Preflight results |
+| Daily Digest | tools/scout/digest.py | Scout daily digest generator — produces Markdown reports of Scout findings with LLM synthesis and recommended actions | --generate --date YYYY-MM-DD --json, --view --date YYYY-MM-DD, --list --json | Digest reports |
 
 ## AlphaDesk Trading Engine
 | Tool | File | Description | Input | Output |
@@ -1587,6 +1588,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Risk Checker | tools/trading/execution/risk_checker.py | Pre-trade risk validation (position limits, VaR) | --json | Risk assessment |
 | Pulse Article Generator | tools/trading/pulse/article_generator.py | Pulse article generator from analysis results | --json | Article draft |
 | Portfolio Strategist | tools/trading/strategist/portfolio_strategist.py | Autonomous long-term investment strategy agent — 4-tier allocation (core/tactical/opportunistic/hedge) from multi-timeframe performance, macro regime, KG centrality, scenario resilience, expert consensus | --run --json | Strategy allocation |
+| Trading Runner | tools/trading/runner.py | Main orchestrator for AlphaDesk trading engine analysis cycles — full lifecycle: analyze → persist → queue signal → trigger Pulse article. Runs 5-layer DAG (macro, analysts, debate, signal, risk/approval) for a ticker. | --ticker SYM, --json | Full analysis result with run_id, signal, confidence, signal_id, article_id |
 
 
 ## Auto-Registered (Coherence Fix)
