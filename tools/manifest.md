@@ -1680,6 +1680,12 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | PDT Tracker | tools\trading\risk\pdt_tracker.py | Pattern Day Trader rule pre-flight check (3 daytrades / 5 days under $25k). Reads broker account when available. | --daytrade, --json | JSON |
 | Drawdown Monitor | tools\trading\risk\drawdown_monitor.py | Daily P&L watcher; warns at -1%, halts at -2% (auto-trips kill-switch). | --warn PCT, --halt PCT, --json | JSON |
 | VIX Sizing | tools\trading\risk\vix_sizing.py | VIX-conditional position sizing scale factor (0.4x–1.5x). Applied in auto_trader qty calc. | --vix N, --base-qty N, --json | JSON |
+| VIX Term Structure | tools\trading\risk\vix_term_structure.py | ^VIX9D/^VIX/^VIX3M/^VIX6M curve shape (CONTANGO/NORMAL/FLAT/BACKWARDATED); gates new longs on deep backwardation (≥5%). 5-min cache. | --gate, --json | JSON |
+| Adaptive Stops | tools\trading\risk\adaptive_stops.py | VIX-adaptive stop/target width (widens at higher VIX to prevent noise stop-outs). | --base-stop N, --base-target N, --vix N, --json | JSON |
+| VIX Weight Rotation | tools\trading\analysis\vix_weight_rotation.py | VIX-conditional signal weight rotation (momentum in low-vol, mean-reversion in high-vol). | --vix N, --json | JSON |
+| Vol Divergence | tools\trading\analysis\vol_divergence.py | Realized vs implied vol comparison (IV-RV); flags vol_rich / hedges_cheap / aligned. | --ticker SYM, --window N, --json | JSON |
+| Hedge Recommender | tools\trading\risk\hedge_recommender.py | Tail-risk hedge advisory (VXX / SPX puts / put-write overlay); text only — never executes options. | --equity N, --json | JSON |
+| Confluence: VIX Structure | tools\trading\analysis\confluence_pillars\vix_structure.py | VIX term-structure pillar (contango=bull, backwardation=bear). | library module | PillarVote |
 | Trade Audit | tools\trading\audit\trade_audit.py | Append-only NIST-AU audit trail for signal/order lifecycle (ad_trade_audit). | --query, --ticker, --event, --limit, --json | JSON |
 | Rollout Preset Loader | tools\trading\rollout\preset_loader.py | Loads phased rollout configs (micro_live → scale_10k → scale_25k → scale_100k). Refuses load unless ICDEV_TRADING_TIER env matches tier. | --list, --tier NAME, --check-short, --locate-ok, --json | JSON |
 | Order Poller | tools\trading\execution\order_poller.py | Polls broker for terminal status of non-terminal local orders; updates ad_orders + audit row on transition. Idempotent. | --limit N, --json | JSON |
