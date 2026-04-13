@@ -149,11 +149,19 @@ security-scan:
 
 ### Headless ANVIL Workflow
 
-> **Requires OPT-42** (`tools/anvil/*.py` — not yet merged)
+All 10 core ANVIL commands are runnable headlessly via `tools/anvil/<name>.py`.
+Each wrapper parses its source (`.claude/commands/*.md` or an `icdev-*` skill),
+extracts documented `python tools/…` steps, substitutes `$ARGUMENTS`, and runs
+them with an allowlisted prefix.
 
 ```bash
-python tools/anvil/run_workflow.py --goal goals/build_app.md --headless --json
+python tools/anvil/status.py --json                       # skill-backed
+python tools/anvil/feature.py --dry-run -- "add foo bar"  # md-backed preview
+python tools/anvil/feature.py --json -- "add foo bar"     # full execution
 ```
+
+Available wrappers (11 total): `feature`, `bug`, `chore`, `test`, `review`,
+`commit`, `status`, `monitor`, `maintain`, `secure`, `deploy`.
 
 ### Skill Invocation (Headless)
 
