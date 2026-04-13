@@ -157,11 +157,17 @@ python tools/anvil/run_workflow.py --goal goals/build_app.md --headless --json
 
 ### Skill Invocation (Headless)
 
-> **Requires OPT-41** (`tools/skills/invoke.py` — not yet merged)
+Every `.agents/skills/icdev-*` skill is invokable from a non-Claude shell.
 
 ```bash
-python tools/skills/invoke.py --skill icdev-secure --args "--scan tools/ --json"
+python tools/skills/invoke.py --list --json              # list all skills
+python tools/skills/invoke.py --show icdev-status        # print skill card
+python tools/skills/invoke.py --dry-run icdev-secure     # preview commands
+python tools/skills/invoke.py --exec icdev-status --json # execute + capture output
+python tools/skills/invoke.py --exec icdev-secure -- --scan tools/ --json  # with args
 ```
+
+Allowlisted command prefixes: `python tools/`, `python -m tools`, `python -c`. Shell builtins, curl, etc. are refused.
 
 ### Air-Gap LLM Routing (Ollama-only)
 

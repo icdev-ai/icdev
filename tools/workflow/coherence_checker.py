@@ -19,6 +19,7 @@ Checks:
   9. skill_standard — .agents/skills/*/SKILL.md conform to mattpocock/skills convention
  10. sandbox_coverage — docs/security/sandbox-coverage.md references all ingress gap files
  11. direct_anthropic_import — no direct `import anthropic` outside tools/llm/anthropic_provider.py (OPT-44)
+ 12. karpathy_sync  — 5 canonical Karpathy headings present in all 10 AI platform configs
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 Follows claude_dir_validator.py pattern (dataclass results, check registry).
@@ -2039,6 +2040,108 @@ def check_skill_standard() -> CoherenceCheck:
     )
 
 
+def check_karpathy_sync() -> CoherenceCheck:
+    """Verify canonical Karpathy principle headings exist in all 10 AI platform configs.
+
+    Rule: After any CLAUDE.md update that touches the Karpathy principles section,
+    `companion sync` must propagate all 5 canonical headings to every platform
+    instruction file. This check blocks (--gate) on drift so no platform silently
+    loses the guidance.
+
+    Canonical headings (from goals/build_app.md, goals/tdd_workflow.md,
+    goals/code_review.md — the three goal files that reference karpathy_principles.md):
+      1. State assumptions
+      2. Enumerate interpretations
+      3. Prefer simpler
+      4. Bound your edit scope
+      5. Success criteria
+
+    Checked files (10 AI platform instruction files, excluding CLAUDE.md which is
+    the source of truth):
+      AGENTS.md, .clinerules, .cursor/rules/icdev.mdc, .windsurf/rules/icdev.md,
+      .github/copilot-instructions.md, .amazonq/rules/icdev.md, .junie/guidelines.md,
+      GEMINI.md, .goosehints, CONVENTIONS.md
+    """
+    # Canonical headings — any of these substrings (case-insensitive) must appear
+    KARPATHY_HEADINGS: List[Tuple[str, str]] = [
+        ("state_assumptions",       "State assumptions"),
+        ("enumerate_interpretations","Enumerate interpretations"),
+        ("prefer_simpler",          "Prefer simpler"),
+        ("bound_edit_scope",        "Bound your edit scope"),
+        ("success_criteria",        "Success criteria"),
+    ]
+
+    # 10 AI platform instruction files (relative to PROJECT_ROOT)
+    PLATFORM_FILES: List[Tuple[str, str]] = [
+        ("codex",   "AGENTS.md"),
+        ("cline",   ".clinerules"),
+        ("cursor",  ".cursor/rules/icdev.mdc"),
+        ("windsurf",".windsurf/rules/icdev.md"),
+        ("copilot", ".github/copilot-instructions.md"),
+        ("amazonq", ".amazonq/rules/icdev.md"),
+        ("junie",   ".junie/guidelines.md"),
+        ("gemini",  "GEMINI.md"),
+        ("goose",   ".goosehints"),
+        ("devin",   "CONVENTIONS.md"),
+    ]
+
+    drift: List[str] = []   # per-platform missing heading reports
+    checked_platforms: List[str] = []
+
+    for platform, rel_path in PLATFORM_FILES:
+        full_path = PROJECT_ROOT / rel_path
+        if not full_path.exists():
+            drift.append(
+                f"{rel_path} ({platform}): file missing — "
+                "run `python tools/dx/companion.py --sync --write --json` to regenerate"
+            )
+            continue
+
+        body = _read_text(full_path).lower()
+        missing_hdrs = [
+            label
+            for _, label in KARPATHY_HEADINGS
+            if label.lower() not in body
+        ]
+        if missing_hdrs:
+            drift.append(
+                f"{rel_path} ({platform}): missing headings — "
+                + ", ".join(f'"{h}"' for h in missing_hdrs)
+            )
+        else:
+            checked_platforms.append(platform)
+
+    if drift:
+        return CoherenceCheck(
+            check_id="karpathy_sync",
+            check_name="Karpathy Principles Sync (10 AI platforms)",
+            status="fail",
+            expected=[f'"{label}" in every platform config' for _, label in KARPATHY_HEADINGS],
+            actual=[f"{len(checked_platforms)}/{len(PLATFORM_FILES)} platforms in sync"],
+            missing=drift,
+            extra=[],
+            message=(
+                f"{len(drift)} platform(s) missing Karpathy headings — "
+                "add the Karpathy section to CLAUDE.md then re-run "
+                "`python tools/dx/companion.py --sync --write --json`"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="karpathy_sync",
+        check_name="Karpathy Principles Sync (10 AI platforms)",
+        status="pass",
+        expected=[f'"{label}" in every platform config' for _, label in KARPATHY_HEADINGS],
+        actual=[f"all {len(PLATFORM_FILES)} platforms in sync"],
+        missing=[],
+        extra=[],
+        message=(
+            f"All {len(PLATFORM_FILES)} AI platform configs contain "
+            f"all {len(KARPATHY_HEADINGS)} canonical Karpathy principle headings"
+        ),
+    )
+
+
 def check_sandbox_coverage() -> CoherenceCheck:
     """OPT-58 — verify docs/security/sandbox-coverage.md exists and
     documents all 4 tracked ingress-point gap files.
@@ -2196,6 +2299,7 @@ CHECK_REGISTRY = {
     "skill_standard": check_skill_standard,
     "sandbox_coverage": check_sandbox_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,
+    "karpathy_sync": check_karpathy_sync,
 }
 
 
@@ -2220,6 +2324,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "skill_standard": "suggest",  # description rewrites need human judgment
     "sandbox_coverage": "skip",  # doc/decision — requires human judgment
     "direct_anthropic_import": "skip",  # violations require code routing fix
+    "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
 }
 
 
