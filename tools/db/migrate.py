@@ -80,7 +80,11 @@ def main():
 
     args = parser.parse_args()
 
-    runner = MigrationRunner(db_path=args.db_path)
+    import os
+
+    _backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    # For PostgreSQL, db_path is ignored by _get_connection() — get_connection() uses PG env vars.
+    runner = MigrationRunner(db_path=args.db_path, engine=_backend)
 
     # ---- Status ----
     if args.status:
