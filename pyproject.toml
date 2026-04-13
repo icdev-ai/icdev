@@ -186,6 +186,8 @@ minimal-airgap = [
 ]
 
 [project.scripts]
+icdev = "icdev.tools.cli.init:main"
+icdev-init = "icdev.tools.cli.init:main"
 icdev-init-db = "icdev.tools.db.init_icdev_db:main"
 icdev-dashboard = "icdev.tools.dashboard.app:main"
 icdev-mcp = "icdev.tools.mcp.unified_server:main"
@@ -219,6 +221,14 @@ exclude = [
     "hardprompts/**/*.md",
     "features/**/*.feature", "features/**/*.py",
     "docs/**/*.md",
+    # Claude bootstrap (CLAUDE.md, .claude/commands/, .claude/hooks/, .mcp.json)
+    # Populated by tools/installer/prebuild_bootstrap.py before `python -m build`.
+    "claude_bootstrap/**/*.md",
+    "claude_bootstrap/**/*.json",
+    "claude_bootstrap/**/*.py",
+    "claude_bootstrap/**/*.yaml",
+    "claude_bootstrap/**/*.yml",
+    "claude_bootstrap/**/*",
 ]
 "icdev.tools.dashboard" = [
     "templates/**/*.html",

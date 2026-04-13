@@ -4,6 +4,12 @@ include CLAUDE.md .mcp.json ruff.toml requirements.txt
 recursive-include icdev *.py *.html *.css *.js *.json *.yaml *.yml
 recursive-include icdev *.sql *.md *.txt *.LICENSE *.feature *.j2 *.toml *.ini
 
+# Claude bootstrap (CLAUDE.md, .claude/commands/, .claude/hooks/, .mcp.json)
+# Populated by tools/installer/prebuild_bootstrap.py before `python -m build`.
+# Shipped under icdev/data/claude_bootstrap/ so `icdev init` can copy it
+# into user projects.
+recursive-include icdev/data/claude_bootstrap *
+
 recursive-exclude icdev/tools/saas *
 recursive-exclude icdev/tools/govcon *
 recursive-exclude icdev/tools/rfx *
