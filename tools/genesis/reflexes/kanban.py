@@ -1320,6 +1320,16 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         return
     try:
         log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
+        # guard-23: propagate dispatch_source via env so the stop hook can
+        # tag this session's commits as 'genesis_scheduler' rather than
+        # 'claude_interactive'. Also tag the kanban task row immediately.
+        import os as _os
+        env = _os.environ.copy()
+        env["ICDEV_DISPATCH_SOURCE"] = "genesis_scheduler"
+        env["ICDEV_DISPATCH_TASK_ID"] = task_id
+
+        _tag_task_source(task_id, "genesis_scheduler")
+
         proc = subprocess.Popen(
             [
                 claude_cli,
@@ -1334,6 +1344,7 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
             cwd=work_dir,
             stdout=log_fh,
             stderr=subprocess.STDOUT,
+            env=env,
         )
         _running[task_id] = proc
         _dispatch_times[task_id] = datetime.now(timezone.utc)
@@ -1736,14 +1747,23 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
         result_enum = "passed" if verified else "failed"
         if "PHANTOM" in (reason or "").upper():
             result_enum = "phantom"
+
+        # guard-23: read dispatch_source from task row (set at dispatch time)
+        source_row = conn.execute(
+            "SELECT dispatch_source FROM kanban_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        dispatch_source = (
+            dict(source_row).get("dispatch_source") if source_row else None
+        ) or "genesis_scheduler"  # scheduler-invoked verifications are scheduler by default
+
         conn.execute(
             "INSERT INTO kanban_verifications "
-            "(id, task_id, verified_at, result, reason) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(id, task_id, verified_at, result, reason, dispatch_source) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 verification_id, task_id,
                 datetime.now(timezone.utc).isoformat(),
-                result_enum, reason,
+                result_enum, reason, dispatch_source,
             ),
         )
         conn.commit()
@@ -1751,6 +1771,22 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
     except Exception as exc:
         # Don't fail verification just because audit log is missing
         logger.debug("kanban: kanban_verifications write skipped: %s", exc)
+
+
+def _tag_task_source(task_id: str, source: str) -> None:
+    """Set the dispatch_source on a kanban_tasks row (guard-23)."""
+    try:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE kanban_tasks SET dispatch_source = ? WHERE id = ?",
+                (source, task_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug("kanban: tag dispatch_source skipped for %s: %s", task_id, exc)
 
 
 def _verify_task_specific(task_id: str) -> Tuple[bool, str]:

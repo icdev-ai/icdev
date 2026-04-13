@@ -120,6 +120,25 @@ def _is_kanban_worktree() -> bool:
         return False
 
 
+def _dispatch_source() -> str:
+    """Determine who dispatched the current Claude Code session (guard-23).
+
+    Returns one of:
+      - 'genesis_scheduler'  — ICDEV_DISPATCH_SOURCE env var set by scheduler
+                              OR running inside a kanban worktree
+      - 'claude_interactive' — Claude Code session started by user (default)
+      - 'user_manual'        — if stop.py were somehow invoked outside Claude
+                              (can't really happen — this hook only fires from
+                              Claude Code). Reserved for future use.
+    """
+    env_source = os.environ.get("ICDEV_DISPATCH_SOURCE", "").strip()
+    if env_source:
+        return env_source
+    if _is_kanban_worktree():
+        return "genesis_scheduler"
+    return "claude_interactive"
+
+
 def _current_branch(run) -> str:
     """Get the current git branch (or empty string if detached)."""
     branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
@@ -164,11 +183,14 @@ def _auto_commit_and_push():
         return  # Nothing staged
 
     # Commit locally (work preserved even if validation later fails)
-    result = run([
-        "git", "commit", "-m",
+    # guard-23: embed dispatch_source in commit trailer for traceability
+    source = _dispatch_source()
+    commit_msg = (
         "chore: auto-commit from Claude Code session\n\n"
-        "Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>",
-    ])
+        f"Dispatch-Source: {source}\n"
+        "Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
+    )
+    result = run(["git", "commit", "-m", commit_msg])
     if result.returncode != 0:
         return
 
