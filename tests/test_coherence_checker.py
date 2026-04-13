@@ -127,6 +127,29 @@ conn.execute(
         assert "fetch" in sigs
         assert sigs["fetch"] == ["url", "timeout"]
 
+    def test_extract_function_sigs_self_excluded(self):
+        # Class methods: `self` must be excluded from the param list so
+        # check_signature_call doesn't flag it as a missing required arg.
+        source = textwrap.dedent("""
+        class MyClass:
+            def method(self, a, b):
+                pass
+
+            @staticmethod
+            def helper(x):
+                pass
+        """)
+        sigs = _extract_function_sigs(source)
+        assert "method" in sigs
+        assert sigs["method"] == ["a", "b"], "self must be excluded"
+        assert "helper" in sigs
+        assert sigs["helper"] == ["x"]
+
+    def test_extract_function_sigs_empty_source(self):
+        # Empty source returns empty dict — no false positives.
+        assert _extract_function_sigs("") == {}
+        assert _extract_function_sigs("# just a comment\n") == {}
+
     def test_extract_function_calls(self):
         source = textwrap.dedent("""
         foo("a", "b", "c", test_db)
