@@ -1087,7 +1087,7 @@
 | Scout Reflex | tools/proposal_genesis/reflexes/scout.py | R02: Competitive intelligence and market analysis | --json | Intel report |
 | Shape Reflex | tools/proposal_genesis/reflexes/shape.py | R03: Win strategy, discriminators, partner fit assessment | --json | Strategy recommendations |
 | Engage Reflex | tools/proposal_genesis/reflexes/engage.py | R04: CRM account/contact/engagement tracking | --json | Engagement records |
-| Extract Reflex | tools/proposal_genesis/reflexes/extract.py | R05: Extract requirements from opportunity documents | --json | Requirements list |
+| Extract Reflex | tools/proposal_genesis/reflexes/extract.py | R05: Shall statement mining + amendment re-extraction. Wraps govcon/requirement_extractor.py. Scanner-tier only (zero Claude tokens). Re-extracts from pg_amendment_diffs where re_extracted=0 | run(config, trust) | {success, metric_value, details{opportunities_processed, total_statements_extracted, amendment_re_extractions}} |
 | Map Reflex | tools/proposal_genesis/reflexes/map.py | R06: Map requirements to ICDEV™ capabilities | --json | Capability map |
 | Draft Reflex | tools/proposal_genesis/reflexes/draft.py | R07: Generate proposal section drafts | --json | Draft sections |
 | Polish Reflex | tools/proposal_genesis/reflexes/polish.py | R08: Grammar, readability, tone, AI detection quality checks | --json | Quality report |
