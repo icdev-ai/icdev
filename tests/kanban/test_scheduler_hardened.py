@@ -431,6 +431,62 @@ def test_guard23_dispatch_source_column_exists(db_conn):
     assert "dispatch_source" in verif_cols
 
 
+def test_guard24_manifest_check_passes_when_tool_already_present(db_conn):
+    """False-positive manifest gap: if tool IS already in manifest, _verify_task_specific
+    returns (True, positive_signal) so the no-change path can accept it."""
+    _cleanup_test_tasks(db_conn)
+
+    from tools.genesis.reflexes.kanban import _verify_task_specific
+
+    # This path exists AND is referenced in tools/manifest.md
+    task_id = "test-kbh-mfalready"
+    _mk_task(
+        db_conn, task_id,
+        "[Oracle/internal_awareness] Gap detected: tool_not_in_manifest on tools/genesis/reflexes/audit.py",
+        (
+            "Gap detected: tool_not_in_manifest on tools/genesis/reflexes/audit.py. "
+            "Python tool file in tools/ not documented in tools/manifest.md"
+        ),
+        task_type="fix",
+    )
+    ok, reason = _verify_task_specific(task_id)
+    assert ok, f"Expected PASS when tool already in manifest, got: {reason}"
+    assert "expected outcome achieved" in reason.lower() or "present" in reason.lower()
+
+    _cleanup_test_tasks(db_conn)
+
+
+def test_guard24_no_change_marker_no_longer_hard_fails(db_conn):
+    """Agent saying 'no changes needed' on a legit false-positive should NOT hard-fail."""
+    from tools.genesis.reflexes.kanban import _run_verify_checks
+
+    _cleanup_test_tasks(db_conn)
+    task_id = "test-kbh-nochange"
+    _mk_task(
+        db_conn, task_id,
+        "[Oracle] Gap detected: tool_not_in_manifest on tools/genesis/reflexes/audit.py",
+        "Python tool file in tools/ not documented",
+        task_type="fix",
+    )
+
+    # Simulate agent output that would previously trigger the old fail marker
+    agent_output = (
+        "I investigated the gap for tools/genesis/reflexes/audit.py. This is a false positive - "
+        "the tool is already in tools/manifest.md at two locations. No changes needed. "
+        "Task marked done."
+    ) * 3  # padding to exceed min-length threshold
+
+    verified, reason = _run_verify_checks(task_id, agent_output)
+    # Without commits it will still end up failing the git check, but it
+    # should NOT hard-fail on the "no changes" string alone. The failure
+    # reason should mention "no git commits" rather than "failure indicator".
+    assert "failure indicator" not in reason.lower(), (
+        f"Should not hard-fail on soft 'no changes' marker: {reason}"
+    )
+
+    _cleanup_test_tasks(db_conn)
+
+
 def test_guard23_tag_task_source_sets_dispatch_source(db_conn):
     """_tag_task_source updates the row's dispatch_source column."""
     is_pg = getattr(db_conn, "_backend", "sqlite") == "postgresql"
