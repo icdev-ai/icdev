@@ -1462,6 +1462,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Migrate Add Missing Columns | tools/db/migrate_add_missing_columns.py | Add missing columns migration utility | --json | Migration results |
+| Migrate AlphaDesk | tools/db/migrate_alphadesk.py | Idempotent migration of ad_*, kg_*, and trading_daemon_* tables from legacy data/alphadesk.db (SQLite) into the main ICDEV database (SQLite or PostgreSQL) | --source, --json, --gate | Migration results; exit 1 on --gate + failures |
 | Migrate to Storage | tools/db/migrate_to_storage.py | Migrate to centralized storage module | --json | Migration results |
 | PG Init | tools/db/pg_init.py | PostgreSQL database initialization | --json | Initialization status |
 | PG Optimize All | tools/db/pg_optimize_all.py | PostgreSQL optimization for all tables | --json | Optimization results |
