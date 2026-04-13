@@ -150,6 +150,24 @@ def collect_project_data(directory=None):
 # Stored as string constants (D186 pattern). Each template is tailored
 # to its target tool's conventions and size constraints.
 
+# Canonical Karpathy principles block — enforced across all 10 AI platform
+# configs by tools/workflow/coherence_checker.py::check_karpathy_sync.
+# Edit here, then run: python tools/dx/companion.py --sync --write --json
+KARPATHY_PRINCIPLES_BLOCK = """
+## Karpathy Principles — Pre-Design Engineering Gate
+
+Before writing code, apply these 5 heuristics from `hardprompts/karpathy_principles.md`:
+
+1. **State assumptions** — Name the constraints, inputs, invariants you're relying on. Unstated assumptions are where bugs hide.
+2. **Enumerate interpretations** — For any ambiguous requirement, list the 2–4 ways it could be read before picking one. Surface them to the user if the choice is load-bearing.
+3. **Prefer simpler** — Three similar lines beats one clever abstraction. Don't design for hypothetical future requirements. YAGNI.
+4. **Bound your edit scope** — Only touch what the task requires. No drive-by refactors, no surrounding cleanup, no speculative error handling.
+5. **Success criteria** — State how you'll know the change is done before writing it. If you can't write the test / acceptance check, the spec is incomplete.
+
+Applies to: build, bug fix, refactor, TDD, and code review workflows.
+"""
+# ────────────────────────────────────────────────────────────────────────
+
 TEMPLATE_AGENTS_MD = r"""# AGENTS.md
 
 This file provides guidance to AI coding agents working with this ICDEV™ project.
@@ -770,6 +788,11 @@ def generate_instructions(directory=None, platforms=None, style="full", write=Fa
         companion_cfg = companions.get(platform, {})
         output_path = companion_cfg.get("instruction_file", f"{platform}.md")
         content = _render(template_str, data)
+
+        # Append Karpathy principles block — required in every platform config.
+        # Checked by tools/workflow/coherence_checker.py::check_karpathy_sync.
+        if "State assumptions" not in content:
+            content = content.rstrip() + "\n" + KARPATHY_PRINCIPLES_BLOCK
 
         full_path = directory / output_path
         written = False
