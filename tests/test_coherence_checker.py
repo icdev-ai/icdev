@@ -111,6 +111,22 @@ conn.execute(
         assert "bar" in sigs
         assert sigs["bar"] == ["x"]
 
+    def test_extract_function_sigs_syntax_error(self):
+        # Graceful handling: returns {} when source has a SyntaxError.
+        # This prevents gap_detector false positives when a file is partially
+        # written during an active edit session (op-gap-09f524e9931dee4a).
+        sigs = _extract_function_sigs("def bad(:\n    pass\n")
+        assert sigs == {}
+
+    def test_extract_function_sigs_async(self):
+        source = textwrap.dedent("""
+        async def fetch(url, timeout=30):
+            pass
+        """)
+        sigs = _extract_function_sigs(source)
+        assert "fetch" in sigs
+        assert sigs["fetch"] == ["url", "timeout"]
+
     def test_extract_function_calls(self):
         source = textwrap.dedent("""
         foo("a", "b", "c", test_db)
