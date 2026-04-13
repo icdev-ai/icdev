@@ -1812,6 +1812,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Base Lens | tools\oracle\base_lens.py | Abstract 3-phase pipeline (analyze → score → propose) for all Oracle lenses; exception isolation per lens | N/A (library) | OraclePrediction list |
+| Oracle Prediction | tools\oracle\prediction.py | Canonical OraclePrediction dataclass — id, lens, title, description, confidence, severity, recommendations, data; imported by base_lens and all lenses | N/A (library) | OraclePrediction dataclass |
 | Oracle Reflex | tools\oracle\oracle_reflex.py | Orchestrates all 10 Oracle lenses, persists oracle_predictions, emits GKP artifacts; DaemonBase-compatible run() | run(config, trust) | {success, metric_value, details} |
 | Trajectory Lens | tools\oracle\lens_trajectory.py | Lens 3: architectural trajectory forecasting — CC/maintainability regression, days-to-threshold, hotspot detection | --json / --gate | JSON |
 
@@ -2016,3 +2017,9 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Review Board Compliance Bridge | tools/review_board/compliance_bridge.py | Ties Review Board findings into ICDEV™ audit, evidence, and NIST controls | (library) | Control mappings |
 | Review Board Correlator | tools/review_board/correlator.py | Cross-Reflex Correlator — dedup related findings across personas (D-RB-15) | --run, --json | Correlated findings |
 | Review Board Escalation | tools/review_board/escalation.py | Escalation workflow — auto-create GitHub/GitLab issues for escalated findings (D-RB-14) | --escalate, --finding-id, --json | Issue URL + status |
+
+## Unclassified (auto-added)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Auto-added prediction.py | tools/oracle/prediction.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added prediction.py | tools/oracle/prediction.py | (auto-added by remediation; update description) | --json | stdout |
