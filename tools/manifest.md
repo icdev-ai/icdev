@@ -1652,6 +1652,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Kill Switch | tools\trading\risk\kill_switch.py | Global auto-trading halt (env / file / DB sources). Operator-toggleable from dashboard. | --status, --trip REASON, --clear, --by NAME, --json | JSON |
 | PDT Tracker | tools\trading\risk\pdt_tracker.py | Pattern Day Trader rule pre-flight check (3 daytrades / 5 days under $25k). Reads broker account when available. | --daytrade, --json | JSON |
 | Drawdown Monitor | tools\trading\risk\drawdown_monitor.py | Daily P&L watcher; warns at -1%, halts at -2% (auto-trips kill-switch). | --warn PCT, --halt PCT, --json | JSON |
+| VIX Sizing | tools\trading\risk\vix_sizing.py | VIX-conditional position sizing scale factor (0.4x–1.5x). Applied in auto_trader qty calc. | --vix N, --base-qty N, --json | JSON |
 | Trade Audit | tools\trading\audit\trade_audit.py | Append-only NIST-AU audit trail for signal/order lifecycle (ad_trade_audit). | --query, --ticker, --event, --limit, --json | JSON |
 | Rollout Preset Loader | tools\trading\rollout\preset_loader.py | Loads phased rollout configs (micro_live → scale_10k → scale_25k → scale_100k). Refuses load unless ICDEV_TRADING_TIER env matches tier. | --list, --tier NAME, --check-short, --locate-ok, --json | JSON |
 | Order Poller | tools\trading\execution\order_poller.py | Polls broker for terminal status of non-terminal local orders; updates ad_orders + audit row on transition. Idempotent. | --limit N, --json | JSON |
