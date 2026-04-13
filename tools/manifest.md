@@ -546,6 +546,7 @@
 | Plan Rust | .claude/commands/plan_rust.md | Rust build plan: Actix-web, cucumber-rs, clippy, cargo-audit | $ARGUMENTS | Build plan |
 | Plan C# | .claude/commands/plan_csharp.md | C# build plan: ASP.NET Core, SpecFlow, SecurityCodeScan | $ARGUMENTS | Build plan |
 | Plan TypeScript | .claude/commands/plan_typescript.md | TypeScript build plan: Express, cucumber-js, eslint-security | $ARGUMENTS | Build plan |
+| PRD → Plan | tools/planning/prd_to_plan.py | OPT-53 tracer-bullet planner — reads PRD md, optional LLM enrichment, emits vertical-slice phases; lints output for leaked file/function names (adapted from mattpocock/skills/prd-to-plan, MIT) | --prd PATH, --out PATH, --no-llm, --lint, --validate-only, --json | Plan markdown + lint result |
 
 ## SaaS Multi-Tenancy (Phase 21)
 | Tool | File | Description | Input | Output |
