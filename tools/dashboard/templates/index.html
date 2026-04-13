@@ -640,7 +640,59 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="card-label">Agent Health</div>
         <div id="chart-agent-health" style="min-height: 140px;"></div>
     </div>
+    <!-- OPT-57: Sandbox liveness tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Sandbox</div>
+        <div id="tile-sandbox" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
 </div>
+
+<script>
+// OPT-57: Sandbox liveness tile renderer
+(function () {
+    function renderSandboxTile() {
+        fetch('/api/sandbox/liveness').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-sandbox');
+            if (!el) return;
+            var status = d.status || 'unknown';
+            var color = status === 'healthy' ? '#22c55e'
+                      : status === 'smoke_failed' ? '#f59e0b'
+                      : '#ef4444';
+            var label = status === 'healthy' ? 'OK'
+                      : status === 'smoke_failed' ? 'Smoke failed'
+                      : status === 'degraded' ? 'Degraded'
+                      : 'Unknown';
+            var runtime = (d.health && d.health.runtime) || 'none';
+            var probeAt = d.probe_at ? new Date(d.probe_at) : null;
+            var ageStr = '';
+            if (probeAt) {
+                var hrs = Math.max(0, (Date.now() - probeAt.getTime()) / 3600000);
+                ageStr = hrs < 1 ? '<1h ago' : Math.floor(hrs) + 'h ago';
+            } else {
+                ageStr = 'never';
+            }
+            el.innerHTML =
+                '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">'
+                + '<span style="width:10px; height:10px; border-radius:50%; background:' + color + '; display:inline-block;"></span>'
+                + '<span style="font-size:16px; font-weight:600; color:var(--text-primary);">' + label + '</span>'
+                + '</div>'
+                + '<div>Runtime: <span style="color:var(--text-primary);">' + runtime + '</span></div>'
+                + '<div>Last probe: <span style="color:var(--text-primary);">' + ageStr + '</span></div>'
+                + '<div>Smoke: <span style="color:var(--text-primary);">' + (d.smoke_passed ? 'ok' : 'fail') + '</span></div>'
+                + '<div style="margin-top:8px;"><a href="/sandbox" class="btn" style="font-size:11px; padding:3px 10px;">View log</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-sandbox');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Sandbox status unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderSandboxTile);
+})();
+</script>
 
 <!-- Remediation History Timeline -->
 <div class="card" style="padding:20px; margin-bottom:24px;">
