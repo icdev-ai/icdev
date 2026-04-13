@@ -290,6 +290,7 @@
 | Web Dashboard | tools/dashboard/app.py | Flask web dashboard with role-based views, wizard, quick paths | --port, --debug | Web UI on port 5000 |
 | Dashboard Config | tools/dashboard/config.py | Loads dashboard settings from args/monitoring_config.yaml and args/cui_markings.yaml with env-var overrides; exposes DB_PATH, PORT, DEBUG, CUI banners, BYOK, auth secret, classification | Environment variables (ICDEV_DB_PATH, ICDEV_DASHBOARD_PORT, etc.) | Module-level constants |
 | Platform Health | tools/dashboard/platform_health.py | Aggregate health scoring across 10 ICDEV™ domains (database, agents, compliance, security, infrastructure, canvases, LLM, monitoring, CI/CD, marketplace); 60s in-process cache; bands: ≥90 healthy, ≥70 degraded, <70 critical | get_platform_health(), get_domain_health(domain), _invalidate_cache() | Composite + per-domain score/status/findings JSON |
+| Canvas Aggregator | tools/dashboard/canvas_aggregator.py | Queries across all 7 canvas SQLite DBs (security, infra, observability, boundary, data, network, pipeline) to surface compliance summaries, finding counts, recent findings, and activity trends; 60s module-level cache | get_canvas_compliance_summary(), get_canvas_finding_counts(), get_recent_canvas_findings(limit), get_canvas_activity_trend(days), invalidate_cache(), close_canvas_connections() | Aggregated canvas data JSON |
 | UX Helpers | tools/dashboard/ux_helpers.py | Jinja2 filters (friendly_time, glossary), error recovery dict, quick paths, wizard steps | register_ux_filters(app) | Template filters + globals |
 | UX JavaScript | tools/dashboard/static/js/ux.js | Client-side glossary tooltips, timestamp formatting, accessibility, notifications, progress pipeline | Auto-init on DOMContentLoaded | ICDEV™ namespace |
 | UX Stylesheet | tools/dashboard/static/css/ux.css | Tooltip, pipeline, wizard, quick path, breadcrumb, notification, accessibility styles | — | CSS |
@@ -1590,6 +1591,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Portfolio Strategist | tools/trading/strategist/portfolio_strategist.py | Autonomous long-term investment strategy agent — 4-tier allocation (core/tactical/opportunistic/hedge) from multi-timeframe performance, macro regime, KG centrality, scenario resilience, expert consensus | --run --json | Strategy allocation |
 | Trading Runner | tools/trading/runner.py | Main orchestrator for AlphaDesk trading engine analysis cycles — full lifecycle: analyze → persist → queue signal → trigger Pulse article. Runs 5-layer DAG (macro, analysts, debate, signal, risk/approval) for a ticker. | --ticker SYM, --json | Full analysis result with run_id, signal, confidence, signal_id, article_id |
 | Trading DB | tools/trading/db.py | AlphaDesk database layer — persistent storage for portfolios, positions, orders, signals, and analysis runs (ad_ prefix tables) | N/A (library) | DB connection/helpers |
+| Workflow Builder | tools/trading/workflow.py | DAG workflow builder for AlphaDesk — constructs 5-layer analysis DAG (analysts → debate → signal → risk → approval) for a given ticker | ticker | Workflow dict |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -2039,5 +2041,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Review Board Compliance Bridge | tools/review_board/compliance_bridge.py | Ties Review Board findings into ICDEV™ audit, evidence, and NIST controls | (library) | Control mappings |
 | Review Board Correlator | tools/review_board/correlator.py | Cross-Reflex Correlator — dedup related findings across personas (D-RB-15) | --run, --json | Correlated findings |
 | Review Board Escalation | tools/review_board/escalation.py | Escalation workflow — auto-create GitHub/GitLab issues for escalated findings (D-RB-14) | --escalate, --finding-id, --json | Issue URL + status |
+| IDC Runbooks | tools/infra_canvas/runbooks.py | Infrastructure Design Canvas — operational runbooks for common infra incidents (server provisioning failure, capacity threshold breach, cloud drift, patch rollback). CRUD + seed for idc_runbooks table; no LLM dependency. | (library) get_all_runbooks(category, severity) / get_runbook_by_id(id) / create_runbook(data) / record_execution(id) / seed_runbooks() | Runbook dict / list |
+| ODC Runbooks | tools/observability_canvas/runbooks.py | Observability Design Canvas — operational runbooks for common observability incidents (alert storm triage, log pipeline failure, SIEM gap detected, metric collection outage). CRUD + seed for odc_runbooks table; no LLM dependency. | (library) get_all_runbooks(category, severity) / get_runbook_by_id(id) / create_runbook(data) / record_execution(id) / seed_runbooks() | Runbook dict / list |
 
 
