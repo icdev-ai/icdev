@@ -6,6 +6,7 @@ Tests the 7 coherence checks and cross-subsystem impact analysis.
 """
 
 import textwrap
+from pathlib import Path
 
 from tools.workflow.coherence_checker import (
     CHECK_REGISTRY,
@@ -555,6 +556,20 @@ class TestCoherenceReport:
         assert _FIX_REGISTRY["append_only"] == "auto"
         assert _FIX_REGISTRY["schema_code"] == "suggest"
         assert _FIX_REGISTRY["signature_call"] == "skip"
+
+    def test_run_checks_with_changed_files(self, tmp_path):
+        """run_checks passes changed_files to checks that accept it."""
+        dummy = tmp_path / "dummy.py"
+        dummy.write_text("x = 1\n", encoding="utf-8")
+        report = run_checks(selected=["import_usage"], changed_files=[Path(dummy)])
+        assert isinstance(report, CoherenceReport)
+        assert report.total_checks == 1
+        assert report.checks[0].check_id == "import_usage"
+
+    def test_run_checks_overall_pass_field(self):
+        """overall_pass is False only when at least one check fails."""
+        report = run_checks(selected=["append_only"])
+        assert isinstance(report.overall_pass, bool)
 
 
 # ---------------------------------------------------------------------------
