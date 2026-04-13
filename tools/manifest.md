@@ -1096,7 +1096,7 @@
 | Trace Reflex | tools/proposal_genesis/reflexes/trace.py | R22: Compliance traceability — bidirectional L/M/C to proposal section mapping | --json | Traceability matrix |
 | Monitor Reflex | tools/proposal_genesis/reflexes/monitor.py | R10: Track awarded contract performance | --json | Performance metrics |
 | Fulfill Reflex | tools/proposal_genesis/reflexes/fulfill.py | R11: CDRL delivery tracking | --json | Delivery status |
-| Publish Reflex | tools/proposal_genesis/reflexes/publish.py | R12: Knowledge base article generation from wins | --json | KB articles |
+| Publish Reflex | tools/proposal_genesis/reflexes/publish.py | R12: Proposal content → Pulse case study generation. Scans approved/quality-checked proposal drafts (status='approved', quality≥70), generates Pulse case study articles via deterministic template (scanner-tier, zero Claude tokens), stages in pulse_posts as 'draft' (NEVER auto-publishes, D-GEN), and creates pg_pulse_proposal_links for bidirectional traceability (D-PG-5). YELLOW tier (reversible writes). Integrates PulseSanitizer (Phase 70) to redact agency/program names before staging. | run(config, trust) | {success, metric_value, details{drafts_found, articles_staged, links_created, errors}} |
 | Team Reflex | tools/proposal_genesis/reflexes/team.py | R23: Teaming partner scoring, workshare tracking, TA lifecycle management | --json | Teaming recommendations |
 | Bridge Reflex | tools/proposal_genesis/reflexes/bridge.py | R24: Proposal-to-Program Knowledge Bridge — auto-generates transition packages on bid win | --json | Transition package |
 | Analyze Reflex | tools/proposal_genesis/reflexes/analyze.py | R13: Win/loss analysis, lesson extraction | --json | Analysis report |
