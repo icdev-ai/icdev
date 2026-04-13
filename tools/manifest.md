@@ -785,6 +785,7 @@
 | Code Pattern Scanner | tools/security/code_pattern_scanner.py | Dangerous pattern detection across 6 languages (Python, Java, Go, Rust, C#, TypeScript), declarative YAML patterns (D278) | --scan, --project-dir, --language, --gate, --json | Pattern findings + gate |
 | Register External Patterns | tools/innovation/register_external_patterns.py | Register Agent Zero + InsForge patterns as innovation signals with 5-dimension scoring (D279) | --register-all, --status, --score-all, --json | Registration results |
 | Shared Schemas | tools/schemas/ | stdlib dataclass models (ProjectStatus, AgentHealth, AuditEvent, etc.) with validate_output() and wrap_mcp_response() (D275) | (library) | Schema classes |
+| Innovation Signal Schema | tools/schemas/innovation.py | InnovationSignal dataclass — innovation pipeline signal model (source, scoring, triage result, FORGE layer, boundary tier, effort) (D275/Phase 44) | (library) | InnovationSignal class |
 | Context Indexer | tools/mcp/context_indexer.py | CLAUDE.md section indexer by ## headers for semantic layer MCP delivery (D277) | (library) | Section index |
 
 ## Observability, Traceability & Explainable AI (Phase 46)
