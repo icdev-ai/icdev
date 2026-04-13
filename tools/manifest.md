@@ -1594,6 +1594,12 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 |------|------|-------------|-------|--------|
 | Alert Engine | tools\trading\market_intel\alert_engine.py | Auto-registered: market_intel/alert_engine.py | --json | JSON |
 | Auto Trader | tools\trading\market_intel\auto_trader.py | Auto-registered: market_intel/auto_trader.py | --json | JSON |
+| Alpaca Adapter | tools\trading\brokers\alpaca_adapter.py | Stdlib REST client for Alpaca paper/live (account, orders, positions, bars, quotes). Falls back to sample data when creds missing. | --account, --quote SYM, --bars SYM, --limit N, --json | JSON |
+| Kill Switch | tools\trading\risk\kill_switch.py | Global auto-trading halt (env / file / DB sources). Operator-toggleable from dashboard. | --status, --trip REASON, --clear, --by NAME, --json | JSON |
+| PDT Tracker | tools\trading\risk\pdt_tracker.py | Pattern Day Trader rule pre-flight check (3 daytrades / 5 days under $25k). Reads broker account when available. | --daytrade, --json | JSON |
+| Drawdown Monitor | tools\trading\risk\drawdown_monitor.py | Daily P&L watcher; warns at -1%, halts at -2% (auto-trips kill-switch). | --warn PCT, --halt PCT, --json | JSON |
+| Trade Audit | tools\trading\audit\trade_audit.py | Append-only NIST-AU audit trail for signal/order lifecycle (ad_trade_audit). | --query, --ticker, --event, --limit, --json | JSON |
+| Rollout Preset Loader | tools\trading\rollout\preset_loader.py | Loads phased rollout configs (micro_live → scale_10k → scale_25k → scale_100k). Refuses load unless ICDEV_TRADING_TIER env matches tier. | --list, --tier NAME, --check-short, --locate-ok, --json | JSON |
 | Batch Scanner | tools\trading\market_intel\batch_scanner.py | Auto-registered: market_intel/batch_scanner.py | --json | JSON |
 | Cascade Engine | tools\trading\market_intel\cascade_engine.py | Auto-registered: market_intel/cascade_engine.py | --json | JSON |
 | Expert Agents | tools\trading\market_intel\expert_agents.py | Auto-registered: market_intel/expert_agents.py | --json | JSON |
