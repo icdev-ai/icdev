@@ -832,6 +832,49 @@ CREATE TABLE IF NOT EXISTS genesis_gkp (
 CREATE INDEX IF NOT EXISTS idx_gkp_type ON genesis_gkp(artifact_type);
 CREATE INDEX IF NOT EXISTS idx_gkp_status ON genesis_gkp(promotion_status);
 
+CREATE TABLE IF NOT EXISTS genesis_audit (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    reflex_name     TEXT,
+    risk_tier       TEXT,
+    details         TEXT,
+    success         INTEGER,
+    duration_ms     INTEGER,
+    metric_name     TEXT,
+    metric_value    REAL,
+    gkp_id          TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_type ON genesis_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_reflex ON genesis_audit(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_created ON genesis_audit(created_at);
+
+CREATE TABLE IF NOT EXISTS genesis_generated_goals (
+    id              TEXT PRIMARY KEY,
+    version         INTEGER NOT NULL DEFAULT 1,
+    domain_label    TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    slug            TEXT NOT NULL,
+    novelty_score   REAL NOT NULL DEFAULT 0.0,
+    quality_score   REAL NOT NULL DEFAULT 0.0,
+    evidence_count  INTEGER NOT NULL DEFAULT 0,
+    keywords        TEXT,
+    goal_markdown   TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'suggested'
+        CHECK(status IN ('suggested','approved','rejected','superseded')),
+    gkp_id          TEXT,
+    goal_file_path  TEXT,
+    rejection_reason TEXT,
+    approved_at     TEXT,
+    rejected_at     TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_gg_status ON genesis_generated_goals(status);
+CREATE INDEX IF NOT EXISTS idx_gg_domain ON genesis_generated_goals(domain_label);
+CREATE INDEX IF NOT EXISTS idx_gg_created ON genesis_generated_goals(created_at);
+
 CREATE TABLE IF NOT EXISTS kanban_tasks (
     id                   TEXT PRIMARY KEY,
     title                TEXT NOT NULL,
