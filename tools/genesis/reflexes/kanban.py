@@ -883,19 +883,28 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                     "Task %s failed %d times — flagging for decomposition",
                     task_id, new_count,
                 )
-                # Notify via Telegram so someone can decompose it
-                try:
-                    from tools.notifications.adapters.telegram import send as tg_send
-                    tg_send(
-                        f"DECOMPOSITION NEEDED: {task_id[:24]}",
-                        f"Task failed {new_count} verification attempts. "
-                        f"It is likely too big for one Claude CLI session. "
-                        f"Please split it into smaller sub-tasks.\n"
-                        f"Latest reason: {reason_short[:200]}",
-                        severity="warning",
-                    )
-                except Exception:
-                    pass
+                # Notify via Telegram so someone can decompose it.
+                # Skip for test tasks (id starts with 'test-') and when
+                # PYTEST_CURRENT_TEST env var is present, to avoid spam.
+                import os as _os
+                _is_test = (
+                    task_id.startswith("test-") or
+                    _os.environ.get("PYTEST_CURRENT_TEST") or
+                    _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"
+                )
+                if not _is_test:
+                    try:
+                        from tools.notifications.adapters.telegram import send as tg_send
+                        tg_send(
+                            f"DECOMPOSITION NEEDED: {task_id[:24]}",
+                            f"Task failed {new_count} verification attempts. "
+                            f"It is likely too big for one Claude CLI session. "
+                            f"Please split it into smaller sub-tasks.\n"
+                            f"Latest reason: {reason_short[:200]}",
+                            severity="warning",
+                        )
+                    except Exception:
+                        pass
                 return "needs_decomposition"
             return "backlog"
         finally:
@@ -1597,7 +1606,8 @@ def _run_verify_checks(task_id, claude_output):
 
     # Check 2: Look for failure indicators (scan first 1000 chars — the
     # agent usually declares failure up front if it's going to)
-    fail_markers = [
+    # HARD fail markers: agent explicitly could not do the work → reject.
+    hard_fail_markers = [
         "I cannot",
         "I'm unable",
         "I don't have access",
@@ -1610,14 +1620,32 @@ def _run_verify_checks(task_id, claude_output):
         "ModuleNotFoundError",
         "ImportError",
         "SyntaxError",
+    ]
+    # SOFT markers: agent claims nothing to do. This may be a FALSE POSITIVE
+    # gap (e.g., tool already in manifest, route already listed). Don't fail
+    # here — let task-specific verification (_verify_task_specific) decide
+    # by checking the actual state. If the state is as expected, task is
+    # genuinely complete. If not, the no-commits check downstream catches it.
+    soft_nochange_markers = [
         "there is nothing to",
         "no changes",
         "already up to date",
+        "already in the manifest",
+        "already documented",
+        "already listed",
+        "false positive",
+        "already exists",
     ]
     output_lower = claude_output.lower()
-    for marker in fail_markers:
+    for marker in hard_fail_markers:
         if marker.lower() in output_lower[:1000]:
             return False, f"Output contains failure indicator: {marker}"
+
+    # Track soft "no-change" signal — task-specific verification will decide
+    # whether this is a legitimate false-positive resolution or a cop-out.
+    has_nochange_signal = any(
+        m in output_lower[:2000] for m in soft_nochange_markers
+    )
 
     # Check 3: Evidence of file changes in output
     file_change_markers = [
@@ -1637,7 +1665,9 @@ def _run_verify_checks(task_id, claude_output):
         "docs/",
     ]
     has_file_evidence = any(m in output_lower for m in file_change_markers)
-    if not has_file_evidence:
+    if not has_file_evidence and not has_nochange_signal:
+        # Only hard-fail for "no evidence" when the agent ALSO didn't claim
+        # a legitimate no-change resolution.
         return False, "No evidence of file changes in output"
 
     # Check 4 — OPT-76 phantom guard: extract every path the agent
@@ -1647,7 +1677,10 @@ def _run_verify_checks(task_id, claude_output):
 
     # Check 4a: If the task description mentions file creation but the
     # output claims zero paths, the agent likely hallucinated.
-    if not claimed_paths:
+    # EXCEPTION: if the agent signaled a legitimate no-change outcome
+    # (false-positive gap), skip this check and defer to task-specific
+    # verification downstream which will confirm the expected state.
+    if not claimed_paths and not has_nochange_signal:
         try:
             _c = get_connection()
             _row = _c.execute(
@@ -1754,6 +1787,22 @@ def _run_verify_checks(task_id, claude_output):
         )
         if result.stdout.strip():
             return True, "Verified: found commits referencing task"
+
+        # Fallback C: legitimate no-change case. If the agent claimed
+        # "no changes needed" AND _verify_task_specific confirms the
+        # expected state (e.g., tool IS in manifest for a
+        # tool_not_in_manifest task), accept as completed. False-positive
+        # gaps are legitimate completions.
+        if has_nochange_signal:
+            try:
+                specific_ok, specific_reason = _verify_task_specific(task_id)
+                if specific_ok:
+                    return True, (
+                        "Verified: agent reported no changes needed AND "
+                        f"task-specific state check passed ({specific_reason[:80]})"
+                    )
+            except Exception:
+                pass
 
         # No commits on the task branch — uncommitted changes are NOT
         # sufficient evidence of completion (dirty-tree fallback removed).
@@ -1898,6 +1947,11 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                         f"SPECIFIC CHECK FAILED: task mentions {tool_path} "
                         f"but it is NOT in tools/manifest.md"
                     )
+                # Positive signal: tool IS in manifest — task state is as expected
+                return True, (
+                    f"Task-specific check passed: {tool_path} is present in "
+                    f"tools/manifest.md (expected outcome achieved)"
+                )
             except Exception as exc:
                 return True, f"Manifest read failed ({exc}) — skipping manifest check"
 
