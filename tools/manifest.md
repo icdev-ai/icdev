@@ -1003,13 +1003,14 @@
 | reporter | `tools/genesis/reporter.py` | Weekly autonomous markdown report: reflex activity, promotions, circuit breakers (D-GEN-12) |
 | pattern_detector | `tools/genesis/pattern_detector.py` | Deterministic tool-chain mining from telemetry; scans hook_events and ai_telemetry for recurring multi-tool sequences with frequency/diversity/failure-avoidance scoring | --json, --lookback-days, --min-frequency | Detected patterns |
 
-### 14 Reflexes (tools/genesis/reflexes/)
+### 15 Reflexes (tools/genesis/reflexes/)
 
 | Reflex | Risk Tier | Schedule | Purpose |
 |--------|-----------|----------|---------|
 | research | GREEN | every 6h | Scrape NIST/CISA/OWASP feeds, export GKP research signals |
 | scout | GREEN | daily 07:00 | Monitor 16 GitHub repos (autoresearch, trivy, ollama, etc.), intel briefs |
 | audit | GREEN | daily 06:00 | Self-scan: code quality + SAST via existing tools |
+| awareness | GREEN | every 3h | Internal self-observation cycle: component graph refresh, health probe, drift detection, gap detection, kanban card promotion |
 | report | GREEN | weekly Sun 20:00 | Generate weekly status report with promotions/circuit breakers |
 | comply | GREEN | daily 09:00 | cATO evidence freshness, crosswalk sync, SbD assessment |
 | ingest | GREEN | every 4h | RSS feeds → innovation_signals for knowledge enrichment |
