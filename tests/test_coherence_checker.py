@@ -217,6 +217,85 @@ class TestFixtureSchemaCheck:
         if result.status == "fail":
             assert len(result.missing) > 0
 
+    def test_detects_column_used_in_insert_but_absent_from_fixture(self, tmp_path):
+        # Fixture declares only (id, project_id) but INSERT references phase_name too —
+        # check_fixture_schema must flag that mismatch.
+        test_file = tmp_path / "test_insert_mismatch.py"
+        test_file.write_text(
+            textwrap.dedent("""
+            import sqlite3
+
+            SCHEMA = '''
+            CREATE TABLE IF NOT EXISTS workflow_loops (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL
+            );
+            '''
+
+            def test_something(tmp_path):
+                db = str(tmp_path / "t.db")
+                conn = sqlite3.connect(db)
+                conn.executescript(SCHEMA)
+                conn.execute(
+                    "INSERT INTO workflow_loops (id, project_id, phase_name) VALUES (?, ?, ?)",
+                    ("1", "p1", "build"),
+                )
+                conn.commit()
+        """),
+            encoding="utf-8",
+        )
+        result = check_fixture_schema(changed_files=[test_file])
+        assert isinstance(result, CoherenceCheck)
+        assert result.check_id == "fixture_schema"
+        # phase_name is used in INSERT but absent from fixture CREATE TABLE → must fail
+        assert result.status == "fail"
+        assert any("phase_name" in m for m in result.missing)
+
+    def test_passes_when_no_create_table_in_file(self, tmp_path):
+        # Files without CREATE TABLE should always pass (no fixture to check).
+        test_file = tmp_path / "test_no_schema.py"
+        test_file.write_text(
+            textwrap.dedent("""
+            def test_pure_python():
+                assert 1 + 1 == 2
+        """),
+            encoding="utf-8",
+        )
+        result = check_fixture_schema(changed_files=[test_file])
+        assert isinstance(result, CoherenceCheck)
+        assert result.status == "pass"
+
+    def test_passes_when_insert_columns_match_fixture(self, tmp_path):
+        # INSERT references only columns that ARE in the fixture → no mismatch.
+        test_file = tmp_path / "test_matching_fixture.py"
+        test_file.write_text(
+            textwrap.dedent("""
+            import sqlite3
+
+            SCHEMA = '''
+            CREATE TABLE IF NOT EXISTS workflow_loops (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                phase_name TEXT NOT NULL
+            );
+            '''
+
+            def test_something(tmp_path):
+                db = str(tmp_path / "t.db")
+                conn = sqlite3.connect(db)
+                conn.executescript(SCHEMA)
+                conn.execute(
+                    "INSERT INTO workflow_loops (id, project_id, phase_name) VALUES (?, ?, ?)",
+                    ("1", "p1", "init"),
+                )
+                conn.commit()
+        """),
+            encoding="utf-8",
+        )
+        result = check_fixture_schema(changed_files=[test_file])
+        assert isinstance(result, CoherenceCheck)
+        assert result.status == "pass"
+
 
 class TestSignatureCallCheck:
     """Tests for signature-call coherence check."""
