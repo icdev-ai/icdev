@@ -1500,7 +1500,44 @@ def create_app() -> Flask:
                 }
 
             # ----------------------------------------------------------------
-            # 4. Agent health (gauge: % active) — unchanged
+            # 4. Oracle compliance-risk predictions (forward-looking posture)
+            # Query oracle_predictions for lens_id='oracle-compliance-risk' with
+            # outcome='pending', grouped into CAT1/CAT2/CAT3 by severity.
+            # ----------------------------------------------------------------
+            oracle_cat1 = oracle_cat2 = oracle_cat3 = 0
+            try:
+                oracle_rows = conn.execute(
+                    "SELECT severity, COUNT(*) as cnt FROM oracle_predictions "
+                    "WHERE lens_id = 'oracle-compliance-risk' AND outcome = 'pending' "
+                    "GROUP BY severity"
+                ).fetchall()
+                for _orow in oracle_rows:
+                    _sev = ((_orow["severity"] or "")).lower()
+                    _cnt = int(_orow["cnt"] or 0)
+                    if _sev in ("critical", "high"):
+                        oracle_cat1 += _cnt
+                    elif _sev == "medium":
+                        oracle_cat2 += _cnt
+                    else:
+                        oracle_cat3 += _cnt
+            except Exception:
+                pass
+            oracle_total = oracle_cat1 + oracle_cat2 + oracle_cat3
+            canvases_with_oracle = canvas_compliance + [
+                {
+                    "name": "Oracle",
+                    "score": oracle_total,
+                    "open_findings": oracle_total,
+                    "closed_findings": 0,
+                    "cat1": oracle_cat1,
+                    "cat2": oracle_cat2,
+                    "cat3": oracle_cat3,
+                    "is_oracle": True,
+                }
+            ]
+
+            # ----------------------------------------------------------------
+            # 5. Agent health (gauge: % active) — unchanged
             # ----------------------------------------------------------------
             total_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents").fetchone()["cnt"]
             active_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'").fetchone()["cnt"]
@@ -1510,7 +1547,7 @@ def create_app() -> Flask:
                     "task_statuses": [dict(r) for r in task_statuses],
                     "activity_trend": [dict(r) for r in activity_trend],
                     "compliance": {
-                        "canvases": canvas_compliance,
+                        "canvases": canvases_with_oracle,
                         "overall_score": overall_score,
                     },
                     "agent_health": {
