@@ -10,9 +10,8 @@ import argparse
 import json
 import shutil
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Test framework mappings
@@ -105,8 +104,7 @@ def _get_assertion_mappings(source_lang, target_lang):
     return ASSERTION_MAPPINGS.get((src_fw, tgt_fw), [])
 
 
-def _build_test_prompt(source_test_code, source_language, target_language,
-                       ir_data=None, bdd_mode=False):
+def _build_test_prompt(source_test_code, source_language, target_language, ir_data=None, bdd_mode=False):
     """Build the test translation prompt."""
     prompt_path = BASE_DIR / "hardprompts" / "translation" / "test_translation.md"
 
@@ -122,7 +120,7 @@ def _build_test_prompt(source_test_code, source_language, target_language,
             "to {target_language} ({target_framework}):\n\n{source_test_code}"
         )
 
-    from icdev.tools.translation.code_translator import CUI_HEADERS, NAMING_CONVENTIONS, PROVENANCE_TEMPLATES
+    from tools.translation.code_translator import CUI_HEADERS, NAMING_CONVENTIONS, PROVENANCE_TEMPLATES
 
     cui_header = CUI_HEADERS.get(target_language, "// CUI // SP-CTI")
     provenance = PROVENANCE_TEMPLATES.get(target_language, "// Translated by ICDEV™").format(
@@ -172,8 +170,9 @@ def _build_test_prompt(source_test_code, source_language, target_language,
     return prompt
 
 
-def translate_tests(source_test_dir, source_language, target_language,
-                    output_dir, ir_data=None, project_id=None, job_id=None):
+def translate_tests(
+    source_test_dir, source_language, target_language, output_dir, ir_data=None, project_id=None, job_id=None
+):
     """Translate test files from source to target language.
 
     Returns dict with translated_tests, copied_features, stats.
@@ -199,9 +198,13 @@ def translate_tests(source_test_dir, source_language, target_language,
     bdd_patterns = BDD_PATTERNS.get(source_language, [])
 
     ext_map = {
-        "python": ".py", "java": ".java", "go": ".go",
-        "rust": ".rs", "csharp": ".cs",
-        "typescript": ".ts", "javascript": ".js",
+        "python": ".py",
+        "java": ".java",
+        "go": ".go",
+        "rust": ".rs",
+        "csharp": ".cs",
+        "typescript": ".ts",
+        "javascript": ".js",
     }
     target_ext = ext_map.get(target_language, ".txt")
 
@@ -210,20 +213,22 @@ def translate_tests(source_test_dir, source_language, target_language,
             source_code = test_file.read_text(encoding="utf-8")
 
             # Determine if this is a BDD step definition
-            is_bdd = any(
-                test_file.match(bp) for bp in bdd_patterns
-            )
+            is_bdd = any(test_file.match(bp) for bp in bdd_patterns)
 
             # Build prompt
             prompt = _build_test_prompt(
-                source_code, source_language, target_language,
-                ir_data=ir_data, bdd_mode=is_bdd,
+                source_code,
+                source_language,
+                target_language,
+                ir_data=ir_data,
+                bdd_mode=is_bdd,
             )
 
             # Invoke LLM
             translated = None
             try:
-                from icdev.tools.translation.code_translator import _invoke_llm, _load_config
+                from tools.translation.code_translator import _invoke_llm, _load_config
+
                 config = _load_config()
                 translated = _invoke_llm(prompt, config, "test_translation")
             except Exception:
@@ -240,27 +245,31 @@ def translate_tests(source_test_dir, source_language, target_language,
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(translated.strip(), encoding="utf-8")
 
-                translated_tests.append({
-                    "source_file": str(rel),
-                    "target_file": str(dest.relative_to(out_dir)),
-                    "is_bdd": is_bdd,
-                    "status": "translated",
-                })
+                translated_tests.append(
+                    {
+                        "source_file": str(rel),
+                        "target_file": str(dest.relative_to(out_dir)),
+                        "is_bdd": is_bdd,
+                        "status": "translated",
+                    }
+                )
             else:
-                failed_tests.append({
-                    "source_file": str(test_file.relative_to(src_dir)),
-                    "status": "failed",
-                    "error": "LLM returned empty response",
-                })
+                failed_tests.append(
+                    {
+                        "source_file": str(test_file.relative_to(src_dir)),
+                        "status": "failed",
+                        "error": "LLM returned empty response",
+                    }
+                )
 
     # Audit trail
     try:
-        from icdev.tools.audit.audit_logger import log_event
+        from tools.audit.audit_logger import log_event
+
         log_event(
             event_type="translation.unit_translated",
             actor="test_translator",
-            action=f"Translated {len(translated_tests)} test files from "
-                   f"{source_language} to {target_language}",
+            action=f"Translated {len(translated_tests)} test files from {source_language} to {target_language}",
             project_id=project_id,
             details={
                 "translated_count": len(translated_tests),
@@ -290,8 +299,7 @@ def main():
         description="ICDEV™ Phase 43 — Test file translation (D250)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--source-test-dir", required=True,
-                        help="Directory containing source test files")
+    parser.add_argument("--source-test-dir", required=True, help="Directory containing source test files")
     parser.add_argument("--source-language", required=True, help="Source language")
     parser.add_argument("--target-language", required=True, help="Target language")
     parser.add_argument("--output-dir", required=True, help="Output directory for translated tests")

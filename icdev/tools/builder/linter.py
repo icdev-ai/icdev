@@ -16,12 +16,13 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 # Language support (Phase 16)
 try:
     import importlib.util as _ilu
+
     _ls_path = Path(__file__).parent / "language_support.py"
     if _ls_path.exists():
         _ls_spec = _ilu.spec_from_file_location("language_support", _ls_path)
@@ -48,8 +49,13 @@ def detect_language(project_path: str) -> List[str]:
 
     # Python indicators
     python_indicators = [
-        "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt",
-        "Pipfile", "poetry.lock", "tox.ini",
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "requirements.txt",
+        "Pipfile",
+        "poetry.lock",
+        "tox.ini",
     ]
     for indicator in python_indicators:
         if (root / indicator).exists():
@@ -104,7 +110,9 @@ def lint_python(project_path: str, fix: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             [sys.executable, "-m", "flake8", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -117,7 +125,9 @@ def lint_python(project_path: str, fix: bool = False) -> Dict:
 
     # Run flake8
     cmd = [
-        sys.executable, "-m", "flake8",
+        sys.executable,
+        "-m",
+        "flake8",
         "--format=json" if _flake8_supports_json() else "--format=default",
         "--max-line-length=100",
         "--exclude=venv,node_modules,.git,__pycache__,.eggs,build,dist",
@@ -126,7 +136,11 @@ def lint_python(project_path: str, fix: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -156,9 +170,10 @@ def lint_python(project_path: str, fix: bool = False) -> Dict:
         result["fix_attempted"] = True
         try:
             subprocess.run(
-                [sys.executable, "-m", "autopep8", "--in-place", "--recursive",
-                 "--max-line-length=100", str(root)],
-                capture_output=True, text=True, timeout=120,
+                [sys.executable, "-m", "autopep8", "--in-place", "--recursive", "--max-line-length=100", str(root)],
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             result["fix_output"] = "autopep8 applied (re-run lint to verify)"
         except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -194,7 +209,10 @@ def lint_javascript(project_path: str, fix: bool = False) -> Dict:
             parts = cmd.split()
             check = subprocess.run(
                 parts + ["--version"],
-                capture_output=True, text=True, timeout=30, cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(root),
             )
             if check.returncode == 0:
                 eslint_cmd = parts
@@ -210,7 +228,8 @@ def lint_javascript(project_path: str, fix: bool = False) -> Dict:
     # Build eslint command
     cmd = eslint_cmd + [
         "--format=json",
-        "--ext", ".js,.jsx,.ts,.tsx",
+        "--ext",
+        ".js,.jsx,.ts,.tsx",
     ]
     if fix:
         cmd.append("--fix")
@@ -218,7 +237,11 @@ def lint_javascript(project_path: str, fix: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -270,7 +293,9 @@ def lint_java(project_path: str, fix: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             [mvn_cmd, "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -284,7 +309,11 @@ def lint_java(project_path: str, fix: bool = False) -> Dict:
     cmd = [mvn_cmd, "checkstyle:check", "-q"]
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -297,7 +326,7 @@ def lint_java(project_path: str, fix: bool = False) -> Dict:
             # Maven checkstyle format: [SEVERITY] file.java:[line,col] (or file:line:col:) message
             for prefix, severity in [("[ERROR]", "error"), ("[WARNING]", "warning"), ("[INFO]", "info")]:
                 if line.startswith(prefix):
-                    rest = line[len(prefix):].strip()
+                    rest = line[len(prefix) :].strip()
                     # Try to parse file:line:col: message or file:[line,col] message
                     parts = rest.split(":", 3)
                     if len(parts) >= 3:
@@ -309,14 +338,16 @@ def lint_java(project_path: str, fix: bool = False) -> Dict:
                             line_num = 0
                             col_num = 0
                         message = parts[3].strip() if len(parts) > 3 else rest
-                        findings.append({
-                            "file": file_path,
-                            "line": line_num,
-                            "column": col_num,
-                            "code": "checkstyle",
-                            "message": message,
-                            "severity": severity,
-                        })
+                        findings.append(
+                            {
+                                "file": file_path,
+                                "line": line_num,
+                                "column": col_num,
+                                "code": "checkstyle",
+                                "message": message,
+                                "severity": severity,
+                            }
+                        )
                     break
 
         result["findings"] = findings
@@ -364,15 +395,21 @@ def lint_go(project_path: str, fix: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             ["golangci-lint", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
-            result["raw_output"] = "golangci-lint not found. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+            result["raw_output"] = (
+                "golangci-lint not found. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"  # noqa: E501
+            )
             return result
     except (subprocess.TimeoutExpired, FileNotFoundError):
         result["success"] = False
-        result["raw_output"] = "golangci-lint not found. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+        result["raw_output"] = (
+            "golangci-lint not found. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"  # noqa: E501
+        )
         return result
 
     cmd = ["golangci-lint", "run", "--out-format", "json"]
@@ -381,7 +418,11 @@ def lint_go(project_path: str, fix: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -396,14 +437,16 @@ def lint_go(project_path: str, fix: bool = False) -> Dict:
                 sev_str = issue.get("Severity", "").lower()
                 if sev_str in ("error", "warning", "info"):
                     severity = sev_str
-                findings.append({
-                    "file": pos.get("Filename", ""),
-                    "line": pos.get("Line", 0),
-                    "column": pos.get("Column", 0),
-                    "code": issue.get("FromLinter", ""),
-                    "message": issue.get("Text", ""),
-                    "severity": severity,
-                })
+                findings.append(
+                    {
+                        "file": pos.get("Filename", ""),
+                        "line": pos.get("Line", 0),
+                        "column": pos.get("Column", 0),
+                        "code": issue.get("FromLinter", ""),
+                        "message": issue.get("Text", ""),
+                        "severity": severity,
+                    }
+                )
         except json.JSONDecodeError:
             # If JSON parsing fails, tool still ran
             pass
@@ -453,7 +496,9 @@ def lint_rust(project_path: str, fix: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             ["cargo", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -470,7 +515,11 @@ def lint_rust(project_path: str, fix: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -505,14 +554,16 @@ def lint_rust(project_path: str, fix: bool = False) -> Dict:
                 code_info = message.get("code", {}) or {}
                 code_str = code_info.get("code", "") if isinstance(code_info, dict) else ""
 
-                findings.append({
-                    "file": file_path,
-                    "line": line_num,
-                    "column": col_num,
-                    "code": code_str,
-                    "message": message.get("message", ""),
-                    "severity": severity,
-                })
+                findings.append(
+                    {
+                        "file": file_path,
+                        "line": line_num,
+                        "column": col_num,
+                        "code": code_str,
+                        "message": message.get("message", ""),
+                        "severity": severity,
+                    }
+                )
             except json.JSONDecodeError:
                 continue
 
@@ -561,7 +612,9 @@ def lint_csharp(project_path: str, fix: bool = False) -> Dict:
     try:
         version_check = subprocess.run(
             ["dotnet", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -576,7 +629,11 @@ def lint_csharp(project_path: str, fix: bool = False) -> Dict:
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -603,7 +660,7 @@ def lint_csharp(project_path: str, fix: bool = False) -> Dict:
                         paren_idx = location.rfind("(")
                         if paren_idx >= 0:
                             file_path = location[:paren_idx]
-                            loc_str = location[paren_idx + 1:].rstrip(")")
+                            loc_str = location[paren_idx + 1 :].rstrip(")")
                             loc_parts = loc_str.split(",")
                             try:
                                 line_num = int(loc_parts[0].strip())
@@ -617,16 +674,18 @@ def lint_csharp(project_path: str, fix: bool = False) -> Dict:
                         colon_idx = rest.find(":")
                         if colon_idx > 0:
                             code = rest[:colon_idx].strip()
-                            message = rest[colon_idx + 1:].strip()
+                            message = rest[colon_idx + 1 :].strip()
 
-                        findings.append({
-                            "file": file_path,
-                            "line": line_num,
-                            "column": col_num,
-                            "code": code,
-                            "message": message,
-                            "severity": sev_tag,
-                        })
+                        findings.append(
+                            {
+                                "file": file_path,
+                                "line": line_num,
+                                "column": col_num,
+                                "code": code,
+                                "message": message,
+                                "severity": sev_tag,
+                            }
+                        )
                     break
 
         result["findings"] = findings
@@ -677,7 +736,10 @@ def lint_typescript(project_path: str, fix: bool = False) -> Dict:
     try:
         tsc_proc = subprocess.run(
             ["npx", "tsc", "--noEmit"],
-            capture_output=True, text=True, timeout=300, cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         outputs.append(f"=== tsc ===\n{tsc_proc.stdout}{tsc_proc.stderr}")
 
@@ -700,7 +762,7 @@ def lint_typescript(project_path: str, fix: bool = False) -> Dict:
                         paren_idx = location.rfind("(")
                         if paren_idx >= 0:
                             file_path = location[:paren_idx]
-                            loc_str = location[paren_idx + 1:].rstrip(")")
+                            loc_str = location[paren_idx + 1 :].rstrip(")")
                             loc_parts = loc_str.split(",")
                             try:
                                 line_num = int(loc_parts[0].strip())
@@ -713,16 +775,18 @@ def lint_typescript(project_path: str, fix: bool = False) -> Dict:
                         colon_idx = rest.find(":")
                         if colon_idx > 0:
                             code = rest[:colon_idx].strip()
-                            message = rest[colon_idx + 1:].strip()
+                            message = rest[colon_idx + 1 :].strip()
 
-                        all_findings.append({
-                            "file": file_path,
-                            "line": line_num,
-                            "column": col_num,
-                            "code": code,
-                            "message": message,
-                            "severity": sev_tag,
-                        })
+                        all_findings.append(
+                            {
+                                "file": file_path,
+                                "line": line_num,
+                                "column": col_num,
+                                "code": code,
+                                "message": message,
+                                "severity": sev_tag,
+                            }
+                        )
                     break
 
         if tsc_proc.returncode != 0:
@@ -739,7 +803,11 @@ def lint_typescript(project_path: str, fix: bool = False) -> Dict:
         eslint_cmd.append(str(root / "src") if (root / "src").is_dir() else str(root))
 
         eslint_proc = subprocess.run(
-            eslint_cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            eslint_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         outputs.append(f"=== eslint ===\n{eslint_proc.stdout}{eslint_proc.stderr}")
 
@@ -772,7 +840,9 @@ def _flake8_supports_json() -> bool:
     try:
         result = subprocess.run(
             [sys.executable, "-m", "flake8", "--format=json", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return "json" not in result.stderr.lower()
     except Exception:
@@ -806,7 +876,7 @@ def _parse_flake8_output(output: str) -> List[Dict]:
                 space_idx = rest.find(" ")
                 if space_idx > 0:
                     code = rest[:space_idx]
-                    message = rest[space_idx + 1:]
+                    message = rest[space_idx + 1 :]
 
             severity = "warning"
             if code.startswith("E") or code.startswith("F"):
@@ -816,14 +886,16 @@ def _parse_flake8_output(output: str) -> List[Dict]:
             elif code.startswith("C"):
                 severity = "info"
 
-            findings.append({
-                "file": file_path,
-                "line": line_num,
-                "column": col_num,
-                "code": code,
-                "message": message,
-                "severity": severity,
-            })
+            findings.append(
+                {
+                    "file": file_path,
+                    "line": line_num,
+                    "column": col_num,
+                    "code": code,
+                    "message": message,
+                    "severity": severity,
+                }
+            )
     return findings
 
 
@@ -839,14 +911,16 @@ def _parse_eslint_output(output: str) -> List[Dict]:
         file_path = file_result.get("filePath", "")
         for msg in file_result.get("messages", []):
             severity_map = {2: "error", 1: "warning", 0: "info"}
-            findings.append({
-                "file": file_path,
-                "line": msg.get("line", 0),
-                "column": msg.get("column", 0),
-                "code": msg.get("ruleId", ""),
-                "message": msg.get("message", ""),
-                "severity": severity_map.get(msg.get("severity", 1), "warning"),
-            })
+            findings.append(
+                {
+                    "file": file_path,
+                    "line": msg.get("line", 0),
+                    "column": msg.get("column", 0),
+                    "code": msg.get("ruleId", ""),
+                    "message": msg.get("message", ""),
+                    "severity": severity_map.get(msg.get("severity", 1), "warning"),
+                }
+            )
     return findings
 
 

@@ -4,17 +4,16 @@ Flask Blueprint for project API endpoints.
 Queries icdev.db for project data, compliance status, and audit trail entries.
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 from flask import Blueprint, jsonify
 
-from icdev.tools.dashboard.config import DB_PATH
+from tools.dashboard.config import DB_PATH
 
 projects_api = Blueprint("projects_api", __name__, url_prefix="/api/projects")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -41,9 +40,7 @@ def project_status(project_id):
     conn = _get_db()
     try:
         # Project basics
-        project = conn.execute(
-            "SELECT * FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
+        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
             return jsonify({"error": "Project not found"}), 404
 
@@ -162,17 +159,19 @@ def project_compliance(project_id):
             st = cd.get("implementation_status", "planned")
             control_summary["by_status"][st] = control_summary["by_status"].get(st, 0) + 1
 
-        return jsonify({
-            "project_id": project_id,
-            "ssp_documents": [dict(r) for r in ssps],
-            "poam_summary": poam_summary,
-            "poam_items": [dict(r) for r in poams],
-            "stig_summary": stig_summary,
-            "stig_findings": [dict(r) for r in stigs],
-            "sbom_records": [dict(r) for r in sboms],
-            "control_summary": control_summary,
-            "controls": [dict(r) for r in controls],
-        })
+        return jsonify(
+            {
+                "project_id": project_id,
+                "ssp_documents": [dict(r) for r in ssps],
+                "poam_summary": poam_summary,
+                "poam_items": [dict(r) for r in poams],
+                "stig_summary": stig_summary,
+                "stig_findings": [dict(r) for r in stigs],
+                "sbom_records": [dict(r) for r in sboms],
+                "control_summary": control_summary,
+                "controls": [dict(r) for r in controls],
+            }
+        )
     finally:
         conn.close()
 

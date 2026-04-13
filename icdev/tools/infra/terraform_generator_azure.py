@@ -16,8 +16,7 @@ expressions."""
 import argparse
 from pathlib import Path
 
-from icdev.tools.infra.terraform_generator import _cui_header, _write
-from icdev._paths import get_project_root
+from tools.infra.terraform_generator import _cui_header, _write
 
 
 def _render(template_str: str, ctx: dict) -> str:
@@ -33,7 +32,8 @@ def _render(template_str: str, ctx: dict) -> str:
         result = result.replace("{{" + key + "}}", str(val))
     return result
 
-BASE_DIR = get_project_root()
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -220,9 +220,7 @@ def generate_base(project_path: str, project_config: dict = None) -> list:
     environment = config.get("environment", "dev")
     # Storage account names: lowercase alphanumeric, max 24 chars
     sanitized = project_name.replace("-", "").replace("_", "")[:14]
-    storage_account_name = config.get(
-        "storage_account_name", f"{sanitized}tfstate"
-    )
+    storage_account_name = config.get("storage_account_name", f"{sanitized}tfstate")
 
     tf_dir = Path(project_path) / "terraform"
     ctx = {
@@ -1149,6 +1147,722 @@ def generate_key_vault(project_path: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# SCCA (Secure Cloud Computing Architecture) module — Azure
+# ---------------------------------------------------------------------------
+SCCA_AZURE_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA Azure — Hub VNet (VDSS), Bastion, Firewall, ExpressRoute
+# -------------------------------------------------------
+
+resource "azurerm_resource_group" "scca" {
+  name     = "${{var.project_name}}-${{var.environment}}-scca-rg"
+  location = var.region
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+# --- Hub VNet (VDSS) ---
+
+resource "azurerm_virtual_network" "hub" {
+  name                = "${{var.project_name}}-${{var.environment}}-hub-vnet"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  address_space       = [var.hub_cidr]
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "VDSS-Hub"
+  })
+}
+
+resource "azurerm_subnet" "firewall" {
+  name                 = "AzureFirewallSubnet"
+  resource_group_name  = azurerm_resource_group.scca.name
+  virtual_network_name = azurerm_virtual_network.hub.name
+  address_prefixes     = [cidrsubnet(var.hub_cidr, 10, 0)]
+}
+
+resource "azurerm_subnet" "bastion" {
+  name                 = "AzureBastionSubnet"
+  resource_group_name  = azurerm_resource_group.scca.name
+  virtual_network_name = azurerm_virtual_network.hub.name
+  address_prefixes     = [cidrsubnet(var.hub_cidr, 10, 1)]
+}
+
+resource "azurerm_subnet" "gateway" {
+  name                 = "GatewaySubnet"
+  resource_group_name  = azurerm_resource_group.scca.name
+  virtual_network_name = azurerm_virtual_network.hub.name
+  address_prefixes     = [cidrsubnet(var.hub_cidr, 10, 2)]
+}
+
+# --- Azure Firewall (VDSS) ---
+
+resource "azurerm_public_ip" "firewall" {
+  name                = "${{var.project_name}}-${{var.environment}}-fw-pip"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+resource "azurerm_firewall" "hub" {
+  name                = "${{var.project_name}}-${{var.environment}}-fw"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  sku_name            = "AZFW_VNet"
+  sku_tier            = "Premium"
+  threat_intel_mode   = "Deny"
+
+  ip_configuration {
+    name                 = "fw-ipconfig"
+    subnet_id            = azurerm_subnet.firewall.id
+    public_ip_address_id = azurerm_public_ip.firewall.id
+  }
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "VDSS-Firewall"
+  })
+}
+
+# --- Azure Bastion ---
+
+resource "azurerm_public_ip" "bastion" {
+  name                = "${{var.project_name}}-${{var.environment}}-bastion-pip"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+resource "azurerm_bastion_host" "hub" {
+  name                = "${{var.project_name}}-${{var.environment}}-bastion"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  sku                 = "Standard"
+
+  ip_configuration {
+    name                 = "bastion-ipconfig"
+    subnet_id            = azurerm_subnet.bastion.id
+    public_ip_address_id = azurerm_public_ip.bastion.id
+  }
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+# --- Spoke VNet Peering ---
+
+resource "azurerm_virtual_network" "spoke" {
+  count               = length(var.spoke_cidrs)
+  name                = "${{var.project_name}}-${{var.environment}}-spoke-${{count.index + 1}}-vnet"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  address_space       = [var.spoke_cidrs[count.index]]
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Role           = "Spoke"
+  })
+}
+
+resource "azurerm_virtual_network_peering" "hub_to_spoke" {
+  count                        = length(var.spoke_cidrs)
+  name                         = "hub-to-spoke-${{count.index + 1}}"
+  resource_group_name          = azurerm_resource_group.scca.name
+  virtual_network_name         = azurerm_virtual_network.hub.name
+  remote_virtual_network_id    = azurerm_virtual_network.spoke[count.index].id
+  allow_forwarded_traffic      = true
+  allow_gateway_transit        = true
+  use_remote_gateways          = false
+}
+
+resource "azurerm_virtual_network_peering" "spoke_to_hub" {
+  count                        = length(var.spoke_cidrs)
+  name                         = "spoke-${{count.index + 1}}-to-hub"
+  resource_group_name          = azurerm_resource_group.scca.name
+  virtual_network_name         = azurerm_virtual_network.spoke[count.index].name
+  remote_virtual_network_id    = azurerm_virtual_network.hub.id
+  allow_forwarded_traffic      = true
+  allow_gateway_transit        = false
+  use_remote_gateways          = true
+}
+
+# --- ExpressRoute Circuit ---
+
+resource "azurerm_express_route_circuit" "this" {
+  name                  = "${{var.project_name}}-${{var.environment}}-er-circuit"
+  resource_group_name   = azurerm_resource_group.scca.name
+  location              = azurerm_resource_group.scca.location
+  service_provider_name = "Equinix"
+  peering_location      = "Washington DC"
+  bandwidth_in_mbps     = 200
+
+  sku {
+    tier   = "Premium"
+    family = "MeteredData"
+  }
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+# --- NSG (default deny) ---
+
+resource "azurerm_network_security_group" "scca_default" {
+  name                = "${{var.project_name}}-${{var.environment}}-scca-nsg"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+
+  security_rule {
+    name                       = "DenyAllInbound"
+    priority                   = 4096
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowVNetInbound"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "VirtualNetwork"
+  }
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+# --- DDoS Protection Standard ---
+
+resource "azurerm_network_ddos_protection_plan" "scca" {
+  name                = "${{var.project_name}}-${{var.environment}}-ddos-plan"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+"""
+
+SCCA_AZURE_SECURITY = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA Azure — Security (Defender, Sentinel, Policy)
+# -------------------------------------------------------
+
+# --- Microsoft Defender for Cloud ---
+
+resource "azurerm_security_center_subscription_pricing" "vms" {
+  tier          = "Standard"
+  resource_type = "VirtualMachines"
+}
+
+resource "azurerm_security_center_subscription_pricing" "sql" {
+  tier          = "Standard"
+  resource_type = "SqlServers"
+}
+
+resource "azurerm_security_center_subscription_pricing" "app_services" {
+  tier          = "Standard"
+  resource_type = "AppServices"
+}
+
+resource "azurerm_security_center_subscription_pricing" "storage" {
+  tier          = "Standard"
+  resource_type = "StorageAccounts"
+}
+
+resource "azurerm_security_center_subscription_pricing" "containers" {
+  tier          = "Standard"
+  resource_type = "Containers"
+}
+
+resource "azurerm_security_center_subscription_pricing" "key_vaults" {
+  tier          = "Standard"
+  resource_type = "KeyVaults"
+}
+
+# --- Azure Sentinel (Log Analytics) ---
+
+resource "azurerm_log_analytics_workspace" "sentinel" {
+  name                = "${{var.project_name}}-${{var.environment}}-sentinel-law"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  sku                 = "PerGB2018"
+  retention_in_days   = 365
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+  })
+}
+
+resource "azurerm_sentinel_log_analytics_workspace_onboarding" "this" {
+  workspace_id = azurerm_log_analytics_workspace.sentinel.id
+}
+
+# --- Azure Policy Assignments for DoD ---
+
+resource "azurerm_subscription_policy_assignment" "dod_il4" {
+  name                 = "${{var.project_name}}-dod-il4-baseline"
+  subscription_id      = data.azurerm_subscription.current.id
+  policy_definition_id = "/providers/Microsoft.Authorization/policySetDefinitions/DoD_Impact_Level_4"
+  display_name         = "DoD IL4 Baseline"
+  description          = "SCCA DoD IL4 policy assignment for ${{var.project_name}}"
+
+  non_compliance_message {
+    content = "This resource is not compliant with DoD IL4 requirements."
+  }
+}
+
+data "azurerm_subscription" "current" {}
+"""
+
+SCCA_AZURE_IDENTITY = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA Azure — Identity (Entra ID Conditional Access)
+# -------------------------------------------------------
+
+# NOTE: Entra ID (Azure AD) is a SaaS service. Terraform can manage
+# conditional access policies via the azuread provider.
+
+# Conditional Access — Require MFA for all users
+resource "azurerm_resource_group" "identity" {
+  name     = "${{var.project_name}}-${{var.environment}}-identity-rg"
+  location = var.region
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Purpose        = "Entra ID identity governance"
+  })
+}
+
+# Placeholder for azuread_conditional_access_policy resources.
+# The azuread provider must be configured separately to manage
+# Entra ID conditional access policies, app registrations, and
+# Privileged Identity Management (PIM) settings.
+#
+# Example policies to implement:
+# - Require MFA for all administrative users
+# - Block legacy authentication protocols
+# - Require compliant devices for CUI access
+# - Restrict sign-ins to US Government regions only
+"""
+
+SCCA_AZURE_LOGGING = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA Azure — Logging (Log Analytics, Diagnostics, Activity Log)
+# -------------------------------------------------------
+
+# --- Central Log Analytics Workspace ---
+
+resource "azurerm_log_analytics_workspace" "central" {
+  name                = "${{var.project_name}}-${{var.environment}}-central-law"
+  resource_group_name = azurerm_resource_group.scca.name
+  location            = azurerm_resource_group.scca.location
+  sku                 = "PerGB2018"
+  retention_in_days   = 365
+
+  tags = merge(var.common_tags, {
+    Classification = "CUI"
+    ManagedBy      = "icdev"
+    Purpose        = "Central logging for SCCA"
+  })
+}
+
+# --- Diagnostic Settings for Azure Firewall ---
+
+resource "azurerm_monitor_diagnostic_setting" "firewall" {
+  name                       = "${{var.project_name}}-${{var.environment}}-fw-diag"
+  target_resource_id         = azurerm_firewall.hub.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.central.id
+
+  enabled_log {
+    category = "AzureFirewallApplicationRule"
+  }
+
+  enabled_log {
+    category = "AzureFirewallNetworkRule"
+  }
+
+  enabled_log {
+    category = "AzureFirewallDnsProxy"
+  }
+
+  metric {
+    category = "AllMetrics"
+    enabled  = true
+  }
+}
+
+# --- Activity Log Export ---
+
+resource "azurerm_monitor_log_profile" "activity" {
+  name = "${{var.project_name}}-${{var.environment}}-activity-log-export"
+
+  categories = [
+    "Action",
+    "Delete",
+    "Write",
+  ]
+
+  locations = [
+    var.region,
+    "global",
+  ]
+
+  retention_policy {
+    enabled = true
+    days    = 365
+  }
+}
+
+# --- Diagnostic Settings for Hub VNet NSG ---
+
+resource "azurerm_monitor_diagnostic_setting" "nsg" {
+  name                       = "${{var.project_name}}-${{var.environment}}-scca-nsg-diag"
+  target_resource_id         = azurerm_network_security_group.scca_default.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.central.id
+
+  enabled_log {
+    category = "NetworkSecurityGroupEvent"
+  }
+
+  enabled_log {
+    category = "NetworkSecurityGroupRuleCounter"
+  }
+}
+"""
+
+SCCA_AZURE_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA Azure — Variables
+# -------------------------------------------------------
+variable "project_name" {
+  description = "Project identifier"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, staging, prod)"
+  type        = string
+  default     = "prod"
+}
+
+variable "il_level" {
+  description = "DoD Impact Level (IL4, IL5, IL6)"
+  type        = string
+  default     = "IL4"
+
+  validation {
+    condition     = contains(["IL4", "IL5", "IL6"], var.il_level)
+    error_message = "IL level must be IL4, IL5, or IL6."
+  }
+}
+
+variable "hub_cidr" {
+  description = "Hub VNet CIDR block (VDSS)"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "spoke_cidrs" {
+  description = "Spoke VNet CIDR blocks"
+  type        = list(string)
+  default     = ["10.1.0.0/16", "10.2.0.0/16"]
+}
+
+variable "region" {
+  description = "Azure Government region"
+  type        = string
+  default     = "usgovvirginia"
+
+  validation {
+    condition     = contains(["usgovvirginia", "usgovarizona", "usgovtexas"], var.region)
+    error_message = "Region must be an Azure Government region."
+  }
+}
+
+variable "common_tags" {
+  description = "Common tags for all resources"
+  type        = map(string)
+  default     = {}
+}
+"""
+
+SCCA_AZURE_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# SCCA Azure — Outputs
+# -------------------------------------------------------
+output "hub_vnet_id" {
+  description = "Hub VNet (VDSS) resource ID"
+  value       = azurerm_virtual_network.hub.id
+}
+
+output "firewall_private_ip" {
+  description = "Azure Firewall private IP address"
+  value       = azurerm_firewall.hub.ip_configuration[0].private_ip_address
+}
+
+output "log_analytics_workspace_id" {
+  description = "Central Log Analytics Workspace ID"
+  value       = azurerm_log_analytics_workspace.central.id
+}
+"""
+
+
+# ---------------------------------------------------------------------------
+# Security Baseline module — Azure
+# ---------------------------------------------------------------------------
+SECURITY_BASELINE_AZURE_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# Azure Security Baseline — Defender, Sentinel, Policy, Diagnostics
+# -------------------------------------------------------
+
+resource "azurerm_resource_group" "security_baseline" {
+  name     = "$${var.project_name}-security-baseline-rg"
+  location = var.location
+
+  tags = var.common_tags
+}
+
+# --- Microsoft Defender for Cloud ---
+
+resource "azurerm_security_center_subscription_pricing" "servers" {
+  tier          = "Standard"
+  resource_type = "VirtualMachines"
+}
+
+resource "azurerm_security_center_subscription_pricing" "storage" {
+  tier          = "Standard"
+  resource_type = "StorageAccounts"
+}
+
+resource "azurerm_security_center_subscription_pricing" "keyvault" {
+  tier          = "Standard"
+  resource_type = "KeyVaults"
+}
+
+resource "azurerm_security_center_subscription_pricing" "arm" {
+  tier          = "Standard"
+  resource_type = "Arm"
+}
+
+resource "azurerm_security_center_subscription_pricing" "dns" {
+  tier          = "Standard"
+  resource_type = "Dns"
+}
+
+# --- Microsoft Sentinel (Log Analytics Workspace) ---
+
+resource "azurerm_log_analytics_workspace" "sentinel" {
+  name                = "$${var.project_name}-sentinel-law"
+  location            = azurerm_resource_group.security_baseline.location
+  resource_group_name = azurerm_resource_group.security_baseline.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 90
+
+  tags = var.common_tags
+}
+
+resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
+  workspace_id                 = azurerm_log_analytics_workspace.sentinel.id
+  customer_managed_key_enabled = false
+}
+
+# --- Azure Policy Assignment (CIS Benchmark) ---
+
+data "azurerm_subscription" "current" {}
+
+resource "azurerm_subscription_policy_assignment" "cis_benchmark" {
+  name                 = "$${var.project_name}-cis-benchmark"
+  subscription_id      = data.azurerm_subscription.current.id
+  policy_definition_id = "/providers/Microsoft.Authorization/policySetDefinitions/612b5213-9160-4969-8578-1518bd2a000c"
+  display_name         = "CIS Microsoft Azure Foundations Benchmark"
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  location = var.location
+}
+
+# --- Diagnostic Settings for Activity Log ---
+
+resource "azurerm_monitor_diagnostic_setting" "activity_log" {
+  name                       = "$${var.project_name}-activity-log-diag"
+  target_resource_id         = data.azurerm_subscription.current.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.sentinel.id
+
+  enabled_log {
+    category = "Administrative"
+  }
+
+  enabled_log {
+    category = "Security"
+  }
+
+  enabled_log {
+    category = "Alert"
+  }
+
+  enabled_log {
+    category = "Policy"
+  }
+}
+"""
+
+SECURITY_BASELINE_AZURE_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# Azure Security Baseline — Variables
+# -------------------------------------------------------
+variable "project_name" {
+  description = "Project identifier used for resource naming"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment"
+  type        = string
+  default     = "production"
+}
+
+variable "location" {
+  description = "Azure region for security baseline resources"
+  type        = string
+  default     = "usgovvirginia"
+}
+
+variable "common_tags" {
+  description = "Common tags applied to all resources"
+  type        = map(string)
+  default = {
+    Classification = "CUI"
+    ManagedBy      = "terraform"
+  }
+}
+"""
+
+SECURITY_BASELINE_AZURE_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# Azure Security Baseline — Outputs
+# -------------------------------------------------------
+output "sentinel_workspace_id" {
+  description = "Microsoft Sentinel Log Analytics Workspace ID"
+  value       = azurerm_log_analytics_workspace.sentinel.id
+}
+
+output "defender_subscription_id" {
+  description = "Subscription ID with Defender for Cloud enabled"
+  value       = data.azurerm_subscription.current.subscription_id
+}
+"""
+
+
+def generate_security_baseline_azure(project_path: str, project_config: dict = None) -> list:
+    """Generate Azure Security Baseline Terraform module.
+
+    Produces terraform/modules/az-security-baseline/ with main.tf (Defender for
+    Cloud, Sentinel, Azure Policy CIS benchmark, diagnostic settings),
+    variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    tf_dir = Path(project_path) / "terraform" / "modules" / "az-security-baseline"
+    ctx = {"cui_header": _cui_header()}
+
+    files = []
+    for name, template in [
+        ("main.tf", SECURITY_BASELINE_AZURE_MAIN),
+        ("variables.tf", SECURITY_BASELINE_AZURE_VARIABLES),
+        ("outputs.tf", SECURITY_BASELINE_AZURE_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
+def generate_scca_azure(project_path: str, project_config: dict = None) -> list:
+    """Generate SCCA (Secure Cloud Computing Architecture) Terraform module for Azure.
+
+    Produces terraform/modules/scca-azure/ with main.tf (Hub VNet, Firewall,
+    Bastion, ExpressRoute, NSG, DDoS), security.tf, identity.tf, logging.tf,
+    variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    tf_dir = Path(project_path) / "terraform" / "modules" / "scca-azure"
+    ctx = {"cui_header": _cui_header()}
+
+    files = []
+    for name, template in [
+        ("main.tf", SCCA_AZURE_MAIN),
+        ("security.tf", SCCA_AZURE_SECURITY),
+        ("identity.tf", SCCA_AZURE_IDENTITY),
+        ("logging.tf", SCCA_AZURE_LOGGING),
+        ("variables.tf", SCCA_AZURE_VARIABLES),
+        ("outputs.tf", SCCA_AZURE_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 def generate(project_path: str, project_config: dict = None) -> list:
@@ -1177,6 +1891,8 @@ def generate(project_path: str, project_config: dict = None) -> list:
         "postgres": lambda: generate_postgres(project_path, config),
         "acr": lambda: generate_acr(project_path),
         "key_vault": lambda: generate_key_vault(project_path),
+        "scca_azure": lambda: generate_scca_azure(project_path, config),
+        "security_baseline_azure": lambda: generate_security_baseline_azure(project_path, config),
     }
 
     all_files = []
@@ -1193,9 +1909,7 @@ def generate(project_path: str, project_config: dict = None) -> list:
 # ---------------------------------------------------------------------------
 def main():
     """CLI entry point for Azure Government Terraform generation."""
-    parser = argparse.ArgumentParser(
-        description="Generate Terraform for Azure Government (AzureUSGovernment)"
-    )
+    parser = argparse.ArgumentParser(description="Generate Terraform for Azure Government (AzureUSGovernment)")
     parser.add_argument(
         "--project-path",
         required=True,
@@ -1204,7 +1918,7 @@ def main():
     parser.add_argument(
         "--components",
         default="base,vnet,postgres,acr,key_vault",
-        help="Comma-separated components: base,vnet,postgres,acr,key_vault",
+        help="Comma-separated components: base,vnet,postgres,acr,key_vault,scca_azure,security_baseline_azure",
     )
     parser.add_argument(
         "--project-name",
@@ -1235,6 +1949,8 @@ def main():
         "postgres": lambda: generate_postgres(args.project_path, config),
         "acr": lambda: generate_acr(args.project_path),
         "key_vault": lambda: generate_key_vault(args.project_path),
+        "scca_azure": lambda: generate_scca_azure(args.project_path, config),
+        "security_baseline_azure": lambda: generate_security_baseline_azure(args.project_path, config),
     }
 
     for comp in components:

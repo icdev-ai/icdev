@@ -18,17 +18,14 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import struct
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
-DB_PATH = BASE_DIR / "data" / "memory.db"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 sys.path.insert(0, str(BASE_DIR))
 
@@ -45,6 +42,7 @@ def _load_config():
     }
     try:
         import yaml
+
         if config_path.exists():
             with open(config_path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
@@ -60,7 +58,8 @@ def _load_config():
 def flush_buffer(db_path=None):
     """Flush memory buffer to memory_entries."""
     try:
-        from icdev.tools.memory.auto_capture import flush_buffer as _flush
+        from tools.memory.auto_capture import flush_buffer as _flush
+
         return _flush(db_path=db_path)
     except (ImportError, Exception) as exc:
         return {"flushed": 0, "error": str(exc)}
@@ -68,8 +67,7 @@ def flush_buffer(db_path=None):
 
 def embed_unembedded(db_path=None):
     """Generate embeddings for entries missing them (D72 compliant)."""
-    path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT id, content FROM memory_entries WHERE embedding IS NULL")
     rows = c.fetchall()
@@ -82,7 +80,8 @@ def embed_unembedded(db_path=None):
     provider = None
     provider_name = "none"
     try:
-        from icdev.tools.llm import get_embedding_provider
+        from tools.llm import get_embedding_provider
+
         provider = get_embedding_provider()
         provider_name = "llm_provider"
     except Exception:
@@ -92,15 +91,18 @@ def embed_unembedded(db_path=None):
     if provider is None:
         try:
             from dotenv import load_dotenv
+
             load_dotenv(BASE_DIR / ".env")
         except ImportError:
             pass
 
         import os
+
         api_key = os.environ.get("OPENAI_API_KEY")
         if api_key:
             try:
                 import openai
+
                 provider = openai.OpenAI(api_key=api_key)
                 provider_name = "openai_direct"
             except ImportError:
@@ -116,7 +118,7 @@ def embed_unembedded(db_path=None):
     errors = 0
 
     for i in range(0, len(rows), batch_size):
-        batch = rows[i:i + batch_size]
+        batch = rows[i : i + batch_size]
         texts = [row[1] for row in batch]
         ids = [row[0] for row in batch]
 
@@ -133,9 +135,7 @@ def embed_unembedded(db_path=None):
                     embedded += 1
             else:
                 # Direct OpenAI client
-                response = provider.embeddings.create(
-                    input=texts, model="text-embedding-3-small"
-                )
+                response = provider.embeddings.create(input=texts, model="text-embedding-3-small")
                 for j, emb_data in enumerate(response.data):
                     blob = struct.pack(f"{len(emb_data.embedding)}f", *emb_data.embedding)
                     c.execute(
@@ -167,8 +167,7 @@ def prune_stale(days=None, db_path=None):
     min_importance = cfg.get("prune_min_importance", 3)
     prune_types = cfg.get("prune_types", ["event", "thinking"])
 
-    path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
 
     placeholders = ",".join("?" * len(prune_types))
@@ -176,7 +175,7 @@ def prune_stale(days=None, db_path=None):
         f"""DELETE FROM memory_entries
            WHERE importance <= ?
              AND type IN ({placeholders})
-             AND created_at < datetime('now', ? || ' days')""",
+             AND created_at < datetime('now', ? || ' days')""",  # nosec B608 -- table/column names are internal constants, not user input
         [min_importance] + prune_types + [str(-prune_days)],
     )
     pruned = c.rowcount
@@ -191,11 +190,13 @@ def prune_stale(days=None, db_path=None):
 
 
 def backup_memory(db_path=None):
-    """Backup memory.db using the backup manager."""
+    """Backup the main DB (memory tables consolidated into icdev.db)."""
     try:
-        from icdev.tools.db.backup_manager import BackupManager
+        from tools.db.backup_manager import BackupManager
+
         mgr = BackupManager()
-        result = mgr.backup_sqlite(db_path or DB_PATH)
+        icdev_db = BASE_DIR / "data" / "icdev.db"
+        result = mgr.backup_sqlite(db_path or icdev_db)
         return {"status": "ok", "backup_path": str(result.get("backup_path", ""))}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
@@ -233,23 +234,14 @@ def run_all(db_path=None, prune_days=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Memory maintenance orchestrator (D179-D182)"
-    )
-    parser.add_argument("--all", action="store_true",
-                        help="Run full maintenance pipeline")
-    parser.add_argument("--flush-buffer", action="store_true",
-                        help="Flush auto-capture buffer only")
-    parser.add_argument("--embed-unembedded", action="store_true",
-                        help="Generate embeddings for unembedded entries")
-    parser.add_argument("--prune-stale", action="store_true",
-                        help="Prune stale low-importance entries")
-    parser.add_argument("--backup", action="store_true",
-                        help="Backup memory.db")
-    parser.add_argument("--days", type=int,
-                        help="Override prune threshold days")
-    parser.add_argument("--json", action="store_true",
-                        help="JSON output")
+    parser = argparse.ArgumentParser(description="Memory maintenance orchestrator (D179-D182)")
+    parser.add_argument("--all", action="store_true", help="Run full maintenance pipeline")
+    parser.add_argument("--flush-buffer", action="store_true", help="Flush auto-capture buffer only")
+    parser.add_argument("--embed-unembedded", action="store_true", help="Generate embeddings for unembedded entries")
+    parser.add_argument("--prune-stale", action="store_true", help="Prune stale low-importance entries")
+    parser.add_argument("--backup", action="store_true", help="Backup memory.db")
+    parser.add_argument("--days", type=int, help="Override prune threshold days")
+    parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
     if args.all:
@@ -276,10 +268,8 @@ def main():
             bk = result.get("backup", {})
             print(f"Maintenance complete ({result.get('duration_ms', 0)}ms):")
             print(f"  Flush:  {fl.get('flushed', 0)} entries flushed")
-            print(f"  Embed:  {em.get('embedded', 0)} entries embedded "
-                  f"(provider: {em.get('provider', 'n/a')})")
-            print(f"  Prune:  {pr.get('pruned', 0)} entries pruned "
-                  f"(>{pr.get('threshold_days', '?')} days)")
+            print(f"  Embed:  {em.get('embedded', 0)} entries embedded (provider: {em.get('provider', 'n/a')})")
+            print(f"  Prune:  {pr.get('pruned', 0)} entries pruned (>{pr.get('threshold_days', '?')} days)")
             print(f"  Backup: {bk.get('status', 'skipped')}")
         else:
             print(json.dumps(result, indent=2))

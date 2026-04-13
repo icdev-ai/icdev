@@ -11,9 +11,8 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -53,7 +52,7 @@ def check_health(
         req.add_header("User-Agent", "ICDev-HealthChecker/1.0")
         req.add_header("Accept", "application/json, text/plain, */*")
 
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             elapsed = (time.time() - start) * 1000
             body = resp.read().decode("utf-8", errors="replace")
 
@@ -77,11 +76,7 @@ def check_health(
                 result["health_data"] = health_data
 
                 # Common health endpoint formats
-                status_field = (
-                    health_data.get("status") or
-                    health_data.get("health") or
-                    health_data.get("state")
-                )
+                status_field = health_data.get("status") or health_data.get("health") or health_data.get("state")
                 if isinstance(status_field, str):
                     healthy_values = ("ok", "healthy", "up", "pass", "alive", "green")
                     if status_field.lower() in healthy_values:
@@ -158,13 +153,15 @@ def check_with_retries(
         result = check_health(url, timeout, expected_status, expected_body)
         result["attempt"] = attempt
 
-        attempts.append({
-            "attempt": attempt,
-            "healthy": result["healthy"],
-            "status_code": result["status_code"],
-            "response_time_ms": result["response_time_ms"],
-            "error": result.get("error"),
-        })
+        attempts.append(
+            {
+                "attempt": attempt,
+                "healthy": result["healthy"],
+                "status_code": result["status_code"],
+                "response_time_ms": result["response_time_ms"],
+                "error": result.get("error"),
+            }
+        )
 
         last_result = result
 
@@ -172,8 +169,9 @@ def check_with_retries(
             break
 
         if attempt < retries:
-            print(f"[health-check] Attempt {attempt}/{retries} failed: {result.get('error')}. "
-                  f"Retrying in {interval}s...")
+            print(
+                f"[health-check] Attempt {attempt}/{retries} failed: {result.get('error')}. Retrying in {interval}s..."
+            )
             time.sleep(interval)
 
     # Compute summary
@@ -256,10 +254,7 @@ def check_k8s_pods(
 
             # Check readiness
             conditions = item.get("status", {}).get("conditions", [])
-            is_ready = any(
-                c.get("type") == "Ready" and c.get("status") == "True"
-                for c in conditions
-            )
+            is_ready = any(c.get("type") == "Ready" and c.get("status") == "True" for c in conditions)
 
             # Container statuses
             container_statuses = item.get("status", {}).get("containerStatuses", [])
@@ -268,8 +263,7 @@ def check_k8s_pods(
 
             # Check for crash loops
             crash_loop = any(
-                cs.get("state", {}).get("waiting", {}).get("reason") == "CrashLoopBackOff"
-                for cs in container_statuses
+                cs.get("state", {}).get("waiting", {}).get("reason") == "CrashLoopBackOff" for cs in container_statuses
             )
 
             # Check container ready state
@@ -398,8 +392,10 @@ def main():
 
     # HTTP health check
     if args.url:
-        print(f"[health-check] Checking {args.url} (retries={args.retries}, "
-              f"timeout={args.timeout}s, interval={args.interval}s)...")
+        print(
+            f"[health-check] Checking {args.url} (retries={args.retries}, "
+            f"timeout={args.timeout}s, interval={args.interval}s)..."
+        )
 
         http_result = check_with_retries(
             url=args.url,
@@ -426,10 +422,10 @@ def main():
     if args.format == "json":
         print(json.dumps(results, indent=2))
     else:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("  HEALTH CHECK REPORT")
         print(f"  Timestamp: {datetime.now(timezone.utc).isoformat()}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         if "http" in results:
             r = results["http"]
@@ -490,15 +486,15 @@ def main():
                 for pod in r["pods"]:
                     status_icon = "ready" if pod["ready"] else "NOT ready"
                     crash = " [CrashLoop!]" if pod["crash_loop"] else ""
-                    print(f"      {pod['name']}: {pod['phase']} ({status_icon}) "
-                          f"containers={pod['containers']} restarts={pod['restarts']}{crash}")
+                    print(
+                        f"      {pod['name']}: {pod['phase']} ({status_icon}) "
+                        f"containers={pod['containers']} restarts={pod['restarts']}{crash}"
+                    )
 
         # Overall
-        all_healthy = all(
-            r.get("healthy", False) for r in results.values()
-        )
+        all_healthy = all(r.get("healthy", False) for r in results.values())
         print(f"\n  Overall: {'HEALTHY' if all_healthy else 'UNHEALTHY'}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Exit code
         if not all_healthy:

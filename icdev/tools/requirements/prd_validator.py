@@ -12,17 +12,17 @@ Runs 6 validation passes on intake requirements:
 Usage:
     python tools/requirements/prd_validator.py --session-id <id> [--json]
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import re
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # ---------------------------------------------------------------------------
@@ -31,12 +31,15 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Density: filler phrases that add no value
 FILLER_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\bthe system (?:shall|will|should) (?:allow|enable|permit) (?:the )?users? to\b", re.I),
-     "Users can"),
-    (re.compile(r"\bthe system (?:shall|will|should) provide (?:the )?(?:ability|capability) (?:to|for)\b", re.I),
-     "Users can / System supports"),
-    (re.compile(r"\bit is (?:important|necessary|essential|critical) (?:that|to)\b", re.I),
-     "(state the requirement directly)"),
+    (re.compile(r"\bthe system (?:shall|will|should) (?:allow|enable|permit) (?:the )?users? to\b", re.I), "Users can"),
+    (
+        re.compile(r"\bthe system (?:shall|will|should) provide (?:the )?(?:ability|capability) (?:to|for)\b", re.I),
+        "Users can / System supports",
+    ),
+    (
+        re.compile(r"\bit is (?:important|necessary|essential|critical) (?:that|to)\b", re.I),
+        "(state the requirement directly)",
+    ),
     (re.compile(r"\bin order to\b", re.I), "to"),
     (re.compile(r"\bdue to the fact that\b", re.I), "because"),
     (re.compile(r"\bat this point in time\b", re.I), "now"),
@@ -46,8 +49,7 @@ FILLER_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bwith respect to\b", re.I), "about / regarding"),
     (re.compile(r"\bon a regular basis\b", re.I), "regularly"),
     (re.compile(r"\ba large number of\b", re.I), "(use a specific number)"),
-    (re.compile(r"\bas (?:quickly|soon) as possible\b", re.I),
-     "(specify a measurable target)"),
+    (re.compile(r"\bas (?:quickly|soon) as possible\b", re.I), "(specify a measurable target)"),
 ]
 
 # Density: redundant phrases
@@ -65,44 +67,109 @@ REDUNDANT_PATTERNS: list[tuple[re.Pattern, str]] = [
 # Leakage: technology names that indicate implementation details in requirements
 _TECH_PATTERNS: dict[str, list[str]] = {
     "frontend_framework": [
-        "React", "Vue", "Angular", "Svelte", "Next\\.js", "Nuxt",
-        "Gatsby", "Remix", "SolidJS", "Ember",
+        "React",
+        "Vue",
+        "Angular",
+        "Svelte",
+        "Next\\.js",
+        "Nuxt",
+        "Gatsby",
+        "Remix",
+        "SolidJS",
+        "Ember",
     ],
     "backend_framework": [
-        "Express", "Django", "Flask", "FastAPI", "Rails",
-        "Spring Boot", "Spring", "NestJS", "Laravel", "ASP\\.NET",
-        "Gin", "Actix", "Rocket",
+        "Express",
+        "Django",
+        "Flask",
+        "FastAPI",
+        "Rails",
+        "Spring Boot",
+        "Spring",
+        "NestJS",
+        "Laravel",
+        "ASP\\.NET",
+        "Gin",
+        "Actix",
+        "Rocket",
     ],
     "database": [
-        "PostgreSQL", "Postgres", "MongoDB", "MySQL", "MariaDB",
-        "Redis", "DynamoDB", "Cassandra", "CouchDB", "SQLite",
-        "Oracle DB", "SQL Server", "ElasticSearch", "Elasticsearch",
+        "PostgreSQL",
+        "Postgres",
+        "MongoDB",
+        "MySQL",
+        "MariaDB",
+        "Redis",
+        "DynamoDB",
+        "Cassandra",
+        "CouchDB",
+        "SQLite",
+        "Oracle DB",
+        "SQL Server",
+        "ElasticSearch",
+        "Elasticsearch",
     ],
     "cloud_platform": [
-        "AWS", "Amazon Web Services", "GCP", "Google Cloud",
-        "Azure", "S3 bucket", "EC2", "Lambda", "CloudFront",
-        "ECS", "EKS", "RDS", "SQS", "SNS", "API Gateway",
-        "Cloud Run", "Cloud Functions", "App Engine",
+        "AWS",
+        "Amazon Web Services",
+        "GCP",
+        "Google Cloud",
+        "Azure",
+        "S3 bucket",
+        "EC2",
+        "Lambda",
+        "CloudFront",
+        "ECS",
+        "EKS",
+        "RDS",
+        "SQS",
+        "SNS",
+        "API Gateway",
+        "Cloud Run",
+        "Cloud Functions",
+        "App Engine",
     ],
     "infrastructure": [
-        "Docker", "Kubernetes", "K8s", "Terraform", "Ansible",
-        "Jenkins", "GitHub Actions", "GitLab CI", "CircleCI",
-        "Helm", "Istio", "Nginx", "Apache",
+        "Docker",
+        "Kubernetes",
+        "K8s",
+        "Terraform",
+        "Ansible",
+        "Jenkins",
+        "GitHub Actions",
+        "GitLab CI",
+        "CircleCI",
+        "Helm",
+        "Istio",
+        "Nginx",
+        "Apache",
     ],
     "library": [
-        "Redux", "MobX", "Zustand", "Axios", "Lodash",
-        "jQuery", "Bootstrap", "Tailwind", "Material UI",
-        "Pandas", "NumPy", "TensorFlow", "PyTorch",
+        "Redux",
+        "MobX",
+        "Zustand",
+        "Axios",
+        "Lodash",
+        "jQuery",
+        "Bootstrap",
+        "Tailwind",
+        "Material UI",
+        "Pandas",
+        "NumPy",
+        "TensorFlow",
+        "PyTorch",
     ],
 }
 
 LEAKAGE_PATTERNS: list[tuple[re.Pattern, str]] = []
 for category, names in _TECH_PATTERNS.items():
     for name in names:
-        LEAKAGE_PATTERNS.append((
-            re.compile(r"\b" + name + r"\b", re.I if len(name) > 3 else 0),
-            category,
-        ))
+        LEAKAGE_PATTERNS.append(
+            (
+                re.compile(r"\b" + name + r"\b", re.I if len(name) > 3 else 0),
+                category,
+            )
+        )
 
 # Vague quantifiers (measurability anti-patterns)
 VAGUE_PATTERNS: list[re.Pattern] = [
@@ -133,8 +200,11 @@ MEASURABLE_PATTERNS: list[re.Pattern] = [
 
 # Specific actor patterns (positive signal for SMART-Specific)
 ACTOR_PATTERNS: list[re.Pattern] = [
-    re.compile(r"\b(?:user|admin|administrator|operator|analyst|manager|developer|customer|"
-               r"system|service|agent|viewer|editor|approver|reviewer|auditor)\b", re.I),
+    re.compile(
+        r"\b(?:user|admin|administrator|operator|analyst|manager|developer|customer|"
+        r"system|service|agent|viewer|editor|approver|reviewer|auditor)\b",
+        re.I,
+    ),
     re.compile(r"\bas a\b", re.I),  # user story format
 ]
 
@@ -143,15 +213,16 @@ ACTOR_PATTERNS: list[re.Pattern] = [
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
 # ---------------------------------------------------------------------------
 # Validation passes
 # ---------------------------------------------------------------------------
+
 
 def _validate_density(reqs: list[dict]) -> dict:
     """Check for filler words, wordy phrases, and redundancy."""
@@ -164,22 +235,26 @@ def _validate_density(reqs: list[dict]) -> dict:
         for pattern, suggestion in FILLER_PATTERNS:
             matches = pattern.findall(text)
             for m in matches:
-                findings.append({
-                    "requirement_id": rid,
-                    "category": "filler",
-                    "matched": m if isinstance(m, str) else m[0],
-                    "suggestion": suggestion,
-                })
+                findings.append(
+                    {
+                        "requirement_id": rid,
+                        "category": "filler",
+                        "matched": m if isinstance(m, str) else m[0],
+                        "suggestion": suggestion,
+                    }
+                )
 
         for pattern, suggestion in REDUNDANT_PATTERNS:
             matches = pattern.findall(text)
             for m in matches:
-                findings.append({
-                    "requirement_id": rid,
-                    "category": "redundant",
-                    "matched": m if isinstance(m, str) else m[0],
-                    "suggestion": suggestion,
-                })
+                findings.append(
+                    {
+                        "requirement_id": rid,
+                        "category": "redundant",
+                        "matched": m if isinstance(m, str) else m[0],
+                        "suggestion": suggestion,
+                    }
+                )
 
     count = len(findings)
     if count > 10:
@@ -209,13 +284,15 @@ def _validate_leakage(reqs: list[dict]) -> dict:
         for pattern, category in LEAKAGE_PATTERNS:
             matches = pattern.findall(text)
             for m in matches:
-                findings.append({
-                    "requirement_id": rid,
-                    "category": category,
-                    "matched": m,
-                    "suggestion": "Requirements should describe WHAT, not HOW. "
-                                  "Move technology choices to architecture decisions.",
-                })
+                findings.append(
+                    {
+                        "requirement_id": rid,
+                        "category": category,
+                        "matched": m,
+                        "suggestion": "Requirements should describe WHAT, not HOW. "
+                        "Move technology choices to architecture decisions.",
+                    }
+                )
 
     count = len(findings)
     if count > 5:
@@ -397,19 +474,23 @@ def _validate_measurability(reqs: list[dict]) -> dict:
         has_ac = bool(ac and ac.strip())
 
         if vague_matches and not has_measurable_ac:
-            findings.append({
-                "requirement_id": rid,
-                "issue": "vague_without_measure",
-                "vague_phrases": vague_matches,
-                "suggestion": "Replace vague language with specific measurable targets "
-                              "(e.g., 'fast' → '< 200ms p95 latency')",
-            })
+            findings.append(
+                {
+                    "requirement_id": rid,
+                    "issue": "vague_without_measure",
+                    "vague_phrases": vague_matches,
+                    "suggestion": "Replace vague language with specific measurable targets "
+                    "(e.g., 'fast' → '< 200ms p95 latency')",
+                }
+            )
         elif not has_ac:
-            findings.append({
-                "requirement_id": rid,
-                "issue": "missing_acceptance_criteria",
-                "suggestion": "Add BDD acceptance criteria with measurable Given/When/Then",
-            })
+            findings.append(
+                {
+                    "requirement_id": rid,
+                    "issue": "missing_acceptance_criteria",
+                    "suggestion": "Add BDD acceptance criteria with measurable Given/When/Then",
+                }
+            )
 
     count = len(findings)
     measurable_pct = round((1 - count / max(len(reqs), 1)) * 100)
@@ -453,8 +534,10 @@ def _validate_completeness(reqs: list[dict], session: dict) -> dict:
 
     impact = session.get("impact_level", "IL5")
     if impact in ("IL4", "IL5", "IL6") and type_counts.get("security", 0) < 3:
-        issues.append(f"Only {type_counts.get('security', 0)} security requirements for {impact} — "
-                      "minimum 3 recommended for CUI/SECRET systems")
+        issues.append(
+            f"Only {type_counts.get('security', 0)} security requirements for {impact} — "
+            "minimum 3 recommended for CUI/SECRET systems"
+        )
 
     coverage_pct = round(len(present_types & expected_types) / len(expected_types) * 100)
     if coverage_pct >= 80 and not issues:
@@ -479,6 +562,7 @@ def _validate_completeness(reqs: list[dict], session: dict) -> dict:
 # Main validator
 # ---------------------------------------------------------------------------
 
+
 def validate_prd(session_id: str, db_path=None) -> dict:
     """Run all 6 validation passes on an intake session's requirements.
 
@@ -486,21 +570,26 @@ def validate_prd(session_id: str, db_path=None) -> dict:
     """
     conn = _get_connection(db_path)
     try:
-        session = conn.execute(
-            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
         if not session:
             return {"status": "error", "error": f"Session '{session_id}' not found."}
         session = dict(session)
 
-        reqs = [dict(r) for r in conn.execute(
-            "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY created_at",
-            (session_id,),
-        ).fetchall()]
+        reqs = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY created_at",
+                (session_id,),
+            ).fetchall()
+        ]
 
-        decomp = [dict(r) for r in conn.execute(
-            "SELECT * FROM safe_decomposition WHERE session_id = ?", (session_id,),
-        ).fetchall()]
+        decomp = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM safe_decomposition WHERE session_id = ?",
+                (session_id,),
+            ).fetchall()
+        ]
     finally:
         conn.close()
 
@@ -548,8 +637,10 @@ def validate_prd(session_id: str, db_path=None) -> dict:
     critical_count = severities.count("critical")
     warning_count = severities.count("warning")
     pass_count = severities.count("pass")
-    summary = (f"{pass_count} passed, {warning_count} warnings, {critical_count} critical "
-               f"across 6 checks. Overall quality score: {overall_score}%.")
+    summary = (
+        f"{pass_count} passed, {warning_count} warnings, {critical_count} critical "
+        f"across 6 checks. Overall quality score: {overall_score}%."
+    )
 
     return {
         "status": "ok",
@@ -566,6 +657,7 @@ def validate_prd(session_id: str, db_path=None) -> dict:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(description="Validate PRD quality (BMAD-adapted)")

@@ -50,13 +50,12 @@ See also:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CROSSWALK_PATH = BASE_DIR / "context" / "compliance" / "control_crosswalk.json"
 ISO_BRIDGE_PATH = BASE_DIR / "context" / "compliance" / "iso27001_nist_bridge.json"
@@ -150,6 +149,7 @@ IL_BASELINE_MAP = {"IL2": "Low", "IL4": "Moderate", "IL5": "High", "IL6": "High"
 # FIPS 199 baseline integration
 # -----------------------------------------------------------------
 
+
 def get_baseline_from_categorization(project_id, db_path=None):
     """Get the NIST 800-53 baseline from the project's FIPS 199 categorization.
 
@@ -219,16 +219,13 @@ def get_baseline_from_categorization(project_id, db_path=None):
 # Database helpers
 # -----------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -308,6 +305,7 @@ def _ensure_crosswalk_tables(conn):
 # Core functions
 # -----------------------------------------------------------------
 
+
 def load_crosswalk():
     """Load and cache the crosswalk JSON data.
 
@@ -326,8 +324,7 @@ def load_crosswalk():
 
     if not CROSSWALK_PATH.exists():
         raise FileNotFoundError(
-            f"Crosswalk data file not found: {CROSSWALK_PATH}\n"
-            "Expected: context/compliance/control_crosswalk.json"
+            f"Crosswalk data file not found: {CROSSWALK_PATH}\nExpected: context/compliance/control_crosswalk.json"
         )
     with open(CROSSWALK_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -393,11 +390,13 @@ def get_iso_for_nist_control(nist_id):
     for entry in bridge:
         nist_refs = entry.get("nist_800_53", [])
         if nist_upper in [r.upper() for r in nist_refs]:
-            results.append({
-                "iso_27001": entry.get("iso_27001"),
-                "iso_title": entry.get("iso_title"),
-                "mapping_type": entry.get("mapping_type", "equivalent"),
-            })
+            results.append(
+                {
+                    "iso_27001": entry.get("iso_27001"),
+                    "iso_title": entry.get("iso_title"),
+                    "mapping_type": entry.get("mapping_type", "equivalent"),
+                }
+            )
 
     return results
 
@@ -514,9 +513,7 @@ def get_controls_for_impact_level(il_level):
     """
     il_upper = il_level.upper()
     if il_upper not in IL_KEYS:
-        raise ValueError(
-            f"Invalid impact level '{il_level}'. Valid: IL4, IL5, IL6"
-        )
+        raise ValueError(f"Invalid impact level '{il_level}'. Valid: IL4, IL5, IL6")
 
     crosswalk_key = IL_KEYS[il_upper]
     crosswalk = load_crosswalk()
@@ -605,23 +602,27 @@ def compute_crosswalk_coverage(project_id, db_path=None):
                     last_assessed, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id, fw_key, data["total"],
-                    data["implemented"], data["coverage_pct"],
-                    gate, now, now,
+                    project_id,
+                    fw_key,
+                    data["total"],
+                    data["implemented"],
+                    data["coverage_pct"],
+                    gate,
+                    now,
+                    now,
                 ),
             )
         conn.commit()
 
         # Log audit event
         _log_audit_event(
-            conn, project_id,
+            conn,
+            project_id,
             "Crosswalk coverage computed",
             {
                 "frameworks_assessed": len(coverage),
                 "implemented_controls": len(implemented_ids),
-                "coverage_summary": {
-                    k: v["coverage_pct"] for k, v in coverage.items()
-                },
+                "coverage_summary": {k: v["coverage_pct"] for k, v in coverage.items()},
             },
         )
 
@@ -703,10 +704,12 @@ def get_gap_analysis(project_id, target_framework, baseline=None, db_path=None):
 
         # Sort by priority (P1 > P2 > P3), then by nist_id
         priority_order = {"P1": 0, "P2": 1, "P3": 2}
-        gaps.sort(key=lambda g: (
-            priority_order.get(g["priority"], 99),
-            g["nist_id"],
-        ))
+        gaps.sort(
+            key=lambda g: (
+                priority_order.get(g["priority"], 99),
+                g["nist_id"],
+            )
+        )
 
         return gaps
     finally:
@@ -754,10 +757,7 @@ def map_implementation_across_frameworks(project_id, control_id, db_path=None):
         ).fetchone()
 
         if not row:
-            raise ValueError(
-                f"Control '{control_id}' not found in project_controls "
-                f"for project '{project_id}'."
-            )
+            raise ValueError(f"Control '{control_id}' not found in project_controls for project '{project_id}'.")
 
         # Look up all frameworks this control satisfies
         frameworks = get_frameworks_for_control(control_upper)
@@ -781,14 +781,16 @@ def map_implementation_across_frameworks(project_id, control_id, db_path=None):
                         mapping_type, created_at)
                        VALUES (?, ?, ?, ?, ?)""",
                     (
-                        control_upper, fw_key, fw_control_id,
-                        "equivalent", now,
+                        control_upper,
+                        fw_key,
+                        fw_control_id,
+                        "equivalent",
+                        now,
                     ),
                 )
             except Exception as e:
                 print(
-                    f"Warning: Could not upsert crosswalk for "
-                    f"{control_upper} -> {fw_key}: {e}",
+                    f"Warning: Could not upsert crosswalk for {control_upper} -> {fw_key}: {e}",
                     file=sys.stderr,
                 )
         conn.commit()
@@ -800,14 +802,11 @@ def map_implementation_across_frameworks(project_id, control_id, db_path=None):
 
         # Reopen for final audit log
         conn = _get_connection(db_path)
-        coverage_summary = {
-            k: {"coverage_pct": v["coverage_pct"]}
-            for k, v in coverage.items()
-            if k in satisfied
-        }
+        coverage_summary = {k: {"coverage_pct": v["coverage_pct"]} for k, v in coverage.items() if k in satisfied}
 
         _log_audit_event(
-            conn, project_id,
+            conn,
+            project_id,
             f"Crosswalk mapped: {control_upper} -> {len(satisfied)} frameworks",
             {
                 "control_id": control_upper,
@@ -884,6 +883,7 @@ def get_crosswalk_summary():
 # -----------------------------------------------------------------
 # Formatting helpers
 # -----------------------------------------------------------------
+
 
 def _resolve_framework_key(framework, baseline=None):
     """Resolve a CLI framework name + baseline to a crosswalk key."""
@@ -964,10 +964,7 @@ def _format_framework_controls(framework, baseline, controls, as_json=False):
         f"{'-' * 70}",
     ]
     for c in sorted(controls, key=lambda x: x["nist_id"]):
-        lines.append(
-            f"{c['nist_id']:<10} {c.get('family', ''):<8} "
-            f"{c.get('priority', ''):<10} {c.get('title', '')}"
-        )
+        lines.append(f"{c['nist_id']:<10} {c.get('family', ''):<8} {c.get('priority', ''):<10} {c.get('title', '')}")
     lines.append(f"{'=' * 70}")
     lines.append(f"Total: {len(controls)} controls")
     return "\n".join(lines)
@@ -995,10 +992,7 @@ def _format_coverage(project_id, coverage, as_json=False):
             pct_str = f"{data['coverage_pct']:.1f}%"
             bar_len = int(data["coverage_pct"] / 5)
             bar = "#" * bar_len + "." * (20 - bar_len)
-            lines.append(
-                f"  {fw_name:<25} {data['implemented']:<15} "
-                f"{data['total']:<10} {pct_str:<8} [{bar}]"
-            )
+            lines.append(f"  {fw_name:<25} {data['implemented']:<15} {data['total']:<10} {pct_str:<8} [{bar}]")
     lines.append(f"{'=' * 65}")
     return "\n".join(lines)
 
@@ -1029,10 +1023,7 @@ def _format_gap_analysis(project_id, framework, gaps, as_json=False):
     ]
     for gap in gaps:
         status_display = gap["status"].replace("_", " ")
-        lines.append(
-            f"  {gap['nist_id']:<10} {gap['priority']:<10} "
-            f"{status_display:<22} {gap['title']}"
-        )
+        lines.append(f"  {gap['nist_id']:<10} {gap['priority']:<10} {status_display:<22} {gap['title']}")
     lines.append(f"{'=' * 75}")
 
     # Priority breakdown
@@ -1077,10 +1068,9 @@ def _format_summary(summary, as_json=False):
 # CLI entrypoint
 # -----------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Control Framework Crosswalk Engine"
-    )
+    parser = argparse.ArgumentParser(description="Control Framework Crosswalk Engine")
     parser.add_argument(
         "--control",
         help="Look up frameworks for a NIST 800-53 control (e.g., AC-2)",
@@ -1144,16 +1134,12 @@ def main():
         # --framework (without --project-id): List controls for a framework
         elif args.framework and not args.project_id and not args.gap_analysis:
             controls = get_controls_for_framework(args.framework, args.baseline)
-            print(_format_framework_controls(
-                args.framework, args.baseline, controls, args.json
-            ))
+            print(_format_framework_controls(args.framework, args.baseline, controls, args.json))
 
         # --impact-level: Controls for an impact level
         elif args.impact_level:
             controls = get_controls_for_impact_level(args.impact_level)
-            print(_format_framework_controls(
-                args.impact_level, None, controls, args.json
-            ))
+            print(_format_framework_controls(args.impact_level, None, controls, args.json))
 
         # --project-id --coverage: Coverage report
         elif args.project_id and args.coverage:
@@ -1163,23 +1149,24 @@ def main():
         # --project-id --framework --gap-analysis: Gap analysis
         elif args.project_id and args.framework and args.gap_analysis:
             gaps = get_gap_analysis(
-                args.project_id, args.framework,
-                baseline=args.baseline, db_path=db_path,
+                args.project_id,
+                args.framework,
+                baseline=args.baseline,
+                db_path=db_path,
             )
-            print(_format_gap_analysis(
-                args.project_id, args.framework, gaps, args.json
-            ))
+            print(_format_gap_analysis(args.project_id, args.framework, gaps, args.json))
 
         # --project-id --map-control: Map implementation across frameworks
         elif args.project_id and args.map_control:
             result = map_implementation_across_frameworks(
-                args.project_id, args.map_control, db_path=db_path,
+                args.project_id,
+                args.map_control,
+                db_path=db_path,
             )
             if args.json:
                 print(json.dumps(result, indent=2))
             else:
-                print(f"Mapped {result['control_id']} across "
-                      f"{len(result['frameworks_satisfied'])} frameworks:")
+                print(f"Mapped {result['control_id']} across {len(result['frameworks_satisfied'])} frameworks:")
                 for fw in result["frameworks_satisfied"]:
                     fw_name = FRAMEWORK_KEYS.get(fw, fw)
                     pct = result["coverage_updated"].get(fw, {}).get("coverage_pct", "N/A")

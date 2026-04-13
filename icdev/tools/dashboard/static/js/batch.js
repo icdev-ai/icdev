@@ -12,8 +12,8 @@
 (function () {
     "use strict";
 
-    var ICDEV™ = window.ICDEV™ || {};
-    window.ICDEV™ = ICDEV™;
+    var ICDEV = window.ICDEV || {};
+    window.ICDEV = ICDEV;
 
     // ========================================================================
     // CONFIGURATION
@@ -419,14 +419,14 @@
         })
         .then(function (data) {
             _currentRunId = data.run_id;
-            if (ICDEV™.showNotification) {
-                ICDEV™.showNotification("Batch started: " + batchId, "info");
+            if (ICDEV.showNotification) {
+                ICDEV.showNotification("Batch started: " + batchId, "info");
             }
             pollStatus(data.run_id);
         })
         .catch(function (err) {
-            if (ICDEV™.showNotification) {
-                ICDEV™.showNotification("Error: " + err.message, "error");
+            if (ICDEV.showNotification) {
+                ICDEV.showNotification("Error: " + err.message, "error");
             }
             // Re-enable buttons
             var buttons = document.querySelectorAll(".batch-run-btn");
@@ -526,11 +526,11 @@
             // Fire toast on status transitions
             var stepKey = run.run_id + "-" + i;
             var prev = _prevStepStatuses[stepKey];
-            if (prev && prev !== step.status && ICDEV™.showNotification) {
+            if (prev && prev !== step.status && ICDEV.showNotification) {
                 if (step.status === "completed") {
-                    ICDEV™.showNotification(step.name + " completed", "success", 3000);
+                    ICDEV.showNotification(step.name + " completed", "success", 3000);
                 } else if (step.status === "failed") {
-                    ICDEV™.showNotification(step.name + " failed", "error", 5000);
+                    ICDEV.showNotification(step.name + " failed", "error", 5000);
                 }
             }
             _prevStepStatuses[stepKey] = step.status;
@@ -555,7 +555,7 @@
         container.innerHTML = html;
 
         // Render pipeline using ux.js helper if available
-        if (ICDEV™.createProgressPipeline) {
+        if (ICDEV.createProgressPipeline) {
             var pipelineSteps = [];
             for (var p = 0; p < run.steps.length; p++) {
                 var s = run.steps[p];
@@ -566,7 +566,7 @@
                 else if (s.status === "skipped" || s.status === "cancelled") { pipelineStatus = "pending"; }
                 pipelineSteps.push({name: s.name, status: pipelineStatus});
             }
-            ICDEV™.createProgressPipeline("batch-pipeline", pipelineSteps);
+            ICDEV.createProgressPipeline("batch-pipeline", pipelineSteps);
         }
 
         // Attach cancel button handler
@@ -579,8 +579,8 @@
                 fetch("/api/batch/cancel/" + encodeURIComponent(_currentRunId), { method: "POST" })
                     .then(function (resp) { return resp.json(); })
                     .then(function () {
-                        if (ICDEV™.showNotification) {
-                            ICDEV™.showNotification("Cancel requested — finishing current step", "warning");
+                        if (ICDEV.showNotification) {
+                            ICDEV.showNotification("Cancel requested — finishing current step", "warning");
                         }
                     })
                     .catch(function () {
@@ -603,11 +603,11 @@
 
     function onBatchComplete(run) {
         _currentRunId = null;
-        if (!ICDEV™.showNotification) {
+        if (!ICDEV.showNotification) {
             return;
         }
         if (run.status === "cancelled") {
-            ICDEV™.showNotification(run.batch_name + " was cancelled", "warning", 5000);
+            ICDEV.showNotification(run.batch_name + " was cancelled", "warning", 5000);
             return;
         }
         var failed = 0, skipped = 0;
@@ -618,19 +618,19 @@
         }
         var passed = total - failed - skipped;
         if (failed === 0 && skipped === 0) {
-            ICDEV™.showNotification(
+            ICDEV.showNotification(
                 run.batch_name + " completed successfully (" + total + "/" + total + " steps)",
                 "success",
                 6000
             );
         } else if (run.status === "stopped_on_failure") {
-            ICDEV™.showNotification(
+            ICDEV.showNotification(
                 run.batch_name + " stopped on failure (" + passed + " passed, " + failed + " failed, " + skipped + " skipped)",
                 "error",
                 8000
             );
         } else {
-            ICDEV™.showNotification(
+            ICDEV.showNotification(
                 run.batch_name + " finished with " + failed + " failed step" + (failed > 1 ? "s" : "") +
                 " (" + passed + "/" + total + " passed)",
                 "warning",
@@ -643,9 +643,9 @@
     // HELPERS
     // ========================================================================
 
-    /** Delegate to shared ICDEV™.escapeHTML (api.js). */
+    /** Delegate to shared ICDEV.escapeHTML (api.js). */
     function escapeHTML(str) {
-        return ICDEV™.escapeHTML ? ICDEV™.escapeHTML(str) : String(str || "");
+        return ICDEV.escapeHTML ? ICDEV.escapeHTML(str) : String(str || "");
     }
 
     function escapeAttr(str) {
@@ -801,9 +801,9 @@
     }
 
     // Expose for external use
-    ICDEV™.batchLoadCatalog = loadCatalog;
-    ICDEV™.batchStartBatch = startBatch;
-    ICDEV™.batchLoadHistory = loadHistory;
+    ICDEV.batchLoadCatalog = loadCatalog;
+    ICDEV.batchStartBatch = startBatch;
+    ICDEV.batchLoadHistory = loadHistory;
 
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", init);

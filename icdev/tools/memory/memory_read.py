@@ -3,15 +3,13 @@
 """Read all memory: MEMORY.md + recent daily logs + DB entries."""
 
 import argparse
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from datetime import datetime, timedelta
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
-DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
 def read_memory_file():
@@ -32,9 +30,7 @@ def read_recent_logs(days=2):
 
 
 def read_db_recent(limit=10, user_id=None, tenant_id=None):
-    if not DB_PATH.exists():
-        return []
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT content, type, importance, created_at FROM memory_entries WHERE 1=1"

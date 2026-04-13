@@ -7,7 +7,7 @@ are left untouched to avoid mass-refactor risk. New code SHOULD use these
 exceptions for categorized error handling.
 
 Usage:
-    from icdev.tools.resilience.errors import ICDevTransientError, ServiceUnavailableError
+    from tools.resilience.errors import ICDevTransientError, ServiceUnavailableError
 
     raise ICDevTransientError("Bedrock throttled", service="bedrock", retryable=True)
 """

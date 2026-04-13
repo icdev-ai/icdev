@@ -16,20 +16,22 @@ Usage:
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
-    from icdev.tools.audit.audit_logger import log_event
+    from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
-    def log_event(**kwargs): return -1
+
+    def log_event(**kwargs):
+        return -1
 
 
 FRAMEWORK_KEYWORDS = {
@@ -53,8 +55,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -64,30 +65,26 @@ def _load_weights():
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
                 return cfg.get("ricoas", {}).get("readiness_weights", {})
         except ImportError:
             pass
-    return {"completeness": 0.25, "clarity": 0.25, "feasibility": 0.20,
-            "compliance": 0.15, "testability": 0.15}
+    return {"completeness": 0.25, "clarity": 0.25, "feasibility": 0.20, "compliance": 0.15, "testability": 0.15}
 
 
 def score_readiness(session_id: str, db_path=None) -> dict:
     """Calculate multi-dimensional readiness score for a session."""
     conn = _get_connection(db_path)
 
-    session = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
 
     session_data = dict(session)
-    reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ?", (session_id,)
-    ).fetchall()
+    reqs = conn.execute("SELECT * FROM intake_requirements WHERE session_id = ?", (session_id,)).fetchall()
     reqs = [dict(r) for r in reqs]
     total = len(reqs)
 
@@ -110,8 +107,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     amb_count = session_data.get("ambiguity_count", 0)
     flagged = context.get("flagged_ambiguities", [])
     turn_row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_conversation "
-        "WHERE session_id = ? AND role = 'customer'",
+        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = ? AND role = 'customer'",
         (session_id,),
     ).fetchone()
     turn_count = turn_row["cnt"] if turn_row else 0
@@ -153,25 +149,27 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     devsecops_readiness = 0.0
     try:
         devsecops_profile = conn.execute(
-            "SELECT maturity_level FROM devsecops_profiles WHERE project_id = ? "
-            "ORDER BY created_at DESC LIMIT 1",
+            "SELECT maturity_level FROM devsecops_profiles WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
             (session_data.get("project_id", ""),),
         ).fetchone()
         if devsecops_profile:
-            level_map = {"level_1_initial": 0.2, "level_2_managed": 0.4,
-                         "level_3_defined": 0.6, "level_4_measured": 0.8,
-                         "level_5_optimizing": 1.0}
-            devsecops_readiness = level_map.get(
-                devsecops_profile["maturity_level"], 0.0)
+            level_map = {
+                "level_1_initial": 0.2,
+                "level_2_managed": 0.4,
+                "level_3_defined": 0.6,
+                "level_4_measured": 0.8,
+                "level_5_optimizing": 1.0,
+            }
+            devsecops_readiness = level_map.get(devsecops_profile["maturity_level"], 0.0)
     except Exception:
         pass
 
     # --- AI Governance Readiness (D323) ---
     ai_governance_readiness = 0.0
     try:
-        from icdev.tools.requirements.ai_governance_scorer import score_ai_governance_readiness
-        gov_result = score_ai_governance_readiness(
-            session_data.get("project_id", ""), conn=conn)
+        from tools.requirements.ai_governance_scorer import score_ai_governance_readiness
+
+        gov_result = score_ai_governance_readiness(session_data.get("project_id", ""), conn=conn)
         ai_governance_readiness = gov_result.get("score", 0.0)
     except (ImportError, Exception):
         pass
@@ -189,8 +187,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
     # Get turn number for tracking
     last_turn = conn.execute(
-        "SELECT MAX(turn_number) as mt FROM intake_conversation WHERE session_id = ?",
-        (session_id,)
+        "SELECT MAX(turn_number) as mt FROM intake_conversation WHERE session_id = ?", (session_id,)
     ).fetchone()
     turn_num = last_turn["mt"] if last_turn else 0
 
@@ -201,10 +198,19 @@ def score_readiness(session_id: str, db_path=None) -> dict:
             feasibility, compliance, testability, gap_count, ambiguity_count,
             requirement_count)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (session_id, turn_num, round(overall, 4), round(completeness, 4),
-         round(clarity, 4), round(feasibility, 4), round(compliance, 4),
-         round(testability, 4), session_data.get("gap_count", 0),
-         amb_count, total),
+        (
+            session_id,
+            turn_num,
+            round(overall, 4),
+            round(completeness, 4),
+            round(clarity, 4),
+            round(feasibility, 4),
+            round(compliance, 4),
+            round(testability, 4),
+            session_data.get("gap_count", 0),
+            amb_count,
+            total,
+        ),
     )
 
     # Update session
@@ -212,11 +218,20 @@ def score_readiness(session_id: str, db_path=None) -> dict:
         """UPDATE intake_sessions
            SET readiness_score = ?, readiness_breakdown = ?, updated_at = ?
            WHERE id = ?""",
-        (round(overall, 4),
-         json.dumps({"completeness": round(completeness, 4), "clarity": round(clarity, 4),
-                      "feasibility": round(feasibility, 4), "compliance": round(compliance, 4),
-                      "testability": round(testability, 4)}),
-         datetime.now(timezone.utc).isoformat(), session_id),
+        (
+            round(overall, 4),
+            json.dumps(
+                {
+                    "completeness": round(completeness, 4),
+                    "clarity": round(clarity, 4),
+                    "feasibility": round(feasibility, 4),
+                    "compliance": round(compliance, 4),
+                    "testability": round(testability, 4),
+                }
+            ),
+            datetime.now(timezone.utc).isoformat(),
+            session_id,
+        ),
     )
 
     conn.commit()
@@ -232,9 +247,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
         )
 
     threshold = 0.7
-    recommendation = "proceed" if overall >= threshold else (
-        "gather_more" if overall >= 0.4 else "critical_gaps"
-    )
+    recommendation = "proceed" if overall >= threshold else ("gather_more" if overall >= 0.4 else "critical_gaps")
 
     return {
         "status": "ok",
@@ -246,8 +259,14 @@ def score_readiness(session_id: str, db_path=None) -> dict:
             "feasibility": {"score": round(feasibility, 4), "weight": weights.get("feasibility", 0.20)},
             "compliance": {"score": round(compliance, 4), "weight": weights.get("compliance", 0.15)},
             "testability": {"score": round(testability, 4), "weight": weights.get("testability", 0.15)},
-            "devsecops_readiness": {"score": round(devsecops_readiness, 4), "weight": weights.get("devsecops_readiness", 0.0)},
-            "ai_governance_readiness": {"score": round(ai_governance_readiness, 4), "weight": weights.get("ai_governance_readiness", 0.0)},
+            "devsecops_readiness": {
+                "score": round(devsecops_readiness, 4),
+                "weight": weights.get("devsecops_readiness", 0.0),
+            },
+            "ai_governance_readiness": {
+                "score": round(ai_governance_readiness, 4),
+                "weight": weights.get("ai_governance_readiness", 0.0),
+            },
         },
         "requirement_count": total,
         "types_present": list(types_present),

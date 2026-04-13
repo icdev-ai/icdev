@@ -1,183 +1,256 @@
-# [TEMPLATE: CUI // SP-CTI]
-# ICDEV™ Testing Data Types
-# Adapted from ADW data_types.py for Gov/DoD testing workflows
+# CUI // SP-CTI
+"""ICDEV™ testing framework data models.
 
-"""Pydantic data models for ICDEV™ testing framework.
+The structured shapes returned by every tool under ``tools/testing/``
+plus a few request/response shapes used by the Claude Code agent
+helpers.
 
-Provides structured types for unit test results, E2E test results,
-health checks, compliance gate results, and test orchestration state.
+Pydantic is used when available; the module falls back to a tiny
+in-house ``BaseModel`` shim so the framework still imports on hosts
+without pydantic installed. Both code paths share the same field
+defaults — including the **independent** list defaults that fix the
+historical shared-mutable-default bug.
+
+Implements the contract documented in
+``docs/rewrite/adw/specs/tools/testing/data_types.md`` (OPT-75 Phase 3
+clean-room rewrite).
 """
+from __future__ import annotations
 
-from typing import Optional, List, Dict, Any, Literal
+import json
+from typing import Any, Dict, List, Literal, Optional
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Pydantic ↔ shim
+# ────────────────────────────────────────────────────────────────────────────
 
 try:
-    from pydantic import BaseModel, Field
-except ImportError:
-    # Fallback for environments without pydantic
-    class BaseModel:
-        def __init__(self, **kwargs):
+    from pydantic import BaseModel  # type: ignore
+    from pydantic import Field as _PydField  # type: ignore
+
+    # Re-export so call sites can `from tools.testing.data_types import Field`.
+    Field = _PydField  # noqa: N816 — alias intentional
+    _USING_PYDANTIC = True
+except ImportError:  # pragma: no cover - exercised in shim-only envs
+    _USING_PYDANTIC = False
+
+    class BaseModel:  # type: ignore[no-redef]
+        """Minimal shim so the testing framework imports without pydantic.
+
+        Models that depend on this shim must call ``super().__init__``
+        in their own ``__init__`` (or omit ``__init__`` entirely and
+        let the shim populate from kwargs).
+        """
+
+        def __init__(self, **kwargs: Any) -> None:
+            # Pull every declared default from the class so callers don't
+            # have to set every field. Mutable defaults are deep-copied
+            # so two instances never share a list/dict reference — this
+            # is the bug that the spec acceptance check 6 calls out.
+            for name, default in self.__class__._field_defaults().items():
+                if name in kwargs:
+                    setattr(self, name, kwargs[name])
+                else:
+                    setattr(self, name, _clone_default(default))
+            # Allow ad-hoc unknown kwargs without raising — matches the
+            # shim's old behaviour.
             for k, v in kwargs.items():
-                setattr(self, k, v)
-        def model_dump(self):
-            return self.__dict__
-        def model_dump_json(self, indent=None):
-            import json
-            return json.dumps(self.__dict__, indent=indent, default=str)
+                if not hasattr(self, k):
+                    setattr(self, k, v)
 
-    def Field(*args, **kwargs):
-        return kwargs.get('default', None)
+        @classmethod
+        def _field_defaults(cls) -> Dict[str, Any]:
+            # Walk the MRO and gather class-level annotations + defaults.
+            collected: Dict[str, Any] = {}
+            for klass in reversed(cls.__mro__):
+                if klass is object or klass is BaseModel:
+                    continue
+                annotations = getattr(klass, "__annotations__", {}) or {}
+                for name in annotations:
+                    if name in collected:
+                        continue
+                    collected[name] = getattr(klass, name, None)
+            return collected
+
+        def model_dump(self) -> Dict[str, Any]:
+            return dict(self.__dict__)
+
+        def model_dump_json(self, indent: Optional[int] = None) -> str:
+            return json.dumps(
+                self.__dict__, indent=indent, default=str
+            )
+
+    def Field(*args: Any, **kwargs: Any) -> Any:  # type: ignore[no-redef]
+        return kwargs.get("default", None)
 
 
-# --- Test Result Types (adapted from ADW TestResult / E2ETestResult) ---
+def _clone_default(value: Any) -> Any:
+    """Return a fresh copy of a mutable default so model instances do
+    not share state. Scalars and immutables are returned as-is."""
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, set):
+        return set(value)
+    return value
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Test result types
+# ────────────────────────────────────────────────────────────────────────────
+
+
+_TestType = Literal["unit", "integration", "bdd", "security", "compliance"]
+_E2EStatus = Literal["passed", "failed"]
+_GateType = Literal["code_review", "merge", "deploy"]
+_GateSeverity = Literal["blocking", "warning", "info"]
+_AgentModel = Literal["sonnet", "opus", "haiku"]
+_AcceptanceStatus = Literal["verified", "failed", "unverified"]
+_EvidenceType = Literal[
+    "unit_test", "bdd_test", "e2e_test", "page_check", "manual"
+]
+
 
 class TestResult(BaseModel):
-    """Individual test result from unit/integration test execution.
+    """A single result from a unit, integration, or compliance test."""
 
-    Mirrors ADW TestResult pattern with added NIST compliance fields.
-    """
-    test_name: str
-    passed: bool
-    execution_command: str
-    test_purpose: str
+    test_name: str = ""
+    passed: bool = False
+    execution_command: str = ""
+    test_purpose: str = ""
     error: Optional[str] = None
-    # ICDEV™ additions
-    test_type: Literal["unit", "integration", "bdd", "security", "compliance"] = "unit"
+    test_type: _TestType = "unit"
     duration_ms: Optional[int] = None
-    nist_controls: List[str] = []  # Controls satisfied by this test (e.g., ["SA-11"])
+    nist_controls: List[str] = []
 
 
 class E2ETestResult(BaseModel):
-    """Individual E2E test result from browser automation via Playwright MCP.
+    """A single result from a Playwright/Selenium E2E test."""
 
-    Mirrors ADW E2ETestResult pattern with screenshots and CUI marking verification.
-    """
-    test_name: str
-    status: Literal["passed", "failed"]
-    test_path: str  # Path to the .md test spec file
+    test_name: str = ""
+    status: _E2EStatus = "failed"
+    test_path: str = ""
     screenshots: List[str] = []
     error: Optional[str] = None
-    # ICDEV™ additions
-    cui_banners_verified: bool = False  # Whether CUI banners were checked in UI
+    cui_banners_verified: bool = False
     video_path: Optional[str] = None
-    # Vision-based screenshot validation (Phase 23)
     vision_analysis: Optional[List[Dict[str, Any]]] = None
 
     @property
     def passed(self) -> bool:
-        """Check if test passed."""
         return self.status == "passed"
 
 
-# --- Health Check Types (adapted from ADW health_check.py) ---
+# ────────────────────────────────────────────────────────────────────────────
+# Health check types
+# ────────────────────────────────────────────────────────────────────────────
+
 
 class CheckResult(BaseModel):
-    """Individual health check result."""
-    success: bool
+    success: bool = False
     error: Optional[str] = None
     warning: Optional[str] = None
     details: Dict[str, Any] = {}
 
 
 class HealthCheckResult(BaseModel):
-    """Aggregate health check results for the ICDEV™ system."""
-    success: bool
-    timestamp: str
+    success: bool = False
+    timestamp: str = ""
     checks: Dict[str, CheckResult] = {}
     warnings: List[str] = []
     errors: List[str] = []
 
 
-# --- Compliance Gate Types (ICDEV™-specific) ---
+# ────────────────────────────────────────────────────────────────────────────
+# Compliance gate types
+# ────────────────────────────────────────────────────────────────────────────
+
 
 class GateResult(BaseModel):
-    """Result of a single security/compliance gate evaluation."""
-    gate_name: str
-    passed: bool
-    severity: Literal["blocking", "warning", "info"] = "blocking"
+    gate_name: str = ""
+    passed: bool = False
+    severity: _GateSeverity = "blocking"
     details: str = ""
     nist_control: Optional[str] = None
 
 
 class GateEvaluation(BaseModel):
-    """Aggregate gate evaluation result for code review / merge / deploy."""
-    gate_type: Literal["code_review", "merge", "deploy"]
-    overall_pass: bool
+    gate_type: _GateType = "code_review"
+    overall_pass: bool = False
     gates: List[GateResult] = []
     timestamp: str = ""
     project_id: Optional[str] = None
     evaluated_by: str = "icdev-testing"
 
 
-# --- Test Orchestration State (adapted from ADW ADWStateData) ---
+# ────────────────────────────────────────────────────────────────────────────
+# Test orchestration state
+# ────────────────────────────────────────────────────────────────────────────
+
 
 class TestRunState(BaseModel):
-    """Persistent state for a test orchestration run.
-
-    Stored in .tmp/test_runs/{run_id}/state.json
-    """
-    run_id: str
+    run_id: str = ""
     project_id: Optional[str] = None
     project_dir: Optional[str] = None
     branch_name: Optional[str] = None
-    # Test counts
     unit_passed: int = 0
     unit_failed: int = 0
     bdd_passed: int = 0
     bdd_failed: int = 0
     e2e_passed: int = 0
     e2e_failed: int = 0
-    # Gate results
     security_gate_passed: Optional[bool] = None
     compliance_gate_passed: Optional[bool] = None
-    # Timing
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
-    # Retry tracking
     unit_attempts: int = 0
     e2e_attempts: int = 0
 
 
-# --- Agent Execution Types (adapted from ADW agent types) ---
+# ────────────────────────────────────────────────────────────────────────────
+# Agent execution types
+# ────────────────────────────────────────────────────────────────────────────
+
 
 class AgentPromptRequest(BaseModel):
-    """Request to execute a Claude Code agent prompt."""
-    prompt: str
+    prompt: str = ""
     agent_name: str = "ops"
-    model: Literal["sonnet", "opus", "haiku"] = "sonnet"
+    model: _AgentModel = "sonnet"
     output_file: str = ""
     project_dir: str = "."
 
 
 class AgentPromptResponse(BaseModel):
-    """Response from a Claude Code agent execution."""
-    output: str
-    success: bool
+    output: str = ""
+    success: bool = False
     session_id: Optional[str] = None
     duration_ms: Optional[int] = None
 
 
 class AgentTemplateRequest(BaseModel):
-    """Request to execute a Claude Code skill/slash command."""
-    agent_name: str
-    slash_command: str  # e.g., "/icdev-test", "/icdev-secure"
+    agent_name: str = ""
+    slash_command: str = ""
     args: List[str] = []
     run_id: str = ""
-    model: Literal["sonnet", "opus", "haiku"] = "sonnet"
+    model: _AgentModel = "sonnet"
 
 
-# --- Acceptance Validation Types (V&V Gate) ---
+# ────────────────────────────────────────────────────────────────────────────
+# Acceptance validation (V&V gate)
+# ────────────────────────────────────────────────────────────────────────────
+
 
 class AcceptanceCriterionResult(BaseModel):
-    """Result of validating a single acceptance criterion against test evidence."""
-    criterion: str
-    status: Literal["verified", "failed", "unverified"] = "unverified"
-    evidence_type: Optional[Literal["unit_test", "bdd_test", "e2e_test", "page_check", "manual"]] = None
+    criterion: str = ""
+    status: _AcceptanceStatus = "unverified"
+    evidence_type: Optional[_EvidenceType] = None
     evidence_detail: str = ""
 
 
 class UIPageCheckResult(BaseModel):
-    """Result of checking a rendered page for error patterns (deterministic DOM check)."""
-    url: str
+    url: str = ""
     status_code: int = 0
     has_errors: bool = False
     error_patterns_found: List[str] = []
@@ -185,8 +258,7 @@ class UIPageCheckResult(BaseModel):
 
 
 class AcceptanceReport(BaseModel):
-    """Full acceptance validation report — gate artifact for V&V."""
-    plan_file: str
+    plan_file: str = ""
     criteria_count: int = 0
     criteria_verified: int = 0
     criteria_failed: int = 0

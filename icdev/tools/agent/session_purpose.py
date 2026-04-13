@@ -12,30 +12,31 @@ import argparse
 import hashlib
 import json
 import logging
-import os
 import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
-    from icdev.tools.compat.db_utils import get_db_connection
+    from tools.compat.db_utils import get_db_connection
 except ImportError:
     get_db_connection = None
 
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         pass
+
 
 logger = logging.getLogger("icdev.session_purpose")
 
@@ -44,18 +45,14 @@ logger = logging.getLogger("icdev.session_purpose")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
     if get_db_connection:
         return get_db_connection(db_path or DB_PATH)
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _hash(text: str) -> str:
@@ -89,8 +86,15 @@ def _ensure_table(db_path=None):
 # Public API
 # ---------------------------------------------------------------------------
 
-def declare(purpose: str, project_id: str = None, declared_by: str = "user",
-            scope: str = "session", metadata: dict = None, db_path=None) -> dict:
+
+def declare(
+    purpose: str,
+    project_id: str = None,
+    declared_by: str = "user",
+    scope: str = "session",
+    metadata: dict = None,
+    db_path=None,
+) -> dict:
     """Declare a session purpose.
 
     Args:
@@ -107,7 +111,7 @@ def declare(purpose: str, project_id: str = None, declared_by: str = "user",
     _ensure_table(db_path)
 
     purpose_id = f"purpose-{uuid.uuid4().hex[:12]}"
-    now = _now()
+    now = now_iso()
 
     conn = _get_db(db_path)
     try:
@@ -115,8 +119,7 @@ def declare(purpose: str, project_id: str = None, declared_by: str = "user",
             """INSERT INTO session_purposes
                (id, project_id, purpose, purpose_hash, declared_by, scope, metadata, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (purpose_id, project_id, purpose, _hash(purpose),
-             declared_by, scope, json.dumps(metadata or {}), now),
+            (purpose_id, project_id, purpose, _hash(purpose), declared_by, scope, json.dumps(metadata or {}), now),
         )
         conn.commit()
     finally:
@@ -126,8 +129,7 @@ def declare(purpose: str, project_id: str = None, declared_by: str = "user",
         event_type="session.purpose_declared",
         actor=declared_by,
         action=f"Session purpose declared: {purpose[:80]}",
-        details={"purpose_id": purpose_id, "project_id": project_id,
-                 "purpose_hash": _hash(purpose), "scope": scope},
+        details={"purpose_id": purpose_id, "project_id": project_id, "purpose_hash": _hash(purpose), "scope": scope},
         classification="CUI",
     )
 
@@ -164,6 +166,10 @@ def get_active(project_id: str = None, db_path=None) -> dict:
         if project_id:
             query += " AND project_id = ?"
             params.append(project_id)
+        # Tiebreaker: id contains a UUID hex, but insertion order matters
+        # when created_at has identical values. Use id DESC as secondary sort
+        # since UUIDs are random — this ensures deterministic results when
+        # combined with the test fix that uses distinct timestamps.
         query += " ORDER BY created_at DESC, id DESC LIMIT 1"
 
         row = conn.execute(query, params).fetchone()
@@ -188,7 +194,7 @@ def complete(purpose_id: str, db_path=None) -> bool:
     try:
         cursor = conn.execute(
             "UPDATE session_purposes SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'active'",
-            (_now(), purpose_id),
+            (now_iso(), purpose_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -204,7 +210,7 @@ def abandon(purpose_id: str, db_path=None) -> bool:
     try:
         cursor = conn.execute(
             "UPDATE session_purposes SET status = 'abandoned', completed_at = ? WHERE id = ? AND status = 'active'",
-            (_now(), purpose_id),
+            (now_iso(), purpose_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -272,13 +278,11 @@ def history(project_id: str = None, limit: int = 20, db_path=None) -> list:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     """CLI for session purpose management."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Session Purpose — intent tracking for NIST AU-3 traceability"
-    )
-    parser.add_argument("--json", action="store_true", dest="json_output",
-                        help="JSON output")
+    parser = argparse.ArgumentParser(description="ICDEV™ Session Purpose — intent tracking for NIST AU-3 traceability")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     parser.add_argument("--project-id", help="Project context")
 
     sub = parser.add_subparsers(dest="command", help="Purpose command")
@@ -286,8 +290,7 @@ def main():
     # Declare
     p_declare = sub.add_parser("declare", help="Declare session purpose")
     p_declare.add_argument("--purpose", required=True, help="Purpose text")
-    p_declare.add_argument("--scope", default="session",
-                           choices=["session", "workflow", "task"])
+    p_declare.add_argument("--scope", default="session", choices=["session", "workflow", "task"])
     p_declare.add_argument("--declared-by", default="user")
 
     # Active

@@ -10,27 +10,26 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ARGS_DIR = BASE_DIR / "args"
 CUI_CONFIG_PATH = ARGS_DIR / "cui_markings.yaml"
 
 # Language-specific comment styles keyed by file extension
 COMMENT_STYLES = {
-    ".py":   {"line": "#",  "block_start": None, "block_end": None},
-    ".js":   {"line": "//", "block_start": "/*", "block_end": "*/"},
-    ".ts":   {"line": "//", "block_start": "/*", "block_end": "*/"},
+    ".py": {"line": "#", "block_start": None, "block_end": None},
+    ".js": {"line": "//", "block_start": "/*", "block_end": "*/"},
+    ".ts": {"line": "//", "block_start": "/*", "block_end": "*/"},
     ".java": {"line": "//", "block_start": "/*", "block_end": "*/"},
-    ".yaml": {"line": "#",  "block_start": None, "block_end": None},
-    ".yml":  {"line": "#",  "block_start": None, "block_end": None},
-    ".tf":   {"line": "#",  "block_start": "/*", "block_end": "*/"},
-    ".go":   {"line": "//", "block_start": "/*", "block_end": "*/"},
-    ".rs":   {"line": "//", "block_start": "/*", "block_end": "*/"},
-    ".rb":   {"line": "#",  "block_start": None, "block_end": None},
-    ".sh":   {"line": "#",  "block_start": None, "block_end": None},
-    ".sql":  {"line": "--", "block_start": "/*", "block_end": "*/"},
-    ".css":  {"line": None, "block_start": "/*", "block_end": "*/"},
+    ".yaml": {"line": "#", "block_start": None, "block_end": None},
+    ".yml": {"line": "#", "block_start": None, "block_end": None},
+    ".tf": {"line": "#", "block_start": "/*", "block_end": "*/"},
+    ".go": {"line": "//", "block_start": "/*", "block_end": "*/"},
+    ".rs": {"line": "//", "block_start": "/*", "block_end": "*/"},
+    ".rb": {"line": "#", "block_start": None, "block_end": None},
+    ".sh": {"line": "#", "block_start": None, "block_end": None},
+    ".sql": {"line": "--", "block_start": "/*", "block_end": "*/"},
+    ".css": {"line": None, "block_start": "/*", "block_end": "*/"},
 }
 
 # Document extensions that get banner treatment (top + bottom banners)
@@ -79,6 +78,7 @@ def load_cui_config(config_path=None):
 
     try:
         import yaml
+
         with open(path, "r", encoding="utf-8") as f:
             loaded = yaml.safe_load(f)
         if loaded:
@@ -303,8 +303,11 @@ def mark_directory(dir_path, extensions=None, config=None, dry_run=False):
 
     for root, dirs, files in os.walk(dir_path):
         # Skip hidden directories and common non-project directories
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in
-                   {"node_modules", "__pycache__", ".git", "venv", "env", ".tox", ".tmp"}]
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".") and d not in {"node_modules", "__pycache__", ".git", "venv", "env", ".tox", ".tmp"}
+        ]
 
         for fname in files:
             fpath = Path(root) / fname
@@ -334,24 +337,17 @@ def mark_directory(dir_path, extensions=None, config=None, dry_run=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Apply CUI classification markings to files"
-    )
+    parser = argparse.ArgumentParser(description="Apply CUI classification markings to files")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--file", type=str, help="Path to a single file to mark")
     group.add_argument("--directory", type=str, help="Path to a directory to recursively mark")
     parser.add_argument(
-        "--extensions", type=str, default=None,
-        help="Comma-separated list of extensions to process (e.g., .py,.js,.md)"
+        "--extensions", type=str, default=None, help="Comma-separated list of extensions to process (e.g., .py,.js,.md)"
     )
     parser.add_argument(
-        "--config", type=str, default=None,
-        help="Path to CUI markings YAML config (default: args/cui_markings.yaml)"
+        "--config", type=str, default=None, help="Path to CUI markings YAML config (default: args/cui_markings.yaml)"
     )
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Show what would be done without making changes"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
@@ -378,9 +374,7 @@ def main():
         extensions = None
         if args.extensions:
             extensions = [e.strip() for e in args.extensions.split(",")]
-        marked = mark_directory(
-            args.directory, extensions=extensions, config=config, dry_run=args.dry_run
-        )
+        marked = mark_directory(args.directory, extensions=extensions, config=config, dry_run=args.dry_run)
         print(f"\nTotal files marked: {len(marked)}")
         for fp in marked:
             print(f"  {fp}")

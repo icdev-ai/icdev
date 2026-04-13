@@ -17,13 +17,11 @@ Usage:
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import yaml
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 AGENT_CONFIG_PATH = BASE_DIR / "args" / "agent_config.yaml"
 
 # A2A protocol version
@@ -142,13 +140,15 @@ def generate_agent_card(agent_id: str, agent_config: dict = None) -> dict:
     # Build skills list
     skills = []
     for skill in AGENT_SKILLS.get(agent_id, []):
-        skills.append({
-            "id": skill["id"],
-            "name": skill["name"],
-            "description": skill["description"],
-            "inputModes": ["application/json"],
-            "outputModes": ["application/json"],
-        })
+        skills.append(
+            {
+                "id": skill["id"],
+                "name": skill["name"],
+                "description": skill["description"],
+                "inputModes": ["application/json"],
+                "outputModes": ["application/json"],
+            }
+        )
 
     # Build v0.3 Agent Card
     card = {
@@ -224,22 +224,22 @@ def list_agents() -> list:
     cards = generate_all_cards()
     agents = []
     for agent_id, card in sorted(cards.items()):
-        agents.append({
-            "agent_id": agent_id,
-            "name": card["name"],
-            "url": card["url"],
-            "protocol_version": card["protocolVersion"],
-            "skill_count": len(card["skills"]),
-            "tier": card["metadata"]["tier"],
-            "task_subscription": card["capabilities"].get("taskSubscription", False),
-        })
+        agents.append(
+            {
+                "agent_id": agent_id,
+                "name": card["name"],
+                "url": card["url"],
+                "protocol_version": card["protocolVersion"],
+                "skill_count": len(card["skills"]),
+                "tier": card["metadata"]["tier"],
+                "task_subscription": card["capabilities"].get("taskSubscription", False),
+            }
+        )
     return agents
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="A2A v0.3 Agent Card Generator (D344)"
-    )
+    parser = argparse.ArgumentParser(description="A2A v0.3 Agent Card Generator (D344)")
     parser.add_argument("--agent-id", help="Generate card for specific agent", dest="agent_id")
     parser.add_argument("--all", action="store_true", help="Generate cards for all agents")
     parser.add_argument("--list", action="store_true", help="List all agents")

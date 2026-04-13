@@ -5,20 +5,19 @@ Fills {{variables}} from project data in icdev.db, pulls control implementations
 from project_controls table, applies CUI markings, saves to project compliance
 directory, records in ssp_documents table, and logs an audit event."""
 
-from icdev._paths import get_project_root
 import argparse
 import json
 import re
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
-    from icdev.tools.compat.db_utils import get_db_connection
+    from tools.compat.db_utils import get_db_connection
 except ImportError:
     get_db_connection = None
 SSP_TEMPLATE_PATH = BASE_DIR / "context" / "compliance" / "ssp_template.md"
@@ -55,12 +54,8 @@ def _get_connection(db_path=None):
         return get_db_connection(db_path or DB_PATH, validate=True)
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -84,9 +79,7 @@ def _load_nist_controls():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -173,7 +166,6 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
         "system_name": system_name or project.get("name", "UNNAMED SYSTEM"),
         "system_abbreviation": "",
         "system_id": project.get("id", ""),
-
         # Section 2 — dynamic from FIPS 199
         "confidentiality_impact": conf_impact,
         "integrity_impact": int_impact,
@@ -181,7 +173,6 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
         "overall_categorization": overall,
         "cui_category": "CTI",
         "cui_designation": "CUI // SP-CTI",
-
         # Section 3
         "system_owner_name": "{{system_owner_name}}",
         "system_owner_title": "{{system_owner_title}}",
@@ -189,28 +180,23 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
         "system_owner_address": "{{system_owner_address}}",
         "system_owner_email": "{{system_owner_email}}",
         "system_owner_phone": "{{system_owner_phone}}",
-
         # Section 4
         "authorizing_official_name": "{{authorizing_official_name}}",
         "authorizing_official_title": "{{authorizing_official_title}}",
         "authorizing_official_organization": "{{authorizing_official_organization}}",
         "authorizing_official_email": "{{authorizing_official_email}}",
         "authorizing_official_phone": "{{authorizing_official_phone}}",
-
         # Section 7
         "operational_status": "Under Development",
         "operational_date": "TBD",
         "authorization_date": "TBD",
         "authorization_termination_date": "TBD",
-
         # Section 8
         "system_type": project.get("type", "webapp"),
         "cloud_service_model": "PaaS",
         "cloud_deployment_model": "Government Community Cloud",
-
         # Section 9
         "system_purpose": project.get("description", "{{system_purpose}}"),
-
         # Section 12
         "fisma_applicability": "Applicable",
         "nist_800_53_applicability": f"Applicable — Rev 5 {baseline} Baseline",
@@ -219,11 +205,9 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
         "cmmc_applicability": "Level 2 Required",
         "dod_cui_applicability": "Applicable",
         "fedramp_applicability": "Aligned",
-
         # Section 13 — dynamic from FIPS 199
         "control_baseline": baseline,
         "impact_level": baseline,
-
         # Section 14
         "date_prepared": now.strftime("%Y-%m-%d"),
         "document_version": "1.0",
@@ -233,7 +217,6 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
         "version_1_date": now.strftime("%Y-%m-%d"),
         "version_1_author": "ICDEV™ Compliance Engine",
         "version_1_changes": "Initial SSP generation",
-
         # Classification
         "classification": "CUI // SP-CTI",
         "icdev_version": "1.0",
@@ -258,8 +241,7 @@ def _load_pre_generated_narratives(conn, project_id):
         return narratives
     try:
         rows = conn.execute(
-            "SELECT control_id, narrative_text FROM control_narratives "
-            "WHERE project_id = ? ORDER BY control_id",
+            "SELECT control_id, narrative_text FROM control_narratives WHERE project_id = ? ORDER BY control_id",
             (project_id,),
         ).fetchall()
         for row in rows:
@@ -339,19 +321,10 @@ def _build_family_summary(implementations, nist_controls):
     counts = {}
     for fam_code in CONTROL_FAMILIES:
         total_in_nist = sum(1 for cid in nist_controls if cid.startswith(f"{fam_code}-"))
-        family_impls = [
-            i for i in implementations if i["control_id"].startswith(f"{fam_code}-")
-        ]
-        implemented = sum(
-            1 for i in family_impls if i["implementation_status"] == "implemented"
-        )
-        planned = sum(
-            1 for i in family_impls
-            if i["implementation_status"] in ("planned", "partially_implemented")
-        )
-        na = sum(
-            1 for i in family_impls if i["implementation_status"] == "not_applicable"
-        )
+        family_impls = [i for i in implementations if i["control_id"].startswith(f"{fam_code}-")]
+        implemented = sum(1 for i in family_impls if i["implementation_status"] == "implemented")
+        planned = sum(1 for i in family_impls if i["implementation_status"] in ("planned", "partially_implemented"))
+        na = sum(1 for i in family_impls if i["implementation_status"] == "not_applicable")
 
         prefix = fam_code.lower()
         counts[f"{prefix}_total"] = str(total_in_nist)
@@ -360,18 +333,10 @@ def _build_family_summary(implementations, nist_controls):
         counts[f"{prefix}_na"] = str(na)
 
     # Overall totals
-    total_required = sum(
-        int(counts.get(f"{f.lower()}_total", "0")) for f in CONTROL_FAMILIES
-    )
-    total_implemented = sum(
-        int(counts.get(f"{f.lower()}_implemented", "0")) for f in CONTROL_FAMILIES
-    )
-    total_planned = sum(
-        int(counts.get(f"{f.lower()}_planned", "0")) for f in CONTROL_FAMILIES
-    )
-    total_na = sum(
-        int(counts.get(f"{f.lower()}_na", "0")) for f in CONTROL_FAMILIES
-    )
+    total_required = sum(int(counts.get(f"{f.lower()}_total", "0")) for f in CONTROL_FAMILIES)
+    total_implemented = sum(int(counts.get(f"{f.lower()}_implemented", "0")) for f in CONTROL_FAMILIES)
+    total_planned = sum(int(counts.get(f"{f.lower()}_planned", "0")) for f in CONTROL_FAMILIES)
+    total_na = sum(int(counts.get(f"{f.lower()}_na", "0")) for f in CONTROL_FAMILIES)
 
     counts["total_controls_required"] = str(total_required)
     counts["controls_implemented"] = str(total_implemented)
@@ -383,9 +348,11 @@ def _build_family_summary(implementations, nist_controls):
 
 def _substitute_variables(template, variables):
     """Replace {{variable_name}} placeholders in the template with actual values."""
+
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
+
     return re.sub(r"\{\{(\w+)\}\}", replacer, template)
 
 
@@ -448,9 +415,7 @@ def generate_ssp(
         implementations = _get_control_implementations(conn, project_id)
 
         # Build variables dict (conn passed for dynamic FIPS 199 baseline)
-        variables = _build_system_info(
-            project, system_name or project.get("name"), system_info, conn=conn
-        )
+        variables = _build_system_info(project, system_name or project.get("name"), system_info, conn=conn)
 
         # Build control family summary counts
         family_counts = _build_family_summary(implementations, nist_controls)
@@ -458,9 +423,7 @@ def generate_ssp(
 
         # Build Section 15 control implementation narratives
         # Checks control_narratives table for pre-generated narratives first
-        control_section = _build_control_section(
-            implementations, nist_controls, conn=conn, project_id=project_id
-        )
+        control_section = _build_control_section(implementations, nist_controls, conn=conn, project_id=project_id)
         variables["control_implementations"] = control_section
 
         # Substitute all variables in template
@@ -512,12 +475,18 @@ def generate_ssp(
         conn.commit()
 
         # Log audit event
-        _log_audit_event(conn, project_id, f"SSP v{new_version} generated", {
-            "version": new_version,
-            "system_name": variables["system_name"],
-            "controls_mapped": len(implementations),
-            "output_file": str(out_file),
-        }, out_file)
+        _log_audit_event(
+            conn,
+            project_id,
+            f"SSP v{new_version} generated",
+            {
+                "version": new_version,
+                "system_name": variables["system_name"],
+                "controls_mapped": len(implementations),
+                "output_file": str(out_file),
+            },
+            out_file,
+        )
 
         print("SSP generated successfully:")
         print(f"  File: {out_file}")
@@ -532,17 +501,13 @@ def generate_ssp(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate a System Security Plan (SSP)"
-    )
+    parser = argparse.ArgumentParser(description="Generate a System Security Plan (SSP)")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--system-name", help="System name (overrides project name)")
     parser.add_argument("--template", help="Path to SSP template")
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
-    parser.add_argument(
-        "--system-info", help="JSON string of additional variable overrides"
-    )
+    parser.add_argument("--system-info", help="JSON string of additional variable overrides")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 

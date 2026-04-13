@@ -18,15 +18,15 @@ Usage:
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 SKILLS_DIR = BASE_DIR / ".claude" / "skills"
 
 
 # ── Skill Parser ────────────────────────────────────────────────────────
+
 
 def parse_claude_skill(skill_dir):
     """Parse a .claude/skills/*/SKILL.md into structured data.
@@ -82,6 +82,8 @@ def parse_claude_skill(skill_dir):
             if current_step:
                 steps.append({"title": current_step, "body": "\n".join(step_lines).strip()})
             in_steps = False
+            current_step = None
+            step_lines = []
             continue
         if in_steps:
             m = step_pattern.match(line)
@@ -95,9 +97,26 @@ def parse_claude_skill(skill_dir):
     if current_step:
         steps.append({"title": current_step, "body": "\n".join(step_lines).strip()})
 
+    # Derive description: frontmatter > ## Description section > first intro paragraph
+    _desc = frontmatter.get("description", "").strip()
+    if not _desc:
+        _raw = sections.get("description", "").replace("\n", " ").strip()
+        if not _raw:
+            for _ln in sections.get("intro", "").split("\n"):
+                _ln = _ln.strip()
+                if _ln and not _ln.startswith("#"):
+                    _raw = _ln
+                    break
+        if _raw:
+            if len(_raw) > 800:
+                _raw = _raw[:797] + "..."
+            if "Use when" not in _raw:
+                _raw += f" Use when invoking /{Path(skill_dir).name}."
+            _desc = _raw
+
     return {
         "name": frontmatter.get("name", Path(skill_dir).name),
-        "description": frontmatter.get("description", ""),
+        "description": _desc,
         "context": frontmatter.get("context", "fork"),
         "allowed_tools": frontmatter.get("allowed-tools", ""),
         "usage": sections.get("usage", ""),
@@ -116,13 +135,11 @@ def list_skills(skills_dir=None):
     sd = Path(skills_dir) if skills_dir else SKILLS_DIR
     if not sd.exists():
         return []
-    return sorted([
-        d.name for d in sd.iterdir()
-        if d.is_dir() and (d / "SKILL.md").exists()
-    ])
+    return sorted([d.name for d in sd.iterdir() if d.is_dir() and (d / "SKILL.md").exists()])
 
 
 # ── Translators ─────────────────────────────────────────────────────────
+
 
 def _translate_to_codex_skill(skill_data):
     """Generate .agents/skills/{name}/SKILL.md for OpenAI Codex.
@@ -187,7 +204,7 @@ def _translate_to_copilot_prompt(skill_data):
     lines = [
         "---",
         "mode: agent",
-        f"description: \"{desc}\"",
+        f'description: "{desc}"',
         "tools:",
         "  - terminal",
         "  - file_search",
@@ -220,7 +237,7 @@ def _translate_to_copilot_prompt(skill_data):
                     lines.append(block)
             else:
                 # Include first 3 lines of body
-                body_lines = [l for l in body.split("\n") if l.strip()][:3]
+                body_lines = [ln for ln in body.split("\n") if ln.strip()][:3]
                 lines.extend(body_lines)
             lines.append("")
 
@@ -243,7 +260,7 @@ def _translate_to_cursor_rule(skill_data):
 
     lines = [
         "---",
-        f"description: \"ICDEV™ workflow: {desc}\"",
+        f'description: "ICDEV™ workflow: {desc}"',
         "globs:",
         '  - "**/*.py"',
         '  - "**/*.yaml"',
@@ -266,9 +283,9 @@ def _translate_to_cursor_rule(skill_data):
                 for cmd in commands:
                     for cmd_line in cmd.strip().split("\n"):
                         if cmd_line.strip() and not cmd_line.startswith("#"):
-                            lines.append(f"   ```bash")
+                            lines.append("   ```bash")
                             lines.append(f"   {cmd_line.strip()}")
-                            lines.append(f"   ```")
+                            lines.append("   ```")
             else:
                 # Summarize the step
                 summary = re.sub(
@@ -293,8 +310,7 @@ TRANSLATORS = {
 }
 
 
-def translate_skills(directory=None, platforms=None, skills=None,
-                     write=False, dry_run=False):
+def translate_skills(directory=None, platforms=None, skills=None, write=False, dry_run=False):
     """Translate Claude Code skills to other tool formats.
 
     Args:
@@ -363,9 +379,7 @@ def translate_skills(directory=None, platforms=None, skills=None,
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Translate Claude Code skills to other AI tool formats"
-    )
+    parser = argparse.ArgumentParser(description="Translate Claude Code skills to other AI tool formats")
     parser.add_argument("--dir", help="Project directory")
     parser.add_argument("--platform", help="Comma-separated platform IDs")
     parser.add_argument("--all", action="store_true", help="All platforms")
@@ -386,14 +400,15 @@ def main():
                 print(f"  - {s}")
         return
 
-    platforms = ["all"] if args.all else (
-        [p.strip() for p in args.platform.split(",")] if args.platform else None
-    )
+    platforms = ["all"] if args.all else ([p.strip() for p in args.platform.split(",")] if args.platform else None)
     skills = [s.strip() for s in args.skills.split(",")] if args.skills else None
 
     results = translate_skills(
-        directory=args.dir, platforms=platforms, skills=skills,
-        write=args.write, dry_run=args.dry_run,
+        directory=args.dir,
+        platforms=platforms,
+        skills=skills,
+        write=args.write,
+        dry_run=args.dry_run,
     )
 
     if args.json:

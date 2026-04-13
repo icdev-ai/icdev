@@ -13,7 +13,7 @@ Configuration:
 
 Usage::
 
-    from icdev.tools.agent.dispatcher_mode import is_dispatcher_mode, is_tool_allowed
+    from tools.agent.dispatcher_mode import is_dispatcher_mode, is_tool_allowed
 
     if is_dispatcher_mode(project_id="proj-123"):
         if not is_tool_allowed("scaffold"):
@@ -27,18 +27,18 @@ CLI::
     python tools/agent/dispatcher_mode.py --disable --project-id proj-123
 """
 
-from icdev._paths import get_project_root
 import argparse
 import json
 import logging
 import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
+from tools.common.helpers import now_iso
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -51,16 +51,12 @@ logger = logging.getLogger("icdev.dispatcher_mode")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _now() -> str:
-    """Return current UTC timestamp as ISO-8601 string."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -88,12 +84,13 @@ def _ensure_table(db_path: Path = None):
         conn.close()
 
 
-def _audit(event_type: str, actor: str, action: str,
-           project_id: str = None, details: dict = None,
-           db_path: Path = None):
+def _audit(
+    event_type: str, actor: str, action: str, project_id: str = None, details: dict = None, db_path: Path = None
+):
     """Best-effort audit trail logging."""
     try:
-        from icdev.tools.audit.audit_logger import log_event
+        from tools.audit.audit_logger import log_event
+
         log_event(
             event_type=event_type,
             actor=actor,
@@ -127,10 +124,20 @@ def _load_dispatcher_config() -> dict:
             "prompt_chain_execute",
         ],
         "blocked_when_dispatching": [
-            "scaffold", "generate_code", "write_tests", "run_tests",
-            "lint", "format", "ssp_generate", "poam_generate",
-            "stig_check", "sbom_generate", "terraform_plan",
-            "terraform_apply", "ansible_run", "k8s_deploy",
+            "scaffold",
+            "generate_code",
+            "write_tests",
+            "run_tests",
+            "lint",
+            "format",
+            "ssp_generate",
+            "poam_generate",
+            "stig_check",
+            "sbom_generate",
+            "terraform_plan",
+            "terraform_apply",
+            "ansible_run",
+            "k8s_deploy",
         ],
     }
 
@@ -140,6 +147,7 @@ def _load_dispatcher_config() -> dict:
 
     try:
         import yaml
+
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f) or {}
 
@@ -278,8 +286,7 @@ def get_blocked_tools(project_id: str = None, db_path: Path = None) -> List[str]
     return blocked_tools
 
 
-def is_tool_allowed(tool_name: str, project_id: str = None,
-                    db_path: Path = None) -> bool:
+def is_tool_allowed(tool_name: str, project_id: str = None, db_path: Path = None) -> bool:
     """Check if a specific tool is allowed for the orchestrator.
 
     When dispatcher mode is disabled, all tools are allowed.
@@ -312,9 +319,7 @@ def is_tool_allowed(tool_name: str, project_id: str = None,
     return False
 
 
-def filter_tools_for_dispatcher(tool_list: List[str],
-                                project_id: str = None,
-                                db_path: Path = None) -> List[str]:
+def filter_tools_for_dispatcher(tool_list: List[str], project_id: str = None, db_path: Path = None) -> List[str]:
     """Filter a tool list to only include tools allowed in dispatcher mode.
 
     When dispatcher mode is disabled, returns the full list unchanged.
@@ -330,10 +335,7 @@ def filter_tools_for_dispatcher(tool_list: List[str],
     if not is_dispatcher_mode(project_id=project_id, db_path=db_path):
         return list(tool_list)
 
-    return [
-        tool for tool in tool_list
-        if is_tool_allowed(tool, project_id=project_id, db_path=db_path)
-    ]
+    return [tool for tool in tool_list if is_tool_allowed(tool, project_id=project_id, db_path=db_path)]
 
 
 def get_redirect_agent(tool_name: str) -> Optional[str]:
@@ -372,10 +374,13 @@ def get_redirect_agent(tool_name: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # DB operations (enable/disable per-project)
 # ---------------------------------------------------------------------------
-def enable_for_project(project_id: str, created_by: str = "system",
-                       custom_dispatch_tools: List[str] = None,
-                       custom_blocked_tools: List[str] = None,
-                       db_path: Path = None) -> dict:
+def enable_for_project(
+    project_id: str,
+    created_by: str = "system",
+    custom_dispatch_tools: List[str] = None,
+    custom_blocked_tools: List[str] = None,
+    db_path: Path = None,
+) -> dict:
     """Enable dispatcher mode for a specific project.
 
     Args:
@@ -392,7 +397,7 @@ def enable_for_project(project_id: str, created_by: str = "system",
     conn = _get_db(db_path)
     try:
         override_id = f"dmo-{uuid.uuid4().hex[:12]}"
-        now = _now()
+        now = now_iso()
 
         conn.execute(
             """INSERT INTO dispatcher_mode_overrides
@@ -440,8 +445,7 @@ def enable_for_project(project_id: str, created_by: str = "system",
         conn.close()
 
 
-def disable_for_project(project_id: str, disabled_by: str = "system",
-                        db_path: Path = None) -> dict:
+def disable_for_project(project_id: str, disabled_by: str = "system", db_path: Path = None) -> dict:
     """Disable dispatcher mode for a specific project.
 
     Args:
@@ -459,7 +463,7 @@ def disable_for_project(project_id: str, disabled_by: str = "system",
             """UPDATE dispatcher_mode_overrides
                SET enabled = 0, created_by = ?, created_at = ?
                WHERE project_id = ?""",
-            (disabled_by, _now(), project_id),
+            (disabled_by, now_iso(), project_id),
         )
         conn.commit()
 
@@ -520,15 +524,18 @@ def main():
         description="ICDEV™ Dispatcher Mode — restrict orchestrator to delegation-only (Phase 61)"
     )
     parser.add_argument(
-        "--status", action="store_true",
+        "--status",
+        action="store_true",
         help="Show current dispatcher mode status",
     )
     parser.add_argument(
-        "--enable", action="store_true",
+        "--enable",
+        action="store_true",
         help="Enable dispatcher mode for a project",
     )
     parser.add_argument(
-        "--disable", action="store_true",
+        "--disable",
+        action="store_true",
         help="Disable dispatcher mode for a project",
     )
     parser.add_argument(
@@ -572,7 +579,7 @@ def main():
                 ov = result["project_override"]
                 print(f"  Project override ({args.project_id}): enabled={ov['enabled']}")
             else:
-                print(f"  Project override: (none)")
+                print("  Project override: (none)")
             print(f"  Effective mode: {'DISPATCHER-ONLY' if effective else 'FULL ACCESS'}")
             print()
             print("  Dispatch-only tools:")
@@ -641,9 +648,7 @@ def main():
         result = {
             "tool_name": args.check_tool,
             "allowed": allowed,
-            "dispatcher_mode_active": is_dispatcher_mode(
-                project_id=args.project_id, db_path=db_path
-            ),
+            "dispatcher_mode_active": is_dispatcher_mode(project_id=args.project_id, db_path=db_path),
             "redirect_agent": redirect,
             "classification": "CUI",
         }

@@ -16,8 +16,8 @@
     "use strict";
 
     // Ensure ICDEV™ namespace exists (api.js should have created it)
-    var ICDEV™ = window.ICDEV™ || {};
-    window.ICDEV™ = ICDEV™;
+    var ICDEV = window.ICDEV || {};
+    window.ICDEV = ICDEV;
 
     // ========================================================================
     // 1. GLOSSARY TOOLTIP SYSTEM
@@ -27,7 +27,7 @@
      * Dictionary of government/DoD/compliance acronyms with plain-English
      * definitions. Used by the tooltip system and <abbr> auto-fill.
      */
-    ICDEV™.glossary = {
+    ICDEV.glossary = {
         "POA&M":   "Plan of Action & Milestones \u2014 your fix-it list for security gaps with deadlines",
         "POAM":    "Plan of Action & Milestones \u2014 your fix-it list for security gaps with deadlines",
         "STIG":    "Security Technical Implementation Guide \u2014 DoD security checklist for systems",
@@ -371,9 +371,9 @@
         }, 100);
     }
 
-    /** Delegate to shared ICDEV™.escapeHTML (api.js). */
+    /** Delegate to shared ICDEV.escapeHTML (api.js). */
     function escapeHTML(str) {
-        return ICDEV™.escapeHTML ? ICDEV™.escapeHTML(str) : String(str || "");
+        return ICDEV.escapeHTML ? ICDEV.escapeHTML(str) : String(str || "");
     }
 
     /**
@@ -381,12 +381,12 @@
      * - Attach hover/focus tooltips to all [data-glossary] elements.
      * - Auto-fill empty <abbr> titles from the glossary dictionary.
      */
-    ICDEV™.initGlossary = function initGlossary() {
+    ICDEV.initGlossary = function initGlossary() {
         var glossaryEls = document.querySelectorAll("[data-glossary]");
 
         glossaryEls.forEach(function (el) {
             var term = el.getAttribute("data-glossary");
-            var definition = ICDEV™.glossary[term];
+            var definition = ICDEV.glossary[term];
             if (!definition) {
                 return;
             }
@@ -423,7 +423,7 @@
                 return;
             }
             var text = (abbr.textContent || "").trim();
-            var definition = ICDEV™.glossary[text];
+            var definition = ICDEV.glossary[text];
             if (definition) {
                 abbr.setAttribute("title", definition);
             }
@@ -444,7 +444,7 @@
      * @param {string} isoString - ISO-8601 date string
      * @returns {string} Formatted timestamp, or empty string on invalid input
      */
-    ICDEV™.formatTimestamp = function formatTimestamp(isoString) {
+    ICDEV.formatTimestamp = function formatTimestamp(isoString) {
         if (!isoString) {
             return "";
         }
@@ -474,7 +474,7 @@
      * @param {string} isoString - ISO-8601 date string
      * @returns {string} Short formatted date
      */
-    ICDEV™.formatTimestampShort = function formatTimestampShort(isoString) {
+    ICDEV.formatTimestampShort = function formatTimestampShort(isoString) {
         if (!isoString) {
             return "";
         }
@@ -495,7 +495,7 @@
      * @param {string} isoString - ISO-8601 date string
      * @returns {string} Relative time string
      */
-    ICDEV™.formatTimeAgo = function formatTimeAgo(isoString) {
+    ICDEV.formatTimeAgo = function formatTimeAgo(isoString) {
         if (!isoString) {
             return "";
         }
@@ -568,7 +568,7 @@
      *   "short" -> uses formatTimestampShort
      *   (default) -> uses formatTimestamp
      */
-    ICDEV™.initTimestamps = function initTimestamps() {
+    ICDEV.initTimestamps = function initTimestamps() {
         var elements = document.querySelectorAll("[data-timestamp]");
 
         elements.forEach(function (el) {
@@ -577,11 +577,11 @@
             var formatted;
 
             if (format === "ago") {
-                formatted = ICDEV™.formatTimeAgo(isoString);
+                formatted = ICDEV.formatTimeAgo(isoString);
             } else if (format === "short") {
-                formatted = ICDEV™.formatTimestampShort(isoString);
+                formatted = ICDEV.formatTimestampShort(isoString);
             } else {
-                formatted = ICDEV™.formatTimestamp(isoString);
+                formatted = ICDEV.formatTimestamp(isoString);
             }
 
             if (formatted) {
@@ -630,7 +630,7 @@
      * - Prepend status icons to .badge elements
      * - Add ARIA attributes to status dots and health banners
      */
-    ICDEV™.initAccessibility = function initAccessibility() {
+    ICDEV.initAccessibility = function initAccessibility() {
         // --- Badge icons ---
         var badges = document.querySelectorAll(".badge");
         badges.forEach(function (badge) {
@@ -709,7 +709,7 @@
      * @param {Array<{name: string, status: string, detail?: string}>} steps -
      *   Pipeline steps. Status: "completed"|"active"|"pending"|"blocked"|"skipped"
      */
-    ICDEV™.createProgressPipeline = function createProgressPipeline(containerId, steps) {
+    ICDEV.createProgressPipeline = function createProgressPipeline(containerId, steps) {
         var container = document.getElementById(containerId);
         if (!container) {
             console.error("[ICDEV™ UX] Pipeline container not found: #" + containerId);
@@ -813,7 +813,7 @@
      * @param {string} [type]   - "success"|"error"|"warning"|"info" (default: "info")
      * @param {number} [duration] - Auto-dismiss after this many ms (default: 5000)
      */
-    ICDEV™.showNotification = function showNotification(message, type, duration) {
+    ICDEV.showNotification = function showNotification(message, type, duration) {
         var validTypes = { success: 1, error: 1, warning: 1, info: 1 };
         type = validTypes[type] ? type : "info";
         duration = typeof duration === "number" && duration > 0 ? duration : 5000;
@@ -882,7 +882,7 @@
      *   value >= threshold * 0.8     -> yellow + warning
      *   value < threshold * 0.8      -> red    + X
      */
-    ICDEV™.formatScore = function formatScore(value, threshold, label) {
+    ICDEV.formatScore = function formatScore(value, threshold, label) {
         // Normalize to percentage for display (handles both 0-1 and 0-100 inputs)
         var displayValue = value;
         var displayThreshold = threshold;
@@ -926,9 +926,9 @@
      * Run all UX initializers on DOMContentLoaded.
      */
     function initAll() {
-        ICDEV™.initGlossary();
-        ICDEV™.initTimestamps();
-        ICDEV™.initAccessibility();
+        ICDEV.initGlossary();
+        ICDEV.initTimestamps();
+        ICDEV.initAccessibility();
     }
 
     // If DOM is already loaded (e.g., script loaded with defer/async after load),

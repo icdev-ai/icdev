@@ -6,16 +6,14 @@ Provides REST endpoints for FedRAMP 20x KSI evidence generation,
 summary, and authorization package status.
 """
 
-import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
-from icdev._paths import get_project_root
 
 # Add compliance tools to path for imports
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
 
 DB_PATH = str(BASE_DIR / "data" / "icdev.db")
@@ -24,8 +22,7 @@ fedramp_20x_api = Blueprint("fedramp_20x_api", __name__, url_prefix="/api/fedram
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -35,6 +32,7 @@ def fedramp_20x_stats():
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_ksi_generator import generate_summary
+
         result = generate_summary(project_id, Path(DB_PATH))
         return jsonify(result)
     except Exception as e:
@@ -47,6 +45,7 @@ def fedramp_20x_ksis():
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_ksi_generator import generate_all_ksis
+
         result = generate_all_ksis(project_id, Path(DB_PATH))
         return jsonify(result)
     except Exception as e:
@@ -59,6 +58,7 @@ def fedramp_20x_ksi_detail(ksi_id):
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_ksi_generator import generate_ksi
+
         result = generate_ksi(project_id, ksi_id, Path(DB_PATH))
         return jsonify(result)
     except Exception as e:
@@ -71,6 +71,7 @@ def fedramp_20x_package():
     project_id = request.args.get("project_id", "")
     try:
         from fedramp_authorization_packager import package_authorization
+
         result = package_authorization(project_id)
         return jsonify(result)
     except Exception as e:

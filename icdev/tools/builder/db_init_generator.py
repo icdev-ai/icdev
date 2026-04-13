@@ -29,14 +29,14 @@ import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 logger = logging.getLogger("icdev.db_init_generator")
 
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
+
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — skipping audit event")
 
@@ -59,7 +59,6 @@ CORE_TABLES: Dict[str, str] = {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "agents": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS agents (
             id TEXT PRIMARY KEY,
@@ -70,7 +69,6 @@ CORE_TABLES: Dict[str, str] = {
             last_health_check TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "a2a_tasks": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS a2a_tasks (
             id TEXT PRIMARY KEY,
@@ -83,7 +81,6 @@ CORE_TABLES: Dict[str, str] = {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP
         );"""),
-
     "audit_trail": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS audit_trail (
             id TEXT PRIMARY KEY,
@@ -95,7 +92,6 @@ CORE_TABLES: Dict[str, str] = {
             details TEXT,
             classification TEXT DEFAULT 'CUI'
         );"""),
-
     "knowledge_patterns": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS knowledge_patterns (
             id TEXT PRIMARY KEY,
@@ -107,7 +103,6 @@ CORE_TABLES: Dict[str, str] = {
             occurrences INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "self_healing_events": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS self_healing_events (
             id TEXT PRIMARY KEY,
@@ -118,7 +113,6 @@ CORE_TABLES: Dict[str, str] = {
             confidence REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "tasks": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
@@ -130,7 +124,6 @@ CORE_TABLES: Dict[str, str] = {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP
         );"""),
-
     "deployments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS deployments (
             id TEXT PRIMARY KEY,
@@ -140,7 +133,6 @@ CORE_TABLES: Dict[str, str] = {
             artifacts TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "metric_snapshots": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS metric_snapshots (
             id TEXT PRIMARY KEY,
@@ -149,7 +141,6 @@ CORE_TABLES: Dict[str, str] = {
             project_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "alerts": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS alerts (
             id TEXT PRIMARY KEY,
@@ -160,7 +151,6 @@ CORE_TABLES: Dict[str, str] = {
             acknowledged INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "code_reviews": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS code_reviews (
             id TEXT PRIMARY KEY,
@@ -170,7 +160,6 @@ CORE_TABLES: Dict[str, str] = {
             findings TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "maintenance_audits": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS maintenance_audits (
             id TEXT PRIMARY KEY,
@@ -193,7 +182,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             impact_level TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "project_controls": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS project_controls (
             id TEXT PRIMARY KEY,
@@ -207,7 +195,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, control_id)
         );"""),
-
     "ssp_documents": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ssp_documents (
             id TEXT PRIMARY KEY,
@@ -220,7 +207,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             status TEXT DEFAULT 'draft',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "poam_items": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS poam_items (
             id TEXT PRIMARY KEY,
@@ -236,7 +222,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "stig_findings": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS stig_findings (
             id TEXT PRIMARY KEY,
@@ -251,7 +236,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             assessed_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "sbom_records": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS sbom_records (
             id TEXT PRIMARY KEY,
@@ -263,7 +247,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             vulnerability_count INTEGER,
             generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "fedramp_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS fedramp_assessments (
             id TEXT PRIMARY KEY,
@@ -278,7 +261,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, baseline, control_id)
         );"""),
-
     "cmmc_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS cmmc_assessments (
             id TEXT PRIMARY KEY,
@@ -294,7 +276,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, practice_id)
         );"""),
-
     "oscal_artifacts": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS oscal_artifacts (
             id TEXT PRIMARY KEY,
@@ -309,7 +290,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             UNIQUE(project_id, artifact_type, format)
         );"""),
-
     "cato_evidence": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS cato_evidence (
             id TEXT PRIMARY KEY,
@@ -325,7 +305,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             status TEXT DEFAULT 'current',
             UNIQUE(project_id, control_id, evidence_type, evidence_source)
         );"""),
-
     "cssp_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS cssp_assessments (
             id TEXT PRIMARY KEY,
@@ -340,7 +319,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, requirement_id)
         );"""),
-
     "ivv_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ivv_assessments (
             id TEXT PRIMARY KEY,
@@ -356,7 +334,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, requirement_id)
         );"""),
-
     "sbd_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS sbd_assessments (
             id TEXT PRIMARY KEY,
@@ -371,7 +348,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, requirement_id)
         );"""),
-
     "control_crosswalk": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS control_crosswalk (
             id TEXT PRIMARY KEY,
@@ -382,7 +358,6 @@ COMPLIANCE_TABLES: Dict[str, str] = {
             notes TEXT,
             UNIQUE(nist_800_53_id, framework_id)
         );"""),
-
     "pi_compliance_tracking": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS pi_compliance_tracking (
             id TEXT PRIMARY KEY,
@@ -423,7 +398,6 @@ MBSE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, xmi_id)
         );"""),
-
     "sysml_relationships": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS sysml_relationships (
             id TEXT PRIMARY KEY,
@@ -436,7 +410,6 @@ MBSE_TABLES: Dict[str, str] = {
             source_file TEXT,
             UNIQUE(project_id, source_element_id, target_element_id, relationship_type)
         );"""),
-
     "doors_requirements": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS doors_requirements (
             id TEXT PRIMARY KEY,
@@ -454,7 +427,6 @@ MBSE_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, doors_id)
         );"""),
-
     "digital_thread_links": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS digital_thread_links (
             id TEXT PRIMARY KEY,
@@ -470,7 +442,6 @@ MBSE_TABLES: Dict[str, str] = {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, source_type, source_id, target_type, target_id, link_type)
         );"""),
-
     "model_imports": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS model_imports (
             id TEXT PRIMARY KEY,
@@ -485,7 +456,6 @@ MBSE_TABLES: Dict[str, str] = {
             status TEXT DEFAULT 'completed',
             imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "model_snapshots": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS model_snapshots (
             id TEXT PRIMARY KEY,
@@ -502,7 +472,6 @@ MBSE_TABLES: Dict[str, str] = {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, pi_number, snapshot_type)
         );"""),
-
     "model_code_mappings": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS model_code_mappings (
             id TEXT PRIMARY KEY,
@@ -517,7 +486,6 @@ MBSE_TABLES: Dict[str, str] = {
             code_hash TEXT,
             UNIQUE(project_id, sysml_element_id, code_path)
         );"""),
-
     "des_compliance": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS des_compliance (
             id TEXT PRIMARY KEY,
@@ -564,7 +532,6 @@ RICOAS_TABLES: Dict[str, str] = {
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "intake_requirements": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS intake_requirements (
             id TEXT PRIMARY KEY,
@@ -596,7 +563,6 @@ RICOAS_TABLES: Dict[str, str] = {
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "safe_decomposition": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS safe_decomposition (
             id TEXT PRIMARY KEY,
@@ -622,7 +588,6 @@ RICOAS_TABLES: Dict[str, str] = {
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "readiness_scores": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS readiness_scores (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -639,7 +604,6 @@ RICOAS_TABLES: Dict[str, str] = {
             requirement_count INTEGER DEFAULT 0,
             scored_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "ato_system_registry": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ato_system_registry (
             id TEXT PRIMARY KEY,
@@ -661,7 +625,6 @@ RICOAS_TABLES: Dict[str, str] = {
             updated_at TEXT DEFAULT (datetime('now')),
             UNIQUE(project_id, system_name)
         );"""),
-
     "boundary_impact_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS boundary_impact_assessments (
             id TEXT PRIMARY KEY,
@@ -680,13 +643,12 @@ RICOAS_TABLES: Dict[str, str] = {
             assessed_by TEXT DEFAULT 'icdev-requirements-analyst',
             assessed_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "supply_chain_vendors": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS supply_chain_vendors (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL REFERENCES projects(id),
             vendor_name TEXT NOT NULL,
-            vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),
+            vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),  # noqa: E501
             country_of_origin TEXT,
             scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')),
             section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')),
@@ -699,7 +661,6 @@ RICOAS_TABLES: Dict[str, str] = {
             updated_at TEXT DEFAULT (datetime('now')),
             UNIQUE(project_id, vendor_name)
         );"""),
-
     "supply_chain_dependencies": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS supply_chain_dependencies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -715,7 +676,6 @@ RICOAS_TABLES: Dict[str, str] = {
             metadata TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "isa_agreements": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS isa_agreements (
             id TEXT PRIMARY KEY,
@@ -738,7 +698,6 @@ RICOAS_TABLES: Dict[str, str] = {
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "scrm_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS scrm_assessments (
             id TEXT PRIMARY KEY,
@@ -755,7 +714,6 @@ RICOAS_TABLES: Dict[str, str] = {
             assessed_by TEXT DEFAULT 'icdev-supply-chain-agent',
             assessed_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "cve_triage": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS cve_triage (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -765,7 +723,7 @@ RICOAS_TABLES: Dict[str, str] = {
             package_version TEXT,
             severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low')),
             cvss_score REAL,
-            triage_decision TEXT CHECK(triage_decision IN ('remediate', 'mitigate', 'accept_risk', 'defer', 'false_positive', 'not_applicable')),
+            triage_decision TEXT CHECK(triage_decision IN ('remediate', 'mitigate', 'accept_risk', 'defer', 'false_positive', 'not_applicable')),  # noqa: E501
             triage_rationale TEXT,
             sla_deadline TEXT,
             triaged_by TEXT,
@@ -773,7 +731,6 @@ RICOAS_TABLES: Dict[str, str] = {
             remediated_at TEXT,
             UNIQUE(project_id, cve_id, package_name)
         );"""),
-
     "simulation_scenarios": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS simulation_scenarios (
             id TEXT PRIMARY KEY,
@@ -790,7 +747,6 @@ RICOAS_TABLES: Dict[str, str] = {
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "coa_records": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS coa_records (
             id TEXT PRIMARY KEY,
@@ -832,7 +788,6 @@ AI_SECURITY_TABLES: Dict[str, str] = {
             user_id TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );"""),
-
     "ai_telemetry": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_telemetry (
             id TEXT PRIMARY KEY,
@@ -850,7 +805,6 @@ AI_SECURITY_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );"""),
-
     "ai_bom": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_bom (
             id TEXT PRIMARY KEY,
@@ -863,7 +817,6 @@ AI_SECURITY_TABLES: Dict[str, str] = {
             data_categories TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );"""),
-
     "atlas_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS atlas_assessments (
             id TEXT PRIMARY KEY,
@@ -880,7 +833,6 @@ AI_SECURITY_TABLES: Dict[str, str] = {
             assessed_by TEXT DEFAULT 'automated',
             classification TEXT DEFAULT 'CUI'
         );"""),
-
     "atlas_red_team_results": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS atlas_red_team_results (
             id TEXT PRIMARY KEY,
@@ -896,7 +848,6 @@ AI_SECURITY_TABLES: Dict[str, str] = {
             tested_at TEXT NOT NULL DEFAULT (datetime('now')),
             tested_by TEXT DEFAULT 'automated'
         );"""),
-
     "owasp_llm_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS owasp_llm_assessments (
             id TEXT PRIMARY KEY,
@@ -932,7 +883,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             created_at TEXT DEFAULT (datetime('now')),
             UNIQUE(project_id, model_name, version)
         );"""),
-
     "system_cards": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS system_cards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -942,7 +892,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             version INTEGER DEFAULT 1,
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "ai_use_case_inventory": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_use_case_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -959,7 +908,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             created_at TEXT DEFAULT (datetime('now')),
             UNIQUE(project_id, name)
         );"""),
-
     "fairness_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS fairness_assessments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -968,7 +916,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             overall_score REAL DEFAULT 0.0,
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "ai_oversight_plans": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_oversight_plans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -981,7 +928,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "ai_caio_registry": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_caio_registry (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -992,7 +938,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             designation_date TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "ai_incident_log": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_incident_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1008,7 +953,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             reported_by TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "ai_ethics_reviews": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_ethics_reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1022,7 +966,6 @@ AI_GOVERNANCE_TABLES: Dict[str, str] = {
             reviewer TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "ai_reassessment_schedule": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS ai_reassessment_schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1062,7 +1005,6 @@ OBSERVABILITY_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "prov_entities": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS prov_entities (
             id TEXT PRIMARY KEY,
@@ -1078,7 +1020,6 @@ OBSERVABILITY_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "prov_activities": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS prov_activities (
             id TEXT PRIMARY KEY,
@@ -1094,7 +1035,6 @@ OBSERVABILITY_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "prov_relations": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS prov_relations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1107,7 +1047,6 @@ OBSERVABILITY_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "shap_attributions": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS shap_attributions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1125,7 +1064,6 @@ OBSERVABILITY_TABLES: Dict[str, str] = {
             classification TEXT DEFAULT 'CUI',
             analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "xai_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS xai_assessments (
             id TEXT PRIMARY KEY,
@@ -1175,7 +1113,6 @@ CODE_INTELLIGENCE_TABLES: Dict[str, str] = {
             scan_id TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );"""),
-
     "runtime_feedback": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS runtime_feedback (
             id TEXT PRIMARY KEY,
@@ -1216,7 +1153,6 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id)
         );"""),
-
     "zta_maturity_scores": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS zta_maturity_scores (
             id TEXT PRIMARY KEY,
@@ -1231,7 +1167,6 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
             assessed_by TEXT DEFAULT 'icdev-devsecops-agent',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
-
     "zta_posture_evidence": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS zta_posture_evidence (
             id TEXT PRIMARY KEY,
@@ -1242,7 +1177,6 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
             collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP
         );"""),
-
     "nist_800_207_assessments": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS nist_800_207_assessments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1263,7 +1197,6 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(project_id, requirement_id)
         );"""),
-
     "devsecops_pipeline_audit": textwrap.dedent("""\
         CREATE TABLE IF NOT EXISTS devsecops_pipeline_audit (
             id TEXT PRIMARY KEY,
@@ -1275,6 +1208,391 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
             findings_count INTEGER DEFAULT 0,
             findings_data TEXT,
             duration_seconds REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
+# D-RAG-13: RAG TABLES (Phase 64)
+# ============================================================
+
+RAG_TABLES: Dict[str, str] = {
+    "rag_chunks": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_chunks (
+            id TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            embedding BLOB,
+            source_type TEXT NOT NULL,
+            source_id TEXT,
+            source_table TEXT,
+            chunk_index INTEGER DEFAULT 0,
+            total_chunks INTEGER DEFAULT 1,
+            metadata TEXT DEFAULT '{}',
+            tier TEXT DEFAULT 'hot' CHECK(tier IN ('hot', 'warm', 'cold')),
+            tenant_id TEXT DEFAULT '',
+            project_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "rag_ingestion_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_ingestion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_type TEXT NOT NULL,
+            source_id TEXT,
+            source_table TEXT,
+            chunks_created INTEGER DEFAULT 0,
+            chunks_skipped INTEGER DEFAULT 0,
+            ingestion_mode TEXT DEFAULT 'batch',
+            tenant_id TEXT DEFAULT '',
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "rag_retrieval_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_retrieval_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_hash TEXT NOT NULL,
+            results_count INTEGER DEFAULT 0,
+            top_score REAL,
+            rerank_used INTEGER DEFAULT 0,
+            filters TEXT,
+            agent_id TEXT DEFAULT '',
+            duration_ms INTEGER,
+            tenant_id TEXT DEFAULT '',
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "rag_parent_cache": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_parent_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_hash TEXT UNIQUE,
+            results TEXT,
+            retrieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            source TEXT DEFAULT 'parent'
+        );"""),
+}
+
+
+# ============================================================
+# Phase 61: ORCHESTRATION TABLES (ANVIL critique, prompt chains,
+# dispatcher mode, session purpose)
+# ============================================================
+
+ORCHESTRATION_TABLES: Dict[str, str] = {
+    "anvil_critique_sessions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS anvil_critique_sessions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            workflow_id TEXT,
+            phase_input_hash TEXT NOT NULL,
+            status TEXT DEFAULT 'in_progress' CHECK(status IN (
+                'in_progress', 'go', 'nogo', 'conditional', 'revised', 'failed')),
+            round_number INTEGER DEFAULT 1,
+            max_rounds INTEGER DEFAULT 3,
+            consensus TEXT CHECK(consensus IN ('go', 'nogo', 'conditional') OR consensus IS NULL),
+            critics_assigned TEXT DEFAULT '[]',
+            total_findings INTEGER DEFAULT 0,
+            critical_count INTEGER DEFAULT 0,
+            high_count INTEGER DEFAULT 0,
+            medium_count INTEGER DEFAULT 0,
+            low_count INTEGER DEFAULT 0,
+            revision_summary TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );"""),
+    "anvil_critique_findings": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS anvil_critique_findings (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES anvil_critique_sessions(id),
+            critic_agent TEXT NOT NULL,
+            round_number INTEGER DEFAULT 1,
+            finding_type TEXT NOT NULL CHECK(finding_type IN (
+                'security_vulnerability', 'compliance_gap', 'architecture_flaw',
+                'performance_risk', 'maintainability_concern', 'testing_gap',
+                'deployment_risk', 'data_handling_issue')),
+            severity TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            evidence TEXT,
+            suggested_fix TEXT,
+            nist_controls TEXT DEFAULT '[]',
+            addressed_in_revision INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );"""),
+    "prompt_chain_executions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS prompt_chain_executions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            chain_name TEXT NOT NULL,
+            original_input TEXT NOT NULL,
+            original_input_hash TEXT NOT NULL,
+            status TEXT DEFAULT 'running'
+                CHECK(status IN ('running', 'completed', 'failed', 'cancelled')),
+            steps_completed INTEGER DEFAULT 0,
+            steps_total INTEGER NOT NULL,
+            step_results TEXT DEFAULT '{}',
+            final_output TEXT,
+            final_output_hash TEXT,
+            total_duration_ms INTEGER,
+            total_tokens_used INTEGER DEFAULT 0,
+            error_message TEXT,
+            executed_by TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );"""),
+    "dispatcher_mode_overrides": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS dispatcher_mode_overrides (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL UNIQUE,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            custom_dispatch_tools TEXT DEFAULT '[]',
+            custom_blocked_tools TEXT DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            created_by TEXT NOT NULL DEFAULT 'system'
+        );"""),
+    "session_purposes": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS session_purposes (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            purpose TEXT NOT NULL,
+            purpose_hash TEXT NOT NULL,
+            declared_by TEXT DEFAULT 'user',
+            scope TEXT DEFAULT 'session' CHECK(scope IN ('session','workflow','task')),
+            status TEXT DEFAULT 'active' CHECK(status IN ('active','completed','abandoned')),
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );"""),
+}
+
+
+# ============================================================
+# GENESIS TABLES (D-GEN-6, D-GEN-10)
+# ============================================================
+
+GENESIS_TABLES: Dict[str, str] = {
+    "genesis_audit": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS genesis_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reflex TEXT NOT NULL,
+            action TEXT NOT NULL,
+            detail TEXT,
+            risk_tier TEXT DEFAULT 'GREEN'
+                CHECK(risk_tier IN ('GREEN', 'YELLOW', 'ORANGE')),
+            status TEXT DEFAULT 'completed'
+                CHECK(status IN ('started', 'completed', 'failed', 'skipped')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "genesis_reflex_state": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS genesis_reflex_state (
+            reflex TEXT PRIMARY KEY,
+            enabled INTEGER DEFAULT 1,
+            last_run TIMESTAMP,
+            next_run TIMESTAMP,
+            run_count INTEGER DEFAULT 0,
+            consecutive_failures INTEGER DEFAULT 0,
+            circuit_state TEXT DEFAULT 'closed'
+                CHECK(circuit_state IN ('closed', 'open', 'half_open')),
+            last_error TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "genesis_gkp": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS genesis_gkp (
+            id TEXT PRIMARY KEY,
+            reflex TEXT NOT NULL,
+            gkp_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            status TEXT DEFAULT 'pending_review'
+                CHECK(status IN ('pending_review', 'auto_promoted', 'promoted',
+                    'rejected', 'expired')),
+            risk_tier TEXT DEFAULT 'GREEN',
+            promoted_at TIMESTAMP,
+            promoted_by TEXT,
+            rejection_reason TEXT,
+            metadata TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
+# KNOWLEDGE GRAPH TABLES (D-KARL-1 through D-KARL-4)
+# ============================================================
+
+KNOWLEDGE_GRAPH_TABLES: Dict[str, str] = {
+    "kg_graphs": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_graphs (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            name TEXT NOT NULL,
+            description TEXT,
+            entity_count INTEGER DEFAULT 0,
+            edge_count INTEGER DEFAULT 0,
+            metadata TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "kg_nodes": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_nodes (
+            id TEXT PRIMARY KEY,
+            graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+            label TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            properties TEXT DEFAULT '{}',
+            embedding BLOB,
+            centrality REAL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "kg_edges": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_edges (
+            id TEXT PRIMARY KEY,
+            graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+            source_id TEXT NOT NULL REFERENCES kg_nodes(id),
+            target_id TEXT NOT NULL REFERENCES kg_nodes(id),
+            relationship TEXT NOT NULL,
+            weight REAL DEFAULT 1.0,
+            properties TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "kg_retrieval_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_retrieval_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+            query TEXT NOT NULL,
+            query_hash TEXT NOT NULL,
+            profile TEXT DEFAULT 'exploratory',
+            nodes_returned INTEGER DEFAULT 0,
+            edges_returned INTEGER DEFAULT 0,
+            compression_applied INTEGER DEFAULT 0,
+            retrieval_ms INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
+# FINE-TUNING TABLES (D-FT-1 through D-FT-22)
+# ============================================================
+
+FINE_TUNING_TABLES: Dict[str, str] = {
+    "ft_datasets": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_datasets (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            purpose TEXT DEFAULT 'general',
+            version INTEGER DEFAULT 1,
+            example_count INTEGER DEFAULT 0,
+            content_hash TEXT,
+            status TEXT DEFAULT 'active'
+                CHECK(status IN ('active', 'archived', 'deleted')),
+            metadata TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_dataset_examples": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_dataset_examples (
+            id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+            input_text TEXT NOT NULL,
+            output_text TEXT NOT NULL,
+            source_type TEXT,
+            source_id TEXT,
+            quality_score REAL,
+            compliance_score REAL,
+            relevance_score REAL,
+            label TEXT DEFAULT 'unlabeled'
+                CHECK(label IN ('unlabeled', 'approved', 'rejected', 'needs_review')),
+            labeled_by TEXT,
+            labeled_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_training_jobs": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_training_jobs (
+            id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+            provider TEXT NOT NULL,
+            base_model TEXT NOT NULL,
+            status TEXT DEFAULT 'pending'
+                CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+            hyperparams TEXT DEFAULT '{}',
+            metrics TEXT DEFAULT '{}',
+            error_message TEXT,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_training_job_events": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_training_job_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+            event_type TEXT NOT NULL,
+            detail TEXT,
+            metrics TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_model_versions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_model_versions (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+            model_name TEXT NOT NULL,
+            version INTEGER DEFAULT 1,
+            adapter_path TEXT,
+            gguf_path TEXT,
+            eval_scores TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'created'
+                CHECK(status IN ('created', 'evaluating', 'promoted', 'deprecated', 'archived')),
+            promoted_at TIMESTAMP,
+            promoted_function TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_active_models": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_active_models (
+            id TEXT PRIMARY KEY,
+            function_name TEXT NOT NULL UNIQUE,
+            model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+            ollama_model_tag TEXT,
+            activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            activated_by TEXT DEFAULT 'system'
+        );"""),
+    "ft_evaluations": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_evaluations (
+            id TEXT PRIMARY KEY,
+            model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+            eval_type TEXT DEFAULT 'standard'
+                CHECK(eval_type IN ('standard', 'ab_comparison', 'regression')),
+            test_count INTEGER DEFAULT 0,
+            bleu_score REAL,
+            rouge_l_score REAL,
+            perplexity REAL,
+            custom_metrics TEXT DEFAULT '{}',
+            passed INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_promotion_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_promotion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+            action TEXT NOT NULL,
+            function_name TEXT,
+            previous_model_id TEXT,
+            reason TEXT,
+            promoted_by TEXT DEFAULT 'system',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_hyperparam_results": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_hyperparam_results (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+            search_type TEXT DEFAULT 'grid'
+                CHECK(search_type IN ('grid', 'random')),
+            hyperparams TEXT NOT NULL,
+            eval_score REAL,
+            is_best INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );"""),
 }
@@ -1296,6 +1614,16 @@ CAPABILITY_TABLE_MAP: Dict[str, Dict[str, str]] = {
     "observability": OBSERVABILITY_TABLES,
     "code_intelligence": CODE_INTELLIGENCE_TABLES,
     "devsecops_zta": DEVSECOPS_ZTA_TABLES,
+    # D-RAG-13: RAG tables (Phase 64)
+    "rag": RAG_TABLES,
+    # D-FT-19: Fine-tuning tables (Phase 64 Extension)
+    "fine_tuning": FINE_TUNING_TABLES,
+    # D-GEN-6: Genesis tables
+    "genesis": GENESIS_TABLES,
+    # D-KARL-1: Knowledge Graph tables
+    "knowledge_graph": KNOWLEDGE_GRAPH_TABLES,
+    # Phase 61: Orchestration tables (always included)
+    "orchestration": ORCHESTRATION_TABLES,
 }
 
 
@@ -1303,9 +1631,10 @@ CAPABILITY_TABLE_MAP: Dict[str, Dict[str, str]] = {
 # HELPER FUNCTIONS
 # ============================================================
 
+
 def _sanitize_name(name: str) -> str:
     """Sanitize app name for use as a Python identifier and filename."""
-    return re.sub(r'[^a-z0-9_]', '_', name.lower().replace('-', '_')).strip('_')
+    return re.sub(r"[^a-z0-9_]", "_", name.lower().replace("-", "_")).strip("_")
 
 
 def _build_sql_block(tables: Dict[str, str], block_comment: str) -> str:
@@ -1326,6 +1655,7 @@ def _indent(text: str, prefix: str = "    ") -> str:
 # MAIN GENERATOR
 # ============================================================
 
+
 def generate_init_script(blueprint: Dict[str, Any]) -> str:
     """Generate a complete, standalone Python init script for a child app.
 
@@ -1345,36 +1675,31 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
 
     # --- Determine which capability SQL blocks to include -----------------
     enabled_caps: List[str] = sorted(
-        cap for cap, enabled in capabilities.items()
-        if enabled and cap in CAPABILITY_TABLE_MAP
+        cap for cap, enabled in capabilities.items() if enabled and cap in CAPABILITY_TABLE_MAP
     )
 
     # --- Build the SQL constant strings that will live in the generated file
     core_sql = _build_sql_block(CORE_TABLES, "CORE TABLES")
 
     capability_sql_constants: List[str] = []  # Python source fragments
-    capability_init_calls: List[str] = []      # Lines inside init_db()
-    migrate_cases: List[str] = []              # Cases for migrate_add_capability()
+    capability_init_calls: List[str] = []  # Lines inside init_db()
+    migrate_cases: List[str] = []  # Cases for migrate_add_capability()
 
     for cap_name in CAPABILITY_TABLE_MAP:
         var_name = f"{cap_name.upper()}_SQL"
         sql_block = _build_sql_block(CAPABILITY_TABLE_MAP[cap_name], f"{cap_name.upper()} TABLES")
         # Always emit the constant so migrate_add_capability can reference it
-        capability_sql_constants.append(
-            f'{var_name} = """\n{sql_block}\n"""'
-        )
-        migrate_cases.append(
-            f'    "{cap_name}": {var_name},'
-        )
+        capability_sql_constants.append(f'{var_name} = """\n{sql_block}\n"""')
+        migrate_cases.append(f'    "{cap_name}": {var_name},')
         # Only call it in init_db if this capability is currently enabled
         if cap_name in enabled_caps:
-            capability_init_calls.append(
-                f'    conn.executescript({var_name})'
-            )
+            capability_init_calls.append(f"    conn.executescript({var_name})")
 
     capability_constants_src = "\n\n".join(capability_sql_constants)
-    "\n".join(capability_init_calls) if capability_init_calls else "    pass  # No optional capabilities enabled at init time"
-    migrate_map_src = "\n".join(migrate_cases) if migrate_cases else '    # No optional table groups defined'
+    "\n".join(
+        capability_init_calls
+    ) if capability_init_calls else "    pass  # No optional capabilities enabled at init time"
+    migrate_map_src = "\n".join(migrate_cases) if migrate_cases else "    # No optional table groups defined"
 
     # --- Enabled capabilities comment for the header ----------------------
     caps_comment = ", ".join(enabled_caps) if enabled_caps else "none"
@@ -1382,10 +1707,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     # --- Classification banner --------------------------------------------
     if classification == "SECRET":
         cui_banner = (
-            "# SECRET // NOFORN\n"
-            "# Classified by: Department of Defense\n"
-            "# Reason: 1.4(c)\n"
-            "# Declassify on: 25X1"
+            "# SECRET // NOFORN\n# Classified by: Department of Defense\n# Reason: 1.4(c)\n# Declassify on: 25X1"
         )
     else:
         cui_banner = (
@@ -1411,7 +1733,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append(f"Enabled capabilities at generation time: {caps_comment}")
     parts.append("")
     parts.append("Usage:")
-    parts.append(f'    python init_{safe_name}_db.py [--db-path DATA/{safe_name}.db] [--reset]')
+    parts.append(f"    python init_{safe_name}_db.py [--db-path DATA/{safe_name}.db] [--reset]")
     parts.append('"""')
     parts.append("")
     parts.append("import argparse")
@@ -1430,7 +1752,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("#   _entity_check = ','.join(repr(t) for t in ENTITY_TYPES)")
     parts.append("#")
     parts.append("#   Then in SQL:")
-    parts.append(f"#   CHECK (entity_type IN ({{_entity_check}}))")
+    parts.append("#   CHECK (entity_type IN ({_entity_check}))")
     parts.append("#")
     parts.append("# This avoids CHECK constraint mismatches when adding new types.")
     parts.append("# " + "-" * 60)
@@ -1459,8 +1781,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("# Combined SQL for test setup (import this in features/environment.py)")
     if capability_init_calls:
         cap_refs = " + ".join(
-            call_line.strip().replace("conn.executescript(", "").rstrip(")")
-            for call_line in capability_init_calls
+            call_line.strip().replace("conn.executescript(", "").rstrip(")") for call_line in capability_init_calls
         )
         parts.append(f"SCHEMA_SQL = CORE_SQL + {cap_refs}")
     else:
@@ -1474,7 +1795,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("    path = Path(db_path) if db_path else DB_PATH")
     parts.append("    path.parent.mkdir(parents=True, exist_ok=True)")
     parts.append("")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        # Core tables -- always present")
     parts.append("        conn.executescript(CORE_SQL)")
@@ -1491,16 +1812,16 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("        conn.close()")
     parts.append("")
     parts.append("    # Verify")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        cur = conn.cursor()")
-    parts.append('        cur.execute("SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name")')
+    parts.append("        cur.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\")")
     parts.append("        tables = [row[0] for row in cur.fetchall()]")
     parts.append("    finally:")
     parts.append("        conn.close()")
     parts.append("")
     parts.append('    print(f"Database initialized at {path}")')
-    parts.append('    print(f"Tables created ({len(tables)}): {\', \'.join(tables)}")')
+    parts.append("    print(f\"Tables created ({len(tables)}): {', '.join(tables)}\")")
     parts.append("    return tables")
     parts.append("")
     parts.append("")
@@ -1518,7 +1839,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append('    """')
     parts.append("    if capability_name not in _CAPABILITY_SQL_MAP:")
     parts.append("        raise ValueError(")
-    parts.append('            f"Unknown capability \'{capability_name}\'. "')
+    parts.append("            f\"Unknown capability '{capability_name}'. \"")
     parts.append('            f"Valid options: {list(_CAPABILITY_SQL_MAP.keys())}"')
     parts.append("        )")
     parts.append("")
@@ -1527,7 +1848,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append('        raise FileNotFoundError(f"Database not found: {path}")')
     parts.append("")
     parts.append("    sql = _CAPABILITY_SQL_MAP[capability_name]")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        conn.executescript(sql)")
     parts.append("        conn.commit()")
@@ -1535,16 +1856,16 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("        conn.close()")
     parts.append("")
     parts.append("    # Verify new tables")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        cur = conn.cursor()")
-    parts.append('        cur.execute("SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name")')
+    parts.append("        cur.execute(\"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name\")")
     parts.append("        tables = [row[0] for row in cur.fetchall()]")
     parts.append("    finally:")
     parts.append("        conn.close()")
     parts.append("")
-    parts.append('    print(f"Capability \'{capability_name}\' tables added to {path}")')
-    parts.append('    print(f"Total tables ({len(tables)}): {\', \'.join(tables)}")')
+    parts.append("    print(f\"Capability '{capability_name}' tables added to {path}\")")
+    parts.append("    print(f\"Total tables ({len(tables)}): {', '.join(tables)}\")")
     parts.append("    return tables")
     parts.append("")
     parts.append("")
@@ -1617,14 +1938,14 @@ def write_init_script(blueprint: Dict[str, Any], output_dir: Path) -> Path:
         event_type="code_generated",
         actor="icdev-db-init-generator",
         action=f"Generated DB init script for {app_name}",
-        details=json.dumps({
-            "app_name": app_name,
-            "output_path": str(output_path),
-            "capabilities": {
-                k: v for k, v in blueprint.get("capabilities", {}).items() if v
-            },
-            "classification": blueprint.get("classification", "CUI"),
-        }),
+        details=json.dumps(
+            {
+                "app_name": app_name,
+                "output_path": str(output_path),
+                "capabilities": {k: v for k, v in blueprint.get("capabilities", {}).items() if v},
+                "classification": blueprint.get("classification", "CUI"),
+            }
+        ),
         project_id=blueprint.get("blueprint_id", "unknown"),
     )
 
@@ -1635,23 +1956,15 @@ def write_init_script(blueprint: Dict[str, Any], output_dir: Path) -> Path:
 # CLI ENTRY POINT
 # ============================================================
 
+
 def main():
     """CLI entry point for the DB init generator."""
-    parser = argparse.ArgumentParser(
-        description="Generate a standalone database init script for a child app"
-    )
+    parser = argparse.ArgumentParser(description="Generate a standalone database init script for a child app")
     parser.add_argument(
-        "--blueprint", required=True, type=Path,
-        help="Path to blueprint JSON file (from app_blueprint.py)"
+        "--blueprint", required=True, type=Path, help="Path to blueprint JSON file (from app_blueprint.py)"
     )
-    parser.add_argument(
-        "--output-dir", required=True, type=Path,
-        help="Directory to write the generated init script"
-    )
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output",
-        help="Output result as JSON"
-    )
+    parser.add_argument("--output-dir", required=True, type=Path, help="Directory to write the generated init script")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Output result as JSON")
     args = parser.parse_args()
 
     # Configure logging

@@ -146,7 +146,7 @@
 <!-- Tabs: Prompt Chains / Critiques -->
 <div class="tabs" style="margin-top:32px;">
     <button class="tab-btn active" data-tab="tab-chains" onclick="switchTab(this, 'tab-chains')">Prompt Chains</button>
-    <button class="tab-btn" data-tab="tab-critiques" onclick="switchTab(this, 'tab-critiques')">ANVIL Critiques</button>
+    <button class="tab-btn" data-tab="tab-critiques" onclick="switchTab(this, 'tab-critiques')">ATLAS Critiques</button>
 </div>
 
 <div id="tab-chains" class="tab-content active">
@@ -499,7 +499,7 @@
         fetch(API + '/critiques?limit=15').then(function(r) { return r.json(); }).then(function(d) {
             var tbody = document.getElementById('critiques-body');
             if (!d.critiques || !d.critiques.length) {
-                var note = d.note ? d.note : 'No ANVIL critique sessions recorded.';
+                var note = d.note ? d.note : 'No ATLAS critique sessions recorded.';
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">' + esc(note) + '</td></tr>';
                 return;
             }

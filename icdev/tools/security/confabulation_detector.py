@@ -23,19 +23,18 @@ import json
 import re
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 from urllib.parse import urlparse
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -62,38 +61,45 @@ def check_citation_patterns(text: str) -> List[Dict]:
     findings = []
 
     # Check for URL-like references that may be fabricated
-    url_pattern = re.compile(r'https?://[^\s\)\"\']+')
+    url_pattern = re.compile(r"https?://[^\s\)\"\']+")
     urls = url_pattern.findall(text)
     for url in urls:
         parsed = urlparse(url)
         # Flag URLs with suspicious patterns
-        if any(word in parsed.path.lower() for word in [
-            "article", "paper", "report", "study"
-        ]) and len(parsed.path) > 100:
-            findings.append({
-                "type": "suspicious_url",
-                "detail": f"Long URL path may indicate fabricated reference: {url[:80]}...",
-                "severity": "medium",
-            })
+        if (
+            any(word in parsed.path.lower() for word in ["article", "paper", "report", "study"])
+            and len(parsed.path) > 100
+        ):
+            findings.append(
+                {
+                    "type": "suspicious_url",
+                    "detail": f"Long URL path may indicate fabricated reference: {url[:80]}...",
+                    "severity": "medium",
+                }
+            )
 
     # Check for academic citation patterns with specific years
-    cite_pattern = re.compile(r'(?:et al\.|(?:[A-Z][a-z]+,?\s+){2,})\(?\d{4}\)?')
+    cite_pattern = re.compile(r"(?:et al\.|(?:[A-Z][a-z]+,?\s+){2,})\(?\d{4}\)?")
     citations = cite_pattern.findall(text)
     if len(citations) > 5:
-        findings.append({
-            "type": "high_citation_density",
-            "detail": f"Found {len(citations)} academic citations — verify provenance",
-            "severity": "low",
-        })
+        findings.append(
+            {
+                "type": "high_citation_density",
+                "detail": f"Found {len(citations)} academic citations — verify provenance",
+                "severity": "low",
+            }
+        )
 
     # Check for specific document references (RFC, NIST SP, etc.)
-    doc_refs = re.findall(r'(?:RFC|NIST SP|OMB M-|EO )\d[\d\-\.]+', text)
+    doc_refs = re.findall(r"(?:RFC|NIST SP|OMB M-|EO )\d[\d\-\.]+", text)
     for ref in doc_refs:
-        findings.append({
-            "type": "document_reference",
-            "detail": f"Document reference detected: {ref} — verify accuracy",
-            "severity": "info",
-        })
+        findings.append(
+            {
+                "type": "document_reference",
+                "detail": f"Document reference detected: {ref} — verify accuracy",
+                "severity": "info",
+            }
+        )
 
     return findings
 
@@ -101,7 +107,7 @@ def check_citation_patterns(text: str) -> List[Dict]:
 def check_internal_contradictions(text: str) -> List[Dict]:
     """Detect potential internal contradictions in text."""
     findings = []
-    sentences = re.split(r'[.!?]+', text)
+    sentences = re.split(r"[.!?]+", text)
     sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
 
     # Check for negation contradictions
@@ -118,11 +124,13 @@ def check_internal_contradictions(text: str) -> List[Dict]:
         has_positive = any(word in s.lower() and negation not in s.lower() for s in sentences)
         has_negative = any(negation in s.lower() for s in sentences)
         if has_positive and has_negative:
-            findings.append({
-                "type": "potential_contradiction",
-                "detail": f"Text contains both '{word}' and '{negation}' claims — verify consistency",
-                "severity": "medium",
-            })
+            findings.append(
+                {
+                    "type": "potential_contradiction",
+                    "detail": f"Text contains both '{word}' and '{negation}' claims — verify consistency",
+                    "severity": "medium",
+                }
+            )
 
     return findings
 
@@ -132,20 +140,22 @@ def check_confidence_indicators(text: str) -> List[Dict]:
     findings = []
 
     hedging_patterns = [
-        (r'\b(?:I think|I believe|probably|possibly|might|could be|likely)\b', "hedging_language"),
-        (r'\b(?:approximately|roughly|around|about)\s+\d', "imprecise_quantification"),
-        (r'\b(?:as of my|my training|my knowledge|cutoff)\b', "knowledge_limitation"),
+        (r"\b(?:I think|I believe|probably|possibly|might|could be|likely)\b", "hedging_language"),
+        (r"\b(?:approximately|roughly|around|about)\s+\d", "imprecise_quantification"),
+        (r"\b(?:as of my|my training|my knowledge|cutoff)\b", "knowledge_limitation"),
     ]
 
     for pattern, pattern_type in hedging_patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         if matches:
-            findings.append({
-                "type": pattern_type,
-                "detail": f"Found {len(matches)} instances of {pattern_type.replace('_', ' ')}",
-                "severity": "low",
-                "count": len(matches),
-            })
+            findings.append(
+                {
+                    "type": pattern_type,
+                    "detail": f"Found {len(matches)} instances of {pattern_type.replace('_', ' ')}",
+                    "severity": "low",
+                    "count": len(matches),
+                }
+            )
 
     return findings
 
@@ -178,11 +188,7 @@ def check_output(
             "input_length": len(text),
             "check_timestamp": now,
             "risk_score": round(risk_score, 3),
-            "risk_level": (
-                "high" if risk_score >= 0.7
-                else "medium" if risk_score >= 0.3
-                else "low"
-            ),
+            "risk_level": ("high" if risk_score >= 0.7 else "medium" if risk_score >= 0.3 else "low"),
             "findings": all_findings,
             "findings_count": len(all_findings),
             "checks_performed": [

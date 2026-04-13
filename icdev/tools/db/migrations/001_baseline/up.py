@@ -12,16 +12,15 @@ For existing databases that already have the schema, use:
 
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 
 def up(conn):
     """Apply the baseline schema using init_icdev_db.py's SCHEMA_SQL."""
-    from icdev.tools.db.init_icdev_db import (
+    from tools.db.init_icdev_db import (
         SCHEMA_SQL,
         MBSE_ALTER_SQL,
         MODERNIZATION_ALTER_SQL,
@@ -59,7 +58,6 @@ def up(conn):
 
 def down(conn):
     """Drop all tables (DEVELOPMENT ONLY — never in production)."""
-    import sqlite3
     c = conn.cursor()
     c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name != 'schema_migrations'")
     tables = [row[0] for row in c.fetchall()]

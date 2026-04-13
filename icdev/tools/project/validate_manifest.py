@@ -15,17 +15,14 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.project.manifest_loader import load_manifest
+from tools.project.manifest_loader import load_manifest  # noqa: E402
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Validate an icdev.yaml manifest file"
-    )
+    parser = argparse.ArgumentParser(description="Validate an icdev.yaml manifest file")
     parser.add_argument("--file", help="Path to icdev.yaml")
     parser.add_argument("--dir", help="Directory containing icdev.yaml")
     parser.add_argument("--json", action="store_true", help="Output JSON")
@@ -34,12 +31,17 @@ def main():
     result = load_manifest(directory=args.dir, file_path=args.file)
 
     if args.json:
-        print(json.dumps({
-            "valid": result["valid"],
-            "errors": result["errors"],
-            "warnings": result["warnings"],
-            "file_path": result["file_path"],
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "valid": result["valid"],
+                    "errors": result["errors"],
+                    "warnings": result["warnings"],
+                    "file_path": result["file_path"],
+                },
+                indent=2,
+            )
+        )
     else:
         for err in result["errors"]:
             print(f"ERROR: {err}")

@@ -20,23 +20,24 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -47,9 +48,10 @@ def _import_tool(module_path, func_name):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_create_scenario(args: dict) -> dict:
     """Create a what-if scenario for simulation."""
-    create_scenario = _import_tool("icdev.tools.simulation.simulation_engine", "create_scenario")
+    create_scenario = _import_tool("tools.simulation.simulation_engine", "create_scenario")
     if not create_scenario:
         return {"error": "simulation_engine module not available", "status": "pending"}
 
@@ -84,7 +86,7 @@ def handle_create_scenario(args: dict) -> dict:
 
 def handle_run_simulation(args: dict) -> dict:
     """Run 6-dimension simulation on a scenario."""
-    run_simulation = _import_tool("icdev.tools.simulation.simulation_engine", "run_simulation")
+    run_simulation = _import_tool("tools.simulation.simulation_engine", "run_simulation")
     if not run_simulation:
         return {"error": "simulation_engine module not available", "status": "pending"}
 
@@ -106,7 +108,7 @@ def handle_run_simulation(args: dict) -> dict:
 
 def handle_run_monte_carlo(args: dict) -> dict:
     """Run Monte Carlo schedule/cost/risk estimation."""
-    run_monte_carlo = _import_tool("icdev.tools.simulation.monte_carlo", "run_monte_carlo")
+    run_monte_carlo = _import_tool("tools.simulation.monte_carlo", "run_monte_carlo")
     if not run_monte_carlo:
         return {"error": "monte_carlo module not available", "status": "pending"}
 
@@ -144,7 +146,7 @@ def handle_run_monte_carlo(args: dict) -> dict:
 
 def handle_generate_coas(args: dict) -> dict:
     """Generate 3 COAs (Speed/Balanced/Comprehensive)."""
-    generate_3_coas = _import_tool("icdev.tools.simulation.coa_generator", "generate_3_coas")
+    generate_3_coas = _import_tool("tools.simulation.coa_generator", "generate_3_coas")
     if not generate_3_coas:
         return {"error": "coa_generator module not available", "status": "pending"}
 
@@ -170,7 +172,7 @@ def handle_generate_coas(args: dict) -> dict:
 
 def handle_generate_alternative_coa(args: dict) -> dict:
     """Generate alternative COA for a RED requirement."""
-    generate_alternative_coa = _import_tool("icdev.tools.simulation.coa_generator", "generate_alternative_coa")
+    generate_alternative_coa = _import_tool("tools.simulation.coa_generator", "generate_alternative_coa")
     if not generate_alternative_coa:
         return {"error": "coa_generator module not available", "status": "pending"}
 
@@ -194,7 +196,7 @@ def handle_generate_alternative_coa(args: dict) -> dict:
 
 def handle_compare_coas(args: dict) -> dict:
     """Compare COAs across all simulation dimensions."""
-    compare_coas = _import_tool("icdev.tools.simulation.coa_generator", "compare_coas")
+    compare_coas = _import_tool("tools.simulation.coa_generator", "compare_coas")
     if not compare_coas:
         return {"error": "coa_generator module not available", "status": "pending"}
 
@@ -210,7 +212,7 @@ def handle_compare_coas(args: dict) -> dict:
 
 def handle_select_coa(args: dict) -> dict:
     """Select a COA with rationale."""
-    select_coa = _import_tool("icdev.tools.simulation.coa_generator", "select_coa")
+    select_coa = _import_tool("tools.simulation.coa_generator", "select_coa")
     if not select_coa:
         return {"error": "coa_generator module not available", "status": "pending"}
 
@@ -250,7 +252,7 @@ def handle_manage_scenarios(args: dict) -> dict:
         "summary": "scenario_summary",
     }
 
-    func = _import_tool("icdev.tools.simulation.scenario_manager", func_map[action])
+    func = _import_tool("tools.simulation.scenario_manager", func_map[action])
     if not func:
         return {"error": f"scenario_manager.{func_map[action]} not available", "status": "pending"}
 
@@ -293,6 +295,7 @@ def handle_manage_scenarios(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     """Create and configure the Simulation MCP server."""
     server = MCPServer(name="icdev-simulation", version="1.0.0")
@@ -313,7 +316,7 @@ def create_server() -> MCPServer:
                 },
                 "modifications": {
                     "type": "string",
-                    "description": "JSON string describing modifications (add/remove requirements, architecture changes)",
+                    "description": "JSON string describing modifications (add/remove requirements, architecture changes)",  # noqa: E501
                 },
                 "base_session_id": {
                     "type": "string",
@@ -335,7 +338,7 @@ def create_server() -> MCPServer:
                 "dimensions": {
                     "type": "string",
                     "default": "all",
-                    "description": "Comma-separated dimensions or 'all' (architecture,compliance,supply_chain,schedule,cost,risk)",
+                    "description": "Comma-separated dimensions or 'all' (architecture,compliance,supply_chain,schedule,cost,risk)",  # noqa: E501
                 },
             },
             "required": ["scenario_id"],

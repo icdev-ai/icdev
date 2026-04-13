@@ -38,7 +38,9 @@ class NIST800207Assessor(BaseAssessor):
     CATALOG_FILENAME = "nist_800_207_zta.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """ZTA-specific automated checks.
 

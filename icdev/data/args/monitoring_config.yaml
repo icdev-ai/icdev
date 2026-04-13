@@ -104,6 +104,22 @@ heartbeat:
       enabled: true
       interval_seconds: 86400
       stale_days: 90
+    review_board_health:
+      enabled: true
+      interval_seconds: 1800
+
+# Push-Based Metrics Sidecar (Coolify Sentinel)
+push_agent:
+  interval_seconds: 30           # Collection + push interval
+  dashboard_url: "http://localhost:5050"
+  push_endpoint: "/api/metrics/push"
+  push_timeout_seconds: 10
+  buffer_unpushed: true          # Buffer locally when dashboard unreachable
+  batch_size: 50                 # Records per HTTP push call
+  docker_enabled: true           # Collect via `docker stats`
+  psutil_enabled: true           # Fallback: psutil process-level
+  psutil_min_cpu: 0.1            # Skip processes below this CPU% (reduces noise)
+  retention_days: 7              # Auto-cleanup window (hard floor: 1 day)
 
 # Phase 29: Auto-resolution pipeline (D143-D145)
 auto_resolution:

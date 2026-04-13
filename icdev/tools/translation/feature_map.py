@@ -19,11 +19,9 @@ Feature maps are stored in args/translation_config.yaml under feature_maps.
 
 import json
 import re
-import textwrap
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = BASE_DIR / "args" / "translation_config.yaml"
 
 CUI_BANNER = "CUI // SP-CTI"
@@ -36,7 +34,7 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "py_list_comprehension",
             "pattern": r"\[.*\bfor\b.*\bin\b.*\]",
-            "description": "Python list comprehension — translate to Java Stream .map().collect(Collectors.toList()) or explicit for-loop.",
+            "description": "Python list comprehension — translate to Java Stream .map().collect(Collectors.toList()) or explicit for-loop.",  # noqa: E501
             "validation": "no_list_comprehension_syntax",
         },
         {
@@ -74,13 +72,13 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "py_exception_handling",
             "pattern": r"\btry\b.*\bexcept\b",
-            "description": "Python try/except — translate to Go multi-value return (val, err) pattern. Check err != nil after each call.",
+            "description": "Python try/except — translate to Go multi-value return (val, err) pattern. Check err != nil after each call.",  # noqa: E501
             "validation": "uses_error_return_pattern",
         },
         {
             "id": "py_class",
             "pattern": r"\bclass\b\s+\w+",
-            "description": "Python class — translate to Go struct with methods (receiver functions). Use interfaces for polymorphism.",
+            "description": "Python class — translate to Go struct with methods (receiver functions). Use interfaces for polymorphism.",  # noqa: E501
             "validation": "uses_struct_not_class",
         },
         {
@@ -94,13 +92,13 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "py_none_check",
             "pattern": r"\bis\s+None\b|\bis\s+not\s+None\b",
-            "description": "Python None checks — translate to Rust Option<T> with .is_some()/.is_none() or pattern matching.",
+            "description": "Python None checks — translate to Rust Option<T> with .is_some()/.is_none() or pattern matching.",  # noqa: E501
             "validation": "uses_option_type",
         },
         {
             "id": "py_mutable_list",
             "pattern": r"\w+\.append\(|\w+\.extend\(",
-            "description": "Python mutable list operations — translate to Rust Vec<T> with .push() or .extend(). Ensure proper ownership/borrowing.",
+            "description": "Python mutable list operations — translate to Rust Vec<T> with .push() or .extend(). Ensure proper ownership/borrowing.",  # noqa: E501
             "validation": "uses_vec_type",
         },
         {
@@ -120,7 +118,7 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "java_stream",
             "pattern": r"\.stream\(\)\.(?:map|filter|collect|reduce)",
-            "description": "Java Stream API — translate to Python list comprehension, generator expression, or itertools.",
+            "description": "Java Stream API — translate to Python list comprehension, generator expression, or itertools.",  # noqa: E501
             "validation": "uses_pythonic_iteration",
         },
     ],
@@ -128,7 +126,7 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "java_class_hierarchy",
             "pattern": r"\bextends\b|\bimplements\b",
-            "description": "Java class hierarchy — translate to Go struct embedding (extends) and interface satisfaction (implements). Go uses implicit interface implementation.",
+            "description": "Java class hierarchy — translate to Go struct embedding (extends) and interface satisfaction (implements). Go uses implicit interface implementation.",  # noqa: E501
             "validation": "no_extends_implements",
         },
     ],
@@ -136,7 +134,7 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "go_goroutine",
             "pattern": r"\bgo\s+\w+\(",
-            "description": "Go goroutine — translate to Rust tokio::spawn() or std::thread::spawn() with proper ownership transfer.",
+            "description": "Go goroutine — translate to Rust tokio::spawn() or std::thread::spawn() with proper ownership transfer.",  # noqa: E501
             "validation": "uses_spawn_or_async",
         },
         {
@@ -150,13 +148,13 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "cs_linq",
             "pattern": r"\.Where\(|\.Select\(|\.OrderBy\(|\.GroupBy\(",
-            "description": "C# LINQ — translate to Java Stream API with .filter(), .map(), .sorted(), .collect(groupingBy()).",
+            "description": "C# LINQ — translate to Java Stream API with .filter(), .map(), .sorted(), .collect(groupingBy()).",  # noqa: E501
             "validation": "uses_stream_api",
         },
         {
             "id": "cs_async_await",
             "pattern": r"\basync\b\s+Task|\bawait\b",
-            "description": "C# async/await — translate to Java CompletableFuture or reactive streams (Project Reactor).",
+            "description": "C# async/await — translate to Java CompletableFuture or reactive streams (Project Reactor).",  # noqa: E501
             "validation": "uses_completable_future",
         },
     ],
@@ -164,7 +162,7 @@ BUILTIN_FEATURE_MAPS = {
         {
             "id": "ts_interface",
             "pattern": r"\binterface\b\s+\w+",
-            "description": "TypeScript interface — translate to Python Protocol (typing) or ABC. Prefer Protocol for structural typing.",
+            "description": "TypeScript interface — translate to Python Protocol (typing) or ABC. Prefer Protocol for structural typing.",  # noqa: E501
             "validation": "uses_protocol_or_abc",
         },
     ],
@@ -247,10 +245,7 @@ class FeatureMapLoader:
             return ""
 
         lines = ["## Language-Specific Feature Guidance\n"]
-        lines.append(
-            "The following source language patterns were detected. "
-            "Apply these translation rules:\n"
-        )
+        lines.append("The following source language patterns were detected. Apply these translation rules:\n")
         for feat in detected_features:
             lines.append(f"- **{feat.get('id', 'unknown')}** ({feat.get('match_count', 0)} occurrences):")
             lines.append(f"  {feat.get('description', 'No guidance available.')}")
@@ -366,14 +361,19 @@ def main():
         source_code = source_path.read_text(encoding="utf-8", errors="replace")
         detected = loader.detect_features(source_code, args.source_language, args.target_language)
         if args.json_output:
-            print(json.dumps({
-                "source_file": str(source_path),
-                "source_language": args.source_language,
-                "target_language": args.target_language,
-                "detected_features": detected,
-                "count": len(detected),
-                "prompt_context": loader.generate_prompt_context(detected),
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "source_file": str(source_path),
+                        "source_language": args.source_language,
+                        "target_language": args.target_language,
+                        "detected_features": detected,
+                        "count": len(detected),
+                        "prompt_context": loader.generate_prompt_context(detected),
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(f"Detected {len(detected)} features in {source_path}:")
             for feat in detected:

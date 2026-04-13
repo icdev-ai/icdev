@@ -2,6 +2,10 @@
 
 {% block title %}Chat — ICDEV™ Dashboard{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <h1>Chat</h1>
@@ -28,67 +32,92 @@
     </div>
 </div>
 
-<!-- Main layout: sidebar + chat pane + right sidebar -->
-<div style="display: flex; gap: 16px; margin-top: 16px; min-height: 500px;">
+<!-- Main layout: CSS Grid with resize handles (D-CU-5) -->
+<div class="chat-layout" id="chat-layout">
     <!-- Left sidebar: context list -->
-    <div style="width: 280px; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); overflow-y: auto; max-height: 600px;">
-        <div style="padding: 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <div class="chat-sidebar" id="chat-sidebar">
+        <div class="chat-sidebar__header">
             <strong>Contexts</strong>
-            <button id="btn-new-context" class="btn btn-sm" style="font-size: 0.75rem; padding: 4px 10px; background: var(--accent-blue); color: #fff; border: none; border-radius: 4px; cursor: pointer;" title="Create new chat context">+ New</button>
+            <button id="btn-new-context" class="chat-sidebar__new-btn" title="Create new chat context">+ New</button>
         </div>
-        <div id="context-list" style="padding: 4px;"></div>
+        <div id="context-list" class="chat-sidebar__list"></div>
     </div>
 
+    <!-- Left resize handle -->
+    <div class="chat-resize-handle" id="resize-left" title="Drag to resize"></div>
+
     <!-- Main chat pane -->
-    <div style="flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary);">
+    <div class="chat-main">
         <!-- Chat header -->
-        <div id="chat-header" style="padding: 10px 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <span id="chat-title" style="font-weight: 600;">Select or create a context</span>
-            <div>
-                <span id="chat-status" class="badge" style="font-size: 0.7rem;"></span>
-                <button id="btn-ricoas-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; background: var(--accent-blue); color: #fff; border: none; border-radius: 3px; cursor: pointer; display: none;" title="Toggle RICOAS sidebar">RICOAS</button>
-                <button id="btn-gov-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; background: var(--accent-purple, #7c4dff); color: #fff; border: none; border-radius: 3px; cursor: pointer;" title="Toggle AI Governance sidebar">Gov</button>
-                <button id="btn-close-context" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; display: none; background: var(--accent-red, #d44); color: #fff; border: none; border-radius: 3px; cursor: pointer;">Close</button>
+        <div id="chat-header" class="chat-header">
+            <span id="chat-title" class="chat-header__title">Select or create a context</span>
+            <div class="chat-header__actions">
+                <span id="chat-status" class="badge chat-header__status"></span>
+                <button id="btn-ricoas-toggle" class="chat-toggle-btn chat-toggle-btn--ricoas" title="Toggle RICOAS sidebar">RICOAS</button>
+                <button id="btn-gov-toggle" class="chat-toggle-btn chat-toggle-btn--gov" title="Toggle AI Governance sidebar">Gov</button>
+                <button id="btn-intel-toggle" class="chat-toggle-btn chat-toggle-btn--intel" title="Toggle Intelligence sidebar (RAG, Bayesian, Code Quality, Genesis)">Intel</button>
+                <button id="btn-focus-mode" class="chat-toggle-btn chat-toggle-btn--focus" title="Focus mode — hide sidebars">Focus</button>
+                <button id="btn-close-context" class="chat-toggle-btn chat-toggle-btn--close">Close</button>
             </div>
         </div>
 
         <!-- Message stream -->
-        <div id="message-stream" style="flex: 1; overflow-y: auto; padding: 16px; min-height: 300px; max-height: 450px;"></div>
+        <div id="message-stream" class="chat-messages"></div>
+
+        <!-- Typing indicator (D-CU-1) -->
+        <div id="typing-indicator" class="typing-indicator">
+            <div class="agent-avatar" id="typing-avatar" style="width:28px;height:28px;font-size:0.7rem;"></div>
+            <div class="typing-dots">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+            <span class="typing-label" id="typing-label">Agent is thinking...</span>
+        </div>
 
         <!-- Intervention bar (visible during processing) -->
-        <div id="intervention-bar" style="display: none; padding: 8px 16px; background: var(--bg-warning, #332); border-top: 1px solid var(--border-color);">
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <span style="font-size: 0.8rem; color: var(--accent-yellow, #fa0);">Agent is processing...</span>
-                <input type="text" id="intervention-input" placeholder="Type to intervene..." style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 10px; font-size: 0.85rem;">
-                <button id="btn-intervene" style="background: var(--accent-yellow, #fa0); color: #000; border: none; border-radius: 4px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer;">Intervene</button>
+        <div id="intervention-bar" class="chat-intervention">
+            <div class="chat-intervention__inner">
+                <span class="chat-intervention__label">Agent is processing...</span>
+                <input type="text" id="intervention-input" class="chat-intervention__input" placeholder="Type to intervene...">
+                <button id="btn-intervene" class="chat-intervention__btn">Intervene</button>
             </div>
         </div>
 
         <!-- Input area with file upload -->
-        <div id="input-area" style="padding: 12px 16px; border-top: 1px solid var(--border-color);">
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <button id="chat-upload-btn" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 1rem; display: none;" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
-                <input type="text" id="message-input" placeholder="Type a message..." style="flex: 1; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; font-size: 0.9rem;" disabled>
-                <button id="btn-send" style="background: var(--accent-blue); color: #fff; border: none; border-radius: 4px; padding: 8px 20px; font-size: 0.85rem; cursor: pointer;" disabled>Send</button>
+        <div id="input-area" class="chat-input-area">
+            <div class="chat-input-area__inner">
+                <button id="chat-upload-btn" class="chat-upload-btn" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
+                <input type="text" id="message-input" class="chat-message-input" placeholder="Type a message..." disabled>
+                <button id="btn-send" class="chat-send-btn" disabled>Send</button>
                 <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
             </div>
         </div>
     </div>
 
-    <!-- Right sidebar: RICOAS + AI Governance -->
-    <div id="right-sidebar" style="display: none; width: 280px; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); overflow-y: auto; max-height: 600px;">
+    <!-- Right resize handle -->
+    <div class="chat-resize-handle" id="resize-right" title="Drag to resize"></div>
 
-        <!-- RICOAS Section (shown when context is intake-linked) -->
-        <div id="ricoas-sidebar" style="display: none; padding: 12px;">
+    <!-- Right sidebar: Tabbed (RICOAS | Gov | Intel) -->
+    <div id="right-sidebar" class="chat-right-panel">
+        <!-- Tabs -->
+        <div class="chat-right-tabs" id="right-sidebar-tabs">
+            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas">RICOAS</button>
+            <button class="chat-right-tab" data-tab="gov" id="tab-gov">Gov</button>
+            <button class="chat-right-tab" data-tab="intel" id="tab-intel">Intel</button>
+        </div>
+
+        <!-- RICOAS Tab Content -->
+        <div id="ricoas-sidebar" class="chat-right-tab-content chat-right-tab-content--active" data-tab-content="ricoas">
             <!-- Compliance Frameworks -->
             <div class="sidebar-section" id="frameworks-section" style="display:none;">
-                <h4 style="margin: 0 0 8px; font-size: 0.85rem;">Compliance Frameworks</h4>
+                <h4 class="chat-sidebar-heading">Compliance Frameworks</h4>
                 <div id="framework-tags" class="framework-tags"></div>
             </div>
 
             <!-- Complexity -->
             <div class="sidebar-section" id="complexity-section" style="display:none;">
-                <h4 style="margin: 8px 0; font-size: 0.85rem;">Project Complexity</h4>
+                <h4 class="chat-sidebar-heading">Project Complexity</h4>
                 <div class="complexity-indicator" id="complexity-indicator">
                     <div class="complexity-level" id="complexity-level"></div>
                     <div class="complexity-bar-container"><div class="complexity-bar-fill" id="complexity-bar" style="width:0%"></div></div>
@@ -98,7 +127,7 @@
             </div>
 
             <!-- Readiness Score -->
-            <h4 style="margin: 8px 0; font-size: 0.85rem;">Readiness Score</h4>
+            <h4 class="chat-sidebar-heading">Readiness Score</h4>
             <div class="readiness-gauge-container" id="readiness-gauge" style="text-align: center;">
                 <svg viewBox="0 0 120 120" class="readiness-gauge-svg" style="width: 100px; height: 100px;">
                     <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border-color)" stroke-width="10"/>
@@ -118,7 +147,7 @@
                 <div class="readiness-dim"><span class="readiness-dim-label">Testability</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-testability" style="width:0%"></div></div><span class="readiness-dim-value" id="val-testability">0%</span></div>
             </div>
 
-            <div class="chat-stats" style="margin: 8px 0; font-size: 0.8rem;">
+            <div class="chat-stats">
                 <div class="chat-stat"><span class="chat-stat-label">Requirements</span> <span class="chat-stat-value" id="stat-requirements">0</span></div>
                 <div class="chat-stat"><span class="chat-stat-label">Documents</span> <span class="chat-stat-value" id="stat-documents">0</span></div>
                 <div class="chat-stat"><span class="chat-stat-label">Turns</span> <span class="chat-stat-value" id="stat-turns">0</span></div>
@@ -126,116 +155,145 @@
 
             <!-- Elicitation Techniques -->
             <div class="sidebar-section" id="techniques-section">
-                <h4 style="margin: 8px 0; font-size: 0.85rem;">Elicitation Techniques</h4>
+                <h4 class="chat-sidebar-heading">Elicitation Techniques</h4>
                 <div id="technique-active" class="technique-active-banner" style="display:none;">
                     <span id="technique-active-name"></span>
-                    <button class="technique-deactivate-btn" onclick="ICDEV™.chatDeactivateTechnique()" title="Deactivate">&times;</button>
+                    <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
                 </div>
                 <div id="technique-chips" class="technique-chips"></div>
             </div>
 
             <!-- BDD Preview -->
             <div class="sidebar-section" id="bdd-preview-section" style="display:none;">
-                <h4 style="margin: 8px 0; font-size: 0.85rem;">BDD Scenarios (Draft)</h4>
+                <h4 class="chat-sidebar-heading">BDD Scenarios (Draft)</h4>
                 <div id="bdd-preview-list" class="bdd-preview-list"></div>
             </div>
 
             <!-- Courses of Action -->
             <div class="sidebar-section" id="coa-section" style="display:none;">
-                <h4 style="margin: 8px 0; font-size: 0.85rem;">Courses of Action</h4>
+                <h4 class="chat-sidebar-heading">Courses of Action</h4>
                 <div id="coa-list"></div>
                 <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">&#x2713; <span id="coa-selected-name"></span> selected</div>
             </div>
 
-            <div id="chat-actions" style="margin-top: 12px;">
-                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none; width:100%; font-size: 0.85rem;" onclick="ICDEV™.chatGeneratePlan()">Generate Plan &#x2192;</button>
-                <button class="btn btn-secondary" id="export-btn" style="width:100%; margin-top:8px; display:none; font-size: 0.85rem;" onclick="ICDEV™.chatExport()">Export Requirements</button>
+            <div id="chat-actions" class="chat-actions">
+                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
+                <button class="btn btn-secondary" id="export-btn" style="display:none;" onclick="ICDEV.chatExport()">Export Requirements</button>
             </div>
 
             <!-- Post-export actions -->
             <div id="post-export-actions" class="post-export-actions" style="display:none;">
-                <h4 style="margin: 8px 0; font-size: 0.85rem;">What's next?</h4>
-                <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatTriggerBuild()">Generate Application</button>
-                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatRunSimulation()">Run Simulation (COAs)</button>
-                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatViewRequirements()">View Requirements</button>
-                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
-                <button class="btn btn-secondary" style="width:100%; font-size: 0.8rem;" onclick="ICDEV™.chatValidatePRD()">&#x2714; Validate PRD</button>
+                <h4 class="chat-sidebar-heading">What's next?</h4>
+                <button class="btn btn-primary" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
+                <button class="btn btn-warning" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatValidatePRD()">&#x2714; Validate PRD</button>
             </div>
 
             <!-- Build Pipeline -->
             <div class="sidebar-section" id="build-pipeline-section" style="display:none;">
-                <h4 style="margin: 8px 0; font-size: 0.85rem;">Build Pipeline</h4>
+                <h4 class="chat-sidebar-heading">Build Pipeline</h4>
                 <div id="build-pipeline-phases" class="build-pipeline"></div>
                 <div id="build-pipeline-status" class="build-pipeline-status"></div>
                 <div id="build-done-actions" class="build-done-actions" style="display:none;">
-                    <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatViewProject()">View Project</button>
-                    <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatRunTests()">Run Tests</button>
-                    <button class="btn btn-secondary" style="width:100%; font-size: 0.8rem;" onclick="window.open('/events','_blank')">View Events</button>
+                    <button class="btn btn-primary" onclick="ICDEV.chatViewProject()">View Project</button>
+                    <button class="btn btn-secondary" onclick="ICDEV.chatRunTests()">Run Tests</button>
+                    <button class="btn btn-secondary" onclick="window.open('/events','_blank')">View Events</button>
                 </div>
             </div>
         </div>
 
-        <!-- AI Governance Section -->
-        <div id="gov-sidebar" style="display: none; padding: 12px;">
-            <div style="padding-bottom: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 8px;">
-                <strong style="color: var(--accent-purple, #7c4dff);">AI Governance</strong>
+        <!-- Governance Tab Content -->
+        <div id="gov-sidebar" class="chat-right-tab-content" data-tab-content="gov">
+            <div class="gov-sidebar-header">
+                <strong class="gov-sidebar-title">AI Governance</strong>
             </div>
             <div id="gov-sidebar-content">
-                <p style="font-size: 0.8rem; color: var(--text-secondary);">Loading governance status...</p>
+                <p class="gov-sidebar-placeholder">Loading governance status...</p>
+            </div>
+        </div>
+
+        <!-- Intelligence Tab Content -->
+        <div id="intel-sidebar" class="chat-right-tab-content" data-tab-content="intel">
+            <div class="intel-sidebar-header">
+                <strong class="intel-sidebar-title">Intelligence</strong>
+                <span class="intel-sidebar-subtitle">RAG + Bayesian + Quality + Genesis</span>
+            </div>
+
+            <!-- RAG Knowledge Sources -->
+            <div class="intel-section" id="intel-rag">
+                <h4 class="intel-section-heading intel-section-heading--rag">Knowledge Sources (RAG)</h4>
+                <div id="intel-rag-content" class="intel-section-content">
+                    No sources retrieved yet. RAG context is automatically injected when you ask questions.
+                </div>
+            </div>
+
+            <!-- Bayesian Learning -->
+            <div class="intel-section" id="intel-bayesian">
+                <h4 class="intel-section-heading intel-section-heading--bayesian">Bayesian Learning</h4>
+                <div id="intel-bayesian-content" class="intel-section-content">
+                    Discuss compliance topics to get information-gain optimized recommendations for control implementation order.
+                </div>
+            </div>
+
+            <!-- Code Quality -->
+            <div class="intel-section" id="intel-code-quality">
+                <h4 class="intel-section-heading intel-section-heading--quality">Code Quality</h4>
+                <div id="intel-code-quality-content" class="intel-section-content">
+                    Discuss code or implementation topics to get maintainability insights, smell detection, and complexity alerts.
+                </div>
+            </div>
+
+            <!-- Genesis Activity -->
+            <div class="intel-section" id="intel-genesis">
+                <h4 class="intel-section-heading intel-section-heading--genesis">Genesis Research Lab</h4>
+                <div id="intel-genesis-content" class="intel-section-content">
+                    Discuss improvements or research to see autonomous Genesis findings and pending knowledge packets.
+                </div>
+            </div>
+
+            <!-- Context Health -->
+            <div class="intel-section" id="intel-health">
+                <h4 class="intel-section-heading intel-section-heading--health">Context Health</h4>
+                <div id="intel-health-content" class="intel-section-content">
+                    <span style="color: #4caf50;">Healthy</span> — Pressure and stuck detection monitored every 10 turns.
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<style>
-/* Governance advisory message styling (D327) */
-.msg-governance_advisory {
-    border-left: 3px solid var(--accent-purple, #7c4dff) !important;
-    background: rgba(124, 77, 255, 0.05) !important;
-}
-.msg-governance_advisory::before {
-    content: '\26A0';
-    margin-right: 6px;
-}
-.gov-stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; }
-.gov-stat-label { color: var(--text-secondary); }
-.gov-stat-value { font-weight: 600; }
-.gov-gap-item { padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.78rem; }
-.gov-gap-severity { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; }
-.gov-gap-severity.high { background: var(--accent-red, #d44); color: #fff; }
-.gov-gap-severity.medium { background: var(--accent-yellow, #fa0); color: #000; }
-.gov-gap-severity.low { background: var(--accent-blue); color: #fff; }
-</style>
-
 <!-- New Context Modal -->
-<div id="new-context-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
-    <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 24px; width: 400px; max-width: 90vw;">
-        <h3 style="margin-top: 0;">New Chat Context</h3>
-        <div style="margin-bottom: 12px;">
-            <label style="font-size: 0.85rem;">Title</label>
-            <input type="text" id="new-ctx-title" placeholder="Chat title..." style="width: 100%; margin-top: 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px;">
+<div id="new-context-modal" class="chat-modal-overlay">
+    <div class="chat-modal">
+        <h3 class="chat-modal__title">New Chat Context</h3>
+        <div class="chat-modal__field">
+            <label class="chat-modal__label">Title</label>
+            <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title...">
         </div>
-        <div style="margin-bottom: 12px;">
-            <label style="font-size: 0.85rem;">Agent Model</label>
-            <select id="new-ctx-model" style="width: 100%; margin-top: 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px;">
+        <div class="chat-modal__field">
+            <label class="chat-modal__label">Agent Model</label>
+            <select id="new-ctx-model" class="chat-modal__select">
                 <option value="sonnet">Sonnet (Default)</option>
                 <option value="opus">Opus</option>
                 <option value="haiku">Haiku</option>
             </select>
         </div>
-        <div style="margin-bottom: 12px;">
-            <label style="font-size: 0.85rem;">
-                <input type="checkbox" id="new-ctx-intake" style="vertical-align: middle; margin-right: 4px;">
+        <div class="chat-modal__field">
+            <label class="chat-modal__label chat-modal__label--inline">
+                <input type="checkbox" id="new-ctx-intake" class="chat-modal__checkbox">
                 Link to Requirements Intake (RICOAS)
             </label>
         </div>
-        <div style="margin-bottom: 16px;">
-            <label style="font-size: 0.85rem;">System Prompt (optional)</label>
-            <textarea id="new-ctx-prompt" placeholder="Custom system prompt..." rows="3" style="width: 100%; margin-top: 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; resize: vertical;"></textarea>
+        <div class="chat-modal__field">
+            <label class="chat-modal__label">System Prompt (optional)</label>
+            <textarea id="new-ctx-prompt" class="chat-modal__textarea" placeholder="Custom system prompt..." rows="3"></textarea>
         </div>
-        <div style="display: flex; gap: 8px; justify-content: flex-end;">
-            <button id="btn-cancel-modal" style="background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 16px; cursor: pointer;">Cancel</button>
-            <button id="btn-create-context" style="background: var(--accent-blue); color: #fff; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;">Create</button>
+        <div class="chat-modal__actions">
+            <button id="btn-cancel-modal" class="chat-modal__btn chat-modal__btn--cancel">Cancel</button>
+            <button id="btn-create-context" class="chat-modal__btn chat-modal__btn--create">Create</button>
         </div>
     </div>
 </div>
@@ -257,31 +315,95 @@
 {% block scripts %}
 <script defer src="{{ url_for('static', filename='js/chat.js') }}"></script>
 <script>
-// AI Governance sidebar (D326)
+// Right sidebar tab switching
 (function() {
-    var btn = document.getElementById('btn-gov-toggle');
-    var sidebar = document.getElementById('gov-sidebar');
-    var rightSidebar = document.getElementById('right-sidebar');
-    var content = document.getElementById('gov-sidebar-content');
-    if (!btn || !sidebar) return;
-
-    btn.addEventListener('click', function() {
-        var visible = sidebar.style.display !== 'none';
-        sidebar.style.display = visible ? 'none' : 'block';
-        // Show right sidebar container if any section is visible
-        if (!visible) {
-            rightSidebar.style.display = 'block';
-            refreshGovernanceSidebar();
-        } else {
-            // Hide right sidebar if RICOAS is also hidden
-            var ricoas = document.getElementById('ricoas-sidebar');
-            if (!ricoas || ricoas.style.display === 'none') {
-                rightSidebar.style.display = 'none';
-            }
-        }
+    var tabs = document.querySelectorAll('.chat-right-tab');
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            var tabName = this.getAttribute('data-tab');
+            // Deactivate all tabs and contents
+            document.querySelectorAll('.chat-right-tab').forEach(function(t) { t.classList.remove('chat-right-tab--active'); });
+            document.querySelectorAll('.chat-right-tab-content').forEach(function(c) { c.classList.remove('chat-right-tab-content--active'); });
+            // Activate clicked tab
+            this.classList.add('chat-right-tab--active');
+            var content = document.querySelector('[data-tab-content="' + tabName + '"]');
+            if (content) content.classList.add('chat-right-tab-content--active');
+        });
     });
+})();
 
+// Right sidebar toggle buttons (Gov, Intel, RICOAS)
+(function() {
+    var rightSidebar = document.getElementById('right-sidebar');
+
+    function showRightSidebar(tabName) {
+        rightSidebar.classList.add('chat-right-panel--visible');
+        document.getElementById('chat-layout').classList.add('chat-layout--right-open');
+        // Switch to the requested tab
+        document.querySelectorAll('.chat-right-tab').forEach(function(t) { t.classList.remove('chat-right-tab--active'); });
+        document.querySelectorAll('.chat-right-tab-content').forEach(function(c) { c.classList.remove('chat-right-tab-content--active'); });
+        var tab = document.getElementById('tab-' + tabName);
+        var content = document.querySelector('[data-tab-content="' + tabName + '"]');
+        if (tab) tab.classList.add('chat-right-tab--active');
+        if (content) content.classList.add('chat-right-tab-content--active');
+    }
+
+    function hideRightSidebar() {
+        rightSidebar.classList.remove('chat-right-panel--visible');
+        document.getElementById('chat-layout').classList.remove('chat-layout--right-open');
+    }
+
+    function toggleTab(tabName) {
+        var isVisible = rightSidebar.classList.contains('chat-right-panel--visible');
+        var activeTab = document.querySelector('.chat-right-tab--active');
+        var activeTabName = activeTab ? activeTab.getAttribute('data-tab') : '';
+
+        if (isVisible && activeTabName === tabName) {
+            hideRightSidebar();
+        } else {
+            showRightSidebar(tabName);
+            if (tabName === 'gov') refreshGovernanceSidebar();
+        }
+    }
+
+    // Button handlers
+    var btnGov = document.getElementById('btn-gov-toggle');
+    var btnIntel = document.getElementById('btn-intel-toggle');
+    var btnRicoas = document.getElementById('btn-ricoas-toggle');
+
+    if (btnGov) btnGov.addEventListener('click', function() { toggleTab('gov'); });
+    if (btnIntel) btnIntel.addEventListener('click', function() { toggleTab('intel'); });
+    if (btnRicoas) btnRicoas.addEventListener('click', function() { toggleTab('ricoas'); });
+
+    // Focus mode
+    var btnFocus = document.getElementById('btn-focus-mode');
+    if (btnFocus) {
+        btnFocus.addEventListener('click', function() {
+            var sidebar = document.getElementById('chat-sidebar');
+            var layout = document.getElementById('chat-layout');
+            var resizeLeft = document.getElementById('resize-left');
+            var resizeRight = document.getElementById('resize-right');
+            var isFocused = sidebar.style.display === 'none';
+
+            if (isFocused) {
+                sidebar.style.display = '';
+                if (resizeLeft) resizeLeft.style.display = '';
+                btnFocus.textContent = 'Focus';
+            } else {
+                sidebar.style.display = 'none';
+                hideRightSidebar();
+                if (resizeLeft) resizeLeft.style.display = 'none';
+                if (resizeRight) resizeRight.style.display = 'none';
+                layout.style.gridTemplateColumns = '1fr';
+                btnFocus.textContent = 'Expand';
+            }
+        });
+    }
+
+    // AI Governance sidebar refresh
     function refreshGovernanceSidebar() {
+        var content = document.getElementById('gov-sidebar-content');
+        if (!content) return;
         var html = '';
         Promise.all([
             fetch('/api/ai-transparency/stats').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
@@ -290,16 +412,16 @@
             var tStats = results[0];
             var aStats = results[1];
 
-            html += '<div style="margin-bottom: 12px;"><strong style="font-size: 0.82rem;">Transparency</strong></div>';
+            html += '<div class="gov-section-heading"><strong>Transparency</strong></div>';
             if (tStats) {
                 html += govStatRow('AI Systems', tStats.inventory_count || 0);
                 html += govStatRow('Model Cards', tStats.model_cards || 0);
                 html += govStatRow('System Cards', tStats.system_cards || 0);
             } else {
-                html += '<p style="font-size:0.78rem;color:var(--text-secondary);">Transparency API not available</p>';
+                html += '<p class="gov-sidebar-placeholder">Transparency API not available</p>';
             }
 
-            html += '<div style="margin: 12px 0 8px;"><strong style="font-size: 0.82rem;">Accountability</strong></div>';
+            html += '<div class="gov-section-heading" style="margin-top:12px;"><strong>Accountability</strong></div>';
             if (aStats) {
                 html += govStatRow('Oversight Plans', aStats.oversight_plans || 0);
                 html += govStatRow('CAIO Designated', aStats.caio_designations || 0);
@@ -307,7 +429,7 @@
                 html += govStatRow('Ethics Reviews', aStats.ethics_reviews || 0);
                 html += govStatRow('Reassessments', aStats.reassessment_schedules || 0);
             } else {
-                html += '<p style="font-size:0.78rem;color:var(--text-secondary);">Accountability API not available</p>';
+                html += '<p class="gov-sidebar-placeholder">Accountability API not available</p>';
             }
 
             content.innerHTML = html;
@@ -323,10 +445,120 @@
         window._chatOnStateChange = [];
     }
     window._chatOnStateChange.push(function(data) {
-        if (data && data.change_type === 'governance_advisory' && sidebar.style.display !== 'none') {
-            refreshGovernanceSidebar();
+        if (data && data.change_type === 'governance_advisory' && rightSidebar.classList.contains('chat-right-panel--visible')) {
+            var activeTab = document.querySelector('.chat-right-tab--active');
+            if (activeTab && activeTab.getAttribute('data-tab') === 'gov') {
+                refreshGovernanceSidebar();
+            }
         }
     });
+})();
+
+// Intelligence sidebar state change handlers
+(function() {
+    if (typeof window._chatOnStateChange === 'undefined') {
+        window._chatOnStateChange = [];
+    }
+    window._chatOnStateChange.push(function(data) {
+        if (!data) return;
+        var ct = data.change_type || '';
+
+        if (ct === 'rag_attribution') {
+            var ragEl = document.getElementById('intel-rag-content');
+            if (ragEl && data.source_count) {
+                ragEl.innerHTML = '<span style="color:#2196f3;font-weight:600;">' + data.source_count +
+                    ' source(s)</span> used in last response. View the [Knowledge Sources] message in chat for details.';
+            }
+        }
+
+        if (ct === 'bayesian_advisory') {
+            var bayEl = document.getElementById('intel-bayesian-content');
+            if (bayEl) {
+                var domain = data.fitness_domain || 'compliance';
+                bayEl.innerHTML = '<span style="color:#00bfa5;font-weight:600;">Active</span> — ' +
+                    'Bayesian info-gain analysis running for <em>' + domain + '</em>. ' +
+                    'See [Bayesian Learning] messages for recommended next actions.';
+            }
+        }
+
+        if (ct === 'code_quality_advisory') {
+            var cqEl = document.getElementById('intel-code-quality-content');
+            if (cqEl) {
+                var score = data.score ? (data.score * 100).toFixed(0) + '%' : 'N/A';
+                var sev = data.severity || 'info';
+                var color = sev === 'high' ? '#d44' : sev === 'medium' ? '#ff9800' : '#4caf50';
+                cqEl.innerHTML = '<span style="color:' + color + ';font-weight:600;">Score: ' + score + '</span> — ' +
+                    'See [Code Quality] messages for smell and complexity details.';
+            }
+        }
+
+        if (ct === 'genesis_advisory') {
+            var genEl = document.getElementById('intel-genesis-content');
+            if (genEl) {
+                genEl.innerHTML = '<span style="color:#e040fb;font-weight:600;">Activity detected</span> — ' +
+                    'See [Genesis Insight] messages for research findings and pending GKPs.';
+            }
+        }
+
+        if (ct === 'context_health') {
+            var healthEl = document.getElementById('intel-health-content');
+            if (healthEl) {
+                var level = data.pressure_level || 'unknown';
+                var stuck = data.is_stuck;
+                var hColor = stuck ? '#ff5252' : (level === 'high' ? '#ff9800' : '#4caf50');
+                var hText = stuck ? 'STUCK — agent may need intervention' :
+                    (level === 'high' ? 'High pressure (' + level + ')' : 'Healthy');
+                healthEl.innerHTML = '<span style="color:' + hColor + ';font-weight:600;">' + hText + '</span>';
+            }
+        }
+    });
+})();
+
+// Resize handles
+(function() {
+    function initResize(handleId, targetId, side) {
+        var handle = document.getElementById(handleId);
+        var target = document.getElementById(targetId);
+        if (!handle || !target) return;
+
+        var startX, startWidth;
+
+        handle.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            startX = e.clientX;
+            startWidth = target.offsetWidth;
+            handle.classList.add('chat-resize-handle--active');
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        function onMouseMove(e) {
+            var diff = e.clientX - startX;
+            var newWidth = side === 'left' ? startWidth + diff : startWidth - diff;
+            newWidth = Math.max(200, Math.min(400, newWidth));
+            target.style.width = newWidth + 'px';
+            var layout = document.getElementById('chat-layout');
+            if (side === 'left') {
+                layout.style.gridTemplateColumns = newWidth + 'px 6px 1fr 6px var(--chat-right-w, 0px)';
+            }
+            try { localStorage.setItem('icdev_chat_' + side + '_w', newWidth); } catch(ex) {}
+        }
+
+        function onMouseUp() {
+            handle.classList.remove('chat-resize-handle--active');
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+    }
+
+    initResize('resize-left', 'chat-sidebar', 'left');
+    initResize('resize-right', 'right-sidebar', 'right');
+
+    // Restore saved widths
+    try {
+        var leftW = localStorage.getItem('icdev_chat_left_w');
+        if (leftW) document.getElementById('chat-sidebar').style.width = leftW + 'px';
+    } catch(ex) {}
 })();
 </script>
 {% endblock %}

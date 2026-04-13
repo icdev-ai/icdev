@@ -10,7 +10,7 @@ Activity types: tool_invocation, llm_call, decision, review, generation
 Relation types: wasGeneratedBy, used, wasInformedBy, wasDerivedFrom, wasAttributedTo
 
 Usage:
-    from icdev.tools.observability.provenance.prov_recorder import ProvRecorder
+    from tools.observability.provenance.prov_recorder import ProvRecorder
     recorder = ProvRecorder()
 
     entity_id = recorder.record_entity("prompt", "User query", content_hash="abc...")
@@ -18,20 +18,20 @@ Usage:
     recorder.record_relation("wasGeneratedBy", entity_id, activity_id)
 """
 
-from icdev._paths import get_project_root
 import hashlib
 import json
 import logging
 import os
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("icdev.observability.provenance")
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -92,17 +92,24 @@ class ProvRecorder:
             return None
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO prov_entities
                    (id, entity_type, label, content_hash, content, attributes,
                     trace_id, span_id, agent_id, project_id, classification)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    entity_id, entity_type, label, content_hash, stored_content,
+                    entity_id,
+                    entity_type,
+                    label,
+                    content_hash,
+                    stored_content,
                     json.dumps(attributes or {}),
-                    trace_id, span_id,
-                    self._agent_id, self._project_id, self._classification,
+                    trace_id,
+                    span_id,
+                    self._agent_id,
+                    self._project_id,
+                    self._classification,
                 ),
             )
             conn.commit()
@@ -143,18 +150,24 @@ class ProvRecorder:
             return None
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO prov_activities
                    (id, activity_type, label, start_time, end_time, attributes,
                     trace_id, span_id, agent_id, project_id, classification)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    activity_id, activity_type, label,
-                    start_time or now, end_time,
+                    activity_id,
+                    activity_type,
+                    label,
+                    start_time or now,
+                    end_time,
                     json.dumps(attributes or {}),
-                    trace_id, span_id,
-                    self._agent_id, self._project_id, self._classification,
+                    trace_id,
+                    span_id,
+                    self._agent_id,
+                    self._project_id,
+                    self._classification,
                 ),
             )
             conn.commit()
@@ -188,16 +201,20 @@ class ProvRecorder:
             return False
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO prov_relations
                    (relation_type, subject_id, object_id, attributes,
                     trace_id, project_id, classification)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    relation_type, subject_id, object_id,
+                    relation_type,
+                    subject_id,
+                    object_id,
                     json.dumps(attributes or {}),
-                    trace_id, self._project_id, self._classification,
+                    trace_id,
+                    self._project_id,
+                    self._classification,
                 ),
             )
             conn.commit()
@@ -231,8 +248,7 @@ class ProvRecorder:
         queue = [entity_id]
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
 
             depth = 0
             while queue and depth < max_depth:
@@ -280,15 +296,14 @@ class ProvRecorder:
             return {"entity": {}, "activity": {}, "relation": []}
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
 
             where = "WHERE project_id = ?" if pid else ""
             params = (pid,) if pid else ()
 
-            entities = conn.execute(f"SELECT * FROM prov_entities {where}", params).fetchall()
-            activities = conn.execute(f"SELECT * FROM prov_activities {where}", params).fetchall()
-            relations = conn.execute(f"SELECT * FROM prov_relations {where}", params).fetchall()
+            entities = conn.execute(f"SELECT * FROM prov_entities {where}", params).fetchall()  # nosec B608 -- table/column names are internal constants, not user input
+            activities = conn.execute(f"SELECT * FROM prov_activities {where}", params).fetchall()  # nosec B608 -- table/column names are internal constants, not user input
+            relations = conn.execute(f"SELECT * FROM prov_relations {where}", params).fetchall()  # nosec B608 -- table/column names are internal constants, not user input
             conn.close()
 
             return {

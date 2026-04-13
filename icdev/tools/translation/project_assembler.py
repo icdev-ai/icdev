@@ -8,12 +8,9 @@ Architecture Decision D249: Compliance bridge — CUI markings on all translated
 
 import argparse
 import json
-import os
-import uuid
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Build file templates per language
@@ -172,20 +169,20 @@ def _format_dependencies(dep_resolutions, target_language):
     if not dep_resolutions:
         return ""
 
-    resolved = [d for d in dep_resolutions
-                if d.get("mapping_source") in ("table", "llm_suggested", "manual")
-                and d.get("target_import")]
+    resolved = [
+        d
+        for d in dep_resolutions
+        if d.get("mapping_source") in ("table", "llm_suggested", "manual") and d.get("target_import")
+    ]
 
     if not resolved:
         return ""
 
     if target_language == "python":
         # pyproject.toml dependencies array
-        packages = sorted(set(
-            d["target_import"].split(".")[0].replace("_", "-")
-            for d in resolved
-            if d.get("target_import")
-        ))
+        packages = sorted(
+            set(d["target_import"].split(".")[0].replace("_", "-") for d in resolved if d.get("target_import"))
+        )
         return "\n".join(f'    "{p}",' for p in packages)
 
     elif target_language == "java":
@@ -210,39 +207,31 @@ def _format_dependencies(dep_resolutions, target_language):
         return "\n".join(lines)
 
     elif target_language == "rust":
-        packages = sorted(set(
-            d["target_import"].split("::")[0]
-            for d in resolved
-            if d.get("target_import")
-        ))
+        packages = sorted(set(d["target_import"].split("::")[0] for d in resolved if d.get("target_import")))
         return "\n".join(f'{p} = "*"' for p in packages)
 
     elif target_language == "csharp":
-        packages = sorted(set(
-            d["target_import"].split(".")[0]
-            for d in resolved
-            if d.get("target_import")
-        ))
-        return "\n".join(
-            f'    <PackageReference Include="{p}" Version="*" />'
-            for p in packages
-        )
+        packages = sorted(set(d["target_import"].split(".")[0] for d in resolved if d.get("target_import")))
+        return "\n".join(f'    <PackageReference Include="{p}" Version="*" />' for p in packages)
 
     elif target_language in ("typescript", "javascript"):
-        packages = sorted(set(
-            d["target_import"].split("/")[0].lstrip("@")
-            for d in resolved
-            if d.get("target_import")
-        ))
+        packages = sorted(set(d["target_import"].split("/")[0].lstrip("@") for d in resolved if d.get("target_import")))
         return "\n".join(f'    "{p}": "*",' for p in packages)
 
     return ""
 
 
-def assemble_project(output_dir, target_language, source_language,
-                     translated_units, dep_resolutions=None,
-                     project_name=None, project_id=None, job_id=None,
-                     db_path=None):
+def assemble_project(
+    output_dir,
+    target_language,
+    source_language,
+    translated_units,
+    dep_resolutions=None,
+    project_name=None,
+    project_id=None,
+    job_id=None,
+    db_path=None,
+):
     """Assemble a complete target project from translated units.
 
     Returns dict with project_path, files_written, build_file.
@@ -291,8 +280,7 @@ def assemble_project(output_dir, target_language, source_language,
         init_path = src_dir / "__init__.py"
         if not init_path.exists():
             init_path.write_text(
-                "# CUI // SP-CTI\n"
-                f"# Translated from {source_language} by ICDEV™ Phase 43\n",
+                f"# CUI // SP-CTI\n# Translated from {source_language} by ICDEV™ Phase 43\n",
                 encoding="utf-8",
             )
             files_written.append(str(init_path.relative_to(out_dir)))
@@ -346,7 +334,8 @@ def assemble_project(output_dir, target_language, source_language,
 
     # Audit trail
     try:
-        from icdev.tools.audit.audit_logger import log_event
+        from tools.audit.audit_logger import log_event
+
         log_event(
             event_type="translation.assembly_completed",
             actor="project_assembler",
@@ -381,8 +370,7 @@ def main():
         description="ICDEV™ Phase 4 — Assemble translated project",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--translated-file", required=True,
-                        help="Path to JSON file with translated units")
+    parser.add_argument("--translated-file", required=True, help="Path to JSON file with translated units")
     parser.add_argument("--source-language", required=True, help="Source language")
     parser.add_argument("--target-language", required=True, help="Target language")
     parser.add_argument("--output-dir", required=True, help="Output directory")

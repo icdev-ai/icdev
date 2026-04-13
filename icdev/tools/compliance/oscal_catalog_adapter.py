@@ -11,7 +11,7 @@ to know which catalog is active.  Priority: official OSCAL → ICDEV™ fallback
 Architecture Decision D304.
 
 Usage (library):
-    from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+    from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
     adapter = OscalCatalogAdapter()
     ctrl = adapter.get_control("AC-2")
     ctrls = adapter.list_controls(family="AC")
@@ -23,7 +23,6 @@ Usage (CLI):
     python tools/compliance/oscal_catalog_adapter.py --stats --json
 """
 
-from icdev._paths import get_project_root
 import argparse
 import json
 import logging
@@ -33,7 +32,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 # Default catalog sources in priority order (D304)
 _DEFAULT_SOURCES = [
     BASE_DIR / "context" / "oscal" / "NIST_SP-800-53_rev5_catalog.json",
@@ -127,13 +127,9 @@ def _extract_oscal_control(control, family_id, family_title):
             "label": param.get("label", ""),
         }
         if "select" in param:
-            param_entry["choices"] = [
-                c for c in param["select"].get("choice", [])
-            ]
+            param_entry["choices"] = [c for c in param["select"].get("choice", [])]
         if "guidelines" in param:
-            param_entry["guidelines"] = [
-                g.get("prose", "") for g in param["guidelines"]
-            ]
+            param_entry["guidelines"] = [g.get("prose", "") for g in param["guidelines"]]
         params.append(param_entry)
 
     # Check withdrawn status
@@ -333,9 +329,7 @@ class OscalCatalogAdapter:
 
 def main():
     """CLI entry point for catalog operations."""
-    parser = argparse.ArgumentParser(
-        description="OSCAL Catalog Adapter — query NIST 800-53 controls (D304)"
-    )
+    parser = argparse.ArgumentParser(description="OSCAL Catalog Adapter — query NIST 800-53 controls (D304)")
     parser.add_argument("--lookup", help="Look up a control by ID (e.g., AC-2)")
     parser.add_argument("--list", action="store_true", help="List controls")
     parser.add_argument("--family", help="Filter by family code (e.g., AC, AU)")
@@ -354,8 +348,10 @@ def main():
         else:
             print(f"Source:   {result['source_path']}")
             print(f"Format:   {result['source_format']}")
-            print(f"Controls: {result['total_controls']} total "
-                  f"({result['base_controls']} base, {result['enhancements']} enhancements)")
+            print(
+                f"Controls: {result['total_controls']} total "
+                f"({result['base_controls']} base, {result['enhancements']} enhancements)"
+            )
             print(f"Families: {result['family_count']} ({', '.join(result['families'])})")
         sys.exit(0)
 
@@ -371,8 +367,11 @@ def main():
                 if ctrl.get("params"):
                     print(f"  Parameters: {len(ctrl['params'])}")
         else:
-            print(json.dumps({"error": f"Control '{args.lookup}' not found"})
-                  if args.json else f"Control '{args.lookup}' not found")
+            print(
+                json.dumps({"error": f"Control '{args.lookup}' not found"})
+                if args.json
+                else f"Control '{args.lookup}' not found"
+            )
             sys.exit(1)
         sys.exit(0)
 

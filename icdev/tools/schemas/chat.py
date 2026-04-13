@@ -5,8 +5,8 @@
 Used by multi-stream parallel chat (D257), dashboard API, and SaaS portal.
 """
 
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, asdict
+from typing import Any, Dict, Optional
 
 
 @dataclass

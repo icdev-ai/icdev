@@ -7,17 +7,16 @@ Pushes assessment data, evidence, and compliance artifacts to Xacta 360
 per DoD environment requirements.
 
 Usage:
-    from icdev.tools.compliance.xacta.xacta_client import XactaClient
+    from tools.compliance.xacta.xacta_client import XactaClient
     client = XactaClient()
     client.push_system(project_data)
     client.push_assessment(project_id, assessment_results)
 """
 
-from icdev._paths import get_project_root
 import json
 import logging
-import sqlite3
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,7 +30,7 @@ try:
 except ImportError:
     yaml = None
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 DEFAULTS_PATH = BASE_DIR / "args" / "project_defaults.yaml"
 
@@ -72,8 +71,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -112,18 +110,17 @@ class XactaClient:
             return self._session
 
         if requests is None:
-            raise ImportError(
-                "requests library required for Xacta API. "
-                "Install with: pip install requests"
-            )
+            raise ImportError("requests library required for Xacta API. Install with: pip install requests")
 
         self._session = requests.Session()
-        self._session.headers.update({
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-Classification": "CUI",
-            "User-Agent": "ICDEV-Compliance-Engine/1.0",
-        })
+        self._session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Classification": "CUI",
+                "User-Agent": "ICDEV-Compliance-Engine/1.0",
+            }
+        )
 
         # PKI/certificate-based auth
         if self.config.get("auth_method") == "pki":
@@ -170,12 +167,9 @@ class XactaClient:
 
             except Exception as e:
                 last_error = str(e)
-                logger.warning(
-                    "Xacta API attempt %d/%d failed: %s",
-                    attempt + 1, self.max_retries, last_error
-                )
+                logger.warning("Xacta API attempt %d/%d failed: %s", attempt + 1, self.max_retries, last_error)
                 if attempt < self.max_retries - 1:
-                    wait = self.retry_backoff ** attempt
+                    wait = self.retry_backoff**attempt
                     time.sleep(wait)
 
         logger.error("Xacta API request failed after %d attempts: %s", self.max_retries, last_error)
@@ -205,10 +199,15 @@ class XactaClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, project_data.get("id"), "push_system", {
-                "system_name": payload["system_name"],
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                project_data.get("id"),
+                "push_system",
+                {
+                    "system_name": payload["system_name"],
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -244,10 +243,15 @@ class XactaClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, project_id, "push_controls", {
-                "control_count": len(control_mappings),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                project_id,
+                "push_controls",
+                {
+                    "control_count": len(control_mappings),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -286,10 +290,15 @@ class XactaClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, project_id, "push_assessment", {
-                "requirement_count": len(assessment_results),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                project_id,
+                "push_assessment",
+                {
+                    "requirement_count": len(assessment_results),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -327,10 +336,15 @@ class XactaClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, project_id, "push_findings", {
-                "finding_count": len(findings),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                project_id,
+                "push_findings",
+                {
+                    "finding_count": len(findings),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -368,10 +382,15 @@ class XactaClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, project_id, "push_poam", {
-                "poam_count": len(poam_items),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                project_id,
+                "push_poam",
+                {
+                    "poam_count": len(poam_items),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 
@@ -397,10 +416,15 @@ class XactaClient:
 
         conn = _get_connection(self.db_path)
         try:
-            _log_audit(conn, project_id, "push_evidence", {
-                "artifact_count": evidence_manifest.get("metadata", {}).get("total_artifacts", 0),
-                "result": result.get("status") if result else "error",
-            })
+            _log_audit(
+                conn,
+                project_id,
+                "push_evidence",
+                {
+                    "artifact_count": evidence_manifest.get("metadata", {}).get("total_artifacts", 0),
+                    "result": result.get("status") if result else "error",
+                },
+            )
         finally:
             conn.close()
 

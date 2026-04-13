@@ -8,7 +8,7 @@ All implementations use Python stdlib only (air-gap safe).
 ADRs: D146 (circuit breaker), D147 (retry), D148 (errors), D149 (correlation).
 """
 
-from icdev.tools.resilience.circuit_breaker import (  # noqa: F401
+from tools.resilience.circuit_breaker import (  # noqa: F401
     CircuitBreakerBackend,
     CircuitState,
     InMemoryCircuitBreaker,
@@ -17,13 +17,13 @@ from icdev.tools.resilience.circuit_breaker import (  # noqa: F401
     get_circuit_breaker,
     reset_all,
 )
-from icdev.tools.resilience.correlation import (  # noqa: F401
+from tools.resilience.correlation import (  # noqa: F401
     CorrelationLogFilter,
     get_correlation_id,
     register_correlation_middleware,
     set_correlation_id,
 )
-from icdev.tools.resilience.errors import (  # noqa: F401
+from tools.resilience.errors import (  # noqa: F401
     ConfigurationError,
     ICDevError,
     ICDevPermanentError,
@@ -31,4 +31,4 @@ from icdev.tools.resilience.errors import (  # noqa: F401
     RateLimitedError,
     ServiceUnavailableError,
 )
-from icdev.tools.resilience.retry import backoff_delay, retry  # noqa: F401
+from tools.resilience.retry import backoff_delay, retry  # noqa: F401

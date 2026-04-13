@@ -7,17 +7,15 @@ Supports user-scoped queries (D180), time-decay ranking (D147), and JSON output.
 
 import argparse
 import json
-import sqlite3
 import struct
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
-DB_PATH = BASE_DIR / "data" / "memory.db"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 def get_all_entries(user_id=None, tenant_id=None):
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE 1=1"
@@ -42,6 +40,7 @@ def bm25_search(query, entries):
 
     try:
         from rank_bm25 import BM25Okapi
+
         tokenized = [doc.lower().split() for doc in documents]
         bm25 = BM25Okapi(tokenized)
         scores = bm25.get_scores(query.lower().split())
@@ -64,7 +63,8 @@ def semantic_search(query, entries):
     # Try LLM provider system first (supports OpenAI, Ollama, Bedrock Titan)
     query_emb = None
     try:
-        from icdev.tools.llm import get_embedding_provider
+        from tools.llm import get_embedding_provider
+
         provider = get_embedding_provider()
         query_emb = provider.embed(query)
     except Exception:
@@ -74,17 +74,20 @@ def semantic_search(query, entries):
     if query_emb is None:
         try:
             from dotenv import load_dotenv
+
             load_dotenv(BASE_DIR / ".env")
         except ImportError:
             pass
 
         import os
+
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             return None
 
         try:
             import openai
+
             client = openai.OpenAI(api_key=api_key)
             response = client.embeddings.create(input=query, model="text-embedding-3-small")
             query_emb = response.data[0].embedding
@@ -106,6 +109,7 @@ def semantic_search(query, entries):
         # Cosine similarity
         try:
             import numpy as np
+
             a, b = np.array(query_emb), np.array(stored_emb)
             score = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
         except ImportError:
@@ -121,8 +125,9 @@ def semantic_search(query, entries):
     return [s / max_score for s in scores]
 
 
-def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight,
-                time_decay_enabled=False, decay_config=None):
+def hybrid_rank(
+    entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight, time_decay_enabled=False, decay_config=None
+):
     """Combine BM25 and semantic scores, with optional time-decay (D147)."""
     results = []
     for i, entry in enumerate(entries):
@@ -140,7 +145,8 @@ def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_wei
         # D147: Apply time-decay reranking when enabled
         if time_decay_enabled:
             try:
-                from icdev.tools.memory.time_decay import compute_time_aware_score
+                from tools.memory.time_decay import compute_time_aware_score
+
                 combined = compute_time_aware_score(
                     base_score=combined,
                     created_at=created_at or "",
@@ -157,6 +163,81 @@ def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_wei
     return results
 
 
+# ---------------------------------------------------------------------------
+# D-SUM-1: LLM summarization (Phase 72, Hermes adaptation)
+# ---------------------------------------------------------------------------
+_summary_cache = {}  # query_hash → (summary, timestamp)
+_SUMMARY_CACHE_TTL = 3600  # 1 hour
+
+
+def _summarize_results(query, top_entries, cache_ttl=_SUMMARY_CACHE_TTL):
+    """Summarize ranked memory entries into a narrative using scanner-tier LLM.
+
+    Args:
+        query: Original search query.
+        top_entries: List of (score, content, type_) tuples.
+        cache_ttl: Cache TTL in seconds.
+
+    Returns:
+        Tuple of (summary_text or None, error_message or None).
+    """
+    import hashlib
+    import time
+
+    # Build cache key from query + entry contents
+    entry_key = hashlib.sha256((query + "|" + "|".join(c for _, c, _ in top_entries)).encode()).hexdigest()[:16]
+
+    # Check cache
+    if entry_key in _summary_cache:
+        cached_summary, cached_ts = _summary_cache[entry_key]
+        if time.time() - cached_ts < cache_ttl:
+            return cached_summary, None
+
+    # Build entries text for prompt
+    entries_text = "\n".join(
+        f"- [{t}] (score: {s:.3f}) {c[:200]}"
+        for s, c, t in top_entries[:10]  # Cap at 10 for token budget
+    )
+
+    # Load hardprompt template
+    hardprompt_path = Path(__file__).resolve().parent.parent.parent / "hardprompts" / "memory" / "search_summary.md"
+    if hardprompt_path.exists():
+        template = hardprompt_path.read_text(encoding="utf-8")
+        prompt = template.replace("{query}", query).replace("{entries_text}", entries_text)
+    else:
+        prompt = (
+            f"Synthesize these memory entries into a concise narrative summary.\n"
+            f"Query: {query}\n\nEntries:\n{entries_text}"
+        )
+
+    try:
+        from tools.llm.router import LLMRouter
+
+        router = LLMRouter()
+
+        # Use memory_consolidation function (scanner tier — qwen3.5, zero Claude)
+        from tools.llm.provider import LLMRequest
+
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
+        )
+        response = router.invoke("memory_consolidation", request)
+
+        # Extract text from response
+        summary = response.content.strip() if response and response.content else ""
+
+        if summary:
+            _summary_cache[entry_key] = (summary, time.time())
+            return summary, None
+        return None, "LLM returned empty response"
+
+    except ImportError:
+        return None, "LLM router not available"
+    except Exception as exc:
+        return None, str(exc)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hybrid search (BM25 + semantic)")
     parser.add_argument("--query", required=True, help="Search query")
@@ -166,6 +247,9 @@ def main():
     parser.add_argument("--time-decay", action="store_true", help="Enable time-decay scoring (D147)")
     parser.add_argument("--user-id", help="Filter by user ID (D180)")
     parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
+    parser.add_argument(
+        "--summarize", action="store_true", help="Synthesize top results into narrative summary via scanner-tier LLM"
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -187,18 +271,26 @@ def main():
     decay_config = None
     if args.time_decay:
         try:
-            from icdev.tools.memory.time_decay import load_decay_config
+            from tools.memory.time_decay import load_decay_config
+
             decay_config = load_decay_config()
         except (ImportError, Exception):
             if not args.json:
                 print("(Time-decay module unavailable — using standard ranking)")
 
-    results = hybrid_rank(entries, bm25_scores, semantic_scores, args.bm25_weight, args.semantic_weight,
-                          time_decay_enabled=args.time_decay, decay_config=decay_config)
+    results = hybrid_rank(
+        entries,
+        bm25_scores,
+        semantic_scores,
+        args.bm25_weight,
+        args.semantic_weight,
+        time_decay_enabled=args.time_decay,
+        decay_config=decay_config,
+    )
 
     # Log access
     search_type = "hybrid_time_decay" if args.time_decay else "hybrid"
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
     c.execute(
         "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (?, ?, ?)",
@@ -207,25 +299,45 @@ def main():
     conn.commit()
     conn.close()
 
+    # D-SUM-1: LLM summarization of search results (Phase 72, Hermes adaptation)
+    summary = None
+    summary_error = None
+    if args.summarize:
+        top_entries = [
+            (score, content, type_)
+            for score, id_, content, type_, importance, created_at in results[: args.limit]
+            if score > 0
+        ]
+        if top_entries:
+            summary, summary_error = _summarize_results(args.query, top_entries)
+
     if args.json:
         output_entries = []
         for score, id_, content, type_, importance, created_at in results[: args.limit]:
             if score > 0:
-                output_entries.append({
-                    "id": id_,
-                    "score": round(score, 4),
-                    "content": content,
-                    "type": type_,
-                    "importance": importance,
-                    "created_at": created_at,
-                })
-        print(json.dumps({
+                output_entries.append(
+                    {
+                        "id": id_,
+                        "score": round(score, 4),
+                        "content": content,
+                        "type": type_,
+                        "importance": importance,
+                        "created_at": created_at,
+                    }
+                )
+        output = {
             "classification": "CUI // SP-CTI",
             "count": len(output_entries),
             "search_type": search_type,
             "semantic_available": semantic_scores is not None,
             "entries": output_entries,
-        }, indent=2))
+        }
+        if args.summarize:
+            if summary:
+                output["summary"] = summary
+            if summary_error:
+                output["summary_error"] = summary_error
+        print(json.dumps(output, indent=2))
     else:
         for score, id_, content, type_, importance, created_at in results[: args.limit]:
             if score > 0:

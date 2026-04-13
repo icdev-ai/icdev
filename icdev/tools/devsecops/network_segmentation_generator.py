@@ -27,16 +27,16 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 try:
     import yaml as _yaml_mod
+
     _HAS_YAML = True
 except ImportError:
     _yaml_mod = None
@@ -82,6 +82,7 @@ _DEFAULT_SERVICE_PORTS = {
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _cui_header() -> str:
     """Return formatted CUI header with current UTC timestamp."""
@@ -154,8 +155,7 @@ def _load_config() -> dict:
 
 def _get_db():
     """Open connection to ICDEV™ SQLite database."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -191,6 +191,7 @@ def _parse_services(services_str: str) -> list:
 # ---------------------------------------------------------------------------
 # generate_namespace_isolation
 # ---------------------------------------------------------------------------
+
 
 def generate_namespace_isolation(project_path: str, namespaces: list) -> dict:
     """Generate default-deny ingress and egress NetworkPolicies per namespace.
@@ -239,10 +240,12 @@ def generate_namespace_isolation(project_path: str, namespaces: list) -> dict:
             "metadata": {
                 "name": "default-deny-ingress",
                 "namespace": ns,
-                "labels": _zta_labels({
-                    "app.kubernetes.io/component": "default-deny-ingress",
-                    "icdev.mil/namespace": ns,
-                }),
+                "labels": _zta_labels(
+                    {
+                        "app.kubernetes.io/component": "default-deny-ingress",
+                        "icdev.mil/namespace": ns,
+                    }
+                ),
                 "annotations": {
                     "icdev.mil/classification": "CUI",
                     "icdev.mil/generated": datetime.now(timezone.utc).isoformat(),
@@ -263,10 +266,12 @@ def generate_namespace_isolation(project_path: str, namespaces: list) -> dict:
             "metadata": {
                 "name": "default-deny-egress",
                 "namespace": ns,
-                "labels": _zta_labels({
-                    "app.kubernetes.io/component": "default-deny-egress",
-                    "icdev.mil/namespace": ns,
-                }),
+                "labels": _zta_labels(
+                    {
+                        "app.kubernetes.io/component": "default-deny-egress",
+                        "icdev.mil/namespace": ns,
+                    }
+                ),
                 "annotations": {
                     "icdev.mil/classification": "CUI",
                     "icdev.mil/generated": datetime.now(timezone.utc).isoformat(),
@@ -315,21 +320,25 @@ def generate_namespace_isolation(project_path: str, namespaces: list) -> dict:
         files_written.append(str(egress_path))
         all_yaml_parts.append(egress_content)
 
-        policies_meta.append({
-            "namespace": ns,
-            "policy_name": "default-deny-ingress",
-            "policy_type": "default-deny",
-            "direction": "Ingress",
-            "file": str(ingress_path),
-        })
-        policies_meta.append({
-            "namespace": ns,
-            "policy_name": "default-deny-egress",
-            "policy_type": "default-deny-with-dns",
-            "direction": "Egress",
-            "dns_exception": {"namespace": "kube-system", "ports": [53]},
-            "file": str(egress_path),
-        })
+        policies_meta.append(
+            {
+                "namespace": ns,
+                "policy_name": "default-deny-ingress",
+                "policy_type": "default-deny",
+                "direction": "Ingress",
+                "file": str(ingress_path),
+            }
+        )
+        policies_meta.append(
+            {
+                "namespace": ns,
+                "policy_name": "default-deny-egress",
+                "policy_type": "default-deny-with-dns",
+                "direction": "Egress",
+                "dns_exception": {"namespace": "kube-system", "ports": [53]},
+                "file": str(egress_path),
+            }
+        )
 
     return {
         "policies": policies_meta,
@@ -344,6 +353,7 @@ def generate_namespace_isolation(project_path: str, namespaces: list) -> dict:
 # ---------------------------------------------------------------------------
 # generate_microsegmentation
 # ---------------------------------------------------------------------------
+
 
 def generate_microsegmentation(project_path: str, services: list) -> dict:
     """Generate per-pod NetworkPolicies for service-to-service micro-segmentation.
@@ -393,11 +403,13 @@ def generate_microsegmentation(project_path: str, services: list) -> dict:
             "kind": "NetworkPolicy",
             "metadata": {
                 "name": policy_name,
-                "labels": _zta_labels({
-                    "app.kubernetes.io/component": "microsegmentation",
-                    "app.kubernetes.io/name": svc_name,
-                    "icdev.mil/service": svc_name,
-                }),
+                "labels": _zta_labels(
+                    {
+                        "app.kubernetes.io/component": "microsegmentation",
+                        "app.kubernetes.io/name": svc_name,
+                        "icdev.mil/service": svc_name,
+                    }
+                ),
                 "annotations": {
                     "icdev.mil/classification": "CUI",
                     "icdev.mil/generated": datetime.now(timezone.utc).isoformat(),
@@ -466,15 +478,17 @@ def generate_microsegmentation(project_path: str, services: list) -> dict:
         files_written.append(str(written_path))
         all_yaml_parts.append(content)
 
-        policies_meta.append({
-            "service": svc_name,
-            "port": svc_port,
-            "policy_name": policy_name,
-            "policy_type": "microsegmentation",
-            "ingress_ports": [svc_port],
-            "egress_ports": [svc_port, 53],
-            "file": str(written_path),
-        })
+        policies_meta.append(
+            {
+                "service": svc_name,
+                "port": svc_port,
+                "policy_name": policy_name,
+                "policy_type": "microsegmentation",
+                "ingress_ports": [svc_port],
+                "egress_ports": [svc_port, 53],
+                "file": str(written_path),
+            }
+        )
 
     return {
         "policies": policies_meta,
@@ -489,6 +503,7 @@ def generate_microsegmentation(project_path: str, services: list) -> dict:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -587,7 +602,9 @@ def main():
 
         if combined.get("isolation"):
             iso = combined["isolation"]
-            print(f"\n[Namespace Isolation] {iso['policy_count']} policies across {len(iso['namespaces'])} namespace(s)")
+            print(
+                f"\n[Namespace Isolation] {iso['policy_count']} policies across {len(iso['namespaces'])} namespace(s)"
+            )
             for ns in iso["namespaces"]:
                 print(f"  Namespace: {ns}")
                 print("    - default-deny-ingress  (blocks all inbound traffic)")

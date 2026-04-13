@@ -68,7 +68,7 @@ def check_git() -> dict:
 
 def check_npx() -> dict:
     """npx for Playwright E2E tests."""
-    from icdev.tools.compat.platform_utils import get_npx_cmd
+    from tools.compat.platform_utils import get_npx_cmd
 
     cmd = get_npx_cmd()
     found = shutil.which(cmd)
@@ -81,17 +81,53 @@ def check_npx() -> dict:
 
 
 def check_utf8_locale() -> dict:
-    """Check UTF-8 support."""
-    encoding = sys.stdout.encoding or "unknown"
-    ok = "utf" in encoding.lower()
-    return {"check": "utf8_support", "ok": ok, "value": encoding}
+    """Check UTF-8 support in stdout and filesystem.
+
+    On Windows, stdout may be cp1252 (normal for cmd/PowerShell).
+    What matters is that filesystem encoding is UTF-8, which Python 3.7+
+    ensures via UTF-8 mode. We pass if either stdout or fs is UTF-8.
+    """
+    stdout_enc = sys.stdout.encoding or "unknown"
+    fs_enc = sys.getfilesystemencoding()
+    ok = "utf" in stdout_enc.lower() or "utf" in fs_enc.lower()
+    return {"check": "utf8_support", "ok": ok, "value": f"stdout={stdout_enc}, fs={fs_enc}"}
 
 
 def check_platform() -> dict:
     """Report current platform."""
-    from icdev.tools.compat.platform_utils import PLATFORM_NAME
+    from tools.compat.platform_utils import PLATFORM_NAME
 
     return {"check": "platform", "ok": True, "value": PLATFORM_NAME}
+
+
+def check_gitattributes() -> dict:
+    """Check .gitattributes exists and enforces LF line endings."""
+    ga = PROJECT_ROOT / ".gitattributes"
+    if ga.exists():
+        content = ga.read_text(encoding="utf-8")
+        has_lf = "eol=lf" in content
+        return {"check": "gitattributes", "ok": has_lf, "value": "eol=lf enforced" if has_lf else "no eol=lf rule"}
+    return {"check": "gitattributes", "ok": False, "value": "missing — create .gitattributes with '* text=auto eol=lf'"}
+
+
+def check_ollama_http() -> dict:
+    """Check Ollama is reachable via HTTP API (not subprocess)."""
+    try:
+        import urllib.request
+
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        req = urllib.request.Request(f"{ollama_url}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310
+            return {"check": "ollama_http", "ok": resp.status == 200, "value": f"reachable at {ollama_url}"}
+    except Exception:
+        return {"check": "ollama_http", "ok": False, "value": "not reachable — install from https://ollama.com"}
+
+
+def check_filesystem_encoding() -> dict:
+    """Check filesystem encoding is UTF-8 (critical for cross-platform paths)."""
+    fs_enc = sys.getfilesystemencoding()
+    ok = "utf" in fs_enc.lower()
+    return {"check": "fs_encoding", "ok": ok, "value": fs_enc + (" (UTF-8)" if ok else " — may cause issues")}
 
 
 def run_all_checks() -> list:
@@ -104,6 +140,9 @@ def run_all_checks() -> list:
         check_git(),
         check_npx(),
         check_utf8_locale(),
+        check_filesystem_encoding(),
+        check_gitattributes(),
+        check_ollama_http(),
     ]
     return checks
 
@@ -125,7 +164,7 @@ def main():
             )
         )
     else:
-        from icdev.tools.compat.platform_utils import PLATFORM_NAME
+        from tools.compat.platform_utils import PLATFORM_NAME
 
         print(f"ICDEV™ Platform Check -- {PLATFORM_NAME}")
         print("=" * 50)

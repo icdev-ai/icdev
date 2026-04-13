@@ -147,7 +147,7 @@
     }
 
     // Expose API to global scope — merge into existing ICDEV™ namespace (preserve inline scripts)
-    var ns = window.ICDEV™ || {};
+    var ns = window.ICDEV || {};
     ns.fetchJSON = fetchJSON;
     ns.updateText = updateText;
     ns.updateHTML = updateHTML;
@@ -157,5 +157,5 @@
     ns.refreshAlertBadge = refreshAlertBadge;
     ns.refreshHealthStatus = refreshHealthStatus;
     ns.escapeHTML = escapeHTML;
-    window.ICDEV™ = ns;
+    window.ICDEV = ns;
 })();

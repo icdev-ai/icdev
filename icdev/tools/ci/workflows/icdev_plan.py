@@ -1,202 +1,293 @@
-# [TEMPLATE: CUI // SP-CTI]
-# ICDEV™ Plan — Agentic planning workflow
-# Adapted from ADW adw_plan.py with dual platform support
+# CUI // SP-CTI
+"""ICDEV™ Plan — agentic planning workflow.
 
+Kicks off a kanban run: fetch the linked issue, classify it, generate
+the feature branch, ask the planner agent for an implementation plan,
+commit, and push.
+
+Implements the contract documented in
+``docs/rewrite/adw/specs/tools/ci/workflows/icdev_plan.md`` (OPT-75
+Phase 3 clean-room rewrite).
 """
-ICDEV™ Plan — Issue classification, branch creation, and plan generation.
-
-Usage:
-    python tools/ci/workflows/icdev_plan.py <issue-number> [run-id]
-
-Workflow:
-    1. Fetch issue details (GitHub or GitLab)
-    2. Classify issue type (/chore, /bug, /feature)
-    3. Create feature branch
-    4. Generate implementation plan via Claude Code
-    5. Commit plan
-    6. Push and create PR/MR
-"""
+from __future__ import annotations
 
 import json
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
-from icdev.tools.ci.modules.state import ICDevState
-from icdev.tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations
-from icdev.tools.ci.modules.vcs import VCS
-from icdev.tools.ci.modules.workflow_ops import (
-    classify_issue,
-    build_plan,
-    generate_branch_name,
-    create_commit,
-    format_issue_message,
-    ensure_run_id,
-    AGENT_PLANNER,
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.ci.modules.git_ops import (  # noqa: E402
+    commit_changes,
+    create_branch,
+    finalize_git_operations,
 )
-from icdev.tools.testing.utils import setup_logger
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
+    AGENT_PLANNER,
+    build_plan,
+    classify_issue,
+    create_commit,
+    ensure_run_id,
+    format_issue_message,
+    generate_branch_name,
+)
+from tools.testing.utils import setup_logger  # noqa: E402
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Environment probe
+# ────────────────────────────────────────────────────────────────────────────
 
 
 def check_env_vars(logger: logging.Logger) -> None:
-    """Check that Claude Code CLI or an API key is available.
+    """Verify at least one LLM provider is reachable for ``code_generation``.
 
-    The workflow uses Claude Code CLI (which has its own session auth when
-    running inside VSCode extension). ANTHROPIC_API_KEY is only required
-    when running headless outside a Claude Code session.
+    Probes (in order): Claude Code CLI on PATH, then LLMRouter for any
+    provider on the ``code_generation`` chain. Exits 1 with a multi-line
+    error message if neither is available.
     """
-    import shutil
-
-    # Claude Code CLI available = session auth works (VSCode extension, CLI login)
-    claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
-    if shutil.which(claude_path):
-        logger.info(f"Claude Code CLI found at: {shutil.which(claude_path)}")
+    cli_path_env = os.getenv("CLAUDE_CODE_PATH", "claude")
+    cli = shutil.which(cli_path_env)
+    if cli:
+        logger.info("icdev_plan: Claude Code CLI at %s — using session auth", cli)
         return
 
-    # Fallback: check for direct API key
+    try:
+        from tools.llm.router import LLMRouter
+    except ImportError as exc:
+        logger.error("icdev_plan: LLMRouter import failed: %s", exc)
+        sys.exit(1)
+
+    try:
+        router = LLMRouter()
+        provider, model_id, _model_cfg = router.get_provider_for_function(
+            "code_generation"
+        )
+    except Exception as exc:
+        logger.warning("icdev_plan: LLMRouter probe raised: %s", exc)
+        provider = None
+        model_id = ""
+
+    if provider is not None:
+        logger.info(
+            "icdev_plan: LLM provider available — %s / %s",
+            getattr(provider, "provider_name", "?"), model_id,
+        )
+        return
+
+    hints: List[str] = []
     if os.getenv("ANTHROPIC_API_KEY"):
-        logger.info("Using ANTHROPIC_API_KEY for direct API access")
-        return
+        hints.append(
+            "ANTHROPIC_API_KEY is set but no provider matched it — "
+            "check args/llm_config.yaml"
+        )
+    if os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_PROFILE"):
+        hints.append(
+            "AWS credentials present — Bedrock provider may need to be "
+            "enabled in args/llm_config.yaml"
+        )
+    if os.getenv("OLLAMA_HOST") or os.getenv("OLLAMA_BASE_URL"):
+        hints.append(
+            "Ollama env vars set — confirm `ollama serve` is running "
+            "and the model is pulled"
+        )
 
     logger.error(
-        "No Claude access available. Either:\n"
-        "  1. Run inside Claude Code (VSCode extension or CLI session), or\n"
-        "  2. Set ANTHROPIC_API_KEY environment variable"
+        "icdev_plan: no LLM provider reachable for function="
+        "code_generation. Either:\n"
+        "  1. Install Claude Code CLI (VSCode extension or CLI login),\n"
+        "  2. Configure a provider in args/llm_config.yaml "
+        "(Bedrock, Vertex, OCI, watsonx, Ollama, Anthropic API), or\n"
+        "  3. Set ANTHROPIC_API_KEY for direct API access (legacy path)."
     )
+    for hint in hints:
+        logger.error("  hint: %s", hint)
     sys.exit(1)
 
 
-def main():
-    """Main entry point."""
-    if len(sys.argv) < 2:
-        print("Usage: python tools/ci/workflows/icdev_plan.py <issue-number> [run-id]")
-        sys.exit(1)
+# ────────────────────────────────────────────────────────────────────────────
+# CLI helpers
+# ────────────────────────────────────────────────────────────────────────────
 
-    issue_number = sys.argv[1]
-    run_id = sys.argv[2] if len(sys.argv) > 2 else None
 
-    # Ensure run_id exists
-    run_id = ensure_run_id(issue_number, run_id)
-    state = ICDevState.load(run_id)
+def _bot(run_id: str, agent: str, message: str) -> str:
+    return format_issue_message(run_id, agent, message)
+
+
+def _coerce_int(value: str) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_comment(
+    vcs: Any, logger: Any, issue_int: Optional[int], body: str,
+) -> None:
+    if issue_int is None:
+        return
+    try:
+        vcs.comment_on_issue(issue_int, body)
+    except Exception as exc:
+        logger.warning("icdev_plan: comment_on_issue raised: %s", exc)
+
+
+def _parse_args(argv: List[str]) -> Optional[Dict[str, Optional[str]]]:
+    if len(argv) < 2:
+        return None
+    return {
+        "issue_number": argv[1],
+        "run_id": argv[2] if len(argv) > 2 else None,
+    }
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(list(argv) if argv is not None else sys.argv)
+    if args is None:
+        sys.stdout.write(
+            "Usage: python tools/ci/workflows/icdev_plan.py "
+            "<issue-number> [run-id]\n"
+        )
+        return 1
+
+    issue_str = args["issue_number"]
+    issue_int = _coerce_int(issue_str)
+    run_id = ensure_run_id(issue_str, args["run_id"])
+
     logger = setup_logger(run_id, "icdev_plan")
-    logger.info(f"ICDEV™ Plan starting — run_id: {run_id}, issue: #{issue_number}")
-
-    check_env_vars(logger)
-
-    # Initialize VCS
-    try:
-        vcs = VCS()
-        platform = "gitlab" if vcs.is_gitlab else "github"
-        state.update(platform=platform)
-        state.save("icdev_plan")
-    except ValueError as e:
-        logger.error(f"VCS initialization failed: {e}")
-        sys.exit(1)
-
-    # Fetch issue
-    logger.info("Fetching issue details...")
-    try:
-        issue_data = vcs.fetch_issue(int(issue_number))
-        issue_json = json.dumps(issue_data)
-    except Exception as e:
-        logger.error(f"Failed to fetch issue: {e}")
-        sys.exit(1)
-
-    vcs.comment_on_issue(
-        int(issue_number),
-        format_issue_message(run_id, "ops", "Starting planning phase"),
+    logger.info(
+        "ICDEV™ Plan starting — run_id=%s issue=#%s", run_id, issue_str
     )
 
-    # Classify issue
-    issue_command, error = classify_issue(issue_json, run_id, logger)
-    if error:
-        logger.error(f"Classification failed: {error}")
-        vcs.comment_on_issue(
-            int(issue_number),
-            format_issue_message(run_id, "ops", f"Classification failed: {error}"),
+    state = ICDevState.load(run_id, logger=logger)
+    check_env_vars(logger)
+
+    try:
+        vcs = VCS()
+    except ValueError as exc:
+        logger.error("icdev_plan: VCS initialization failed: %s", exc)
+        return 1
+
+    state.update(
+        platform="gitlab" if getattr(vcs, "is_gitlab", False) else "github"
+    )
+    state.save("icdev_plan")
+
+    if issue_int is None:
+        logger.error("icdev_plan: issue_number is not numeric: %r", issue_str)
+        return 1
+
+    try:
+        issue_data = vcs.fetch_issue(issue_int) or {}
+    except Exception as exc:
+        logger.error("icdev_plan: fetch_issue raised: %s", exc)
+        return 1
+    issue_json = json.dumps(issue_data)
+
+    _safe_comment(vcs, logger, issue_int,
+                  _bot(run_id, "ops", "Starting planning phase"))
+
+    issue_command, classify_err = classify_issue(issue_json, run_id, logger)
+    if classify_err:
+        logger.error("icdev_plan: classification failed: %s", classify_err)
+        _safe_comment(
+            vcs, logger, issue_int,
+            _bot(run_id, "ops", f"Classification failed: {classify_err}"),
         )
-        sys.exit(1)
+        return 1
 
     state.update(issue_class=issue_command)
     state.save("icdev_plan")
-    logger.info(f"Issue classified as: {issue_command}")
-    vcs.comment_on_issue(
-        int(issue_number),
-        format_issue_message(run_id, "ops", f"Issue classified as: {issue_command}"),
+    logger.info("icdev_plan: classified as %s", issue_command)
+    _safe_comment(
+        vcs, logger, issue_int,
+        _bot(run_id, "ops", f"Issue classified as: {issue_command}"),
     )
 
-    # Generate branch name
-    branch_name, error = generate_branch_name(issue_json, issue_command, run_id, logger)
-    if error:
-        logger.error(f"Branch name generation failed: {error}")
-        sys.exit(1)
+    branch_name, branch_err = generate_branch_name(
+        issue_json, issue_command, run_id, logger,
+    )
+    if branch_err or not branch_name:
+        logger.error("icdev_plan: branch name generation failed: %s", branch_err)
+        return 1
 
-    # Create branch
-    success, error = create_branch(branch_name)
-    if not success:
-        logger.error(f"Branch creation failed: {error}")
-        sys.exit(1)
+    branched, branch_failure = create_branch(branch_name)
+    if not branched:
+        logger.error("icdev_plan: branch creation failed: %s", branch_failure)
+        return 1
 
     state.update(branch_name=branch_name)
     state.save("icdev_plan")
-    logger.info(f"Working on branch: {branch_name}")
-    vcs.comment_on_issue(
-        int(issue_number),
-        format_issue_message(run_id, "ops", f"Working on branch: {branch_name}"),
+    logger.info("icdev_plan: working on branch %s", branch_name)
+    _safe_comment(
+        vcs, logger, issue_int,
+        _bot(run_id, "ops", f"Working on branch: {branch_name}"),
     )
 
-    # Build plan
-    logger.info("Building implementation plan...")
-    vcs.comment_on_issue(
-        int(issue_number),
-        format_issue_message(run_id, AGENT_PLANNER, "Building implementation plan"),
+    _safe_comment(
+        vcs, logger, issue_int,
+        _bot(run_id, AGENT_PLANNER, "Building implementation plan"),
     )
 
     plan_response = build_plan(issue_json, issue_command, run_id, logger)
-    if not plan_response.success:
-        logger.error(f"Plan generation failed: {plan_response.output}")
-        vcs.comment_on_issue(
-            int(issue_number),
-            format_issue_message(run_id, AGENT_PLANNER, f"Plan failed: {plan_response.output}"),
+    if not getattr(plan_response, "success", False):
+        output = getattr(plan_response, "output", "") or ""
+        logger.error("icdev_plan: plan generation failed: %s", output[:500])
+        _safe_comment(
+            vcs, logger, issue_int,
+            _bot(run_id, AGENT_PLANNER, f"Plan failed: {output}"),
         )
-        sys.exit(1)
+        return 1
 
-    plan_file_path = plan_response.output.strip()
-
+    plan_file_path = (getattr(plan_response, "output", "") or "").strip()
     if not plan_file_path or not os.path.exists(plan_file_path):
-        logger.error(f"Plan file not found: {plan_file_path}")
-        sys.exit(1)
+        logger.error("icdev_plan: plan file not found at %s", plan_file_path)
+        return 1
 
     state.update(plan_file=plan_file_path)
     state.save("icdev_plan")
-    logger.info(f"Plan file: {plan_file_path}")
+    logger.info("icdev_plan: plan file %s", plan_file_path)
 
-    # Commit plan
-    commit_msg, error = create_commit(AGENT_PLANNER, issue_json, issue_command, run_id, logger)
-    if error:
-        logger.error(f"Commit message generation failed: {error}")
-        sys.exit(1)
+    commit_msg, commit_err = create_commit(
+        AGENT_PLANNER, issue_json, issue_command, run_id, logger,
+    )
+    if commit_err or not commit_msg:
+        logger.error("icdev_plan: create_commit failed: %s", commit_err)
+        return 1
 
-    success, error = commit_changes(commit_msg)
-    if not success:
-        logger.error(f"Commit failed: {error}")
-        sys.exit(1)
+    committed, commit_failure = commit_changes(commit_msg)
+    if not committed:
+        logger.error("icdev_plan: commit failed: %s", commit_failure)
+        return 1
+    logger.info("icdev_plan: committed %s", commit_msg)
 
-    logger.info(f"Committed: {commit_msg}")
+    try:
+        finalize_git_operations(state, logger, vcs=vcs)
+    except Exception as exc:
+        logger.warning("icdev_plan: finalize_git_operations raised: %s", exc)
 
-    # Push and create PR/MR
-    finalize_git_operations(state, logger, vcs)
-
-    logger.info("Planning phase completed")
-    vcs.comment_on_issue(
-        int(issue_number),
-        format_issue_message(run_id, "ops", "Planning phase completed"),
+    _safe_comment(
+        vcs, logger, issue_int,
+        _bot(run_id, "ops", "Planning phase completed"),
     )
     state.save("icdev_plan")
+    logger.info("icdev_plan: phase complete")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

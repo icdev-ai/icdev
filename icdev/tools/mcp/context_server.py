@@ -9,16 +9,14 @@ Usage:
     python tools/mcp/context_server.py
 """
 
-import json
 import logging
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -31,27 +29,29 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 # ---------------------------------------------------------------------------
 
 try:
-    from icdev.tools.mcp.base_server import MCPServer
+    from tools.mcp.base_server import MCPServer
+
     _HAS_BASE = True
 except ImportError:
     _HAS_BASE = False
 
 try:
-    from icdev.tools.mcp.context_indexer import ClaudeMdIndexer
+    from tools.mcp.context_indexer import ClaudeMdIndexer
+
     _indexer = ClaudeMdIndexer()
 except ImportError:
     _indexer = None
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_fetch_docs(args: dict) -> dict:
     """Fetch CLAUDE.md section(s) by header name or keyword search.
@@ -107,18 +107,14 @@ def handle_get_icdev_metadata(args: dict) -> dict:
         conn = _get_db()
 
         # Project count and status
-        projects = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM projects GROUP BY status"
-        ).fetchall()
+        projects = conn.execute("SELECT status, COUNT(*) as cnt FROM projects GROUP BY status").fetchall()
         metadata["projects"] = {
             "total": sum(dict(r)["cnt"] for r in projects),
             "by_status": {dict(r)["status"]: dict(r)["cnt"] for r in projects},
         }
 
         # Agent health
-        agents = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM agents GROUP BY status"
-        ).fetchall()
+        agents = conn.execute("SELECT status, COUNT(*) as cnt FROM agents GROUP BY status").fetchall()
         metadata["agents"] = {
             "total": sum(dict(r)["cnt"] for r in agents),
             "by_status": {dict(r)["status"]: dict(r)["cnt"] for r in agents},
@@ -132,12 +128,10 @@ def handle_get_icdev_metadata(args: dict) -> dict:
 
         # Compliance posture
         try:
-            poam_open = conn.execute(
-                "SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'"
-            ).fetchone()["cnt"]
-            stig_open = conn.execute(
-                "SELECT COUNT(*) as cnt FROM stig_findings WHERE status = 'Open'"
-            ).fetchone()["cnt"]
+            poam_open = conn.execute("SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'").fetchone()["cnt"]
+            stig_open = conn.execute("SELECT COUNT(*) as cnt FROM stig_findings WHERE status = 'Open'").fetchone()[
+                "cnt"
+            ]
             metadata["compliance"] = {
                 "poam_open": poam_open,
                 "stig_open": stig_open,
@@ -147,9 +141,7 @@ def handle_get_icdev_metadata(args: dict) -> dict:
 
         # Migration version
         try:
-            ver = conn.execute(
-                "SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"
-            ).fetchone()
+            ver = conn.execute("SELECT version FROM schema_migrations ORDER BY applied_at DESC LIMIT 1").fetchone()
             metadata["migration_version"] = dict(ver)["version"] if ver else "unknown"
         except sqlite3.OperationalError:
             metadata["migration_version"] = "unknown"
@@ -173,9 +165,7 @@ def handle_get_project_context(args: dict) -> dict:
 
     try:
         conn = _get_db()
-        project = conn.execute(
-            "SELECT * FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
+        project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not project:
             conn.close()
             return {"error": f"Project '{project_id}' not found"}
@@ -189,7 +179,7 @@ def handle_get_project_context(args: dict) -> dict:
 
         # Get recent audit events
         events = conn.execute(
-            "SELECT event_type, action, created_at FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT 5",
+            "SELECT event_type, action, created_at FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT 5",  # noqa: E501
             (project_id,),
         ).fetchall()
 
@@ -227,6 +217,7 @@ def handle_get_agent_context(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server():
     """Create and configure the context MCP server."""
@@ -289,7 +280,7 @@ def create_server():
             "properties": {
                 "role": {
                     "type": "string",
-                    "description": "Agent role (builder, compliance, security, architect, infrastructure, orchestrator)",
+                    "description": "Agent role (builder, compliance, security, architect, infrastructure, orchestrator)",  # noqa: E501
                 },
             },
             "required": ["role"],

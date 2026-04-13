@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any, Dict, Iterator
 
-from icdev.tools.llm.provider import (
+from tools.llm.provider import (
     LLMProvider,
     LLMRequest,
     LLMResponse,
@@ -28,6 +28,7 @@ logger = logging.getLogger("icdev.llm.openai_compat")
 
 try:
     import openai as openai_sdk
+
     HAS_OPENAI = True
 except ImportError:
     openai_sdk = None
@@ -41,8 +42,7 @@ class OpenAICompatibleProvider(LLMProvider):
     by configuring the base_url parameter.
     """
 
-    def __init__(self, api_key: str = "", base_url: str = "https://api.openai.com/v1",
-                 provider_label: str = "openai"):
+    def __init__(self, api_key: str = "", base_url: str = "https://api.openai.com/v1", provider_label: str = "openai"):
         self._api_key = api_key
         self._base_url = base_url
         self._provider_label = provider_label
@@ -56,9 +56,7 @@ class OpenAICompatibleProvider(LLMProvider):
         """Lazy-init OpenAI client with custom base_url."""
         if self._client is None:
             if not HAS_OPENAI:
-                raise ImportError(
-                    "openai SDK required. Install: pip install openai"
-                )
+                raise ImportError("openai SDK required. Install: pip install openai")
             kwargs = {"base_url": self._base_url}
             if self._api_key:
                 kwargs["api_key"] = self._api_key
@@ -68,8 +66,7 @@ class OpenAICompatibleProvider(LLMProvider):
             self._client = openai_sdk.OpenAI(**kwargs)
         return self._client
 
-    def invoke(self, request: LLMRequest, model_id: str,
-               model_config: dict) -> LLMResponse:
+    def invoke(self, request: LLMRequest, model_id: str, model_config: dict) -> LLMResponse:
         """Invoke via OpenAI Chat Completions API."""
         client = self._get_client()
         start_time = time.time()
@@ -142,11 +139,13 @@ class OpenAICompatibleProvider(LLMProvider):
                                 args = json.loads(args_str)
                             except (json.JSONDecodeError, ValueError):
                                 args = {"raw": args_str}
-                            resp.tool_calls.append({
-                                "id": getattr(tc, "id", ""),
-                                "name": getattr(func, "name", ""),
-                                "input": args,
-                            })
+                            resp.tool_calls.append(
+                                {
+                                    "id": getattr(tc, "id", ""),
+                                    "name": getattr(func, "name", ""),
+                                    "input": args,
+                                }
+                            )
 
         # Try parsing structured output
         if resp.content.strip().startswith(("{", "[")):
@@ -157,8 +156,7 @@ class OpenAICompatibleProvider(LLMProvider):
 
         return resp
 
-    def invoke_streaming(self, request: LLMRequest, model_id: str,
-                         model_config: dict) -> Iterator[dict]:
+    def invoke_streaming(self, request: LLMRequest, model_id: str, model_config: dict) -> Iterator[dict]:
         """Invoke with streaming via OpenAI API."""
         client = self._get_client()
         start_time = time.time()

@@ -25,24 +25,24 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Import sibling tools
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.project.manifest_loader import (
+from tools.project.manifest_loader import (  # noqa: E402
     load_manifest,
-    detect_vcs_platform,
     _apply_defaults,
 )
 
 
 # ── Core API ────────────────────────────────────────────────────────────
+
 
 def build_session_context(directory: str = None, db_path: str = None) -> dict:
     """Build comprehensive session context for Claude Code.
@@ -119,9 +119,7 @@ def build_session_context(directory: str = None, db_path: str = None) -> dict:
     else:
         # Neither yaml nor DB
         context["setup_needed"] = True
-        context["warnings"].append(
-            "No icdev.yaml found and current directory is not a registered ICDEV™ project."
-        )
+        context["warnings"].append("No icdev.yaml found and current directory is not a registered ICDEV™ project.")
 
     # Suggest workflows based on context
     context["recommended_workflows"] = _suggest_workflows(context)
@@ -171,8 +169,7 @@ def _find_project_by_directory(directory: str, db_path: str) -> dict:
     if not db.exists():
         return None
     try:
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
         row = conn.execute(
             "SELECT * FROM projects WHERE directory_path = ? LIMIT 1",
             (directory,),
@@ -195,6 +192,7 @@ def _enrich_from_db(context: dict, project_id: str, db_path: str):
 
 # ── Compliance Summary ──────────────────────────────────────────────────
 
+
 def _get_compliance_summary(project_id: str, db_path: str) -> dict:
     """Get compliance posture summary for a project."""
     summary = {
@@ -213,8 +211,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
         return summary
 
     try:
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
 
         # SSP
         ssp = conn.execute(
@@ -286,6 +283,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
 
 # ── Dev Profile Summary ─────────────────────────────────────────────────
 
+
 def _get_dev_profile_summary(project_id: str, db_path: str) -> dict:
     """Get resolved dev profile key dimensions."""
     summary = {}
@@ -294,8 +292,7 @@ def _get_dev_profile_summary(project_id: str, db_path: str) -> dict:
         return summary
 
     try:
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
         row = conn.execute(
             "SELECT dimensions FROM dev_profiles WHERE scope = 'project' AND scope_id = ? ORDER BY version DESC LIMIT 1",
             (project_id,),
@@ -325,6 +322,7 @@ def _get_dev_profile_summary(project_id: str, db_path: str) -> dict:
 
 # ── Recent Activity ─────────────────────────────────────────────────────
 
+
 def _get_recent_activity(project_id: str, limit: int = 5, db_path: str = None) -> list:
     """Get last N audit trail entries for a project."""
     db = Path(db_path) if db_path else DB_PATH
@@ -333,19 +331,20 @@ def _get_recent_activity(project_id: str, limit: int = 5, db_path: str = None) -
 
     entries = []
     try:
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
         rows = conn.execute(
             "SELECT event_type, actor, action, created_at FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
             (project_id, limit),
         ).fetchall()
         for r in rows:
-            entries.append({
-                "event_type": r["event_type"],
-                "actor": r["actor"],
-                "action": r["action"],
-                "timestamp": r["created_at"],
-            })
+            entries.append(
+                {
+                    "event_type": r["event_type"],
+                    "actor": r["actor"],
+                    "action": r["action"],
+                    "timestamp": r["created_at"],
+                }
+            )
         conn.close()
     except Exception:
         pass
@@ -355,6 +354,7 @@ def _get_recent_activity(project_id: str, limit: int = 5, db_path: str = None) -
 
 # ── Active Intake Sessions ──────────────────────────────────────────────
 
+
 def _get_active_intake_sessions(project_id: str, db_path: str) -> list:
     """Get active (non-completed) intake sessions."""
     db = Path(db_path)
@@ -363,20 +363,21 @@ def _get_active_intake_sessions(project_id: str, db_path: str) -> list:
 
     sessions = []
     try:
-        conn = sqlite3.connect(str(db))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(db_path))
         rows = conn.execute(
             "SELECT id, customer_name, status, readiness_score, created_at FROM intake_sessions WHERE project_id = ? AND status != 'completed' ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
         for r in rows:
-            sessions.append({
-                "session_id": r["id"],
-                "customer_name": r["customer_name"],
-                "status": r["status"],
-                "readiness_score": r["readiness_score"],
-                "created_at": r["created_at"],
-            })
+            sessions.append(
+                {
+                    "session_id": r["id"],
+                    "customer_name": r["customer_name"],
+                    "status": r["status"],
+                    "readiness_score": r["readiness_score"],
+                    "created_at": r["created_at"],
+                }
+            )
         conn.close()
     except Exception:
         pass
@@ -386,6 +387,7 @@ def _get_active_intake_sessions(project_id: str, db_path: str) -> list:
 
 # ── Workflow Suggestions ────────────────────────────────────────────────
 
+
 def _suggest_workflows(context: dict) -> list:
     """Deterministic rules to suggest next actions."""
     suggestions = []
@@ -394,63 +396,78 @@ def _suggest_workflows(context: dict) -> list:
     intake = context.get("intake_sessions", [])
 
     if context.get("setup_needed"):
-        suggestions.append({
-            "command": "/icdev-init",
-            "reason": "No project detected — initialize a new ICDEV™ project",
-        })
+        suggestions.append(
+            {
+                "command": "/icdev-init",
+                "reason": "No project detected — initialize a new ICDEV™ project",
+            }
+        )
         return suggestions
 
     # No DB record but has yaml
     if context.get("source") == "yaml" and not project.get("db_project_id"):
-        suggestions.append({
-            "command": "/icdev-init",
-            "reason": "icdev.yaml found but project not registered in DB",
-        })
+        suggestions.append(
+            {
+                "command": "/icdev-init",
+                "reason": "icdev.yaml found but project not registered in DB",
+            }
+        )
 
     # No SSP generated
     if compliance.get("ssp_status") in (None, "not_generated"):
-        suggestions.append({
-            "command": "/icdev-comply",
-            "reason": "No SSP generated — generate ATO compliance artifacts",
-        })
+        suggestions.append(
+            {
+                "command": "/icdev-comply",
+                "reason": "No SSP generated — generate ATO compliance artifacts",
+            }
+        )
 
     # Open POAMs
     open_poams = compliance.get("open_poams", 0)
     if open_poams > 0:
-        suggestions.append({
-            "command": "/icdev-comply",
-            "reason": f"{open_poams} open POAM item(s) — address findings",
-        })
+        suggestions.append(
+            {
+                "command": "/icdev-comply",
+                "reason": f"{open_poams} open POAM item(s) — address findings",
+            }
+        )
 
     # STIG CAT1 findings
     cat1 = compliance.get("stig_cat1", 0)
     if cat1 > 0:
-        suggestions.append({
-            "command": "/icdev-secure",
-            "reason": f"{cat1} CAT1 STIG finding(s) — critical, blocks deployment",
-        })
+        suggestions.append(
+            {
+                "command": "/icdev-secure",
+                "reason": f"{cat1} CAT1 STIG finding(s) — critical, blocks deployment",
+            }
+        )
 
     # Active intake sessions
     if intake:
         for s in intake:
-            suggestions.append({
-                "command": "/icdev-intake",
-                "reason": f"Active intake session ({s.get('customer_name', 'unknown')}) — resume requirements gathering",
-            })
+            suggestions.append(
+                {
+                    "command": "/icdev-intake",
+                    "reason": f"Active intake session ({s.get('customer_name', 'unknown')}) — resume requirements gathering",
+                }
+            )
 
     # No recent test activity — check if any test events exist
     activity = context.get("recent_activity", [])
     test_events = [a for a in activity if "test" in a.get("event_type", "").lower()]
     if not test_events and project.get("db_project_id"):
-        suggestions.append({
-            "command": "/icdev-test",
-            "reason": "No recent test activity — run test suite",
-        })
+        suggestions.append(
+            {
+                "command": "/icdev-test",
+                "reason": "No recent test activity — run test suite",
+            }
+        )
 
     return suggestions
 
 
 # ── Markdown Formatter ──────────────────────────────────────────────────
+
 
 def _format_markdown(context: dict) -> str:
     """Format context as structured markdown for Claude consumption."""
@@ -480,7 +497,7 @@ def _format_markdown(context: dict) -> str:
 
     # Header
     name = project.get("name", "Unknown")
-    lines.append(f"## ICDEV™ Project Context")
+    lines.append("## ICDEV™ Project Context")
     lines.append("")
 
     # Project info
@@ -514,7 +531,11 @@ def _format_markdown(context: dict) -> str:
         lines.append(f"- **SSP**: {ssp_str} | **Open POAMs**: {open_poams}")
         lines.append(f"- **STIG**: {cat1} CAT1, {cat2} CAT2 | **Controls**: {implemented}/{total} implemented")
         if cato is not None:
-            lines.append(f"- **cATO Readiness**: {cato:.0%}" if isinstance(cato, (int, float)) else f"- **cATO Readiness**: {cato}")
+            lines.append(
+                f"- **cATO Readiness**: {cato:.0%}"
+                if isinstance(cato, (int, float))
+                else f"- **cATO Readiness**: {cato}"
+            )
         lines.append("")
 
     # Dev Profile
@@ -594,6 +615,7 @@ def _format_markdown(context: dict) -> str:
 
 # ── Init from Manifest ──────────────────────────────────────────────────
 
+
 def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
     """Create a DB project record from icdev.yaml.
 
@@ -649,11 +671,11 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
         return result
 
     # Create project record
-    project_id = project.get("id", f"proj-{name.lower().replace(' ', '-')}")
+    project.get("id", f"proj-{name.lower().replace(' ', '-')}")
     db_id = str(uuid.uuid4())
 
     try:
-        conn = sqlite3.connect(str(db))
+        conn = get_connection(db_path=str(db_path))
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             """INSERT INTO projects
@@ -664,11 +686,19 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
                VALUES (?, ?, ?, ?, ?, 'active', ?, ?, 'icdev-yaml',
                        ?, ?, ?, ?, ?, ?)""",
             (
-                db_id, name, config.get("description", ""),
-                project_type, classification,
-                language, str(cwd), il, cloud,
-                ",".join(frameworks), ato_status,
-                now, now,
+                db_id,
+                name,
+                config.get("description", ""),
+                project_type,
+                classification,
+                language,
+                str(cwd),
+                il,
+                cloud,
+                ",".join(frameworks),
+                ato_status,
+                now,
+                now,
             ),
         )
 
@@ -717,18 +747,14 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
 
 # ── CLI ─────────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Build session context for Claude Code (D190)"
-    )
+    parser = argparse.ArgumentParser(description="Build session context for Claude Code (D190)")
     parser.add_argument("--dir", help="Project directory (defaults to cwd)")
     parser.add_argument("--db", help="Path to icdev.db")
-    parser.add_argument("--format", choices=["markdown", "json"],
-                        default="markdown", help="Output format")
-    parser.add_argument("--json", action="store_true",
-                        help="Output JSON (shortcut for --format json)")
-    parser.add_argument("--init", action="store_true",
-                        help="Initialize DB project record from icdev.yaml")
+    parser.add_argument("--format", choices=["markdown", "json"], default="markdown", help="Output format")
+    parser.add_argument("--json", action="store_true", help="Output JSON (shortcut for --format json)")
+    parser.add_argument("--init", action="store_true", help="Initialize DB project record from icdev.yaml")
     args = parser.parse_args()
 
     if args.init:

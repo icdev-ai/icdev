@@ -15,26 +15,25 @@ Resources:
     observability://stats     — Live trace/prov/SHAP statistics
 """
 
-import json
 import os
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 try:
-    from icdev.tools.compat.db_utils import get_db_connection
+    from tools.compat.db_utils import get_db_connection
 except ImportError:
     get_db_connection = None
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
     audit_log_event = None
 
@@ -42,8 +41,7 @@ except ImportError:
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -51,14 +49,18 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
     if audit_log_event:
         try:
             audit_log_event(
-                event_type=event_type, actor=actor, action=action,
-                project_id=project_id, details=details,
+                event_type=event_type,
+                actor=actor,
+                action=action,
+                project_id=project_id,
+                details=details,
             )
         except Exception:
             pass
 
 
 # ── Tool handlers ────────────────────────────────────────────────
+
 
 def trace_query_handler(args: dict):
     """Query traces and spans."""
@@ -86,7 +88,7 @@ def trace_query_handler(args: dict):
             where = "WHERE " + " AND ".join(clauses) if clauses else ""
             params.append(limit)
             rows = conn.execute(
-                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT ?",
+                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchall()
 
@@ -107,23 +109,26 @@ def trace_summary_handler(args: dict):
 
         stats = {
             "total_spans": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where}", params
+                f"SELECT COUNT(*) FROM otel_spans {where}",
+                params,  # nosec B608 -- table/column names are internal constants, not user input
             ).fetchone()[0],
             "total_traces": conn.execute(
-                f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params
+                f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}",
+                params,  # nosec B608 -- table/column names are internal constants, not user input
             ).fetchone()[0],
             "mcp_tool_calls": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} name = 'mcp.tool_call'",
+                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} name = 'mcp.tool_call'",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()[0],
             "error_spans": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} status_code = 'ERROR'",
+                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} status_code = 'ERROR'",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()[0],
         }
 
         avg = conn.execute(
-            f"SELECT AVG(duration_ms) FROM otel_spans {where}", params
+            f"SELECT AVG(duration_ms) FROM otel_spans {where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
         stats["avg_duration_ms"] = round(avg, 2) if avg else 0
 
@@ -143,7 +148,8 @@ def prov_lineage_handler(args: dict):
     max_depth = min(int(args.get("max_depth", 50)), 100)
 
     try:
-        from icdev.tools.observability.provenance.prov_recorder import ProvRecorder
+        from tools.observability.provenance.prov_recorder import ProvRecorder
+
         recorder = ProvRecorder(db_path=DB_PATH)
         lineage = recorder.get_lineage(entity_id, direction=direction, max_depth=max_depth)
         return {"entity_id": entity_id, "direction": direction, "lineage": lineage}
@@ -156,7 +162,8 @@ def prov_export_handler(args: dict):
     project_id = args.get("project_id")
 
     try:
-        from icdev.tools.observability.provenance.prov_recorder import ProvRecorder
+        from tools.observability.provenance.prov_recorder import ProvRecorder
+
         recorder = ProvRecorder(db_path=DB_PATH, project_id=project_id)
         prov_json = recorder.export_prov_json(project_id=project_id)
         _audit("prov.entity_created", "icdev-observability", "Exported PROV-JSON", project_id)
@@ -174,11 +181,16 @@ def shap_analyze_handler(args: dict):
     iterations = min(int(args.get("iterations", 1000)), 5000)
 
     try:
-        from icdev.tools.observability.shap.agent_shap import AgentSHAP
+        from tools.observability.shap.agent_shap import AgentSHAP
+
         shap = AgentSHAP(db_path=DB_PATH)
         result = shap.analyze_trace(trace_id, iterations=iterations)
-        _audit("shap.analysis_completed", "icdev-observability",
-               f"SHAP analysis on trace {trace_id[:12]}", details={"trace_id": trace_id})
+        _audit(
+            "shap.analysis_completed",
+            "icdev-observability",
+            f"SHAP analysis on trace {trace_id[:12]}",
+            details={"trace_id": trace_id},
+        )
         return result
     except Exception as e:
         return {"error": str(e)}
@@ -191,7 +203,8 @@ def xai_assess_handler(args: dict):
         return {"error": "project_id required"}
 
     try:
-        from icdev.tools.compliance.xai_assessor import XAIAssessor
+        from tools.compliance.xai_assessor import XAIAssessor
+
         assessor = XAIAssessor(db_path=DB_PATH)
         project = {"id": project_id}
         results = assessor.get_automated_checks(project)
@@ -200,9 +213,13 @@ def xai_assess_handler(args: dict):
         total = len(results)
         coverage_pct = round((satisfied / total) * 100, 1) if total > 0 else 0
 
-        _audit("xai.assessment_completed", "icdev-observability",
-               f"XAI assessment: {coverage_pct}% coverage", project_id,
-               details={"coverage_pct": coverage_pct})
+        _audit(
+            "xai.assessment_completed",
+            "icdev-observability",
+            f"XAI assessment: {coverage_pct}% coverage",
+            project_id,
+            details={"coverage_pct": coverage_pct},
+        )
 
         return {
             "project_id": project_id,
@@ -218,9 +235,11 @@ def xai_assess_handler(args: dict):
 
 # ── Resource handlers ────────────────────────────────────────────
 
+
 def config_resource_handler(uri: str):
     """Return current observability config."""
     import yaml
+
     config_path = BASE_DIR / "args" / "observability_tracing_config.yaml"
     if config_path.exists():
         with open(config_path) as f:

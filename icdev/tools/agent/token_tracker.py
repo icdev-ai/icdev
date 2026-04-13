@@ -1,19 +1,28 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Token usage and cost tracking per agent/project/task.
+"""Token usage, cost tracking, and budget enforcement per agent/project/task.
 
-Logs Bedrock API token consumption to data/icdev.db and provides
-aggregated summaries and cost estimates by project, agent, and model.
+Logs LLM token consumption to data/icdev.db, provides aggregated summaries
+and cost estimates, and enforces per-agent monthly budget hard-stops.
+
+Budget enforcement (inspired by Paperclip AI's per-agent budget model):
+    - Per-agent monthly USD caps configured in args/llm_config.yaml
+    - Warning at configurable threshold (default 80%)
+    - Hard-stop blocks invocations when budget exhausted
+    - check_budget() returns allow/warn/block decision before each invoke()
 """
 
 import argparse
 import json
+import logging
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+logger = logging.getLogger("icdev.agent.token_tracker")
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # ---------------------------------------------------------------------------
@@ -31,14 +40,30 @@ CREATE TABLE IF NOT EXISTS agent_token_usage (
     duration_ms INTEGER NOT NULL DEFAULT 0,
     task_id TEXT,
     cost_estimate_usd REAL NOT NULL DEFAULT 0.0,
-    timestamp TEXT NOT NULL
+    created_at TEXT NOT NULL
+);
+"""
+
+CREATE_BUDGETS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS agent_token_budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    budget_usd REAL NOT NULL DEFAULT 0.0,
+    spent_usd REAL NOT NULL DEFAULT 0.0,
+    warning_threshold REAL NOT NULL DEFAULT 0.8,
+    hard_stop INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(agent_id, month)
 );
 """
 
 
 def _ensure_table(conn: sqlite3.Connection) -> None:
-    """Create agent_token_usage table if it does not exist."""
+    """Create agent_token_usage and agent_token_budgets tables if they do not exist."""
     conn.execute(CREATE_TABLE_SQL)
+    conn.execute(CREATE_BUDGETS_TABLE_SQL)
     conn.commit()
 
 
@@ -46,8 +71,7 @@ def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a connection and guarantee the table is present."""
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     _ensure_table(conn)
     return conn
 
@@ -59,7 +83,8 @@ def _load_model_pricing() -> Dict:
     """Load pricing from llm_config.yaml (multi-provider) or bedrock_models.yaml."""
     # Try LLM router first (covers all providers: Bedrock, OpenAI, Ollama, etc.)
     try:
-        from icdev.tools.llm.router import LLMRouter
+        from tools.llm.router import LLMRouter
+
         router = LLMRouter()
         all_pricing = router.get_all_model_pricing()
         if all_pricing:
@@ -80,6 +105,7 @@ def _load_model_pricing() -> Dict:
         return {}
     try:
         import yaml  # noqa: E401 — optional dependency
+
         with open(yaml_path, "r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
         return data.get("models", {})
@@ -90,6 +116,7 @@ def _load_model_pricing() -> Dict:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def log_usage(
     agent_id: str,
@@ -110,7 +137,7 @@ def log_usage(
             """
             INSERT INTO agent_token_usage
                 (agent_id, project_id, model_id, input_tokens, output_tokens,
-                 thinking_tokens, duration_ms, task_id, cost_estimate_usd, timestamp)
+                 thinking_tokens, duration_ms, task_id, cost_estimate_usd, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -239,25 +266,244 @@ def estimate_cost(model_id: str, input_tokens: int, output_tokens: int) -> float
 
 
 # ---------------------------------------------------------------------------
+# Budget Enforcement (Paperclip-inspired per-agent hard-stops)
+# ---------------------------------------------------------------------------
+
+# Default budgets loaded from args/llm_config.yaml token_budgets section
+_budget_config_cache: Optional[Dict] = None
+
+
+def _load_budget_config() -> Dict:
+    """Load token budget config from llm_config.yaml."""
+    global _budget_config_cache
+    if _budget_config_cache is not None:
+        return _budget_config_cache
+
+    config_path = BASE_DIR / "args" / "llm_config.yaml"
+    if not config_path.exists():
+        _budget_config_cache = {}
+        return _budget_config_cache
+
+    try:
+        import yaml
+
+        with open(config_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        _budget_config_cache = data.get("token_budgets", {})
+        return _budget_config_cache
+    except (ImportError, Exception):
+        _budget_config_cache = {}
+        return _budget_config_cache
+
+
+def _current_month() -> str:
+    """Return current month as YYYY-MM string."""
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def _month_range(month: str) -> tuple:
+    """Return (start, end) ISO timestamps for a YYYY-MM month.
+
+    Start is first day of the month, end is first day of next month.
+    Works with both PostgreSQL and SQLite date comparisons.
+    """
+    year, mon = int(month[:4]), int(month[5:7])
+    start = f"{year:04d}-{mon:02d}-01T00:00:00"
+    # Roll to next month
+    if mon == 12:
+        end = f"{year + 1:04d}-01-01T00:00:00"
+    else:
+        end = f"{year:04d}-{mon + 1:02d}-01T00:00:00"
+    return start, end
+
+
+def _get_agent_budget(agent_id: str) -> Dict:
+    """Get budget config for an agent, falling back to defaults."""
+    cfg = _load_budget_config()
+    if not cfg.get("enabled", False):
+        return {"enabled": False}
+
+    default_usd = cfg.get("default_monthly_usd", 0.0)
+    warning_pct = cfg.get("warning_threshold", 0.8)
+    hard_stop = cfg.get("hard_stop", True)
+
+    # Per-agent overrides
+    per_agent = cfg.get("per_agent", {})
+    agent_cfg = per_agent.get(agent_id, {})
+
+    return {
+        "enabled": True,
+        "budget_usd": agent_cfg.get("monthly_usd", default_usd),
+        "warning_threshold": agent_cfg.get("warning_threshold", warning_pct),
+        "hard_stop": agent_cfg.get("hard_stop", hard_stop),
+    }
+
+
+def _get_monthly_spend(agent_id: str, month: str = None, db_path: Path = None) -> float:
+    """Get total USD spent by agent in the given month."""
+    month = month or _current_month()
+    start, end = _month_range(month)
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(cost_estimate_usd), 0.0) AS total
+               FROM agent_token_usage
+               WHERE agent_id = ?
+                 AND created_at >= ?
+                 AND created_at < ?""",
+            (agent_id, start, end),
+        ).fetchone()
+        return round(row["total"], 6) if row else 0.0
+    finally:
+        conn.close()
+
+
+def check_budget(agent_id: str, db_path: Path = None) -> Dict:
+    """Check if agent is within budget. Returns decision dict.
+
+    Returns:
+        {
+            "action": "allow" | "warn" | "block",
+            "agent_id": str,
+            "month": str,
+            "budget_usd": float,
+            "spent_usd": float,
+            "remaining_usd": float,
+            "utilization_pct": float,
+            "message": str,
+        }
+    """
+    budget_cfg = _get_agent_budget(agent_id)
+
+    # Budget enforcement disabled — always allow
+    if not budget_cfg.get("enabled"):
+        return {
+            "action": "allow",
+            "agent_id": agent_id,
+            "month": _current_month(),
+            "budget_usd": 0.0,
+            "spent_usd": 0.0,
+            "remaining_usd": 0.0,
+            "utilization_pct": 0.0,
+            "message": "Budget enforcement disabled",
+        }
+
+    budget_usd = budget_cfg["budget_usd"]
+    warning_threshold = budget_cfg["warning_threshold"]
+    hard_stop = budget_cfg["hard_stop"]
+    month = _current_month()
+
+    # Zero budget means unlimited
+    if budget_usd <= 0:
+        return {
+            "action": "allow",
+            "agent_id": agent_id,
+            "month": month,
+            "budget_usd": 0.0,
+            "spent_usd": 0.0,
+            "remaining_usd": 0.0,
+            "utilization_pct": 0.0,
+            "message": "No budget cap set (unlimited)",
+        }
+
+    spent_usd = _get_monthly_spend(agent_id, month, db_path)
+    remaining = round(budget_usd - spent_usd, 6)
+    utilization = round(spent_usd / budget_usd, 4) if budget_usd > 0 else 0.0
+
+    result = {
+        "agent_id": agent_id,
+        "month": month,
+        "budget_usd": budget_usd,
+        "spent_usd": spent_usd,
+        "remaining_usd": max(remaining, 0.0),
+        "utilization_pct": round(utilization * 100, 2),
+    }
+
+    if spent_usd >= budget_usd and hard_stop:
+        result["action"] = "block"
+        result["message"] = (
+            f"Agent '{agent_id}' budget exhausted: "
+            f"${spent_usd:.4f} spent of ${budget_usd:.2f} monthly cap. "
+            f"Hard-stop active — invocation blocked."
+        )
+        logger.warning(result["message"])
+    elif utilization >= warning_threshold:
+        result["action"] = "warn"
+        result["message"] = (
+            f"Agent '{agent_id}' approaching budget: "
+            f"${spent_usd:.4f} of ${budget_usd:.2f} "
+            f"({result['utilization_pct']}% used)."
+        )
+        logger.info(result["message"])
+    else:
+        result["action"] = "allow"
+        result["message"] = (
+            f"Agent '{agent_id}' within budget: "
+            f"${spent_usd:.4f} of ${budget_usd:.2f} "
+            f"({result['utilization_pct']}% used)."
+        )
+
+    return result
+
+
+def get_all_budgets(db_path: Path = None) -> Dict:
+    """Get budget status for all agents with recorded usage this month."""
+    month = _current_month()
+    start, end = _month_range(month)
+    conn = _connect(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT agent_id, COALESCE(SUM(cost_estimate_usd), 0.0) AS total
+               FROM agent_token_usage
+               WHERE created_at >= ?
+                 AND created_at < ?
+               GROUP BY agent_id
+               ORDER BY total DESC""",
+            (start, end),
+        ).fetchall()
+
+        agents = {}
+        for r in rows:
+            aid = r["agent_id"]
+            budget_status = check_budget(aid, db_path)
+            agents[aid] = budget_status
+
+        return {
+            "month": month,
+            "agent_count": len(agents),
+            "agents": agents,
+        }
+    finally:
+        conn.close()
+
+
+class BudgetExceededError(Exception):
+    """Raised when an agent's token budget has been exhausted."""
+
+    def __init__(self, agent_id: str, budget_status: Dict):
+        self.agent_id = agent_id
+        self.budget_status = budget_status
+        super().__init__(budget_status.get("message", f"Budget exceeded for {agent_id}"))
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Token usage and cost tracking for ICDEV™ agents"
-    )
+    parser = argparse.ArgumentParser(description="Token usage, cost tracking, and budget enforcement for ICDEV™ agents")
     parser.add_argument(
         "--action",
-        choices=["summary", "cost"],
+        choices=["summary", "cost", "check-budget", "budgets"],
         required=True,
-        help="Action to perform",
+        help="Action: summary, cost, check-budget (single agent), budgets (all agents)",
     )
     parser.add_argument("--project-id", default=None, help="Filter by project ID")
     parser.add_argument("--agent-id", default=None, help="Filter by agent ID")
     parser.add_argument("--since", default=None, help="Filter by ISO timestamp (>=)")
-    parser.add_argument(
-        "--json", action="store_true", dest="json_output", help="Output as JSON"
-    )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
+    parser.add_argument("--gate", action="store_true", help="Exit 1 if any budget is blocked")
     args = parser.parse_args()
 
     if args.action == "summary":
@@ -270,6 +516,12 @@ def main() -> None:
         if not args.project_id:
             parser.error("--project-id is required for 'cost' action")
         result = get_cost_estimate(project_id=args.project_id)
+    elif args.action == "check-budget":
+        if not args.agent_id:
+            parser.error("--agent-id is required for 'check-budget' action")
+        result = check_budget(agent_id=args.agent_id)
+    elif args.action == "budgets":
+        result = get_all_budgets()
     else:
         parser.error(f"Unknown action: {args.action}")
         return
@@ -284,6 +536,15 @@ def main() -> None:
                     print(f"  {k2}: {v2}")
             else:
                 print(f"{key}: {value}")
+
+    # Gate mode: exit 1 if any budget blocked
+    if args.gate:
+        if args.action == "check-budget" and result.get("action") == "block":
+            raise SystemExit(1)
+        if args.action == "budgets":
+            for agent_data in result.get("agents", {}).values():
+                if agent_data.get("action") == "block":
+                    raise SystemExit(1)
 
 
 if __name__ == "__main__":

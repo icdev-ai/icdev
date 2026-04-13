@@ -10,12 +10,11 @@ Provides:
 """
 
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
-from pathlib import Path
 
-from icdev.tools.dashboard.config import BYOK_ENABLED, BYOK_ENCRYPTION_KEY, DB_PATH
+from tools.dashboard.config import BYOK_ENABLED, BYOK_ENCRYPTION_KEY, DB_PATH
 
 # ---------------------------------------------------------------------------
 # Fernet encryption (optional dependency — graceful fallback)
@@ -74,8 +73,7 @@ def decrypt_key(ciphertext: str) -> str:
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -212,9 +210,7 @@ PROVIDER_ENV_MAP = {
 }
 
 
-def resolve_api_key(
-    user_id: str, provider: str, department: str = ""
-) -> tuple:
+def resolve_api_key(user_id: str, provider: str, department: str = "") -> tuple:
     """Resolve the API key for a provider using the BYOK priority chain.
 
     Returns (api_key: str, source: str).

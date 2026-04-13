@@ -21,8 +21,8 @@
 (function () {
     "use strict";
 
-    var ICDEV™ = window.ICDEV™ || {};
-    window.ICDEV™ = ICDEV™;
+    var ICDEV = window.ICDEV || {};
+    window.ICDEV = ICDEV;
 
     // ---- Constants ----
     var POLL_ENDPOINT = "/api/events/poll";
@@ -165,7 +165,7 @@
         if (_filters.hook_type) url += "&hook_type=" + encodeURIComponent(_filters.hook_type);
         if (_filters.tool_name) url += "&tool_name=" + encodeURIComponent(_filters.tool_name);
 
-        var fetchFn = (typeof ICDEV™.fetchJSON === "function") ? ICDEV™.fetchJSON : null;
+        var fetchFn = (typeof ICDEV.fetchJSON === "function") ? ICDEV.fetchJSON : null;
         if (!fetchFn) {
             schedulePoll();
             return;
@@ -245,7 +245,7 @@
         var sev = (data.severity || "").toLowerCase();
         var hook = data.hook_type || "";
         var tool = (data.tool_name || data.tool || "").toLowerCase();
-        var notify = ICDEV™.showNotification;
+        var notify = ICDEV.showNotification;
         if (typeof notify !== "function") return;
 
         if (sev === "critical" || sev === "high") {
@@ -283,8 +283,8 @@
             refreshHomeActivity(events);
         }
         if (path === "/monitoring") {
-            if (needsAlerts && typeof ICDEV™.refreshAlertBadge === "function") ICDEV™.refreshAlertBadge();
-            if (typeof ICDEV™.refreshHealthStatus === "function") ICDEV™.refreshHealthStatus();
+            if (needsAlerts && typeof ICDEV.refreshAlertBadge === "function") ICDEV.refreshAlertBadge();
+            if (typeof ICDEV.refreshHealthStatus === "function") ICDEV.refreshHealthStatus();
         }
         if (path === "/events") refreshEventsPage();
     }
@@ -293,8 +293,8 @@
     // 6. Dashboard Section Refreshers
     // ========================================================================
     function refreshHomeNotifications() {
-        if (typeof ICDEV™.fetchJSON !== "function") return;
-        ICDEV™.fetchJSON("/api/notifications").then(function (data) {
+        if (typeof ICDEV.fetchJSON !== "function") return;
+        ICDEV.fetchJSON("/api/notifications").then(function (data) {
             if (!data || !data.notifications) return;
             var count = 0;
             for (var i = 0; i < data.notifications.length; i++) {
@@ -309,18 +309,18 @@
     }
 
     function refreshHomeCharts() {
-        if (typeof ICDEV™.fetchJSON !== "function") return;
-        ICDEV™.fetchJSON("/api/charts/overview").then(function (d) {
+        if (typeof ICDEV.fetchJSON !== "function") return;
+        ICDEV.fetchJSON("/api/charts/overview").then(function (d) {
             if (!d) return;
-            if (d.agent_health && typeof ICDEV™.gaugeChart === "function" && document.getElementById("chart-agent-health")) {
-                ICDEV™.gaugeChart("chart-agent-health", {
+            if (d.agent_health && typeof ICDEV.gaugeChart === "function" && document.getElementById("chart-agent-health")) {
+                ICDEV.gaugeChart("chart-agent-health", {
                     value: d.agent_health.ratio,
                     label: d.agent_health.active + "/" + d.agent_health.total + " Active",
                     thresholds: { good: 0.7, warning: 0.4 }
                 });
             }
-            if (d.compliance && typeof ICDEV™.barChart === "function" && document.getElementById("chart-compliance")) {
-                ICDEV™.barChart("chart-compliance", {
+            if (d.compliance && typeof ICDEV.barChart === "function" && document.getElementById("chart-compliance")) {
+                ICDEV.barChart("chart-compliance", {
                     labels: ["POA&M", "STIG"],
                     series: [
                         { name: "Open",   color: "#dc3545", data: [d.compliance.poam.open,   d.compliance.stig.open] },
@@ -353,12 +353,12 @@
     }
 
     function refreshEventsPage() {
-        if (typeof ICDEV™.fetchJSON !== "function") return;
+        if (typeof ICDEV.fetchJSON !== "function") return;
         var url = "/api/events/recent?limit=50";
         if (_filters.severity) url += "&severity=" + encodeURIComponent(_filters.severity);
         if (_filters.hook_type) url += "&hook_type=" + encodeURIComponent(_filters.hook_type);
         if (_filters.tool_name) url += "&tool_name=" + encodeURIComponent(_filters.tool_name);
-        ICDEV™.fetchJSON(url).then(function (data) {
+        ICDEV.fetchJSON(url).then(function (data) {
             if (!data || !data.events) return;
             var tbody = findTbody("Recent Events") || document.querySelector("table tbody");
             if (!tbody) return;
@@ -425,9 +425,9 @@
         }
     }
 
-    /** Delegate to shared ICDEV™.escapeHTML (api.js). */
+    /** Delegate to shared ICDEV.escapeHTML (api.js). */
     function esc(str) {
-        return ICDEV™.escapeHTML ? ICDEV™.escapeHTML(str) : String(str || "");
+        return ICDEV.escapeHTML ? ICDEV.escapeHTML(str) : String(str || "");
     }
 
     function badge(severity) {
@@ -436,7 +436,7 @@
     }
 
     function timeAgo(iso) {
-        if (typeof ICDEV™.formatTimeAgo === "function") return esc(ICDEV™.formatTimeAgo(iso));
+        if (typeof ICDEV.formatTimeAgo === "function") return esc(ICDEV.formatTimeAgo(iso));
         if (!iso) return "just now";
         var d = Date.now() - new Date(iso).getTime();
         if (d < 60000) return "just now";
@@ -463,7 +463,7 @@
         bar.setAttribute("aria-label", "Event filters");
 
         // Load filter options from API
-        var fetchFn = (typeof ICDEV™.fetchJSON === "function") ? ICDEV™.fetchJSON : null;
+        var fetchFn = (typeof ICDEV.fetchJSON === "function") ? ICDEV.fetchJSON : null;
         if (!fetchFn) return;
 
         fetchFn("/api/events/filter-options").then(function (data) {
@@ -519,28 +519,28 @@
     // ========================================================================
 
     /** Manually initiate HTTP polling. Called automatically on DOMContentLoaded. */
-    ICDEV™.connectLive = function () { startPolling(); };
+    ICDEV.connectLive = function () { startPolling(); };
 
     /** Manually stop HTTP polling. */
-    ICDEV™.disconnectLive = function () { stopPolling(); };
+    ICDEV.disconnectLive = function () { stopPolling(); };
 
     /** Check whether polling is currently active and healthy. */
-    ICDEV™.isLiveConnected = function () { return _state === STATE_CONNECTED; };
+    ICDEV.isLiveConnected = function () { return _state === STATE_CONNECTED; };
 
     /** Set a filter and reset the cursor so events are re-fetched with new criteria. */
-    ICDEV™.setEventFilter = function (key, value) {
+    ICDEV.setEventFilter = function (key, value) {
         if (key in _filters) { _filters[key] = value || ""; _cursor = ""; }
     };
 
     /** Get current filter state. */
-    ICDEV™.getEventFilters = function () {
+    ICDEV.getEventFilters = function () {
         return { severity: _filters.severity, hook_type: _filters.hook_type, tool_name: _filters.tool_name };
     };
 
     // Legacy SSE aliases (backward compat)
-    ICDEV™.connectSSE = ICDEV™.connectLive;
-    ICDEV™.disconnectSSE = ICDEV™.disconnectLive;
-    ICDEV™.isSSEConnected = ICDEV™.isLiveConnected;
+    ICDEV.connectSSE = ICDEV.connectLive;
+    ICDEV.disconnectSSE = ICDEV.disconnectLive;
+    ICDEV.isSSEConnected = ICDEV.isLiveConnected;
 
     // ========================================================================
     // 9. Initialization

@@ -510,7 +510,7 @@ flowchart LR
 {% block scripts %}
 <script>
 (function() {
-    if (!window.ICDEV™ || !ICDEV™.donutChart) return;
+    if (!window.ICDEV || !ICDEV.donutChart) return;
     var projectId = '{{ project.id }}';
     fetch('/api/charts/project/' + projectId)
         .then(function(r) { return r.json(); })
@@ -523,7 +523,7 @@ flowchart LR
                     if (r.status === 'Open') openCount += r.cnt;
                     else closedCount += r.cnt;
                 });
-                ICDEV™.donutChart('chart-proj-stig', {
+                ICDEV.donutChart('chart-proj-stig', {
                     segments: [
                         { label: 'Open', value: openCount, color: '#dc3545' },
                         { label: 'Closed', value: closedCount, color: '#28a745' },
@@ -545,7 +545,7 @@ flowchart LR
                     else sevs[r.severity].closed += r.cnt;
                 });
                 var labels = Object.keys(sevs);
-                ICDEV™.barChart('chart-proj-poam', {
+                ICDEV.barChart('chart-proj-poam', {
                     labels: labels,
                     series: [
                         { name: 'Open', data: labels.map(function(s) { return sevs[s].open; }), color: '#dc3545' },
@@ -563,7 +563,7 @@ flowchart LR
                     if (days.indexOf(r.day) === -1) { days.push(r.day); counts.push(0); }
                     counts[days.indexOf(r.day)] += r.cnt;
                 });
-                ICDEV™.lineChart('chart-proj-alerts', {
+                ICDEV.lineChart('chart-proj-alerts', {
                     labels: days.map(function(d) { return d.slice(5); }),
                     series: [{ name: 'Alerts', data: counts, color: '#ffc107' }],
                     height: 140, showLegend: false,

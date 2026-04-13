@@ -4,7 +4,8 @@
 Centralizes OS detection and platform-specific behavior (D145).
 Uses only Python stdlib — air-gap safe.
 """
-from icdev.tools.compat.platform_utils import (  # noqa: F401
+
+from tools.compat.platform_utils import (  # noqa: F401
     IS_WINDOWS,
     IS_MACOS,
     IS_LINUX,

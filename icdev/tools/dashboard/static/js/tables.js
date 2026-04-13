@@ -11,7 +11,7 @@
 (function () {
     "use strict";
 
-    var NS = window.ICDEV™ || (window.ICDEV™ = {});
+    var NS = window.ICDEV || (window.ICDEV = {});
 
     // ========================================================================
     // Constants

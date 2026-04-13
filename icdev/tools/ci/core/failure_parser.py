@@ -11,7 +11,7 @@ Architecture Decisions:
     D134: Self-recovery auto-commits fixes; targeted retesting (failed only)
 
 Usage:
-    from icdev.tools.ci.core.failure_parser import parse_failure_output, ParsedFailure
+    from tools.ci.core.failure_parser import parse_failure_output, ParsedFailure
     failure = parse_failure_output("test", output_text)
 """
 
@@ -23,6 +23,7 @@ from typing import List
 @dataclass
 class FailedTest:
     """A single failed test case."""
+
     name: str
     file: str
     line: int = 0
@@ -33,6 +34,7 @@ class FailedTest:
 @dataclass
 class FailedCheck:
     """A single failed lint/security check."""
+
     tool: str
     rule: str
     file: str
@@ -43,6 +45,7 @@ class FailedCheck:
 @dataclass
 class ParsedFailure:
     """Structured representation of a CI phase failure."""
+
     phase: str
     recoverable: bool = True
     failed_tests: List[FailedTest] = field(default_factory=list)
@@ -57,13 +60,11 @@ class ParsedFailure:
             "phase": self.phase,
             "recoverable": self.recoverable,
             "failed_tests": [
-                {"name": t.name, "file": t.file, "line": t.line,
-                 "error": t.error, "assertion": t.assertion}
+                {"name": t.name, "file": t.file, "line": t.line, "error": t.error, "assertion": t.assertion}
                 for t in self.failed_tests
             ],
             "failed_checks": [
-                {"tool": c.tool, "rule": c.rule, "file": c.file,
-                 "line": c.line, "message": c.message}
+                {"tool": c.tool, "rule": c.rule, "file": c.file, "line": c.line, "message": c.message}
                 for c in self.failed_checks
             ],
             "relevant_files": self.relevant_files,
@@ -125,6 +126,7 @@ def _is_security_blocked(output: str) -> bool:
 
 # ── Pytest Output Parser ──────────────────────────────────────────────
 
+
 def parse_pytest_output(output: str) -> ParsedFailure:
     """Parse pytest output into structured failure."""
     failure = ParsedFailure(
@@ -134,23 +136,21 @@ def parse_pytest_output(output: str) -> ParsedFailure:
     )
 
     # Match FAILED test lines: FAILED tests/test_foo.py::TestClass::test_method
-    failed_pattern = re.compile(
-        r"FAILED\s+([\w/\\.-]+)::(\w+(?:::\w+)?)"
-    )
+    failed_pattern = re.compile(r"FAILED\s+([\w/\\.-]+)::(\w+(?:::\w+)?)")
     for match in failed_pattern.finditer(output):
         filepath = match.group(1).replace("\\", "/")
         test_name = match.group(2)
-        failure.failed_tests.append(FailedTest(
-            name=test_name,
-            file=filepath,
-        ))
+        failure.failed_tests.append(
+            FailedTest(
+                name=test_name,
+                file=filepath,
+            )
+        )
         if filepath not in failure.relevant_files:
             failure.relevant_files.append(filepath)
 
     # Match assertion errors: E   AssertionError: ...
-    assertion_pattern = re.compile(
-        r"^E\s+(AssertionError|assert\w*):?\s*(.*)$", re.MULTILINE
-    )
+    assertion_pattern = re.compile(r"^E\s+(AssertionError|assert\w*):?\s*(.*)$", re.MULTILINE)
     assertions = assertion_pattern.findall(output)
     for i, (err_type, message) in enumerate(assertions):
         if i < len(failure.failed_tests):
@@ -158,9 +158,7 @@ def parse_pytest_output(output: str) -> ParsedFailure:
             failure.failed_tests[i].error = f"{err_type}: {message.strip()}"
 
     # Match file:line from tracebacks
-    traceback_pattern = re.compile(
-        r"([\w/\\.-]+\.py):(\d+):\s+(.*Error|.*Exception)"
-    )
+    traceback_pattern = re.compile(r"([\w/\\.-]+\.py):(\d+):\s+(.*Error|.*Exception)")
     for match in traceback_pattern.finditer(output):
         filepath = match.group(1).replace("\\", "/")
         line = int(match.group(2))
@@ -191,6 +189,7 @@ def parse_pytest_output(output: str) -> ParsedFailure:
 
 # ── Ruff Output Parser ────────────────────────────────────────────────
 
+
 def parse_ruff_output(output: str) -> ParsedFailure:
     """Parse ruff lint output into structured failure."""
     failure = ParsedFailure(
@@ -200,21 +199,21 @@ def parse_ruff_output(output: str) -> ParsedFailure:
     )
 
     # Match ruff lines: path/file.py:10:5: E302 expected 2 blank lines
-    ruff_pattern = re.compile(
-        r"([\w/\\.-]+\.py):(\d+):\d+:\s+(\w+)\s+(.*)"
-    )
+    ruff_pattern = re.compile(r"([\w/\\.-]+\.py):(\d+):\d+:\s+(\w+)\s+(.*)")
     for match in ruff_pattern.finditer(output):
         filepath = match.group(1).replace("\\", "/")
         line = int(match.group(2))
         rule = match.group(3)
         message = match.group(4)
-        failure.failed_checks.append(FailedCheck(
-            tool="ruff",
-            rule=rule,
-            file=filepath,
-            line=line,
-            message=message,
-        ))
+        failure.failed_checks.append(
+            FailedCheck(
+                tool="ruff",
+                rule=rule,
+                file=filepath,
+                line=line,
+                message=message,
+            )
+        )
         if filepath not in failure.relevant_files:
             failure.relevant_files.append(filepath)
 
@@ -223,6 +222,7 @@ def parse_ruff_output(output: str) -> ParsedFailure:
 
 
 # ── Bandit Output Parser ──────────────────────────────────────────────
+
 
 def parse_bandit_output(output: str) -> ParsedFailure:
     """Parse bandit SAST output into structured failure."""
@@ -233,15 +233,9 @@ def parse_bandit_output(output: str) -> ParsedFailure:
     )
 
     # Match bandit lines: >> Issue: [B602:subprocess_popen_with_shell_equals_true]
-    issue_pattern = re.compile(
-        r">> Issue: \[(B\d+):(\w+)\]\s*(.*)"
-    )
-    location_pattern = re.compile(
-        r"Location:\s*([\w/\\.-]+):(\d+)"
-    )
-    severity_pattern = re.compile(
-        r"Severity:\s*(Low|Medium|High)"
-    )
+    issue_pattern = re.compile(r">> Issue: \[(B\d+):(\w+)\]\s*(.*)")
+    location_pattern = re.compile(r"Location:\s*([\w/\\.-]+):(\d+)")
+    severity_pattern = re.compile(r"Severity:\s*(Low|Medium|High)")
 
     issues = issue_pattern.finditer(output)
     locations = location_pattern.finditer(output)
@@ -265,13 +259,15 @@ def parse_bandit_output(output: str) -> ParsedFailure:
         if i < len(severity_list):
             severity = severity_list[i].group(1)
 
-        failure.failed_checks.append(FailedCheck(
-            tool="bandit",
-            rule=f"{rule}:{name}",
-            file=filepath,
-            line=line,
-            message=f"[{severity}] {description}" if severity else description,
-        ))
+        failure.failed_checks.append(
+            FailedCheck(
+                tool="bandit",
+                rule=f"{rule}:{name}",
+                file=filepath,
+                line=line,
+                message=f"[{severity}] {description}" if severity else description,
+            )
+        )
         if filepath and filepath not in failure.relevant_files:
             failure.relevant_files.append(filepath)
 
@@ -285,6 +281,7 @@ def parse_bandit_output(output: str) -> ParsedFailure:
 
 # ── Behave Output Parser ──────────────────────────────────────────────
 
+
 def parse_behave_output(output: str) -> ParsedFailure:
     """Parse behave BDD output into structured failure."""
     failure = ParsedFailure(
@@ -295,9 +292,7 @@ def parse_behave_output(output: str) -> ParsedFailure:
 
     # Match failing scenarios: Failing scenarios:
     #   features/foo.feature:10  Scenario name
-    scenario_pattern = re.compile(
-        r"(features/[\w/\\.-]+\.feature):(\d+)\s+(.*)"
-    )
+    scenario_pattern = re.compile(r"(features/[\w/\\.-]+\.feature):(\d+)\s+(.*)")
 
     in_failing = False
     for line in output.splitlines():
@@ -310,11 +305,13 @@ def parse_behave_output(output: str) -> ParsedFailure:
                 filepath = match.group(1).replace("\\", "/")
                 line_num = int(match.group(2))
                 scenario = match.group(3).strip()
-                failure.failed_tests.append(FailedTest(
-                    name=scenario,
-                    file=filepath,
-                    line=line_num,
-                ))
+                failure.failed_tests.append(
+                    FailedTest(
+                        name=scenario,
+                        file=filepath,
+                        line=line_num,
+                    )
+                )
                 if filepath not in failure.relevant_files:
                     failure.relevant_files.append(filepath)
             elif line.strip() == "" or not line.startswith(" "):
@@ -326,6 +323,7 @@ def parse_behave_output(output: str) -> ParsedFailure:
 
 # ── Compile Error Parser ──────────────────────────────────────────────
 
+
 def parse_compile_output(output: str) -> ParsedFailure:
     """Parse py_compile / syntax error output."""
     failure = ParsedFailure(
@@ -335,19 +333,19 @@ def parse_compile_output(output: str) -> ParsedFailure:
     )
 
     # Match: File "path/file.py", line 10
-    compile_pattern = re.compile(
-        r'File "([^"]+)", line (\d+)'
-    )
+    compile_pattern = re.compile(r'File "([^"]+)", line (\d+)')
     for match in compile_pattern.finditer(output):
         filepath = match.group(1).replace("\\", "/")
         line = int(match.group(2))
-        failure.failed_checks.append(FailedCheck(
-            tool="py_compile",
-            rule="SyntaxError",
-            file=filepath,
-            line=line,
-            message="Syntax error",
-        ))
+        failure.failed_checks.append(
+            FailedCheck(
+                tool="py_compile",
+                rule="SyntaxError",
+                file=filepath,
+                line=line,
+                message="Syntax error",
+            )
+        )
         if filepath not in failure.relevant_files:
             failure.relevant_files.append(filepath)
 

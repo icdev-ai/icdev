@@ -5,9 +5,8 @@
 import sqlite3
 import argparse
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 SCHEMA_SQL = """
@@ -156,6 +155,10 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'marketplace_review_submitted', 'marketplace_review_completed',
         'marketplace_scan_completed', 'marketplace_federation_sync',
         'marketplace_rating_submitted',
+        'openclaw_skill_imported', 'openclaw_skill_promoted',
+        'openclaw_skill_rejected', 'openclaw_skill_exported',
+        'openclaw_export_approved', 'openclaw_export_rejected',
+        'openclaw_quarantine_expired',
         'compliance_detected', 'compliance_confirmed',
         'multi_regime_assessed', 'multi_regime_gate_evaluated',
         'data_category_assigned', 'data_category_detected',
@@ -189,6 +192,33 @@ CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_trail(project_id);
 CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_trail(event_type);
 CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_trail(actor);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_trail(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_trail_actor_action ON audit_trail(actor, action);
+
+-- ============================================================
+-- CONTINUOUS COMPLIANCE EVIDENCE CHAIN (D-CHAIN-1)
+-- Unified PDC/NDC/SDC audit trail snapshots aligned to OSCAL 1.1.2
+-- ============================================================
+CREATE TABLE IF NOT EXISTS compliance_evidence_chain (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    chain_id       TEXT NOT NULL,
+    event_id       TEXT NOT NULL,
+    source         TEXT NOT NULL CHECK (source IN ('pdc', 'ndc', 'sdc', 'icdev')),
+    event_type     TEXT NOT NULL,
+    actor          TEXT,
+    action         TEXT NOT NULL,
+    oscal_controls TEXT DEFAULT '[]',
+    oscal_family   TEXT,
+    evidence_type  TEXT DEFAULT 'audit' CHECK (evidence_type IN ('audit', 'test', 'assessment', 'deployment', 'compliance', 'other')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    event_ts       TEXT NOT NULL,
+    details_json   TEXT,
+    created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_cec_chain ON compliance_evidence_chain(chain_id);
+CREATE INDEX IF NOT EXISTS idx_cec_source ON compliance_evidence_chain(source);
+CREATE INDEX IF NOT EXISTS idx_cec_ts ON compliance_evidence_chain(event_ts);
+CREATE INDEX IF NOT EXISTS idx_cec_family ON compliance_evidence_chain(oscal_family);
 
 -- ============================================================
 -- COMPLIANCE TRACKING
@@ -261,6 +291,28 @@ CREATE TABLE IF NOT EXISTS poam_items (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Canvas-finding approval state (one row per unique finding across all canvas DBs).
+-- Findings live in their source canvas DBs (security_canvas.db, data_canvas.db, etc.)
+-- and are re-generated each scan; this table persists the human approval decision
+-- keyed by a stable SHA-256 hash of (canvas, rule_id, title, affected_entity).
+-- Mutable: a finding can move pending -> approved -> remediated. Each transition
+-- is also logged to audit_trail (append-only) for compliance.
+CREATE TABLE IF NOT EXISTS finding_approvals (
+    finding_hash TEXT PRIMARY KEY,
+    canvas_source TEXT NOT NULL,
+    rule_id TEXT,
+    severity TEXT,
+    title TEXT NOT NULL,
+    affected_entity TEXT,
+    decision TEXT DEFAULT 'pending' CHECK(decision IN ('pending', 'approved', 'declined', 'accepted_risk', 'remediated')),
+    decision_by TEXT,
+    decision_at TIMESTAMP,
+    decision_rationale TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS stig_findings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),
@@ -317,9 +369,14 @@ CREATE TABLE IF NOT EXISTS knowledge_patterns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pattern_type TEXT NOT NULL CHECK(pattern_type IN ('failure', 'success', 'optimization', 'security', 'compliance', 'performance')),
     pattern_signature TEXT NOT NULL,
+    name TEXT,
     description TEXT NOT NULL,
     root_cause TEXT,
     remediation TEXT,
+    resolution TEXT,
+    detection_rule TEXT,
+    solution TEXT,
+    source TEXT,
     confidence REAL DEFAULT 0.0,
     occurrence_count INTEGER DEFAULT 1,
     last_occurrence TIMESTAMP,
@@ -337,6 +394,7 @@ CREATE TABLE IF NOT EXISTS self_healing_events (
     trigger_data TEXT NOT NULL,
     action_taken TEXT,
     outcome TEXT CHECK(outcome IN ('success', 'failure', 'escalated', 'pending')),
+    status TEXT,
     escalated_to TEXT,
     duration_seconds REAL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -813,9 +871,13 @@ CREATE TABLE IF NOT EXISTS emass_systems (
     authorization_status TEXT CHECK(authorization_status IN ('not_yet_authorized', 'ato', 'iato', 'dato', 'cato', 'denied', 'decommissioned')),
     authorization_date TEXT,
     authorization_expiry TEXT,
+    authorization_termination_date TEXT,
     authorizing_official TEXT,
     last_sync TEXT,
+    last_sync_status TEXT,
     sync_status TEXT DEFAULT 'never' CHECK(sync_status IN ('never', 'success', 'partial', 'failed')),
+    sync_mode TEXT,
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -825,12 +887,23 @@ CREATE TABLE IF NOT EXISTS emass_sync_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
     sync_direction TEXT NOT NULL CHECK(sync_direction IN ('push', 'pull', 'bidirectional')),
+    sync_mode TEXT,
+    sync_status TEXT,
     artifact_type TEXT,
     status TEXT NOT NULL CHECK(status IN ('started', 'success', 'partial', 'failed')),
     items_synced INTEGER DEFAULT 0,
     items_failed INTEGER DEFAULT 0,
+    controls_synced INTEGER,
+    poam_synced INTEGER,
+    artifacts_synced INTEGER,
+    test_results_synced INTEGER,
     error_details TEXT,
+    error_message TEXT,
+    details TEXT,
     sync_duration_ms INTEGER,
+    started_at TEXT,
+    completed_at TEXT,
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -1630,6 +1703,22 @@ CREATE TABLE IF NOT EXISTS cve_triage (
 CREATE INDEX IF NOT EXISTS idx_cve_triage_project ON cve_triage(project_id);
 CREATE INDEX IF NOT EXISTS idx_cve_triage_severity ON cve_triage(severity);
 
+-- Passive CVE Watcher — append-only processing log (NIST AU, SI-4, CA-7)
+CREATE TABLE IF NOT EXISTS cve_passive_watch_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audit_trail_id INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    cve_id TEXT NOT NULL,
+    component TEXT,
+    triage_id INTEGER,
+    skipped INTEGER DEFAULT 0,
+    source_event_type TEXT,
+    processed_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cpwl_audit ON cve_passive_watch_log(audit_trail_id);
+CREATE INDEX IF NOT EXISTS idx_cpwl_cve ON cve_passive_watch_log(cve_id);
+CREATE INDEX IF NOT EXISTS idx_cpwl_project ON cve_passive_watch_log(project_id);
+
 -- ============================================================
 -- RICOAS: SIMULATION & COAs (Phase 20C)
 -- ============================================================
@@ -1972,6 +2061,63 @@ CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON agent_token_usage(agent_id);
 CREATE INDEX IF NOT EXISTS idx_token_usage_project ON agent_token_usage(project_id);
 CREATE INDEX IF NOT EXISTS idx_token_usage_created ON agent_token_usage(created_at);
 
+-- Per-agent monthly token budgets (Paperclip-inspired hard-stops)
+CREATE TABLE IF NOT EXISTS agent_token_budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    budget_usd REAL NOT NULL DEFAULT 0.0,
+    spent_usd REAL NOT NULL DEFAULT 0.0,
+    warning_threshold REAL NOT NULL DEFAULT 0.8,
+    hard_stop INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(agent_id, month)
+);
+
+-- Atomic task checkout — lease-based single-assignee enforcement
+CREATE TABLE IF NOT EXISTS agent_task_leases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL UNIQUE,
+    agent_id TEXT NOT NULL,
+    leased_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    released_at TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released', 'expired')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_task_leases_agent ON agent_task_leases(agent_id);
+CREATE INDEX IF NOT EXISTS idx_task_leases_status ON agent_task_leases(status);
+CREATE INDEX IF NOT EXISTS idx_task_leases_expires ON agent_task_leases(expires_at);
+
+-- Scout Daemon — daily autonomous self-improvement scanner
+CREATE TABLE IF NOT EXISTS scout_scans (
+    id TEXT PRIMARY KEY,
+    scan_date TEXT NOT NULL,
+    pillar_results TEXT,
+    digest_path TEXT,
+    total_findings INTEGER DEFAULT 0,
+    signals_fed INTEGER DEFAULT 0,
+    repos_added INTEGER DEFAULT 0,
+    genesis_status TEXT,
+    genesis_branch TEXT,
+    duration_ms INTEGER,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS scout_audit (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    pillar TEXT,
+    details TEXT,
+    success INTEGER,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scout_audit_event ON scout_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_scout_audit_created ON scout_audit(created_at);
+
 -- Multi-agent workflow tracking
 CREATE TABLE IF NOT EXISTS agent_workflows (
     id TEXT PRIMARY KEY,
@@ -2141,13 +2287,19 @@ CREATE TABLE IF NOT EXISTS child_app_registry (
     id TEXT PRIMARY KEY,
     parent_project_id TEXT REFERENCES projects(id),
     child_name TEXT NOT NULL,
+    child_type TEXT,
     child_path TEXT NOT NULL,
+    project_path TEXT,
     blueprint_hash TEXT,
+    blueprint_json TEXT,
     fitness_assessment_id TEXT REFERENCES agentic_fitness_assessments(id),
     capabilities TEXT NOT NULL,
     agent_count INTEGER DEFAULT 5,
     cloud_provider TEXT DEFAULT 'aws',
+    target_cloud TEXT,
     callback_url TEXT,
+    compliance_required INTEGER DEFAULT 0,
+    status TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -2418,6 +2570,68 @@ CREATE INDEX IF NOT EXISTS idx_mkt_dep_asset ON marketplace_dependencies(asset_i
 CREATE INDEX IF NOT EXISTS idx_mkt_dep_target ON marketplace_dependencies(depends_on_slug);
 
 -- ============================================================
+-- OPENCLAW SKILL BRIDGE (Phase 69)
+-- ============================================================
+
+-- Quarantine-first import tracker for external OpenClaw skills
+-- Zero-trust: all imports start at trust_score=0.30 (untrusted)
+-- No registration/renewal required — free community assets
+CREATE TABLE IF NOT EXISTS openclaw_imports (
+    id TEXT PRIMARY KEY,
+    source_url TEXT,
+    source_path TEXT NOT NULL,
+    openclaw_slug TEXT,
+    openclaw_author TEXT,
+    skill_name TEXT NOT NULL,
+    skill_version TEXT DEFAULT '1.0.0',
+    quarantine_path TEXT NOT NULL,
+    sha256_hash TEXT NOT NULL,
+    has_executable_content INTEGER DEFAULT 0,
+    scan_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(scan_status IN ('pending', 'scanning', 'passed', 'failed')),
+    gate_results TEXT,
+    review_required INTEGER DEFAULT 0,
+    review_id TEXT,
+    trust_score REAL DEFAULT 0.30,
+    status TEXT NOT NULL DEFAULT 'quarantined'
+        CHECK(status IN ('quarantined', 'scanning', 'review_pending',
+                         'promoted', 'rejected', 'expired')),
+    imported_by TEXT NOT NULL,
+    promoted_by TEXT,
+    promoted_at TIMESTAMP,
+    rejected_by TEXT,
+    rejected_reason TEXT,
+    marketplace_asset_id TEXT,
+    tenant_id TEXT NOT NULL,
+    metadata TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_oc_import_status ON openclaw_imports(status);
+CREATE INDEX IF NOT EXISTS idx_oc_import_tenant ON openclaw_imports(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_oc_import_slug ON openclaw_imports(openclaw_slug);
+CREATE INDEX IF NOT EXISTS idx_oc_import_hash ON openclaw_imports(sha256_hash);
+
+-- Export audit trail (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS openclaw_exports (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    version_id TEXT NOT NULL,
+    output_path TEXT,
+    exported_by TEXT NOT NULL,
+    review_id TEXT,
+    review_status TEXT DEFAULT 'pending'
+        CHECK(review_status IN ('pending', 'approved', 'rejected')),
+    stripping_log TEXT,
+    sha256_hash TEXT,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'approved', 'exported', 'rejected')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_oc_export_asset ON openclaw_exports(asset_id);
+CREATE INDEX IF NOT EXISTS idx_oc_export_status ON openclaw_exports(status);
+
+-- ============================================================
 -- UNIVERSAL COMPLIANCE PLATFORM (Phase 23)
 -- ============================================================
 
@@ -2462,6 +2676,11 @@ CREATE TABLE IF NOT EXISTS compliance_detection_log (
     rules_evaluated INTEGER DEFAULT 0,
     frameworks_detected TEXT,
     data_categories_found TEXT,
+    data_categories TEXT,
+    detected_frameworks TEXT,
+    recommended_frameworks TEXT,
+    required_frameworks TEXT,
+    rules_matched TEXT,
     applied INTEGER DEFAULT 0,
     confirmed INTEGER DEFAULT 0,
     details TEXT
@@ -2716,7 +2935,9 @@ CREATE TABLE IF NOT EXISTS icd_documents (
     file_path TEXT,
     classification TEXT DEFAULT 'CUI',
     status TEXT CHECK(status IN ('draft','review','approved','deprecated')) DEFAULT 'draft',
+    approval_status TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT,
     approved_at TIMESTAMP,
     approved_by TEXT,
     UNIQUE(project_id, interface_id, version)
@@ -2734,7 +2955,9 @@ CREATE TABLE IF NOT EXISTS tsp_documents (
     file_path TEXT,
     classification TEXT DEFAULT 'CUI',
     status TEXT CHECK(status IN ('draft','review','approved','deprecated')) DEFAULT 'draft',
+    approval_status TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT,
     approved_at TIMESTAMP,
     approved_by TEXT,
     UNIQUE(project_id, version)
@@ -2923,6 +3146,8 @@ CREATE TABLE IF NOT EXISTS dev_profiles (
     version INTEGER NOT NULL DEFAULT 1,
     profile_md TEXT,
     profile_yaml TEXT NOT NULL,
+    dimensions TEXT,
+    template TEXT,
     inherits_from TEXT,
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -2969,15 +3194,40 @@ CREATE TABLE IF NOT EXISTS heartbeat_checks (
     last_run TEXT NOT NULL,
     next_run TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK(status IN ('pending', 'ok', 'warning', 'critical', 'error')),
+        CHECK(status IN ('pending', 'ok', 'warning', 'critical', 'error', 'healthy')),
     result_summary TEXT,
     items_found INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
+    details TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_hb_check_type ON heartbeat_checks(check_type);
 CREATE INDEX IF NOT EXISTS idx_hb_status ON heartbeat_checks(status);
 CREATE INDEX IF NOT EXISTS idx_hb_next_run ON heartbeat_checks(next_run);
+
+-- Push-Based Metrics Sidecar: per-container/process metrics with push buffer
+CREATE TABLE IF NOT EXISTS container_metrics (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    container_id     TEXT    NOT NULL,
+    container_name   TEXT,
+    host             TEXT    NOT NULL,
+    backend          TEXT    NOT NULL DEFAULT 'psutil',
+    cpu_percent      REAL,
+    memory_percent   REAL,
+    memory_rss_mb    REAL,
+    memory_limit_mb  REAL,
+    disk_read_mb     REAL,
+    disk_write_mb    REAL,
+    net_rx_mb        REAL,
+    net_tx_mb        REAL,
+    status           TEXT,
+    pushed           INTEGER DEFAULT 0,
+    collected_at     TEXT    DEFAULT (datetime('now')),
+    pushed_at        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cm_container ON container_metrics(container_id);
+CREATE INDEX IF NOT EXISTS idx_cm_pushed    ON container_metrics(pushed);
+CREATE INDEX IF NOT EXISTS idx_cm_collected ON container_metrics(collected_at);
 
 -- Phase 29: Auto-resolution alert processing log (D143-D145, append-only)
 CREATE TABLE IF NOT EXISTS auto_resolution_log (
@@ -3087,24 +3337,30 @@ CREATE TABLE IF NOT EXISTS innovation_signals (
     source_type TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
+    body TEXT,
     url TEXT,
     metadata TEXT,
     community_score REAL DEFAULT 0.0,
+    composite_score REAL,
     content_hash TEXT NOT NULL,
     discovered_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'new'
         CHECK(status IN ('new', 'scored', 'triaged', 'approved', 'suggested',
                          'blocked', 'logged', 'solution_generated', 'published')),
     category TEXT,
+    score REAL,
+    raw_data TEXT,
     innovation_score REAL,
     score_breakdown TEXT,
+    implementation_status TEXT,
     triage_result TEXT
         CHECK(triage_result IS NULL OR triage_result IN ('approved', 'suggested', 'blocked', 'logged')),
     gotcha_layer TEXT
         CHECK(gotcha_layer IS NULL OR gotcha_layer IN ('goal', 'tool', 'arg', 'context', 'hardprompt')),
     boundary_tier TEXT
         CHECK(boundary_tier IS NULL OR boundary_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_innovation_signals_status ON innovation_signals(status);
 CREATE INDEX IF NOT EXISTS idx_innovation_signals_source ON innovation_signals(source);
@@ -3119,8 +3375,8 @@ CREATE TABLE IF NOT EXISTS innovation_triage_log (
     signal_id TEXT NOT NULL REFERENCES innovation_signals(id),
     stage INTEGER NOT NULL CHECK(stage BETWEEN 1 AND 5),
     stage_name TEXT NOT NULL
-        CHECK(stage_name IN ('classify', 'gotcha_fit', 'boundary_impact',
-                              'compliance_check', 'dedup_license')),
+        CHECK(stage_name IN ('classify_signal', 'gotcha_fit_check', 'boundary_impact',
+                              'compliance_precheck', 'duplicate_license_check')),
     result TEXT NOT NULL CHECK(result IN ('pass', 'block', 'warn')),
     details TEXT,
     triaged_at TEXT NOT NULL
@@ -3238,9 +3494,13 @@ CREATE TABLE IF NOT EXISTS prompt_injection_log (
     detected INTEGER NOT NULL DEFAULT 0,
     confidence REAL DEFAULT 0.0,
     action TEXT CHECK(action IN ('allow', 'warn', 'flag', 'block')),
+    finding_count INTEGER,
     findings TEXT,
+    findings_json TEXT,
     project_id TEXT,
     user_id TEXT,
+    scanned_at TEXT,
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_pi_log_source ON prompt_injection_log(source);
@@ -3256,12 +3516,17 @@ CREATE TABLE IF NOT EXISTS ai_telemetry (
     response_hash TEXT,
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
+    thinking_tokens INTEGER DEFAULT 0,
     latency_ms INTEGER DEFAULT 0,
+    cost_usd REAL,
     agent_id TEXT,
     user_id TEXT,
     project_id TEXT,
     function TEXT,
+    api_key_source TEXT,
+    injection_scan_result TEXT,
     classification TEXT DEFAULT 'CUI',
+    logged_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_telemetry_model ON ai_telemetry(model_id);
@@ -3273,12 +3538,18 @@ CREATE TABLE IF NOT EXISTS ai_bom (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
     model_id TEXT NOT NULL,
+    component_type TEXT,
+    component_name TEXT,
     provider TEXT NOT NULL,
     version TEXT,
     purpose TEXT,
+    license TEXT,
+    risk_level TEXT,
     risk_classification TEXT,
     data_categories TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ai_bom_project ON ai_bom(project_id);
 
@@ -3305,13 +3576,20 @@ CREATE TABLE IF NOT EXISTS atlas_red_team_results (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
     technique_id TEXT NOT NULL,
+    technique TEXT,
     technique_name TEXT,
     test_name TEXT NOT NULL,
     result TEXT CHECK(result IN ('pass', 'fail', 'partial', 'error')),
+    passed INTEGER,
+    tests_run INTEGER,
+    tests_passed INTEGER,
     severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low', 'info')),
     details TEXT,
+    findings_json TEXT,
     evidence TEXT,
     remediation TEXT,
+    scanned_at TEXT,
+    classification TEXT DEFAULT 'CUI',
     tested_at TEXT NOT NULL DEFAULT (datetime('now')),
     tested_by TEXT DEFAULT 'automated'
 );
@@ -3394,11 +3672,17 @@ CREATE TABLE IF NOT EXISTS child_telemetry (
     id TEXT PRIMARY KEY,
     child_id TEXT NOT NULL,
     health_status TEXT CHECK(health_status IN ('healthy', 'degraded', 'unhealthy', 'offline')) DEFAULT 'healthy',
+    metric_type TEXT,
+    metric_data TEXT,
     genome_version TEXT,
     uptime_hours REAL DEFAULT 0.0,
     error_rate REAL DEFAULT 0.0,
+    response_time_ms REAL,
     compliance_scores_json TEXT,
     learned_behaviors_json TEXT,
+    raw_response TEXT,
+    endpoint_url TEXT,
+    classification TEXT DEFAULT 'CUI',
     collected_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_child_telemetry_child ON child_telemetry(child_id);
@@ -3416,6 +3700,7 @@ CREATE TABLE IF NOT EXISTS child_learned_behaviors (
     trust_level TEXT DEFAULT 'child'
         CHECK(trust_level IN ('system', 'user', 'external', 'child')),
     injection_scan_result TEXT DEFAULT NULL,
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_child_behaviors_child ON child_learned_behaviors(child_id);
@@ -3475,12 +3760,18 @@ CREATE TABLE IF NOT EXISTS propagation_log (
     capability_id TEXT NOT NULL,
     capability_name TEXT,
     source_type TEXT,
+    source_child_id TEXT,
+    target_child_id TEXT,
     target_children_json TEXT,
     status TEXT CHECK(status IN ('prepared', 'approved', 'executing', 'completed', 'failed', 'rolled_back')) DEFAULT 'prepared',
+    propagation_status TEXT,
+    genome_version TEXT,
     genome_version_before TEXT,
     genome_version_after TEXT,
     rollback_plan TEXT,
     prepared_by TEXT,
+    initiated_by TEXT,
+    initiated_at TEXT,
     approved_by TEXT,
     approved_at TEXT,
     executed_by TEXT,
@@ -3490,6 +3781,7 @@ CREATE TABLE IF NOT EXISTS propagation_log (
     rolled_back_at TEXT,
     rolled_back_by TEXT,
     execution_results_json TEXT,
+    classification TEXT DEFAULT 'CUI',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_propagation_status ON propagation_log(status);
@@ -3602,8 +3894,11 @@ CREATE TABLE IF NOT EXISTS translation_units (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL REFERENCES translation_jobs(id),
     name TEXT NOT NULL,
+    unit_name TEXT,
     kind TEXT NOT NULL CHECK(kind IN ('function','class','interface','enum','struct','trait','module')),
+    unit_kind TEXT,
     file_path TEXT,
+    source_file TEXT,
     line_start INTEGER,
     line_end INTEGER,
     source_code TEXT,
@@ -3618,6 +3913,7 @@ CREATE TABLE IF NOT EXISTS translation_units (
     retry_count INTEGER DEFAULT 0,
     repair_attempts INTEGER DEFAULT 0,
     candidate_count INTEGER DEFAULT 0,
+    candidate_selected INTEGER,
     selected_candidate INTEGER,
     error_message TEXT,
     translation_order INTEGER,
@@ -3692,7 +3988,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     turn_number INTEGER NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('user','assistant','system','intervention')),
     content TEXT NOT NULL,
-    content_type TEXT DEFAULT 'text' CHECK(content_type IN ('text','tool_result','error','intervention','summary')),
+    content_type TEXT DEFAULT 'text' CHECK(content_type IN ('text','tool_result','error','intervention','summary','code_block','markdown','phase_transition','citation','action_card')),
     metadata TEXT,
     is_compressed INTEGER DEFAULT 0,
     compression_tier TEXT,
@@ -3718,6 +4014,43 @@ CREATE TABLE IF NOT EXISTS chat_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_task_ctx ON chat_tasks(context_id);
 CREATE INDEX IF NOT EXISTS idx_chat_task_status ON chat_tasks(status);
+
+-- ============================================================
+-- Phase 69: Codebase Assistant (D-CA-1 to D-CA-10)
+-- ============================================================
+
+-- Codebase file index for assistant widget
+CREATE TABLE IF NOT EXISTS codebase_index (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    file_hash TEXT NOT NULL,
+    file_type TEXT NOT NULL CHECK(file_type IN ('python','template','goal','config','docs','args')),
+    module TEXT,
+    symbols TEXT,
+    last_indexed_at TEXT DEFAULT (datetime('now')),
+    chunk_count INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_codebase_module ON codebase_index(module);
+CREATE INDEX IF NOT EXISTS idx_codebase_hash ON codebase_index(file_hash);
+
+-- Q&A cache for popular codebase questions (D-CA-6)
+CREATE TABLE IF NOT EXISTS codebase_qa_cache (
+    id TEXT PRIMARY KEY,
+    question_hash TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    question TEXT,
+    answer_text TEXT NOT NULL,
+    answer TEXT,
+    source_citations TEXT,
+    citations TEXT DEFAULT '[]',
+    scope TEXT,
+    hit_count INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    last_hit_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_qa_cache_hash ON codebase_qa_cache(question_hash);
 
 -- ============================================================
 -- Phase 44: Active Extension Hooks (D261-D264)
@@ -3756,6 +4089,45 @@ CREATE INDEX IF NOT EXISTS idx_ext_exec_ext ON extension_execution_log(extension
 CREATE INDEX IF NOT EXISTS idx_ext_exec_hook ON extension_execution_log(hook_point);
 
 -- ============================================================
+-- Phase 44: Memory System Core Tables
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    type TEXT DEFAULT 'event',
+    importance INTEGER DEFAULT 5,
+    embedding BLOB,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    content_hash TEXT,
+    user_id TEXT,
+    tenant_id TEXT,
+    source TEXT DEFAULT 'manual'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user
+    ON memory_entries(content_hash, user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_user_id ON memory_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_memory_tenant_id ON memory_entries(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_memory_created ON memory_entries(created_at);
+
+CREATE TABLE IF NOT EXISTS daily_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_daily_logs_date ON daily_logs(date);
+
+CREATE TABLE IF NOT EXISTS memory_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT,
+    query TEXT,
+    results_count INTEGER,
+    search_type TEXT,
+    accessed_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mem_access_search ON memory_access_log(search_type);
+
 -- Phase 44: AI-Driven Memory Consolidation (D276, append-only)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS memory_consolidation_log (
@@ -3772,6 +4144,68 @@ CREATE TABLE IF NOT EXISTS memory_consolidation_log (
 );
 CREATE INDEX IF NOT EXISTS idx_mem_consol_action ON memory_consolidation_log(action);
 CREATE INDEX IF NOT EXISTS idx_mem_consol_source ON memory_consolidation_log(source_entry_id);
+
+-- Phase 44: Auto-capture buffer (D181) — migrated from memory.db
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_buffer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    type TEXT DEFAULT 'event',
+    importance INTEGER DEFAULT 3,
+    source TEXT NOT NULL DEFAULT 'hook'
+        CHECK(source IN ('hook', 'manual', 'thinking', 'auto')),
+    user_id TEXT,
+    tenant_id TEXT,
+    session_id TEXT,
+    tool_name TEXT,
+    metadata TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_buffer_created ON memory_buffer(created_at);
+CREATE INDEX IF NOT EXISTS idx_buffer_source ON memory_buffer(source);
+CREATE INDEX IF NOT EXISTS idx_buffer_user ON memory_buffer(user_id);
+
+-- ============================================================
+-- Activity / Task Tracking — migrated from activity.db
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled', 'blocked')),
+    priority TEXT DEFAULT 'medium'
+        CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+    project_id TEXT,
+    agent_id TEXT,
+    session_id TEXT,
+    parent_task_id INTEGER REFERENCES tasks(id),
+    metadata TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
+
+-- ============================================================
+-- Migration 018: Activity task tracking (consolidated from activity.db)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS activity_tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    title        TEXT NOT NULL,
+    description  TEXT,
+    status       TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','in_progress','completed','cancelled')),
+    priority     INTEGER DEFAULT 5,
+    created_at   TEXT DEFAULT (datetime('now')),
+    updated_at   TEXT DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_activity_tasks_status ON activity_tasks(status);
 
 -- ============================================================
 -- Phase 45: OWASP Agentic AI Security (D257-D264)
@@ -4192,12 +4626,15 @@ CREATE TABLE IF NOT EXISTS ai_oversight_plans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
     plan_name TEXT NOT NULL,
-    plan_data TEXT NOT NULL,
+    plan_data TEXT,
+    description TEXT DEFAULT '',
     approval_status TEXT DEFAULT 'draft'
         CHECK(approval_status IN ('draft', 'submitted', 'approved', 'rejected')),
     approved_by TEXT,
+    created_by TEXT DEFAULT '',
     classification TEXT DEFAULT 'CUI',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_oversight_project ON ai_oversight_plans(project_id);
 
@@ -4208,10 +4645,14 @@ CREATE TABLE IF NOT EXISTS ai_accountability_appeals (
     appellant TEXT NOT NULL,
     ai_system TEXT NOT NULL,
     decision_contested TEXT,
+    grievance TEXT DEFAULT '',
     appeal_status TEXT DEFAULT 'submitted'
         CHECK(appeal_status IN ('submitted', 'under_review', 'resolved', 'dismissed')),
+    status TEXT DEFAULT 'submitted',
     resolution TEXT,
     resolved_by TEXT,
+    filed_at TEXT DEFAULT (datetime('now')),
+    resolved_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_appeals_project ON ai_accountability_appeals(project_id);
@@ -4221,10 +4662,14 @@ CREATE INDEX IF NOT EXISTS idx_ai_appeals_status ON ai_accountability_appeals(ap
 CREATE TABLE IF NOT EXISTS ai_caio_registry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
-    official_name TEXT NOT NULL,
-    official_role TEXT NOT NULL DEFAULT 'CAIO',
+    official_name TEXT,
+    official_role TEXT DEFAULT 'CAIO',
+    name TEXT,
+    role TEXT DEFAULT 'CAIO',
     organization TEXT,
     designation_date TEXT,
+    appointment_date TEXT DEFAULT (datetime('now')),
+    status TEXT DEFAULT 'active',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_caio_project ON ai_caio_registry(project_id);
@@ -4259,6 +4704,7 @@ CREATE TABLE IF NOT EXISTS ai_reassessment_schedule (
         CHECK(frequency IN ('quarterly', 'semi_annual', 'annual', 'biennial')),
     next_due TEXT,
     last_completed TEXT,
+    last_assessed TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(project_id, ai_system)
 );
@@ -4273,11 +4719,16 @@ CREATE TABLE IF NOT EXISTS ai_ethics_reviews (
         CHECK(review_type IN ('bias_testing_policy', 'impact_assessment', 'ethics_framework',
               'legal_compliance', 'pre_deployment', 'annual_review', 'other')),
     ai_system TEXT,
+    summary TEXT DEFAULT '',
     findings TEXT,
+    recommendation TEXT DEFAULT '',
     opt_out_policy INTEGER DEFAULT 0,
     legal_compliance_matrix INTEGER DEFAULT 0,
     pre_deployment_review INTEGER DEFAULT 0,
     reviewer TEXT,
+    status TEXT DEFAULT 'submitted',
+    submitted_at TEXT DEFAULT (datetime('now')),
+    reviewed_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_ethics_project ON ai_ethics_reviews(project_id);
@@ -4305,7 +4756,14 @@ CREATE TABLE IF NOT EXISTS code_quality_metrics (
     import_count INTEGER DEFAULT 0,
     class_count INTEGER DEFAULT 0,
     function_count INTEGER DEFAULT 0,
+    total_functions INTEGER,
+    avg_cyclomatic REAL,
+    avg_cognitive REAL,
+    avg_nesting REAL,
+    avg_params REAL,
+    avg_loc REAL,
     smells_json TEXT DEFAULT '[]',
+    smells TEXT,
     smell_count INTEGER DEFAULT 0,
     maintainability_score REAL DEFAULT 0.0,
     content_hash TEXT,
@@ -4519,6 +4977,282 @@ CREATE TABLE IF NOT EXISTS creative_trends (
 );
 CREATE INDEX IF NOT EXISTS idx_ctrend_status ON creative_trends(status);
 CREATE INDEX IF NOT EXISTS idx_ctrend_velocity ON creative_trends(velocity);
+
+-- ============================================================
+-- INDUSTRY RESEARCH ENGINE (Phase 63 — D-RES-1 through D-RES-13)
+-- ============================================================
+
+-- Research sessions — active research sessions with lifecycle state
+-- NOTE: This table allows UPDATE for status transitions (D-RES-5)
+CREATE TABLE IF NOT EXISTS research_sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    vertical_id TEXT NOT NULL,
+    vertical_name TEXT NOT NULL,
+    description TEXT,
+    focus_areas TEXT DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'created'
+        CHECK(status IN ('created','scoping','scanning','synthesizing',
+                         'dossier_ready','reviewed','child_app_triggered','archived')),
+    pipeline_stage TEXT DEFAULT 'SCOPE'
+        CHECK(pipeline_stage IN ('SCOPE','LANDSCAPE','REGULATE','COMMUNITY',
+                                  'ACADEMIC','BUILD_BUY','SYNTHESIZE','FORECAST','DOSSIER')),
+    signal_count INTEGER DEFAULT 0,
+    challenge_count INTEGER DEFAULT 0,
+    dossier_id TEXT,
+    config_overrides TEXT DEFAULT '{}',
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rsess_vertical ON research_sessions(vertical_id);
+CREATE INDEX IF NOT EXISTS idx_rsess_status ON research_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_rsess_stage ON research_sessions(pipeline_stage);
+
+-- Research verticals — industry vertical definitions loaded from JSON configs
+-- NOTE: This table allows UPDATE for activation status changes (D-RES-5)
+CREATE TABLE IF NOT EXISTS research_verticals (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    description TEXT,
+    config_path TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    regulatory_bodies TEXT DEFAULT '[]',
+    academic_categories TEXT DEFAULT '[]',
+    community_sources TEXT DEFAULT '[]',
+    active INTEGER NOT NULL DEFAULT 1,
+    session_count INTEGER DEFAULT 0,
+    loaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rvert_slug ON research_verticals(slug);
+CREATE INDEX IF NOT EXISTS idx_rvert_active ON research_verticals(active);
+
+-- Research signals — discovered signals from all 8 data streams (append-only, D6/D-RES-5)
+CREATE TABLE IF NOT EXISTS research_signals (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES research_sessions(id),
+    source TEXT NOT NULL CHECK(source IN ('community_forum','review_site','academic_paper',
+                                          'regulatory_body','open_source','saas_commercial',
+                                          'news_blog','patent','video','manual')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('reddit','stackexchange','discord','forum',
+                                                     'g2','capterra','trustpilot','domain_review',
+                                                     'arxiv','ieee','acm','scholar',
+                                                     'federal_register','regulations_gov','body_rss',
+                                                     'github','awesome_list','package_registry',
+                                                     'product_page','producthunt',
+                                                     'news_article','analyst_report','blog',
+                                                     'google_patent','uspto',
+                                                     'youtube_search','youtube_manual','youtube_channel',
+                                                     'manual_entry','scan_error')),
+    title TEXT NOT NULL,
+    body TEXT,
+    url TEXT,
+    author TEXT,
+    upvotes INTEGER DEFAULT 0,
+    citations INTEGER DEFAULT 0,
+    sentiment TEXT CHECK(sentiment IS NULL OR sentiment IN ('positive','negative','neutral','mixed')),
+    content_hash TEXT NOT NULL,
+    keywords TEXT DEFAULT '[]',
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rsig_session ON research_signals(session_id);
+CREATE INDEX IF NOT EXISTS idx_rsig_source ON research_signals(source);
+CREATE INDEX IF NOT EXISTS idx_rsig_hash ON research_signals(content_hash);
+CREATE INDEX IF NOT EXISTS idx_rsig_discovered ON research_signals(discovered_at);
+
+-- Research challenges — clustered and scored challenges (append-only, D6/D-RES-5)
+CREATE TABLE IF NOT EXISTS research_challenges (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES research_sessions(id),
+    title TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL CHECK(category IN ('infrastructure','compliance','security','ux',
+                                               'performance','integration','data','cost',
+                                               'scalability','automation','governance','other')),
+    signal_ids TEXT NOT NULL DEFAULT '[]',
+    signal_count INTEGER NOT NULL DEFAULT 1,
+    keyword_fingerprint TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    composite_score REAL,
+    score_breakdown TEXT DEFAULT '{}',
+    market_demand REAL DEFAULT 0.0,
+    regulatory_pressure REAL DEFAULT 0.0,
+    technical_complexity REAL DEFAULT 0.0,
+    competitive_saturation REAL DEFAULT 0.0,
+    icdev_readiness REAL DEFAULT 0.0,
+    compliance_alignment REAL DEFAULT 0.0,
+    severity TEXT DEFAULT 'notable'
+        CHECK(severity IN ('critical','notable','appendix')),
+    status TEXT NOT NULL DEFAULT 'new'
+        CHECK(status IN ('new','scored','mapped','dossier_included')),
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rchal_session ON research_challenges(session_id);
+CREATE INDEX IF NOT EXISTS idx_rchal_score ON research_challenges(composite_score);
+CREATE INDEX IF NOT EXISTS idx_rchal_category ON research_challenges(category);
+CREATE INDEX IF NOT EXISTS idx_rchal_fingerprint ON research_challenges(keyword_fingerprint);
+
+-- Research regulatory map — regulation-to-ICDEV™ crosswalk mappings (append-only, D6/D-RES-5)
+CREATE TABLE IF NOT EXISTS research_regulatory_map (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES research_sessions(id),
+    challenge_id TEXT REFERENCES research_challenges(id),
+    regulatory_body TEXT NOT NULL,
+    regulation_name TEXT NOT NULL,
+    regulation_id TEXT,
+    regulation_url TEXT,
+    enforcement_actions INTEGER DEFAULT 0,
+    deadline TEXT,
+    nist_controls TEXT DEFAULT '[]',
+    icdev_frameworks TEXT DEFAULT '[]',
+    crosswalk_coverage REAL DEFAULT 0.0,
+    gap_analysis TEXT DEFAULT '{}',
+    metadata TEXT DEFAULT '{}',
+    mapped_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rregmap_session ON research_regulatory_map(session_id);
+CREATE INDEX IF NOT EXISTS idx_rregmap_challenge ON research_regulatory_map(challenge_id);
+CREATE INDEX IF NOT EXISTS idx_rregmap_body ON research_regulatory_map(regulatory_body);
+
+-- Research build/buy — build/buy/partner decision matrix (append-only, D6/D-RES-5)
+CREATE TABLE IF NOT EXISTS research_build_buy (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES research_sessions(id),
+    challenge_id TEXT NOT NULL REFERENCES research_challenges(id),
+    recommendation TEXT NOT NULL CHECK(recommendation IN ('build','buy','partner','hybrid')),
+    build_score REAL DEFAULT 0.0,
+    buy_score REAL DEFAULT 0.0,
+    partner_score REAL DEFAULT 0.0,
+    build_rationale TEXT,
+    buy_rationale TEXT,
+    partner_rationale TEXT,
+    existing_solutions TEXT DEFAULT '[]',
+    icdev_capability_coverage REAL DEFAULT 0.0,
+    estimated_effort TEXT CHECK(estimated_effort IS NULL OR estimated_effort IN ('S','M','L','XL')),
+    estimated_cost_tier TEXT CHECK(estimated_cost_tier IS NULL OR estimated_cost_tier IN ('low','medium','high','very_high')),
+    risk_level TEXT DEFAULT 'medium' CHECK(risk_level IN ('low','medium','high','critical')),
+    score_breakdown TEXT DEFAULT '{}',
+    metadata TEXT DEFAULT '{}',
+    analyzed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rbb_session ON research_build_buy(session_id);
+CREATE INDEX IF NOT EXISTS idx_rbb_challenge ON research_build_buy(challenge_id);
+CREATE INDEX IF NOT EXISTS idx_rbb_recommendation ON research_build_buy(recommendation);
+
+-- Research dossiers — generated research dossiers (append-only, D6/D-RES-5)
+CREATE TABLE IF NOT EXISTS research_dossiers (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES research_sessions(id),
+    vertical_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    executive_summary TEXT,
+    signal_count INTEGER DEFAULT 0,
+    challenge_count INTEGER DEFAULT 0,
+    critical_challenges INTEGER DEFAULT 0,
+    notable_challenges INTEGER DEFAULT 0,
+    regulatory_mappings INTEGER DEFAULT 0,
+    build_buy_analyses INTEGER DEFAULT 0,
+    capability_coverage REAL DEFAULT 0.0,
+    overall_opportunity_score REAL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'generated'
+        CHECK(status IN ('generated','reviewed','approved','rejected','child_app_triggered')),
+    reviewer TEXT,
+    reviewed_at TEXT,
+    review_notes TEXT,
+    fitness_assessment_id TEXT,
+    metadata TEXT DEFAULT '{}',
+    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rdoss_session ON research_dossiers(session_id);
+CREATE INDEX IF NOT EXISTS idx_rdoss_status ON research_dossiers(status);
+CREATE INDEX IF NOT EXISTS idx_rdoss_score ON research_dossiers(overall_opportunity_score);
+
+-- Research trends — cross-session trend clusters (append-only, D6/D-RES-5)
+CREATE TABLE IF NOT EXISTS research_trends (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    vertical_ids TEXT NOT NULL DEFAULT '[]',
+    session_ids TEXT NOT NULL DEFAULT '[]',
+    challenge_ids TEXT NOT NULL DEFAULT '[]',
+    keyword_fingerprint TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    signal_count INTEGER NOT NULL DEFAULT 0,
+    velocity REAL DEFAULT 0.0,
+    acceleration REAL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'emerging'
+        CHECK(status IN ('emerging','active','declining','stale')),
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rtrend_status ON research_trends(status);
+CREATE INDEX IF NOT EXISTS idx_rtrend_velocity ON research_trends(velocity);
+CREATE INDEX IF NOT EXISTS idx_rtrend_fingerprint ON research_trends(keyword_fingerprint);
+
+-- Research capability map — challenge-to-ICDEV™ capability mappings (append-only, D6/D-RES-5)
+CREATE TABLE IF NOT EXISTS research_capability_map (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES research_sessions(id),
+    challenge_id TEXT NOT NULL REFERENCES research_challenges(id),
+    capability_id TEXT NOT NULL,
+    capability_name TEXT NOT NULL,
+    coverage_score REAL DEFAULT 0.0,
+    keyword_overlap TEXT DEFAULT '[]',
+    gap_description TEXT,
+    enhancement_needed INTEGER DEFAULT 0,
+    metadata TEXT DEFAULT '{}',
+    mapped_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rcapmap_session ON research_capability_map(session_id);
+CREATE INDEX IF NOT EXISTS idx_rcapmap_challenge ON research_capability_map(challenge_id);
+CREATE INDEX IF NOT EXISTS idx_rcapmap_capability ON research_capability_map(capability_id);
+
+-- Research forecasts — AI-generated predictions with surprise scoring (append-only, D6/D-RES-20)
+CREATE TABLE IF NOT EXISTS research_forecasts (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES research_sessions(id),
+    trend_id TEXT REFERENCES research_trends(id),
+    title TEXT NOT NULL,
+    description TEXT,
+    prediction_type TEXT NOT NULL CHECK(prediction_type IN (
+        'trend_trajectory','greenfield','convergence','disruption','regulatory_shift')),
+    confidence REAL NOT NULL DEFAULT 0.5,
+    surprise_score REAL NOT NULL DEFAULT 0.5,
+    composite_rank REAL NOT NULL DEFAULT 0.25,
+    time_horizon TEXT NOT NULL DEFAULT '6mo' CHECK(time_horizon IN ('3mo','6mo','1yr','3yr')),
+    supporting_evidence TEXT DEFAULT '[]',
+    cross_engine_sources TEXT DEFAULT '[]',
+    llm_model TEXT,
+    llm_raw_response TEXT,
+    outcome TEXT CHECK(outcome IS NULL OR outcome IN (
+        'confirmed','partially_confirmed','not_confirmed','too_early')),
+    outcome_date TEXT,
+    outcome_notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rfor_session ON research_forecasts(session_id);
+CREATE INDEX IF NOT EXISTS idx_rfor_trend ON research_forecasts(trend_id);
+CREATE INDEX IF NOT EXISTS idx_rfor_type ON research_forecasts(prediction_type);
+CREATE INDEX IF NOT EXISTS idx_rfor_composite ON research_forecasts(composite_rank);
+CREATE INDEX IF NOT EXISTS idx_rfor_generated ON research_forecasts(generated_at);
 
 -- ============================================================
 -- PROPOSAL LIFECYCLE — GovCon Proposal Writing Tracker
@@ -4763,6 +5497,29 @@ CREATE INDEX IF NOT EXISTS idx_sam_type ON sam_gov_opportunities(notice_type);
 CREATE INDEX IF NOT EXISTS idx_sam_deadline ON sam_gov_opportunities(response_deadline);
 CREATE INDEX IF NOT EXISTS idx_sam_hash ON sam_gov_opportunities(content_hash);
 CREATE INDEX IF NOT EXISTS idx_sam_agency ON sam_gov_opportunities(agency);
+
+-- SAM.gov API quota tracking (D370 — daily call counter)
+CREATE TABLE IF NOT EXISTS sam_gov_api_quota (
+    date TEXT PRIMARY KEY,
+    requests_made INTEGER NOT NULL DEFAULT 0,
+    daily_limit INTEGER NOT NULL DEFAULT 10000,
+    buffer_remaining INTEGER NOT NULL DEFAULT 50,
+    last_429_at TEXT,
+    last_429_reset TEXT,
+    last_429_body TEXT,
+    updated_at TEXT NOT NULL
+);
+
+-- SAM.gov quota events audit trail (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS sam_gov_quota_events (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    date TEXT NOT NULL,
+    requests_made INTEGER,
+    daily_limit INTEGER,
+    details TEXT,
+    created_at TEXT NOT NULL
+);
 
 -- Extracted "shall" statements from RFPs (append-only, D6/D362)
 CREATE TABLE IF NOT EXISTS rfp_shall_statements (
@@ -5571,8 +6328,3442 @@ CREATE INDEX IF NOT EXISTS idx_session_purposes_project
     ON session_purposes(project_id);
 CREATE INDEX IF NOT EXISTS idx_session_purposes_status
     ON session_purposes(status);
+
+-- Phase 64: Universal RAG Subsystem (D-RAG-1 through D-RAG-14)
+CREATE TABLE IF NOT EXISTS rag_chunks (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    embedding BLOB,
+    embedding_vec BLOB,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL DEFAULT '',
+    source_table TEXT NOT NULL DEFAULT '',
+    chunk_index INTEGER NOT NULL DEFAULT 0,
+    total_chunks INTEGER NOT NULL DEFAULT 1,
+    metadata TEXT DEFAULT '{}',
+    tier TEXT NOT NULL DEFAULT 'hot'
+        CHECK(tier IN ('hot', 'warm', 'cold')),
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_content_hash
+    ON rag_chunks(content_hash);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_source
+    ON rag_chunks(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_tier
+    ON rag_chunks(tier);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_tenant
+    ON rag_chunks(tenant_id);
+
+-- RAG PDF documents — ingested PDF files (D-RAG-15)
+CREATE TABLE IF NOT EXISTS rag_pdf_documents (
+    id TEXT PRIMARY KEY,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_hash TEXT NOT NULL,
+    page_count INTEGER DEFAULT 0,
+    extracted_text TEXT,
+    provider_used TEXT DEFAULT ''
+        CHECK(provider_used IN ('', 'anthropic', 'google', 'vision_llava', 'pypdf_text')),
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'extracting', 'extracted', 'failed', 'ingested')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_pdf_hash
+    ON rag_pdf_documents(file_hash);
+CREATE INDEX IF NOT EXISTS idx_rag_pdf_tenant
+    ON rag_pdf_documents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_rag_pdf_status
+    ON rag_pdf_documents(status);
+
+-- RAG ingestion log — tracks what was ingested when (append-only, D6, D-RAG-18)
+CREATE TABLE IF NOT EXISTS rag_ingestion_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL DEFAULT '',
+    source_table TEXT NOT NULL DEFAULT '',
+    chunks_created INTEGER NOT NULL DEFAULT 0,
+    chunks_skipped INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT DEFAULT '',
+    ingestion_mode TEXT DEFAULT 'batch'
+        CHECK(ingestion_mode IN ('realtime', 'batch', 'manual')),
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    agent_id TEXT DEFAULT '',
+    correlation_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_ingestion_source
+    ON rag_ingestion_log(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_rag_ingestion_tenant
+    ON rag_ingestion_log(tenant_id);
+
+-- RAG retrieval log — every retrieval logged (append-only, NIST AU-3, D-RAG-8)
+CREATE TABLE IF NOT EXISTS rag_retrieval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_hash TEXT NOT NULL,
+    query_text TEXT DEFAULT '',
+    results_count INTEGER NOT NULL DEFAULT 0,
+    top_score REAL DEFAULT 0.0,
+    retrieval_mode TEXT DEFAULT 'hybrid'
+        CHECK(retrieval_mode IN ('vector', 'bm25', 'hybrid', 'rrf_hybrid', 'reranked')),
+    vector_top_k INTEGER DEFAULT 50,
+    final_top_k INTEGER DEFAULT 5,
+    rerank_used INTEGER DEFAULT 0,
+    source_types_queried TEXT DEFAULT '',
+    duration_ms INTEGER DEFAULT 0,
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    agent_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_retrieval_tenant
+    ON rag_retrieval_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_rag_retrieval_created
+    ON rag_retrieval_log(created_at);
+
+-- RAG parent cache — child apps cache parent RAG query results (D-RAG-13)
+CREATE TABLE IF NOT EXISTS rag_parent_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_hash TEXT UNIQUE,
+    results TEXT DEFAULT '[]',
+    retrieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    source TEXT DEFAULT 'parent'
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_hash
+    ON rag_parent_cache(query_hash);
+CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_expires
+    ON rag_parent_cache(expires_at);
+
+-- ============================================================
+-- FINE-TUNING SUBSYSTEM (Phase 64 Extension, D-FT-1 through D-FT-22)
+-- ============================================================
+
+-- 1. Datasets: versioned collections of training examples (D-FT-9)
+CREATE TABLE IF NOT EXISTS ft_datasets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    purpose TEXT DEFAULT 'general'
+        CHECK(purpose IN ('general','proposal_drafting','compliance_export','code_generation','custom')),
+    base_model TEXT DEFAULT 'qwen3:latest',
+    version INTEGER DEFAULT 1,
+    example_count INTEGER DEFAULT 0,
+    content_hash TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','labeling','ready','archived')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Training examples — APPEND-ONLY (D6, D-FT-9)
+CREATE TABLE IF NOT EXISTS ft_dataset_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+    system_prompt TEXT DEFAULT '',
+    user_input TEXT NOT NULL,
+    expected_output TEXT NOT NULL,
+    source TEXT DEFAULT 'manual'
+        CHECK(source IN ('manual','rag_auto_generated','document_extraction','imported','marketplace')),
+    source_chunk_id TEXT DEFAULT '',
+    source_document_id TEXT DEFAULT '',
+    quality_score REAL DEFAULT 0.0,
+    compliance_score REAL DEFAULT 0.0,
+    relevance_score REAL DEFAULT 0.0,
+    approved INTEGER DEFAULT 0,
+    labeled_by TEXT DEFAULT '',
+    labeled_at TIMESTAMP,
+    content_hash TEXT NOT NULL,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_examples_dataset
+    ON ft_dataset_examples(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_ft_examples_hash
+    ON ft_dataset_examples(content_hash);
+CREATE INDEX IF NOT EXISTS idx_ft_examples_approved
+    ON ft_dataset_examples(dataset_id, approved);
+
+-- 3. Training jobs (D-FT-3)
+CREATE TABLE IF NOT EXISTS ft_training_jobs (
+    id TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+    provider TEXT NOT NULL DEFAULT 'unsloth_local'
+        CHECK(provider IN ('unsloth_local','openai','bedrock','azure_openai')),
+    base_model TEXT NOT NULL DEFAULT 'qwen3:latest',
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','preparing','training','exporting','evaluating','completed','failed','canceled')),
+    hyperparams TEXT DEFAULT '{}',
+    lora_rank INTEGER DEFAULT 16,
+    learning_rate REAL DEFAULT 2e-4,
+    epochs INTEGER DEFAULT 3,
+    batch_size INTEGER DEFAULT 2,
+    max_seq_length INTEGER DEFAULT 2048,
+    gpu_count INTEGER DEFAULT 1,
+    distributed INTEGER DEFAULT 0,
+    output_dir TEXT DEFAULT '',
+    adapter_path TEXT DEFAULT '',
+    gguf_path TEXT DEFAULT '',
+    ollama_model_name TEXT DEFAULT '',
+    cloud_job_id TEXT DEFAULT '',
+    loss_history TEXT DEFAULT '[]',
+    training_duration_seconds INTEGER DEFAULT 0,
+    total_steps INTEGER DEFAULT 0,
+    error_message TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_jobs_dataset
+    ON ft_training_jobs(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_ft_jobs_status
+    ON ft_training_jobs(status);
+
+-- 4. Training job events — APPEND-ONLY (D6, D-FT-3)
+CREATE TABLE IF NOT EXISTS ft_training_job_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+    event_type TEXT NOT NULL
+        CHECK(event_type IN ('created','started','checkpoint','progress','export_started',
+                              'export_completed','eval_started','eval_completed',
+                              'completed','failed','canceled','promoted','demoted')),
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_events_job
+    ON ft_training_job_events(job_id);
+
+-- 5. Model versions — all trained adapters (D-FT-7)
+CREATE TABLE IF NOT EXISTS ft_model_versions (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+    model_name TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    base_model TEXT NOT NULL,
+    adapter_path TEXT DEFAULT '',
+    gguf_path TEXT DEFAULT '',
+    ollama_model_name TEXT DEFAULT '',
+    adapter_hash TEXT DEFAULT '',
+    file_size_bytes INTEGER DEFAULT 0,
+    eval_bleu REAL DEFAULT 0.0,
+    eval_rouge_l REAL DEFAULT 0.0,
+    eval_perplexity REAL DEFAULT 0.0,
+    eval_custom TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'created'
+        CHECK(status IN ('created','evaluated','promoted','demoted','archived')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(model_name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_ft_models_name
+    ON ft_model_versions(model_name);
+CREATE INDEX IF NOT EXISTS idx_ft_models_status
+    ON ft_model_versions(status);
+
+-- 6. Active model overrides — runtime routing (D-FT-6)
+CREATE TABLE IF NOT EXISTS ft_active_models (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    function_name TEXT NOT NULL,
+    model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+    ollama_model_name TEXT NOT NULL,
+    routing_tier TEXT DEFAULT 'worker' CHECK(routing_tier IN ('worker','scanner','planner')),
+    activated_by TEXT DEFAULT '',
+    activation_reason TEXT DEFAULT '',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deactivated_at TIMESTAMP,
+    UNIQUE(function_name, tenant_id, project_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ft_active_function
+    ON ft_active_models(function_name, deactivated_at);
+
+-- 7. Evaluations — APPEND-ONLY (D6, D-FT-14)
+CREATE TABLE IF NOT EXISTS ft_evaluations (
+    id TEXT PRIMARY KEY,
+    model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+    eval_type TEXT NOT NULL DEFAULT 'automated'
+        CHECK(eval_type IN ('automated','ab_comparison','human','regression')),
+    test_set_size INTEGER DEFAULT 0,
+    bleu_score REAL DEFAULT 0.0,
+    rouge_l_score REAL DEFAULT 0.0,
+    perplexity REAL DEFAULT 0.0,
+    custom_metrics TEXT DEFAULT '{}',
+    comparison_model TEXT DEFAULT '',
+    comparison_scores TEXT DEFAULT '{}',
+    statistical_significance REAL DEFAULT 0.0,
+    pass_threshold INTEGER DEFAULT 0,
+    details TEXT DEFAULT '{}',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_evals_model
+    ON ft_evaluations(model_version_id);
+
+-- 8. Promotion log — APPEND-ONLY (D6, D-FT-16)
+CREATE TABLE IF NOT EXISTS ft_promotion_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+    action TEXT NOT NULL CHECK(action IN ('promoted','demoted','override_promoted','override_demoted','auto_promoted')),
+    function_name TEXT NOT NULL,
+    previous_model TEXT DEFAULT '',
+    eval_score_summary TEXT DEFAULT '{}',
+    reason TEXT DEFAULT '',
+    actor TEXT DEFAULT '',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_promo_model
+    ON ft_promotion_log(model_version_id);
+
+-- 9. Hyperparameter search results — APPEND-ONLY (D6, D-FT-13)
+CREATE TABLE IF NOT EXISTS ft_hyperparam_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id TEXT NOT NULL,
+    job_id TEXT REFERENCES ft_training_jobs(id),
+    hyperparams TEXT NOT NULL DEFAULT '{}',
+    eval_bleu REAL DEFAULT 0.0,
+    eval_rouge_l REAL DEFAULT 0.0,
+    eval_perplexity REAL DEFAULT 0.0,
+    composite_score REAL DEFAULT 0.0,
+    is_best INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_hp_search
+    ON ft_hyperparam_results(search_id);
+
+-- ============================================================
+-- TRAJECTORY-TO-TRAINING PIPELINE (D-FT-TRAJ)
+-- ============================================================
+
+-- 10. Trajectory metadata — mutable until finalized (captured_at set)
+CREATE TABLE IF NOT EXISTS ft_trajectories (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT DEFAULT '',
+    workflow_type TEXT NOT NULL DEFAULT 'general'
+        CHECK(workflow_type IN ('compliance','build','proposal','test','general')),
+    source TEXT NOT NULL DEFAULT 'manual'
+        CHECK(source IN ('otel_spans','a2a_tasks','manual')),
+    outcome TEXT NOT NULL DEFAULT 'partial'
+        CHECK(outcome IN ('success','partial','failed')),
+    reward REAL DEFAULT 0.0,
+    step_count INTEGER DEFAULT 0,
+    dataset_id TEXT DEFAULT '',
+    sharegpt_json TEXT DEFAULT '{}',
+    project_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    captured_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ft_traj_workflow
+    ON ft_trajectories(workflow_type, outcome);
+CREATE INDEX IF NOT EXISTS idx_ft_traj_reward
+    ON ft_trajectories(reward, outcome);
+
+-- 11. Trajectory steps — APPEND-ONLY (D6, D-FT-TRAJ)
+CREATE TABLE IF NOT EXISTS ft_trajectory_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trajectory_id TEXT NOT NULL REFERENCES ft_trajectories(id),
+    step_index INTEGER NOT NULL,
+    tool_name TEXT DEFAULT '',
+    tool_input TEXT DEFAULT '{}',
+    tool_output TEXT DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'success'
+        CHECK(status IN ('success','error','skipped')),
+    duration_ms INTEGER DEFAULT 0,
+    span_id TEXT DEFAULT '',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ft_traj_steps_traj
+    ON ft_trajectory_steps(trajectory_id, step_index);
+
+-- ============================================================
+-- RAG-TO-FT PIPELINE (D-KARL-5)
+-- ============================================================
+
+-- Pipeline execution tracking (append-only)
+CREATE TABLE IF NOT EXISTS ft_pipeline_runs (
+    id TEXT PRIMARY KEY,
+    run_type TEXT NOT NULL DEFAULT 'rag_to_ft',
+    source_type TEXT,
+    chunks_processed INTEGER DEFAULT 0,
+    pairs_generated INTEGER DEFAULT 0,
+    pairs_approved INTEGER DEFAULT 0,
+    retrain_triggered INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'running' CHECK(status IN ('running','completed','failed','dry_run')),
+    error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_pipeline_source
+    ON ft_pipeline_runs(source_type, status);
+
+-- Quality monitoring snapshots (append-only, D-KARL-8)
+CREATE TABLE IF NOT EXISTS ft_quality_snapshots (
+    id TEXT PRIMARY KEY,
+    snapshot_type TEXT NOT NULL CHECK(snapshot_type IN ('rag_eval','ft_eval')),
+    metric_name TEXT NOT NULL,
+    metric_value REAL NOT NULL,
+    baseline_value REAL,
+    below_threshold INTEGER DEFAULT 0,
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_quality_type
+    ON ft_quality_snapshots(snapshot_type, metric_name);
+
+-- ============================================================
+-- WRITEGUARD SUBSYSTEM (Phase 65, D-WG-1 through D-WG-14)
+-- ============================================================
+
+-- 1. Style guides — 5-layer cascade (mutable, versioned per D183)
+CREATE TABLE IF NOT EXISTS wg_style_guides (
+    id TEXT NOT NULL,
+    scope TEXT NOT NULL CHECK(scope IN ('platform','tenant','program','project','user')),
+    scope_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    guide_name TEXT NOT NULL,
+    guide_yaml TEXT NOT NULL,
+    inherits_from TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER DEFAULT 1,
+    change_summary TEXT,
+    classification TEXT DEFAULT 'CUI',
+    PRIMARY KEY (id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_wg_style_guides_scope
+    ON wg_style_guides(scope, scope_id);
+
+-- 2. Style guide locks — ISSO-lockable dimensions (D-WG-3)
+CREATE TABLE IF NOT EXISTS wg_style_guide_locks (
+    id TEXT PRIMARY KEY,
+    guide_id TEXT NOT NULL REFERENCES wg_style_guides(id),
+    dimension_path TEXT NOT NULL,
+    lock_owner_role TEXT NOT NULL CHECK(lock_owner_role IN ('isso','architect','pm','admin')),
+    locked_by TEXT NOT NULL,
+    locked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    reason TEXT,
+    is_active INTEGER DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_wg_locks_guide
+    ON wg_style_guide_locks(guide_id);
+
+-- 3. Analysis results — APPEND-ONLY (D6, D-WG-9)
+CREATE TABLE IF NOT EXISTS wg_analysis_results (
+    id TEXT PRIMARY KEY,
+    input_text_hash TEXT NOT NULL,
+    input_length INTEGER NOT NULL DEFAULT 0,
+    mode TEXT NOT NULL DEFAULT 'inline' CHECK(mode IN ('inline','batch')),
+    readability_flesch REAL DEFAULT 0.0,
+    readability_gunning_fog REAL DEFAULT 0.0,
+    readability_grade_level REAL DEFAULT 0.0,
+    grammar_error_count INTEGER DEFAULT 0,
+    passive_voice_pct REAL DEFAULT 0.0,
+    avg_sentence_length REAL DEFAULT 0.0,
+    tone_profile TEXT DEFAULT '{}',
+    coherence_score REAL DEFAULT 0.0,
+    plagiarism_max_similarity REAL DEFAULT 0.0,
+    ai_content_score REAL DEFAULT 0.0,
+    overall_quality_score REAL DEFAULT 0.0,
+    style_guide_id TEXT,
+    section_id TEXT,
+    opportunity_id TEXT,
+    document_name TEXT DEFAULT '',
+    findings_count INTEGER DEFAULT 0,
+    analysis_duration_ms INTEGER DEFAULT 0,
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    user_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_wg_results_hash
+    ON wg_analysis_results(input_text_hash);
+CREATE INDEX IF NOT EXISTS idx_wg_results_section
+    ON wg_analysis_results(section_id);
+
+-- 4. Analysis findings — APPEND-ONLY (D6, D-WG-9)
+CREATE TABLE IF NOT EXISTS wg_analysis_findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id TEXT NOT NULL REFERENCES wg_analysis_results(id),
+    category TEXT NOT NULL CHECK(category IN (
+        'grammar','spelling','punctuation','readability','sentence_length',
+        'passive_voice','tone','style','coherence','plagiarism','ai_content',
+        'cui_marking','classification','govcon_compliance','win_theme',
+        'cross_volume','custom_rule'
+    )),
+    severity TEXT NOT NULL DEFAULT 'info'
+        CHECK(severity IN ('critical','high','medium','low','info')),
+    message TEXT NOT NULL,
+    suggestion TEXT DEFAULT '',
+    context TEXT DEFAULT '',
+    line_number INTEGER DEFAULT 0,
+    char_offset INTEGER DEFAULT 0,
+    char_length INTEGER DEFAULT 0,
+    rule_id TEXT DEFAULT '',
+    confidence REAL DEFAULT 1.0,
+    auto_fixable INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_wg_findings_result
+    ON wg_analysis_findings(result_id);
+CREATE INDEX IF NOT EXISTS idx_wg_findings_category
+    ON wg_analysis_findings(category);
+
+-- 5. Snippets — reusable writing templates (D-WG-7)
+CREATE TABLE IF NOT EXISTS wg_snippets (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(category IN (
+        'boilerplate','transition','introduction','conclusion',
+        'methodology','compliance','evidence','custom'
+    )),
+    domain TEXT DEFAULT 'general',
+    tags TEXT DEFAULT '[]',
+    usage_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','archived')),
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wg_snippets_category
+    ON wg_snippets(category);
+
+-- 6. Batch runs — batch analysis sessions (D-WG-9)
+CREATE TABLE IF NOT EXISTS wg_batch_runs (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    document_count INTEGER DEFAULT 0,
+    completed_count INTEGER DEFAULT 0,
+    avg_quality_score REAL DEFAULT 0.0,
+    cross_doc_consistency_score REAL DEFAULT 0.0,
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','running','completed','failed')),
+    summary TEXT DEFAULT '{}',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- 7. Glossary — unified terminology management (D-WG-4c)
+CREATE TABLE IF NOT EXISTS wg_glossary (
+    id TEXT PRIMARY KEY,
+    term TEXT NOT NULL,
+    term_type TEXT NOT NULL CHECK(term_type IN (
+        'acronym','preferred','deprecated','banned','custom_spell'
+    )),
+    expansion TEXT NOT NULL DEFAULT '',      -- full form for acronyms
+    replacement TEXT NOT NULL DEFAULT '',    -- what to use instead (deprecated/banned)
+    definition TEXT NOT NULL DEFAULT '',     -- hover tooltip text
+    domain TEXT NOT NULL DEFAULT 'general'
+        CHECK(domain IN ('general','far','nist','cyber','project')),
+    scope TEXT NOT NULL DEFAULT 'platform'
+        CHECK(scope IN ('platform','tenant','program','project','user')),
+    scope_id TEXT NOT NULL DEFAULT '',       -- tenant/program/project/user ID
+    case_sensitive INTEGER NOT NULL DEFAULT 1,
+    enforcement TEXT NOT NULL DEFAULT 'suggest'
+        CHECK(enforcement IN ('suggest','warn','block')),
+    source TEXT NOT NULL DEFAULT 'admin'
+        CHECK(source IN ('builtin','admin','user','import:far','import:nist','import:cui')),
+    approved_by TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    classification TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_term   ON wg_glossary(term);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_type   ON wg_glossary(term_type);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_scope  ON wg_glossary(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_domain ON wg_glossary(domain);
+CREATE INDEX IF NOT EXISTS idx_wg_glossary_active ON wg_glossary(is_active);
+
+-- 8. Style profiles — per-user/project writing style snapshots (D-WG-10b)
+CREATE TABLE IF NOT EXISTS wg_style_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    profile_json TEXT NOT NULL DEFAULT '{}',
+    scope TEXT NOT NULL CHECK(scope IN ('platform','tenant','program','project','user')) DEFAULT 'user',
+    scope_id TEXT NOT NULL DEFAULT '',
+    tone TEXT DEFAULT '',
+    voice TEXT DEFAULT '',
+    formality TEXT CHECK(formality IN ('formal','semi-formal','informal','')) DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    classification TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_wg_style_profiles_scope  ON wg_style_profiles(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_wg_style_profiles_active ON wg_style_profiles(is_active);
+
+-- Phase 68: Draft generation batch job tracking (D-P68-3)
+CREATE TABLE IF NOT EXISTS draft_generation_jobs (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    job_type TEXT DEFAULT 'batch',
+    total_sections INTEGER DEFAULT 0,
+    completed_sections INTEGER DEFAULT 0,
+    current_section_id TEXT,
+    current_section_title TEXT,
+    current_step TEXT,
+    steps_completed TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'completed', 'failed')),
+    error_message TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE INDEX IF NOT EXISTS idx_draftjob_opp ON draft_generation_jobs(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_draftjob_status ON draft_generation_jobs(status);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- DataBridge — Universal Data & Storage Connector (D-DB-1 through D-DB-20)
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Connections (D-DB-12, D-DB-13)
+CREATE TABLE IF NOT EXISTS db_connections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    connector_type TEXT NOT NULL
+        CHECK(connector_type IN ('database','cloud_storage','file',
+                                  'streaming','saas_api','on_prem')),
+    connector_name TEXT NOT NULL,
+    config_yaml TEXT NOT NULL,
+    auth_method TEXT NOT NULL DEFAULT 'none'
+        CHECK(auth_method IN ('none','api_key','oauth2','iam_role',
+                               'connection_string','pki','password','pat')),
+    auth_secret_ref TEXT,
+    sync_direction TEXT DEFAULT 'read'
+        CHECK(sync_direction IN ('read','write','bidirectional')),
+    status TEXT DEFAULT 'configured'
+        CHECK(status IN ('configured','connected','syncing','error','disabled')),
+    health_status TEXT DEFAULT 'unknown'
+        CHECK(health_status IN ('unknown','healthy','degraded','unhealthy')),
+    last_health_check TEXT,
+    last_sync TEXT,
+    sync_cadence_minutes INTEGER DEFAULT 60,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    impact_level TEXT DEFAULT 'IL4'
+        CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_db_conn_tenant ON db_connections(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_db_conn_type ON db_connections(connector_type);
+CREATE INDEX IF NOT EXISTS idx_db_conn_status ON db_connections(status);
+
+-- Schema registry (versioned, D-DB-7)
+CREATE TABLE IF NOT EXISTS db_schemas (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    table_name TEXT NOT NULL,
+    schema_json TEXT NOT NULL,
+    schema_hash TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    inferred_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    UNIQUE(connection_id, table_name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_db_schema_conn ON db_schemas(connection_id);
+
+-- Sync log (append-only, D-DB-6)
+CREATE TABLE IF NOT EXISTS db_sync_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    sync_direction TEXT NOT NULL CHECK(sync_direction IN ('read','write')),
+    table_name TEXT,
+    rows_read INTEGER DEFAULT 0,
+    rows_written INTEGER DEFAULT 0,
+    rows_failed INTEGER DEFAULT 0,
+    bytes_transferred INTEGER DEFAULT 0,
+    sync_duration_ms INTEGER,
+    incremental_key TEXT,
+    incremental_value TEXT,
+    error_details TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    synced_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_sync_conn ON db_sync_log(connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_sync_time ON db_sync_log(synced_at);
+
+-- Connector configuration registry
+CREATE TABLE IF NOT EXISTS db_connector_configs (
+    id TEXT PRIMARY KEY,
+    connector_name TEXT NOT NULL UNIQUE,
+    connector_type TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    description TEXT,
+    config_schema_json TEXT,
+    requires_dependencies TEXT,
+    is_builtin INTEGER DEFAULT 1,
+    tier TEXT DEFAULT 'free' CHECK(tier IN ('free','paid')),
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Cloud storage path registry (Phase 3)
+CREATE TABLE IF NOT EXISTS db_storage_paths (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    logical_name TEXT NOT NULL,
+    physical_path TEXT NOT NULL,
+    file_format TEXT NOT NULL
+        CHECK(file_format IN ('parquet','csv','json','avro','orc','ipc','auto')),
+    partition_scheme TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id, logical_name)
+);
+
+-- Schema mappings (versioned, D-DB-7)
+CREATE TABLE IF NOT EXISTS db_mappings (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    target_connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    source_table TEXT NOT NULL,
+    target_table TEXT NOT NULL,
+    mapping_json TEXT NOT NULL,
+    mapping_hash TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft','active','archived')),
+    cui_field_markings TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_db_map_src ON db_mappings(source_connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_map_tgt ON db_mappings(target_connection_id);
+
+-- Mapping execution log (append-only, D-DB-6)
+CREATE TABLE IF NOT EXISTS db_mapping_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mapping_id TEXT NOT NULL REFERENCES db_mappings(id),
+    rows_mapped INTEGER DEFAULT 0,
+    rows_failed INTEGER DEFAULT 0,
+    transform_errors TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    executed_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Lookup tables for transforms (D-DB-15)
+CREATE TABLE IF NOT EXISTS db_lookup_tables (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    table_json TEXT NOT NULL,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+
+-- Active stream subscriptions (Phase 6)
+CREATE TABLE IF NOT EXISTS db_streams (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    stream_name TEXT NOT NULL,
+    consumer_group TEXT,
+    status TEXT DEFAULT 'stopped'
+        CHECK(status IN ('stopped','running','paused','error')),
+    batch_window_seconds INTEGER DEFAULT 10,
+    batch_size INTEGER DEFAULT 1000,
+    last_offset TEXT,
+    rows_consumed INTEGER DEFAULT 0,
+    errors_count INTEGER DEFAULT 0,
+    started_at TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_stream_conn ON db_streams(connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_stream_status ON db_streams(status);
+
+-- OAuth2 token cache (Phase 7)
+CREATE TABLE IF NOT EXISTS db_oauth_tokens (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    access_token_ref TEXT NOT NULL,
+    refresh_token_ref TEXT,
+    token_type TEXT DEFAULT 'bearer',
+    expires_at TEXT,
+    scopes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id)
+);
+
+-- On-prem agent registrations (Phase 8)
+CREATE TABLE IF NOT EXISTS db_agents (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    agent_key_hash TEXT NOT NULL,
+    status TEXT DEFAULT 'registered'
+        CHECK(status IN ('registered','connected','disconnected','revoked')),
+    last_heartbeat TEXT,
+    ip_address TEXT,
+    agent_version TEXT,
+    capabilities_json TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_agent_tenant ON db_agents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_db_agent_status ON db_agents(status);
+
+-- DataBridge Messages (Phase 71, D-DB-26, append-only/immutable)
+CREATE TABLE IF NOT EXISTS db_messages (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('inbound','outbound')),
+    channel_id TEXT NOT NULL,
+    channel_name TEXT,
+    thread_id TEXT,
+    author_id TEXT NOT NULL,
+    author_name TEXT,
+    content TEXT NOT NULL,
+    content_html TEXT,
+    attachments_json TEXT,
+    platform_message_id TEXT,
+    reply_to_message_id TEXT,
+    agent_routed_to TEXT,
+    agent_response_task_id TEXT,
+    pii_scan_status TEXT DEFAULT 'pending'
+        CHECK(pii_scan_status IN ('pending','clean','flagged','error')),
+    pii_findings_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_msg_conn ON db_messages(connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_msg_channel ON db_messages(channel_id);
+CREATE INDEX IF NOT EXISTS idx_db_msg_platform ON db_messages(platform);
+CREATE INDEX IF NOT EXISTS idx_db_msg_time ON db_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_db_msg_pii ON db_messages(pii_scan_status);
+
+-- Agent routing overrides (Phase 71, D-DB-25)
+CREATE TABLE IF NOT EXISTS db_message_routing (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL,
+    channel_id TEXT,
+    platform TEXT NOT NULL DEFAULT '',
+    target_agent_name TEXT NOT NULL DEFAULT 'orchestrator',
+    target_agent_url TEXT,
+    routing_rules_json TEXT,
+    enabled INTEGER DEFAULT 1,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id, channel_id)
+);
+
+-- Messaging daemon state (Phase 71, D-DB-23)
+CREATE TABLE IF NOT EXISTS db_messaging_daemon_state (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    listener_type TEXT NOT NULL
+        CHECK(listener_type IN ('long_poll','websocket','gateway','webhook_only','error')),
+    status TEXT DEFAULT 'stopped'
+        CHECK(status IN ('stopped','starting','running','error','reconnecting')),
+    last_heartbeat TEXT,
+    error_details TEXT,
+    pid INTEGER,
+    thread_name TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id)
+);
+
+-- ============================================================
+-- CONNECTOR FORGE (Phase 78, D-CF-1 through D-CF-10)
+-- Dynamic DataBridge connector generation, validation, sandbox
+-- ============================================================
+
+-- Generated connector code and metadata
+CREATE TABLE IF NOT EXISTS db_forge_connectors (
+    id TEXT PRIMARY KEY,
+    connector_name TEXT NOT NULL,
+    connector_type TEXT NOT NULL,
+    base_class TEXT NOT NULL,
+    protocol TEXT NOT NULL,
+    generated_code TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'sandboxed'
+        CHECK(status IN ('sandboxed','promoted','published','deprecated')),
+    spec_id TEXT,
+    promoted_by TEXT,
+    promoted_at TEXT,
+    published_slug TEXT,
+    marketplace_artifact_id TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_connector_name ON db_forge_connectors(connector_name);
+CREATE INDEX IF NOT EXISTS idx_forge_connector_status ON db_forge_connectors(status);
+CREATE INDEX IF NOT EXISTS idx_forge_connector_tenant ON db_forge_connectors(tenant_id);
+
+-- Input specs used to generate connectors
+CREATE TABLE IF NOT EXISTS db_forge_specs (
+    id TEXT PRIMARY KEY,
+    input_type TEXT NOT NULL
+        CHECK(input_type IN ('openapi','wsdl','html','yaml','manual')),
+    input_source TEXT NOT NULL DEFAULT '',
+    raw_input TEXT NOT NULL,
+    parsed_manifest TEXT,
+    detected_protocol TEXT,
+    target_base_class TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Static + integration validation results per connector version
+CREATE TABLE IF NOT EXISTS db_forge_validations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    stage TEXT NOT NULL
+        CHECK(stage IN ('py_compile','ruff','ast_abc','bandit','secret_scan',
+                        'import_whitelist','integration')),
+    passed INTEGER NOT NULL DEFAULT 0,
+    details TEXT,
+    duration_ms INTEGER,
+    run_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_val_connector ON db_forge_validations(connector_id);
+
+-- Sandbox runtime events (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS db_forge_sandbox_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    sandbox_type TEXT NOT NULL CHECK(sandbox_type IN ('docker','subprocess')),
+    event_type TEXT NOT NULL
+        CHECK(event_type IN ('start','connect','read','write','schema',
+                             'health','error','stop','import','instantiate',
+                             'list_tables')),
+    details TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    logged_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_sandbox_conn ON db_forge_sandbox_log(connector_id);
+
+-- Promotion approvals (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS db_forge_promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    from_status TEXT NOT NULL,
+    to_status TEXT NOT NULL,
+    promoted_by TEXT NOT NULL,
+    review_notes TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    promoted_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_promo_conn ON db_forge_promotions(connector_id);
+
+-- ============================================================
+-- CLOUDFORGE: LANDING ZONES (D-CF-1, D-CF-15)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_landing_zones (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    cloud_type TEXT NOT NULL CHECK(cloud_type IN
+        ('aws_commercial','aws_govcloud','aws_secret',
+         'azure_commercial','azure_gov','azure_secret','gcp','oci')),
+    region TEXT NOT NULL,
+    impact_level TEXT NOT NULL DEFAULT 'IL4' CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
+    environment TEXT NOT NULL DEFAULT 'staging' CHECK(environment IN ('dev','staging','production','dr')),
+    blueprint_name TEXT NOT NULL,
+    iac_engine TEXT DEFAULT 'terraform' CHECK(iac_engine IN ('terraform','opentofu','pulumi')),
+    status TEXT DEFAULT 'planned' CHECK(status IN
+        ('planned','provisioning','active','updating','destroying','destroyed','error','drifted')),
+    iac_output_path TEXT,
+    state_file_path TEXT,
+    estimated_monthly_cost_usd REAL DEFAULT 0.0,
+    inherited_controls_json TEXT,
+    parameters_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_lz_cloud ON cf_landing_zones(cloud_type);
+CREATE INDEX IF NOT EXISTS idx_cf_lz_status ON cf_landing_zones(status);
+CREATE INDEX IF NOT EXISTS idx_cf_lz_tenant ON cf_landing_zones(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: PROVISIONING LOG (append-only, D-CF-15)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_provision_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('plan','apply','validate','destroy','drift_check','rollback')),
+    status TEXT NOT NULL CHECK(status IN ('started','completed','failed','rolled_back')),
+    resources_affected INTEGER DEFAULT 0,
+    duration_ms INTEGER,
+    iac_plan_json TEXT,
+    error_details TEXT,
+    actor TEXT DEFAULT 'cloudforge',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_plog_zone ON cf_provision_log(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_plog_action ON cf_provision_log(action);
+
+-- ============================================================
+-- CLOUDFORGE: ATO PHASES (D-CF-14)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_ato_phases (
+    id TEXT PRIMARY KEY,
+    zone_id TEXT NOT NULL,
+    phase_number INTEGER NOT NULL CHECK(phase_number BETWEEN 1 AND 5),
+    phase_name TEXT NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','in_progress','passed','failed','waived')),
+    started_at TEXT,
+    completed_at TEXT,
+    gate_results_json TEXT,
+    evidence_artifact_ids TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    UNIQUE(zone_id, phase_number)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_ato_zone ON cf_ato_phases(zone_id);
+
+-- ============================================================
+-- CLOUDFORGE: MIGRATION ASSESSMENTS (D-CF-7, D-CF-12)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_migration_assessments (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_cloud TEXT NOT NULL,
+    target_cloud TEXT NOT NULL,
+    status TEXT DEFAULT 'draft' CHECK(status IN
+        ('draft','assessing','planned','executing','completed','failed','cancelled')),
+    workload_count INTEGER DEFAULT 0,
+    total_data_volume_gb REAL DEFAULT 0.0,
+    overall_risk_score REAL DEFAULT 0.0,
+    overall_complexity_score REAL DEFAULT 0.0,
+    strategy TEXT DEFAULT 'phased' CHECK(strategy IN ('phased','big_bang','trickle','replatform','hybrid')),
+    estimated_downtime_hours REAL DEFAULT 0.0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_mig_status ON cf_migration_assessments(status);
+CREATE INDEX IF NOT EXISTS idx_cf_mig_tenant ON cf_migration_assessments(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: MIGRATION WORKLOADS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_migration_workloads (
+    id TEXT PRIMARY KEY,
+    assessment_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    workload_type TEXT NOT NULL CHECK(workload_type IN
+        ('vm','container','database','storage','serverless','network','identity','application','data_pipeline')),
+    source_details_json TEXT,
+    target_details_json TEXT,
+    risk_score REAL DEFAULT 0.0,
+    complexity_score REAL DEFAULT 0.0,
+    data_volume_gb REAL DEFAULT 0.0,
+    dependencies_json TEXT,
+    migration_phase INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'pending' CHECK(status IN
+        ('pending','migrating','validating','completed','failed','rolled_back')),
+    databridge_sync_id TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_mwl_assess ON cf_migration_workloads(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_cf_mwl_status ON cf_migration_workloads(status);
+
+-- ============================================================
+-- CLOUDFORGE: HYBRID TOPOLOGY (D-CF-13)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_hybrid_topology (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    topology_type TEXT NOT NULL CHECK(topology_type IN ('hub_spoke','mesh','gateway','point_to_point')),
+    status TEXT DEFAULT 'planned' CHECK(status IN ('planned','deploying','active','degraded','error')),
+    nodes_json TEXT,
+    edges_json TEXT,
+    health_status TEXT DEFAULT 'unknown',
+    last_health_check TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_topo_tenant ON cf_hybrid_topology(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: HYBRID CONNECTIONS (D-CF-13)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_hybrid_connections (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT NOT NULL,
+    source_zone_id TEXT NOT NULL,
+    target_zone_id TEXT NOT NULL,
+    connection_type TEXT NOT NULL CHECK(connection_type IN
+        ('vpn','peering','direct_connect','expressroute','interconnect','transit_gateway','relay')),
+    status TEXT DEFAULT 'planned' CHECK(status IN
+        ('planned','establishing','active','degraded','error','disconnected')),
+    bandwidth_mbps INTEGER,
+    latency_ms INTEGER,
+    encrypted INTEGER DEFAULT 1,
+    health_status TEXT DEFAULT 'unknown',
+    config_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_conn_topo ON cf_hybrid_connections(topology_id);
+CREATE INDEX IF NOT EXISTS idx_cf_conn_src ON cf_hybrid_connections(source_zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_conn_tgt ON cf_hybrid_connections(target_zone_id);
+
+-- ============================================================
+-- CLOUDFORGE: FINOPS COST RECORDS (D-CF-11)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_cost_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id TEXT,
+    cloud_type TEXT NOT NULL,
+    service_name TEXT NOT NULL,
+    cost_usd REAL NOT NULL,
+    usage_quantity REAL,
+    usage_unit TEXT,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    tags_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    collected_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_cost_zone ON cf_cost_records(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_cost_period ON cf_cost_records(period_start, period_end);
+
+-- ============================================================
+-- CLOUDFORGE: FINOPS BUDGETS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_budgets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    zone_id TEXT,
+    monthly_limit_usd REAL NOT NULL,
+    alert_threshold_pct REAL DEFAULT 80.0,
+    current_spend_usd REAL DEFAULT 0.0,
+    period TEXT NOT NULL,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','exceeded','closed')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_budget_tenant ON cf_budgets(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: SIEM EVENTS (append-only, D-CF-10)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_siem_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id TEXT,
+    cloud_type TEXT NOT NULL,
+    event_source TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    severity TEXT DEFAULT 'info' CHECK(severity IN ('info','low','medium','high','critical')),
+    raw_event_json TEXT,
+    correlated_event_id TEXT,
+    alert_fired INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    event_time TEXT NOT NULL,
+    ingested_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_siem_zone ON cf_siem_events(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_siem_sev ON cf_siem_events(severity);
+CREATE INDEX IF NOT EXISTS idx_cf_siem_time ON cf_siem_events(event_time);
+
+-- ============================================================
+-- CLOUDFORGE: SHIFT EMULATOR SESSIONS (D-CF-6)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_shift_sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    emulated_il_level TEXT NOT NULL CHECK(emulated_il_level IN ('IL4','IL5','IL6')),
+    container_ids_json TEXT,
+    network_policy_json TEXT,
+    status TEXT DEFAULT 'stopped' CHECK(status IN ('stopped','starting','running','error')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    stopped_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cf_shift_tenant ON cf_shift_sessions(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: CD HUB DEPLOYMENTS (D-CF-8)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_deployments (
+    id TEXT PRIMARY KEY,
+    zone_id TEXT NOT NULL,
+    artifact_name TEXT NOT NULL,
+    artifact_version TEXT NOT NULL,
+    strategy TEXT DEFAULT 'rolling' CHECK(strategy IN ('rolling','canary','blue_green','recreate')),
+    status TEXT DEFAULT 'pending' CHECK(status IN
+        ('pending','deploying','healthy','degraded','failed','rolled_back')),
+    canary_pct INTEGER DEFAULT 0,
+    spoke_id TEXT,
+    gitops_repo TEXT,
+    gitops_path TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cf_deploy_zone ON cf_deployments(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_deploy_status ON cf_deployments(status);
+
+-- ============================================================
+-- CLOUDFORGE: CONTAINER SCANS (D-CF-9)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_container_scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_name TEXT NOT NULL,
+    image_tag TEXT NOT NULL,
+    scan_type TEXT NOT NULL CHECK(scan_type IN ('vulnerability','stig','sbom','cis_benchmark')),
+    findings_count INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    results_json TEXT,
+    hardened INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    scanned_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_cscan_image ON cf_container_scans(image_name);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOKS (D-CF-19)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbooks (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','published','archived','deprecated')),
+    template_source TEXT,
+    tasks_json TEXT NOT NULL,
+    edges_json TEXT NOT NULL,
+    snippets_used TEXT,
+    estimated_duration_minutes INTEGER,
+    owner TEXT,
+    tags TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_rb_tenant ON cf_runbooks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cf_rb_status ON cf_runbooks(status);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOK EXECUTIONS (append-only, D-CF-20)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbook_executions (
+    id TEXT PRIMARY KEY,
+    runbook_id TEXT NOT NULL,
+    runbook_version INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN
+        ('pending','running','completed','failed','cancelled','paused')),
+    trigger_type TEXT DEFAULT 'manual' CHECK(trigger_type IN ('manual','scheduled','event','api')),
+    triggered_by TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    duration_ms INTEGER,
+    task_results_json TEXT,
+    parallel_paths_count INTEGER DEFAULT 0,
+    tasks_completed INTEGER DEFAULT 0,
+    tasks_failed INTEGER DEFAULT 0,
+    tasks_skipped INTEGER DEFAULT 0,
+    tasks_total INTEGER DEFAULT 0,
+    error_summary TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_rbe_runbook ON cf_runbook_executions(runbook_id);
+CREATE INDEX IF NOT EXISTS idx_cf_rbe_status ON cf_runbook_executions(status);
+CREATE INDEX IF NOT EXISTS idx_cf_rbe_tenant ON cf_runbook_executions(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOK TASK LOG (append-only, D-CF-21, NIST AU)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbook_task_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    task_name TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('started','completed','failed','skipped','retried','paused','resumed')),
+    output_json TEXT,
+    error_details TEXT,
+    duration_ms INTEGER,
+    actor TEXT DEFAULT 'cloudforge',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_rtl_exec ON cf_runbook_task_log(execution_id);
+CREATE INDEX IF NOT EXISTS idx_cf_rtl_task ON cf_runbook_task_log(task_id);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOK SNIPPETS (D-CF-22)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbook_snippets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL CHECK(category IN
+        ('dr_failover','backup','health_check','patching','incident','provisioning','migration','custom')),
+    tasks_json TEXT NOT NULL,
+    edges_json TEXT NOT NULL,
+    usage_count INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_snp_category ON cf_runbook_snippets(category);
+CREATE INDEX IF NOT EXISTS idx_cf_snp_tenant ON cf_runbook_snippets(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: APPLICATION METASTORE (D-CF-23)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_applications (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    app_type TEXT NOT NULL CHECK(app_type IN
+        ('web','api','database','queue','cache','batch','streaming','edge','firmware','monolith','microservice','other')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive','deprecated','decommissioned','discovered')),
+    environment TEXT DEFAULT 'production' CHECK(environment IN ('dev','staging','production','dr')),
+    rto_hours REAL,
+    rpo_hours REAL,
+    criticality TEXT DEFAULT 'medium' CHECK(criticality IN ('critical','high','medium','low')),
+    owner_team TEXT,
+    owner_email TEXT,
+    zone_ids TEXT,
+    device_ids TEXT,
+    connection_ids TEXT,
+    runbook_ids TEXT,
+    metadata_json TEXT,
+    discovery_source TEXT,
+    tags TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name, environment)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_app_tenant ON cf_applications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cf_app_type ON cf_applications(app_type);
+CREATE INDEX IF NOT EXISTS idx_cf_app_status ON cf_applications(status);
+CREATE INDEX IF NOT EXISTS idx_cf_app_criticality ON cf_applications(criticality);
+
+-- ============================================================
+-- CLOUDFORGE: APPLICATION DEPENDENCIES (adjacency list, D-CF-24)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_app_dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_app_id TEXT NOT NULL,
+    target_app_id TEXT NOT NULL,
+    dependency_type TEXT NOT NULL CHECK(dependency_type IN
+        ('hard','soft','data','network','auth','queue','shared_storage')),
+    protocol TEXT,
+    port INTEGER,
+    description TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(source_app_id, target_app_id, dependency_type)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_adep_src ON cf_app_dependencies(source_app_id);
+CREATE INDEX IF NOT EXISTS idx_cf_adep_tgt ON cf_app_dependencies(target_app_id);
+CREATE INDEX IF NOT EXISTS idx_cf_adep_tenant ON cf_app_dependencies(tenant_id);
+
+-- ============================================================
+-- INNOVATION: cATO LIVE EVIDENCE STREAM (D-INV-1)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cato_evidence_stream (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    control_id TEXT NOT NULL,
+    oscal_artifact_type TEXT NOT NULL DEFAULT 'assessment-results',
+    oscal_json TEXT NOT NULL,
+    evidence_ids TEXT,
+    stream_status TEXT NOT NULL DEFAULT 'current' CHECK(stream_status IN ('current','stale','expired')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cato_stream_project ON cato_evidence_stream(project_id);
+CREATE INDEX IF NOT EXISTS idx_cato_stream_control ON cato_evidence_stream(control_id);
+
+-- ============================================================
+-- INNOVATION: COMPLIANCE TEMPLATE EXCHANGE (D-INV-5)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS compliance_templates (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    template_type TEXT NOT NULL CHECK(template_type IN ('ssp_section','poam','narrative','control_set','checklist')),
+    framework TEXT,
+    content TEXT NOT NULL,
+    version TEXT DEFAULT '1.0.0',
+    author TEXT,
+    author_org TEXT,
+    provenance_hash TEXT,
+    rating_sum REAL DEFAULT 0,
+    rating_count INTEGER DEFAULT 0,
+    download_count INTEGER DEFAULT 0,
+    is_published INTEGER DEFAULT 0,
+    marketplace_slug TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ct_project ON compliance_templates(project_id);
+CREATE INDEX IF NOT EXISTS idx_ct_type ON compliance_templates(template_type);
+CREATE INDEX IF NOT EXISTS idx_ct_framework ON compliance_templates(framework);
+
+CREATE TABLE IF NOT EXISTS compliance_template_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id TEXT NOT NULL REFERENCES compliance_templates(id),
+    user_id TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(template_id, user_id)
+);
+
+-- ============================================================
+-- INNOVATION: VSM DASHBOARD (D-INV-9)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS vsm_stage_events (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    pipeline_run_id TEXT NOT NULL,
+    stage TEXT NOT NULL CHECK(stage IN ('architect','trace','link','assemble','stress_test')),
+    event_type TEXT NOT NULL CHECK(event_type IN ('started','completed','failed','blocked')),
+    actor TEXT,
+    duration_seconds REAL,
+    metadata TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_vsm_project ON vsm_stage_events(project_id);
+CREATE INDEX IF NOT EXISTS idx_vsm_pipeline ON vsm_stage_events(pipeline_run_id);
+CREATE INDEX IF NOT EXISTS idx_vsm_stage ON vsm_stage_events(stage);
+
+CREATE TABLE IF NOT EXISTS vsm_dora_snapshots (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    snapshot_date TEXT NOT NULL,
+    deployment_frequency REAL,
+    lead_time_hours REAL,
+    change_failure_rate REAL,
+    mttr_hours REAL,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dora_project ON vsm_dora_snapshots(project_id);
+
+-- ============================================================
+-- INNOVATION: NARRATIVE APPROVALS (D-INV-13)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS narrative_approvals (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    control_id TEXT NOT NULL,
+    narrative_type TEXT NOT NULL CHECK(narrative_type IN ('ssp','poam','executive','control')),
+    template_draft TEXT,
+    llm_draft TEXT,
+    llm_reviewed TEXT,
+    final_narrative TEXT,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','pending_review','approved','rejected')),
+    reviewer TEXT,
+    review_comment TEXT,
+    reviewed_at TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_narr_project ON narrative_approvals(project_id);
+CREATE INDEX IF NOT EXISTS idx_narr_status ON narrative_approvals(status);
+CREATE INDEX IF NOT EXISTS idx_narr_control ON narrative_approvals(control_id);
+
+-- ============================================================
+-- INNOVATION: DIGITAL THREAD HEATMAP SNAPSHOTS (D-INV-17)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS thread_heatmap_snapshots (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    matrix_json TEXT NOT NULL,
+    total_links INTEGER,
+    total_orphans INTEGER,
+    overall_coverage REAL,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_heatmap_project ON thread_heatmap_snapshots(project_id);
+
+-- ============================================================
+-- INNOVATION: PR INTELLIGENCE REPORTS (D-INV-21)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS pr_intelligence_reports (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    pr_reference TEXT,
+    diff_summary TEXT,
+    files_changed INTEGER,
+    security_findings TEXT,
+    compliance_impacts TEXT,
+    code_quality_delta TEXT,
+    overall_status TEXT NOT NULL CHECK(overall_status IN ('pass','warn','fail')),
+    report_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pr_intel_project ON pr_intelligence_reports(project_id);
+
+-- ============================================================
+-- INNOVATION: STRIDE THREAT MODELS (D-INV-25)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS threat_models (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    components TEXT NOT NULL,
+    data_flows TEXT,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','analyzed','reviewed','approved')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tm_project ON threat_models(project_id);
+
+CREATE TABLE IF NOT EXISTS threat_findings (
+    id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL REFERENCES threat_models(id),
+    component_id TEXT NOT NULL,
+    stride_category TEXT NOT NULL CHECK(stride_category IN ('spoofing','tampering','repudiation','information_disclosure','denial_of_service','elevation_of_privilege')),
+    threat_description TEXT NOT NULL,
+    risk_level TEXT NOT NULL CHECK(risk_level IN ('critical','high','moderate','low')),
+    attack_technique TEXT,
+    nist_controls TEXT,
+    mitigation TEXT,
+    poam_id TEXT,
+    status TEXT DEFAULT 'open' CHECK(status IN ('open','mitigated','accepted','transferred')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tf_model ON threat_findings(model_id);
+CREATE INDEX IF NOT EXISTS idx_tf_stride ON threat_findings(stride_category);
+CREATE INDEX IF NOT EXISTS idx_tf_risk ON threat_findings(risk_level);
+
+-- ============================================================
+-- INNOVATION: DEVELOPER SCORECARDS (D-INV-29)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS developer_scorecards (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    actor TEXT,
+    overall_score REAL NOT NULL,
+    letter_grade TEXT NOT NULL CHECK(letter_grade IN ('A','B','C','D','F')),
+    code_quality_score REAL,
+    security_score REAL,
+    compliance_score REAL,
+    test_coverage_score REAL,
+    velocity_score REAL,
+    dimension_details TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sc_project ON developer_scorecards(project_id);
+CREATE INDEX IF NOT EXISTS idx_sc_actor ON developer_scorecards(actor);
+CREATE INDEX IF NOT EXISTS idx_sc_created ON developer_scorecards(created_at);
+
+-- ============================================================
+-- INNOVATION: SCAFFOLD RUNS (D-INV-33)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS scaffold_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    template_name TEXT NOT NULL,
+    output_dir TEXT NOT NULL,
+    parameters TEXT,
+    files_created INTEGER,
+    compliance_bootstrapped INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','in_progress','completed','failed')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scaffold_project ON scaffold_runs(project_id);
+
+-- ============================================================
+-- INNOVATION: FORGE HUB RATINGS & TRUST (D-INV-37)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS forge_hub_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+    review_text TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT,
+    UNIQUE(connector_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fhr_connector ON forge_hub_ratings(connector_id);
+
+CREATE TABLE IF NOT EXISTS forge_hub_trust_scores (
+    id TEXT PRIMARY KEY,
+    connector_id TEXT NOT NULL,
+    trust_score REAL NOT NULL,
+    validation_pass_rate REAL,
+    download_count INTEGER,
+    avg_rating REAL,
+    age_days INTEGER,
+    score_breakdown TEXT,
+    breakdown TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    computed_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fht_connector ON forge_hub_trust_scores(connector_id);
+
+-- ============================================================
+-- INNOVATION: ATO SIMULATION RUNS (D-INV-41)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ato_simulation_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    scenario_id TEXT,
+    iterations INTEGER NOT NULL,
+    stig_findings_count INTEGER,
+    poam_open_count INTEGER,
+    evidence_stale_count INTEGER,
+    result_json TEXT NOT NULL,
+    p50_days REAL,
+    p80_days REAL,
+    p90_days REAL,
+    p95_days REAL,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ato_sim_project ON ato_simulation_runs(project_id);
+
+-- ============================================================
+-- INNOVATION: FIRMWARE SBOM & VEX (D-INV-45)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS firmware_sbom_records (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    board TEXT,
+    cmake_path TEXT,
+    components TEXT NOT NULL,
+    component_count INTEGER,
+    rtos_detected TEXT,
+    sbom_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fw_sbom_project ON firmware_sbom_records(project_id);
+
+CREATE TABLE IF NOT EXISTS firmware_vex_records (
+    id TEXT PRIMARY KEY,
+    sbom_id TEXT NOT NULL REFERENCES firmware_sbom_records(id),
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    vex_format TEXT NOT NULL DEFAULT 'csaf',
+    vulnerabilities TEXT NOT NULL,
+    vulnerability_count INTEGER,
+    vex_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fw_vex_project ON firmware_vex_records(project_id);
+CREATE INDEX IF NOT EXISTS idx_fw_vex_sbom ON firmware_vex_records(sbom_id);
+
+-- ============================================================
+-- GENESIS v2.0 — AUTONOMOUS RESEARCH LAB (D-GEN-6, D-GEN-10)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS genesis_audit (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    reflex_name     TEXT,
+    risk_tier       TEXT,
+    details         TEXT,
+    success         INTEGER,
+    duration_ms     INTEGER,
+    metric_name     TEXT,
+    metric_value    REAL,
+    gkp_id          TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_type ON genesis_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_reflex ON genesis_audit(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_created ON genesis_audit(created_at);
+
+CREATE TABLE IF NOT EXISTS genesis_reflex_state (
+    reflex_name         TEXT PRIMARY KEY,
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    last_run_at         TEXT,
+    next_run_at         TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs          INTEGER NOT NULL DEFAULT 0,
+    total_successes     INTEGER NOT NULL DEFAULT 0,
+    total_failures      INTEGER NOT NULL DEFAULT 0,
+    last_metric_value   REAL,
+    last_error          TEXT,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS genesis_gkp (
+    id              TEXT PRIMARY KEY,
+    gkp_version     TEXT NOT NULL DEFAULT '1.0',
+    artifact_type   TEXT NOT NULL,
+    genesis_reflex  TEXT NOT NULL,
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    evidence        TEXT,
+    payload         TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    promotion_status TEXT NOT NULL DEFAULT 'pending_review'
+        CHECK(promotion_status IN ('pending_review','auto_promoted','promoted','rejected','dedup_skipped')),
+    promoted_at     TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_type ON genesis_gkp(artifact_type);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_status ON genesis_gkp(promotion_status);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_reflex ON genesis_gkp(genesis_reflex);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_created ON genesis_gkp(created_at);
+
+-- Notification Gateway delivery log (Phase 72 — append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS notification_log (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    adapter         TEXT NOT NULL,
+    severity        TEXT NOT NULL DEFAULT 'info'
+        CHECK(severity IN ('info','warning','error','critical')),
+    title           TEXT,
+    delivered       BOOLEAN NOT NULL DEFAULT FALSE,
+    error           TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notification_log_event ON notification_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_notification_log_created ON notification_log(created_at);
+
+-- PII Redaction audit trail (Phase 72, D-RDT-2 — append-only, NIST AU)
+-- Superset schema: router.py uses function/action/entity_types_json,
+-- anonymizer.py uses timestamp/text_length/entity_types/module
+CREATE TABLE IF NOT EXISTS redaction_audit (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    function        TEXT DEFAULT '',
+    detection_count INTEGER NOT NULL DEFAULT 0,
+    entity_types_json TEXT,
+    entity_types    TEXT,
+    impact_level    TEXT NOT NULL DEFAULT 'IL4',
+    action          TEXT DEFAULT 'redacted'
+        CHECK(action IN ('redacted','skipped','error','')),
+    timestamp       TEXT,
+    text_length     INTEGER,
+    module          TEXT DEFAULT 'unknown',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_redaction_audit_session ON redaction_audit(session_id);
+CREATE INDEX IF NOT EXISTS idx_redaction_audit_created ON redaction_audit(created_at);
+
+-- Genesis Synthesize Reflex — detected tool-chain patterns (Phase 72, Hermes adaptation)
+CREATE TABLE IF NOT EXISTS genesis_tool_patterns (
+    id              TEXT PRIMARY KEY,
+    chain_hash      TEXT NOT NULL UNIQUE,
+    tool_chain      TEXT NOT NULL,
+    frequency       INTEGER NOT NULL DEFAULT 0,
+    caller_diversity INTEGER NOT NULL DEFAULT 0,
+    chain_length    INTEGER NOT NULL DEFAULT 0,
+    composite_score REAL NOT NULL DEFAULT 0.0,
+    sessions        TEXT,
+    status          TEXT NOT NULL DEFAULT 'detected'
+        CHECK(status IN ('detected','goal_generated','dismissed','archived')),
+    first_seen      TEXT NOT NULL,
+    last_seen       TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_genesis_tool_patterns_status ON genesis_tool_patterns(status);
+CREATE INDEX IF NOT EXISTS idx_genesis_tool_patterns_score ON genesis_tool_patterns(composite_score);
+
+-- Goal Learner — Self-Improving Goals from Experience (D-GEN-GL-1)
+CREATE TABLE IF NOT EXISTS genesis_generated_goals (
+    id              TEXT PRIMARY KEY,
+    version         INTEGER NOT NULL DEFAULT 1,
+    domain_label    TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    slug            TEXT NOT NULL,
+    novelty_score   REAL NOT NULL DEFAULT 0.0,
+    quality_score   REAL NOT NULL DEFAULT 0.0,
+    evidence_count  INTEGER NOT NULL DEFAULT 0,
+    keywords        TEXT,
+    goal_markdown   TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'suggested'
+        CHECK(status IN ('suggested','approved','rejected','superseded')),
+    gkp_id          TEXT,
+    goal_file_path  TEXT,
+    rejection_reason TEXT,
+    approved_at     TEXT,
+    rejected_at     TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gg_status ON genesis_generated_goals(status);
+CREATE INDEX IF NOT EXISTS idx_gg_domain ON genesis_generated_goals(domain_label);
+CREATE INDEX IF NOT EXISTS idx_gg_created ON genesis_generated_goals(created_at);
+
+-- ============================================================
+-- PROPOSAL GENESIS — AUTONOMOUS PROPOSAL INTELLIGENCE (D-PG-1 through D-PG-10)
+-- ============================================================
+
+-- Audit trail for all autonomous proposal decisions (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS pg_proposal_genesis_audit (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    reflex_name     TEXT,
+    risk_tier       TEXT,
+    opportunity_id  TEXT,
+    details         TEXT,
+    success         INTEGER,
+    duration_ms     INTEGER,
+    metric_name     TEXT,
+    metric_value    REAL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_type ON pg_proposal_genesis_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_reflex ON pg_proposal_genesis_audit(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_opp ON pg_proposal_genesis_audit(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_created ON pg_proposal_genesis_audit(created_at);
+
+-- Reflex state tracking (mirrors genesis_reflex_state pattern)
+CREATE TABLE IF NOT EXISTS pg_proposal_genesis_state (
+    reflex_name         TEXT PRIMARY KEY,
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    last_run_at         TEXT,
+    next_run_at         TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs          INTEGER NOT NULL DEFAULT 0,
+    total_successes     INTEGER NOT NULL DEFAULT 0,
+    total_failures      INTEGER NOT NULL DEFAULT 0,
+    last_metric_value   REAL,
+    last_error          TEXT,
+    updated_at          TEXT NOT NULL
+);
+
+-- Daemon configuration overrides (D-PG-3: toggle)
+CREATE TABLE IF NOT EXISTS pg_proposal_genesis_config (
+    key             TEXT PRIMARY KEY,
+    value           TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Amendment tracking diffs (R1 Discover → R5 Extract)
+CREATE TABLE IF NOT EXISTS pg_amendment_diffs (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    amendment_id    TEXT,
+    diff_type       TEXT NOT NULL CHECK(diff_type IN ('added', 'removed', 'modified')),
+    section         TEXT,
+    old_text        TEXT,
+    new_text        TEXT,
+    re_extracted    INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_amend_opp ON pg_amendment_diffs(opportunity_id);
+
+-- Pulse ↔ Proposal content links (D-PG-5: bidirectional)
+CREATE TABLE IF NOT EXISTS pg_pulse_proposal_links (
+    id              TEXT PRIMARY KEY,
+    pulse_post_id   TEXT,
+    opportunity_id  TEXT,
+    section_id      TEXT,
+    link_type       TEXT NOT NULL CHECK(link_type IN ('article_to_proposal', 'capability_to_article', 'cdrl_to_case_study')),
+    relevance_score REAL DEFAULT 0.0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_pulse_link_post ON pg_pulse_proposal_links(pulse_post_id);
+CREATE INDEX IF NOT EXISTS idx_pg_pulse_link_opp ON pg_pulse_proposal_links(opportunity_id);
+
+-- Proposal quality scores from WriteGuard (R8 Polish)
+CREATE TABLE IF NOT EXISTS pg_proposal_quality_scores (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    section_id      TEXT,
+    draft_id        TEXT,
+    grammar_score   REAL,
+    readability_score REAL,
+    tone_score      REAL,
+    plagiarism_score REAL,
+    ai_detection_score REAL,
+    composite_score REAL,
+    overall_score   REAL NOT NULL DEFAULT 0.0,
+    passed          INTEGER NOT NULL DEFAULT 0,
+    findings        TEXT,
+    check_details   TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_quality_opp ON pg_proposal_quality_scores(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_quality_created ON pg_proposal_quality_scores(created_at);
+
+-- Bid/no-bid decisions (R9 Decide — Phase B)
+CREATE TABLE IF NOT EXISTS pg_bid_decisions (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    decision        TEXT NOT NULL CHECK(decision IN ('bid', 'no_bid', 'pending', 'deferred')),
+    win_probability REAL,
+    score_breakdown TEXT,
+    rationale       TEXT,
+    decided_by      TEXT DEFAULT 'autonomous',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_bid_opp ON pg_bid_decisions(opportunity_id);
+
+-- Bid decision outcomes for calibration (R13 Analyze — Phase B)
+CREATE TABLE IF NOT EXISTS pg_bid_decision_outcomes (
+    id              TEXT PRIMARY KEY,
+    bid_decision_id TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled', 'withdrawn')),
+    actual_award_date TEXT,
+    award_amount    REAL,
+    notes           TEXT,
+    created_at      TEXT NOT NULL
+);
+
+-- Win/loss records (R13 Analyze — Phase B)
+CREATE TABLE IF NOT EXISTS pg_win_loss_records (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled')),
+    competitor_name TEXT,
+    competitor_strengths TEXT,
+    our_strengths   TEXT,
+    our_weaknesses  TEXT,
+    lessons_learned TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_winloss_opp ON pg_win_loss_records(opportunity_id);
+
+-- Win/loss lessons for feedback loop (R13 Analyze → R14 Train)
+CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
+    id              TEXT PRIMARY KEY,
+    win_loss_id     TEXT NOT NULL,
+    category        TEXT NOT NULL CHECK(category IN ('technical', 'management', 'pricing', 'past_performance', 'compliance', 'staffing', 'other')),
+    lesson          TEXT NOT NULL,
+    actionable      INTEGER NOT NULL DEFAULT 1,
+    applied         INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+
+-- CRM accounts (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_accounts (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    agency          TEXT,
+    sub_agency      TEXT,
+    account_type    TEXT DEFAULT 'government' CHECK(account_type IN ('government', 'prime', 'subcontractor', 'partner', 'other')),
+    website         TEXT,
+    naics_codes     TEXT,
+    set_asides      TEXT,
+    notes           TEXT,
+    status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'prospect')),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_acct_name ON pg_crm_accounts(name);
+
+-- CRM contacts (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_contacts (
+    id              TEXT PRIMARY KEY,
+    account_id      TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    title           TEXT,
+    email           TEXT,
+    phone           TEXT,
+    role_in_procurement TEXT,
+    influence_level TEXT CHECK(influence_level IN ('decision_maker', 'influencer', 'evaluator', 'end_user', 'unknown')),
+    notes           TEXT,
+    last_contact_at TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_contact_acct ON pg_crm_contacts(account_id);
+
+-- CRM interactions (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_interactions (
+    id              TEXT PRIMARY KEY,
+    contact_id      TEXT NOT NULL,
+    account_id      TEXT NOT NULL,
+    interaction_type TEXT NOT NULL CHECK(interaction_type IN ('meeting', 'call', 'email', 'conference', 'site_visit', 'rfi_response', 'industry_day', 'other')),
+    subject         TEXT,
+    notes           TEXT,
+    opportunity_id  TEXT,
+    interaction_date TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_interact_contact ON pg_crm_interactions(contact_id);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_interact_acct ON pg_crm_interactions(account_id);
+
+-- CRM engagement scores (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_engagement_scores (
+    id              TEXT PRIMARY KEY,
+    account_id      TEXT NOT NULL,
+    score           REAL NOT NULL DEFAULT 0.0,
+    score_breakdown TEXT,
+    interaction_count INTEGER DEFAULT 0,
+    last_interaction_at TEXT,
+    opportunity_count INTEGER DEFAULT 0,
+    win_rate        REAL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_eng_acct ON pg_crm_engagement_scores(account_id);
+
+-- Capture plans (R3 Shape — Phase D)
+CREATE TABLE IF NOT EXISTS pg_capture_plans (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    status          TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'completed', 'abandoned')),
+    win_strategy    TEXT,
+    discriminators  TEXT,
+    teaming_strategy TEXT,
+    price_strategy  TEXT,
+    gate_reviews    TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_capture_opp ON pg_capture_plans(opportunity_id);
+
+-- Capture activities (R3 Shape — Phase D)
+CREATE TABLE IF NOT EXISTS pg_capture_activities (
+    id              TEXT PRIMARY KEY,
+    capture_plan_id TEXT NOT NULL,
+    activity_type   TEXT NOT NULL,
+    description     TEXT,
+    assigned_to     TEXT,
+    due_date        TEXT,
+    status          TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_capture_act_plan ON pg_capture_activities(capture_plan_id);
+
+-- Teaming partners (R3 Shape — Phase D, D-PG-6)
+CREATE TABLE IF NOT EXISTS pg_teaming_partners (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    partner_type    TEXT NOT NULL CHECK(partner_type IN ('prime', 'subcontractor', 'consultant', 'technology_partner', 'mentor_protege')),
+    capabilities    TEXT,
+    past_performance TEXT,
+    contract_vehicles TEXT,
+    certifications  TEXT,
+    set_asides      TEXT,
+    status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'prospect')),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_team_name ON pg_teaming_partners(name);
+
+-- Teaming assessments (R3 Shape — Phase D)
+CREATE TABLE IF NOT EXISTS pg_teaming_assessments (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    partner_id      TEXT NOT NULL,
+    fit_score       REAL DEFAULT 0.0,
+    capability_gaps_filled TEXT,
+    risk_assessment TEXT,
+    recommendation  TEXT CHECK(recommendation IN ('strong_fit', 'good_fit', 'marginal', 'not_recommended')),
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_team_assess_opp ON pg_teaming_assessments(opportunity_id);
+
+-- ================================================================
+-- Proposal Genesis Enhancement (3-Engine Research, §3.11-§3.18)
+-- ================================================================
+
+-- §3.11 Compliance Matrix (R5 enhancement + R22 Trace)
+CREATE TABLE IF NOT EXISTS pg_compliance_matrix (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    requirement_id      TEXT NOT NULL,
+    requirement_text    TEXT NOT NULL,
+    source_section      TEXT NOT NULL CHECK(source_section IN ('L', 'M', 'C', 'attachment', 'amendment')),
+    evaluation_factor   TEXT,
+    evaluation_weight   REAL,
+    assigned_volume     TEXT,
+    assigned_section    TEXT,
+    compliance_status   TEXT DEFAULT 'gap' CHECK(compliance_status IN ('addressed', 'partial', 'gap', 'na')),
+    amendment_version   INTEGER DEFAULT 0,
+    notes               TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_cmatrix_opp ON pg_compliance_matrix(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_cmatrix_status ON pg_compliance_matrix(compliance_status);
+
+-- §3.12 AI Color Team Review Simulator (R15 Review)
+CREATE TABLE IF NOT EXISTS pg_review_findings (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    review_type         TEXT NOT NULL CHECK(review_type IN ('blue', 'pink', 'red', 'green', 'gold')),
+    review_iteration    INTEGER DEFAULT 1,
+    section_id          TEXT,
+    severity            TEXT NOT NULL CHECK(severity IN ('critical', 'major', 'minor', 'observation')),
+    category            TEXT NOT NULL CHECK(category IN ('compliance', 'persuasion', 'readability', 'formatting', 'pricing', 'strategy')),
+    finding_text        TEXT NOT NULL,
+    recommendation      TEXT,
+    resolution_status   TEXT DEFAULT 'open' CHECK(resolution_status IN ('open', 'addressed', 'deferred', 'wontfix')),
+    resolution_notes    TEXT,
+    created_at          TEXT NOT NULL,
+    resolved_at         TEXT,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_review_opp ON pg_review_findings(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_review_type ON pg_review_findings(review_type);
+
+-- §3.13 Cost Volume Automation (R17 Price)
+CREATE TABLE IF NOT EXISTS pg_cost_volumes (
+    id                      TEXT PRIMARY KEY,
+    opportunity_id          TEXT NOT NULL,
+    contract_type           TEXT NOT NULL CHECK(contract_type IN ('ffp', 't_and_m', 'cpff', 'cpaf', 'idiq', 'hybrid')),
+    pricing_strategy        TEXT CHECK(pricing_strategy IN ('lpta', 'best_value', 'tradeoff')),
+    total_evaluated_price   REAL,
+    direct_labor_cost       REAL,
+    fringe_rate             REAL,
+    overhead_rate           REAL,
+    g_and_a_rate            REAL,
+    fee_rate                REAL,
+    subcontractor_cost      REAL,
+    odc_cost                REAL,
+    ptw_estimate_low        REAL,
+    ptw_estimate_high       REAL,
+    calc_benchmark_median   REAL,
+    period_of_performance   TEXT,
+    status                  TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'reviewed', 'approved', 'submitted')),
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_costvol_opp ON pg_cost_volumes(opportunity_id);
+
+CREATE TABLE IF NOT EXISTS pg_lcat_allocations (
+    id                  TEXT PRIMARY KEY,
+    cost_volume_id      TEXT NOT NULL,
+    task_description    TEXT NOT NULL,
+    labor_category      TEXT NOT NULL,
+    bls_soc_code        TEXT,
+    fte_count           REAL NOT NULL,
+    hourly_rate         REAL,
+    annual_cost         REAL,
+    basis_of_estimate   TEXT,
+    created_at          TEXT NOT NULL,
+    FOREIGN KEY (cost_volume_id) REFERENCES pg_cost_volumes(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_lcat_vol ON pg_lcat_allocations(cost_volume_id);
+
+-- §3.14 CMMC Supply Chain Validator (R18 Comply_CMMC)
+CREATE TABLE IF NOT EXISTS pg_cmmc_supply_chain (
+    id                      TEXT PRIMARY KEY,
+    opportunity_id          TEXT NOT NULL,
+    team_member_name        TEXT NOT NULL,
+    team_member_cage        TEXT,
+    role                    TEXT CHECK(role IN ('prime', 'sub_tier1', 'sub_tier2', 'consultant')),
+    required_cmmc_level     INTEGER NOT NULL,
+    actual_cmmc_level       INTEGER,
+    assessment_type         TEXT CHECK(assessment_type IN ('self', 'c3pao', 'dibcac')),
+    sprs_score              INTEGER,
+    poam_status             TEXT CHECK(poam_status IN ('none', 'open', 'closed')),
+    certification_expiry    TEXT,
+    compliance_status       TEXT DEFAULT 'unknown' CHECK(compliance_status IN ('compliant', 'poam', 'non_compliant', 'unknown', 'expired')),
+    flow_down_generated     INTEGER DEFAULT 0,
+    checked_at              TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_cmmc_opp ON pg_cmmc_supply_chain(opportunity_id);
+
+-- §3.15 GSA "American AI" Clause Compliance
+CREATE TABLE IF NOT EXISTS pg_ai_clause_compliance (
+    id                          TEXT PRIMARY KEY,
+    opportunity_id              TEXT NOT NULL,
+    clause_type                 TEXT NOT NULL CHECK(clause_type IN ('gsar_552_239_7001', 'omb_m26_04', 'omb_m25_21')),
+    model_cards_generated       INTEGER DEFAULT 0,
+    bias_evaluations_generated  INTEGER DEFAULT 0,
+    source_disclosure_generated INTEGER DEFAULT 0,
+    system_card_generated       INTEGER DEFAULT 0,
+    american_ai_certified       INTEGER DEFAULT 0,
+    ip_rights_documented        INTEGER DEFAULT 0,
+    bundle_path                 TEXT,
+    status                      TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'generated', 'reviewed', 'attached')),
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_aiclause_opp ON pg_ai_clause_compliance(opportunity_id);
+
+-- §3.16 Talent Intelligence (R20 Talent)
+CREATE TABLE IF NOT EXISTS pg_talent_signals (
+    id                          TEXT PRIMARY KEY,
+    competitor_name             TEXT NOT NULL,
+    role_title                  TEXT NOT NULL,
+    location                    TEXT,
+    clearance_required          TEXT,
+    salary_low                  REAL,
+    salary_high                 REAL,
+    tools_mentioned             TEXT,
+    certifications_mentioned    TEXT,
+    source_url                  TEXT,
+    posting_date                TEXT,
+    scan_date                   TEXT NOT NULL,
+    correlated_opportunity_id   TEXT,
+    signal_type                 TEXT CHECK(signal_type IN ('velocity_spike', 'role_cluster', 'new_capability', 'pricing_intel', 'general')),
+    created_at                  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_talent_comp ON pg_talent_signals(competitor_name);
+CREATE INDEX IF NOT EXISTS idx_pg_talent_date ON pg_talent_signals(scan_date);
+
+CREATE TABLE IF NOT EXISTS pg_talent_velocity (
+    id                      TEXT PRIMARY KEY,
+    competitor_name         TEXT NOT NULL,
+    week_start              TEXT NOT NULL,
+    posting_count           INTEGER NOT NULL,
+    velocity_zscore         REAL,
+    dominant_role_category  TEXT,
+    dominant_location       TEXT,
+    dominant_clearance      TEXT,
+    created_at              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_talvel_comp ON pg_talent_velocity(competitor_name);
+
+-- §3.17 Win Theme & Discriminator Registry
+CREATE TABLE IF NOT EXISTS pg_win_themes (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    theme_type          TEXT NOT NULL CHECK(theme_type IN ('win_theme', 'discriminator', 'ghost')),
+    theme_statement     TEXT NOT NULL,
+    supporting_evidence TEXT,
+    target_eval_factor  TEXT,
+    ghost_competitor    TEXT,
+    priority            INTEGER DEFAULT 1,
+    status              TEXT DEFAULT 'active' CHECK(status IN ('active', 'archived', 'superseded')),
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_wintheme_opp ON pg_win_themes(opportunity_id);
+
+CREATE TABLE IF NOT EXISTS pg_theme_tracking (
+    id                      TEXT PRIMARY KEY,
+    theme_id                TEXT NOT NULL,
+    section_id              TEXT NOT NULL,
+    implementation_status   TEXT DEFAULT 'pending' CHECK(implementation_status IN ('pending', 'implemented', 'partial', 'missing')),
+    density_score           REAL,
+    reviewer_notes          TEXT,
+    checked_at              TEXT NOT NULL,
+    FOREIGN KEY (theme_id) REFERENCES pg_win_themes(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_themetrack_theme ON pg_theme_tracking(theme_id);
+
+-- §3.18 Teaming Coordination Hub enhancements (extends pg_teaming_partners)
+CREATE TABLE IF NOT EXISTS pg_teaming_workshare (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    partner_id          TEXT NOT NULL,
+    clin_number         TEXT,
+    workshare_pct       REAL NOT NULL,
+    labor_categories    TEXT,
+    status              TEXT DEFAULT 'proposed' CHECK(status IN ('proposed', 'agreed', 'contracted', 'disputed')),
+    ta_status           TEXT DEFAULT 'none' CHECK(ta_status IN ('none', 'draft', 'negotiating', 'executed', 'expired')),
+    ta_expiry_date      TEXT,
+    oci_risk            TEXT DEFAULT 'none' CHECK(oci_risk IN ('none', 'low', 'medium', 'high', 'disqualifying')),
+    socioeconomic_status TEXT,
+    reliability_score   REAL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_workshare_opp ON pg_teaming_workshare(opportunity_id);
+
+-- ================================================================
+-- File Sync Module (D-SYNC-1 through D-SYNC-10)
+-- ================================================================
+
+-- Sync jobs — mutable (status updates allowed)
+CREATE TABLE IF NOT EXISTS sync_jobs (
+    id                          TEXT PRIMARY KEY,
+    name                        TEXT NOT NULL,
+    source_path                 TEXT NOT NULL,
+    source_provider             TEXT NOT NULL DEFAULT 'local'
+        CHECK(source_provider IN ('local', 'sftp', 's3', 'azure', 'gcs')),
+    dest_path                   TEXT NOT NULL,
+    dest_provider               TEXT NOT NULL DEFAULT 'local'
+        CHECK(dest_provider IN ('local', 'sftp', 's3', 'azure', 'gcs')),
+    sync_mode                   TEXT NOT NULL DEFAULT 'push'
+        CHECK(sync_mode IN ('push', 'pull', 'bidirectional')),
+    conflict_strategy           TEXT NOT NULL DEFAULT 'last_write_wins'
+        CHECK(conflict_strategy IN ('last_write_wins', 'rename_both', 'newest_wins', 'source_wins', 'skip')),
+    ignore_file                 TEXT DEFAULT '.syncignore',
+    delete_orphans              INTEGER DEFAULT 0,
+    status                      TEXT NOT NULL DEFAULT 'idle'
+        CHECK(status IN ('idle', 'scanning', 'syncing', 'completed', 'failed', 'paused', 'watching')),
+    schedule_interval_seconds   INTEGER DEFAULT 0,
+    bandwidth_limit_kbps        INTEGER DEFAULT 0,
+    max_workers                 INTEGER DEFAULT 4,
+    last_run_at                 TIMESTAMP,
+    last_success_at             TIMESTAMP,
+    files_synced                INTEGER DEFAULT 0,
+    files_skipped               INTEGER DEFAULT 0,
+    files_conflicted            INTEGER DEFAULT 0,
+    bytes_transferred           INTEGER DEFAULT 0,
+    error_message               TEXT,
+    config_json                 TEXT,
+    classification              TEXT DEFAULT 'CUI',
+    project_id                  TEXT,
+    created_by                  TEXT,
+    created_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_sync_jobs_project ON sync_jobs(project_id);
+
+-- Sync state — mutable (per-file hash cache for fast-skip, D-SYNC-2)
+CREATE TABLE IF NOT EXISTS sync_state (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id          TEXT NOT NULL REFERENCES sync_jobs(id),
+    relative_path   TEXT NOT NULL,
+    content_hash    TEXT,
+    file_size       INTEGER,
+    mtime_epoch     REAL,
+    side            TEXT NOT NULL DEFAULT 'source'
+        CHECK(side IN ('source', 'dest')),
+    last_synced_at  TIMESTAMP,
+    last_synced_hash TEXT,
+    UNIQUE(job_id, relative_path, side)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_state_job ON sync_state(job_id);
+
+-- Sync log — APPEND-ONLY (NIST AU compliant, D6, D-SYNC-7)
+CREATE TABLE IF NOT EXISTS sync_log (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id              TEXT NOT NULL REFERENCES sync_jobs(id),
+    action              TEXT NOT NULL CHECK(action IN (
+        'copy', 'update', 'delete', 'rename', 'skip',
+        'conflict_resolved', 'conflict_skipped', 'error',
+        'scan_started', 'scan_completed',
+        'sync_started', 'sync_completed', 'sync_failed'
+    )),
+    relative_path       TEXT,
+    source_hash         TEXT,
+    dest_hash           TEXT,
+    bytes_transferred   INTEGER DEFAULT 0,
+    duration_ms         INTEGER DEFAULT 0,
+    resolution          TEXT,
+    error_detail        TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_log_job ON sync_log(job_id);
+CREATE INDEX IF NOT EXISTS idx_sync_log_action ON sync_log(action);
+CREATE INDEX IF NOT EXISTS idx_sync_log_created ON sync_log(created_at);
+
+-- Sync conflicts — mutable (resolution status updates)
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id              TEXT PRIMARY KEY,
+    job_id          TEXT NOT NULL REFERENCES sync_jobs(id),
+    relative_path   TEXT NOT NULL,
+    source_hash     TEXT,
+    source_mtime    REAL,
+    source_size     INTEGER,
+    dest_hash       TEXT,
+    dest_mtime      REAL,
+    dest_size       INTEGER,
+    resolution      TEXT CHECK(resolution IN (
+        'pending', 'source_wins', 'dest_wins', 'renamed', 'skipped', 'manual'
+    )) DEFAULT 'pending',
+    resolved_at     TIMESTAMP,
+    resolved_by     TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_job ON sync_conflicts(job_id);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_status ON sync_conflicts(resolution);
+
+-- =========================================================================
+-- Pulse AI Blog Engine
+-- =========================================================================
+
+-- Pulse demand signals (topics extracted from SAM.gov, community, etc.)
+CREATE TABLE IF NOT EXISTS pulse_demand_signals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    pain_point_text TEXT NOT NULL,
+    domain_category TEXT,
+    keywords        TEXT,
+    source          TEXT DEFAULT 'manual',
+    frequency       INTEGER DEFAULT 1,
+    velocity        REAL DEFAULT 0.0,
+    is_high_demand  INTEGER DEFAULT 0,
+    article_generated INTEGER DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_demand_high ON pulse_demand_signals(is_high_demand);
+CREATE INDEX IF NOT EXISTS idx_pulse_demand_created ON pulse_demand_signals(created_at);
+
+-- Pulse blog posts (articles — draft/staged/published lifecycle)
+CREATE TABLE IF NOT EXISTS pulse_posts (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    slug                TEXT,
+    status              TEXT NOT NULL DEFAULT 'draft'
+                        CHECK(status IN ('draft', 'staged', 'review', 'published', 'archived')),
+    topic               TEXT,
+    body_markdown       TEXT,
+    hero_image_path     TEXT,
+    hero_image_method   TEXT CHECK(hero_image_method IN ('sdxl_turbo', 'svg', 'manual', NULL)),
+    hero_image_prompt   TEXT,
+    readability_score   REAL DEFAULT 0.0,
+    author_id           TEXT,
+    demand_signal_id    INTEGER REFERENCES pulse_demand_signals(id),
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_posts_status ON pulse_posts(status);
+CREATE INDEX IF NOT EXISTS idx_pulse_posts_slug ON pulse_posts(slug);
+CREATE INDEX IF NOT EXISTS idx_pulse_posts_created ON pulse_posts(created_at);
+
+-- =========================================================================
+-- Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
+-- =========================================================================
+
+-- Red Team Plugin Registry results (append-only, D6)
+CREATE TABLE IF NOT EXISTS red_team_results (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT,
+    plugin_id       TEXT NOT NULL,
+    plugin_name     TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    passed          INTEGER DEFAULT 0,
+    tests_run       INTEGER DEFAULT 0,
+    tests_passed    INTEGER DEFAULT 0,
+    findings_json   TEXT,
+    duration_ms     INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_red_team_plugin ON red_team_results(plugin_id);
+CREATE INDEX IF NOT EXISTS idx_red_team_project ON red_team_results(project_id);
+
+-- Genesis Convergence Log (append-only, D6)
+CREATE TABLE IF NOT EXISTS genesis_convergence_log (
+    id                      TEXT PRIMARY KEY,
+    reflex_name             TEXT NOT NULL,
+    generation              INTEGER DEFAULT 0,
+    goal_drift              REAL DEFAULT 0.0,
+    metric_drift            REAL DEFAULT 0.0,
+    output_similarity       REAL DEFAULT 0.0,
+    combined_drift          REAL DEFAULT 0.0,
+    ambiguity_score         REAL DEFAULT 0.0,
+    converged               INTEGER DEFAULT 0,
+    retrospective_triggered INTEGER DEFAULT 0,
+    details_json            TEXT,
+    classification          TEXT DEFAULT 'CUI',
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_conv_reflex ON genesis_convergence_log(reflex_name);
+
+-- Genesis Stagnation Log (append-only, D6)
+CREATE TABLE IF NOT EXISTS genesis_stagnation_log (
+    id                   TEXT PRIMARY KEY,
+    reflex_name          TEXT NOT NULL,
+    pattern_type         TEXT NOT NULL CHECK(pattern_type IN (
+        'oscillation', 'stagnation', 'diminishing_returns', 'repetitive_output'
+    )),
+    persona_used         TEXT,
+    alternatives_json    TEXT,
+    selected_alternative TEXT,
+    score                REAL DEFAULT 0.0,
+    details_json         TEXT,
+    classification       TEXT DEFAULT 'CUI',
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stag_reflex ON genesis_stagnation_log(reflex_name);
+
+-- Agent Benchmark Results (append-only, D6)
+CREATE TABLE IF NOT EXISTS agent_benchmark_results (
+    id                  TEXT PRIMARY KEY,
+    scan_id             TEXT NOT NULL,
+    project_id          TEXT,
+    agent_type          TEXT NOT NULL,
+    scenario_id         TEXT NOT NULL,
+    scenario_name       TEXT NOT NULL,
+    category            TEXT NOT NULL,
+    outcome_passed      INTEGER DEFAULT 0,
+    methodology_passed  INTEGER DEFAULT 0,
+    composite_score     REAL DEFAULT 0.0,
+    duration_ms         INTEGER DEFAULT 0,
+    details_json        TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_bench_scan ON agent_benchmark_results(scan_id);
+CREATE INDEX IF NOT EXISTS idx_bench_agent ON agent_benchmark_results(agent_type);
+
+-- GSD-adapted: 4-Level Verification & Stub Detection Results (D-GSD-1/3)
+CREATE TABLE IF NOT EXISTS stub_detection_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      TEXT NOT NULL,
+    project_dir     TEXT,
+    files_checked   INTEGER DEFAULT 0,
+    files_passed    INTEGER DEFAULT 0,
+    files_failed    INTEGER DEFAULT 0,
+    stub_total      INTEGER DEFAULT 0,
+    level_summary   TEXT,       -- JSON: per-level pass/fail counts
+    failures        TEXT,       -- JSON: list of failure details
+    overall_passed  INTEGER DEFAULT 1,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stub_project ON stub_detection_results(project_id);
+
+-- GSD-adapted: Context Pressure & Stuck Detection Events (D-GSD-4/6)
+CREATE TABLE IF NOT EXISTS context_pressure_events (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id               TEXT NOT NULL,
+    event_type               TEXT NOT NULL CHECK(event_type IN (
+        'pressure_check', 'stuck_analysis_paralysis',
+        'stuck_duplicate_loop', 'stuck_retry_spiral', 'stuck_unknown'
+    )),
+    pressure_level           TEXT NOT NULL CHECK(pressure_level IN (
+        'normal', 'warning', 'critical', 'stuck'
+    )),
+    estimated_tokens_used    INTEGER DEFAULT 0,
+    estimated_remaining_pct  REAL DEFAULT 100.0,
+    tool_call_count          INTEGER DEFAULT 0,
+    recommendation           TEXT,
+    classification           TEXT DEFAULT 'CUI',
+    created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ctx_pressure_session ON context_pressure_events(session_id);
+
+-- GSD-adapted: Category-Based Deviation Rule Events (D-GSD-7/9)
+CREATE TABLE IF NOT EXISTS deviation_rule_events (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    category            TEXT NOT NULL,
+    confidence          REAL NOT NULL,
+    original_decision   TEXT NOT NULL CHECK(original_decision IN (
+        'auto_heal', 'suggest', 'escalate'
+    )),
+    final_decision      TEXT NOT NULL CHECK(final_decision IN (
+        'auto_heal', 'suggest', 'escalate'
+    )),
+    category_overrode   INTEGER DEFAULT 0,
+    matched_keywords    TEXT,       -- JSON array of matched keywords
+    reason              TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_deviation_category ON deviation_rule_events(category);
+CREATE INDEX IF NOT EXISTS idx_deviation_decision ON deviation_rule_events(final_decision);
+
+--- ============================================================
+--- NEMOCLAW-ADAPTED AGENT SANDBOXING (D-NC-1 through D-NC-3)
+--- ============================================================
+
+-- Credential broker audit log (D-NC-1 — append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS credential_broker_log (
+    id              TEXT PRIMARY KEY,
+    agent_id        TEXT NOT NULL,
+    function        TEXT NOT NULL,
+    provider        TEXT,
+    scope           TEXT,
+    action          TEXT NOT NULL CHECK(action IN ('grant', 'deny', 'revoke', 'expire', 'fallback')),
+    token_hash      TEXT,
+    reason          TEXT,
+    ttl_seconds     INTEGER,
+    expires_at      TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cbl_agent ON credential_broker_log(agent_id);
+CREATE INDEX IF NOT EXISTS idx_cbl_function ON credential_broker_log(function);
+CREATE INDEX IF NOT EXISTS idx_cbl_action ON credential_broker_log(action);
+CREATE INDEX IF NOT EXISTS idx_cbl_created ON credential_broker_log(created_at);
+
+-- Active credential tokens (D-NC-1 — allows UPDATE for revocation)
+CREATE TABLE IF NOT EXISTS credential_active_tokens (
+    token_hash      TEXT PRIMARY KEY,
+    agent_id        TEXT NOT NULL,
+    function        TEXT NOT NULL,
+    provider        TEXT,
+    scope           TEXT,
+    issued_at       TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    revoked         INTEGER NOT NULL DEFAULT 0,
+    revoked_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cat_agent ON credential_active_tokens(agent_id);
+CREATE INDEX IF NOT EXISTS idx_cat_expires ON credential_active_tokens(expires_at);
+
+-- Egress policy audit log (D-NC-2 — append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS egress_policy_audit (
+    id              TEXT PRIMARY KEY,
+    agent_role      TEXT NOT NULL,
+    policy_hash     TEXT NOT NULL,
+    action          TEXT NOT NULL CHECK(action IN ('resolve', 'generate', 'apply', 'override')),
+    applied_by      TEXT,
+    diff_summary    TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_epa_role ON egress_policy_audit(agent_role);
+CREATE INDEX IF NOT EXISTS idx_epa_created ON egress_policy_audit(created_at);
+
+-- Blueprint digest store (D-NC-3 — append-only for computed records)
+CREATE TABLE IF NOT EXISTS blueprint_digests (
+    id              TEXT PRIMARY KEY,
+    entity_type     TEXT NOT NULL CHECK(entity_type IN ('genome', 'marketplace_asset', 'child_app', 'capability', 'propagation')),
+    entity_id       TEXT NOT NULL,
+    digest          TEXT NOT NULL,
+    file_count      INTEGER NOT NULL,
+    total_bytes     INTEGER NOT NULL,
+    directory_path  TEXT,
+    computed_at     TEXT NOT NULL,
+    verified_at     TEXT,
+    verified_by     TEXT,
+    verification_result TEXT CHECK(verification_result IN ('pass', 'fail', NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_bd_entity ON blueprint_digests(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_bd_digest ON blueprint_digests(digest);
+CREATE INDEX IF NOT EXISTS idx_bd_computed ON blueprint_digests(computed_at);
+
+-- Post-propagation verifications (D-NC-5 — append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS propagation_verifications (
+    id              TEXT PRIMARY KEY,
+    propagation_id  TEXT NOT NULL,
+    child_id        TEXT,
+    check_name      TEXT NOT NULL,
+    check_status    TEXT NOT NULL CHECK(check_status IN ('pass', 'fail', 'skip', 'error')),
+    detail          TEXT,
+    verified_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pv_prop ON propagation_verifications(propagation_id);
+CREATE INDEX IF NOT EXISTS idx_pv_child ON propagation_verifications(child_id);
+
+--- ============================================================
+--- EVOLUTION DAEMON — Phase 36 Autonomous Lifecycle (D-EVO-1)
+--- ============================================================
+
+-- Append-only audit trail for evolution daemon decisions (NIST AU)
+CREATE TABLE IF NOT EXISTS evolution_audit (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    reflex_name     TEXT,
+    risk_tier       TEXT,
+    details         TEXT,
+    success         INTEGER,
+    duration_ms     INTEGER,
+    metric_name     TEXT,
+    metric_value    REAL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_evolution_audit_type ON evolution_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_evolution_audit_reflex ON evolution_audit(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_evolution_audit_created ON evolution_audit(created_at);
+
+-- Per-reflex state tracking for evolution daemon
+CREATE TABLE IF NOT EXISTS evolution_reflex_state (
+    reflex_name             TEXT PRIMARY KEY,
+    enabled                 INTEGER NOT NULL DEFAULT 1,
+    last_run_at             TEXT,
+    next_run_at             TEXT,
+    consecutive_failures    INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open    INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs              INTEGER NOT NULL DEFAULT 0,
+    total_successes         INTEGER NOT NULL DEFAULT 0,
+    total_failures          INTEGER NOT NULL DEFAULT 0,
+    last_metric_value       REAL,
+    last_error              TEXT,
+    updated_at              TEXT NOT NULL
+);
+
+--- ============================================================
+--- OUTCOME VERIFIER — Self-Healing Feedback Loop (D-EVO-6)
+--- ============================================================
+
+-- Append-only verification log for auto-resolution outcomes (NIST AU)
+CREATE TABLE IF NOT EXISTS outcome_verification_log (
+    id TEXT PRIMARY KEY,
+    resolution_id TEXT NOT NULL,
+    pr_url TEXT,
+    pattern_signature TEXT,
+    verification_type TEXT NOT NULL
+        CHECK(verification_type IN ('pr_merge_check', 'recurrence_check')),
+    result TEXT NOT NULL DEFAULT 'pending'
+        CHECK(result IN ('pending', 'merged', 'closed', 'recurred',
+                         'resolved', 'timeout', 'cli_unavailable')),
+    checked_at TEXT,
+    confidence_delta REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ov_resolution ON outcome_verification_log(resolution_id);
+CREATE INDEX IF NOT EXISTS idx_ov_result ON outcome_verification_log(result);
+
+--- ============================================================
+--- PER-PROJECT PATTERN LEARNING (D-EVO-8)
+--- ============================================================
+
+-- Track self-healing pattern effectiveness per project
+CREATE TABLE IF NOT EXISTS self_heal_project_patterns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pattern_signature TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    successes INTEGER DEFAULT 0,
+    failures INTEGER DEFAULT 0,
+    effectiveness REAL DEFAULT 0.0,
+    last_attempt_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(pattern_signature, project_id)
+);
+CREATE INDEX IF NOT EXISTS idx_shpp_project ON self_heal_project_patterns(project_id);
+CREATE INDEX IF NOT EXISTS idx_shpp_signature ON self_heal_project_patterns(pattern_signature);
+
+-- ============================================================
+-- BAYESIAN TEACHING (D-BT-1 through D-BT-6)
+-- Adapts Bayesian Teaching (Shafto 2014, Zhu 2015, Qiu 2025)
+-- and DeepFlow SmartEncoding (ACM SIGCOMM 2023)
+-- ============================================================
+
+-- Append-only scoring log (NIST AU-2 compliant)
+CREATE TABLE IF NOT EXISTS bayesian_teaching_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL,
+    candidate_type TEXT NOT NULL CHECK(candidate_type IN (
+        'training_pair', 'compliance_ordering', 'rag_chunk',
+        'teaching_set', 'onboarding_item'
+    )),
+    info_gain_score REAL NOT NULL,
+    dimensions TEXT,
+    threshold_band TEXT CHECK(threshold_band IN ('auto_select', 'suggest', 'exclude')),
+    context_id TEXT,
+    project_id TEXT,
+    agent_id TEXT DEFAULT 'intelligence-engine',
+    classification TEXT DEFAULT 'CUI',
+    scored_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bts_candidate ON bayesian_teaching_scores(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_bts_type ON bayesian_teaching_scores(candidate_type);
+CREATE INDEX IF NOT EXISTS idx_bts_context ON bayesian_teaching_scores(context_id);
+
+-- SmartEncoding dictionary (DeepFlow-inspired tag compression, D-BT-5)
+CREATE TABLE IF NOT EXISTS smart_encoding_dictionary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tag_value TEXT NOT NULL UNIQUE,
+    encoded_id INTEGER NOT NULL UNIQUE,
+    category TEXT CHECK(category IN (
+        'agent', 'status', 'operation', 'framework', 'classification', 'custom'
+    )),
+    usage_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- WORKFLOW DISCIPLINE ENGINE (Phase 66, D-WF-1 through D-WF-7)
+-- Adapts PAUL (Plan-Apply-Unify Loop) into LLM-agnostic tools
+-- ============================================================
+
+-- Workflow loops — PLAN → APPLY → UNIFY lifecycle
+CREATE TABLE IF NOT EXISTS workflow_loops (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    phase_name TEXT NOT NULL,
+    loop_type TEXT DEFAULT 'build' CHECK(loop_type IN (
+        'build', 'compliance', 'deploy', 'fix', 'research', 'custom'
+    )),
+    status TEXT DEFAULT 'planning' CHECK(status IN (
+        'planning', 'planned', 'applying', 'applied',
+        'unifying', 'closed', 'abandoned'
+    )),
+    plan_summary TEXT,
+    boundaries TEXT,
+    task_count INTEGER DEFAULT 0,
+    tasks_completed INTEGER DEFAULT 0,
+    acceptance_criteria_count INTEGER DEFAULT 0,
+    acceptance_pass_count INTEGER DEFAULT 0,
+    acceptance_fail_count INTEGER DEFAULT 0,
+    acceptance_skip_count INTEGER DEFAULT 0,
+    planned_at TEXT,
+    apply_started_at TEXT,
+    apply_completed_at TEXT,
+    unify_started_at TEXT,
+    closed_at TEXT,
+    created_by TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wl_project ON workflow_loops(project_id);
+CREATE INDEX IF NOT EXISTS idx_wl_status ON workflow_loops(status);
+
+-- Acceptance criteria per loop (Given/When/Then)
+-- Optional bdd_story_id links to safe_decomposition for traceability
+CREATE TABLE IF NOT EXISTS workflow_acceptance_criteria (
+    id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    criterion_number INTEGER NOT NULL,
+    given_text TEXT,
+    when_text TEXT,
+    then_text TEXT,
+    bdd_story_id TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN (
+        'pending', 'pass', 'fail', 'skip'
+    )),
+    evidence TEXT,
+    verified_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (loop_id) REFERENCES workflow_loops(id),
+    FOREIGN KEY (bdd_story_id) REFERENCES safe_decomposition(id)
+);
+CREATE INDEX IF NOT EXISTS idx_wac_loop ON workflow_acceptance_criteria(loop_id);
+
+-- Reconciliation records (UNIFY output — append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS workflow_reconciliations (
+    id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    planned_tasks INTEGER DEFAULT 0,
+    completed_tasks INTEGER DEFAULT 0,
+    deviations TEXT,
+    lessons_learned TEXT,
+    process_checks TEXT,
+    required_processes_invoked INTEGER DEFAULT 0,
+    required_processes_total INTEGER DEFAULT 0,
+    overall_result TEXT CHECK(overall_result IN (
+        'success', 'partial', 'failed'
+    )),
+    classification TEXT DEFAULT 'CUI',
+    reconciled_at TEXT NOT NULL,
+    FOREIGN KEY (loop_id) REFERENCES workflow_loops(id)
+);
+CREATE INDEX IF NOT EXISTS idx_wr_loop ON workflow_reconciliations(loop_id);
+
+-- Session handoffs (structured context transfer)
+-- chat_context_id links to the chat context where the conversation happened
+CREATE TABLE IF NOT EXISTS workflow_handoffs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    loop_id TEXT,
+    loop_status TEXT,
+    chat_context_id TEXT,
+    decisions_made TEXT,
+    blockers TEXT,
+    next_actions TEXT,
+    context_summary TEXT,
+    handoff_to TEXT,
+    created_by TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wh_project ON workflow_handoffs(project_id);
+
+-- ============================================================
+-- EVENT-SOURCED WORKFLOW REPLAY (NIST AU extension, D-REPLAY-1 through D-REPLAY-7)
+-- Deterministic ANVIL pipeline replay from immutable audit trail
+-- ============================================================
+
+-- Replay sessions — mutable status tracking (rows are updated on completion).
+-- Durable event log lives in audit_trail (workflow_replay_* event types).
+CREATE TABLE IF NOT EXISTS workflow_replay_sessions (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    project_id TEXT,
+    status TEXT NOT NULL DEFAULT 'running' CHECK(status IN (
+        'running', 'completed', 'failed'
+    )),
+    resume_step TEXT,
+    completed_steps_snapshot TEXT DEFAULT '[]',
+    total_steps INTEGER DEFAULT 0,
+    skipped_steps INTEGER DEFAULT 0,
+    replayed_steps INTEGER DEFAULT 0,
+    error_message TEXT,
+    triggered_by TEXT DEFAULT 'replay-engine',
+    classification TEXT DEFAULT 'CUI',
+    started_at TEXT NOT NULL,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wrs_workflow ON workflow_replay_sessions(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_wrs_project ON workflow_replay_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_wrs_status ON workflow_replay_sessions(status);
+
+-- ============================================================
+-- ENGINEERING REVIEW BOARD (Phase 67, D-RB-1 through D-RB-7)
+-- Continuous multi-persona code analysis daemon
+-- ============================================================
+
+-- Audit trail (append-only, NIST AU — D-RB-2)
+CREATE TABLE IF NOT EXISTS review_board_audit (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    reflex_name     TEXT,
+    risk_tier       TEXT,
+    details         TEXT,
+    success         INTEGER,
+    duration_ms     INTEGER,
+    metric_name     TEXT,
+    metric_value    REAL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rba_reflex ON review_board_audit(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_rba_created ON review_board_audit(created_at);
+
+-- Reflex state (allows UPDATE for scheduling/circuit breaker)
+CREATE TABLE IF NOT EXISTS review_board_reflex_state (
+    reflex_name             TEXT PRIMARY KEY,
+    enabled                 INTEGER NOT NULL DEFAULT 1,
+    last_run_at             TEXT,
+    next_run_at             TEXT,
+    consecutive_failures    INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open    INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs              INTEGER NOT NULL DEFAULT 0,
+    total_successes         INTEGER NOT NULL DEFAULT 0,
+    total_failures          INTEGER NOT NULL DEFAULT 0,
+    last_metric_value       REAL,
+    last_error              TEXT,
+    updated_at              TEXT NOT NULL
+);
+
+-- Findings (append-only, NIST AU — D-RB-2)
+CREATE TABLE IF NOT EXISTS review_board_findings (
+    id              TEXT PRIMARY KEY,
+    reflex_name     TEXT NOT NULL,
+    severity        TEXT NOT NULL CHECK(severity IN (
+        'critical', 'high', 'medium', 'low', 'info'
+    )),
+    category        TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    description     TEXT,
+    recommendation  TEXT,
+    evidence        TEXT,
+    confidence      REAL DEFAULT 0.0,
+    auto_fixable    INTEGER DEFAULT 0,
+    fix_applied     INTEGER DEFAULT 0,
+    sha256          TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rbf_reflex ON review_board_findings(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_rbf_severity ON review_board_findings(severity);
+CREATE INDEX IF NOT EXISTS idx_rbf_created ON review_board_findings(created_at);
+
+-- Remediation audit log (append-only, NIST AU — D-RB-10)
+CREATE TABLE IF NOT EXISTS review_board_remediation_log (
+    id              TEXT PRIMARY KEY,
+    finding_id      TEXT NOT NULL,
+    reflex_name     TEXT,
+    category        TEXT NOT NULL,
+    severity        TEXT,
+    confidence      REAL DEFAULT 0.0,
+    tier            TEXT NOT NULL CHECK(tier IN (
+        'auto_fix', 'suggest', 'escalate'
+    )),
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+        'pending', 'fixing', 'fixed', 'failed',
+        'suggested', 'escalated', 'skipped', 'verified'
+    )),
+    fix_description TEXT,
+    fix_result      TEXT,
+    verification    TEXT,
+    dry_run         INTEGER DEFAULT 0,
+    duration_ms     INTEGER,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rbrlog_finding ON review_board_remediation_log(finding_id);
+CREATE INDEX IF NOT EXISTS idx_rbrlog_status ON review_board_remediation_log(status);
+
+-- Health score history (append-only, D-RB-12)
+CREATE TABLE IF NOT EXISTS review_board_health_history (
+    id          TEXT PRIMARY KEY,
+    score       REAL NOT NULL,
+    grade       TEXT NOT NULL,
+    trend       TEXT NOT NULL DEFAULT 'stable',
+    breakdown   TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rbhh_created ON review_board_health_history(created_at);
+
+-- ============================================================
+-- AUTONOMY ENGINE (Phase 68, D-AE-1 through D-AE-12)
+-- Bayesian trust-graduated self-evolution
+-- ============================================================
+
+-- Trust state per action category — allows UPDATE (posterior evolves)
+CREATE TABLE IF NOT EXISTS autonomy_trust_state (
+    category            TEXT PRIMARY KEY,
+    alpha               REAL NOT NULL DEFAULT 2.0,
+    beta                REAL NOT NULL DEFAULT 8.0,
+    ceiling             REAL NOT NULL DEFAULT 1.0,
+    total_observations  INTEGER NOT NULL DEFAULT 0,
+    total_successes     INTEGER NOT NULL DEFAULT 0,
+    total_failures      INTEGER NOT NULL DEFAULT 0,
+    current_tier        TEXT DEFAULT 'observer',
+    last_updated        TEXT NOT NULL
+);
+
+-- Observations (append-only, NIST AU — D-AE-5)
+CREATE TABLE IF NOT EXISTS autonomy_observations (
+    id              TEXT PRIMARY KEY,
+    category        TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('success', 'failure')),
+    alpha_before    REAL,
+    beta_before     REAL,
+    alpha_after     REAL,
+    beta_after      REAL,
+    mean_before     REAL,
+    mean_after      REAL,
+    tier_before     TEXT,
+    tier_after      TEXT,
+    source          TEXT,
+    details         TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ao_category ON autonomy_observations(category);
+CREATE INDEX IF NOT EXISTS idx_ao_created ON autonomy_observations(created_at);
+
+-- Actions (append-only, NIST AU — D-AE-10)
+CREATE TABLE IF NOT EXISTS autonomy_actions (
+    id              TEXT PRIMARY KEY,
+    category        TEXT NOT NULL,
+    action_type     TEXT NOT NULL,
+    decision        TEXT NOT NULL CHECK(decision IN (
+        'approved', 'denied', 'explored', 'safety_blocked'
+    )),
+    trust_mean      REAL,
+    thompson_sample REAL,
+    tier_required   TEXT,
+    tier_current    TEXT,
+    details         TEXT,
+    coherence_passed INTEGER,
+    remediation_applied INTEGER,
+    outcome         TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_aa_category ON autonomy_actions(category);
+
+-- Behavior log (append-only, NIST AU — D-AE-12)
+CREATE TABLE IF NOT EXISTS autonomy_behavior_log (
+    id              TEXT PRIMARY KEY,
+    signal_type     TEXT NOT NULL,
+    finding_id      TEXT,
+    pr_url          TEXT,
+    alpha_delta     REAL DEFAULT 0.0,
+    beta_delta      REAL DEFAULT 0.0,
+    category        TEXT,
+    details         TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_abl_signal ON autonomy_behavior_log(signal_type);
+
+-- ============================================================
+-- Phase 67 — Bayesian Autoresearch (D-AR-1 through D-AR-10)
+-- ============================================================
+
+-- Experiment programs (reference data, allows UPDATE)
+CREATE TABLE IF NOT EXISTS experiment_programs (
+    id              TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL UNIQUE,
+    objective_metric TEXT NOT NULL,
+    objective_direction TEXT NOT NULL CHECK(objective_direction IN ('maximize', 'minimize')),
+    measurement_command TEXT NOT NULL,
+    metric_path     TEXT,
+    modifiable_paths TEXT,
+    forbidden_paths TEXT,
+    time_budget_seconds INTEGER NOT NULL DEFAULT 300,
+    keep_threshold  REAL NOT NULL DEFAULT 0.005,
+    category_order  TEXT,
+    categories      TEXT,
+    config          TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Experiment candidates (allows UPDATE for status transitions)
+CREATE TABLE IF NOT EXISTS experiment_candidates (
+    id              TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL,
+    hypothesis      TEXT NOT NULL,
+    category        TEXT,
+    modifications   TEXT,
+    source          TEXT DEFAULT 'manual' CHECK(source IN (
+        'manual', 'innovation', 'creative', 'research', 'genesis', 'llm_generated'
+    )),
+    signal_id       TEXT,
+    status          TEXT NOT NULL DEFAULT 'created' CHECK(status IN (
+        'created', 'scoring', 'selected', 'running', 'completed', 'discarded', 'failed', 'deduped'
+    )),
+    embedding       BLOB,
+    content_hash    TEXT,
+    info_gain_score REAL,
+    thompson_sample REAL,
+    estimated_impact TEXT CHECK(estimated_impact IN ('high', 'medium', 'low')),
+    risk_level      TEXT CHECK(risk_level IN ('high', 'medium', 'low')),
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ec_domain ON experiment_candidates(domain);
+CREATE INDEX IF NOT EXISTS idx_ec_status ON experiment_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_ec_hash ON experiment_candidates(content_hash);
+
+-- Experiment results (append-only, NIST AU-2 — D-AR-4)
+CREATE TABLE IF NOT EXISTS experiment_results (
+    id              TEXT PRIMARY KEY,
+    experiment_id   TEXT NOT NULL,
+    domain          TEXT NOT NULL,
+    hypothesis      TEXT NOT NULL,
+    category        TEXT,
+    pre_metric      REAL,
+    post_metric     REAL,
+    metric_delta    REAL,
+    improvement_pct REAL,
+    decision        TEXT NOT NULL CHECK(decision IN ('keep', 'discard', 'timeout', 'error')),
+    decision_rationale TEXT,
+    duration_ms     INTEGER,
+    git_branch      TEXT,
+    git_commit      TEXT,
+    tests_passed    INTEGER,
+    coherence_passed INTEGER,
+    files_modified  TEXT,
+    details         TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_er_domain ON experiment_results(domain);
+CREATE INDEX IF NOT EXISTS idx_er_decision ON experiment_results(decision);
+CREATE INDEX IF NOT EXISTS idx_er_created ON experiment_results(created_at);
+
+-- Experiment landscapes (allows UPDATE — posteriors evolve)
+CREATE TABLE IF NOT EXISTS experiment_landscapes (
+    id              TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    alpha           REAL NOT NULL DEFAULT 2.0,
+    beta_val        REAL NOT NULL DEFAULT 8.0,
+    total_experiments INTEGER NOT NULL DEFAULT 0,
+    total_kept      INTEGER NOT NULL DEFAULT 0,
+    total_discarded INTEGER NOT NULL DEFAULT 0,
+    best_improvement REAL DEFAULT 0.0,
+    cumulative_improvement REAL DEFAULT 0.0,
+    last_experiment_at TEXT,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(domain, category)
+);
+
+-- Bayesian experiment scores (append-only, NIST AU-2 — D-AR-4)
+CREATE TABLE IF NOT EXISTS bayesian_experiment_scores (
+    id              TEXT PRIMARY KEY,
+    candidate_id    TEXT NOT NULL,
+    domain          TEXT NOT NULL,
+    info_gain_score REAL NOT NULL,
+    dimensions      TEXT,
+    threshold_band  TEXT,
+    thompson_sample REAL,
+    prior_distribution TEXT,
+    selected        INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    scored_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bes_domain ON bayesian_experiment_scores(domain);
+CREATE INDEX IF NOT EXISTS idx_bes_candidate ON bayesian_experiment_scores(candidate_id);
+
+-- ============================================================
+-- REDACTION & DATA PROTECTION (Phase 70 — D-RDT-1)
+-- ============================================================
+
+-- Conversation-scoped real<->surrogate mapping (reversible anonymization)
+CREATE TABLE IF NOT EXISTS redaction_registry (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    real_hash TEXT NOT NULL,
+    surrogate TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    UNIQUE(session_id, entity_type, real_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_redaction_registry_session ON redaction_registry(session_id);
+CREATE INDEX IF NOT EXISTS idx_redaction_registry_expires ON redaction_registry(expires_at);
+
+-- redaction_audit: duplicate removed — canonical definition is at Phase 72, D-RDT-2 above
+-- (merged superset schema covers both router.py and anonymizer.py column sets)
+
+-- ============================================================
+-- ORACLE ENGINE — MULTI-LENS PREDICTION INTELLIGENCE
+-- ============================================================
+
+-- Individual predictions emitted by oracle lenses (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS oracle_predictions (
+    id              TEXT PRIMARY KEY,
+    lens_id         TEXT NOT NULL,
+    lens_name       TEXT NOT NULL,
+    subject_type    TEXT NOT NULL
+        CHECK(subject_type IN ('project','agent','pipeline','requirement','deployment','system')),
+    subject_id      TEXT NOT NULL,
+    prediction_type TEXT NOT NULL,
+    prediction_text TEXT NOT NULL,
+    confidence      REAL NOT NULL DEFAULT 0.0
+        CHECK(confidence >= 0.0 AND confidence <= 1.0),
+    severity        TEXT NOT NULL DEFAULT 'medium'
+        CHECK(severity IN ('critical','high','medium','low','info')),
+    horizon_days    INTEGER NOT NULL DEFAULT 7,
+    evidence_json   TEXT DEFAULT '{}',
+    scoring_weights TEXT DEFAULT '{}',
+    outcome         TEXT CHECK(outcome IN ('confirmed','refuted','expired','pending')),
+    outcome_at      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_lens ON oracle_predictions(lens_id);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_subject ON oracle_predictions(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_severity ON oracle_predictions(severity);
+CREATE INDEX IF NOT EXISTS idx_oracle_predictions_created ON oracle_predictions(created_at);
+
+-- Convergence events: when 2+ lenses agree on the same prediction (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS oracle_convergence_events (
+    id                  TEXT PRIMARY KEY,
+    convergence_type    TEXT NOT NULL
+        CHECK(convergence_type IN ('risk','opportunity','anomaly','trend','threshold_breach')),
+    subject_type        TEXT NOT NULL,
+    subject_id          TEXT NOT NULL,
+    lens_ids_json       TEXT NOT NULL,
+    lens_count          INTEGER NOT NULL DEFAULT 2,
+    consensus_score     REAL NOT NULL DEFAULT 0.0
+        CHECK(consensus_score >= 0.0 AND consensus_score <= 1.0),
+    severity            TEXT NOT NULL DEFAULT 'medium'
+        CHECK(severity IN ('critical','high','medium','low','info')),
+    summary             TEXT NOT NULL,
+    prediction_ids_json TEXT DEFAULT '[]',
+    recommended_action  TEXT,
+    action_taken        INTEGER NOT NULL DEFAULT 0,
+    action_notes        TEXT,
+    resolved_at         TEXT,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_type ON oracle_convergence_events(convergence_type);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_subject ON oracle_convergence_events(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_severity ON oracle_convergence_events(severity);
+CREATE INDEX IF NOT EXISTS idx_oracle_convergence_created ON oracle_convergence_events(created_at);
+
+-- Per-lens runtime state: scheduling, health, and scoring config
+CREATE TABLE IF NOT EXISTS oracle_lens_state (
+    lens_id             TEXT PRIMARY KEY,
+    lens_name           TEXT NOT NULL UNIQUE,
+    domain              TEXT NOT NULL
+        CHECK(domain IN ('technical_debt','security_risk','performance','compliance_risk','architecture_drift','delivery_risk')),
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    weight              REAL NOT NULL DEFAULT 1.0,
+    last_run_at         TEXT,
+    next_run_at         TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs          INTEGER NOT NULL DEFAULT 0,
+    total_predictions   INTEGER NOT NULL DEFAULT 0,
+    accuracy_rate       REAL DEFAULT NULL,
+    avg_confidence      REAL DEFAULT NULL,
+    config_json         TEXT DEFAULT '{}',
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_lens_domain ON oracle_lens_state(domain);
+CREATE INDEX IF NOT EXISTS idx_oracle_lens_enabled ON oracle_lens_state(enabled);
+
+-- Remediation proposals generated by Oracle RemediationLens (append-only, NIST AU)
+-- id is a deterministic hash from source_lens + subject_id
+CREATE TABLE IF NOT EXISTS oracle_remediation_proposals (
+    id                   TEXT PRIMARY KEY,
+    source_lens          TEXT NOT NULL,
+    source_prediction_id TEXT NOT NULL DEFAULT '',
+    subject_type         TEXT NOT NULL
+        CHECK(subject_type IN ('canvas','tool','pipeline','system')),
+    subject_id           TEXT NOT NULL,
+    title                TEXT NOT NULL,
+    severity             TEXT NOT NULL DEFAULT 'medium'
+        CHECK(severity IN ('critical','high','medium','low')),
+    current_score        REAL,
+    projected_score      REAL,
+    proposal_json        TEXT NOT NULL DEFAULT '[]',
+    impact_summary       TEXT NOT NULL DEFAULT '',
+    status               TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','approved','rejected','executed','failed','expired')),
+    reviewed_by          TEXT NOT NULL DEFAULT '',
+    reviewed_at          TEXT NOT NULL DEFAULT '',
+    review_notes         TEXT NOT NULL DEFAULT '',
+    execution_result     TEXT NOT NULL DEFAULT '{}',
+    executed_at          TEXT NOT NULL DEFAULT '',
+    expires_at           TEXT NOT NULL DEFAULT '',
+    classification       TEXT NOT NULL DEFAULT 'CUI',
+    created_at           TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_oracle_proposals_status ON oracle_remediation_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_oracle_proposals_subject ON oracle_remediation_proposals(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_oracle_proposals_created ON oracle_remediation_proposals(created_at);
+
+-- ============================================================
+-- CANVAS PROJECTS (Cross-Canvas Integration Layer)
+-- Phase: Cross-Canvas Integration
+-- Links a "Design Project" entity across all 7 canvases:
+--   IDC (infra), NDC (network), SDC (security), BDC (boundary),
+--   PDC (pipeline), ODC (observability), DDC (data)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_projects (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    links_json      TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_projects_name ON canvas_projects(name);
+CREATE INDEX IF NOT EXISTS idx_canvas_projects_updated ON canvas_projects(updated_at);
+
+-- ============================================================
+-- CANVAS KG BUILD LOG (Append-only — NIST AU)
+-- Phase: Cross-Canvas KG Incremental Updates
+-- Records every targeted or full KG rebuild triggered by a
+-- canvas design save or a manual CLI rebuild.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_kg_build_log (
+    build_id        TEXT PRIMARY KEY,
+    canvas          TEXT NOT NULL,
+    design_id       TEXT NOT NULL,
+    nodes_upserted  INTEGER NOT NULL DEFAULT 0,
+    edges_upserted  INTEGER NOT NULL DEFAULT 0,
+    duration_ms     INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ckg_build_log_canvas
+    ON canvas_kg_build_log(canvas);
+CREATE INDEX IF NOT EXISTS idx_ckg_build_log_design
+    ON canvas_kg_build_log(design_id);
+
+-- ============================================================
+-- CANVAS KG NODES — Unified knowledge graph across all canvases
+-- Phase: Cross-Canvas Integration
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
+    id              TEXT PRIMARY KEY,
+    canvas          TEXT NOT NULL,
+    design_id       TEXT NOT NULL,
+    node_id         TEXT NOT NULL,
+    node_type       TEXT,
+    label           TEXT,
+    metadata_json   TEXT DEFAULT '{}',
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ckg_nodes_canvas
+    ON canvas_kg_nodes(canvas, design_id);
+
+-- ============================================================
+-- CANVAS KG EDGES — Unified knowledge graph edges across canvases
+-- Phase: Cross-Canvas Integration
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_kg_edges (
+    id              TEXT PRIMARY KEY,
+    canvas          TEXT NOT NULL,
+    design_id       TEXT NOT NULL,
+    source_id       TEXT NOT NULL,
+    target_id       TEXT NOT NULL,
+    edge_type       TEXT,
+    metadata_json   TEXT DEFAULT '{}',
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ckg_edges_canvas
+    ON canvas_kg_edges(canvas, design_id);
 """
 
+
+# Phase 64: RAG columns on projects table
+RAG_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN rag_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN rag_chunk_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN rag_last_ingestion TIMESTAMP",
+]
 
 MBSE_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN sysml_model_path TEXT",
@@ -5709,6 +9900,14 @@ CPMP_ALTER_SQL = [
     "ALTER TABLE customer_deliveries ADD COLUMN contract_id TEXT",
 ]
 
+# Phase 64 Extension: Fine-Tuning columns (D-FT-1)
+FINETUNE_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN finetune_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN finetune_dataset_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN finetune_active_model_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN finetune_last_training TIMESTAMP",
+]
+
 
 def _has_migration_system(path):
     """Check if the database is managed by the migration framework (D150)."""
@@ -5717,9 +9916,7 @@ def _has_migration_system(path):
         return False
     try:
         conn = sqlite3.connect(str(path))
-        c = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
-        )
+        c = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
         has_table = c.fetchone() is not None
         conn.close()
         return has_table
@@ -5865,6 +10062,18 @@ def init_db(db_path=None):
             pass
     # Phase 60: CPMP — link proposals/deliveries to contracts (D-CPMP-9)
     for sql in CPMP_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 64 Extension: Fine-Tuning columns (D-FT-1)
+    for sql in FINETUNE_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 64: RAG Subsystem columns (D-RAG-1)
+    for sql in RAG_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

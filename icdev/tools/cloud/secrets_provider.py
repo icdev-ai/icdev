@@ -7,7 +7,6 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 Each implementation ~40-60 lines with try/except ImportError.
 """
 
-import json
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -48,6 +47,7 @@ class SecretsProvider(ABC):
 # ============================================================
 try:
     import boto3
+
     _HAS_BOTO3 = True
 except ImportError:
     _HAS_BOTO3 = False
@@ -129,6 +129,7 @@ class AWSSecretsProvider(SecretsProvider):
 try:
     from azure.keyvault.secrets import SecretClient
     from azure.identity import DefaultAzureCredential
+
     _HAS_AZURE = True
 except ImportError:
     _HAS_AZURE = False
@@ -205,6 +206,7 @@ class AzureSecretsProvider(SecretsProvider):
 # ============================================================
 try:
     from google.cloud import secretmanager
+
     _HAS_GCP = True
 except ImportError:
     _HAS_GCP = False
@@ -245,15 +247,12 @@ class GCPSecretsProvider(SecretsProvider):
             parent = f"projects/{self._project_id}"
             try:
                 client.create_secret(
-                    request={"parent": parent, "secret_id": secret_name,
-                             "secret": {"replication": {"automatic": {}}}}
+                    request={"parent": parent, "secret_id": secret_name, "secret": {"replication": {"automatic": {}}}}
                 )
             except Exception:
                 pass  # Secret may already exist
             name = f"projects/{self._project_id}/secrets/{secret_name}"
-            client.add_secret_version(
-                request={"parent": name, "payload": {"data": secret_value.encode("utf-8")}}
-            )
+            client.add_secret_version(request={"parent": name, "payload": {"data": secret_value.encode("utf-8")}})
             return True
         except Exception:
             return False
@@ -296,6 +295,7 @@ class GCPSecretsProvider(SecretsProvider):
 # ============================================================
 try:
     import oci
+
     _HAS_OCI = True
 except ImportError:
     _HAS_OCI = False
@@ -342,6 +342,7 @@ class OCISecretsProvider(SecretsProvider):
 try:
     from ibm_platform_services import SecretsManagerV2
     from ibm_cloud_sdk_core.authenticators import IAMAuthenticator as _IBMSecretsAuth
+
     _HAS_IBM_SECRETS = True
 except ImportError:
     _HAS_IBM_SECRETS = False
@@ -350,8 +351,7 @@ except ImportError:
 class IBMSecretsProvider(SecretsProvider):
     """IBM Cloud Secrets Manager implementation (D237)."""
 
-    def __init__(self, api_key: str = "", region: str = "us-south",
-                 instance_id: str = ""):
+    def __init__(self, api_key: str = "", region: str = "us-south", instance_id: str = ""):
         self._api_key = api_key or os.environ.get("IBM_CLOUD_API_KEY", "")
         self._region = region
         self._instance_id = instance_id or os.environ.get("IBM_SECRETS_MANAGER_ID", "")
@@ -365,9 +365,7 @@ class IBMSecretsProvider(SecretsProvider):
         if self._client is None and _HAS_IBM_SECRETS and self._api_key:
             authenticator = _IBMSecretsAuth(apikey=self._api_key)
             self._client = SecretsManagerV2(authenticator=authenticator)
-            self._client.set_service_url(
-                f"https://{self._instance_id}.{self._region}.secrets-manager.appdomain.cloud"
-            )
+            self._client.set_service_url(f"https://{self._instance_id}.{self._region}.secrets-manager.appdomain.cloud")
         return self._client
 
     def get_secret(self, secret_name: str) -> Optional[str]:
@@ -385,11 +383,13 @@ class IBMSecretsProvider(SecretsProvider):
         if not client:
             return False
         try:
-            client.create_secret(secret_prototype={
-                "secret_type": "arbitrary",
-                "name": secret_name,
-                "payload": {"data": secret_value},
-            })
+            client.create_secret(
+                secret_prototype={
+                    "secret_type": "arbitrary",
+                    "name": secret_name,
+                    "payload": {"data": secret_value},
+                }
+            )
             return True
         except Exception:
             return False

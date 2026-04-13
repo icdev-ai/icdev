@@ -19,18 +19,17 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
-from icdev._paths import get_project_root
+from typing import Dict, Optional
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -124,7 +123,7 @@ def assess_fairness(
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         row = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if row and row["cnt"] > 0:
@@ -226,12 +225,14 @@ def assess_fairness(
 
             if status == "satisfied":
                 satisfied_count += 1
-            dimension_results.append({
-                "id": dim["id"],
-                "title": dim["title"],
-                "status": status,
-                "evidence": evidence,
-            })
+            dimension_results.append(
+                {
+                    "id": dim["id"],
+                    "title": dim["title"],
+                    "status": status,
+                    "evidence": evidence,
+                }
+            )
 
         total = len(FAIRNESS_DIMENSIONS)
         overall_score = round(satisfied_count / total * 100, 1) if total > 0 else 0

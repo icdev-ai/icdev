@@ -22,20 +22,19 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
-from icdev._paths import get_project_root
+from typing import Dict
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 VALID_RISK_LEVELS = ("minimal_risk", "high_impact", "safety_impacting")
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -91,9 +90,17 @@ def register_ai_component(
                 appeal_mechanism, last_assessed, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                project_id, name, purpose, risk_level, classification,
-                deployment_status, responsible_official, oversight_role,
-                appeal_mechanism, now, now,
+                project_id,
+                name,
+                purpose,
+                risk_level,
+                classification,
+                deployment_status,
+                responsible_official,
+                oversight_role,
+                appeal_mechanism,
+                now,
+                now,
             ),
         )
         conn.commit()
@@ -105,7 +112,8 @@ def register_ai_component(
                    (project_id, event_type, actor, action, details, classification)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id, "ai_inventory_registered",
+                    project_id,
+                    "ai_inventory_registered",
                     "icdev-compliance-engine",
                     f"Registered AI component: {name}",
                     json.dumps({"name": name, "risk_level": risk_level}),
@@ -209,7 +217,10 @@ def main():
                 print("ERROR: --name required for registration", file=sys.stderr)
                 sys.exit(1)
             result = register_ai_component(
-                args.project_id, args.name, args.purpose, args.risk_level,
+                args.project_id,
+                args.name,
+                args.purpose,
+                args.risk_level,
                 responsible_official=args.responsible_official,
                 oversight_role=args.oversight_role,
                 appeal_mechanism=args.appeal_mechanism,

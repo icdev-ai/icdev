@@ -22,17 +22,15 @@ Usage:
     python tools/compliance/nist_ai_600_1_assessor.py --project-id proj-123 --json
 """
 
-import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
-from icdev._paths import get_project_root
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from base_assessor import BaseAssessor
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -43,7 +41,9 @@ class NISTAI6001Assessor(BaseAssessor):
     CATALOG_FILENAME = "nist_ai_600_1_genai.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """NIST AI 600-1 GenAI Profile automated checks.
 
@@ -63,8 +63,7 @@ class NISTAI6001Assessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = sqlite3.connect(str(self.db_path))
-                conn.row_factory = sqlite3.Row
+                conn = get_connection(db_path=str(self._db_path))
                 project_id = project.get("id", "")
 
                 # GAI-1-1: Confabulation detection
@@ -153,8 +152,9 @@ class NISTAI6001Assessor(BaseAssessor):
             for py_file in project_path.rglob("*.py"):
                 try:
                     content = py_file.read_text(encoding="utf-8", errors="ignore").lower()
-                    if ("pii" in content or "ssn" in content or "classification_leak" in content) \
-                       and ("detect" in content or "screen" in content or "valid" in content):
+                    if ("pii" in content or "ssn" in content or "classification_leak" in content) and (
+                        "detect" in content or "screen" in content or "valid" in content
+                    ):
                         results["GAI-2-2"] = "satisfied"
                         break
                 except Exception:
@@ -174,8 +174,9 @@ class NISTAI6001Assessor(BaseAssessor):
             for f in project_path.rglob("*.yaml"):
                 try:
                     content = f.read_text(encoding="utf-8", errors="ignore").lower()
-                    if ("rbac" in content or "authorization" in content) \
-                       and ("tool" in content or "mcp" in content or "agent" in content):
+                    if ("rbac" in content or "authorization" in content) and (
+                        "tool" in content or "mcp" in content or "agent" in content
+                    ):
                         results["GAI-5-2"] = "satisfied"
                         break
                 except Exception:

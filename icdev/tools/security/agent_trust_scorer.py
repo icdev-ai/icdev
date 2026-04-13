@@ -30,12 +30,12 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import yaml
-from icdev._paths import get_project_root
+from tools.db.storage import get_connection
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "owasp_agentic_config.yaml"
 
@@ -92,12 +92,11 @@ class AgentTrustScorer:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
 
             # Factor 1: Hard vetoes (agent_vetoes table)
             hard_vetoes = self._count_events(
-                conn, "agent_vetoes", "vetoed_agent_id", agent_id,
-                "veto_type = 'hard'", cutoff
+                conn, "agent_vetoes", "vetoed_agent_id", agent_id, "veto_type = 'hard'", cutoff
             )
             if hard_vetoes > 0:
                 decay = hard_vetoes * self._decay.get("veto_hard", -0.15)
@@ -106,8 +105,7 @@ class AgentTrustScorer:
 
             # Factor 2: Soft vetoes
             soft_vetoes = self._count_events(
-                conn, "agent_vetoes", "vetoed_agent_id", agent_id,
-                "veto_type = 'soft'", cutoff
+                conn, "agent_vetoes", "vetoed_agent_id", agent_id, "veto_type = 'soft'", cutoff
             )
             if soft_vetoes > 0:
                 decay = soft_vetoes * self._decay.get("veto_soft", -0.05)
@@ -116,12 +114,10 @@ class AgentTrustScorer:
 
             # Factor 3: Tool chain violations
             chain_critical = self._count_events(
-                conn, "tool_chain_events", "agent_id", agent_id,
-                "severity = 'critical'", cutoff
+                conn, "tool_chain_events", "agent_id", agent_id, "severity = 'critical'", cutoff
             )
             chain_high = self._count_events(
-                conn, "tool_chain_events", "agent_id", agent_id,
-                "severity = 'high'", cutoff
+                conn, "tool_chain_events", "agent_id", agent_id, "severity = 'high'", cutoff
             )
             chain_count = chain_critical + chain_high
             if chain_count > 0:
@@ -130,12 +126,13 @@ class AgentTrustScorer:
                 total_decay += decay
 
             # Factor 4: Output violations by severity
-            for sev, key in [("critical", "output_violation_critical"),
-                             ("high", "output_violation_high"),
-                             ("medium", "output_violation_medium")]:
+            for sev, key in [
+                ("critical", "output_violation_critical"),
+                ("high", "output_violation_high"),
+                ("medium", "output_violation_medium"),
+            ]:
                 output_count = self._count_events(
-                    conn, "agent_output_violations", "agent_id", agent_id,
-                    f"severity = '{sev}'", cutoff
+                    conn, "agent_output_violations", "agent_id", agent_id, f"severity = '{sev}'", cutoff
                 )
                 if output_count > 0:
                     decay = output_count * self._decay.get(key, -0.05)
@@ -166,10 +163,9 @@ class AgentTrustScorer:
         if not self._db_path.exists():
             return None
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             row = conn.execute(
-                "SELECT trust_score FROM agent_trust_scores "
-                "WHERE agent_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT trust_score FROM agent_trust_scores WHERE agent_id = ? ORDER BY created_at DESC LIMIT 1",
                 (agent_id,),
             ).fetchone()
             conn.close()
@@ -205,25 +201,40 @@ class AgentTrustScorer:
         level = self.get_trust_level(score)
 
         if level == "normal":
-            return {"allowed": True, "trust_level": level, "trust_score": score,
-                    "reason": "Agent has normal trust — autonomous actions permitted"}
+            return {
+                "allowed": True,
+                "trust_level": level,
+                "trust_score": score,
+                "reason": "Agent has normal trust — autonomous actions permitted",
+            }
         elif level == "degraded":
-            return {"allowed": action_type != "autonomous", "trust_level": level,
-                    "trust_score": score,
-                    "reason": "Agent trust degraded — HITL confirmation required"}
+            return {
+                "allowed": action_type != "autonomous",
+                "trust_level": level,
+                "trust_score": score,
+                "reason": "Agent trust degraded — HITL confirmation required",
+            }
         elif level == "untrusted":
-            return {"allowed": False, "trust_level": level, "trust_score": score,
-                    "reason": "Agent untrusted — autonomous actions blocked"}
+            return {
+                "allowed": False,
+                "trust_level": level,
+                "trust_score": score,
+                "reason": "Agent untrusted — autonomous actions blocked",
+            }
         else:
-            return {"allowed": False, "trust_level": level, "trust_score": score,
-                    "reason": "Agent trust below minimum — all actions blocked"}
+            return {
+                "allowed": False,
+                "trust_level": level,
+                "trust_score": score,
+                "reason": "Agent trust below minimum — all actions blocked",
+            }
 
     def get_score_history(self, agent_id: str, limit: int = 20) -> List[Dict]:
         """Get recent trust score history for an agent."""
         if not self._db_path.exists():
             return []
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
                 "SELECT trust_score, previous_score, score_delta, factor_json, "
                 "trigger_event, created_at FROM agent_trust_scores "
@@ -250,7 +261,7 @@ class AgentTrustScorer:
         if not self._db_path.exists():
             return []
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
                 "SELECT agent_id, trust_score, created_at FROM agent_trust_scores "
                 "WHERE (agent_id, created_at) IN ("
@@ -288,7 +299,7 @@ class AgentTrustScorer:
             return result
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             untrusted_threshold = self._thresholds.get("untrusted", 0.30)
 
             # Check for any agent below untrusted threshold
@@ -299,7 +310,7 @@ class AgentTrustScorer:
                 params = [project_id]
 
             rows = conn.execute(
-                f"SELECT agent_id, trust_score FROM agent_trust_scores "
+                f"SELECT agent_id, trust_score FROM agent_trust_scores "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE {where} AND (agent_id, created_at) IN ("
                 f"  SELECT agent_id, MAX(created_at) FROM agent_trust_scores "
                 f"  WHERE {where} GROUP BY agent_id"
@@ -314,9 +325,7 @@ class AgentTrustScorer:
                         f"Agent '{agent_id}' trust score {score:.2f} below untrusted threshold {untrusted_threshold}"
                     )
                 elif score < self._thresholds.get("degraded", 0.50):
-                    result["warnings"].append(
-                        f"Agent '{agent_id}' trust score {score:.2f} in degraded state"
-                    )
+                    result["warnings"].append(f"Agent '{agent_id}' trust score {score:.2f} in degraded state")
 
             conn.close()
         except Exception as e:
@@ -325,13 +334,18 @@ class AgentTrustScorer:
         return result
 
     def _count_events(
-        self, conn: sqlite3.Connection, table: str, agent_col: str,
-        agent_id: str, condition: str, cutoff: str,
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        agent_col: str,
+        agent_id: str,
+        condition: str,
+        cutoff: str,
     ) -> int:
         """Count events in a table for an agent since cutoff."""
         try:
             row = conn.execute(
-                f"SELECT COUNT(*) FROM {table} "
+                f"SELECT COUNT(*) FROM {table} "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE {agent_col} = ? AND {condition} AND created_at >= ?",
                 (agent_id, cutoff),
             ).fetchone()
@@ -340,8 +354,12 @@ class AgentTrustScorer:
             return 0
 
     def _store_score(
-        self, agent_id: str, score: float, previous: float,
-        factors: Dict, project_id: Optional[str],
+        self,
+        agent_id: str,
+        score: float,
+        previous: float,
+        factors: Dict,
+        project_id: Optional[str],
     ) -> Optional[str]:
         """Store trust score (append-only, D6)."""
         if not self._db_path.exists():
@@ -357,16 +375,21 @@ class AgentTrustScorer:
             trigger = "scheduled_check"
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO agent_trust_scores
                    (id, agent_id, project_id, trust_score, previous_score,
                     score_delta, factor_json, trigger_event, classification, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
                 (
-                    entry_id, agent_id, project_id,
-                    round(score, 6), round(previous, 6), delta,
-                    json.dumps(factors), trigger,
+                    entry_id,
+                    agent_id,
+                    project_id,
+                    round(score, 6),
+                    round(previous, 6),
+                    delta,
+                    json.dumps(factors),
+                    trigger,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -377,8 +400,12 @@ class AgentTrustScorer:
             return None
 
     def _build_result(
-        self, agent_id: str, score: float, previous: float,
-        factors: Dict, project_id: Optional[str],
+        self,
+        agent_id: str,
+        score: float,
+        previous: float,
+        factors: Dict,
+        project_id: Optional[str],
     ) -> Dict:
         """Build standardized result dict."""
         level = self.get_trust_level(score)
@@ -395,9 +422,7 @@ class AgentTrustScorer:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Agent Trust Scorer — dynamic trust scoring (D260)"
-    )
+    parser = argparse.ArgumentParser(description="Agent Trust Scorer — dynamic trust scoring (D260)")
     parser.add_argument("--score", action="store_true", help="Compute trust score")
     parser.add_argument("--check", action="store_true", help="Check agent access eligibility")
     parser.add_argument("--history", action="store_true", help="Show score history")

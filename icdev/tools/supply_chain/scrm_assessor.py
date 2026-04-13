@@ -20,25 +20,87 @@ CLI:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 # Country risk tiers for provenance scoring
 FIVE_EYES = {"US", "USA", "GB", "GBR", "UK", "CA", "CAN", "AU", "AUS", "NZ", "NZL"}
-ALLIED = {"DE", "DEU", "FR", "FRA", "JP", "JPN", "KR", "KOR", "IL", "ISR",
-          "IT", "ITA", "NL", "NLD", "NO", "NOR", "DK", "DNK", "SE", "SWE",
-          "FI", "FIN", "ES", "ESP", "PL", "POL", "CZ", "CZE", "BE", "BEL",
-          "PT", "PRT", "AT", "AUT", "IE", "IRL", "LU", "LUX", "EE", "EST",
-          "LV", "LVA", "LT", "LTU", "TW", "TWN", "SG", "SGP"}
-ADVERSARY = {"CN", "CHN", "RU", "RUS", "IR", "IRN", "KP", "PRK", "CU", "CUB",
-             "SY", "SYR", "VE", "VEN", "BY", "BLR", "MM", "MMR"}
+ALLIED = {
+    "DE",
+    "DEU",
+    "FR",
+    "FRA",
+    "JP",
+    "JPN",
+    "KR",
+    "KOR",
+    "IL",
+    "ISR",
+    "IT",
+    "ITA",
+    "NL",
+    "NLD",
+    "NO",
+    "NOR",
+    "DK",
+    "DNK",
+    "SE",
+    "SWE",
+    "FI",
+    "FIN",
+    "ES",
+    "ESP",
+    "PL",
+    "POL",
+    "CZ",
+    "CZE",
+    "BE",
+    "BEL",
+    "PT",
+    "PRT",
+    "AT",
+    "AUT",
+    "IE",
+    "IRL",
+    "LU",
+    "LUX",
+    "EE",
+    "EST",
+    "LV",
+    "LVA",
+    "LT",
+    "LTU",
+    "TW",
+    "TWN",
+    "SG",
+    "SGP",
+}
+ADVERSARY = {
+    "CN",
+    "CHN",
+    "RU",
+    "RUS",
+    "IR",
+    "IRN",
+    "KP",
+    "PRK",
+    "CU",
+    "CUB",
+    "SY",
+    "SYR",
+    "VE",
+    "VEN",
+    "BY",
+    "BLR",
+    "MM",
+    "MMR",
+}
 
 # Dimension weights for overall score (sum = 1.0)
 WEIGHTS = {
@@ -65,16 +127,13 @@ NIST_161_CONTROLS = {
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Return a sqlite3 connection with Row factory."""
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -86,9 +145,14 @@ def _log_audit(conn, project_id, event_type, action, details):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (project_id, event_type, "icdev-supply-chain-agent", action,
-             json.dumps(details) if isinstance(details, dict) else str(details),
-             "CUI"),
+            (
+                project_id,
+                event_type,
+                "icdev-supply-chain-agent",
+                action,
+                json.dumps(details) if isinstance(details, dict) else str(details),
+                "CUI",
+            ),
         )
         conn.commit()
     except Exception as exc:
@@ -98,6 +162,7 @@ def _log_audit(conn, project_id, event_type, action, details):
 # ---------------------------------------------------------------------------
 # Scoring functions
 # ---------------------------------------------------------------------------
+
 
 def _score_provenance(country_of_origin):
     """Score based on country of origin risk (0-10, higher = safer).
@@ -175,6 +240,7 @@ def _score_dependency(conn, project_id, vendor_id):
 # Core functions
 # ---------------------------------------------------------------------------
 
+
 def assess_vendor(project_id, vendor_id, db_path=None):
     """Perform a NIST 800-161 SCRM assessment on a single vendor.
 
@@ -193,17 +259,16 @@ def assess_vendor(project_id, vendor_id, db_path=None):
             (vendor_id, project_id),
         ).fetchone()
         if not row:
-            raise ValueError(
-                f"Vendor '{vendor_id}' not found in project '{project_id}'.")
+            raise ValueError(f"Vendor '{vendor_id}' not found in project '{project_id}'.")
         vendor = dict(row)
 
         # Compute dimension scores
         provenance = _score_provenance(vendor.get("country_of_origin"))
         integrity = _score_integrity(vendor.get("section_889_status"))
         dependency = _score_dependency(conn, project_id, vendor_id)
-        substitutability = 5.0   # placeholder: requires manual assessment
-        access_control = 5.0     # placeholder: requires access review data
-        incident_history = 7.0   # placeholder: requires incident feed
+        substitutability = 5.0  # placeholder: requires manual assessment
+        access_control = 5.0  # placeholder: requires access review data
+        incident_history = 7.0  # placeholder: requires incident feed
 
         scores = {
             "provenance": provenance,
@@ -229,10 +294,8 @@ def assess_vendor(project_id, vendor_id, db_path=None):
             risk_tier = "critical"
 
         # Map to likelihood/impact for DB storage
-        likelihood_map = {"low": "very_low", "moderate": "low",
-                          "high": "moderate", "critical": "very_high"}
-        impact_map = {"low": "low", "moderate": "moderate",
-                      "high": "high", "critical": "very_high"}
+        likelihood_map = {"low": "very_low", "moderate": "low", "high": "moderate", "critical": "very_high"}
+        impact_map = {"low": "low", "moderate": "moderate", "high": "high", "critical": "very_high"}
         likelihood = likelihood_map.get(risk_tier, "moderate")
         impact = impact_map.get(risk_tier, "moderate")
 
@@ -248,27 +311,29 @@ def assess_vendor(project_id, vendor_id, db_path=None):
         if provenance < 4.0:
             recommendations.append(
                 "CRITICAL: Vendor originates from adversary nation. "
-                "Evaluate alternatives immediately per EO 13873 / Section 889.")
+                "Evaluate alternatives immediately per EO 13873 / Section 889."
+            )
         elif provenance < 7.0:
             recommendations.append(
                 "Vendor provenance is non-allied. Conduct enhanced due diligence "
-                "and consider supply chain diversification.")
+                "and consider supply chain diversification."
+            )
         if integrity < 5.0:
             recommendations.append(
-                "Section 889 non-compliance detected. Initiate remediation or "
-                "vendor replacement per NDAA Section 889.")
+                "Section 889 non-compliance detected. Initiate remediation or vendor replacement per NDAA Section 889."
+            )
         if dependency < 5.0:
             recommendations.append(
-                "High concentration risk: many components depend on this vendor. "
-                "Identify alternate suppliers.")
+                "High concentration risk: many components depend on this vendor. Identify alternate suppliers."
+            )
         if overall < 4.0:
             recommendations.append(
-                "Overall SCRM risk is CRITICAL. Escalate to ISSO/AO for "
-                "risk acceptance or vendor replacement decision.")
+                "Overall SCRM risk is CRITICAL. Escalate to ISSO/AO for risk acceptance or vendor replacement decision."
+            )
         if not recommendations:
             recommendations.append(
-                "Vendor risk is within acceptable thresholds. "
-                "Continue periodic reassessment per review cadence.")
+                "Vendor risk is within acceptable thresholds. Continue periodic reassessment per review cadence."
+            )
 
         # Determine risk category for DB
         risk_category = None
@@ -293,11 +358,22 @@ def assess_vendor(project_id, vendor_id, db_path=None):
                 mitigations, residual_risk, nist_161_controls,
                 assessed_by, assessed_at, next_assessment)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (assessment_id, project_id, vendor_id, "vendor",
-             risk_category, overall, likelihood, impact,
-             mitigations, risk_tier, json.dumps(controls_list),
-             "icdev-supply-chain-agent", now,
-             None),
+            (
+                assessment_id,
+                project_id,
+                vendor_id,
+                "vendor",
+                risk_category,
+                overall,
+                likelihood,
+                impact,
+                mitigations,
+                risk_tier,
+                json.dumps(controls_list),
+                "icdev-supply-chain-agent",
+                now,
+                None,
+            ),
         )
         conn.commit()
 
@@ -310,10 +386,13 @@ def assess_vendor(project_id, vendor_id, db_path=None):
         )
         conn.commit()
 
-        _log_audit(conn, project_id, "scrm_assessed",
-                   f"SCRM assessment for vendor {vendor.get('vendor_name', vendor_id)}",
-                   {"assessment_id": assessment_id, "overall_score": overall,
-                    "risk_tier": risk_tier})
+        _log_audit(
+            conn,
+            project_id,
+            "scrm_assessed",
+            f"SCRM assessment for vendor {vendor.get('vendor_name', vendor_id)}",
+            {"assessment_id": assessment_id, "overall_score": overall, "risk_tier": risk_tier},
+        )
 
         return {
             "assessment_id": assessment_id,
@@ -365,8 +444,7 @@ def assess_project(project_id, db_path=None):
             result = assess_vendor(project_id, vendor["id"], db_path)
             assessments.append(result)
         except Exception as exc:
-            print(f"Warning: could not assess vendor {vendor.get('vendor_name')}: "
-                  f"{exc}", file=sys.stderr)
+            print(f"Warning: could not assess vendor {vendor.get('vendor_name')}: {exc}", file=sys.stderr)
 
     # Aggregate
     dist = {"low": 0, "moderate": 0, "high": 0, "critical": 0}
@@ -378,21 +456,20 @@ def assess_project(project_id, db_path=None):
 
     # Sort by risk (worst first)
     tier_order = {"critical": 0, "high": 1, "moderate": 2, "low": 3}
-    top_risks = sorted(assessments,
-                       key=lambda x: (tier_order.get(x.get("risk_tier"), 9),
-                                      -x.get("overall_score", 0)))
+    top_risks = sorted(assessments, key=lambda x: (tier_order.get(x.get("risk_tier"), 9), -x.get("overall_score", 0)))
 
     # Limit top risks to top 10
     top_risks_summary = []
     for a in top_risks[:10]:
-        top_risks_summary.append({
-            "vendor_id": a["vendor_id"],
-            "vendor_name": a.get("vendor_name"),
-            "risk_tier": a["risk_tier"],
-            "overall_score": a["overall_score"],
-            "top_recommendation": (a.get("recommendations", ["N/A"])[0]
-                                   if a.get("recommendations") else "N/A"),
-        })
+        top_risks_summary.append(
+            {
+                "vendor_id": a["vendor_id"],
+                "vendor_name": a.get("vendor_name"),
+                "risk_tier": a["risk_tier"],
+                "overall_score": a["overall_score"],
+                "top_recommendation": (a.get("recommendations", ["N/A"])[0] if a.get("recommendations") else "N/A"),
+            }
+        )
 
     return {
         "project_id": project_id,
@@ -441,9 +518,13 @@ def get_prohibited_vendors(project_id, db_path=None):
         }
 
         if prohibited:
-            _log_audit(conn, project_id, "supply_chain_risk_escalated",
-                       f"Found {len(prohibited)} prohibited vendor(s)",
-                       {"vendor_ids": [v["id"] for v in prohibited]})
+            _log_audit(
+                conn,
+                project_id,
+                "supply_chain_risk_escalated",
+                f"Found {len(prohibited)} prohibited vendor(s)",
+                {"vendor_ids": [v["id"] for v in prohibited]},
+            )
 
         return result
     finally:
@@ -454,19 +535,15 @@ def get_prohibited_vendors(project_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="NIST 800-161 SCRM Assessor (RICOAS)")
-    parser.add_argument("--project-id", required=True,
-                        help="Project identifier")
+    parser = argparse.ArgumentParser(description="NIST 800-161 SCRM Assessor (RICOAS)")
+    parser.add_argument("--project-id", required=True, help="Project identifier")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
-    parser.add_argument("--vendor-id",
-                        help="Assess a specific vendor")
-    parser.add_argument("--aggregate", action="store_true",
-                        help="Aggregate SCRM across all vendors")
-    parser.add_argument("--prohibited", action="store_true",
-                        help="Find Section 889 prohibited vendors")
+    parser.add_argument("--vendor-id", help="Assess a specific vendor")
+    parser.add_argument("--aggregate", action="store_true", help="Aggregate SCRM across all vendors")
+    parser.add_argument("--prohibited", action="store_true", help="Find Section 889 prohibited vendors")
 
     args = parser.parse_args()
 
@@ -526,15 +603,15 @@ def _print_human(data):
         if data.get("top_risks"):
             print("  Top Risks:")
             for r in data["top_risks"]:
-                print(f"    [{r['risk_tier'].upper()}] {r.get('vendor_name', r['vendor_id'])} "
-                      f"(score={r['overall_score']})")
+                print(
+                    f"    [{r['risk_tier'].upper()}] {r.get('vendor_name', r['vendor_id'])} "
+                    f"(score={r['overall_score']})"
+                )
 
     elif "prohibited_vendors" in data:
-        print(f"Prohibited Vendors for {data['project_id']}: "
-              f"{data['prohibited_count']}")
+        print(f"Prohibited Vendors for {data['project_id']}: {data['prohibited_count']}")
         for v in data["prohibited_vendors"]:
-            print(f"  - {v.get('vendor_name', v['id'])} "
-                  f"({v.get('country_of_origin', '?')})")
+            print(f"  - {v.get('vendor_name', v['id'])} ({v.get('country_of_origin', '?')})")
             print(f"    {v.get('remediation_guidance', '')}")
 
     else:

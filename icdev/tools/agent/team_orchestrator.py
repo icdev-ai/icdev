@@ -17,14 +17,14 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from graphlib import TopologicalSorter
 from pathlib import Path
 from typing import Dict, List, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -41,6 +41,7 @@ logger = logging.getLogger("icdev.team_orchestrator")
 @dataclass
 class Subtask:
     """A single unit of work assigned to one agent skill."""
+
     id: str
     agent_id: str
     skill_id: str
@@ -57,6 +58,7 @@ class Subtask:
 @dataclass
 class Workflow:
     """A collection of subtasks forming a directed acyclic graph."""
+
     id: str
     name: str
     project_id: str = ""
@@ -72,8 +74,7 @@ class Workflow:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -116,12 +117,13 @@ def _ensure_tables(db_path: Path = None):
         conn.close()
 
 
-def _audit_log(event_type: str, actor: str, action: str,
-               project_id: str = None, details: dict = None,
-               db_path: Path = None):
+def _audit_log(
+    event_type: str, actor: str, action: str, project_id: str = None, details: dict = None, db_path: Path = None
+):
     """Best-effort audit trail logging."""
     try:
-        from icdev.tools.audit.audit_logger import log_event
+        from tools.audit.audit_logger import log_event
+
         log_event(
             event_type=event_type,
             actor=actor,
@@ -171,7 +173,8 @@ class TeamOrchestrator:
     def _get_llm_router(self):
         """Return cached LLMRouter, creating if needed."""
         if self._llm_router is None:
-            from icdev.tools.llm.router import LLMRouter
+            from tools.llm.router import LLMRouter
+
             self._llm_router = LLMRouter()
         return self._llm_router
 
@@ -181,7 +184,8 @@ class TeamOrchestrator:
     def _get_agent_client(self):
         """Return cached A2AAgentClient, creating if needed."""
         if self._agent_client is None:
-            from icdev.tools.a2a.agent_client import A2AAgentClient
+            from tools.a2a.agent_client import A2AAgentClient
+
             self._agent_client = A2AAgentClient(verify_ssl=False)
         return self._agent_client
 
@@ -219,14 +223,20 @@ class TeamOrchestrator:
         # Attempt LLM-based decomposition
         try:
             workflow = self._decompose_via_bedrock(
-                workflow, task_description, project_id, agent_config,
+                workflow,
+                task_description,
+                project_id,
+                agent_config,
             )
         except Exception as exc:
             logger.warning(
-                "Bedrock decomposition failed (%s) -- using fallback", exc,
+                "Bedrock decomposition failed (%s) -- using fallback",
+                exc,
             )
             workflow = self._decompose_fallback(
-                workflow, task_description, project_id,
+                workflow,
+                task_description,
+                project_id,
             )
 
         # Persist and audit
@@ -254,7 +264,7 @@ class TeamOrchestrator:
         agent_config: dict = None,
     ) -> Workflow:
         """Use LLM to decompose the task into a subtask DAG."""
-        from icdev.tools.llm.provider import LLMRequest
+        from tools.llm.provider import LLMRequest
 
         router = self._get_llm_router()
 
@@ -314,26 +324,23 @@ class TeamOrchestrator:
             agent_context = f"\n\nAvailable agents and skills:\n{json.dumps(agent_config, indent=2)}"
         else:
             try:
-                from icdev.tools.a2a.agent_registry import discover_agents
+                from tools.a2a.agent_registry import discover_agents
+
                 agents = discover_agents(db_path=self._db_path)
                 if agents:
                     summary = []
                     for a in agents:
                         caps = a.get("capabilities", {})
                         skills = caps.get("skills", []) if isinstance(caps, dict) else []
-                        skill_ids = [
-                            s.get("id", s) if isinstance(s, dict) else s
-                            for s in skills
-                        ]
-                        summary.append({
-                            "agent_id": a["id"],
-                            "name": a.get("name", ""),
-                            "skills": skill_ids,
-                        })
-                    agent_context = (
-                        f"\n\nAvailable agents and skills:\n"
-                        f"{json.dumps(summary, indent=2)}"
-                    )
+                        skill_ids = [s.get("id", s) if isinstance(s, dict) else s for s in skills]
+                        summary.append(
+                            {
+                                "agent_id": a["id"],
+                                "name": a.get("name", ""),
+                                "skills": skill_ids,
+                            }
+                        )
+                    agent_context = f"\n\nAvailable agents and skills:\n{json.dumps(summary, indent=2)}"
             except Exception:
                 pass
 
@@ -365,9 +372,7 @@ class TeamOrchestrator:
             try:
                 decomposition = json.loads(response.content)
             except json.JSONDecodeError:
-                raise ValueError(
-                    f"Bedrock returned non-JSON content: {response.content[:200]}"
-                )
+                raise ValueError(f"Bedrock returned non-JSON content: {response.content[:200]}")
 
         if not decomposition or "subtasks" not in decomposition:
             raise ValueError("Bedrock decomposition missing 'subtasks' key")
@@ -410,7 +415,8 @@ class TeamOrchestrator:
         workflow.subtasks[st.id] = st
         logger.info(
             "Fallback decomposition: single subtask '%s' for workflow '%s'",
-            st.id, workflow.id,
+            st.id,
+            workflow.id,
         )
         return workflow
 
@@ -444,7 +450,8 @@ class TeamOrchestrator:
                 else:
                     logger.warning(
                         "Subtask '%s' depends on unknown '%s' -- ignoring dependency",
-                        st_id, dep_id,
+                        st_id,
+                        dep_id,
                     )
             graph[st_id] = deps
 
@@ -474,7 +481,9 @@ class TeamOrchestrator:
                 elapsed = time.time() - start_time
                 if elapsed > timeout:
                     logger.error(
-                        "Workflow '%s' timed out after %.0fs", workflow.id, elapsed,
+                        "Workflow '%s' timed out after %.0fs",
+                        workflow.id,
+                        elapsed,
                     )
                     # Cancel remaining subtasks
                     for st_id, st in workflow.subtasks.items():
@@ -529,6 +538,20 @@ class TeamOrchestrator:
                         if completed_st.status == "completed":
                             completed_count += 1
                             sorter.done(st_id)
+                            # SSE progress for DAG workflows
+                            try:
+                                from tools.dashboard.sse_manager import emit_progress
+
+                                emit_progress(
+                                    workflow.id,
+                                    "dag_workflow",
+                                    st_id,
+                                    completed_count,
+                                    len(workflow.subtasks),
+                                    detail=f"{completed_st.skill_id} completed",
+                                )
+                            except Exception:
+                                pass
                             _audit_log(
                                 event_type="subtask_completed",
                                 actor=workflow.created_by,
@@ -657,19 +680,22 @@ class TeamOrchestrator:
         # If dispatcher mode is active and the orchestrator is the source,
         # check whether the skill is blocked for direct execution.
         try:
-            from icdev.tools.agent.dispatcher_mode import (
-                is_dispatcher_mode, is_tool_allowed, get_redirect_agent,
+            from tools.agent.dispatcher_mode import (
+                is_dispatcher_mode,
+                is_tool_allowed,
+                get_redirect_agent,
             )
+
             project_id = context.get("project_id", "")
             if is_dispatcher_mode(project_id=project_id, db_path=self._db_path):
-                if not is_tool_allowed(subtask.skill_id, project_id=project_id,
-                                       db_path=self._db_path):
+                if not is_tool_allowed(subtask.skill_id, project_id=project_id, db_path=self._db_path):
                     # Redirect to appropriate domain agent
                     redirect = get_redirect_agent(subtask.skill_id)
                     if redirect:
                         logger.info(
                             "Dispatcher mode: redirecting skill '%s' from orchestrator to '%s'",
-                            subtask.skill_id, redirect,
+                            subtask.skill_id,
+                            redirect,
                         )
                         subtask.agent_id = redirect
                     _audit_log(
@@ -692,7 +718,8 @@ class TeamOrchestrator:
 
         try:
             # Look up agent
-            from icdev.tools.a2a.agent_registry import get_agent
+            from tools.a2a.agent_registry import get_agent
+
             agent = get_agent(subtask.agent_id, db_path=self._db_path)
 
             if not agent:
@@ -758,7 +785,10 @@ class TeamOrchestrator:
             subtask.status = "failed"
             subtask.error_message = f"Subtask execution error: {exc}"
             logger.error(
-                "Subtask '%s' failed with exception: %s", subtask.id, exc, exc_info=True,
+                "Subtask '%s' failed with exception: %s",
+                subtask.id,
+                exc,
+                exc_info=True,
             )
 
         subtask.duration_ms = int((time.time() - start_time) * 1000)
@@ -766,15 +796,29 @@ class TeamOrchestrator:
         return subtask
 
     def _block_downstream(self, failed_id: str, workflow: Workflow):
-        """Mark all subtasks that depend on the failed subtask as blocked."""
+        """Recursively block all subtasks that transitively depend on failed_id.
+
+        Cascades through the full dependency graph — if A fails, B depends on A,
+        and C depends on B, then both B and C are blocked (not just B).
+        """
+        newly_blocked = []
         for st_id, st in workflow.subtasks.items():
-            if failed_id in st.depends_on and st.status in ("pending", "queued"):
+            if failed_id in st.depends_on and st.status in (
+                "pending",
+                "queued",
+            ):
                 st.status = "blocked"
                 self._update_subtask_status(st, workflow.id)
                 logger.info(
                     "Subtask '%s' blocked due to failed dependency '%s'",
-                    st_id, failed_id,
+                    st_id,
+                    failed_id,
                 )
+                newly_blocked.append(st_id)
+
+        # Recursively block transitive dependents
+        for blocked_id in newly_blocked:
+            self._block_downstream(blocked_id, workflow)
 
     # -------------------------------------------------------------------
     # Result aggregation
@@ -911,6 +955,161 @@ class TeamOrchestrator:
             conn.close()
 
     # -------------------------------------------------------------------
+    # Batch execution (adapted from Agent Harness pattern)
+    # -------------------------------------------------------------------
+    def execute_batch(
+        self,
+        items: List[Dict],
+        handler: callable,
+        batch_size: int = 5,
+        project_id: str = "",
+        workflow_name: str = "batch",
+        on_progress: callable = None,
+    ) -> Dict:
+        """Execute a list of homogeneous items in configurable batches.
+
+        Processes items in parallel batches (default batch_size=5), collecting
+        results and broadcasting progress.  Inspired by the Agent Harness
+        ``llm_batch_agents`` phase pattern.
+
+        Args:
+            items: List of dicts, each describing one work item.
+            handler: Callable(item: dict) -> dict that processes a single item.
+            batch_size: Max concurrent items per batch (default 5).
+            project_id: Project identifier for tracking / audit.
+            workflow_name: Human-readable label for the batch.
+            on_progress: Optional callback(completed, total, last_result) for
+                         progress updates (e.g. SSE broadcast).
+
+        Returns:
+            Dict with results list, summary stats, and batch metadata.
+        """
+        total = len(items)
+        results: List[Dict] = []
+        failed = 0
+        batch_num = 0
+        workflow_id = f"batch-{uuid.uuid4().hex[:12]}"
+
+        _audit_log(
+            event_type="batch_started",
+            actor="orchestrator-agent",
+            action=f"Batch '{workflow_name}' started: {total} items, batch_size={batch_size}",
+            project_id=project_id,
+            details={
+                "workflow_id": workflow_id,
+                "total_items": total,
+                "batch_size": batch_size,
+            },
+            db_path=self._db_path,
+        )
+
+        # Process in batches
+        for i in range(0, total, batch_size):
+            batch_num += 1
+            batch = items[i : i + batch_size]
+            batch_results = []
+
+            with ThreadPoolExecutor(max_workers=min(batch_size, len(batch))) as executor:
+                futures = {
+                    executor.submit(self._execute_batch_item, handler, item): idx for idx, item in enumerate(batch)
+                }
+
+                for future in as_completed(futures):
+                    idx = futures[future]
+                    try:
+                        result = future.result()
+                        batch_results.append(result)
+                        if not result.get("success", False):
+                            failed += 1
+                    except Exception as exc:
+                        batch_results.append(
+                            {
+                                "success": False,
+                                "error": str(exc),
+                                "item_index": i + idx,
+                            }
+                        )
+                        failed += 1
+
+            results.extend(batch_results)
+
+            # Progress callback after each batch completes
+            if on_progress:
+                try:
+                    on_progress(len(results), total, batch_results[-1] if batch_results else None)
+                except Exception:
+                    pass  # Never let callback errors break the batch
+
+            # SSE progress broadcast (best-effort)
+            try:
+                from tools.dashboard.sse_manager import emit_progress
+
+                emit_progress(
+                    workflow_id,
+                    "batch_workflow",
+                    f"batch_{batch_num}",
+                    len(results),
+                    total,
+                    status="running" if len(results) < total else "completed",
+                    detail=f"{workflow_name}: batch {batch_num} done",
+                )
+            except Exception:
+                pass
+
+            logger.info(
+                "Batch '%s': %d/%d items complete (batch %d)",
+                workflow_name,
+                len(results),
+                total,
+                batch_num,
+            )
+
+        summary = {
+            "workflow_id": workflow_id,
+            "workflow_name": workflow_name,
+            "total": total,
+            "completed": total - failed,
+            "failed": failed,
+            "batch_size": batch_size,
+            "batches_executed": batch_num,
+            "results": results,
+            "classification": "CUI",
+        }
+
+        _audit_log(
+            event_type="batch_completed",
+            actor="orchestrator-agent",
+            action=f"Batch '{workflow_name}' finished: {total - failed}/{total} succeeded",
+            project_id=project_id,
+            details={
+                "workflow_id": workflow_id,
+                "completed": total - failed,
+                "failed": failed,
+            },
+            db_path=self._db_path,
+        )
+
+        return summary
+
+    @staticmethod
+    def _execute_batch_item(handler: callable, item: Dict) -> Dict:
+        """Execute a single batch item via the provided handler."""
+        start = time.time()
+        try:
+            result = handler(item)
+            if not isinstance(result, dict):
+                result = {"output": result}
+            result.setdefault("success", True)
+            result["duration_ms"] = int((time.time() - start) * 1000)
+            return result
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "duration_ms": int((time.time() - start) * 1000),
+            }
+
+    # -------------------------------------------------------------------
     # Status query
     # -------------------------------------------------------------------
     def get_workflow_status(self, workflow_id: str) -> dict:
@@ -964,9 +1163,7 @@ class TeamOrchestrator:
 # ---------------------------------------------------------------------------
 def main():
     """CLI for workflow decomposition and execution."""
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Team Orchestrator -- DAG-based multi-agent workflow engine"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Team Orchestrator -- DAG-based multi-agent workflow engine")
     parser.add_argument(
         "--decompose",
         help="Task description to decompose into subtasks",
@@ -981,12 +1178,22 @@ def main():
     )
     parser.add_argument("--project-id", default="", help="Project ID for tracking")
     parser.add_argument(
-        "--max-workers", type=int, default=5,
+        "--max-workers",
+        type=int,
+        default=5,
         help="Max parallel subtask threads (default: 5)",
     )
     parser.add_argument(
-        "--timeout", type=int, default=600,
+        "--timeout",
+        type=int,
+        default=600,
         help="Workflow execution timeout in seconds (default: 600)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=5,
+        help="Items per concurrent batch for --execute-batch (default: 5)",
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", help="Override database path")
@@ -1016,10 +1223,7 @@ def main():
                 "project_id": workflow.project_id,
                 "status": workflow.status,
                 "subtask_count": len(workflow.subtasks),
-                "subtasks": {
-                    st_id: asdict(st)
-                    for st_id, st in workflow.subtasks.items()
-                },
+                "subtasks": {st_id: asdict(st) for st_id, st in workflow.subtasks.items()},
                 "classification": "CUI",
             }
             print(json.dumps(output, indent=2, default=str))

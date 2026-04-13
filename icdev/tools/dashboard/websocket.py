@@ -6,7 +6,7 @@ Additive — HTTP polling (D103) remains for backward compat.
 Falls back gracefully when flask-socketio is not installed.
 
 Usage:
-    from icdev.tools.dashboard.websocket import init_socketio, broadcast_activity
+    from tools.dashboard.websocket import init_socketio, broadcast_activity
 
     # In create_app():
     socketio = init_socketio(app)
@@ -29,7 +29,7 @@ def init_socketio(app):
     global _socketio
 
     try:
-        from flask_socketio import SocketIO, emit, join_room
+        from flask_socketio import SocketIO, join_room
 
         _socketio = SocketIO(
             app,
@@ -56,9 +56,7 @@ def init_socketio(app):
         return _socketio
 
     except ImportError:
-        app.logger.info(
-            "flask-socketio not installed — WebSocket disabled, using HTTP polling"
-        )
+        app.logger.info("flask-socketio not installed — WebSocket disabled, using HTTP polling")
         return None
 
 

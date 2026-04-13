@@ -12,6 +12,7 @@ Tools:
     manage_isa             - ISA/MOU lifecycle management
     assess_scrm            - NIST 800-161 SCRM assessment
     triage_cve             - CVE triage with blast radius
+    watch_passive_cve      - Passive CVE watcher — scan/status/watch audit trail (NIST SI-4, CA-7)
 
 Runs as an MCP server over stdio with Content-Length framing.
 """
@@ -21,23 +22,24 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -48,9 +50,10 @@ def _import_tool(module_path, func_name):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_register_ato_system(args: dict) -> dict:
     """Register an existing ATO boundary system."""
-    register_system = _import_tool("icdev.tools.requirements.boundary_analyzer", "register_system")
+    register_system = _import_tool("tools.requirements.boundary_analyzer", "register_system")
     if not register_system:
         return {"error": "boundary_analyzer module not available", "status": "pending"}
 
@@ -86,7 +89,7 @@ def handle_register_ato_system(args: dict) -> dict:
 
 def handle_assess_boundary_impact(args: dict) -> dict:
     """Assess a requirement's impact on ATO boundary."""
-    assess = _import_tool("icdev.tools.requirements.boundary_analyzer", "assess_boundary_impact")
+    assess = _import_tool("tools.requirements.boundary_analyzer", "assess_boundary_impact")
     if not assess:
         return {"error": "boundary_analyzer module not available", "status": "pending"}
 
@@ -109,7 +112,7 @@ def handle_assess_boundary_impact(args: dict) -> dict:
 
 def handle_generate_red_alternative(args: dict) -> dict:
     """Generate alternative COAs for RED-tier requirements."""
-    generate_alternatives = _import_tool("icdev.tools.requirements.boundary_analyzer", "generate_alternatives")
+    generate_alternatives = _import_tool("tools.requirements.boundary_analyzer", "generate_alternatives")
     if not generate_alternatives:
         return {"error": "boundary_analyzer module not available", "status": "pending"}
 
@@ -130,7 +133,7 @@ def handle_generate_red_alternative(args: dict) -> dict:
 
 def handle_add_vendor(args: dict) -> dict:
     """Register a supply chain vendor."""
-    add_vendor = _import_tool("icdev.tools.supply_chain.dependency_graph", "add_vendor")
+    add_vendor = _import_tool("tools.supply_chain.dependency_graph", "add_vendor")
     if not add_vendor:
         return {"error": "dependency_graph module not available", "status": "pending"}
 
@@ -156,7 +159,7 @@ def handle_add_vendor(args: dict) -> dict:
 
 def handle_build_dependency_graph(args: dict) -> dict:
     """Build or query the project dependency graph."""
-    build_graph = _import_tool("icdev.tools.supply_chain.dependency_graph", "build_graph")
+    build_graph = _import_tool("tools.supply_chain.dependency_graph", "build_graph")
     if not build_graph:
         return {"error": "dependency_graph module not available", "status": "pending"}
 
@@ -172,7 +175,7 @@ def handle_build_dependency_graph(args: dict) -> dict:
 
 def handle_propagate_impact(args: dict) -> dict:
     """Propagate impact through the dependency graph."""
-    propagate_impact = _import_tool("icdev.tools.supply_chain.dependency_graph", "propagate_impact")
+    propagate_impact = _import_tool("tools.supply_chain.dependency_graph", "propagate_impact")
     if not propagate_impact:
         return {"error": "dependency_graph module not available", "status": "pending"}
 
@@ -206,13 +209,13 @@ def handle_manage_isa(args: dict) -> dict:
 
     try:
         if action == "list":
-            list_isas = _import_tool("icdev.tools.supply_chain.isa_manager", "list_isas")
+            list_isas = _import_tool("tools.supply_chain.isa_manager", "list_isas")
             if not list_isas:
                 return {"error": "isa_manager module not available", "status": "pending"}
             return list_isas(project_id=project_id, db_path=str(DB_PATH))
 
         elif action == "create":
-            create_isa = _import_tool("icdev.tools.supply_chain.isa_manager", "create_isa")
+            create_isa = _import_tool("tools.supply_chain.isa_manager", "create_isa")
             if not create_isa:
                 return {"error": "isa_manager module not available", "status": "pending"}
             source_system = args.get("source_system")
@@ -230,7 +233,7 @@ def handle_manage_isa(args: dict) -> dict:
             )
 
         elif action == "expiring":
-            get_expiring = _import_tool("icdev.tools.supply_chain.isa_manager", "get_expiring")
+            get_expiring = _import_tool("tools.supply_chain.isa_manager", "get_expiring")
             if not get_expiring:
                 return {"error": "isa_manager module not available", "status": "pending"}
             return get_expiring(
@@ -240,7 +243,7 @@ def handle_manage_isa(args: dict) -> dict:
             )
 
         elif action == "review_due":
-            get_review_due = _import_tool("icdev.tools.supply_chain.isa_manager", "get_review_due")
+            get_review_due = _import_tool("tools.supply_chain.isa_manager", "get_review_due")
             if not get_review_due:
                 return {"error": "isa_manager module not available", "status": "pending"}
             return get_review_due(project_id=project_id, db_path=str(DB_PATH))
@@ -260,14 +263,14 @@ def handle_assess_scrm(args: dict) -> dict:
 
     try:
         if aggregate:
-            assess_project = _import_tool("icdev.tools.supply_chain.scrm_assessor", "assess_project")
+            assess_project = _import_tool("tools.supply_chain.scrm_assessor", "assess_project")
             if not assess_project:
                 return {"error": "scrm_assessor module not available", "status": "pending"}
             return assess_project(project_id=project_id, db_path=str(DB_PATH))
         else:
             if not vendor_id:
                 return {"error": "vendor_id is required when aggregate is false"}
-            assess_vendor = _import_tool("icdev.tools.supply_chain.scrm_assessor", "assess_vendor")
+            assess_vendor = _import_tool("tools.supply_chain.scrm_assessor", "assess_vendor")
             if not assess_vendor:
                 return {"error": "scrm_assessor module not available", "status": "pending"}
             return assess_vendor(
@@ -281,7 +284,7 @@ def handle_assess_scrm(args: dict) -> dict:
 
 def handle_triage_cve(args: dict) -> dict:
     """CVE triage with blast radius analysis."""
-    triage_cve = _import_tool("icdev.tools.supply_chain.cve_triager", "triage_cve")
+    triage_cve = _import_tool("tools.supply_chain.cve_triager", "triage_cve")
     if not triage_cve:
         return {"error": "cve_triager module not available", "status": "pending"}
 
@@ -306,9 +309,44 @@ def handle_triage_cve(args: dict) -> dict:
         return {"error": str(e), "traceback": traceback.format_exc()}
 
 
+def handle_watch_passive_cve(args: dict) -> dict:
+    """Passive CVE watcher — scan/status/watch audit trail without re-scanning (NIST SI-4, CA-7)."""
+    action = args.get("action", "scan")
+    project_id = args.get("project_id")
+    if not project_id:
+        return {"error": "project_id is required"}
+
+    if action == "scan":
+        watch_scan = _import_tool("tools.supply_chain.cve_passive_watcher", "watch_scan")
+        if not watch_scan:
+            return {"error": "cve_passive_watcher module not available", "status": "pending"}
+        try:
+            return watch_scan(
+                project_id=project_id,
+                since_id=args.get("since_id"),
+                db_path=str(DB_PATH),
+                auto_triage=not args.get("no_triage", False),
+            )
+        except Exception as e:
+            return {"error": str(e), "traceback": traceback.format_exc()}
+
+    elif action == "status":
+        get_status = _import_tool("tools.supply_chain.cve_passive_watcher", "get_status")
+        if not get_status:
+            return {"error": "cve_passive_watcher module not available", "status": "pending"}
+        try:
+            return get_status(project_id=project_id, db_path=str(DB_PATH))
+        except Exception as e:
+            return {"error": str(e), "traceback": traceback.format_exc()}
+
+    else:
+        return {"error": f"Unknown action '{action}'. Use 'scan' or 'status'."}
+
+
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     """Create and configure the Supply Chain MCP server."""
@@ -322,11 +360,27 @@ def create_server() -> MCPServer:
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "system_name": {"type": "string", "description": "Name of the ATO system boundary"},
-                "ato_status": {"type": "string", "default": "active", "enum": ["active", "conditional", "expired", "pending"], "description": "Current ATO status"},
-                "boundary_definition": {"type": "string", "description": "JSON string defining the boundary (components, networks, data flows)"},
-                "baseline_controls": {"type": "string", "description": "JSON string of baseline NIST 800-53 controls implemented"},
+                "ato_status": {
+                    "type": "string",
+                    "default": "active",
+                    "enum": ["active", "conditional", "expired", "pending"],
+                    "description": "Current ATO status",
+                },
+                "boundary_definition": {
+                    "type": "string",
+                    "description": "JSON string defining the boundary (components, networks, data flows)",
+                },
+                "baseline_controls": {
+                    "type": "string",
+                    "description": "JSON string of baseline NIST 800-53 controls implemented",
+                },
                 "classification": {"type": "string", "default": "CUI", "description": "Classification marking"},
-                "impact_level": {"type": "string", "default": "IL4", "enum": ["IL2", "IL4", "IL5", "IL6"], "description": "DoD Impact Level"},
+                "impact_level": {
+                    "type": "string",
+                    "default": "IL4",
+                    "enum": ["IL2", "IL4", "IL5", "IL6"],
+                    "description": "DoD Impact Level",
+                },
             },
             "required": ["project_id", "system_name"],
         },
@@ -355,7 +409,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
-                "assessment_id": {"type": "string", "description": "Boundary impact assessment ID (from assess_boundary_impact)"},
+                "assessment_id": {
+                    "type": "string",
+                    "description": "Boundary impact assessment ID (from assess_boundary_impact)",
+                },
             },
             "required": ["project_id", "assessment_id"],
         },
@@ -370,10 +427,28 @@ def create_server() -> MCPServer:
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "vendor_name": {"type": "string", "description": "Vendor or supplier name"},
-                "vendor_type": {"type": "string", "default": "software", "enum": ["software", "hardware", "cloud_service", "integrator", "open_source"], "description": "Type of vendor"},
-                "country_of_origin": {"type": "string", "description": "ISO 3166-1 alpha-2 country code (e.g., US, GB, DE)"},
-                "scrm_risk_tier": {"type": "string", "default": "medium", "enum": ["low", "medium", "high", "critical"], "description": "Initial SCRM risk tier"},
-                "section_889_status": {"type": "string", "default": "compliant", "enum": ["compliant", "non_compliant", "under_review", "exempt"], "description": "Section 889 compliance status"},
+                "vendor_type": {
+                    "type": "string",
+                    "default": "software",
+                    "enum": ["software", "hardware", "cloud_service", "integrator", "open_source"],
+                    "description": "Type of vendor",
+                },
+                "country_of_origin": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country code (e.g., US, GB, DE)",
+                },
+                "scrm_risk_tier": {
+                    "type": "string",
+                    "default": "medium",
+                    "enum": ["low", "medium", "high", "critical"],
+                    "description": "Initial SCRM risk tier",
+                },
+                "section_889_status": {
+                    "type": "string",
+                    "default": "compliant",
+                    "enum": ["compliant", "non_compliant", "under_review", "exempt"],
+                    "description": "Section 889 compliance status",
+                },
             },
             "required": ["project_id", "vendor_name", "country_of_origin"],
         },
@@ -401,8 +476,18 @@ def create_server() -> MCPServer:
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "component": {"type": "string", "description": "Affected component name"},
-                "impact_type": {"type": "string", "default": "vulnerability", "enum": ["vulnerability", "supply_disruption", "license_change", "eol_notice", "vendor_breach"], "description": "Type of supply chain impact"},
-                "severity": {"type": "string", "default": "high", "enum": ["critical", "high", "medium", "low"], "description": "Impact severity"},
+                "impact_type": {
+                    "type": "string",
+                    "default": "vulnerability",
+                    "enum": ["vulnerability", "supply_disruption", "license_change", "eol_notice", "vendor_breach"],
+                    "description": "Type of supply chain impact",
+                },
+                "severity": {
+                    "type": "string",
+                    "default": "high",
+                    "enum": ["critical", "high", "medium", "low"],
+                    "description": "Impact severity",
+                },
             },
             "required": ["project_id", "component"],
         },
@@ -416,10 +501,17 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
-                "action": {"type": "string", "enum": ["list", "create", "expiring", "review_due"], "description": "ISA management action"},
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "create", "expiring", "review_due"],
+                    "description": "ISA management action",
+                },
                 "source_system": {"type": "string", "description": "Source system name (required for create)"},
                 "target_system": {"type": "string", "description": "Target system name (required for create)"},
-                "data_types_shared": {"type": "string", "description": "Comma-separated data types shared between systems"},
+                "data_types_shared": {
+                    "type": "string",
+                    "description": "Comma-separated data types shared between systems",
+                },
                 "auth_date": {"type": "string", "description": "Authorization date (YYYY-MM-DD)"},
                 "expiry_date": {"type": "string", "description": "Expiry date (YYYY-MM-DD)"},
                 "days_ahead": {"type": "number", "default": 90, "description": "Look-ahead days for expiring check"},
@@ -437,7 +529,11 @@ def create_server() -> MCPServer:
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "vendor_id": {"type": "string", "description": "Vendor ID (required when aggregate is false)"},
-                "aggregate": {"type": "boolean", "default": False, "description": "If true, assess all vendors for the project"},
+                "aggregate": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, assess all vendors for the project",
+                },
             },
             "required": ["project_id"],
         },
@@ -454,12 +550,44 @@ def create_server() -> MCPServer:
                 "cve_id": {"type": "string", "description": "CVE identifier (e.g., CVE-2024-12345)"},
                 "component": {"type": "string", "description": "Affected component name"},
                 "cvss_score": {"type": "number", "description": "CVSS v3.1 base score (0.0-10.0)"},
-                "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"], "description": "CVE severity level"},
+                "severity": {
+                    "type": "string",
+                    "enum": ["critical", "high", "medium", "low"],
+                    "description": "CVE severity level",
+                },
                 "description": {"type": "string", "description": "CVE description for context"},
             },
             "required": ["project_id", "cve_id", "component", "severity"],
         },
         handler=handle_triage_cve,
+    )
+
+    server.register_tool(
+        name="watch_passive_cve",
+        description="Passive CVE watcher — streams immutable audit trail for ATO-relevant CVE signals without re-scanning (NIST SI-4, CA-7)",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
+                "action": {
+                    "type": "string",
+                    "default": "scan",
+                    "enum": ["scan", "status"],
+                    "description": "'scan' — process new audit entries; 'status' — show watcher statistics",
+                },
+                "since_id": {
+                    "type": "number",
+                    "description": "Scan audit entries with id > N (default: auto from high-watermark)",
+                },
+                "no_triage": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, detect CVEs without auto-triaging them",
+                },
+            },
+            "required": ["project_id"],
+        },
+        handler=handle_watch_passive_cve,
     )
 
     return server

@@ -44,13 +44,12 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 INTEGRATION_TYPE = "gitlab"
@@ -66,10 +65,12 @@ SAFE_GITLAB_MAP = {
 
 # Graceful import of audit logger
 try:
-    from icdev.tools.audit.audit_logger import log_event
+    from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
@@ -78,15 +79,13 @@ except ImportError:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -104,8 +103,8 @@ def _now():
 # configure
 # ---------------------------------------------------------------------------
 
-def configure(project_id, instance_url, gitlab_project_id, auth_secret_ref,
-              field_mappings=None, db_path=None):
+
+def configure(project_id, instance_url, gitlab_project_id, auth_secret_ref, field_mappings=None, db_path=None):
     """Store a GitLab integration configuration.
 
     Args:
@@ -124,12 +123,23 @@ def configure(project_id, instance_url, gitlab_project_id, auth_secret_ref,
         connection_id = _generate_id("gl")
         now = _now()
 
-        mapping_json = json.dumps(field_mappings or {
-            "epic": {"gitlab_type": "Epic", "synced_fields": ["title", "description", "labels"]},
-            "feature": {"gitlab_type": "Issue", "labels": ["Feature"], "synced_fields": ["title", "description", "weight", "milestone"]},
-            "story": {"gitlab_type": "Issue", "labels": ["Story"], "synced_fields": ["title", "description", "weight", "milestone"]},
-            "enabler": {"gitlab_type": "Issue", "labels": ["Enabler"], "synced_fields": ["title", "description"]},
-        })
+        mapping_json = json.dumps(
+            field_mappings
+            or {
+                "epic": {"gitlab_type": "Epic", "synced_fields": ["title", "description", "labels"]},
+                "feature": {
+                    "gitlab_type": "Issue",
+                    "labels": ["Feature"],
+                    "synced_fields": ["title", "description", "weight", "milestone"],
+                },
+                "story": {
+                    "gitlab_type": "Issue",
+                    "labels": ["Story"],
+                    "synced_fields": ["title", "description", "weight", "milestone"],
+                },
+                "enabler": {"gitlab_type": "Issue", "labels": ["Enabler"], "synced_fields": ["title", "description"]},
+            }
+        )
 
         conn.execute(
             """INSERT INTO integration_connections
@@ -137,11 +147,21 @@ def configure(project_id, instance_url, gitlab_project_id, auth_secret_ref,
                 auth_secret_ref, sync_direction, sync_status, field_mapping,
                 filter_criteria, classification, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (connection_id, project_id, INTEGRATION_TYPE, instance_url,
-             "pat", auth_secret_ref, "bidirectional", "configured",
-             mapping_json,
-             json.dumps({"gitlab_project_id": str(gitlab_project_id)}),
-             "CUI", now, now),
+            (
+                connection_id,
+                project_id,
+                INTEGRATION_TYPE,
+                instance_url,
+                "pat",
+                auth_secret_ref,
+                "bidirectional",
+                "configured",
+                mapping_json,
+                json.dumps({"gitlab_project_id": str(gitlab_project_id)}),
+                "CUI",
+                now,
+                now,
+            ),
         )
         conn.commit()
 
@@ -150,8 +170,7 @@ def configure(project_id, instance_url, gitlab_project_id, auth_secret_ref,
             actor="icdev-integration-gitlab",
             action=f"Configured GitLab connection for {instance_url}",
             project_id=project_id,
-            details={"connection_id": connection_id,
-                     "gitlab_project_id": gitlab_project_id},
+            details={"connection_id": connection_id, "gitlab_project_id": gitlab_project_id},
         )
 
         return {
@@ -168,6 +187,7 @@ def configure(project_id, instance_url, gitlab_project_id, auth_secret_ref,
 # ---------------------------------------------------------------------------
 # push_to_gitlab
 # ---------------------------------------------------------------------------
+
 
 def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
     """Push SAFe decomposition items to GitLab.
@@ -296,8 +316,16 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                            (connection_id, icdev_type, icdev_id, external_id,
                             external_type, external_url, sync_status, last_synced)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (connection_id, "safe_decomposition", item_dict["id"],
-                         ext_id, ext_type, ext_url, "synced", now),
+                        (
+                            connection_id,
+                            "safe_decomposition",
+                            item_dict["id"],
+                            ext_id,
+                            ext_type,
+                            ext_url,
+                            "synced",
+                            now,
+                        ),
                     )
                 if is_epic:
                     epics_created += 1
@@ -313,10 +341,16 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                    (connection_id, sync_direction, items_synced, items_created,
                     items_updated, items_failed, error_details, synced_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (connection_id, "push", items_pushed,
-                 epics_created + issues_created,
-                 items_updated, items_failed,
-                 json.dumps(errors) if errors else None, now),
+                (
+                    connection_id,
+                    "push",
+                    items_pushed,
+                    epics_created + issues_created,
+                    items_updated,
+                    items_failed,
+                    json.dumps(errors) if errors else None,
+                    now,
+                ),
             )
             conn.execute(
                 """UPDATE integration_connections SET last_sync = ?, sync_status = 'synced',
@@ -330,8 +364,7 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
                 actor="icdev-integration-gitlab",
                 action=f"Pushed {items_pushed} items to GitLab",
                 project_id=project_id,
-                details={"sync_id": sync_id, "epics_created": epics_created,
-                         "issues_created": issues_created},
+                details={"sync_id": sync_id, "epics_created": epics_created, "issues_created": issues_created},
             )
 
         return {
@@ -353,6 +386,7 @@ def push_to_gitlab(project_id, session_id=None, dry_run=False, db_path=None):
 # ---------------------------------------------------------------------------
 # pull_from_gitlab
 # ---------------------------------------------------------------------------
+
 
 def pull_from_gitlab(project_id, db_path=None):
     """Simulate pulling status updates from GitLab.
@@ -437,8 +471,8 @@ def pull_from_gitlab(project_id, db_path=None):
 # create_merge_request
 # ---------------------------------------------------------------------------
 
-def create_merge_request(project_id, session_id, source_branch,
-                         target_branch="main", db_path=None):
+
+def create_merge_request(project_id, session_id, source_branch, target_branch="main", db_path=None):
     """Create a merge request with RICOAS context.
 
     Generates an MR description that includes requirements traceability,
@@ -512,27 +546,31 @@ def create_merge_request(project_id, session_id, source_branch,
         if session:
             description_parts.append(f"**Customer:** {session['customer_name']} ({session['customer_org']})")
             description_parts.append(f"**Readiness Score:** {session['readiness_score']:.1f}%")
-        description_parts.extend([
-            f"**Requirements:** {req_count}",
-            f"**SAFe Items:** {safe_count}",
-            "",
-            "### Boundary Impact Summary",
-        ])
+        description_parts.extend(
+            [
+                f"**Requirements:** {req_count}",
+                f"**SAFe Items:** {safe_count}",
+                "",
+                "### Boundary Impact Summary",
+            ]
+        )
         if impact_summary:
             for tier in ["GREEN", "YELLOW", "ORANGE", "RED"]:
                 if tier in impact_summary:
                     description_parts.append(f"- **{tier}:** {impact_summary[tier]}")
         else:
             description_parts.append("- No boundary impact assessments recorded")
-        description_parts.extend([
-            "",
-            "### Compliance",
-            "- CUI markings: Applied",
-            "- Classification: CUI // SP-CTI",
-            "",
-            "---",
-            "*Generated by ICDEV™ RICOAS Integration Layer*",
-        ])
+        description_parts.extend(
+            [
+                "",
+                "### Compliance",
+                "- CUI markings: Applied",
+                "- Classification: CUI // SP-CTI",
+                "",
+                "---",
+                "*Generated by ICDEV™ RICOAS Integration Layer*",
+            ]
+        )
 
         mr_description = "\n".join(description_parts)
 
@@ -554,8 +592,7 @@ def create_merge_request(project_id, session_id, source_branch,
             actor="icdev-integration-gitlab",
             action=f"Created merge request for session {session_id}",
             project_id=project_id,
-            details={"mr_iid": mr_iid, "source_branch": source_branch,
-                     "target_branch": target_branch},
+            details={"mr_iid": mr_iid, "source_branch": source_branch, "target_branch": target_branch},
         )
 
         return {
@@ -576,6 +613,7 @@ def create_merge_request(project_id, session_id, source_branch,
 # ---------------------------------------------------------------------------
 # get_sync_status
 # ---------------------------------------------------------------------------
+
 
 def get_sync_status(project_id, db_path=None):
     """Return last sync info and mapping count.
@@ -647,6 +685,7 @@ def get_sync_status(project_id, db_path=None):
 # list_mappings
 # ---------------------------------------------------------------------------
 
+
 def list_mappings(project_id, db_path=None):
     """Return all ICDEV™ <-> GitLab ID mappings.
 
@@ -681,15 +720,17 @@ def list_mappings(project_id, db_path=None):
 
         mappings = []
         for r in rows:
-            mappings.append({
-                "icdev_type": r["icdev_type"],
-                "icdev_id": r["icdev_id"],
-                "external_id": r["external_id"],
-                "external_type": r["external_type"],
-                "external_url": r["external_url"],
-                "sync_status": r["sync_status"],
-                "last_synced": r["last_synced"],
-            })
+            mappings.append(
+                {
+                    "icdev_type": r["icdev_type"],
+                    "icdev_id": r["icdev_id"],
+                    "external_id": r["external_id"],
+                    "external_type": r["external_type"],
+                    "external_url": r["external_url"],
+                    "sync_status": r["sync_status"],
+                    "last_synced": r["last_synced"],
+                }
+            )
 
         return {
             "project_id": project_id,
@@ -705,10 +746,9 @@ def list_mappings(project_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="GitLab integration connector for ICDEV™ RICOAS"
-    )
+    parser = argparse.ArgumentParser(description="GitLab integration connector for ICDEV™ RICOAS")
     parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 

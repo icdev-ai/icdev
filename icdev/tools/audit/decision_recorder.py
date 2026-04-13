@@ -5,10 +5,11 @@ Every ICDEV™ decision (why X over Y) is captured for traceability."""
 
 import argparse
 from pathlib import Path
-from icdev.tools.audit.audit_logger import log_event
-from icdev._paths import get_project_root
+from tools.audit.audit_logger import log_event
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
 def record_decision(
     project_id: str,
     decision: str,

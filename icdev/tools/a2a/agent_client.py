@@ -17,14 +17,15 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from icdev._paths import get_project_root
 
 try:
     import requests
 except ImportError:
     requests = None  # Handled at runtime
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
 class A2AAgentClient:
     """Client for interacting with A2A agent servers."""
 
@@ -116,7 +117,8 @@ class A2AAgentClient:
             meta["project_id"] = project_id
         # Propagate correlation ID for distributed tracing (D149)
         try:
-            from icdev.tools.resilience.correlation import get_correlation_id
+            from tools.resilience.correlation import get_correlation_id
+
             cid = get_correlation_id()
             if cid:
                 meta["correlation_id"] = cid
@@ -124,7 +126,8 @@ class A2AAgentClient:
             pass
         # D285: Propagate W3C traceparent for distributed span linking
         try:
-            from icdev.tools.observability.trace_context import get_current_context
+            from tools.observability.trace_context import get_current_context
+
             ctx = get_current_context()
             if ctx:
                 meta["traceparent"] = ctx.to_traceparent()
@@ -150,9 +153,7 @@ class A2AAgentClient:
         body = resp.json()
 
         if "error" in body:
-            raise RuntimeError(
-                f"A2A error ({body['error']['code']}): {body['error']['message']}"
-            )
+            raise RuntimeError(f"A2A error ({body['error']['code']}): {body['error']['message']}")
 
         return body.get("result", body)
 
@@ -219,11 +220,7 @@ class A2AAgentClient:
 
             time.sleep(poll_interval)
 
-        raise TimeoutError(
-            f"Task {task_id} did not complete within {timeout} seconds. "
-            f"Last status: {status}"
-        )
-
+        raise TimeoutError(f"Task {task_id} did not complete within {timeout} seconds. Last status: {status}")
 
     def send_tasks_parallel(
         self,
@@ -330,9 +327,7 @@ def main():
 
         if args.wait and result.get("status") not in ("completed", "failed", "canceled"):
             task_id = result.get("id")
-            result = client.wait_for_completion(
-                agent_url=args.url, task_id=task_id, timeout=args.timeout
-            )
+            result = client.wait_for_completion(agent_url=args.url, task_id=task_id, timeout=args.timeout)
 
         print(json.dumps(result, indent=2))
 

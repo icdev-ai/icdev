@@ -19,14 +19,13 @@ CLI:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Map framework_id -> assessor class import path
@@ -54,8 +53,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -87,8 +85,7 @@ def _load_assessor(framework_id):
         module = __import__(module_name)
         return getattr(module, class_name)
     except Exception as e:
-        print(f"Warning: Could not load assessor for {framework_id}: {e}",
-              file=sys.stderr)
+        print(f"Warning: Could not load assessor for {framework_id}: {e}", file=sys.stderr)
         return None
 
 
@@ -147,10 +144,7 @@ def assess_all(
                    FROM project_controls WHERE project_id = ?""",
                 (project_id,),
             ).fetchall()
-            nist_impl = {
-                r["control_id"].upper(): r["implementation_status"]
-                for r in rows
-            }
+            nist_impl = {r["control_id"].upper(): r["implementation_status"] for r in rows}
         except Exception:
             nist_impl = {}
 
@@ -172,14 +166,11 @@ def assess_all(
         # Compute overall metrics
         total_frameworks = len(results)
         avg_coverage = (
-            sum(r.get("coverage_pct", 0) for r in results.values()) / total_frameworks
-            if total_frameworks > 0 else 0
+            sum(r.get("coverage_pct", 0) for r in results.values()) / total_frameworks if total_frameworks > 0 else 0
         )
 
         # Count implemented NIST controls
-        implemented_count = sum(
-            1 for s in nist_impl.values() if s == "implemented"
-        )
+        implemented_count = sum(1 for s in nist_impl.values() if s == "implemented")
         total_nist = len(nist_impl)
 
     finally:
@@ -274,10 +265,7 @@ def get_minimal_controls(
                    FROM project_controls WHERE project_id = ?""",
                 (project_id,),
             ).fetchall()
-            implemented = set(
-                r["control_id"].upper() for r in rows
-                if r["implementation_status"] == "implemented"
-            )
+            implemented = set(r["control_id"].upper() for r in rows if r["implementation_status"] == "implemented")
         except Exception:
             implemented = set()
 
@@ -319,22 +307,26 @@ def get_minimal_controls(
                     satisfies.append(il_name)
 
             if satisfies:
-                control_scores.append({
-                    "nist_id": nist_id,
-                    "title": entry.get("title", ""),
-                    "family": entry.get("family", ""),
-                    "priority": entry.get("priority", "P3"),
-                    "frameworks_satisfied": len(satisfies),
-                    "frameworks": satisfies,
-                })
+                control_scores.append(
+                    {
+                        "nist_id": nist_id,
+                        "title": entry.get("title", ""),
+                        "family": entry.get("family", ""),
+                        "priority": entry.get("priority", "P3"),
+                        "frameworks_satisfied": len(satisfies),
+                        "frameworks": satisfies,
+                    }
+                )
 
         # Sort: most frameworks satisfied first, then by priority
         priority_order = {"P1": 0, "P2": 1, "P3": 2}
-        control_scores.sort(key=lambda c: (
-            -c["frameworks_satisfied"],
-            priority_order.get(c["priority"], 99),
-            c["nist_id"],
-        ))
+        control_scores.sort(
+            key=lambda c: (
+                -c["frameworks_satisfied"],
+                priority_order.get(c["priority"], 99),
+                c["nist_id"],
+            )
+        )
 
         return {
             "project_id": project_id,
@@ -353,9 +345,7 @@ def get_minimal_controls(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Multi-Regime Compliance Assessor"
-    )
+    parser = argparse.ArgumentParser(description="Multi-Regime Compliance Assessor")
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument("--project-dir", help="Project source directory")
     parser.add_argument(
@@ -364,26 +354,62 @@ def main():
     )
     parser.add_argument("--gate", action="store_true", help="Evaluate all gates")
     parser.add_argument(
-        "--minimal-controls", action="store_true",
+        "--minimal-controls",
+        action="store_true",
         help="Show minimal control set to satisfy all frameworks",
+    )
+    parser.add_argument(
+        "--optimal-order",
+        action="store_true",
+        help="Order controls by Bayesian information gain (D-BT-4)",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None)
     args = parser.parse_args()
 
     try:
-        fw_list = (
-            [f.strip() for f in args.frameworks.split(",")]
-            if args.frameworks else None
-        )
+        fw_list = [f.strip() for f in args.frameworks.split(",")] if args.frameworks else None
 
-        if args.minimal_controls:
+        if args.optimal_order:
+            # D-BT-4: Bayesian information-gain ordering for compliance checks
+            try:
+                from tools.intelligence.bayesian_teacher import optimal_compliance_order
+
+                ctrl_ids = []
+                if fw_list:
+                    ctrl_ids = fw_list  # Treat as control IDs if --frameworks provided
+                else:
+                    # Default: extract NIST controls from minimal set
+                    mc = get_minimal_controls(args.project_id, None, args.db_path)
+                    ctrl_ids = [c["nist_id"] for c in mc.get("prioritized_controls", [])]
+                if not ctrl_ids:
+                    ctrl_ids = [
+                        "AC-2",
+                        "AC-3",
+                        "AU-2",
+                        "AU-3",
+                        "SC-7",
+                        "SI-2",
+                        "IA-2",
+                        "CM-2",
+                        "RA-3",
+                        "SA-3",
+                        "CA-2",
+                    ]
+                result = optimal_compliance_order(ctrl_ids, project_id=args.project_id, db_path=args.db_path)
+            except ImportError:
+                result = {"error": "Bayesian Teaching engine not available"}
+        elif args.minimal_controls:
             result = get_minimal_controls(
-                args.project_id, fw_list, args.db_path,
+                args.project_id,
+                fw_list,
+                args.db_path,
             )
         elif args.gate:
             result = evaluate_all_gates(
-                args.project_id, fw_list, args.db_path,
+                args.project_id,
+                fw_list,
+                args.db_path,
             )
         else:
             result = assess_all(
@@ -432,11 +458,7 @@ def main():
                 print(f"  Avg coverage: {result['unified_metrics']['average_coverage_pct']}%")
                 print(f"{'=' * 70}")
                 for fw in result.get("framework_results", []):
-                    print(
-                        f"  {fw['framework_name']:<40} "
-                        f"{fw['coverage_pct']:>5.1f}% "
-                        f"({fw['total_requirements']} reqs)"
-                    )
+                    print(f"  {fw['framework_name']:<40} {fw['coverage_pct']:>5.1f}% ({fw['total_requirements']} reqs)")
                 if result.get("errors"):
                     print("\n  Errors:")
                     for fw_id, err in result["errors"].items():

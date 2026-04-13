@@ -18,13 +18,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.db.migration_runner import MigrationRunner
+from tools.db.migration_runner import MigrationRunner  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -81,7 +80,11 @@ def main():
 
     args = parser.parse_args()
 
-    runner = MigrationRunner(db_path=args.db_path)
+    import os
+
+    _backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    # For PostgreSQL, db_path is ignored by _get_connection() — get_connection() uses PG env vars.
+    runner = MigrationRunner(db_path=args.db_path, engine=_backend)
 
     # ---- Status ----
     if args.status:

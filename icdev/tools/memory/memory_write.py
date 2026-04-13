@@ -9,16 +9,13 @@ and thinking memory type (D182).
 import argparse
 import hashlib
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from datetime import datetime
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
-DB_PATH = BASE_DIR / "data" / "memory.db"
-
 VALID_TYPES = ("fact", "preference", "event", "insight", "task", "relationship", "thinking")
 VALID_SOURCES = ("manual", "hook", "thinking", "auto")
 MEMORY_SECTIONS = (
@@ -43,7 +40,7 @@ def write_to_db(content, entry_type, importance, user_id=None, tenant_id=None, s
         tuple: (entry_id, is_duplicate)
     """
     content_hash = compute_content_hash(content)
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     # Check for duplicate (D179)
@@ -88,7 +85,7 @@ def write_to_daily_log(content):
         f.write(f"- [{timestamp}] {content}\n")
 
     # Also log to DB
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
     c.execute(
         "INSERT INTO daily_logs (date, content) VALUES (?, ?)",
@@ -187,30 +184,46 @@ def main():
             return
         update_memory_md(args.content, args.section)
         entry_id, is_dup = write_to_db(
-            args.content, args.type, args.importance,
-            user_id=args.user_id, tenant_id=args.tenant_id, source=args.source,
+            args.content,
+            args.type,
+            args.importance,
+            user_id=args.user_id,
+            tenant_id=args.tenant_id,
+            source=args.source,
         )
         if args.json:
-            print(json.dumps({
-                "classification": "CUI // SP-CTI",
-                "entry_id": entry_id,
-                "duplicate": is_dup,
-                "target": "memory_md",
-                "section": args.section,
-            }))
+            print(
+                json.dumps(
+                    {
+                        "classification": "CUI // SP-CTI",
+                        "entry_id": entry_id,
+                        "duplicate": is_dup,
+                        "target": "memory_md",
+                        "section": args.section,
+                    }
+                )
+            )
     else:
         write_to_daily_log(args.content)
         entry_id, is_dup = write_to_db(
-            args.content, args.type, args.importance,
-            user_id=args.user_id, tenant_id=args.tenant_id, source=args.source,
+            args.content,
+            args.type,
+            args.importance,
+            user_id=args.user_id,
+            tenant_id=args.tenant_id,
+            source=args.source,
         )
         if args.json:
-            print(json.dumps({
-                "classification": "CUI // SP-CTI",
-                "entry_id": entry_id,
-                "duplicate": is_dup,
-                "target": "daily_log",
-            }))
+            print(
+                json.dumps(
+                    {
+                        "classification": "CUI // SP-CTI",
+                        "entry_id": entry_id,
+                        "duplicate": is_dup,
+                        "target": "daily_log",
+                    }
+                )
+            )
         else:
             if is_dup:
                 print(f"Duplicate detected (existing entry #{entry_id})")

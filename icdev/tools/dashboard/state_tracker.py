@@ -2,22 +2,25 @@
 # CUI // SP-CTI
 """Dirty-tracking state push for ICDEV™ dashboard (Phase 44 — D268-D270).
 
-Per-client dirty/pushed version counters with debounced coalescing.
-Adapted from Agent Zero's StateMonitor pattern.
+Per-client dirty/pushed version counters with debounced coalescing. Pull-with-
+versioning model designed for Flask long-polling: clients send ?since_version=N
+and server returns only changes since that version. SSE debounced at 25ms,
+HTTP polling preserved at 3s.
 
-Clients send ?since_version=N, server returns only changes since that version.
-SSE debounced at 25ms, HTTP polling preserved at 3s.
+Category-level concept of "debounced mark-dirty notifications" is shared with
+Agent Zero's StateMonitor (MIT), but ICDEV's implementation uses an explicit
+pull+ACK transport model while Agent Zero pushes via WebSocket on debounce
+fire. Zero class overlap, zero architectural overlap. See OPT-73 audit.
 """
 
-import json
 import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 try:
-    from icdev.tools.dashboard.sse_manager import sse_manager
+    from tools.dashboard.sse_manager import sse_manager
 except ImportError:
     sse_manager = None
 
@@ -111,7 +114,7 @@ class StateTracker:
 
             # Trim old changes to prevent unbounded growth
             if len(changes) > self._max_changes_buffer:
-                self._context_changes[context_id] = changes[-self._max_changes_buffer:]
+                self._context_changes[context_id] = changes[-self._max_changes_buffer :]
 
         # Schedule debounced push for SSE clients
         self._schedule_push(context_id)
@@ -210,10 +213,9 @@ class StateTracker:
             current_version = self._context_versions.get(context_id, 0)
             # Get clients viewing this context
             target_clients = [
-                c for c in self._clients.values()
-                if c.viewing_context == context_id
-                and c.transport == "sse"
-                and c.pushed_version < current_version
+                c
+                for c in self._clients.values()
+                if c.viewing_context == context_id and c.transport == "sse" and c.pushed_version < current_version
             ]
             if not target_clients:
                 return

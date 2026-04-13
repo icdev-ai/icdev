@@ -5,8 +5,8 @@
     "use strict";
 
     // Ensure ICDEV™ namespace exists (api.js should have created it)
-    var ICDEV™ = window.ICDEV™ || {};
-    window.ICDEV™ = ICDEV™;
+    var ICDEV = window.ICDEV || {};
+    window.ICDEV = ICDEV;
 
     // ========================================================================
     // 1. CONFIGURATION
@@ -168,9 +168,9 @@
         return e.ctrlKey || e.altKey || e.metaKey;
     }
 
-    /** Delegate to shared ICDEV™.escapeHTML (api.js). */
+    /** Delegate to shared ICDEV.escapeHTML (api.js). */
     function escapeHTML(str) {
-        return ICDEV™.escapeHTML ? ICDEV™.escapeHTML(str) : String(str || "");
+        return ICDEV.escapeHTML ? ICDEV.escapeHTML(str) : String(str || "");
     }
 
     // ========================================================================
@@ -276,7 +276,7 @@
         closeBtn.className = "icdev-shortcuts-close";
         closeBtn.setAttribute("aria-label", "Close shortcuts help");
         closeBtn.textContent = "Close (Esc)";
-        closeBtn.addEventListener("click", function () { ICDEV™.hideShortcutsHelp(); });
+        closeBtn.addEventListener("click", function () { ICDEV.hideShortcutsHelp(); });
         header.appendChild(title);
         header.appendChild(closeBtn);
         card.appendChild(header);
@@ -295,14 +295,14 @@
 
         // Click on backdrop to close
         overlay.addEventListener("click", function (e) {
-            if (e.target === overlay) { ICDEV™.hideShortcutsHelp(); }
+            if (e.target === overlay) { ICDEV.hideShortcutsHelp(); }
         });
 
         return overlay;
     }
 
     /** Open the shortcuts help modal. */
-    ICDEV™.showShortcutsHelp = function showShortcutsHelp() {
+    ICDEV.showShortcutsHelp = function showShortcutsHelp() {
         if (_helpModalOpen) { return; }
         _helpModalOpen = true;
         _previousFocus = document.activeElement;
@@ -318,7 +318,7 @@
     };
 
     /** Close the shortcuts help modal. */
-    ICDEV™.hideShortcutsHelp = function hideShortcutsHelp() {
+    ICDEV.hideShortcutsHelp = function hideShortcutsHelp() {
         if (!_helpModalOpen || !_helpOverlay) { return; }
         _helpModalOpen = false;
         _helpOverlay.classList.remove("visible");
@@ -358,8 +358,8 @@
 
     /** Toggle the shortcuts help modal. */
     function handleShowHelp() {
-        if (_helpModalOpen) { ICDEV™.hideShortcutsHelp(); }
-        else { ICDEV™.showShortcutsHelp(); }
+        if (_helpModalOpen) { ICDEV.hideShortcutsHelp(); }
+        else { ICDEV.showShortcutsHelp(); }
     }
 
     /** Focus the search input if present, otherwise navigate to /query. */
@@ -377,18 +377,18 @@
 
     /** Fetch notifications from /api/notifications and show as toasts. */
     function handleNotifications() {
-        if (typeof ICDEV™.fetchJSON !== "function") { return; }
-        ICDEV™.fetchJSON("/api/notifications").then(function (data) {
+        if (typeof ICDEV.fetchJSON !== "function") { return; }
+        ICDEV.fetchJSON("/api/notifications").then(function (data) {
             if (!data) {
-                if (typeof ICDEV™.showNotification === "function") {
-                    ICDEV™.showNotification("No new notifications", "info");
+                if (typeof ICDEV.showNotification === "function") {
+                    ICDEV.showNotification("No new notifications", "info");
                 }
                 return;
             }
             var items = data.notifications || data.items || [];
             if (items.length === 0) {
-                if (typeof ICDEV™.showNotification === "function") {
-                    ICDEV™.showNotification("No new notifications", "info");
+                if (typeof ICDEV.showNotification === "function") {
+                    ICDEV.showNotification("No new notifications", "info");
                 }
                 return;
             }
@@ -396,39 +396,39 @@
                 var item = items[i];
                 var msg = item.message || item.text || String(item);
                 var lvl = item.level || item.type || "info";
-                if (typeof ICDEV™.showNotification === "function") {
-                    ICDEV™.showNotification(msg, lvl);
+                if (typeof ICDEV.showNotification === "function") {
+                    ICDEV.showNotification(msg, lvl);
                 }
             }
         });
     }
 
-    /** Toggle the guided tour if ICDEV™.startTour is available. */
+    /** Toggle the guided tour if ICDEV.startTour is available. */
     function handleToggleTour() {
-        if (typeof ICDEV™.startTour === "function") {
-            ICDEV™.startTour();
-        } else if (typeof ICDEV™.showNotification === "function") {
-            ICDEV™.showNotification("Guided tour is not available on this page", "info");
+        if (typeof ICDEV.startTour === "function") {
+            ICDEV.startTour();
+        } else if (typeof ICDEV.showNotification === "function") {
+            ICDEV.showNotification("Guided tour is not available on this page", "info");
         }
     }
 
-    /** Refresh page data via ICDEV™ API helpers or fall back to full reload. */
+    /** Refresh page data via ICDEV API helpers or fall back to full reload. */
     function handleRefresh() {
-        if (typeof ICDEV™.fetchJSON !== "function") {
+        if (typeof ICDEV.fetchJSON !== "function") {
             window.location.reload();
             return;
         }
         var refreshed = false;
-        if (typeof ICDEV™.refreshAlertBadge === "function") {
-            ICDEV™.refreshAlertBadge();
+        if (typeof ICDEV.refreshAlertBadge === "function") {
+            ICDEV.refreshAlertBadge();
             refreshed = true;
         }
-        if (typeof ICDEV™.refreshHealthStatus === "function") {
-            ICDEV™.refreshHealthStatus();
+        if (typeof ICDEV.refreshHealthStatus === "function") {
+            ICDEV.refreshHealthStatus();
             refreshed = true;
         }
-        if (refreshed && typeof ICDEV™.showNotification === "function") {
-            ICDEV™.showNotification("Page data refreshed", "success", 2000);
+        if (refreshed && typeof ICDEV.showNotification === "function") {
+            ICDEV.showNotification("Page data refreshed", "success", 2000);
         } else {
             window.location.reload();
         }
@@ -443,7 +443,7 @@
 
         // Escape always closes modals/overlays
         if (key === "Escape") {
-            if (_helpModalOpen) { ICDEV™.hideShortcutsHelp(); e.preventDefault(); return; }
+            if (_helpModalOpen) { ICDEV.hideShortcutsHelp(); e.preventDefault(); return; }
             if (_chordActive) { cancelChordMode(); e.preventDefault(); return; }
             return; // let Escape propagate for other overlays (tour, etc.)
         }
@@ -493,7 +493,7 @@
      * @param {string} label Display label for the help modal
      * @example ICDEV™.setShortcut("x", "/settings", "Settings");
      */
-    ICDEV™.setShortcut = function (key, path, label) {
+    ICDEV.setShortcut = function (key, path, label) {
         if (!key || key.length !== 1 || !path) return;
         NAV_SHORTCUTS[key] = { path: path, label: label || path };
         saveShortcutConfig();
@@ -505,7 +505,7 @@
      * Remove a custom navigation shortcut. Persists to localStorage.
      * @param {string} key  Single character key to remove
      */
-    ICDEV™.removeShortcut = function (key) {
+    ICDEV.removeShortcut = function (key) {
         if (!key) return;
         delete NAV_SHORTCUTS[key];
         saveShortcutConfig();
@@ -515,7 +515,7 @@
     /**
      * Reset all shortcuts to defaults. Clears localStorage.
      */
-    ICDEV™.resetShortcuts = function () {
+    ICDEV.resetShortcuts = function () {
         try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* noop */ }
         loadShortcutConfig();
         _helpOverlay = null;
@@ -525,7 +525,7 @@
      * Get current shortcut configuration (for debugging / display).
      * @returns {{nav: Object, direct: Object}}
      */
-    ICDEV™.getShortcuts = function () {
+    ICDEV.getShortcuts = function () {
         return { nav: NAV_SHORTCUTS, direct: DIRECT_SHORTCUTS };
     };
 

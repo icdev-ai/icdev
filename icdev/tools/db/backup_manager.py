@@ -18,15 +18,14 @@ import os
 import shutil
 import sqlite3
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 # Centralized DB path resolution
 try:
-    from icdev.tools.compat.db_utils import (
+    from tools.compat.db_utils import (
         get_icdev_db_path,
         get_memory_db_path,
         get_platform_db_path,
@@ -140,7 +139,7 @@ def _write_meta_json(
 def _log_audit(event_type: str, action: str, details: dict = None) -> None:
     """Best-effort audit trail logging."""
     try:
-        from icdev.tools.audit.audit_logger import log_event
+        from tools.audit.audit_logger import log_event
 
         log_event(
             event_type=event_type,
@@ -164,24 +163,18 @@ class BackupManager:
     def __init__(self, config: dict = None):
         self._config = config or _load_config()
         self._backup_cfg = self._config.get("backup", {})
-        self._backup_dir = BASE_DIR / self._backup_cfg.get(
-            "backup_dir", "data/backups"
-        )
+        self._backup_dir = BASE_DIR / self._backup_cfg.get("backup_dir", "data/backups")
         self._retention_days = self._backup_cfg.get("retention_days", 30)
         self._max_backups = self._backup_cfg.get("max_backups", 50)
         self._databases = self._backup_cfg.get("databases", {})
         self._encryption_cfg = self._backup_cfg.get("encryption", {})
-        self._pbkdf2_iterations = self._encryption_cfg.get(
-            "pbkdf2_iterations", 600000
-        )
+        self._pbkdf2_iterations = self._encryption_cfg.get("pbkdf2_iterations", 600000)
 
     # ------------------------------------------------------------------
     # SQLite backup / restore
     # ------------------------------------------------------------------
 
-    def backup_sqlite(
-        self, db_path: Path, output_dir: Path = None
-    ) -> dict:
+    def backup_sqlite(self, db_path: Path, output_dir: Path = None) -> dict:
         """Create a WAL-safe online backup of a SQLite database.
 
         Uses the ``sqlite3.Connection.backup()`` API for consistency.
@@ -243,9 +236,7 @@ class BackupManager:
             "encrypted": False,
         }
 
-    def backup_postgresql(
-        self, db_url: str, output_dir: Path = None
-    ) -> dict:
+    def backup_postgresql(self, db_url: str, output_dir: Path = None) -> dict:
         """Create a pg_dump backup of a PostgreSQL database.
 
         Args:
@@ -269,7 +260,7 @@ class BackupManager:
         backup_path = dest_dir / backup_name
 
         cmd = ["pg_dump", "--no-owner", "--no-acl", "-f", str(backup_path), db_url]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
 
         checksum = _compute_sha256(backup_path)
         _write_sha256_sidecar(backup_path, checksum)
@@ -298,9 +289,7 @@ class BackupManager:
             "encrypted": False,
         }
 
-    def restore_sqlite(
-        self, backup_path: Path, db_path: Path
-    ) -> dict:
+    def restore_sqlite(self, backup_path: Path, db_path: Path) -> dict:
         """Restore a SQLite database from a backup file.
 
         Copies the backup to the target path and runs ``PRAGMA integrity_check``
@@ -352,9 +341,7 @@ class BackupManager:
             "engine": "sqlite",
         }
 
-    def restore_postgresql(
-        self, backup_path: Path, db_url: str
-    ) -> dict:
+    def restore_postgresql(self, backup_path: Path, db_url: str) -> dict:
         """Restore a PostgreSQL database from a pg_dump backup.
 
         Args:
@@ -436,9 +423,7 @@ class BackupManager:
                 row = cursor.fetchone()
                 result["integrity_valid"] = row is not None and row[0] == "ok"
                 if not result["integrity_valid"]:
-                    result["errors"].append(
-                        f"SQLite integrity check failed: {row}"
-                    )
+                    result["errors"].append(f"SQLite integrity check failed: {row}")
                 conn.close()
             except sqlite3.Error as exc:
                 result["integrity_valid"] = False
@@ -483,8 +468,7 @@ class BackupManager:
             from cryptography.hazmat.primitives import hashes
         except ImportError:
             raise ImportError(
-                "The 'cryptography' package is required for encryption. "
-                "Install it with: pip install cryptography"
+                "The 'cryptography' package is required for encryption. Install it with: pip install cryptography"
             )
 
         file_path = Path(file_path).resolve()
@@ -561,8 +545,7 @@ class BackupManager:
             from cryptography.hazmat.primitives import hashes
         except ImportError:
             raise ImportError(
-                "The 'cryptography' package is required for decryption. "
-                "Install it with: pip install cryptography"
+                "The 'cryptography' package is required for decryption. Install it with: pip install cryptography"
             )
 
         file_path = Path(file_path).resolve()
@@ -625,22 +608,24 @@ class BackupManager:
                     result["db_key"] = db_key
                     results.append(result)
                 except Exception as exc:
-                    results.append({
+                    results.append(
+                        {
+                            "db_key": db_key,
+                            "db_path": str(db_path),
+                            "error": str(exc),
+                        }
+                    )
+            else:
+                results.append(
+                    {
                         "db_key": db_key,
                         "db_path": str(db_path),
-                        "error": str(exc),
-                    })
-            else:
-                results.append({
-                    "db_key": db_key,
-                    "db_path": str(db_path),
-                    "error": "Database file not found",
-                })
+                        "error": "Database file not found",
+                    }
+                )
         return results
 
-    def backup_tenants(
-        self, slug: str = None, output_dir: Path = None
-    ) -> list:
+    def backup_tenants(self, slug: str = None, output_dir: Path = None) -> list:
         """Backup per-tenant databases from data/tenants/.
 
         Args:
@@ -667,15 +652,19 @@ class BackupManager:
                     result["tenant_slug"] = slug
                     results.append(result)
                 except Exception as exc:
-                    results.append({
-                        "tenant_slug": slug,
-                        "error": str(exc),
-                    })
+                    results.append(
+                        {
+                            "tenant_slug": slug,
+                            "error": str(exc),
+                        }
+                    )
             else:
-                results.append({
-                    "tenant_slug": slug,
-                    "error": f"Tenant database not found: {tenant_db}",
-                })
+                results.append(
+                    {
+                        "tenant_slug": slug,
+                        "error": f"Tenant database not found: {tenant_db}",
+                    }
+                )
         else:
             # Backup all tenants
             for tenant_file in sorted(tenants_dir.glob("*.db")):
@@ -686,10 +675,12 @@ class BackupManager:
                     result["tenant_slug"] = tenant_slug
                     results.append(result)
                 except Exception as exc:
-                    results.append({
-                        "tenant_slug": tenant_slug,
-                        "error": str(exc),
-                    })
+                    results.append(
+                        {
+                            "tenant_slug": tenant_slug,
+                            "error": str(exc),
+                        }
+                    )
 
         return results
 
@@ -725,9 +716,7 @@ class BackupManager:
         records.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return records
 
-    def prune_old_backups(
-        self, backup_dir: Path = None, retention_days: int = None
-    ) -> dict:
+    def prune_old_backups(self, backup_dir: Path = None, retention_days: int = None) -> dict:
         """Remove backups older than the retention period.
 
         Args:
@@ -781,17 +770,21 @@ class BackupManager:
                     # Remove meta file
                     meta_file.unlink()
 
-                    pruned.append({
-                        "db_name": meta.get("db_name"),
-                        "backup_path": meta.get("backup_path"),
-                        "age_days": age_days,
-                    })
+                    pruned.append(
+                        {
+                            "db_name": meta.get("db_name"),
+                            "backup_path": meta.get("backup_path"),
+                            "age_days": age_days,
+                        }
+                    )
 
             except Exception as exc:
-                errors.append({
-                    "meta_file": str(meta_file),
-                    "error": str(exc),
-                })
+                errors.append(
+                    {
+                        "meta_file": str(meta_file),
+                        "error": str(exc),
+                    }
+                )
 
         _log_audit(
             "config_changed",
@@ -824,8 +817,5 @@ class BackupManager:
         """
         db_info = self._databases.get(db_name)
         if not db_info:
-            raise ValueError(
-                f"Unknown database '{db_name}'. "
-                f"Configured: {list(self._databases.keys())}"
-            )
+            raise ValueError(f"Unknown database '{db_name}'. Configured: {list(self._databases.keys())}")
         return BASE_DIR / db_info["path"]

@@ -13,7 +13,7 @@ Architecture Decisions:
           marketplace plugins can register additional connectors
 
 Usage:
-    from icdev.tools.ci.connectors.connector_registry import ConnectorRegistry
+    from tools.ci.connectors.connector_registry import ConnectorRegistry
 
     # At application startup
     ConnectorRegistry.load_from_config()
@@ -28,7 +28,7 @@ Usage:
 from pathlib import Path
 from typing import Dict, Optional
 
-from icdev.tools.ci.connectors.base_connector import ChatConnectorAdapter
+from tools.ci.connectors.base_connector import ChatConnectorAdapter
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -54,7 +54,8 @@ class ConnectorRegistry:
         slack_config = channels.get("slack", {})
         if slack_config.get("enabled", False):
             try:
-                from icdev.tools.ci.connectors.slack_connector import SlackConnector
+                from tools.ci.connectors.slack_connector import SlackConnector
+
                 connector = SlackConnector(slack_config)
                 cls.register(connector)
                 print("[ConnectorRegistry] Slack connector registered")
@@ -65,7 +66,8 @@ class ConnectorRegistry:
         mm_config = channels.get("mattermost", {})
         if mm_config.get("enabled", False):
             try:
-                from icdev.tools.ci.connectors.mattermost_connector import MattermostConnector
+                from tools.ci.connectors.mattermost_connector import MattermostConnector
+
                 connector = MattermostConnector(mm_config)
                 cls.register(connector)
                 print("[ConnectorRegistry] Mattermost connector registered")
@@ -90,10 +92,7 @@ class ConnectorRegistry:
     @classmethod
     def list_connectors(cls) -> Dict[str, bool]:
         """List all registered connectors with their enabled status."""
-        return {
-            name: connector.is_enabled()
-            for name, connector in cls._connectors.items()
-        }
+        return {name: connector.is_enabled() for name, connector in cls._connectors.items()}
 
     @classmethod
     def register_routes(cls, app):
@@ -102,7 +101,7 @@ class ConnectorRegistry:
         Args:
             app: Flask application instance.
         """
-        from icdev.tools.ci.core.event_router import EventRouter
+        from tools.ci.core.event_router import EventRouter
 
         router = EventRouter()
 
@@ -131,9 +130,7 @@ class ConnectorRegistry:
 
                 # For Slack, prepend timestamp for signature verification
                 if conn.connector_name == "slack":
-                    timestamp = request.headers.get(
-                        "X-Slack-Request-Timestamp", ""
-                    )
+                    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
                     signature = f"{timestamp}:{signature}" if timestamp else signature
 
                 if signature and not conn.verify_signature(raw_body, signature):
@@ -143,10 +140,7 @@ class ConnectorRegistry:
                 payload = request.get_json(silent=True) or {}
 
                 # Handle Slack URL verification challenge
-                if (
-                    conn.connector_name == "slack"
-                    and payload.get("type") == "url_verification"
-                ):
+                if conn.connector_name == "slack" and payload.get("type") == "url_verification":
                     return jsonify({"challenge": payload.get("challenge", "")})
 
                 # Parse inbound event
@@ -179,6 +173,7 @@ class ConnectorRegistry:
         """Load cicd_config.yaml."""
         try:
             import yaml
+
             config_path = PROJECT_ROOT / "args" / "cicd_config.yaml"
             if config_path.exists():
                 with open(config_path) as f:

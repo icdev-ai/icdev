@@ -2,9 +2,13 @@
 # Change behavior without editing goals or tools
 
 project:
-  classification: "CUI"
-  distribution: "Distribution D: Authorized DoD Personnel Only"
-  cui_category: "CTI"
+  # Classification is per-project. Default is "public" (opt-in to CUI).
+  # Supported levels defined in args/classification_profiles.yaml:
+  #   public, fouo, cui, cui_sp_cti, secret, itar
+  # Override per-project in icdev.yaml or at /icdev-init time.
+  classification: "public"
+  distribution: ""
+  cui_category: ""
   default_backend: "python"
   default_frontend: "javascript"
   default_database: "postgresql"

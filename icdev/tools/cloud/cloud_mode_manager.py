@@ -17,14 +17,13 @@ CLI: --status, --validate, --switch, --check-readiness, --json
 import argparse
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional
-from icdev._paths import get_project_root
 
 logger = logging.getLogger("icdev.cloud.mode_manager")
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 try:
     import yaml
 except ImportError:
@@ -82,9 +81,7 @@ class CloudModeManager:
     """Orchestrate cloud mode selection, validation, and transitions."""
 
     def __init__(self, config_path: Optional[str] = None):
-        self._config_path = Path(config_path) if config_path else (
-            BASE_DIR / "args" / "cloud_config.yaml"
-        )
+        self._config_path = Path(config_path) if config_path else (BASE_DIR / "args" / "cloud_config.yaml")
         self._config: Dict = {}
         self._load_config()
 
@@ -174,37 +171,28 @@ class CloudModeManager:
 
         # 1. Check mode is valid
         if mode not in CLOUD_MODES:
-            errors.append(f"Unknown cloud_mode: {mode}. "
-                          f"Valid modes: {list(CLOUD_MODES.keys())}")
+            errors.append(f"Unknown cloud_mode: {mode}. Valid modes: {list(CLOUD_MODES.keys())}")
 
         # 2. Check CSP supports mode
         csp_modes = CSP_MODE_SUPPORT.get(provider, [])
         if mode not in csp_modes:
             errors.append(
-                f"CSP '{provider}' does not support cloud_mode '{mode}'. "
-                f"Supported modes for {provider}: {csp_modes}"
+                f"CSP '{provider}' does not support cloud_mode '{mode}'. Supported modes for {provider}: {csp_modes}"
             )
 
         # 3. Check IL is compatible with mode
         il_modes = IL_MODE_REQUIREMENTS.get(il, [])
         if mode not in il_modes:
-            errors.append(
-                f"Impact level {il} requires cloud_mode in {il_modes}, "
-                f"but current mode is '{mode}'"
-            )
+            errors.append(f"Impact level {il} requires cloud_mode in {il_modes}, but current mode is '{mode}'")
 
         # 4. IL6 CSP restrictions
         if il == "IL6" and provider not in ("aws", "azure", "oci", "local"):
-            errors.append(
-                f"IL6 only supports CSPs: aws, azure, oci, local. "
-                f"Current provider: {provider}"
-            )
+            errors.append(f"IL6 only supports CSPs: aws, azure, oci, local. Current provider: {provider}")
 
         # 5. Air-gapped consistency
         if mode == "air_gapped" and not self.air_gapped:
             warnings.append(
-                "cloud_mode is 'air_gapped' but air_gapped flag is false. "
-                "Set air_gapped: true for consistency."
+                "cloud_mode is 'air_gapped' but air_gapped flag is false. Set air_gapped: true for consistency."
             )
         if self.air_gapped and mode != "air_gapped":
             warnings.append(
@@ -217,15 +205,13 @@ class CloudModeManager:
         if mode_info.get("fips_required") and il in ("IL4", "IL5", "IL6"):
             aws_cfg = self.cloud_section.get("aws", {})
             if provider == "aws" and not aws_cfg.get("fips_endpoints", False):
-                warnings.append(
-                    f"Cloud mode '{mode}' with {il} requires FIPS endpoints. "
-                    "Set aws.fips_endpoints: true"
-                )
+                warnings.append(f"Cloud mode '{mode}' with {il} requires FIPS endpoints. Set aws.fips_endpoints: true")
 
         # 7. Region validation (if region_validator is available)
         if self.current_region:
             try:
-                from icdev.tools.cloud.region_validator import RegionValidator
+                from tools.cloud.region_validator import RegionValidator
+
                 rv = RegionValidator()
                 # Determine required certs based on IL
                 required = []
@@ -237,9 +223,7 @@ class CloudModeManager:
                     result = rv.validate_region(provider, self.current_region, required)
                     if not result.get("valid", True):
                         missing = result.get("missing", [])
-                        warnings.append(
-                            f"Region {self.current_region} missing certifications: {missing}"
-                        )
+                        warnings.append(f"Region {self.current_region} missing certifications: {missing}")
             except Exception:
                 pass  # Region validator not available — skip
 
@@ -261,7 +245,8 @@ class CloudModeManager:
         health_results = {}
 
         try:
-            from icdev.tools.cloud.provider_factory import CSPProviderFactory
+            from tools.cloud.provider_factory import CSPProviderFactory
+
             factory = CSPProviderFactory(config_path=str(self._config_path))
             health = factory.health_check()
             health_results = health.get("services", {})
@@ -275,10 +260,10 @@ class CloudModeManager:
             "status": status,
             "health": health_results,
             "ready": all(
-                v.get("status") == "healthy"
-                for v in health_results.values()
-                if isinstance(v, dict) and "status" in v
-            ) if isinstance(health_results, dict) and "error" not in health_results else False,
+                v.get("status") == "healthy" for v in health_results.values() if isinstance(v, dict) and "status" in v
+            )
+            if isinstance(health_results, dict) and "error" not in health_results
+            else False,
         }
 
     def get_eligible_modes(self) -> List[Dict]:
@@ -292,35 +277,29 @@ class CloudModeManager:
 
         results = []
         for mode_name, mode_info in CLOUD_MODES.items():
-            results.append({
-                "mode": mode_name,
-                "description": mode_info["description"],
-                "eligible": mode_name in eligible,
-                "current": mode_name == self.current_mode,
-                "supported_by_csp": mode_name in csp_modes,
-                "supported_by_il": mode_name in il_modes,
-            })
+            results.append(
+                {
+                    "mode": mode_name,
+                    "description": mode_info["description"],
+                    "eligible": mode_name in eligible,
+                    "current": mode_name == self.current_mode,
+                    "supported_by_csp": mode_name in csp_modes,
+                    "supported_by_il": mode_name in il_modes,
+                }
+            )
         return results
 
 
 def run_cli():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Cloud Mode Manager — cloud mode selection and validation (D232)"
-    )
+    parser = argparse.ArgumentParser(description="Cloud Mode Manager — cloud mode selection and validation (D232)")
     parser.add_argument("--config", help="Path to cloud_config.yaml")
-    parser.add_argument("--status", action="store_true",
-                        help="Show current cloud mode status")
-    parser.add_argument("--validate", action="store_true",
-                        help="Validate cloud mode against constraints")
-    parser.add_argument("--check-readiness", action="store_true",
-                        help="Check cloud service readiness")
-    parser.add_argument("--eligible", action="store_true",
-                        help="List eligible cloud modes for current config")
-    parser.add_argument("--json", action="store_true",
-                        help="Output as JSON")
-    parser.add_argument("--human", action="store_true",
-                        help="Output as formatted text")
+    parser.add_argument("--status", action="store_true", help="Show current cloud mode status")
+    parser.add_argument("--validate", action="store_true", help="Validate cloud mode against constraints")
+    parser.add_argument("--check-readiness", action="store_true", help="Check cloud service readiness")
+    parser.add_argument("--eligible", action="store_true", help="List eligible cloud modes for current config")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument("--human", action="store_true", help="Output as formatted text")
 
     args = parser.parse_args()
     manager = CloudModeManager(config_path=args.config)

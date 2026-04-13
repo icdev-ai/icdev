@@ -31,7 +31,9 @@ class NISTAIRMFAssessor(BaseAssessor):
     CATALOG_FILENAME = "nist_ai_rmf.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """NIST AI RMF automated checks.
 

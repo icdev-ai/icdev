@@ -8,24 +8,23 @@ import argparse
 import json
 import re
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _parse_time_window(window: str) -> timedelta:
     """Parse time window string like '5m', '1h', '30s' into timedelta."""
-    match = re.match(r'^(\d+)([smhd])$', window)
+    match = re.match(r"^(\d+)([smhd])$", window)
     if not match:
         raise ValueError(f"Invalid time window: {window}. Use format: 30s, 5m, 1h, 1d")
     value, unit = int(match.group(1)), match.group(2)
@@ -39,13 +38,10 @@ def _normalize_alert(alert: dict) -> dict:
         "id": alert.get("id"),
         "title": alert.get("title") or alert.get("alertname") or alert.get("name") or "",
         "description": alert.get("description") or alert.get("message") or alert.get("summary") or "",
-        "severity": (
-            alert.get("severity") or alert.get("priority") or "warning"
-        ).lower(),
+        "severity": (alert.get("severity") or alert.get("priority") or "warning").lower(),
         "source": alert.get("source") or "unknown",
         "service": (
-            alert.get("service") or alert.get("job") or
-            alert.get("namespace") or alert.get("host") or "unknown"
+            alert.get("service") or alert.get("job") or alert.get("namespace") or alert.get("host") or "unknown"
         ),
         "status": alert.get("status") or "firing",
         "timestamp": alert.get("created_at") or alert.get("timestamp") or alert.get("startsAt") or "",
@@ -89,9 +85,7 @@ def correlate(alerts: list, time_window: timedelta = None) -> list:
         ts = alert["timestamp"]
         if isinstance(ts, str) and ts:
             try:
-                alert["_dt"] = datetime.fromisoformat(
-                    ts.replace("Z", "+00:00").replace("+00:00", "")
-                )
+                alert["_dt"] = datetime.fromisoformat(ts.replace("Z", "+00:00").replace("+00:00", ""))
             except ValueError:
                 alert["_dt"] = datetime.now(timezone.utc)
         else:
@@ -163,24 +157,23 @@ def correlate(alerts: list, time_window: timedelta = None) -> list:
                 if severity_rank.get(other["severity"], 0) > severity_rank.get(group["max_severity"], 0):
                     group["max_severity"] = other["severity"]
 
-        incidents.append({
-            "incident_id": f"INC-{i+1:04d}",
-            "title": alert["title"],
-            "severity": group["max_severity"],
-            "services": list(group["services"]),
-            "sources": list(group["sources"]),
-            "alert_count": 1 + len(group["related_alerts"]),
-            "start_time": group["start_time"].isoformat(),
-            "end_time": group["end_time"].isoformat(),
-            "duration_seconds": (group["end_time"] - group["start_time"]).total_seconds(),
-            "primary_alert": {
-                k: v for k, v in alert.items() if k not in ("_dt", "raw")
-            },
-            "related_alerts": [
-                {k: v for k, v in a.items() if k not in ("_dt", "raw")}
-                for a in group["related_alerts"]
-            ],
-        })
+        incidents.append(
+            {
+                "incident_id": f"INC-{i + 1:04d}",
+                "title": alert["title"],
+                "severity": group["max_severity"],
+                "services": list(group["services"]),
+                "sources": list(group["sources"]),
+                "alert_count": 1 + len(group["related_alerts"]),
+                "start_time": group["start_time"].isoformat(),
+                "end_time": group["end_time"].isoformat(),
+                "duration_seconds": (group["end_time"] - group["start_time"]).total_seconds(),
+                "primary_alert": {k: v for k, v in alert.items() if k not in ("_dt", "raw")},
+                "related_alerts": [
+                    {k: v for k, v in a.items() if k not in ("_dt", "raw")} for a in group["related_alerts"]
+                ],
+            }
+        )
 
     # Sort by severity then by alert count
     severity_rank = {"critical": 4, "high": 3, "warning": 2, "low": 1, "info": 0}
@@ -211,9 +204,7 @@ def deduplicate(alerts: list) -> list:
         ts = alert["timestamp"]
         if isinstance(ts, str) and ts:
             try:
-                alert["_dt"] = datetime.fromisoformat(
-                    ts.replace("Z", "+00:00").replace("+00:00", "")
-                )
+                alert["_dt"] = datetime.fromisoformat(ts.replace("Z", "+00:00").replace("+00:00", ""))
             except ValueError:
                 alert["_dt"] = datetime.now(timezone.utc)
         else:
@@ -258,9 +249,7 @@ def deduplicate(alerts: list) -> list:
                     merged["severity"] = other["severity"]
 
         used.add(i)
-        deduped.append({
-            k: v for k, v in merged.items() if k not in ("_dt", "raw")
-        })
+        deduped.append({k: v for k, v in merged.items() if k not in ("_dt", "raw")})
 
     return deduped
 
@@ -464,19 +453,20 @@ def main():
     if args.format == "json":
         print(json.dumps(result, indent=2))
     else:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  ALERT CORRELATION — {args.project_id}")
         print(f"  Window: {args.time_window} | Alerts: {len(alerts)} | Incidents: {len(incidents)}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         for inc in incidents:
             sev = inc["severity"].upper()
             print(f"\n  [{sev:>8s}] {inc['incident_id']}: {inc['title']}")
-            print(f"           Alerts: {inc['alert_count']} | "
-                  f"Services: {', '.join(inc['services'])} | "
-                  f"Sources: {', '.join(inc['sources'])}")
-            print(f"           Duration: {inc['duration_seconds']:.0f}s | "
-                  f"Start: {inc['start_time']}")
+            print(
+                f"           Alerts: {inc['alert_count']} | "
+                f"Services: {', '.join(inc['services'])} | "
+                f"Sources: {', '.join(inc['sources'])}"
+            )
+            print(f"           Duration: {inc['duration_seconds']:.0f}s | Start: {inc['start_time']}")
 
             if inc["related_alerts"]:
                 print("           Related:")
@@ -488,7 +478,7 @@ def main():
             for esc in escalations:
                 print(f"    {esc['incident_id']}: {esc['title']} — {esc['escalation_reason']}")
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
 
 
 if __name__ == "__main__":

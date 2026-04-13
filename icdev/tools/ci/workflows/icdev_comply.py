@@ -26,20 +26,18 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from icdev.tools.ci.modules.state import ICDevState
-from icdev.tools.ci.modules.git_ops import commit_changes
-from icdev.tools.ci.modules.vcs import VCS
-from icdev.tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import commit_changes  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     BOT_IDENTIFIER,
 )
-from icdev.tools.testing.utils import setup_logger
+from tools.testing.utils import setup_logger  # noqa: E402
 
 AGENT_COMPLIANCE = "icdev_compliance"
 
 
-def run_compliance_artifacts(
-    run_id: str, issue_number: str, logger: logging.Logger
-) -> dict:
+def run_compliance_artifacts(run_id: str, issue_number: str, logger: logging.Logger) -> dict:
     """Generate all compliance artifacts."""
     results = {
         "ssp": {"status": "skipped", "path": ""},
@@ -56,7 +54,8 @@ def run_compliance_artifacts(
     # 1. Generate SSP
     logger.info("Generating SSP...")
     try:
-        from icdev.tools.compliance.ssp_generator import generate_ssp
+        from tools.compliance.ssp_generator import generate_ssp
+
         ssp_result = generate_ssp(project_id)
         results["ssp"] = {
             "status": "generated",
@@ -74,7 +73,8 @@ def run_compliance_artifacts(
     # 2. Generate POAM
     logger.info("Generating POAM...")
     try:
-        from icdev.tools.compliance.poam_generator import generate_poam
+        from tools.compliance.poam_generator import generate_poam
+
         poam_result = generate_poam(project_id)
         results["poam"] = {
             "status": "generated",
@@ -92,7 +92,8 @@ def run_compliance_artifacts(
     # 3. Run STIG checklist
     logger.info("Running STIG checklist...")
     try:
-        from icdev.tools.compliance.stig_checker import check_stig
+        from tools.compliance.stig_checker import check_stig
+
         stig_result = check_stig(project_id)
         findings = stig_result.get("findings", {})
         cat1_count = findings.get("cat1", 0)
@@ -116,7 +117,8 @@ def run_compliance_artifacts(
     # 4. Generate SBOM
     logger.info("Generating SBOM...")
     try:
-        from icdev.tools.compliance.sbom_generator import generate_sbom
+        from tools.compliance.sbom_generator import generate_sbom
+
         sbom_result = generate_sbom(project_dir=str(PROJECT_ROOT))
         results["sbom"] = {
             "status": "generated",
@@ -134,7 +136,8 @@ def run_compliance_artifacts(
     # 5. Apply CUI markings check
     logger.info("Verifying CUI markings...")
     try:
-        from icdev.tools.compliance.cui_marker import verify_cui_markings
+        from tools.compliance.cui_marker import verify_cui_markings
+
         cui_result = verify_cui_markings(project_dir=str(PROJECT_ROOT))
         results["cui_markings"] = {
             "status": "verified",
@@ -154,8 +157,8 @@ def run_compliance_artifacts(
 def _run_agent_comply(run_id: str, artifact_type: str, logger: logging.Logger):
     """Fallback: use Claude Code agent to generate compliance artifact."""
     try:
-        from icdev.tools.ci.modules.agent import execute_template
-        from icdev.tools.testing.data_types import AgentTemplateRequest
+        from tools.ci.modules.agent import execute_template
+        from tools.testing.data_types import AgentTemplateRequest
 
         request = AgentTemplateRequest(
             agent_name=AGENT_COMPLIANCE,
@@ -264,9 +267,7 @@ def main():
         )
 
         if results.get("errors"):
-            summary += "\n\nErrors:\n" + "\n".join(
-                f"- {e}" for e in results["errors"]
-            )
+            summary += "\n\nErrors:\n" + "\n".join(f"- {e}" for e in results["errors"])
 
         vcs.comment_on_issue(int(issue_number), summary)
     except Exception as e:

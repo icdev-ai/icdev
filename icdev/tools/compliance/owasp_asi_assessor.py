@@ -19,17 +19,14 @@ Usage:
     python tools/compliance/owasp_asi_assessor.py --project-id proj-123 --json
 """
 
-import json
-import sqlite3
 import sys
 from pathlib import Path
 from typing import Dict, Optional
-from icdev._paths import get_project_root
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from base_assessor import BaseAssessor
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -40,7 +37,9 @@ class OWASPASIAssessor(BaseAssessor):
     CATALOG_FILENAME = "owasp_agentic_asi.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OWASP ASI01-ASI10 automated checks.
 
@@ -61,8 +60,7 @@ class OWASPASIAssessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = sqlite3.connect(str(self.db_path))
-                conn.row_factory = sqlite3.Row
+                conn = self._get_connection()
                 project_id = project.get("id", "")
 
                 # ASI-01: Goal Hijacking — prompt injection detection active
@@ -117,7 +115,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     for table in ["ai_telemetry", "memory_consolidation_log"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -142,7 +140,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     for table in ["agent_trust_scores", "atlas_red_team_results"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -177,7 +175,7 @@ class OWASPASIAssessor(BaseAssessor):
                 if agent_config.exists():
                     try:
                         content = agent_config.read_text(encoding="utf-8", errors="ignore").lower()
-                        if ("tls" in content or "mtls" in content or "hmac" in content):
+                        if "tls" in content or "mtls" in content or "hmac" in content:
                             results["ASI-07"] = "satisfied"
                     except Exception:
                         pass

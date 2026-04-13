@@ -4,7 +4,7 @@
 
 ## Goal
 
-Integrate MBSE into the ICDEV™ SDLC using the M-ANVIL workflow variant (Model → Architect → Trace → Link → Assemble → Stress-test). Provides end-to-end digital thread from DOORS requirements through SysML models to generated code, tests, and NIST controls. Supports DoDI 5000.87 Digital Engineering Strategy (DES) compliance and SAFe Program Increment (PI) model snapshots.
+Integrate MBSE into the ICDEV™ SDLC using the M-ANVIL workflow variant (Model → Architect → Navigate → Verify → Integrate → Launch). Provides end-to-end digital thread from DOORS requirements through SysML models to generated code, tests, and NIST controls. Supports DoDI 5000.87 Digital Engineering Strategy (DES) compliance and SAFe Program Increment (PI) model snapshots.
 
 **Why this matters:** DoDI 5000.87 mandates digital engineering for all DoD acquisition programs. Without model-code traceability, programs fail audits and cannot demonstrate that delivered code implements the authoritative design. The digital thread closes the loop from requirement to deployment.
 

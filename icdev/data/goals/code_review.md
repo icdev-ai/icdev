@@ -52,6 +52,26 @@ Enforce automated code review gates before merge to ensure security, compliance,
 - Run flake8/eslint for code quality
 - **Gate:** 0 critical errors (warnings acceptable)
 
+### Step 6b: Karpathy Design Heuristics Review
+
+After automated gates, apply the engineering heuristics from `hardprompts/karpathy_principles.md` as a qualitative check on the diff. This is **not a blocking gate** — it surfaces design debt that automated tools miss.
+
+> **Partial:** `{% include 'hardprompts/karpathy_principles.md' %}` with `task_description` set to the PR/MR description.
+
+Review each principle against the actual changeset:
+
+| Heuristic | Finding | Severity |
+|-----------|---------|----------|
+| **Assumptions stated?** | Are implicit assumptions in new logic visible to the reader? | Advisory |
+| **Interpretations resolved?** | Does the code handle only one interpretation, or does it silently branch on ambiguity? | Advisory |
+| **Simpler option chosen?** | Was a more complex solution introduced where a simpler one would suffice? New abstractions, extra layers, or premature generalizations are red flags. | Warning |
+| **Surgical edits only?** | Does the diff touch files or functions outside the stated scope? Unrelated changes should be split into a separate commit. | Warning |
+| **Testable criteria met?** | Does each new function have at least one test that would fail if the function's core contract were violated? | Warning |
+
+**If any Warning-level finding is present**, add a comment to the review noting the specific location and the simpler alternative. The reviewer must not block merge on advisory findings, but must record warnings in the audit trail.
+
+---
+
 ### Step 7: Gate Decision
 Evaluate all gates:
 - ALL must pass for approval
@@ -92,3 +112,6 @@ Evaluate all gates:
 - `tdd_workflow.md` — Test generation and execution
 - `security_scan.md` — Security scanning details
 - `compliance_workflow.md` — Compliance artifact generation
+
+## Related Hard Prompts
+- `hardprompts/karpathy_principles.md` — Engineering heuristics applied in Step 6b

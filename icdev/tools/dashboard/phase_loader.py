@@ -10,15 +10,14 @@ and SaaS Portal phase pages.
 Uses PyYAML if available, falls back to a minimal YAML parser (air-gap safe).
 
 Usage:
-    from icdev.tools.dashboard.phase_loader import load_phases, get_phase_summary
+    from tools.dashboard.phase_loader import load_phases, get_phase_summary
     phases = load_phases()
     summary = get_phase_summary(phases)
 """
 
-from icdev._paths import get_project_root
 from pathlib import Path
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 PHASE_REGISTRY = BASE_DIR / "args" / "phase_registry.yaml"
 
 
@@ -28,6 +27,7 @@ def _load_yaml(filepath: Path) -> dict:
         return {}
     try:
         import yaml
+
         with open(filepath, "r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except ImportError:
@@ -101,8 +101,9 @@ def get_phase_summary(phases: list) -> dict:
     }
 
 
-def filter_phases(phases: list, category: str = None, status: str = None,
-                  impact_level: str = None, tier: str = None) -> list:
+def filter_phases(
+    phases: list, category: str = None, status: str = None, impact_level: str = None, tier: str = None
+) -> list:
     """Filter phases by criteria.
 
     Args:
@@ -125,12 +126,10 @@ def filter_phases(phases: list, category: str = None, status: str = None,
         result = [p for p in result if p.get("status") == status]
 
     if impact_level:
-        result = [p for p in result
-                  if impact_level in p.get("impact_levels", [])]
+        result = [p for p in result if impact_level in p.get("impact_levels", [])]
 
     if tier:
         tier_rank = TIER_ORDER.get(tier, 0)
-        result = [p for p in result
-                  if TIER_ORDER.get(p.get("tier_minimum", "starter"), 0) <= tier_rank]
+        result = [p for p in result if TIER_ORDER.get(p.get("tier_minimum", "starter"), 0) <= tier_rank]
 
     return result
