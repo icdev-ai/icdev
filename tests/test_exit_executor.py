@@ -9,6 +9,7 @@ from tools.trading.execution import exit_executor, exit_manager
 
 @pytest.fixture(autouse=True)
 def _bootstrap():
+    from tools.db.storage import get_connection
     from tools.trading.audit.trade_audit import _conn as audit_conn
     from tools.trading.db import get_conn
 
@@ -16,6 +17,11 @@ def _bootstrap():
     get_conn().close()
     exit_manager._conn().close()
     exit_executor._conn().close()
+    # Clean up any stale exit rows from previous tests in this session
+    c = get_connection()
+    c.execute("DELETE FROM ad_position_exits")
+    c.commit()
+    c.close()
 
 
 def _seed_position(ticker, qty, price):
