@@ -43,21 +43,19 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from icdev._paths import get_project_root
 
 # =========================================================================
 # PATH SETUP
 # =========================================================================
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -67,7 +65,8 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # GRACEFUL IMPORTS
 # =========================================================================
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -75,17 +74,44 @@ except ImportError:
     def audit_log_event(**kwargs):
         return -1
 
+
 try:
-    from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
+    from tools.registry.capability_evaluator import CapabilityEvaluator
+
     _HAS_EVALUATOR = True
 except ImportError:
     _HAS_EVALUATOR = False
 
 try:
-    from icdev.tools.security.prompt_injection_detector import PromptInjectionDetector
+    from tools.security.prompt_injection_detector import PromptInjectionDetector
+
     _pid = PromptInjectionDetector()
 except Exception:
     _pid = None
+
+
+# =========================================================================
+# CONFIG (from args/evolution_config.yaml)
+# =========================================================================
+def _load_evolution_config() -> dict:
+    """Load evaluation config from args/evolution_config.yaml."""
+    config_path = BASE_DIR / "args" / "evolution_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("evaluation", {})
+    except Exception:
+        return {}
+
+
+_eval_cfg = _load_evolution_config()
+_injection_cfg = _eval_cfg.get("injection_scan", {})
+_INJECTION_BLOCK_CONFIDENCE = _injection_cfg.get("block_confidence", 0.7)
+_INJECTION_DEMOTE_CONFIDENCE = _injection_cfg.get("demote_confidence", 0.5)
 
 
 # =========================================================================
@@ -116,7 +142,7 @@ CREATE TABLE IF NOT EXISTS child_learned_behaviors (
     confidence REAL DEFAULT 0.0 CHECK(confidence >= 0.0 AND confidence <= 1.0),
     evaluated INTEGER DEFAULT 0,
     absorbed INTEGER DEFAULT 0,
-    discovered_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (datetime('now')),
     evaluated_at TEXT,
     absorbed_at TEXT,
     classification TEXT DEFAULT 'CUI',
@@ -192,8 +218,7 @@ class LearningCollector:
 
     def _get_conn(self):
         """Get a database connection with row factory."""
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -249,8 +274,7 @@ class LearningCollector:
         # Validate behavior_type
         if behavior_type not in VALID_BEHAVIOR_TYPES:
             print(
-                f"Warning: Invalid behavior_type '{behavior_type}'. "
-                f"Must be one of: {', '.join(VALID_BEHAVIOR_TYPES)}",
+                f"Warning: Invalid behavior_type '{behavior_type}'. Must be one of: {', '.join(VALID_BEHAVIOR_TYPES)}",
                 file=sys.stderr,
             )
             return None
@@ -267,12 +291,13 @@ class LearningCollector:
             scan_target = f"{description} {json.dumps(evidence) if evidence else ''}"
             scan_result = _pid.scan_text(scan_target, source="child_learned_behavior")
             injection_scan_result = json.dumps(scan_result)
-            if scan_result.get("detected") and scan_result.get("confidence", 0) >= 0.7:
-                # Block high-confidence injection attempts
+            if scan_result.get("detected") and scan_result.get("confidence", 0) >= _INJECTION_BLOCK_CONFIDENCE:
+                # Block high-confidence injection attempts (D-EVO-5, WP-8)
                 self._log_audit_event(
-                    None, child_id,
+                    None,
+                    child_id,
                     "learned_behavior_rejected",
-                    f"Prompt injection detected (confidence={scan_result['confidence']:.2f})"
+                    f"Prompt injection detected (confidence={scan_result['confidence']:.2f})",
                 )
                 return {
                     "status": "rejected",
@@ -280,16 +305,34 @@ class LearningCollector:
                     "confidence": scan_result["confidence"],
                     "behavior_id": None,
                 }
-            elif scan_result.get("detected") and scan_result.get("confidence", 0) >= 0.5:
+            elif scan_result.get("detected") and scan_result.get("confidence", 0) >= _INJECTION_DEMOTE_CONFIDENCE:
                 # Accept with warning, tag as external trust
                 trust_level = "external"
+
+        # D-EVO-5: Check child health from telemetry — demote trust if degraded
+        conn = self._get_conn()
+        try:
+            health_row = conn.execute(
+                """SELECT health_status FROM child_telemetry
+                   WHERE child_id = ?
+                   ORDER BY collected_at DESC LIMIT 1""",
+                (child_id,),
+            ).fetchone()
+            if health_row:
+                health = dict(health_row).get("health_status", "unknown")
+                if health in ("degraded", "unhealthy", "offline"):
+                    trust_level = "external"
+        except Exception:
+            pass
+        finally:
+            conn.close()
 
         conn = self._get_conn()
         try:
             cursor = conn.execute(
                 """INSERT INTO child_learned_behaviors
                    (child_id, behavior_type, description, evidence_json,
-                    confidence, evaluated, absorbed, discovered_at,
+                    confidence, evaluated, absorbed, created_at,
                     classification, trust_level, injection_scan_result)
                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, 'CUI', ?, ?)""",
                 (
@@ -305,12 +348,24 @@ class LearningCollector:
             )
             conn.commit()
 
-            behavior_id = str(cursor.lastrowid)
+            # Cross-DB compatible: cursor.lastrowid works for SQLite;
+            # fall back to SELECT for PostgreSQL or other backends.
+            try:
+                behavior_id = str(cursor.lastrowid)
+                if not behavior_id or behavior_id == "0":
+                    raise ValueError("lastrowid not available")
+            except Exception:
+                row = conn.execute(
+                    """SELECT id FROM child_learned_behaviors
+                       WHERE child_id = ? AND created_at = ?
+                       ORDER BY id DESC LIMIT 1""",
+                    (child_id, now),
+                ).fetchone()
+                behavior_id = str(dict(row)["id"]) if row else "0"
 
             _audit(
                 "learning.behavior_ingested",
-                f"Ingested behavior from child {child_id}: "
-                f"{behavior_type} (confidence={confidence:.2f})",
+                f"Ingested behavior from child {child_id}: {behavior_type} (confidence={confidence:.2f})",
                 {
                     "behavior_id": behavior_id,
                     "child_id": child_id,
@@ -371,17 +426,18 @@ class LearningCollector:
             # Build capability_data for CapabilityEvaluator
             capability_data = {
                 "id": f"beh-{behavior_id}",
-                "name": f"{behavior.get('behavior_type', 'other')}: "
-                        f"{behavior.get('description', '')[:80]}",
+                "name": f"{behavior.get('behavior_type', 'other')}: {behavior.get('description', '')[:80]}",
                 "source": "child_report",
                 "compliance_impact": self._infer_compliance_impact(behavior),
                 "blast_radius": self._infer_blast_radius(behavior),
-                "evidence_count": evidence.get("test_count", 0)
-                                  or len(evidence),
+                "evidence_count": evidence.get("test_count", 0) or len(evidence),
                 "field_hours": evidence.get("field_hours", 0.0),
                 "existing_similar": False,
-                "fills_gap": behavior.get("behavior_type") in (
-                    "error_recovery", "security_pattern", "compliance_shortcut",
+                "fills_gap": behavior.get("behavior_type")
+                in (
+                    "error_recovery",
+                    "security_pattern",
+                    "compliance_shortcut",
                 ),
                 "token_cost": evidence.get("token_cost", 0.1),
                 "integration_effort": evidence.get("integration_effort", "medium"),
@@ -426,8 +482,7 @@ class LearningCollector:
                     "score": conf,
                     "outcome": outcome,
                     "rationale": (
-                        f"Fallback evaluation using confidence={conf:.2f} "
-                        "(CapabilityEvaluator not available)"
+                        f"Fallback evaluation using confidence={conf:.2f} (CapabilityEvaluator not available)"
                     ),
                     "dimensions": {"confidence_proxy": conf},
                 }
@@ -465,6 +520,10 @@ class LearningCollector:
                 },
             )
 
+            # D-EVO-5: Auto-queue for staging when score >= auto_queue threshold
+            if evaluation_result.get("outcome") == "auto_queue":
+                result["auto_staged"] = self._auto_stage_capability(behavior_id, behavior)
+
             return result
 
         except Exception as e:
@@ -484,8 +543,10 @@ class LearningCollector:
         btype = behavior.get("behavior_type", "other")
         positive_types = ("compliance_shortcut", "security_pattern")
         neutral_types = (
-            "optimization", "performance_tuning",
-            "configuration", "workflow_improvement",
+            "optimization",
+            "performance_tuning",
+            "configuration",
+            "workflow_improvement",
         )
 
         if btype in positive_types:
@@ -552,6 +613,61 @@ class LearningCollector:
 
         return recommendations.get(outcome, f"Score {score:.4f}: Unknown outcome '{outcome}'")
 
+    def _auto_stage_capability(self, behavior_id: str, behavior: dict) -> dict:
+        """Auto-queue a high-scoring behavior for staging (D-EVO-5).
+
+        Called when evaluate_behavior() returns outcome='auto_queue'.
+        Creates a staging environment via StagingManager.
+
+        Args:
+            behavior_id: Row ID in child_learned_behaviors.
+            behavior: The behavior record dict.
+
+        Returns:
+            Dict with staging result or error.
+        """
+        try:
+            from tools.registry.staging_manager import StagingManager
+
+            sm = StagingManager(db_path=self.db_path)
+
+            # Get current genome version for context
+            genome_version = "0.0.0"
+            conn = self._get_conn()
+            try:
+                row = conn.execute("SELECT version FROM genome_versions ORDER BY created_at DESC LIMIT 1").fetchone()
+                if row:
+                    genome_version = dict(row).get("version", "0.0.0")
+            except Exception:
+                pass
+            finally:
+                conn.close()
+
+            staging_result = sm.create_staging(
+                capability_id=str(behavior_id),
+                genome_version=genome_version,
+            )
+
+            if staging_result and "error" not in staging_result:
+                _audit(
+                    "learning.auto_staged",
+                    f"Behavior {behavior_id} auto-staged: staging_id={staging_result.get('staging_id')}",
+                    {"behavior_id": behavior_id, "staging_id": staging_result.get("staging_id")},
+                )
+                return {
+                    "staged": True,
+                    "staging_id": staging_result.get("staging_id"),
+                }
+            else:
+                return {
+                    "staged": False,
+                    "error": staging_result.get("error", "Unknown staging error"),
+                }
+        except ImportError:
+            return {"staged": False, "error": "StagingManager not available"}
+        except Exception as e:
+            return {"staged": False, "error": str(e)}
+
     def get_unevaluated(self, limit: int = 50) -> list:
         """Return behaviors that have not been evaluated yet.
 
@@ -566,10 +682,10 @@ class LearningCollector:
         try:
             rows = conn.execute(
                 """SELECT id, child_id, behavior_type, description,
-                          evidence_json, confidence, discovered_at
+                          evidence_json, confidence, created_at
                    FROM child_learned_behaviors
                    WHERE evaluated = 0
-                   ORDER BY confidence DESC, discovered_at ASC
+                   ORDER BY confidence DESC, created_at ASC
                    LIMIT ?""",
                 (limit,),
             ).fetchall()
@@ -579,9 +695,7 @@ class LearningCollector:
                 record = dict(row)
                 # Parse evidence JSON
                 try:
-                    record["evidence"] = json.loads(
-                        record.pop("evidence_json", "{}")
-                    )
+                    record["evidence"] = json.loads(record.pop("evidence_json", "{}"))
                 except (json.JSONDecodeError, TypeError):
                     record["evidence"] = {}
                 results.append(record)
@@ -605,10 +719,10 @@ class LearningCollector:
             rows = conn.execute(
                 """SELECT id, child_id, behavior_type, description,
                           evidence_json, confidence, evaluated, absorbed,
-                          discovered_at, evaluated_at, absorbed_at
+                          created_at, evaluated_at, absorbed_at
                    FROM child_learned_behaviors
                    WHERE child_id = ?
-                   ORDER BY discovered_at DESC""",
+                   ORDER BY created_at DESC""",
                 (child_id,),
             ).fetchall()
 
@@ -616,9 +730,7 @@ class LearningCollector:
             for row in rows:
                 record = dict(row)
                 try:
-                    record["evidence"] = json.loads(
-                        record.pop("evidence_json", "{}")
-                    )
+                    record["evidence"] = json.loads(record.pop("evidence_json", "{}"))
                 except (json.JSONDecodeError, TypeError):
                     record["evidence"] = {}
                 results.append(record)
@@ -699,34 +811,36 @@ class LearningCollector:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "ICDEV™ Learning Collector -- ingest and evaluate "
-            "learned behaviors from child applications (D213)"
+            "ICDEV™ Learning Collector -- ingest and evaluate learned behaviors from child applications (D213)"
         )
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
-        "--ingest", action="store_true",
+        "--ingest",
+        action="store_true",
         help="Ingest a learned behavior from a child",
     )
     group.add_argument(
-        "--evaluate", action="store_true",
+        "--evaluate",
+        action="store_true",
         help="Evaluate a behavior using 6-dimension scoring",
     )
     group.add_argument(
-        "--unevaluated", action="store_true",
+        "--unevaluated",
+        action="store_true",
         help="List unevaluated behaviors",
     )
     group.add_argument(
-        "--by-child", action="store_true",
+        "--by-child",
+        action="store_true",
         help="List behaviors for a specific child",
     )
     group.add_argument(
-        "--summary", action="store_true",
+        "--summary",
+        action="store_true",
         help="Show behavior summary statistics",
     )
 
@@ -738,11 +852,11 @@ def main():
         help="Type of learned behavior",
     )
     parser.add_argument("--description", help="Human-readable behavior description")
+    parser.add_argument("--evidence", help="JSON string with supporting evidence")
     parser.add_argument(
-        "--evidence", help="JSON string with supporting evidence"
-    )
-    parser.add_argument(
-        "--confidence", type=float, default=0.5,
+        "--confidence",
+        type=float,
+        default=0.5,
         help="Confidence score (0.0-1.0, default: 0.5)",
     )
 
@@ -751,7 +865,9 @@ def main():
 
     # List args
     parser.add_argument(
-        "--limit", type=int, default=50,
+        "--limit",
+        type=int,
+        default=50,
         help="Result limit (default: 50)",
     )
 

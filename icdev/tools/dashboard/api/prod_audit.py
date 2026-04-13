@@ -11,16 +11,16 @@ import os
 import sqlite3
 import subprocess
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 try:
-    from icdev.tools.compat.db_utils import get_db_connection
+    from tools.compat.db_utils import get_db_connection
 except ImportError:
     get_db_connection = None
 
@@ -30,8 +30,7 @@ prod_audit_api = Blueprint("prod_audit_api", __name__, url_prefix="/api/prod-aud
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -66,9 +65,7 @@ def latest_audit():
     """Get most recent production audit result with full detail."""
     try:
         conn = _get_db()
-        row = conn.execute(
-            "SELECT * FROM production_audits ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT * FROM production_audits ORDER BY created_at DESC LIMIT 1").fetchone()
         conn.close()
 
         if not row:
@@ -104,7 +101,7 @@ def remediation_log():
         params = (check_id,) if check_id else ()
 
         rows = conn.execute(
-            f"SELECT id, source_audit_id, check_id, check_name, category, confidence, "
+            f"SELECT id, source_audit_id, check_id, check_name, category, confidence, "  # nosec B608 -- table/column names are internal constants, not user input
             f"tier, status, fix_strategy, message, duration_ms, "
             f"verification_status, dry_run, created_at "
             f"FROM remediation_audit_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
@@ -112,7 +109,8 @@ def remediation_log():
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM remediation_audit_log {where}", params
+            f"SELECT COUNT(*) FROM remediation_audit_log {where}",
+            params,  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -136,8 +134,12 @@ def run_audit():
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
-            stdin=subprocess.DEVNULL, cwd=str(BASE_DIR),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            stdin=subprocess.DEVNULL,
+            cwd=str(BASE_DIR),
         )
         try:
             result = json.loads(proc.stdout)
@@ -168,8 +170,12 @@ def run_remediation():
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
-            stdin=subprocess.DEVNULL, cwd=str(BASE_DIR),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            stdin=subprocess.DEVNULL,
+            cwd=str(BASE_DIR),
         )
         try:
             result = json.loads(proc.stdout)

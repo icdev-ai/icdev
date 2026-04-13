@@ -7,29 +7,27 @@ All endpoints require 'admin' role.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 
 from flask import Blueprint, jsonify, render_template, request
 
-from icdev.tools.dashboard.auth import (
+from tools.dashboard.auth import (
     create_api_key_for_user,
     create_user,
     list_api_keys_for_user,
     list_users,
-    log_auth_event,
     reactivate_user,
     require_role,
     revoke_api_key,
     suspend_user,
 )
-from icdev.tools.dashboard.config import DB_PATH
+from tools.dashboard.config import DB_PATH
 
 admin_api = Blueprint("admin_api", __name__, url_prefix="/admin")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -105,15 +103,15 @@ def api_create_key(user_id):
     expires_at = data.get("expires_at")
 
     admin_user = getattr(g, "current_user", {})
-    key_info = create_api_key_for_user(
-        user_id, label=label, created_by=admin_user.get("id"), expires_at=expires_at
-    )
-    return jsonify({
-        "key_id": key_info["key_id"],
-        "raw_key": key_info["raw_key"],
-        "prefix": key_info["prefix"],
-        "message": "Save this key now — it will not be shown again.",
-    }), 201
+    key_info = create_api_key_for_user(user_id, label=label, created_by=admin_user.get("id"), expires_at=expires_at)
+    return jsonify(
+        {
+            "key_id": key_info["key_id"],
+            "raw_key": key_info["raw_key"],
+            "prefix": key_info["prefix"],
+            "message": "Save this key now — it will not be shown again.",
+        }
+    ), 201
 
 
 @admin_api.route("/api/keys/<key_id>/revoke", methods=["POST"])

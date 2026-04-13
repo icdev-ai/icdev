@@ -10,7 +10,7 @@ W3C traceparent format:
     00-4bf92f3577b58400000000000000000a-00f067aa0ba902b7-01
 
 Usage:
-    from icdev.tools.observability.trace_context import (
+    from tools.observability.trace_context import (
         generate_traceparent,
         parse_traceparent,
         get_current_context,
@@ -53,6 +53,7 @@ class TraceContext:
         sampled: Whether this trace is sampled (included in export).
         tracestate: Optional vendor-specific tracestate header value.
     """
+
     trace_id: str
     span_id: str
     sampled: bool = True
@@ -159,6 +160,7 @@ def get_current_context() -> Optional[TraceContext]:
     # Try Flask g context for backward compat with D149
     try:
         from flask import g
+
         traceparent = getattr(g, "traceparent", None)
         if traceparent:
             return parse_traceparent(traceparent)

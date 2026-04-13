@@ -26,19 +26,17 @@ Architecture Decision D301:
 
 import importlib
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict
-from icdev._paths import get_project_root
 
 # ---------------------------------------------------------------------------
 # Path setup
 # ---------------------------------------------------------------------------
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 logger = logging.getLogger("mcp.unified")
 
@@ -91,7 +89,7 @@ class UnifiedMCPServer(MCPServer):
 
     def _register_all(self) -> None:
         """Register all tools and resources from the declarative registry."""
-        from icdev.tools.mcp.tool_registry import TOOL_REGISTRY, RESOURCE_REGISTRY
+        from tools.mcp.tool_registry import TOOL_REGISTRY, RESOURCE_REGISTRY
 
         # Register tools with lazy dispatch closures
         for tool_name, entry in TOOL_REGISTRY.items():

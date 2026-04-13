@@ -22,23 +22,24 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -49,9 +50,10 @@ def _import_tool(module_path, func_name):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_register_legacy_app(args: dict) -> dict:
     """Register a legacy application for analysis."""
-    register = _import_tool("icdev.tools.modernization.legacy_analyzer", "register_application")
+    register = _import_tool("tools.modernization.legacy_analyzer", "register_application")
     if not register:
         return {"error": "legacy_analyzer module not available", "status": "pending"}
 
@@ -69,7 +71,7 @@ def handle_register_legacy_app(args: dict) -> dict:
 
 def handle_analyze_legacy(args: dict) -> dict:
     """Run full legacy code analysis."""
-    analyze = _import_tool("icdev.tools.modernization.legacy_analyzer", "analyze_full")
+    analyze = _import_tool("tools.modernization.legacy_analyzer", "analyze_full")
     if not analyze:
         return {"error": "legacy_analyzer module not available", "status": "pending"}
 
@@ -86,7 +88,7 @@ def handle_analyze_legacy(args: dict) -> dict:
 
 def handle_extract_architecture(args: dict) -> dict:
     """Reverse-engineer architecture from analyzed legacy code."""
-    extract = _import_tool("icdev.tools.modernization.architecture_extractor", "generate_architecture_summary")
+    extract = _import_tool("tools.modernization.architecture_extractor", "generate_architecture_summary")
     if not extract:
         return {"error": "architecture_extractor module not available", "status": "pending"}
 
@@ -102,7 +104,7 @@ def handle_extract_architecture(args: dict) -> dict:
 
 def handle_generate_docs(args: dict) -> dict:
     """Generate documentation from legacy code analysis."""
-    gen_docs = _import_tool("icdev.tools.modernization.doc_generator", "generate_full_documentation")
+    gen_docs = _import_tool("tools.modernization.doc_generator", "generate_full_documentation")
     if not gen_docs:
         return {"error": "doc_generator module not available", "status": "pending"}
 
@@ -119,7 +121,7 @@ def handle_generate_docs(args: dict) -> dict:
 
 def handle_assess_seven_r(args: dict) -> dict:
     """Run 7R migration strategy assessment with scored decision matrix."""
-    assess = _import_tool("icdev.tools.modernization.seven_r_assessor", "run_seven_r_assessment")
+    assess = _import_tool("tools.modernization.seven_r_assessor", "run_seven_r_assessment")
     if not assess:
         return {"error": "seven_r_assessor module not available", "status": "pending"}
 
@@ -141,7 +143,7 @@ def handle_assess_seven_r(args: dict) -> dict:
 
 def handle_create_migration_plan(args: dict) -> dict:
     """Create a migration plan with tasks based on assessment."""
-    create_plan = _import_tool("icdev.tools.modernization.monolith_decomposer", "create_migration_plan")
+    create_plan = _import_tool("tools.modernization.monolith_decomposer", "create_migration_plan")
     if not create_plan:
         return {"error": "monolith_decomposer module not available", "status": "pending"}
 
@@ -153,7 +155,9 @@ def handle_create_migration_plan(args: dict) -> dict:
 
     try:
         return create_plan(
-            project_id, app_id, strategy,
+            project_id,
+            app_id,
+            strategy,
             target_lang=args.get("target_language"),
             target_framework=args.get("target_framework"),
             target_db=args.get("target_database"),
@@ -174,24 +178,24 @@ def handle_track_migration(args: dict) -> dict:
 
     try:
         if action == "snapshot":
-            snapshot = _import_tool("icdev.tools.modernization.migration_tracker", "create_pi_migration_snapshot")
+            snapshot = _import_tool("tools.modernization.migration_tracker", "create_pi_migration_snapshot")
             if not snapshot:
                 return {"error": "migration_tracker module not available", "status": "pending"}
             pi_number = args.get("pi_number")
             snapshot_type = args.get("snapshot_type", "manual")
             return snapshot(plan_id, pi_number, snapshot_type)
         elif action == "velocity":
-            velocity = _import_tool("icdev.tools.modernization.migration_tracker", "get_migration_velocity")
+            velocity = _import_tool("tools.modernization.migration_tracker", "get_migration_velocity")
             if not velocity:
                 return {"error": "migration_tracker module not available", "status": "pending"}
             return velocity(plan_id)
         elif action == "burndown":
-            burndown = _import_tool("icdev.tools.modernization.migration_tracker", "get_migration_burndown")
+            burndown = _import_tool("tools.modernization.migration_tracker", "get_migration_burndown")
             if not burndown:
                 return {"error": "migration_tracker module not available", "status": "pending"}
             return burndown(plan_id)
         elif action == "dashboard":
-            dashboard = _import_tool("icdev.tools.modernization.migration_tracker", "get_dashboard")
+            dashboard = _import_tool("tools.modernization.migration_tracker", "get_dashboard")
             if not dashboard:
                 return {"error": "migration_tracker module not available", "status": "pending"}
             return dashboard(plan_id)
@@ -203,7 +207,7 @@ def handle_track_migration(args: dict) -> dict:
 
 def handle_generate_migration_code(args: dict) -> dict:
     """Generate adapters, facades, scaffolding, and tests."""
-    gen_all = _import_tool("icdev.tools.modernization.migration_code_generator", "generate_all")
+    gen_all = _import_tool("tools.modernization.migration_code_generator", "generate_all")
     if not gen_all:
         return {"error": "migration_code_generator module not available", "status": "pending"}
 
@@ -228,22 +232,22 @@ def handle_check_compliance_bridge(args: dict) -> dict:
 
     try:
         if action == "validate":
-            validate = _import_tool("icdev.tools.modernization.compliance_bridge", "validate_ato_coverage")
+            validate = _import_tool("tools.modernization.compliance_bridge", "validate_ato_coverage")
             if not validate:
                 return {"error": "compliance_bridge module not available", "status": "pending"}
             return validate(plan_id)
         elif action == "gaps":
-            gaps = _import_tool("icdev.tools.modernization.compliance_bridge", "identify_ato_gaps")
+            gaps = _import_tool("tools.modernization.compliance_bridge", "identify_ato_gaps")
             if not gaps:
                 return {"error": "compliance_bridge module not available", "status": "pending"}
             return gaps(plan_id)
         elif action == "dashboard":
-            dashboard = _import_tool("icdev.tools.modernization.compliance_bridge", "get_compliance_dashboard")
+            dashboard = _import_tool("tools.modernization.compliance_bridge", "get_compliance_dashboard")
             if not dashboard:
                 return {"error": "compliance_bridge module not available", "status": "pending"}
             return dashboard(plan_id)
         elif action == "report":
-            report = _import_tool("icdev.tools.modernization.compliance_bridge", "generate_ato_impact_report")
+            report = _import_tool("tools.modernization.compliance_bridge", "generate_ato_impact_report")
             if not report:
                 return {"error": "compliance_bridge module not available", "status": "pending"}
             return report(plan_id, output_dir=args.get("output_dir"))
@@ -271,11 +275,11 @@ def handle_migrate_version(args: dict) -> dict:
                 return {"error": "language, from_version, and to_version are required for version migration"}
 
             if language == "python":
-                migrate = _import_tool("icdev.tools.modernization.version_migrator", "migrate_python2_to_3")
+                migrate = _import_tool("tools.modernization.version_migrator", "migrate_python2_to_3")
             elif language == "java":
-                migrate = _import_tool("icdev.tools.modernization.version_migrator", "migrate_java_version")
+                migrate = _import_tool("tools.modernization.version_migrator", "migrate_java_version")
             elif language == "csharp":
-                migrate = _import_tool("icdev.tools.modernization.version_migrator", "migrate_dotnet_framework")
+                migrate = _import_tool("tools.modernization.version_migrator", "migrate_dotnet_framework")
             else:
                 return {"error": f"Unsupported language: {language}"}
 
@@ -306,7 +310,7 @@ def handle_migrate_version(args: dict) -> dict:
             if not func_name:
                 return {"error": f"Unsupported framework migration: {from_fw} → {to_fw}"}
 
-            migrate = _import_tool("icdev.tools.modernization.framework_migrator", func_name)
+            migrate = _import_tool("tools.modernization.framework_migrator", func_name)
             if not migrate:
                 return {"error": "framework_migrator module not available", "status": "pending"}
 
@@ -320,6 +324,7 @@ def handle_migrate_version(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     """Create and configure the Modernization MCP server."""
@@ -343,7 +348,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="analyze_legacy",
-        description="Run full legacy code analysis — AST parsing, dependency extraction, framework detection, API discovery, complexity metrics",
+        description="Run full legacy code analysis — AST parsing, dependency extraction, framework detection, API discovery, complexity metrics",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -357,7 +362,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="extract_architecture",
-        description="Reverse-engineer architecture from analyzed legacy code — call graph, component diagram, data flow, service boundaries",
+        description="Reverse-engineer architecture from analyzed legacy code — call graph, component diagram, data flow, service boundaries",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -370,7 +375,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_docs",
-        description="Generate documentation from legacy code analysis — API docs, data dictionary, component docs, dependency map",
+        description="Generate documentation from legacy code analysis — API docs, data dictionary, component docs, dependency map",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -384,7 +389,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="assess_seven_r",
-        description="Run 7R migration strategy assessment — scores all 7 Rs (Rehost, Replatform, Refactor, Re-architect, Repurchase, Retire, Retain) with weighted decision matrix",
+        description="Run 7R migration strategy assessment — scores all 7 Rs (Rehost, Replatform, Refactor, Re-architect, Repurchase, Retire, Retain) with weighted decision matrix",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -405,12 +410,23 @@ def create_server() -> MCPServer:
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "app_id": {"type": "string", "description": "Legacy application ID"},
-                "strategy": {"type": "string", "enum": ["rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain"]},
+                "strategy": {
+                    "type": "string",
+                    "enum": ["rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain"],
+                },
                 "target_language": {"type": "string", "description": "Target programming language"},
                 "target_framework": {"type": "string", "description": "Target framework"},
                 "target_database": {"type": "string", "description": "Target database"},
-                "target_architecture": {"type": "string", "default": "microservices", "enum": ["microservices", "modular_monolith", "serverless", "event_driven", "layered", "hexagonal"]},
-                "migration_approach": {"type": "string", "default": "strangler_fig", "enum": ["big_bang", "strangler_fig", "parallel_run", "blue_green", "canary", "phased"]},
+                "target_architecture": {
+                    "type": "string",
+                    "default": "microservices",
+                    "enum": ["microservices", "modular_monolith", "serverless", "event_driven", "layered", "hexagonal"],
+                },
+                "migration_approach": {
+                    "type": "string",
+                    "default": "strangler_fig",
+                    "enum": ["big_bang", "strangler_fig", "parallel_run", "blue_green", "canary", "phased"],
+                },
             },
             "required": ["project_id", "app_id", "strategy"],
         },
@@ -424,9 +440,17 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "plan_id": {"type": "string", "description": "Migration plan ID"},
-                "action": {"type": "string", "default": "dashboard", "enum": ["snapshot", "velocity", "burndown", "dashboard"]},
+                "action": {
+                    "type": "string",
+                    "default": "dashboard",
+                    "enum": ["snapshot", "velocity", "burndown", "dashboard"],
+                },
                 "pi_number": {"type": "string", "description": "PI identifier (e.g., PI-25.3) — required for snapshot"},
-                "snapshot_type": {"type": "string", "default": "manual", "enum": ["pi_start", "pi_end", "milestone", "manual"]},
+                "snapshot_type": {
+                    "type": "string",
+                    "default": "manual",
+                    "enum": ["pi_start", "pi_end", "milestone", "manual"],
+                },
             },
             "required": ["plan_id"],
         },
@@ -435,7 +459,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="generate_migration_code",
-        description="Generate migration code — adapters, facades, service scaffolding, data access layers, tests, rollback scripts",
+        description="Generate migration code — adapters, facades, service scaffolding, data access layers, tests, rollback scripts",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
@@ -449,12 +473,16 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="check_compliance_bridge",
-        description="Validate ATO compliance coverage during migration — control inheritance, gap analysis, coverage validation",
+        description="Validate ATO compliance coverage during migration — control inheritance, gap analysis, coverage validation",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "plan_id": {"type": "string", "description": "Migration plan ID"},
-                "action": {"type": "string", "default": "validate", "enum": ["validate", "gaps", "dashboard", "report"]},
+                "action": {
+                    "type": "string",
+                    "default": "validate",
+                    "enum": ["validate", "gaps", "dashboard", "report"],
+                },
                 "output_dir": {"type": "string", "description": "Output directory for reports"},
             },
             "required": ["plan_id"],
@@ -464,14 +492,18 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="migrate_version",
-        description="Run version or framework migration transforms — Python 2→3, Java 8→17, .NET Framework→.NET 8, Struts→Spring, WCF→ASP.NET Core, etc.",
+        description="Run version or framework migration transforms — Python 2→3, Java 8→17, .NET Framework→.NET 8, Struts→Spring, WCF→ASP.NET Core, etc.",  # noqa: E501
         input_schema={
             "type": "object",
             "properties": {
                 "source_path": {"type": "string", "description": "Source code directory"},
                 "output_path": {"type": "string", "description": "Output directory for transformed code"},
                 "migration_type": {"type": "string", "default": "version", "enum": ["version", "framework"]},
-                "language": {"type": "string", "description": "Language (for version migration)", "enum": ["python", "java", "csharp"]},
+                "language": {
+                    "type": "string",
+                    "description": "Language (for version migration)",
+                    "enum": ["python", "java", "csharp"],
+                },
                 "from_version": {"type": "string", "description": "Source version (e.g., 2.7, 8, 4.8)"},
                 "to_version": {"type": "string", "description": "Target version (e.g., 3.11, 17, 8.0)"},
                 "from_framework": {"type": "string", "description": "Source framework (for framework migration)"},

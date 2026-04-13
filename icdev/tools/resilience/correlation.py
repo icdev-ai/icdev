@@ -6,11 +6,11 @@ D149: Request-scoped correlation IDs propagated through Flask middleware,
 A2A JSON-RPC metadata, and audit trail session_id.
 
 Usage:
-    from icdev.tools.resilience.correlation import register_correlation_middleware
+    from tools.resilience.correlation import register_correlation_middleware
     register_correlation_middleware(app)
 
     # Get current correlation ID anywhere in request context:
-    from icdev.tools.resilience.correlation import get_correlation_id
+    from tools.resilience.correlation import get_correlation_id
     cid = get_correlation_id()
 """
 
@@ -44,6 +44,7 @@ def get_correlation_id() -> Optional[str]:
     # Try Flask g context first
     try:
         from flask import g
+
         cid = getattr(g, "correlation_id", None)
         if cid:
             return cid
@@ -88,10 +89,12 @@ def register_correlation_middleware(app):
 
         # D281: Extract or generate W3C traceparent alongside correlation ID
         try:
-            from icdev.tools.observability.trace_context import (
-                parse_traceparent, generate_traceparent,
-                set_current_context, context_from_correlation_id,
+            from tools.observability.trace_context import (
+                parse_traceparent,
+                set_current_context,
+                context_from_correlation_id,
             )
+
             tp_header = request.headers.get("traceparent")
             if tp_header:
                 ctx = parse_traceparent(tp_header)
@@ -127,7 +130,8 @@ def register_correlation_middleware(app):
         _thread_local.correlation_id = None
         # D281: Clear trace context
         try:
-            from icdev.tools.observability.trace_context import clear_current_context
+            from tools.observability.trace_context import clear_current_context
+
             clear_current_context()
         except ImportError:
             pass

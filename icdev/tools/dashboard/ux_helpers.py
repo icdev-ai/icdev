@@ -13,7 +13,7 @@ All functions use Python stdlib only (datetime, re, html). No external
 dependencies required.
 
 Usage:
-    from icdev.tools.dashboard.ux_helpers import register_ux_filters
+    from tools.dashboard.ux_helpers import register_ux_filters
     app = Flask(__name__)
     register_ux_filters(app)
 
@@ -83,6 +83,7 @@ GLOSSARY = {
 # ---------------------------------------------------------------------------
 # 1. Jinja2 Template Filters
 # ---------------------------------------------------------------------------
+
 
 def _format_time_12h(dt):
     """Format a datetime to '2:30 PM' style using only stdlib."""
@@ -245,8 +246,8 @@ def score_display(value, threshold, label="Score"):
     return (
         f'<span class="score-display {css}" title="{safe_label}: {pct}%">'
         f'<span class="score-icon">{icon}</span> '
-        f'{pct}% \u2014 {status}'
-        f'</span>'
+        f"{pct}% \u2014 {status}"
+        f"</span>"
     )
 
 
@@ -255,10 +256,10 @@ def score_display(value, threshold, label="Score"):
 # ---------------------------------------------------------------------------
 
 _ISO_RE = re.compile(
-    r"^(\d{4})-(\d{2})-(\d{2})"           # date
-    r"[T ](\d{2}):(\d{2}):(\d{2})"        # time
-    r"(?:\.(\d+))?"                         # optional fractional seconds
-    r"(Z|[+-]\d{2}:\d{2})?$"              # optional timezone
+    r"^(\d{4})-(\d{2})-(\d{2})"  # date
+    r"[T ](\d{2}):(\d{2}):(\d{2})"  # time
+    r"(?:\.(\d+))?"  # optional fractional seconds
+    r"(Z|[+-]\d{2}:\d{2})?$"  # optional timezone
 )
 
 
@@ -294,6 +295,7 @@ def _parse_iso(value):
         tz_hours = int(tz_parts[0])
         tz_mins = int(tz_parts[1]) if len(tz_parts) > 1 else 0
         from datetime import timedelta
+
         tz = timezone(timedelta(hours=sign * tz_hours, minutes=sign * tz_mins))
 
     return datetime(year, month, day, hour, minute, second, microsecond, tzinfo=tz)
@@ -307,8 +309,7 @@ ERROR_RECOVERY = {
     "cat1_stig": {
         "what": "A Critical (CAT-I) security finding was detected",
         "why": (
-            "CAT-I findings block deployment \u2014 they represent "
-            "vulnerabilities that could be immediately exploited"
+            "CAT-I findings block deployment \u2014 they represent vulnerabilities that could be immediately exploited"
         ),
         "fix": (
             "1. Review the finding details in the STIG tab\n"
@@ -321,10 +322,7 @@ ERROR_RECOVERY = {
     },
     "readiness_below_threshold": {
         "what": "Requirements readiness score is below the 70% threshold",
-        "why": (
-            "Proceeding with incomplete requirements leads to rework "
-            "and cost overruns"
-        ),
+        "why": ("Proceeding with incomplete requirements leads to rework and cost overruns"),
         "fix": (
             "1. Check which dimension is lowest (completeness, clarity, "
             "feasibility, compliance, testability)\n"
@@ -342,10 +340,7 @@ ERROR_RECOVERY = {
     },
     "compliance_bridge_gap": {
         "what": "ATO compliance coverage is below 95% during migration",
-        "why": (
-            "Operating below 95% compliance coverage risks losing "
-            "Authorization to Operate"
-        ),
+        "why": ("Operating below 95% compliance coverage risks losing Authorization to Operate"),
         "fix": (
             "1. Run crosswalk engine to identify missing controls\n"
             "2. Map existing legacy controls to new system\n"
@@ -358,10 +353,7 @@ ERROR_RECOVERY = {
     },
     "connection_validation_failed": {
         "what": "System connection validation failed during build",
-        "why": (
-            "Your application can't connect to required services "
-            "(database, APIs, auth)"
-        ),
+        "why": ("Your application can't connect to required services (database, APIs, auth)"),
         "fix": (
             "1. Check database connection string in environment variables\n"
             "2. Verify API keys are set and not expired\n"
@@ -408,10 +400,7 @@ ERROR_RECOVERY = {
     },
     "database_not_initialized": {
         "what": "The ICDEV™ database has not been set up yet",
-        "why": (
-            "ICDEV™ needs its database to track projects, compliance, "
-            "and audit trails"
-        ),
+        "why": ("ICDEV™ needs its database to track projects, compliance, and audit trails"),
         "fix": (
             "Run this command:\n"
             "  python tools/db/init_icdev_db.py\n\n"
@@ -423,9 +412,7 @@ ERROR_RECOVERY = {
     },
     "session_not_found": {
         "what": "The intake session was not found",
-        "why": (
-            "The session ID may be incorrect, or the session may have expired"
-        ),
+        "why": ("The session ID may be incorrect, or the session may have expired"),
         "fix": (
             "1. Double-check the session ID\n"
             "2. List active sessions: python tools/requirements/"
@@ -438,10 +425,7 @@ ERROR_RECOVERY = {
     },
     "fips199_required": {
         "what": "FIPS 199 security categorization has not been completed",
-        "why": (
-            "Security categorization determines your baseline controls "
-            "\u2014 all compliance work depends on this"
-        ),
+        "why": ("Security categorization determines your baseline controls \u2014 all compliance work depends on this"),
         "fix": (
             "1. Run: python tools/compliance/fips199_categorizer.py "
             "--project-id <id> --list-catalog\n"
@@ -455,9 +439,7 @@ ERROR_RECOVERY = {
     },
     "cve_sla_breach": {
         "what": "A vulnerability fix deadline has been missed",
-        "why": (
-            "Critical CVEs must be fixed within 48 hours per supply chain SLA"
-        ),
+        "why": ("Critical CVEs must be fixed within 48 hours per supply chain SLA"),
         "fix": (
             "1. Review the CVE details and affected component\n"
             "2. Check if a patched version is available\n"
@@ -470,13 +452,8 @@ ERROR_RECOVERY = {
         "time": "4-24 hours depending on complexity",
     },
     "framework_selection_unclear": {
-        "what": (
-            "It's unclear which compliance frameworks apply to your project"
-        ),
-        "why": (
-            "Choosing the wrong frameworks wastes effort; missing a required "
-            "framework delays ATO"
-        ),
+        "what": ("It's unclear which compliance frameworks apply to your project"),
+        "why": ("Choosing the wrong frameworks wastes effort; missing a required framework delays ATO"),
         "fix": (
             "Answer these questions:\n"
             "- Is this a cloud service? \u2192 FedRAMP required\n"
@@ -888,20 +865,12 @@ def recommend_path(goal, role, classification):
 
     # Specific first-command overrides for common workflows
     _FIRST_COMMANDS = {
-        "quick_ato": (
-            "python tools/compliance/fips199_categorizer.py "
-            "--project-id <your-project-id> --list-catalog"
-        ),
-        "build_and_ship": (
-            "python tools/project/project_create.py "
-            "--name <app-name> --type microservice"
-        ),
+        "quick_ato": ("python tools/compliance/fips199_categorizer.py --project-id <your-project-id> --list-catalog"),
+        "build_and_ship": ("python tools/project/project_create.py --name <app-name> --type microservice"),
         "intake_to_approval": (
             "python tools/requirements/intake_engine.py "
             "--project-id <your-project-id> --customer-name <name> "
-            "--customer-org <org> --impact-level "
-            + classification.upper()
-            + " --json"
+            "--customer-org <org> --impact-level " + classification.upper() + " --json"
         ),
         "modernize_legacy": (
             "python tools/modernization/legacy_analyzer.py "
@@ -925,6 +894,7 @@ def recommend_path(goal, role, classification):
 # ---------------------------------------------------------------------------
 # 7. Flask Registration
 # ---------------------------------------------------------------------------
+
 
 def register_ux_filters(app):
     """Register all UX helpers with a Flask application.

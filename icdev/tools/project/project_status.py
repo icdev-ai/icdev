@@ -19,14 +19,14 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
-    from icdev.tools.compat.db_utils import get_db_connection
+    from tools.compat.db_utils import get_db_connection
 except ImportError:
     get_db_connection = None
 
@@ -46,8 +46,7 @@ def get_project_status(project_id: str) -> dict:
     if get_db_connection:
         conn = get_db_connection(DB_PATH)
     else:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
     try:
         return _query_status(conn, project_id)
     finally:
@@ -152,9 +151,7 @@ def _query_compliance(conn: sqlite3.Connection, project_id: str) -> dict:
         stig_summary[sev][r["status"]] = r["cnt"]
 
     stig_total = sum(r["cnt"] for r in stig_rows)
-    stig_open = sum(
-        r["cnt"] for r in stig_rows if r["status"] in ("Open", "open")
-    )
+    stig_open = sum(r["cnt"] for r in stig_rows if r["status"] in ("Open", "open"))
 
     # Control implementation status
     control_rows = conn.execute(
@@ -400,7 +397,7 @@ def format_brief(data: dict) -> str:
     # Compliance
     lines.append("")
     lines.append(f"  {'--- Compliance ---':^56}")
-    lines.append(f"    SSP:      {c['ssp']['status']}" + (f" (v{c['ssp']['version']})" if c['ssp']['version'] else ""))
+    lines.append(f"    SSP:      {c['ssp']['status']}" + (f" (v{c['ssp']['version']})" if c["ssp"]["version"] else ""))
     lines.append(f"    POA&M:    {c['poam']['open_count']} open / {c['poam']['total']} total")
     lines.append(f"    STIG:     {c['stig']['open_findings']} open / {c['stig']['total_findings']} total")
     lines.append(f"    Controls: {c['controls']['implemented']} implemented / {c['controls']['total']} total")
@@ -450,15 +447,13 @@ def format_detailed(data: dict) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Get detailed status for an ICDEV™-managed project"
-    )
+    parser = argparse.ArgumentParser(description="Get detailed status for an ICDEV™-managed project")
+    parser.add_argument("--project-id", "--project", required=True, help="Project UUID", dest="project_id")
     parser.add_argument(
-        "--project-id", "--project", required=True,
-        help="Project UUID", dest="project_id")
-    parser.add_argument(
-        "--format", choices=["brief", "detailed", "json"], default="brief",
-        help="Output format (brief=summary, detailed/json=full JSON)"
+        "--format",
+        choices=["brief", "detailed", "json"],
+        default="brief",
+        help="Output format (brief=summary, detailed/json=full JSON)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()

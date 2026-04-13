@@ -24,17 +24,16 @@ Usage:
 import argparse
 import json
 import re
-import sqlite3
-from datetime import datetime
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Graceful import of audit logger
 try:
-    from icdev.tools.audit.audit_logger import log_event
+    from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -42,56 +41,101 @@ except ImportError:
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
+
 # ---------------------------------------------------------------------------
 # Impact x Uncertainty priority matrix  (1 = highest priority)
 # ---------------------------------------------------------------------------
 PRIORITY_MATRIX = {
-    ("mission_critical", "unknown"):   1,
-    ("mission_critical", "ambiguous"):  2,
-    ("mission_critical", "assumed"):    3,
-    ("compliance_required", "unknown"):  2,
+    ("mission_critical", "unknown"): 1,
+    ("mission_critical", "ambiguous"): 2,
+    ("mission_critical", "assumed"): 3,
+    ("compliance_required", "unknown"): 2,
     ("compliance_required", "ambiguous"): 3,
-    ("compliance_required", "assumed"):  4,
-    ("enhancement", "unknown"):         3,
-    ("enhancement", "ambiguous"):       4,
-    ("enhancement", "assumed"):         5,
+    ("compliance_required", "assumed"): 4,
+    ("enhancement", "unknown"): 3,
+    ("enhancement", "ambiguous"): 4,
+    ("enhancement", "assumed"): 5,
 }
 
 # Keyword sets used for impact classification
-_MISSION_CRITICAL_KEYWORDS = frozenset({
-    "mission", "operational", "safety", "availability", "core capability",
-    "primary function", "critical", "life-threatening", "warfighter",
-    "combat", "command and control", "c2", "real-time", "failover",
-})
+_MISSION_CRITICAL_KEYWORDS = frozenset(
+    {
+        "mission",
+        "operational",
+        "safety",
+        "availability",
+        "core capability",
+        "primary function",
+        "critical",
+        "life-threatening",
+        "warfighter",
+        "combat",
+        "command and control",
+        "c2",
+        "real-time",
+        "failover",
+    }
+)
 
-_COMPLIANCE_KEYWORDS = frozenset({
-    "nist", "stig", "fedramp", "cmmc", "audit", "encryption",
-    "authentication", "ato", "fips", "cui", "authorization",
-    "compliance", "accreditation", "rmf", "poam", "ssp",
-    "cjis", "hipaa", "pci", "iso 27001", "soc 2",
-})
+_COMPLIANCE_KEYWORDS = frozenset(
+    {
+        "nist",
+        "stig",
+        "fedramp",
+        "cmmc",
+        "audit",
+        "encryption",
+        "authentication",
+        "ato",
+        "fips",
+        "cui",
+        "authorization",
+        "compliance",
+        "accreditation",
+        "rmf",
+        "poam",
+        "ssp",
+        "cjis",
+        "hipaa",
+        "pci",
+        "iso 27001",
+        "soc 2",
+    }
+)
 
 # Hedging words that signal assumptions
-_HEDGING_WORDS = frozenset({
-    "should", "probably", "likely", "typically", "usually",
-    "might", "perhaps", "may", "could", "assume", "assumed",
-    "expected", "ideally", "generally", "presumably",
-})
+_HEDGING_WORDS = frozenset(
+    {
+        "should",
+        "probably",
+        "likely",
+        "typically",
+        "usually",
+        "might",
+        "perhaps",
+        "may",
+        "could",
+        "assume",
+        "assumed",
+        "expected",
+        "ideally",
+        "generally",
+        "presumably",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -120,6 +164,7 @@ def _load_config() -> dict:
     if config_path.exists():
         try:
             import yaml  # optional -- air-gap safe fallback below
+
             with open(config_path, "r", encoding="utf-8") as fh:
                 cfg = yaml.safe_load(fh)
             return cfg.get("clarification", {})
@@ -158,6 +203,7 @@ def _parse_spec_sections(spec_path: Path) -> dict:
 # ---------------------------------------------------------------------------
 # Scoring functions
 # ---------------------------------------------------------------------------
+
 
 def _score_impact(text: str, context: dict = None) -> str:
     """Classify a text snippet by impact level.
@@ -235,6 +281,7 @@ def _find_ambiguous_phrase(text: str, patterns: list) -> dict | None:
 # Question generation
 # ---------------------------------------------------------------------------
 
+
 def _generate_question(item: dict) -> str:
     """Generate a human-readable clarification question for an item.
 
@@ -257,10 +304,7 @@ def _generate_question(item: dict) -> str:
     if uncertainty == "ambiguous" and pattern:
         phrase = pattern.get("phrase", "")
         clarification = pattern.get("clarification", "provide a measurable definition")
-        return (
-            f"In '{section}', you mentioned '{phrase}'. "
-            f"{clarification}"
-        )
+        return f"In '{section}', you mentioned '{phrase}'. {clarification}"
 
     # assumed
     if snippet:
@@ -279,8 +323,7 @@ def _generate_question(item: dict) -> str:
             )
 
     return (
-        f"The section '{section}' contains assumptions that need confirmation. "
-        f"Can you clarify the exact requirements?"
+        f"The section '{section}' contains assumptions that need confirmation. Can you clarify the exact requirements?"
     )
 
 
@@ -307,6 +350,7 @@ def _prioritize_questions(items: list, max_questions: int = 5) -> list:
 # Main analysis entry points
 # ---------------------------------------------------------------------------
 
+
 def analyze_spec_clarity(spec_path: Path, max_questions: int = 5) -> dict:
     """Analyze a spec file for clarity and generate prioritized clarification questions.
 
@@ -329,9 +373,13 @@ def analyze_spec_clarity(spec_path: Path, max_questions: int = 5) -> dict:
 
     # Required sections from checklist (subset for clarity check)
     expected_sections = {
-        "Feature Description", "User Story", "Solution Statement",
-        "ATO Impact Assessment", "Acceptance Criteria",
-        "Implementation Plan", "Testing Strategy",
+        "Feature Description",
+        "User Story",
+        "Solution Statement",
+        "ATO Impact Assessment",
+        "Acceptance Criteria",
+        "Implementation Plan",
+        "Testing Strategy",
     }
 
     items: list = []
@@ -424,9 +472,7 @@ def analyze_requirements_clarity(
     """
     conn = _get_connection(db_path)
 
-    session = conn.execute(
-        "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
@@ -510,10 +556,12 @@ def analyze_requirements_clarity(
                             "priority": priority,
                             "requirement_id": req_id,
                         }
-                        item["question"] = _generate_question({
-                            **item,
-                            "snippet": raw_text[:200],
-                        })
+                        item["question"] = _generate_question(
+                            {
+                                **item,
+                                "snippet": raw_text[:200],
+                            }
+                        )
                         item["context"] = raw_text[:300]
                         items.append(item)
                 except (TypeError, ValueError):
@@ -527,7 +575,7 @@ def analyze_requirements_clarity(
             event_type="clarification_analyzed",
             actor="icdev-requirements-analyst",
             action=f"Clarity analysis for session {session_id}: {clarity_score:.1%}, "
-                   f"{len(items)} issues, {len(top_items)} questions",
+            f"{len(items)} issues, {len(top_items)} questions",
             project_id=dict(session).get("project_id"),
             details={
                 "session_id": session_id,
@@ -549,6 +597,7 @@ def analyze_requirements_clarity(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _format_human(result: dict) -> str:
     """Format result dict as human-readable text output."""
@@ -577,13 +626,10 @@ def _format_human(result: dict) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Clarification Engine (ADR D159)"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Clarification Engine (ADR D159)")
     parser.add_argument("--spec-file", help="Path to spec file to analyze")
     parser.add_argument("--session-id", help="Intake session ID to analyze")
-    parser.add_argument("--max-questions", type=int, default=5,
-                        help="Maximum clarification questions (default 5)")
+    parser.add_argument("--max-questions", type=int, default=5, help="Maximum clarification questions (default 5)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable colored output")
     args = parser.parse_args()

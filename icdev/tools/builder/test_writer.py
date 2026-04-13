@@ -15,12 +15,12 @@ Implements:
 import argparse
 import json
 import re
-import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+from tools.db.storage import get_connection
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # CUI header applied to all generated files
@@ -243,7 +243,7 @@ def _parse_feature_steps(feature_file: str) -> Tuple[Path, List[Tuple[str, str]]
         for keyword in ("Given ", "When ", "Then ", "And "):
             if stripped.startswith(keyword):
                 step_type = keyword.strip()
-                step_text = stripped[len(keyword):]
+                step_text = stripped[len(keyword) :]
                 step_lines.append((step_type, step_text))
     return feature_path, step_lines
 
@@ -359,7 +359,7 @@ def _generate_java_steps(
 
         lines.append(f'    @{annotation}("{escaped_text}")')
         lines.append(f"    public void {method_name}() {{")
-        lines.append(f'        // TODO: Implement step - {step_type} {step_text}')
+        lines.append(f"        // TODO: Implement step - {step_type} {step_text}")
         lines.append("        throw new io.cucumber.java.PendingException();")
         lines.append("    }")
         lines.append("")
@@ -394,9 +394,9 @@ def _generate_go_steps(
     lines = [CUI_HEADER_C_STYLE]
     lines.append("package steps")
     lines.append("")
-    lines.append('import (')
+    lines.append("import (")
     lines.append('    "github.com/cucumber/godog"')
-    lines.append(')')
+    lines.append(")")
     lines.append("")
 
     # Collect unique step functions
@@ -414,7 +414,7 @@ def _generate_go_steps(
             func_name = f"{step_type.lower()}_step"
 
         # Escape backtick in regex
-        escaped_text = step_text.replace("`", "` + \"`\" + `")
+        escaped_text = step_text.replace("`", '` + "`" + `')
 
         func_registrations.append((escaped_text, func_name))
 
@@ -427,7 +427,7 @@ def _generate_go_steps(
     # Generate the initialization function
     lines.append(f"func {feature_name}Steps(ctx *godog.ScenarioContext) {{")
     for escaped_text, func_name in func_registrations:
-        lines.append(f'    ctx.Step(`^{escaped_text}$`, {func_name})')
+        lines.append(f"    ctx.Step(`^{escaped_text}$`, {func_name})")
     lines.append("}")
     lines.append("")
 
@@ -762,7 +762,9 @@ def _generate_agent_health_pytest(test_dir: Path, agents: List[str]) -> str:
 
     for agent_name in agents:
         params = AGENT_TEST_PARAMS.get(agent_name, {"port": 8080})
-        lines.append(f'    "{agent_name}": {{"port": {params["port"]}, "endpoint": "https://localhost:{params["port"]}/health"}},')
+        lines.append(
+            f'    "{agent_name}": {{"port": {params["port"]}, "endpoint": "https://localhost:{params["port"]}/health"}},'
+        )
 
     lines.append("}")
     lines.append("")
@@ -770,20 +772,20 @@ def _generate_agent_health_pytest(test_dir: Path, agents: List[str]) -> str:
     lines.append("class TestProjectAgentHealth:")
     lines.append('    """Health checks for project-specific agent configuration."""')
     lines.append("")
-    lines.append("    @pytest.mark.parametrize(\"agent_name,config\", PROJECT_AGENTS.items())")
+    lines.append('    @pytest.mark.parametrize("agent_name,config", PROJECT_AGENTS.items())')
     lines.append("    def test_agent_port_configured(self, agent_name, config):")
     lines.append('        """Each agent should have a valid port."""')
-    lines.append("        assert 1024 <= config[\"port\"] <= 65535, f\"Agent {agent_name} port out of range\"")
+    lines.append('        assert 1024 <= config["port"] <= 65535, f"Agent {agent_name} port out of range"')
     lines.append("")
-    lines.append("    @pytest.mark.parametrize(\"agent_name,config\", PROJECT_AGENTS.items())")
+    lines.append('    @pytest.mark.parametrize("agent_name,config", PROJECT_AGENTS.items())')
     lines.append("    def test_agent_https_endpoint(self, agent_name, config):")
     lines.append('        """Each agent health endpoint should use HTTPS."""')
-    lines.append("        assert config[\"endpoint\"].startswith(\"https://\"), f\"Agent {agent_name} not using HTTPS\"")
+    lines.append('        assert config["endpoint"].startswith("https://"), f"Agent {agent_name} not using HTTPS"')
     lines.append("")
     lines.append("    def test_no_duplicate_ports(self):")
     lines.append('        """All agent ports should be unique."""')
-    lines.append("        ports = [c[\"port\"] for c in PROJECT_AGENTS.values()]")
-    lines.append("        assert len(ports) == len(set(ports)), \"Duplicate agent ports detected\"")
+    lines.append('        ports = [c["port"] for c in PROJECT_AGENTS.values()]')
+    lines.append('        assert len(ports) == len(set(ports)), "Duplicate agent ports detected"')
     lines.append("")
 
     content = "\n".join(lines)
@@ -828,10 +830,7 @@ def generate_steps(
 
     generator = STEP_GENERATORS.get(language)
     if not generator:
-        raise ValueError(
-            f"Unsupported language: {language}. "
-            f"Supported: {', '.join(STEP_GENERATORS.keys())}"
-        )
+        raise ValueError(f"Unsupported language: {language}. Supported: {', '.join(STEP_GENERATORS.keys())}")
 
     step_file = generator(feature_path, steps_dir, step_lines)
     print(f"Step definitions created ({language}): {step_file}")
@@ -845,7 +844,7 @@ def generate_steps(
 def _log_audit(project_path: str, file_path: str, event_type: str, action: str) -> None:
     """Log an audit trail event for test generation."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, affected_files, classification)
@@ -867,47 +866,39 @@ def _log_audit(project_path: str, file_path: str, event_type: str, action: str) 
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate BDD tests in Cucumber/Gherkin format"
-    )
+    parser = argparse.ArgumentParser(description="Generate BDD tests in Cucumber/Gherkin format")
+    parser.add_argument("--project-path", required=True, help="Root path of the project")
+    parser.add_argument("--requirement", required=False, help="Requirement text to generate tests for")
+    parser.add_argument("--feature-name", help="Feature name (auto-generated from requirement if not provided)")
+    parser.add_argument("--tags", nargs="*", help="Gherkin tags (e.g., @smoke @auth)")
     parser.add_argument(
-        "--project-path", required=True, help="Root path of the project"
+        "--steps-only", action="store_true", help="Only generate step definitions for an existing feature file"
     )
+    parser.add_argument("--feature-file", help="Path to existing .feature file (with --steps-only)")
     parser.add_argument(
-        "--requirement", required=False, help="Requirement text to generate tests for"
-    )
-    parser.add_argument(
-        "--feature-name", help="Feature name (auto-generated from requirement if not provided)"
-    )
-    parser.add_argument(
-        "--tags", nargs="*", help="Gherkin tags (e.g., @smoke @auth)"
-    )
-    parser.add_argument(
-        "--steps-only", action="store_true",
-        help="Only generate step definitions for an existing feature file"
-    )
-    parser.add_argument(
-        "--feature-file", help="Path to existing .feature file (with --steps-only)"
-    )
-    parser.add_argument(
-        "--language", default="python",
+        "--language",
+        default="python",
         choices=["python", "java", "go", "typescript", "csharp", "rust"],
         help="Target language for step definitions (default: python)",
     )
     parser.add_argument(
-        "--agentic", action="store_true",
+        "--agentic",
+        action="store_true",
         help="Generate agentic test suite from templates (Phase 19)",
     )
     parser.add_argument(
-        "--agents", nargs="*",
+        "--agents",
+        nargs="*",
         help="Agent names to generate tests for (with --agentic). Default: all agents.",
     )
     parser.add_argument(
-        "--no-bdd", action="store_true",
+        "--no-bdd",
+        action="store_true",
         help="Skip BDD feature file generation (with --agentic)",
     )
     parser.add_argument(
-        "--no-pytest", action="store_true",
+        "--no-pytest",
+        action="store_true",
         help="Skip pytest file generation (with --agentic)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")

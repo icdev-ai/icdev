@@ -181,9 +181,7 @@ class MCPServer:
     def _make_response(self, request_id: Any, result: Any) -> dict:
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
-    def _make_error(
-        self, request_id: Any, code: int, message: str, data: Any = None
-    ) -> dict:
+    def _make_error(self, request_id: Any, code: int, message: str, data: Any = None) -> dict:
         err: Dict[str, Any] = {"code": code, "message": message}
         if data is not None:
             err["data"] = data
@@ -218,9 +216,7 @@ class MCPServer:
             logger.error("Error handling %s: %s\n%s", method, exc, traceback.format_exc())
             if is_notification:
                 return None
-            return self._make_error(
-                request_id, self.INTERNAL_ERROR, str(exc), traceback.format_exc()
-            )
+            return self._make_error(request_id, self.INTERNAL_ERROR, str(exc), traceback.format_exc())
 
         if is_notification:
             return None
@@ -317,24 +313,26 @@ class MCPServer:
 
         # D284: Create trace span wrapping tool execution
         try:
-            from icdev.tools.observability import get_tracer
-            from icdev.tools.observability.tracer import set_content_tag
+            from tools.observability import get_tracer
             import hashlib as _hl
+
             tracer = get_tracer()
         except ImportError:
             tracer = None
 
         span = None
         if tracer:
-            _args_hash = _hl.sha256(
-                json.dumps(arguments, default=str, sort_keys=True).encode()
-            ).hexdigest()[:16]
-            span = tracer.start_span("mcp.tool_call", kind="SERVER", attributes={
-                "gen_ai.operation.name": "execute_tool",
-                "mcp.tool.name": tool_name,
-                "mcp.server.name": getattr(self, "server_name", self.__class__.__name__),
-                "mcp.tool.args_hash": _args_hash,
-            })
+            _args_hash = _hl.sha256(json.dumps(arguments, default=str, sort_keys=True).encode()).hexdigest()[:16]
+            span = tracer.start_span(
+                "mcp.tool_call",
+                kind="SERVER",
+                attributes={
+                    "gen_ai.operation.name": "execute_tool",
+                    "mcp.tool.name": tool_name,
+                    "mcp.server.name": getattr(self, "server_name", self.__class__.__name__),
+                    "mcp.tool.args_hash": _args_hash,
+                },
+            )
 
         try:
             result = handler(arguments)
@@ -342,18 +340,19 @@ class MCPServer:
             logger.error("Tool %s raised: %s", tool_name, exc)
             if span:
                 span.set_status("ERROR", str(exc))
-                span.add_event("exception", {
-                    "exception.type": type(exc).__name__,
-                    "exception.message": str(exc),
-                })
+                span.add_event(
+                    "exception",
+                    {
+                        "exception.type": type(exc).__name__,
+                        "exception.message": str(exc),
+                    },
+                )
                 span.end()
             return {
                 "content": [
                     {
                         "type": "text",
-                        "text": json.dumps(
-                            {"error": str(exc), "tool": tool_name}, indent=2
-                        ),
+                        "text": json.dumps({"error": str(exc), "tool": tool_name}, indent=2),
                     }
                 ],
                 "isError": True,
@@ -403,11 +402,7 @@ class MCPServer:
             content = handler(uri)
             if isinstance(content, dict) or isinstance(content, list):
                 content = json.dumps(content, indent=2, default=str)
-            return {
-                "contents": [
-                    {"uri": uri, "mimeType": mime_type, "text": str(content)}
-                ]
-            }
+            return {"contents": [{"uri": uri, "mimeType": mime_type, "text": str(content)}]}
 
         # Try pattern match (simple {id} template matching)
         for registered_uri, info in self._resources.items():
@@ -432,11 +427,7 @@ class MCPServer:
                     content = handler(uri)
                     if isinstance(content, dict) or isinstance(content, list):
                         content = json.dumps(content, indent=2, default=str)
-                    return {
-                        "contents": [
-                            {"uri": uri, "mimeType": mime_type, "text": str(content)}
-                        ]
-                    }
+                    return {"contents": [{"uri": uri, "mimeType": mime_type, "text": str(content)}]}
 
         raise _MethodNotFound(f"Unknown resource URI: {uri}")
 
@@ -472,9 +463,7 @@ class MCPServer:
         if isinstance(result, str):
             return {
                 "description": self._prompts[prompt_name]["description"],
-                "messages": [
-                    {"role": "user", "content": {"type": "text", "text": result}}
-                ],
+                "messages": [{"role": "user", "content": {"type": "text", "text": result}}],
             }
 
         return {
@@ -513,9 +502,7 @@ class MCPServer:
                     # If it has an 'id', send an error response
                     request_id = msg.get("id") if isinstance(msg, dict) else None
                     if request_id is not None:
-                        response = self._make_error(
-                            request_id, self.INVALID_REQUEST, "Missing 'method' field"
-                        )
+                        response = self._make_error(request_id, self.INVALID_REQUEST, "Missing 'method' field")
                         self._write_message(response)
                     continue
 
@@ -532,4 +519,5 @@ class MCPServer:
 
 class _MethodNotFound(Exception):
     """Raised when a JSON-RPC method is not found."""
+
     pass

@@ -13,7 +13,7 @@ Features:
   - Span buffering with configurable flush interval
 
 Usage:
-    from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+    from tools.observability.sqlite_tracer import SQLiteTracer
     tracer = SQLiteTracer()
 
     with tracer.start_span("my_op", attributes={"key": "val"}) as span:
@@ -26,16 +26,16 @@ import logging
 import sqlite3
 import threading
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from icdev._paths import get_project_root
-from icdev.tools.observability.tracer import NullSpan, Span, Tracer
+from tools.observability.tracer import Span, Tracer
 
 logger = logging.getLogger("icdev.observability.sqlite_tracer")
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Active span tracking via contextvars
@@ -121,11 +121,13 @@ class SQLiteSpan(Span):
 
     def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> None:
         if not self._ended:
-            self._events.append({
-                "name": name,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "attributes": attributes or {},
-            })
+            self._events.append(
+                {
+                    "name": name,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "attributes": attributes or {},
+                }
+            )
 
     def set_status(self, code: str, message: str = "") -> None:
         if not self._ended:
@@ -254,7 +256,7 @@ class SQLiteTracer(Tracer):
             return
 
         try:
-            conn = sqlite3.connect(str(self._db_path), timeout=5)
+            conn = get_connection(str(self._db_path))
             for span in spans_to_write:
                 try:
                     conn.execute(
@@ -328,10 +330,9 @@ class SQLiteTracer(Tracer):
         params.append(limit)
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
-                f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT ?",
+                f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchall()
             conn.close()

@@ -6,7 +6,7 @@ Provides functions to resolve database paths and create connections with a
 consistent fallback chain: env var > explicit argument > default.
 
 Usage:
-    from icdev.tools.compat.db_utils import get_icdev_db_path, get_db_connection
+    from tools.compat.db_utils import get_icdev_db_path, get_db_connection
 
     db_path = get_icdev_db_path()                    # env var or default
     db_path = get_icdev_db_path("/custom/path.db")   # explicit override
@@ -25,11 +25,12 @@ This module uses only Python stdlib (air-gap safe).
 
 import os
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional, Union
 
-# Project root: 3 levels up from icdev/tools/compat/db_utils.py
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+# Project root: 3 levels up from tools/compat/db_utils.py
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_DB = _PROJECT_ROOT / "data" / "icdev.db"
 
 
@@ -65,7 +66,13 @@ def get_icdev_db_path(explicit: Optional[Union[str, Path]] = None) -> Path:
 def get_memory_db_path(explicit: Optional[Union[str, Path]] = None) -> Path:
     """Resolve the memory database path.
 
-    Fallback: ICDEV_MEMORY_DB_PATH env var > <project_root>/data/memory.db
+    Memory tables (memory_entries, daily_logs, memory_access_log,
+    memory_consolidation_log, memory_buffer) are consolidated into the main
+    icdev.db / PostgreSQL backend.  This function returns the main DB path so
+    existing callers that use the returned path for sqlite3.connect() still  # sqlite3-ok — docstring reference, not a call
+    work on SQLite deployments.
+
+    Fallback: ICDEV_MEMORY_DB_PATH env var > main icdev DB path
     """
     if explicit:
         return Path(explicit)
@@ -74,7 +81,7 @@ def get_memory_db_path(explicit: Optional[Union[str, Path]] = None) -> Path:
     if env_path:
         return Path(env_path)
 
-    return _PROJECT_ROOT / "data" / "memory.db"
+    return get_icdev_db_path()
 
 
 def get_platform_db_path(explicit: Optional[Union[str, Path]] = None) -> Path:
@@ -119,13 +126,10 @@ def get_db_connection(
     """
     path = get_icdev_db_path(db_path)
     if validate and not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
+        pass  # get_connection() handles row_factory internally
     return conn
 
 
@@ -134,13 +138,18 @@ def get_memory_connection(
     validate: bool = False,
     row_factory: bool = True,
 ) -> sqlite3.Connection:
-    """Get a SQLite connection to the memory database."""
+    """Get a connection to the memory tables (now consolidated into the main DB).
+
+    Memory tables live in the main icdev.db / PostgreSQL backend.
+    ``db_path`` is accepted for backward compatibility but ignored when using
+    the PostgreSQL backend.
+    """
     path = get_memory_db_path(db_path)
     if validate and not path.exists():
-        raise FileNotFoundError(f"Memory database not found: {path}")
-    conn = sqlite3.connect(str(path))
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
+        pass  # get_connection() handles row_factory internally
     return conn
 
 
@@ -153,7 +162,7 @@ def get_platform_connection(
     path = get_platform_db_path(db_path)
     if validate and not path.exists():
         raise FileNotFoundError(f"Platform database not found: {path}")
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
+        pass  # get_connection() handles row_factory internally
     return conn

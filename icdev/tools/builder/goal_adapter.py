@@ -32,9 +32,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 logger = logging.getLogger("icdev.goal_adapter")
 
 # ============================================================
@@ -68,6 +67,15 @@ GOAL_FILE_MAP: Dict[str, str] = {
     "owasp_agentic_security": "owasp_agentic_security.md",
     "code_intelligence": "code_intelligence.md",
     "ato_acceleration": "ato_acceleration.md",
+    # Phase 64: RAG subsystem
+    "rag_subsystem": "rag_subsystem.md",
+    # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ANVIL critique)
+    "multi_agent_orchestration": "multi_agent_orchestration.md",
+    # Genesis v2.0 Autonomous Research Lab
+    "genesis_daemon": "genesis_daemon.md",
+    "genesis_promoter": "genesis_promoter.md",
+    # Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)
+    "autoresearch": "autoresearch.md",
 }
 
 # ============================================================
@@ -101,6 +109,11 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
     "owasp_agentic_security": "Behavioral drift, tool chain validation, trust scoring, RBAC",
     "code_intelligence": "AST metrics, smell detection, maintainability scoring",
     "ato_acceleration": "Multi-framework ATO: FedRAMP, CMMC, OSCAL, eMASS, cATO",
+    "rag_subsystem": "Multi-source knowledge ingestion, semantic retrieval, cross-engine querying",
+    "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ANVIL critique",
+    "genesis_daemon": "Autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers",
+    "genesis_promoter": "Knowledge Bridge — GKP export/import, dedup, auto-promote, human review",
+    "autoresearch": "Bayesian Autoresearch — Karpathy-loop autonomous experiments with info-gain selection",
 }
 
 # ============================================================
@@ -134,6 +147,11 @@ GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
     "owasp_agentic_security": "OWASP Agentic Security",
     "code_intelligence": "Code Intelligence",
     "ato_acceleration": "ATO Acceleration",
+    "rag_subsystem": "RAG Subsystem",
+    "multi_agent_orchestration": "Multi-Agent Orchestration",
+    "genesis_daemon": "Genesis Daemon",
+    "genesis_promoter": "Genesis Promoter",
+    "autoresearch": "Bayesian Autoresearch",
 }
 
 # ============================================================
@@ -182,9 +200,7 @@ def copy_essential_goals(
 
         source_file = source_dir / filename
         if not source_file.exists():
-            logger.warning(
-                "Goal file not found: %s — skipping", source_file
-            )
+            logger.warning("Goal file not found: %s — skipping", source_file)
             continue
 
         dest_file = dest_dir / filename
@@ -224,7 +240,7 @@ def strip_fitness_step(build_app_content: str) -> str:
     # Using re.DOTALL so . matches newlines within the lazy quantifier.
     pattern = re.compile(
         r"###\s*Step\s*0\s*:\s*Agentic\s+Fitness.*?"  # heading line
-        r"(?=^##[#\s]|\Z)",                            # stop before next ## or ###
+        r"(?=^##[#\s]|\Z)",  # stop before next ## or ###
         re.MULTILINE | re.DOTALL,
     )
     content = pattern.sub("", build_app_content)
@@ -354,8 +370,7 @@ def copy_hardprompts(
             copied.append(rel_path)
             logger.debug("Copied hardprompt: %s", rel_path)
 
-    logger.info("Copied %d hardprompt files across %d directories",
-                len(copied), len(dirs_to_copy))
+    logger.info("Copied %d hardprompt files across %d directories", len(copied), len(dirs_to_copy))
     return copied
 
 
@@ -424,8 +439,7 @@ def adapt_goals(
 
         # Report hardprompts that would be copied
         always_dirs = ["agent", "architect", "builder", "security", "knowledge", "infra"]
-        cond_dirs = [("compliance", "compliance"), ("mbse", "mbse"),
-                     ("maintenance", "compliance")]
+        cond_dirs = [("compliance", "compliance"), ("mbse", "mbse"), ("maintenance", "compliance")]
         dirs_to_check = list(always_dirs)
         for subdir, cap in cond_dirs:
             if capabilities.get(cap, False):
@@ -444,19 +458,15 @@ def adapt_goals(
         # Report manifest
         result["manifest_generated"] = True
         result["manifest_path"] = str(child_goals_dir / "manifest.md")
-        logger.info("[DRY RUN] Would generate manifest at %s",
-                    result["manifest_path"])
+        logger.info("[DRY RUN] Would generate manifest at %s", result["manifest_path"])
 
         return result
 
     # --- Actual execution ---
 
     # Step 1: Copy essential goals
-    logger.info("Adapting goals for '%s' (%d goals, %d capabilities)",
-                app_name, len(goals_config), len(capabilities))
-    copied_goals = copy_essential_goals(
-        icdev_goals_dir, child_goals_dir, goals_config
-    )
+    logger.info("Adapting goals for '%s' (%d goals, %d capabilities)", app_name, len(goals_config), len(capabilities))
+    copied_goals = copy_essential_goals(icdev_goals_dir, child_goals_dir, goals_config)
     result["goals_copied"] = copied_goals
 
     # Step 2: Generate and write manifest
@@ -469,9 +479,7 @@ def adapt_goals(
     logger.info("Generated goals manifest: %s", manifest_path)
 
     # Step 3: Copy hardprompts
-    copied_prompts = copy_hardprompts(
-        icdev_hardprompts_dir, child_hardprompts_dir, capabilities
-    )
+    copied_prompts = copy_hardprompts(icdev_hardprompts_dir, child_hardprompts_dir, capabilities)
     result["hardprompts_copied"] = copied_prompts
 
     logger.info(

@@ -26,19 +26,19 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TOOLS_DIR = PROJECT_ROOT / "tools"
 
 # Files to skip (not CLI tools, or special cases)
 SKIP_FILES = {
-    "tools/dashboard/app.py",         # Flask web server
-    "tools/saas/api_gateway.py",      # Flask web server
-    "tools/saas/portal/app.py",       # Flask web server
-    "tools/saas/db/pg_schema.py",     # Schema definition module
-    "tools/db/init_icdev_db.py",      # DB init script (has --json already via convention)
-    "tools/compat/cli_harmonizer.py", # This file
+    "tools/dashboard/app.py",  # Flask web server
+    "tools/saas/api_gateway.py",  # Flask web server
+    "tools/saas/portal/app.py",  # Flask web server
+    "tools/saas/db/pg_schema.py",  # Schema definition module
+    "tools/db/init_icdev_db.py",  # DB init script (has --json already via convention)
+    "tools/compat/cli_harmonizer.py",  # This file
 }
 
 
@@ -55,7 +55,7 @@ def find_argparse_tools() -> List[Path]:
             content = py_file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        if "ArgumentParser" in content and '__name__' in content and '"__main__"' in content:
+        if "ArgumentParser" in content and "__name__" in content and '"__main__"' in content:
             results.append(py_file)
     return results
 
@@ -68,11 +68,11 @@ def fix_project_naming(py_file: Path, dry_run: bool = True) -> Optional[str]:
     content = py_file.read_text(encoding="utf-8")
 
     # Check if file has bare --project (not --project-id, --project-dir, --project-path)
-    if not re.search(r'''add_argument\(\s*['"]--project['"]''', content):
+    if not re.search(r"""add_argument\(\s*['"]--project['"]""", content):
         return None
 
     # Already has --project-id? Skip.
-    if re.search(r'''add_argument\(\s*['"]--project-id['"]''', content):
+    if re.search(r"""add_argument\(\s*['"]--project-id['"]""", content):
         return None
 
     # Transform: add_argument("--project", ...) → add_argument("--project-id", "--project", dest="project_id", ...)
@@ -106,16 +106,16 @@ def fix_project_naming(py_file: Path, dry_run: bool = True) -> Optional[str]:
         if last_paren > 0:
             before = result[:last_paren].rstrip()
             if before.endswith(","):
-                result = before + f" dest={quote}project_id{quote})" + result[last_paren + 1:]
+                result = before + f" dest={quote}project_id{quote})" + result[last_paren + 1 :]
             else:
-                result = before + f", dest={quote}project_id{quote})" + result[last_paren + 1:]
+                result = before + f", dest={quote}project_id{quote})" + result[last_paren + 1 :]
 
         return result
 
     # Match the full add_argument("--project", ...) call
     # This regex captures the full call including multiline
     pattern = re.compile(
-        r'''add_argument\(\s*(['"])--project\1[^)]*\)''',
+        r"""add_argument\(\s*(['"])--project\1[^)]*\)""",
         re.DOTALL,
     )
 
@@ -123,8 +123,8 @@ def fix_project_naming(py_file: Path, dry_run: bool = True) -> Optional[str]:
 
     # Replace args.project with args.project_id (but not args.project_id, args.project_dir, etc.)
     new_content = re.sub(
-        r'\bargs\.project\b(?!_)',
-        'args.project_id',
+        r"\bargs\.project\b(?!_)",
+        "args.project_id",
         new_content,
     )
 
@@ -158,7 +158,7 @@ def fix_json_flag(py_file: Path, dry_run: bool = True) -> Optional[str]:
         stripped = line.strip()
         # Detect parser variable name
         if "ArgumentParser" in stripped:
-            m = re.match(r'\s*(\w+)\s*=\s*\w*\.?ArgumentParser', stripped)
+            m = re.match(r"\s*(\w+)\s*=\s*\w*\.?ArgumentParser", stripped)
             if m:
                 parser_var = m.group(1)
         # Track last add_argument call
@@ -177,7 +177,9 @@ def fix_json_flag(py_file: Path, dry_run: bool = True) -> Optional[str]:
             break
 
     # Insert --json flag after the last add_argument
-    json_line = f'{indent}{parser_var}.add_argument("--json", action="store_true", dest="json_output", help="JSON output")'
+    json_line = (
+        f'{indent}{parser_var}.add_argument("--json", action="store_true", dest="json_output", help="JSON output")'
+    )
     lines.insert(last_add_arg_idx + 1, json_line)
 
     new_content = "\n".join(lines)
@@ -190,11 +192,10 @@ def fix_json_flag(py_file: Path, dry_run: bool = True) -> Optional[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Bulk-apply ICDEV™ CLI harmonization standards"
-    )
+    parser = argparse.ArgumentParser(description="Bulk-apply ICDEV™ CLI harmonization standards")
     parser.add_argument(
-        "--fix", required=True,
+        "--fix",
+        required=True,
         choices=["project-naming", "json-flag", "all"],
         help="Which fix to apply",
     )

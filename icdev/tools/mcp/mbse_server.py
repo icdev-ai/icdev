@@ -21,23 +21,24 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Lazy tool imports
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -48,9 +49,10 @@ def _import_tool(module_path, func_name):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_import_xmi(args: dict) -> dict:
     """Import a Cameo SysML XMI model file."""
-    import_xmi = _import_tool("icdev.tools.mbse.xmi_parser", "import_xmi")
+    import_xmi = _import_tool("tools.mbse.xmi_parser", "import_xmi")
     if not import_xmi:
         return {"error": "xmi_parser module not available", "status": "pending"}
 
@@ -67,7 +69,7 @@ def handle_import_xmi(args: dict) -> dict:
 
 def handle_import_reqif(args: dict) -> dict:
     """Import a DOORS NG ReqIF requirements file."""
-    import_reqif = _import_tool("icdev.tools.mbse.reqif_parser", "import_reqif")
+    import_reqif = _import_tool("tools.mbse.reqif_parser", "import_reqif")
     if not import_reqif:
         return {"error": "reqif_parser module not available", "status": "pending"}
 
@@ -84,7 +86,7 @@ def handle_import_reqif(args: dict) -> dict:
 
 def handle_trace_forward(args: dict) -> dict:
     """Forward trace through the digital thread."""
-    get_forward_trace = _import_tool("icdev.tools.mbse.digital_thread", "get_forward_trace")
+    get_forward_trace = _import_tool("tools.mbse.digital_thread", "get_forward_trace")
     if not get_forward_trace:
         return {"error": "digital_thread module not available", "status": "pending"}
 
@@ -102,7 +104,7 @@ def handle_trace_forward(args: dict) -> dict:
 
 def handle_trace_backward(args: dict) -> dict:
     """Backward trace through the digital thread."""
-    get_backward_trace = _import_tool("icdev.tools.mbse.digital_thread", "get_backward_trace")
+    get_backward_trace = _import_tool("tools.mbse.digital_thread", "get_backward_trace")
     if not get_backward_trace:
         return {"error": "digital_thread module not available", "status": "pending"}
 
@@ -120,7 +122,7 @@ def handle_trace_backward(args: dict) -> dict:
 
 def handle_generate_code(args: dict) -> dict:
     """Generate code from SysML model elements."""
-    generate_all = _import_tool("icdev.tools.mbse.model_code_generator", "generate_all")
+    generate_all = _import_tool("tools.mbse.model_code_generator", "generate_all")
     if not generate_all:
         return {"error": "model_code_generator module not available", "status": "pending"}
 
@@ -138,7 +140,7 @@ def handle_generate_code(args: dict) -> dict:
 
 def handle_detect_drift(args: dict) -> dict:
     """Check model-code synchronization status."""
-    detect_drift = _import_tool("icdev.tools.mbse.sync_engine", "detect_drift")
+    detect_drift = _import_tool("tools.mbse.sync_engine", "detect_drift")
     if not detect_drift:
         return {"error": "sync_engine module not available", "status": "pending"}
 
@@ -161,12 +163,12 @@ def handle_sync_model(args: dict) -> dict:
 
     try:
         if direction == "model_to_code":
-            sync_fn = _import_tool("icdev.tools.mbse.sync_engine", "sync_model_to_code")
+            sync_fn = _import_tool("tools.mbse.sync_engine", "sync_model_to_code")
             if not sync_fn:
                 return {"error": "sync_engine module not available", "status": "pending"}
             return sync_fn(project_id, language=args.get("language", "python"), db_path=str(DB_PATH))
         elif direction == "code_to_model":
-            sync_fn = _import_tool("icdev.tools.mbse.sync_engine", "sync_code_to_model")
+            sync_fn = _import_tool("tools.mbse.sync_engine", "sync_code_to_model")
             if not sync_fn:
                 return {"error": "sync_engine module not available", "status": "pending"}
             output_path = args.get("output_path")
@@ -181,7 +183,7 @@ def handle_sync_model(args: dict) -> dict:
 
 def handle_des_assess(args: dict) -> dict:
     """Run DoDI 5000.87 Digital Engineering Strategy compliance assessment."""
-    run_des = _import_tool("icdev.tools.mbse.des_assessor", "run_des_assessment")
+    run_des = _import_tool("tools.mbse.des_assessor", "run_des_assessment")
     if not run_des:
         return {"error": "des_assessor module not available", "status": "pending"}
 
@@ -198,7 +200,7 @@ def handle_des_assess(args: dict) -> dict:
 
 def handle_thread_coverage(args: dict) -> dict:
     """Digital thread coverage report."""
-    compute_coverage = _import_tool("icdev.tools.mbse.digital_thread", "compute_coverage")
+    compute_coverage = _import_tool("tools.mbse.digital_thread", "compute_coverage")
     if not compute_coverage:
         return {"error": "digital_thread module not available", "status": "pending"}
 
@@ -214,7 +216,7 @@ def handle_thread_coverage(args: dict) -> dict:
 
 def handle_model_snapshot(args: dict) -> dict:
     """Create a PI model snapshot."""
-    create_snapshot = _import_tool("icdev.tools.mbse.pi_model_tracker", "create_pi_snapshot")
+    create_snapshot = _import_tool("tools.mbse.pi_model_tracker", "create_pi_snapshot")
     if not create_snapshot:
         return {"error": "pi_model_tracker module not available", "status": "pending"}
 
@@ -234,6 +236,7 @@ def handle_model_snapshot(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     """Create and configure the MBSE MCP server."""
@@ -274,7 +277,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
-                "source_type": {"type": "string", "enum": ["doors_requirement", "sysml_element", "code_module", "test_file", "nist_control"]},
+                "source_type": {
+                    "type": "string",
+                    "enum": ["doors_requirement", "sysml_element", "code_module", "test_file", "nist_control"],
+                },
                 "source_id": {"type": "string", "description": "ID of the source element"},
             },
             "required": ["project_id", "source_type", "source_id"],
@@ -289,7 +295,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
-                "target_type": {"type": "string", "enum": ["doors_requirement", "sysml_element", "code_module", "test_file", "nist_control"]},
+                "target_type": {
+                    "type": "string",
+                    "enum": ["doors_requirement", "sysml_element", "code_module", "test_file", "nist_control"],
+                },
                 "target_id": {"type": "string", "description": "ID of the target element"},
             },
             "required": ["project_id", "target_type", "target_id"],
@@ -304,7 +313,11 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
-                "language": {"type": "string", "default": "python", "enum": ["python", "java", "go", "rust", "csharp", "typescript"]},
+                "language": {
+                    "type": "string",
+                    "default": "python",
+                    "enum": ["python", "java", "go", "rust", "csharp", "typescript"],
+                },
                 "output_dir": {"type": "string", "description": "Output directory for generated code"},
             },
             "required": ["project_id", "output_dir"],
@@ -376,7 +389,11 @@ def create_server() -> MCPServer:
             "properties": {
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "pi_number": {"type": "string", "description": "PI identifier (e.g., PI-25.1)"},
-                "snapshot_type": {"type": "string", "default": "manual", "enum": ["pi_start", "pi_end", "baseline", "milestone", "manual"]},
+                "snapshot_type": {
+                    "type": "string",
+                    "default": "manual",
+                    "enum": ["pi_start", "pi_end", "baseline", "milestone", "manual"],
+                },
                 "notes": {"type": "string", "description": "Optional notes for this snapshot"},
             },
             "required": ["project_id"],

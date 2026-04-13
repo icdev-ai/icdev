@@ -10,12 +10,11 @@ Architecture Decision D256: Mock-and-continue from Amazon Oxidizer."""
 
 import argparse
 import json
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # CUI header templates per language
@@ -56,6 +55,7 @@ def _load_config():
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, "r") as f:
                 return yaml.safe_load(f)
         except ImportError:
@@ -78,9 +78,17 @@ def _load_config():
     }
 
 
-def _build_prompt(unit, ir_data, source_language, target_language,
-                  dependency_mappings, feature_rules, type_mappings,
-                  translated_deps, config):
+def _build_prompt(
+    unit,
+    ir_data,
+    source_language,
+    target_language,
+    dependency_mappings,
+    feature_rules,
+    type_mappings,
+    translated_deps,
+    config,
+):
     """Build the translation prompt from hardprompt template + context."""
     prompt_path = BASE_DIR / "hardprompts" / "translation" / "code_translation.md"
     if prompt_path.exists():
@@ -107,9 +115,7 @@ def _build_prompt(unit, ir_data, source_language, target_language,
     type_text = json.dumps(type_mappings, indent=2) if type_mappings else "Use standard type mappings."
 
     # Build translated dependencies text
-    dep_list = "\n".join(
-        f"- {d['name']} ({d['kind']})" for d in translated_deps
-    ) if translated_deps else "None yet."
+    dep_list = "\n".join(f"- {d['name']} ({d['kind']})" for d in translated_deps) if translated_deps else "None yet."
 
     # Simple template substitution
     prompt = template
@@ -146,8 +152,9 @@ def _build_prompt(unit, ir_data, source_language, target_language,
 def _invoke_llm(prompt, config, function_name="code_translation"):
     """Invoke LLM via the router. Returns translated code string."""
     try:
-        from icdev.tools.llm.router import LLMRouter
-        from icdev.tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
         router = LLMRouter()
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
@@ -175,50 +182,42 @@ def _generate_mock(unit, target_language):
             f"{cui_header}\n"
             f"# MOCK — Translation failed after max repair attempts\n"
             f"def {name}({param_str}):\n"
-            f"    \"\"\"MOCK: Requires manual translation.\"\"\"\n"
-            f"    raise NotImplementedError(\"ICDEV™ translation mock — manual translation required\")\n"
+            f'    """MOCK: Requires manual translation."""\n'
+            f'    raise NotImplementedError("ICDEV™ translation mock — manual translation required")\n'
         )
     elif target_language == "java":
-        param_str = ", ".join(
-            f"Object {p.get('name', 'arg')}" for p in params
-        )
+        param_str = ", ".join(f"Object {p.get('name', 'arg')}" for p in params)
         ret = "Object" if return_type else "void"
         return (
             f"{cui_header}\n"
             f"// MOCK — Translation failed after max repair attempts\n"
             f"public {ret} {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new UnsupportedOperationException(\"ICDEV™ translation mock\");\n"
+            f'    throw new UnsupportedOperationException("ICDEV™ translation mock");\n'
             f"}}\n"
         )
     elif target_language == "go":
-        param_str = ", ".join(
-            f"{p.get('name', 'arg')} interface{{}}" for p in params
-        )
+        param_str = ", ".join(f"{p.get('name', 'arg')} interface{{}}" for p in params)
         return (
             f"{cui_header}\n"
             f"// MOCK — Translation failed after max repair attempts\n"
             f"func {name}({param_str}) interface{{}} {{\n"
             f"\t// MOCK: Requires manual translation\n"
-            f"\tpanic(\"ICDEV™ translation mock — manual translation required\")\n"
+            f'\tpanic("ICDEV™ translation mock — manual translation required")\n'
             f"}}\n"
         )
     elif target_language == "rust":
-        param_str = ", ".join(
-            f"{p.get('name', 'arg')}: ()" for p in params
-        )
+        param_str = ", ".join(f"{p.get('name', 'arg')}: ()" for p in params)
         return (
             f"{cui_header}\n"
             f"// MOCK — Translation failed after max repair attempts\n"
             f"pub fn {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    unimplemented!(\"ICDEV™ translation mock\");\n"
+            f'    unimplemented!("ICDEV™ translation mock");\n'
             f"}}\n"
         )
     elif target_language == "csharp":
-        param_str = ", ".join(
-            f"object {p.get('name', 'arg')}" for p in params
-        )
+        param_str = ", ".join(f"object {p.get('name', 'arg')}" for p in params)
         ret = "object" if return_type else "void"
         return (
             f"{cui_header}\n"
@@ -226,7 +225,7 @@ def _generate_mock(unit, target_language):
             f"public {ret} {name}({param_str})\n"
             f"{{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new NotImplementedException(\"ICDEV™ translation mock\");\n"
+            f'    throw new NotImplementedException("ICDEV™ translation mock");\n'
             f"}}\n"
         )
     elif target_language in ("typescript", "javascript"):
@@ -236,7 +235,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"export function {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new Error(\"ICDEV™ translation mock — manual translation required\");\n"
+            f'    throw new Error("ICDEV™ translation mock — manual translation required");\n'
             f"}}\n"
         )
     else:
@@ -283,10 +282,18 @@ def _get_translation_order(ir_data):
     return [name_to_unit[n] for n in order if n in name_to_unit]
 
 
-def translate_units(ir_data, source_language, target_language,
-                    project_id=None, job_id=None, config=None,
-                    dependency_mappings=None, feature_rules=None,
-                    type_mappings=None, db_path=None):
+def translate_units(
+    ir_data,
+    source_language,
+    target_language,
+    project_id=None,
+    job_id=None,
+    config=None,
+    dependency_mappings=None,
+    feature_rules=None,
+    type_mappings=None,
+    db_path=None,
+):
     """Translate all units in IR using LLM with pass@k (D254).
 
     Returns dict with translated_units, mocked_units, failed_units, stats.
@@ -307,13 +314,15 @@ def translate_units(ir_data, source_language, target_language,
     failed = []
     translated_deps = []  # accumulate for context
 
-
     for idx, unit in enumerate(ordered_units):
         unit_name = unit.get("name", "unknown")
 
         # Build prompt
         prompt = _build_prompt(
-            unit, ir_data, source_language, target_language,
+            unit,
+            ir_data,
+            source_language,
+            target_language,
             dependency_mappings or {},
             feature_rules or [],
             type_mappings or {},
@@ -332,15 +341,17 @@ def translate_units(ir_data, source_language, target_language,
                 break
 
         if best_result:
-            translated.append({
-                "name": unit_name,
-                "kind": unit.get("kind", "function"),
-                "source_file": unit.get("source_file", ""),
-                "translated_code": best_result,
-                "status": "translated",
-                "source_hash": unit.get("source_hash", ""),
-                "candidate_selected": k + 1,
-            })
+            translated.append(
+                {
+                    "name": unit_name,
+                    "kind": unit.get("kind", "function"),
+                    "source_file": unit.get("source_file", ""),
+                    "translated_code": best_result,
+                    "status": "translated",
+                    "source_hash": unit.get("source_hash", ""),
+                    "candidate_selected": k + 1,
+                }
+            )
             translated_deps.append({"name": unit_name, "kind": unit.get("kind", "function")})
 
             # Record in DB if available
@@ -350,26 +361,30 @@ def translate_units(ir_data, source_language, target_language,
             # LLM failed — mock-and-continue (D256) or fail
             if mock_on_failure:
                 mock_code = _generate_mock(unit, target_language)
-                mocked.append({
-                    "name": unit_name,
-                    "kind": unit.get("kind", "function"),
-                    "source_file": unit.get("source_file", ""),
-                    "translated_code": mock_code,
-                    "status": "mocked",
-                    "source_hash": unit.get("source_hash", ""),
-                })
+                mocked.append(
+                    {
+                        "name": unit_name,
+                        "kind": unit.get("kind", "function"),
+                        "source_file": unit.get("source_file", ""),
+                        "translated_code": mock_code,
+                        "status": "mocked",
+                        "source_hash": unit.get("source_hash", ""),
+                    }
+                )
                 translated_deps.append({"name": unit_name, "kind": unit.get("kind", "function")})
 
                 if db_path and job_id:
                     _record_unit(db_path, job_id, unit, "mocked", mock_code, 0)
             else:
-                failed.append({
-                    "name": unit_name,
-                    "kind": unit.get("kind", "function"),
-                    "source_file": unit.get("source_file", ""),
-                    "status": "failed",
-                    "error": "LLM returned empty response after all candidates",
-                })
+                failed.append(
+                    {
+                        "name": unit_name,
+                        "kind": unit.get("kind", "function"),
+                        "source_file": unit.get("source_file", ""),
+                        "status": "failed",
+                        "error": "LLM returned empty response after all candidates",
+                    }
+                )
                 if db_path and job_id:
                     _record_unit(db_path, job_id, unit, "failed", None, 0)
 
@@ -396,7 +411,7 @@ def translate_units(ir_data, source_language, target_language,
 def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
     """Record a translation unit result in the database."""
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection(db_path=str(db_path))
         c = conn.cursor()
         unit_id = str(uuid.uuid4())
         c.execute(
@@ -406,10 +421,16 @@ def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
                 source_hash, candidate_selected)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                unit_id, job_id, unit.get("name", ""),
-                unit.get("kind", "function"), unit.get("source_file", ""),
-                unit.get("source_code", ""), translated_code, status,
-                unit.get("source_hash", ""), candidate,
+                unit_id,
+                job_id,
+                unit.get("name", ""),
+                unit.get("kind", "function"),
+                unit.get("source_file", ""),
+                unit.get("source_code", ""),
+                translated_code,
+                status,
+                unit.get("source_hash", ""),
+                candidate,
             ),
         )
         conn.commit()
@@ -449,15 +470,13 @@ def main():
     # Load dependency mappings
     dep_mappings = {}
     try:
-        from icdev.tools.translation.dependency_mapper import load_mappings, resolve_imports
+        from tools.translation.dependency_mapper import load_mappings, resolve_imports
+
         mappings = load_mappings()
         # Pre-resolve imports from IR
         imports = ir_data.get("imports", [])
         if imports:
-            resolutions = resolve_imports(
-                args.source_language, args.target_language,
-                imports, mappings
-            )
+            resolutions = resolve_imports(args.source_language, args.target_language, imports, mappings)
             dep_mappings = {r["source_import"]: r for r in resolutions}
     except ImportError:
         pass
@@ -465,7 +484,8 @@ def main():
     # Load feature rules
     feature_rules = []
     try:
-        from icdev.tools.translation.feature_map import FeatureMapLoader
+        from tools.translation.feature_map import FeatureMapLoader
+
         loader = FeatureMapLoader()
         feature_rules = loader.get_rules(args.source_language, args.target_language)
     except ImportError:
@@ -474,7 +494,8 @@ def main():
     # Load type mappings
     type_mappings = {}
     try:
-        from icdev.tools.translation.type_checker import load_type_mappings
+        from tools.translation.type_checker import load_type_mappings
+
         type_mappings = load_type_mappings()
     except ImportError:
         pass
@@ -505,9 +526,13 @@ def main():
                 # Determine output filename
                 src_file = unit.get("source_file", unit["name"])
                 ext_map = {
-                    "python": ".py", "java": ".java", "go": ".go",
-                    "rust": ".rs", "csharp": ".cs",
-                    "typescript": ".ts", "javascript": ".js",
+                    "python": ".py",
+                    "java": ".java",
+                    "go": ".go",
+                    "rust": ".rs",
+                    "csharp": ".cs",
+                    "typescript": ".ts",
+                    "javascript": ".js",
                 }
                 ext = ext_map.get(args.target_language, ".txt")
                 name = Path(src_file).stem + ext
@@ -516,12 +541,13 @@ def main():
 
     # Audit trail
     try:
-        from icdev.tools.audit.audit_logger import log_event
+        from tools.audit.audit_logger import log_event
+
         log_event(
             event_type="translation.unit_translated",
             actor="code_translator",
             action=f"Translated {result['stats']['translated_count']}/{result['stats']['total_units']} units "
-                   f"from {args.source_language} to {args.target_language}",
+            f"from {args.source_language} to {args.target_language}",
             project_id=args.project_id,
             details=result["stats"],
         )

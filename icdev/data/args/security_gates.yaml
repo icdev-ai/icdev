@@ -13,12 +13,17 @@ merge_gates:
     - critical_vulnerability
     - high_vulnerability
     - failed_tests
-    - missing_cui_markings
+    # CUI marking gate is classification-aware: only enforced when
+    # classification_profiles.yaml -> enforce_cui_marking_gate is true.
+    # Use ClassificationResolver.enforce_cui_marking_gate to check at runtime.
+    - missing_cui_markings_if_required
     - secrets_detected
   warn_on:
     - cat2_stig_finding
     - medium_vulnerability
     - coverage_below_threshold
+    # Warn (not block) if classification markings are missing on non-CUI projects
+    - classification_markings_inconsistent
 
 deployment_gates:
   block_on:
@@ -69,6 +74,18 @@ ivv:
     - code_review_incomplete
     - bdd_feature_coverage_low
     - pipeline_security_stages_missing
+
+# DB abstraction lint gate — blocks merges that introduce bare sqlite3.connect()
+# outside the approved DB-layer files.
+# Run: python tools/lint/sqlite3_connect_linter.py --json --gate
+db_abstraction_lint:
+  blocking:
+    - sqlite3_connect_violation   # bare sqlite3.connect() in tools/ without # sqlite3-ok
+  note: >
+    Violations are detected by tools/lint/sqlite3_connect_linter.py.
+    Exempt files: tools/db/storage.py, init_icdev_db.py, migration_runner.py,
+    backup_manager.py, */init_db.py.  Suppress a single line with # sqlite3-ok
+    only when a direct connection genuinely cannot be avoided.
 
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:
@@ -456,6 +473,36 @@ code_patterns:
     max_high: 0
     max_medium: 10
 
+# Bayesian Teaching Intelligence Gates (D-BT-1 through D-BT-6)
+bayesian_teaching:
+  blocking:
+    - info_gain_scoring_not_configured
+    - smart_encoding_dictionary_empty
+  warning:
+    - compliance_ordering_not_used
+    - pair_scoring_stale_over_30_days
+    - teaching_dimension_not_computed
+  thresholds:
+    min_info_gain_score: 0.50
+    max_scoring_staleness_days: 30
+    smart_encoding_required: true
+
+# Cross-Platform Compatibility Gates (OS-agnostic: Windows → Linux)
+cross_platform:
+  blocking:
+    - hardcoded_platform_paths_detected        # /tmp, C:\, backslash in path strings
+    - datetime_utcnow_usage_detected           # deprecated in Python 3.12+
+    - hashlib_md5_for_non_security_detected     # bandit B324, use sha256
+    - gitattributes_missing_in_project_root     # line ending consistency
+  warning:
+    - open_without_encoding_detected            # implicit encoding varies by OS
+    - subprocess_for_ollama_status              # use HTTP /api/tags instead
+    - os_specific_api_usage                     # fcntl, winreg, msvcrt
+  thresholds:
+    max_path_violations: 0
+    require_gitattributes: true
+    require_timezone_aware_datetime: true
+
 # Endpoint Security Gates (D-EPSEC-2)
 endpoint_security:
   blocking:
@@ -657,6 +704,25 @@ swft:
     dependency_audit_required: true
     secret_detection_required: true
 
+# RAG Subsystem (Phase 64, D-RAG-1 through D-RAG-14)
+rag:
+  blocking:
+    - rag_injection_without_provenance
+    - rag_cross_tenant_query_detected
+    - rag_content_tracing_in_cui_without_approval
+  warning:
+    - rag_ingestion_stale_over_7_days
+    - rag_retrieval_low_relevance_trend
+    - rag_vector_store_unavailable
+    - rag_quality_degradation_detected       # D-KARL-8: quality_monitor threshold breach
+    - rag_corrective_all_strategies_failed   # D-KARL-3: corrective_rag no results
+  thresholds:
+    provenance_required: true
+    tenant_isolation_required: true
+    max_ingestion_staleness_days: 7
+    quality_min_relevance: 0.6               # D-KARL-8: minimum RAG relevance score
+    quality_consecutive_failures_retrain: 3  # D-KARL-8: failures before auto-retrain
+
 code_quality:
   blocking:
     - avg_cyclomatic_complexity_exceeds_critical
@@ -683,3 +749,511 @@ marketplace:
     review:
       max_age_days: 30
       escalation_after_days: 7
+
+# Fine-Tuning Security Gate (D-FT-4, D-FT-16, D-FT-18)
+fine_tuning:
+  blocking:
+    - training_data_cui_boundary_violation
+    - cloud_finetune_exceeds_classification_level
+    - lora_adapter_unsigned_for_marketplace
+    - training_data_provenance_missing
+  warning:
+    - training_dataset_below_min_size
+    - eval_score_below_baseline
+    - gpu_vram_insufficient
+    - auto_retrain_disabled
+    - ft_pipeline_run_failed                 # D-KARL-5: rag_ft_pipeline error state
+    - ft_kg_pair_generation_zero_output      # D-KARL-6: kg_pair_generator produced no pairs
+  thresholds:
+    min_dataset_examples: 20
+    min_bleu_for_promotion: 0.30
+    min_rouge_l_for_promotion: 0.40
+    min_perplexity_improvement_pct: 10
+    cloud_max_classification: CUI
+    min_gpu_vram_gb: 16
+
+# Blockchain Security Gates (D-GC-1 through D-GC-11)
+blockchain:
+  blocking:
+    - chaincode_critical_finding_open
+    - fips_crypto_not_validated
+    - peer_tls_not_configured
+    - endorsement_policy_missing
+    - hsm_required_not_configured  # IL5+ only
+  warning:
+    - chaincode_high_finding_open
+    - fips_validation_expired
+    - peer_health_check_failed
+    - provenance_anchor_pending
+  thresholds:
+    max_critical_chaincode_findings: 0
+    max_high_chaincode_findings: 0
+    fips_validation_required: true
+    hsm_required_for_il5_plus: true
+    tls_mutual_auth_required: true
+
+# Red Team Plugin Registry Gates (Phase 65 — promptfoo-inspired)
+red_team:
+  blocking:
+    - critical_plugin_test_failed
+    - prompt_injection_defense_gaps
+    - atlas_technique_unmitigated
+    - compliance_bypass_detected
+  warning:
+    - high_plugin_test_failed
+    - output_safety_gaps
+    - tool_chain_violations
+  thresholds:
+    max_critical_failures: 0
+    max_high_failures: 0
+    min_plugin_pass_rate: 1.0
+    scan_required_for_il4_plus: true
+
+# Formal Verification Gate (LeanStral-adapted, D-VL-6)
+# Property-based testing, type-level security, SQL injection immunity
+formal_verification:
+  blocking:
+    - sql_injection_pattern_detected
+    - critical_dangerous_pattern_detected
+    - eval_exec_in_production_code
+  warning:
+    - cui_marking_missing
+    - input_validation_gap
+    - low_invariant_density
+    - high_dangerous_pattern_detected
+  thresholds:
+    max_critical_findings: 0
+    max_high_findings: 0
+    min_average_score: 0.60
+    require_cui_markings: true
+
+# Compiler-in-the-Loop Verification Gate (LeanStral-adapted, D-VL-1)
+verify_loop:
+  blocking:
+    - blocking_verifier_failure_unresolved
+  warning:
+    - warning_verifier_failure
+    - repair_attempted_but_failed
+  thresholds:
+    max_unresolved_blocking: 0
+    max_unresolved_warnings: 10
+    require_all_blocking_pass: true
+
+# GSD-adapted: 4-Level Verification & Stub Detection Gate (D-GSD-1)
+stub_detection:
+  blocking:
+    - file_exists_verification_failed
+    - high_stub_ratio_detected
+  warning:
+    - stubs_detected_in_project
+    - wiring_disconnected_files
+    - functional_check_failed
+  thresholds:
+    max_stub_ratio: 0.5
+    max_disconnected_files: 5
+    require_exists_pass: true
+    require_substantive_pass: true
+
+# Complexity as Compliance Signal Gates (Phase 52 extension — D338)
+# Maps cyclomatic/cognitive complexity to NIST SA-11 (Developer Testing)
+# and SA-15 (Development Process, Standards, and Tools) sub-controls.
+# Evaluated by CODE-007 (SA-11) and CODE-008 (SA-15) in the PDC.
+complexity_compliance:
+  sa11:
+    # SA-11(1): Static Code Analysis — any function with CC > threshold
+    # SA-11(3): IV&V coverage — % of functions with high CC
+    # SA-11(8): Dynamic Code Analysis — any function with cognitive CC > threshold
+    blocking: []
+    warning:
+      - high_cyclomatic_function_exceeds_sa11_1_threshold
+      - high_cc_pct_exceeds_sa11_3_ivv_threshold
+      - high_cognitive_function_exceeds_sa11_8_threshold
+  sa15:
+    # SA-15(1): Quality Metrics — avg cyclomatic CC exceeds project-wide threshold (BLOCKING)
+    # SA-15(7): Developer Security Testing — avg cognitive CC exceeds threshold
+    # SA-15(11): Lifecycle Signal — cognitive complexity trend degrading
+    blocking:
+      - avg_cyclomatic_violates_sa15_1_quality_metrics
+    warning:
+      - avg_cognitive_exceeds_sa15_7_security_testing_threshold
+      - cognitive_trend_degrading_sa15_11_lifecycle_signal
+  thresholds:
+    sa11:
+      # SA-11(1): max cyclomatic CC per function before static analysis finding
+      max_cyclomatic_per_function: 20
+      # SA-11(3): % of functions above high-CC threshold before IV&V finding
+      max_pct_high_cyclomatic: 5.0
+      high_cyclomatic_threshold: 15
+      # SA-11(8): max cognitive CC per function before dynamic analysis finding
+      max_cognitive_per_function: 25
+    sa15:
+      # SA-15(1): project-wide average cyclomatic CC (blocking if exceeded)
+      max_avg_cyclomatic: 10.0
+      # SA-15(7): project-wide average cognitive CC (warning if exceeded)
+      max_avg_cognitive: 15.0
+      # SA-15(11): minimum trend delta — negative values indicate degradation
+      cognitive_trend_min_delta: -2.0
+
+# GSD-adapted: Context Pressure & Stuck Detection Gate (D-GSD-4/5)
+context_health:
+  blocking:
+    - stuck_analysis_paralysis
+    - stuck_duplicate_loop
+  warning:
+    - context_pressure_critical
+    - context_pressure_warning
+    - approaching_analysis_paralysis
+  thresholds:
+    max_consecutive_reads: 5
+    max_duplicate_calls: 3
+    warning_remaining_pct: 35
+    critical_remaining_pct: 25
+
+# Agent Benchmark Framework Gates (Phase 65 — TheAgentCompany-inspired)
+agent_benchmark:
+  blocking:
+    - agent_below_minimum_threshold
+    - core_agent_benchmark_not_run
+  warning:
+    - agent_score_declining
+    - benchmark_coverage_low
+    - benchmark_stale
+  thresholds:
+    min_composite_score: 0.60
+    min_outcome_score: 0.50
+    min_methodology_score: 0.40
+    benchmark_max_age_days: 30
+    core_agents_required:
+      - orchestrator
+      - builder
+      - compliance
+
+# NemoClaw-Adapted Agent Sandboxing Gates (D-NC-1 through D-NC-3)
+credential_isolation:
+  blocking:
+    - raw_api_key_in_agent_env
+    - credential_broker_bypass_detected
+  warning:
+    - credential_broker_disabled_using_fallback
+    - token_ttl_exceeded_1h
+    - unused_credential_grant
+    - recent_credential_denials
+  thresholds:
+    max_token_ttl_seconds: 3600
+    credential_broker_required: false       # Set true once rollout complete
+
+egress_policy:
+  blocking:
+    - agent_egress_policy_missing_for_il5
+    - wildcard_egress_on_security_agent
+  warning:
+    - wildcard_egress_rule_detected
+    - ssh_access_for_non_builder
+    - egress_policy_not_applied
+  thresholds:
+    require_egress_policy_for_il5: true
+    max_wildcard_rules_per_role: 2
+
+blueprint_integrity:
+  blocking:
+    - genome_digest_mismatch
+    - marketplace_asset_digest_mismatch
+    - child_app_digest_mismatch
+  warning:
+    - digest_not_computed_for_entity
+    - digest_verification_stale
+  thresholds:
+    require_digest_for_propagation: true
+    require_digest_for_marketplace: true
+    verification_max_age_days: 30
+
+# Evolution Daemon Lifecycle Gates (Phase 36, D-EVO-1 through D-EVO-8)
+evolution_lifecycle:
+  blocking:
+    - capability_absorbed_without_hitl
+    - staging_test_failed_before_propagation
+    - stability_window_not_elapsed
+    - evaluation_score_below_minimum
+  warning:
+    - evolution_daemon_running_without_monitoring
+    - discover_reflex_stale_over_24h
+    - staging_environment_expired
+    - absorb_reflex_circuit_broken
+  thresholds:
+    require_hitl_for_absorb: true
+    min_evaluation_score: 0.65
+    stability_window_hours: 72
+    max_staging_age_hours: 168
+    require_test_pass_before_propagation: true
+
+# Phase 66 — Workflow Discipline Engine (PAUL-inspired, D-WF-1 through D-WF-7)
+workflow_loop:
+  blocking:
+    - loop_closed_without_reconciliation
+    - acceptance_criteria_missing_for_plan
+    - required_process_not_invoked
+  warning:
+    - loop_abandoned_without_reason
+    - acceptance_criteria_pending_at_close
+    - task_count_exceeds_plan_limit
+    - handoff_stale_over_72h
+  thresholds:
+    require_reconciliation: true
+    require_acceptance_criteria: true
+    min_acceptance_pass_rate: 0.80
+    max_tasks_per_plan: 5
+    handoff_max_age_hours: 72
+
+# Implementation Coherence Gate (D-WF-8)
+coherence:
+  description: "Implementation coherence — internal consistency validation (D-WF-8)"
+  blocking:
+    - schema_code_mismatch
+    - fixture_schema_mismatch
+    - append_only_unprotected
+  warning:
+    - config_code_drift
+    - signature_call_risk
+    - manifest_incomplete
+    - import_unused
+  thresholds:
+    max_schema_mismatches: 0
+    max_fixture_mismatches: 0
+    coherence_required: true
+
+# Engineering Review Board Gate (Phase 67, D-RB-1 through D-RB-7)
+review_board:
+  description: "Continuous multi-persona engineering analysis — SRE, QA, Security, Perf, UX, Docs, Product"
+  blocking:
+    - critical_findings_unresolved
+    - security_reflex_circuit_breaker_open
+    - sre_error_budget_exceeded
+  warning:
+    - high_findings_unacknowledged
+    - qa_coverage_below_threshold
+    - docs_stale_over_90_days
+    - perf_db_size_exceeded
+    - ux_aria_coverage_low
+  thresholds:
+    max_critical_findings: 0
+    max_high_findings_unacknowledged: 10
+    min_qa_coverage_pct: 50
+    max_db_size_mb: 500
+    min_aria_coverage_pct: 80
+    review_board_enabled: false
+
+# Autonomy Engine Gate (Phase 68, D-AE-1 through D-AE-12)
+autonomy:
+  description: "Bayesian trust-graduated self-evolution — safety invariants and trust gating"
+  blocking:
+    - safety_invariant_violated
+    - kill_switch_active
+    - trust_below_required_tier
+    - coherence_failed_after_remediation
+  warning:
+    - trust_score_declining
+    - exploration_rate_high
+    - behavior_penalty_spike
+  thresholds:
+    require_safety_check: true
+    require_coherence_check: true
+    max_exploration_rate_pct: 30
+    min_trust_for_commit: 0.30
+    autonomy_enabled: false
+
+# Bayesian Autoresearch Gates (Phase 67, D-AR-1 through D-AR-10)
+autoresearch:
+  description: "Karpathy-loop autonomous experiment engine — Bayesian-guided self-improvement"
+  blocking:
+    - experiment_modifies_forbidden_path
+    - experiment_exceeds_time_budget
+    - experiment_fails_coherence_check
+    - experiment_disables_security_gate
+  warning:
+    - experiment_acceptance_rate_below_threshold
+    - experiment_consecutive_failures_high
+    - hypothesis_dedup_rate_above_threshold
+  thresholds:
+    min_acceptance_rate_pct: 10
+    max_consecutive_failures: 3
+    max_dedup_rate_pct: 80
+    time_budget_max_seconds: 600
+    require_test_pass: true
+    require_coherence_check: true
+    autoresearch_enabled: false
+
+# OpenClaw Skill Import/Export Gates (Phase 69)
+openclaw_import:
+  description: "Zero-trust gate for importing external OpenClaw community skills"
+  blocking:
+    - sast_critical_or_high_findings
+    - secrets_detected_in_skill
+    - prompt_injection_detected
+    - dangerous_code_patterns_critical
+    - executable_content_without_review
+    - sha256_hash_mismatch
+    - dependency_critical_vulnerabilities
+  warning:
+    - medium_sast_findings
+    - behavioral_sandbox_anomaly
+    - trust_score_below_degraded
+    - unpinned_script_dependencies
+  thresholds:
+    max_critical_sast: 0
+    max_high_sast: 0
+    max_secrets: 0
+    max_prompt_injections: 0
+    max_critical_code_patterns: 0
+    require_review_for_scripts: true
+    initial_trust_score: 0.30
+    trust_decay_on_violation: 0.15
+    auto_promote_no_scripts: false
+    quarantine_max_age_days: 30
+    require_sbom_for_deps: true
+    require_registration: false
+    require_renewal: false
+
+llm_gateway:
+  description: "LLM Gateway pre/post-check gates — injection, PII, rate limiting"
+  blocking:
+    - injection_score_above_0_7
+    - pii_detected_in_output
+    - rate_limit_exceeded
+  warning:
+    - injection_score_0_3_to_0_7
+    - input_length_above_80_pct_of_max
+
+model_drift:
+  description: "Model quality and latency drift detection gates"
+  blocking:
+    - quality_degradation_above_20_pct
+    - latency_p95_above_2x_baseline
+  warning:
+    - quality_degradation_above_10_pct
+    - token_inflation_above_20_pct
+
+sre_slo:
+  description: "SRE SLO burn rate and error budget gates"
+  blocking:
+    - slo_burn_rate_above_10x_for_1h
+    - error_budget_exhausted
+  warning:
+    - burn_rate_above_2x
+    - error_budget_below_20_pct
+
+prompt_registry:
+  description: "Prompt version registry gates — active version and deprecation"
+  blocking:
+    - no_active_version_for_registered_prompt
+  warning:
+    - deprecated_prompts_still_in_use
+
+# Sandbox Execution Gates (Phase 71, D-SEC-10)
+sandbox_execution:
+  blocking:
+    - sandbox_execution_critical_violation
+    - sandbox_network_access_unauthorized
+  warning:
+    - sandbox_execution_timeout
+    - sandbox_high_memory_usage
+  thresholds:
+    max_execution_timeout_seconds: 300
+    network_access_requires_approval: true
+    max_concurrent_executions: 4
+
+# Sandbox Integration Gates (Phase 72, D-SEC-11)
+sandbox_integration:
+  blocking:
+    - marketplace_install_sandbox_failure
+    - openclaw_full_sandbox_failure
+    - ci_cd_sandbox_failure
+  warning:
+    - codelens_sandbox_unavailable
+    - genesis_sandbox_failure
+  thresholds:
+    codelens_max_files: 15
+    marketplace_max_files: 20
+    genesis_confidence_penalty: 0.10
+    ci_cd_fail_on_error: true
+
+synthesize_goal_review:
+  description: "Gate for auto-generated goal workflows from Synthesize reflex — human approval required"
+  blocking:
+    - no_human_review_completed
+    - goal_references_forbidden_tool
+    - goal_chain_contains_destructive_ops
+    - cui_markings_missing_from_goal
+  warning:
+    - low_pattern_frequency
+    - single_session_source
+    - llm_polish_failed
+
+openclaw_export:
+  description: "Gate for exporting ICDEV™ skills to OpenClaw format — prevents data leakage"
+  blocking:
+    - cui_markings_present_after_strip
+    - internal_metadata_leak
+    - export_review_not_completed
+    - classification_level_exceeded
+  warning:
+    - export_contains_icdev_references
+    - no_export_license_specified
+  thresholds:
+    require_human_approval: true
+    strip_cui_required: true
+    strip_internal_metadata: true
+
+# Phase 70 — Redaction & Data Protection (D-RDT-1)
+redaction_data_protection:
+  description: "Gate for sensitive data protection — blocks if PII/CUI detected in cloud-bound prompts"
+  blocking:
+    - pii_detected_in_cloud_prompt
+    - cui_data_in_unprotected_channel
+    - program_name_in_cloud_prompt
+    - pricing_data_in_cloud_prompt
+  warning:
+    - redaction_module_not_installed
+    - presidio_unavailable_using_regex_fallback
+    - deny_list_empty
+  thresholds:
+    max_pii_detections_allowed: 0
+    require_local_only_for_proposals: true
+    audit_all_detections: true
+
+# Phase 72 — ICDEV™ Studio (D361-D366)
+studio_workflow:
+  description: "Gate for Studio user-created workflows — validates before execution"
+  blocking:
+    - workflow_circular_dependency
+    - workflow_references_nonexistent_tool
+    - workflow_yaml_parse_error
+  warning:
+    - workflow_disconnected_steps
+    - workflow_missing_timeout
+  thresholds:
+    max_steps_per_workflow: 50
+    max_workflow_timeout_seconds: 3600
+
+# Design Canvas Compliance Gates (9-canvas suite integration)
+canvas_compliance:
+  description: "Cross-canvas compliance posture — blocks on CAT1 findings, warns on low scores"
+  blocking:
+    - canvas_cat1_finding_unresolved
+    - canvas_assessment_not_completed_for_ato
+    - canvas_project_missing_required_canvases
+  warning:
+    - canvas_assessment_score_below_70
+    - canvas_migration_design_unassessed
+    - canvas_cross_canvas_links_stale
+    - canvas_kg_build_failed
+  thresholds:
+    max_cat1_findings: 0
+    min_canvas_score: 70
+    required_canvases_for_ato:
+      - sdc
+      - bdc
+      - ndc
+      - odc
+    assessment_max_age_days: 30
+    require_migration_assessment: true
+    kg_build_required: false

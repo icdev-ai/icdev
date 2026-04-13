@@ -13,23 +13,24 @@ Tools:
 import os
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Lazy tool imports — tools may still be under construction
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -40,9 +41,10 @@ def _import_tool(module_path, func_name):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_scan_dependencies(args: dict) -> dict:
     """Inventory all project dependencies with version staleness."""
-    scan = _import_tool("icdev.tools.maintenance.dependency_scanner", "scan_dependencies")
+    scan = _import_tool("tools.maintenance.dependency_scanner", "scan_dependencies")
     if not scan:
         return {"error": "dependency_scanner module not available yet", "status": "pending"}
 
@@ -62,7 +64,7 @@ def handle_scan_dependencies(args: dict) -> dict:
 
 def handle_check_vulnerabilities(args: dict) -> dict:
     """Check dependencies against advisory databases for known CVEs."""
-    check = _import_tool("icdev.tools.maintenance.vulnerability_checker", "check_vulnerabilities")
+    check = _import_tool("tools.maintenance.vulnerability_checker", "check_vulnerabilities")
     if not check:
         return {"error": "vulnerability_checker module not available yet", "status": "pending"}
 
@@ -79,7 +81,7 @@ def handle_check_vulnerabilities(args: dict) -> dict:
 
 def handle_run_maintenance_audit(args: dict) -> dict:
     """Run full maintenance audit with scoring and SLA tracking."""
-    audit = _import_tool("icdev.tools.maintenance.maintenance_auditor", "run_maintenance_audit")
+    audit = _import_tool("tools.maintenance.maintenance_auditor", "run_maintenance_audit")
     if not audit:
         return {"error": "maintenance_auditor module not available yet", "status": "pending"}
 
@@ -98,7 +100,7 @@ def handle_run_maintenance_audit(args: dict) -> dict:
 
 def handle_remediate(args: dict) -> dict:
     """Auto-implement dependency fixes and track remediation actions."""
-    remediate = _import_tool("icdev.tools.maintenance.remediation_engine", "remediate")
+    remediate = _import_tool("tools.maintenance.remediation_engine", "remediate")
     if not remediate:
         return {"error": "remediation_engine module not available yet", "status": "pending"}
 
@@ -126,6 +128,7 @@ def handle_remediate(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     """Create and configure the maintenance MCP server with all tools registered."""
@@ -222,7 +225,7 @@ def create_server() -> MCPServer:
                 },
                 "vulnerability_id": {
                     "type": "integer",
-                    "description": "Specific vulnerability ID to remediate (optional, remediates all eligible if omitted)",
+                    "description": "Specific vulnerability ID to remediate (optional, remediates all eligible if omitted)",  # noqa: E501
                 },
                 "auto": {
                     "type": "boolean",

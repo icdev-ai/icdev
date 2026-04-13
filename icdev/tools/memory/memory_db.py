@@ -7,20 +7,17 @@ Supports user-scoped queries (D180) and JSON output.
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
-DB_PATH = BASE_DIR / "data" / "memory.db"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 def search(query, limit=10, user_id=None, tenant_id=None):
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
-    sql = ("SELECT id, content, type, importance, created_at "
-           "FROM memory_entries WHERE content LIKE ?")
+    sql = "SELECT id, content, type, importance, created_at FROM memory_entries WHERE content LIKE ?"
     params = [f"%{query}%"]
 
     if user_id:
@@ -47,7 +44,7 @@ def search(query, limit=10, user_id=None, tenant_id=None):
 
 
 def list_all(limit=20, user_id=None, tenant_id=None):
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT id, content, type, importance, created_at FROM memory_entries WHERE 1=1"
@@ -80,18 +77,25 @@ def format_results(results):
 def format_json(results):
     entries = []
     for id_, content, type_, importance, created_at in results:
-        entries.append({
-            "id": id_,
-            "content": content,
-            "type": type_,
-            "importance": importance,
-            "created_at": created_at,
-        })
-    print(json.dumps({
-        "classification": "CUI // SP-CTI",
-        "count": len(entries),
-        "entries": entries,
-    }, indent=2))
+        entries.append(
+            {
+                "id": id_,
+                "content": content,
+                "type": type_,
+                "importance": importance,
+                "created_at": created_at,
+            }
+        )
+    print(
+        json.dumps(
+            {
+                "classification": "CUI // SP-CTI",
+                "count": len(entries),
+                "entries": entries,
+            },
+            indent=2,
+        )
+    )
 
 
 def main():

@@ -7,7 +7,7 @@ role-tailored context delivery, and table-of-contents generation.
 Caches in memory, refreshes on mtime change.
 
 Usage:
-    from icdev.tools.mcp.context_indexer import ClaudeMdIndexer
+    from tools.mcp.context_indexer import ClaudeMdIndexer
 
     indexer = ClaudeMdIndexer()
     section = indexer.get_section("Testing Framework")
@@ -15,7 +15,6 @@ Usage:
     toc = indexer.get_toc()
 """
 
-from icdev._paths import get_project_root
 import logging
 import os
 import re
@@ -24,7 +23,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger("icdev.context_indexer")
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CLAUDE_MD = BASE_DIR / "CLAUDE.md"
 
 
@@ -70,7 +69,7 @@ class ClaudeMdIndexer:
 
         for i, line in enumerate(lines):
             # Match ## or ### headers
-            match = re.match(r'^(#{2,3})\s+(.+)$', line)
+            match = re.match(r"^(#{2,3})\s+(.+)$", line)
             if match:
                 # Save previous section
                 if current_name:
@@ -129,8 +128,7 @@ class ClaudeMdIndexer:
         matches = []
 
         for name, data in self._sections.items():
-            if (keyword_lower in name.lower() or
-                    keyword_lower in data["content"].lower()):
+            if keyword_lower in name.lower() or keyword_lower in data["content"].lower():
                 matches.append(name)
 
         return matches
@@ -143,11 +141,13 @@ class ClaudeMdIndexer:
         self._refresh()
         toc = []
         for name, data in self._sections.items():
-            toc.append({
-                "name": name,
-                "level": data["level"],
-                "line_number": data["line_number"],
-            })
+            toc.append(
+                {
+                    "name": name,
+                    "level": data["level"],
+                    "line_number": data["line_number"],
+                }
+            )
         return toc
 
     def get_sections_for_role(self, role: str) -> str:

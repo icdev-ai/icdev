@@ -14,40 +14,56 @@ import json
 import re
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Audit trail integration (graceful fallback for standalone use)
 try:
     sys.path.insert(0, str(BASE_DIR))
-    from icdev.tools.audit.audit_logger import log_event
+    from tools.audit.audit_logger import log_event
 except ImportError:
+
     def log_event(**kwargs):
         pass
 
+
 # Valid artifact types in the digital thread
 VALID_TYPES = (
-    "doors_requirement", "sysml_element", "code_module",
-    "test_file", "nist_control", "stig_rule", "compliance_artifact",
+    "doors_requirement",
+    "sysml_element",
+    "code_module",
+    "test_file",
+    "nist_control",
+    "stig_rule",
+    "compliance_artifact",
     "interface_spec",  # Phase 26: MOSA interface specifications
 )
 
 # Valid link relationship types
 VALID_LINK_TYPES = (
-    "satisfies", "derives_from", "implements", "verifies",
-    "traces_to", "allocates", "refines", "maps_to",
+    "satisfies",
+    "derives_from",
+    "implements",
+    "verifies",
+    "traces_to",
+    "allocates",
+    "refines",
+    "maps_to",
     "defines_interface",  # Phase 26: MOSA interface definition link
 )
 
 # Expected chain order for completeness analysis
 THREAD_CHAIN = [
-    "doors_requirement", "sysml_element", "code_module",
-    "test_file", "nist_control",
+    "doors_requirement",
+    "sysml_element",
+    "code_module",
+    "test_file",
+    "nist_control",
 ]
 
 # Keyword-to-NIST-control-family mapping for auto-linking
@@ -108,10 +124,18 @@ def _resolve_element_name(element_type: str, element_id: str, conn) -> str:
 # ---------------------------------------------------------------------------
 # Core: create_link
 # ---------------------------------------------------------------------------
-def create_link(project_id: str, source_type: str, source_id: str,
-                target_type: str, target_id: str, link_type: str,
-                evidence: str = None, confidence: float = 1.0,
-                created_by: str = "icdev-mbse-engine", db_path=None) -> dict:
+def create_link(
+    project_id: str,
+    source_type: str,
+    source_id: str,
+    target_type: str,
+    target_id: str,
+    link_type: str,
+    evidence: str = None,
+    confidence: float = 1.0,
+    created_by: str = "icdev-mbse-engine",
+    db_path=None,
+) -> dict:
     """Create a digital thread link. Returns {"id": int, "created": bool} or error.
 
     Uses INSERT OR REPLACE for idempotency.
@@ -126,7 +150,7 @@ def create_link(project_id: str, source_type: str, source_id: str,
         return {"error": "Confidence must be between 0.0 and 1.0"}
 
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     try:
         c.execute(
@@ -134,9 +158,18 @@ def create_link(project_id: str, source_type: str, source_id: str,
                (project_id, source_type, source_id, target_type, target_id,
                 link_type, confidence, evidence, created_by, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (project_id, source_type, source_id, target_type, target_id,
-             link_type, confidence, evidence, created_by,
-             datetime.now().isoformat()),
+            (
+                project_id,
+                source_type,
+                source_id,
+                target_type,
+                target_id,
+                link_type,
+                confidence,
+                evidence,
+                created_by,
+                datetime.now().isoformat(),
+            ),
         )
         conn.commit()
         link_id = c.lastrowid
@@ -176,7 +209,7 @@ def create_link(project_id: str, source_type: str, source_id: str,
 def delete_link(project_id: str, link_id: int, db_path=None) -> bool:
     """Delete a specific link by ID. Returns True if deleted, False otherwise."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     try:
         c.execute(
@@ -195,8 +228,7 @@ def delete_link(project_id: str, link_id: int, db_path=None) -> bool:
 # ---------------------------------------------------------------------------
 # Trace: forward (BFS)
 # ---------------------------------------------------------------------------
-def get_forward_trace(project_id: str, source_type: str, source_id: str,
-                      max_depth: int = 10, db_path=None) -> dict:
+def get_forward_trace(project_id: str, source_type: str, source_id: str, max_depth: int = 10, db_path=None) -> dict:
     """Trace forward from a source element through the digital thread.
 
     Uses BFS traversal. Returns tree structure:
@@ -205,9 +237,7 @@ def get_forward_trace(project_id: str, source_type: str, source_id: str,
          "confidence": float, "children": [...]}
     ]}
     """
-    path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
 
     source_name = _resolve_element_name(source_type, source_id, conn)
     result = {
@@ -260,12 +290,9 @@ def get_forward_trace(project_id: str, source_type: str, source_id: str,
 # ---------------------------------------------------------------------------
 # Trace: backward (BFS)
 # ---------------------------------------------------------------------------
-def get_backward_trace(project_id: str, target_type: str, target_id: str,
-                       max_depth: int = 10, db_path=None) -> dict:
+def get_backward_trace(project_id: str, target_type: str, target_id: str, max_depth: int = 10, db_path=None) -> dict:
     """Trace backward from a target element. Same tree structure but reversed."""
-    path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
 
     target_name = _resolve_element_name(target_type, target_id, conn)
     result = {
@@ -318,13 +345,12 @@ def get_backward_trace(project_id: str, target_type: str, target_id: str,
 # ---------------------------------------------------------------------------
 # Trace: full bidirectional
 # ---------------------------------------------------------------------------
-def get_full_thread(project_id: str, element_type: str, element_id: str,
-                    db_path=None) -> dict:
+def get_full_thread(project_id: str, element_type: str, element_id: str, db_path=None) -> dict:
     """Complete bidirectional trace from any point. Returns both forward and backward."""
     path = db_path or DB_PATH
     forward = get_forward_trace(project_id, element_type, element_id, db_path=path)
     backward = get_backward_trace(project_id, element_type, element_id, db_path=path)
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     name = _resolve_element_name(element_type, element_id, conn)
     conn.close()
     return {
@@ -348,7 +374,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
       (req -> model -> code -> test -> control)
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
 
     # Total DOORS requirements for this project
@@ -474,7 +500,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
                              OR (source_type = 'code_module' AND source_id = ?)
                              OR (source_type = 'test_file' AND source_id IN ({}))
                          )
-                       LIMIT 1""".format(",".join("?" * len(test_ids))),
+                       LIMIT 1""".format(",".join("?" * len(test_ids))),  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id, req_id, model_id, code_id, *test_ids),
                 )
                 if c.fetchone():
@@ -523,7 +549,7 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     - controls_without_evidence: NIST controls not linked to any thread element
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
 
     # Requirements without model links
@@ -635,7 +661,7 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     - code has test link but no control link
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     gaps = []
 
@@ -660,16 +686,18 @@ def find_gaps(project_id: str, db_path=None) -> dict:
         if not c.fetchone():
             req_name = _resolve_element_name("doors_requirement", req_id, conn)
             model_name = _resolve_element_name("sysml_element", model_id, conn)
-            gaps.append({
-                "gap_type": "model_without_code",
-                "description": (
-                    f"Requirement '{req_name}' ({req_id}) traces to model "
-                    f"'{model_name}' ({model_id}), but model has no code link"
-                ),
-                "requirement_id": req_id,
-                "model_id": model_id,
-                "missing_link": "sysml_element -> code_module",
-            })
+            gaps.append(
+                {
+                    "gap_type": "model_without_code",
+                    "description": (
+                        f"Requirement '{req_name}' ({req_id}) traces to model "
+                        f"'{model_name}' ({model_id}), but model has no code link"
+                    ),
+                    "requirement_id": req_id,
+                    "model_id": model_id,
+                    "missing_link": "sysml_element -> code_module",
+                }
+            )
 
     # Gap 2: model -> code exists, but code -> test missing
     c.execute(
@@ -691,16 +719,17 @@ def find_gaps(project_id: str, db_path=None) -> dict:
         )
         if not c.fetchone():
             model_name = _resolve_element_name("sysml_element", model_id, conn)
-            gaps.append({
-                "gap_type": "code_without_test",
-                "description": (
-                    f"Model '{model_name}' ({model_id}) traces to code "
-                    f"'{code_id}', but code has no test link"
-                ),
-                "model_id": model_id,
-                "code_id": code_id,
-                "missing_link": "code_module -> test_file",
-            })
+            gaps.append(
+                {
+                    "gap_type": "code_without_test",
+                    "description": (
+                        f"Model '{model_name}' ({model_id}) traces to code '{code_id}', but code has no test link"
+                    ),
+                    "model_id": model_id,
+                    "code_id": code_id,
+                    "missing_link": "code_module -> test_file",
+                }
+            )
 
     # Gap 3: code -> test exists, but no control link from any chain element
     c.execute(
@@ -725,16 +754,15 @@ def find_gaps(project_id: str, db_path=None) -> dict:
             (project_id, code_id, test_id),
         )
         if not c.fetchone():
-            gaps.append({
-                "gap_type": "test_without_control",
-                "description": (
-                    f"Code '{code_id}' has test '{test_id}', "
-                    f"but neither is linked to a NIST control"
-                ),
-                "code_id": code_id,
-                "test_id": test_id,
-                "missing_link": "code_module/test_file -> nist_control",
-            })
+            gaps.append(
+                {
+                    "gap_type": "test_without_control",
+                    "description": (f"Code '{code_id}' has test '{test_id}', but neither is linked to a NIST control"),
+                    "code_id": code_id,
+                    "test_id": test_id,
+                    "missing_link": "code_module/test_file -> nist_control",
+                }
+            )
 
     conn.close()
     return {
@@ -769,7 +797,7 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
     Creates links with confidence 0.7 and evidence="auto_linked_by_name_match"
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     matches = []
     links_created = 0
@@ -824,13 +852,15 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
                 )
                 if result.get("created") or result.get("id"):
                     links_created += 1
-                    matches.append({
-                        "type": "block_to_code",
-                        "block_id": block_id,
-                        "block_name": block_name,
-                        "code_path": code_path,
-                        "match_method": "name_match",
-                    })
+                    matches.append(
+                        {
+                            "type": "block_to_code",
+                            "block_id": block_id,
+                            "block_name": block_name,
+                            "code_path": code_path,
+                            "match_method": "name_match",
+                        }
+                    )
 
             # Match CamelCase block name to file name containing it
             camel_lower = block_name.lower().replace("_", "")
@@ -850,13 +880,15 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
                 )
                 if result.get("created") or result.get("id"):
                     links_created += 1
-                    matches.append({
-                        "type": "block_to_code_camel",
-                        "block_id": block_id,
-                        "block_name": block_name,
-                        "code_path": code_path,
-                        "match_method": "camel_case_match",
-                    })
+                    matches.append(
+                        {
+                            "type": "block_to_code_camel",
+                            "block_id": block_id,
+                            "block_name": block_name,
+                            "code_path": code_path,
+                            "match_method": "camel_case_match",
+                        }
+                    )
 
     # Strategy 3 & 4: Match requirement IDs in code/test paths
     # Build a lookup of doors_id -> internal id
@@ -907,13 +939,15 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
                     )
                 if result.get("created") or result.get("id"):
                     links_created += 1
-                    matches.append({
-                        "type": "req_in_filename",
-                        "code_path": code_path,
-                        "requirement_id": req_internal_id,
-                        "doors_id": doors_id_lower,
-                        "match_method": "requirement_id_in_filename",
-                    })
+                    matches.append(
+                        {
+                            "type": "req_in_filename",
+                            "code_path": code_path,
+                            "requirement_id": req_internal_id,
+                            "doors_id": doors_id_lower,
+                            "match_method": "requirement_id_in_filename",
+                        }
+                    )
 
     conn.close()
     return {
@@ -936,7 +970,7 @@ def auto_link_to_controls(project_id: str, db_path=None) -> dict:
     Creates links with confidence 0.6 and evidence="auto_linked_by_keyword_match"
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     mappings = []
     links_created = 0
@@ -966,9 +1000,7 @@ def auto_link_to_controls(project_id: str, db_path=None) -> dict:
 
     for elem_id, elem_name, elem_type, stereotype, description in elements:
         # Combine searchable text
-        search_text = " ".join(
-            s.lower() for s in [elem_name or "", stereotype or "", description or ""]
-        )
+        search_text = " ".join(s.lower() for s in [elem_name or "", stereotype or "", description or ""])
 
         for family, keywords in CONTROL_KEYWORD_MAP.items():
             if family not in family_controls:
@@ -994,14 +1026,16 @@ def auto_link_to_controls(project_id: str, db_path=None) -> dict:
                 )
                 if result.get("created") or result.get("id"):
                     links_created += 1
-                    mappings.append({
-                        "element_id": elem_id,
-                        "element_name": elem_name,
-                        "control_id": ctrl_id,
-                        "control_title": ctrl_title,
-                        "control_family": family,
-                        "matched_keywords": matched_keywords,
-                    })
+                    mappings.append(
+                        {
+                            "element_id": elem_id,
+                            "element_name": elem_name,
+                            "control_id": ctrl_id,
+                            "control_title": ctrl_title,
+                            "control_family": family,
+                            "matched_keywords": matched_keywords,
+                        }
+                    )
 
     conn.close()
     return {
@@ -1028,10 +1062,9 @@ def generate_traceability_report(project_id: str, db_path=None) -> str:
     integrity = validate_thread_integrity(project_id, db_path=path)
 
     # Collect all trace chains from requirements
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
-    c.execute("SELECT id, doors_id, title FROM doors_requirements WHERE project_id = ?",
-              (project_id,))
+    c.execute("SELECT id, doors_id, title FROM doors_requirements WHERE project_id = ?", (project_id,))
     all_reqs = c.fetchall()
 
     c.execute("SELECT COUNT(*) FROM digital_thread_links WHERE project_id = ?", (project_id,))
@@ -1066,11 +1099,17 @@ def generate_traceability_report(project_id: str, db_path=None) -> str:
     ]
 
     details = coverage.get("details", {})
-    lines.append(f"- Requirements: {details.get('requirements_linked', 0)}/{details.get('total_requirements', 0)} linked to models")
+    lines.append(
+        f"- Requirements: {details.get('requirements_linked', 0)}/{details.get('total_requirements', 0)} linked to models"
+    )
     lines.append(f"- Model Blocks: {details.get('blocks_linked', 0)}/{details.get('total_blocks', 0)} linked to code")
-    lines.append(f"- Code Modules: {details.get('code_with_tests', 0)}/{details.get('total_code_modules', 0)} linked to tests")
+    lines.append(
+        f"- Code Modules: {details.get('code_with_tests', 0)}/{details.get('total_code_modules', 0)} linked to tests"
+    )
     lines.append(f"- Controls: {details.get('controls_linked', 0)}/{details.get('total_controls', 0)} linked to thread")
-    lines.append(f"- Full Chain (req->model->code->test->control): {details.get('full_chain_requirements', 0)}/{details.get('total_requirements', 0)}")
+    lines.append(
+        f"- Full Chain (req->model->code->test->control): {details.get('full_chain_requirements', 0)}/{details.get('total_requirements', 0)}"
+    )
     lines.append("")
 
     # Orphan analysis
@@ -1239,7 +1278,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
     - Invalid types
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     issues = []
 
@@ -1254,26 +1293,32 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
     # Check 1: Invalid types
     for link_id, src_type, src_id, tgt_type, tgt_id, ltype, conf in all_links:
         if src_type not in VALID_TYPES:
-            issues.append({
-                "severity": "error",
-                "type": "invalid_source_type",
-                "link_id": link_id,
-                "description": f"Link {link_id}: invalid source_type '{src_type}'",
-            })
+            issues.append(
+                {
+                    "severity": "error",
+                    "type": "invalid_source_type",
+                    "link_id": link_id,
+                    "description": f"Link {link_id}: invalid source_type '{src_type}'",
+                }
+            )
         if tgt_type not in VALID_TYPES:
-            issues.append({
-                "severity": "error",
-                "type": "invalid_target_type",
-                "link_id": link_id,
-                "description": f"Link {link_id}: invalid target_type '{tgt_type}'",
-            })
+            issues.append(
+                {
+                    "severity": "error",
+                    "type": "invalid_target_type",
+                    "link_id": link_id,
+                    "description": f"Link {link_id}: invalid target_type '{tgt_type}'",
+                }
+            )
         if ltype not in VALID_LINK_TYPES:
-            issues.append({
-                "severity": "error",
-                "type": "invalid_link_type",
-                "link_id": link_id,
-                "description": f"Link {link_id}: invalid link_type '{ltype}'",
-            })
+            issues.append(
+                {
+                    "severity": "error",
+                    "type": "invalid_link_type",
+                    "link_id": link_id,
+                    "description": f"Link {link_id}: invalid link_type '{ltype}'",
+                }
+            )
 
     # Check 2: Broken links (source/target IDs not in their tables)
     type_table_map = {
@@ -1288,17 +1333,16 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if src_type in type_table_map:
             table, col = type_table_map[src_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (src_id,))
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (src_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
-                    issues.append({
-                        "severity": "warning",
-                        "type": "broken_source_link",
-                        "link_id": link_id,
-                        "description": (
-                            f"Link {link_id}: source {src_type} '{src_id}' "
-                            f"not found in {table}"
-                        ),
-                    })
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "type": "broken_source_link",
+                            "link_id": link_id,
+                            "description": (f"Link {link_id}: source {src_type} '{src_id}' not found in {table}"),
+                        }
+                    )
             except sqlite3.OperationalError:
                 pass  # Table might not exist
 
@@ -1306,17 +1350,16 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if tgt_type in type_table_map:
             table, col = type_table_map[tgt_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (tgt_id,))
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (tgt_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
-                    issues.append({
-                        "severity": "warning",
-                        "type": "broken_target_link",
-                        "link_id": link_id,
-                        "description": (
-                            f"Link {link_id}: target {tgt_type} '{tgt_id}' "
-                            f"not found in {table}"
-                        ),
-                    })
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "type": "broken_target_link",
+                            "link_id": link_id,
+                            "description": (f"Link {link_id}: target {tgt_type} '{tgt_id}' not found in {table}"),
+                        }
+                    )
             except sqlite3.OperationalError:
                 pass  # Table might not exist
 
@@ -1347,12 +1390,14 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
             dfs(node)
 
     for lid in cycle_links:
-        issues.append({
-            "severity": "warning",
-            "type": "circular_reference",
-            "link_id": lid,
-            "description": f"Link {lid}: participates in a circular reference chain",
-        })
+        issues.append(
+            {
+                "severity": "warning",
+                "type": "circular_reference",
+                "link_id": lid,
+                "description": f"Link {lid}: participates in a circular reference chain",
+            }
+        )
 
     # Check 4: Duplicate links (same source+target+link_type, different IDs)
     # The UNIQUE constraint should prevent this, but check anyway
@@ -1360,15 +1405,17 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
     for link_id, src_type, src_id, tgt_type, tgt_id, ltype, conf in all_links:
         combo = (src_type, src_id, tgt_type, tgt_id, ltype)
         if combo in seen_combos:
-            issues.append({
-                "severity": "info",
-                "type": "duplicate_link",
-                "link_id": link_id,
-                "description": (
-                    f"Link {link_id}: duplicate of link {seen_combos[combo]} "
-                    f"({src_type}:{src_id} -> {tgt_type}:{tgt_id} [{ltype}])"
-                ),
-            })
+            issues.append(
+                {
+                    "severity": "info",
+                    "type": "duplicate_link",
+                    "link_id": link_id,
+                    "description": (
+                        f"Link {link_id}: duplicate of link {seen_combos[combo]} "
+                        f"({src_type}:{src_id} -> {tgt_type}:{tgt_id} [{ltype}])"
+                    ),
+                }
+            )
         else:
             seen_combos[combo] = link_id
 
@@ -1386,9 +1433,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
 # CLI entry point
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Digital Thread Engine -- end-to-end traceability"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Digital Thread Engine -- end-to-end traceability")
     parser.add_argument("--project-id", required=True, help="Project identifier")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", type=Path, help="Override database path")
@@ -1397,17 +1442,13 @@ def main():
 
     # create-link
     link_p = sub.add_parser("create-link", help="Create a digital thread link")
-    link_p.add_argument("--source-type", required=True, choices=VALID_TYPES,
-                        help="Source element type")
+    link_p.add_argument("--source-type", required=True, choices=VALID_TYPES, help="Source element type")
     link_p.add_argument("--source-id", required=True, help="Source element ID")
-    link_p.add_argument("--target-type", required=True, choices=VALID_TYPES,
-                        help="Target element type")
+    link_p.add_argument("--target-type", required=True, choices=VALID_TYPES, help="Target element type")
     link_p.add_argument("--target-id", required=True, help="Target element ID")
-    link_p.add_argument("--link-type", required=True, choices=VALID_LINK_TYPES,
-                        help="Relationship type")
+    link_p.add_argument("--link-type", required=True, choices=VALID_LINK_TYPES, help="Relationship type")
     link_p.add_argument("--evidence", help="Evidence for the link")
-    link_p.add_argument("--confidence", type=float, default=1.0,
-                        help="Confidence score 0.0-1.0 (default: 1.0)")
+    link_p.add_argument("--confidence", type=float, default=1.0, help="Confidence score 0.0-1.0 (default: 1.0)")
 
     # delete-link
     del_p = sub.add_parser("delete-link", help="Delete a digital thread link by ID")
@@ -1415,24 +1456,19 @@ def main():
 
     # trace-forward
     fwd_p = sub.add_parser("trace-forward", help="Forward trace from an element")
-    fwd_p.add_argument("--source-type", required=True, choices=VALID_TYPES,
-                        help="Source element type")
+    fwd_p.add_argument("--source-type", required=True, choices=VALID_TYPES, help="Source element type")
     fwd_p.add_argument("--source-id", required=True, help="Source element ID")
-    fwd_p.add_argument("--max-depth", type=int, default=10,
-                        help="Maximum traversal depth (default: 10)")
+    fwd_p.add_argument("--max-depth", type=int, default=10, help="Maximum traversal depth (default: 10)")
 
     # trace-backward
     bwd_p = sub.add_parser("trace-backward", help="Backward trace to an element")
-    bwd_p.add_argument("--target-type", required=True, choices=VALID_TYPES,
-                        help="Target element type")
+    bwd_p.add_argument("--target-type", required=True, choices=VALID_TYPES, help="Target element type")
     bwd_p.add_argument("--target-id", required=True, help="Target element ID")
-    bwd_p.add_argument("--max-depth", type=int, default=10,
-                        help="Maximum traversal depth (default: 10)")
+    bwd_p.add_argument("--max-depth", type=int, default=10, help="Maximum traversal depth (default: 10)")
 
     # full-thread
     full_p = sub.add_parser("full-thread", help="Bidirectional trace from an element")
-    full_p.add_argument("--element-type", required=True, choices=VALID_TYPES,
-                        help="Element type")
+    full_p.add_argument("--element-type", required=True, choices=VALID_TYPES, help="Element type")
     full_p.add_argument("--element-id", required=True, help="Element ID")
 
     # coverage
@@ -1448,8 +1484,7 @@ def main():
     sub.add_parser("auto-link", help="Auto-link elements by name matching")
 
     # auto-link-controls
-    sub.add_parser("auto-link-controls",
-                    help="Auto-map elements to NIST controls by keyword")
+    sub.add_parser("auto-link-controls", help="Auto-map elements to NIST controls by keyword")
 
     # report
     sub.add_parser("report", help="Generate full traceability report")

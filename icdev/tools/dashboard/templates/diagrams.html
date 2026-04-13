@@ -37,7 +37,7 @@
         <div class="mermaid-viewer-header">
             <h3 id="viewer-title">Diagram</h3>
             <div>
-                <button onclick="ICDEV™.exportMermaidSVG('diagram-viewer','icdev-diagram.svg')"
+                <button onclick="ICDEV.exportMermaidSVG('diagram-viewer','icdev-diagram.svg')"
                         title="Download as SVG">Export SVG</button>
                 <button onclick="loadIntoEditor()" title="Edit this diagram in the editor">Edit</button>
                 <button onclick="closeViewer()" title="Close viewer">Close</button>
@@ -54,7 +54,7 @@
         <select id="diagram-template" aria-label="Load a template diagram">
             <option value="">-- Select template --</option>
         </select>
-        <button onclick="ICDEV™.exportMermaidSVG('mermaid-preview','icdev-diagram.svg')"
+        <button onclick="ICDEV.exportMermaidSVG('mermaid-preview','icdev-diagram.svg')"
                 title="Download preview as SVG">Export SVG</button>
     </div>
     <div class="mermaid-editor">
@@ -168,7 +168,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('viewer-title').textContent = data.title;
                 var panel = document.getElementById('diagram-viewer-panel');
                 panel.classList.add('active');
-                ICDEV™.renderMermaid('diagram-viewer', data.mermaid);
+                ICDEV.renderMermaid('diagram-viewer', data.mermaid);
                 panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             });
     }
@@ -182,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.querySelector('[data-tab="tab-editor"]').click();
         var textarea = document.getElementById('mermaid-source');
         textarea.value = _currentMermaid;
-        ICDEV™.renderMermaid('mermaid-preview', _currentMermaid);
+        ICDEV.renderMermaid('mermaid-preview', _currentMermaid);
     };
 
     // ── Category filter ────────────────────────────────────────────
@@ -200,13 +200,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (data.error) return;
                 var textarea = document.getElementById('mermaid-source');
                 textarea.value = data.mermaid;
-                ICDEV™.renderMermaid('mermaid-preview', data.mermaid);
+                ICDEV.renderMermaid('mermaid-preview', data.mermaid);
             });
     });
 
     // ── Editor init ────────────────────────────────────────────────
-    if (ICDEV™.initMermaidEditor) {
-        ICDEV™.initMermaidEditor('mermaid-source', 'mermaid-preview');
+    if (ICDEV.initMermaidEditor) {
+        ICDEV.initMermaidEditor('mermaid-source', 'mermaid-preview');
     }
 
     // ── Escape helper ──────────────────────────────────────────────

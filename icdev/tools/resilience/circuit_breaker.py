@@ -8,7 +8,7 @@ Three-state machine: CLOSED -> OPEN -> HALF_OPEN.
 Follows the D66 provider pattern (ABC + implementations) used by rate_limiter.py.
 
 Usage:
-    from icdev.tools.resilience.circuit_breaker import get_circuit_breaker
+    from tools.resilience.circuit_breaker import get_circuit_breaker
 
     cb = get_circuit_breaker("bedrock")
 
@@ -22,14 +22,13 @@ Usage:
             raise
 
     # Decorator usage
-    from icdev.tools.resilience.circuit_breaker import circuit_breaker
+    from tools.resilience.circuit_breaker import circuit_breaker
 
     @circuit_breaker("bedrock")
     def call_bedrock():
         ...
 """
 
-from icdev._paths import get_project_root
 import abc
 import functools
 import logging
@@ -38,9 +37,9 @@ import threading
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence, Type
+from typing import Callable, Dict, Optional
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -51,9 +50,9 @@ logger = logging.getLogger("icdev.resilience.circuit_breaker")
 # Circuit breaker states
 # ---------------------------------------------------------------------------
 class CircuitState(Enum):
-    CLOSED = "closed"       # Normal operation — requests flow through
-    OPEN = "open"           # Tripped — requests are rejected
-    HALF_OPEN = "half_open" # Testing — limited requests allowed
+    CLOSED = "closed"  # Normal operation — requests flow through
+    OPEN = "open"  # Tripped — requests are rejected
+    HALF_OPEN = "half_open"  # Testing — limited requests allowed
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +69,7 @@ def _load_config() -> dict:
     """Load circuit breaker config from args/resilience_config.yaml."""
     try:
         import yaml
+
         config_path = BASE_DIR / "args" / "resilience_config.yaml"
         if config_path.exists():
             with open(config_path, "r") as f:
@@ -262,16 +262,12 @@ def get_circuit_breaker(service_name: str) -> CircuitBreakerBackend:
             config = _get_service_config(service_name)
             _registry[service_name] = InMemoryCircuitBreaker(
                 service_name=service_name,
-                failure_threshold=config.get(
-                    "failure_threshold", _DEFAULT_CONFIG["failure_threshold"]
-                ),
+                failure_threshold=config.get("failure_threshold", _DEFAULT_CONFIG["failure_threshold"]),
                 recovery_timeout_seconds=config.get(
                     "recovery_timeout_seconds",
                     _DEFAULT_CONFIG["recovery_timeout_seconds"],
                 ),
-                half_open_max_calls=config.get(
-                    "half_open_max_calls", _DEFAULT_CONFIG["half_open_max_calls"]
-                ),
+                half_open_max_calls=config.get("half_open_max_calls", _DEFAULT_CONFIG["half_open_max_calls"]),
             )
         return _registry[service_name]
 
@@ -319,7 +315,7 @@ def circuit_breaker(
                     )
                     return fallback(*args, **kwargs)
                 if raise_on_open:
-                    from icdev.tools.resilience.errors import ServiceUnavailableError
+                    from tools.resilience.errors import ServiceUnavailableError
 
                     raise ServiceUnavailableError(
                         f"Circuit breaker '{service_name}' is OPEN",
@@ -331,7 +327,7 @@ def circuit_breaker(
                 result = func(*args, **kwargs)
                 cb.record_success()
                 return result
-            except Exception as exc:
+            except Exception:
                 cb.record_failure()
                 raise
 

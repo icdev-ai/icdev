@@ -15,16 +15,15 @@ ADR: D-M2 (dual storage — inline templates + API endpoint)
 
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
 # Ensure parent packages importable when run via Flask
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, jsonify, request as flask_request
+from flask import Blueprint, jsonify, request as flask_request  # noqa: E402
 
-from icdev.tools.dashboard.diagram_definitions import get_catalog_for_role, get_diagram
+from tools.dashboard.diagram_definitions import get_catalog_for_role, get_diagram  # noqa: E402
 
 diagrams_api = Blueprint("diagrams_api", __name__, url_prefix="/api/diagrams")
 
@@ -55,11 +54,13 @@ def get_diagram_detail(diagram_id):
     if not diagram:
         return jsonify({"error": f"Diagram '{diagram_id}' not found"}), 404
 
-    return jsonify({
-        "id": diagram_id,
-        "title": diagram["title"],
-        "description": diagram["description"],
-        "category": diagram.get("category", "general"),
-        "roles": diagram.get("roles", []),
-        "mermaid": diagram["mermaid"],
-    })
+    return jsonify(
+        {
+            "id": diagram_id,
+            "title": diagram["title"],
+            "description": diagram["description"],
+            "category": diagram.get("category", "general"),
+            "roles": diagram.get("roles", []),
+            "mermaid": diagram["mermaid"],
+        }
+    )

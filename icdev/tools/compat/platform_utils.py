@@ -6,7 +6,7 @@ Centralizes OS detection and platform-specific behavior (D145).
 Uses only Python stdlib (air-gap safe).
 
 Usage:
-    from icdev.tools.compat.platform_utils import (
+    from tools.compat.platform_utils import (
         IS_WINDOWS, IS_MACOS, IS_LINUX, PLATFORM_NAME,
         get_temp_dir, get_home_dir, get_npx_cmd,
         normalize_path, get_data_dir, get_config_dir,
@@ -23,7 +23,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Platform detection constants
 # ---------------------------------------------------------------------------
-PLATFORM_NAME: str = platform.system()   # "Windows", "Darwin", "Linux"
+PLATFORM_NAME: str = platform.system()  # "Windows", "Darwin", "Linux"
 IS_WINDOWS: bool = PLATFORM_NAME == "Windows"
 IS_MACOS: bool = PLATFORM_NAME == "Darwin"
 IS_LINUX: bool = PLATFORM_NAME == "Linux"
@@ -60,15 +60,11 @@ def get_config_dir() -> Path:
     Linux:   ~/.config/icdev (XDG_CONFIG_HOME respected)
     """
     if IS_WINDOWS:
-        base = Path(os.environ.get(
-            "APPDATA", str(get_home_dir() / "AppData" / "Roaming")
-        ))
+        base = Path(os.environ.get("APPDATA", str(get_home_dir() / "AppData" / "Roaming")))
     elif IS_MACOS:
         base = get_home_dir() / "Library" / "Application Support"
     else:
-        base = Path(os.environ.get(
-            "XDG_CONFIG_HOME", str(get_home_dir() / ".config")
-        ))
+        base = Path(os.environ.get("XDG_CONFIG_HOME", str(get_home_dir() / ".config")))
     return base / "icdev"
 
 
@@ -118,6 +114,5 @@ def ensure_utf8_console():
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):
         import io as _io
-        sys.stdout = _io.TextIOWrapper(
-            sys.stdout.buffer, encoding="utf-8", errors="replace"
-        )
+
+        sys.stdout = _io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

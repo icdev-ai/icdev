@@ -20,13 +20,12 @@ import argparse
 import hashlib
 import json
 import sqlite3
-import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # ---------------------------------------------------------------------------
@@ -96,9 +95,13 @@ FRAMEWORK_EVIDENCE_MAP: Dict[str, Dict[str, Any]] = {
     "ai_transparency": {
         "description": "AI Transparency & Accountability Evidence",
         "tables": [
-            "omb_m25_21_assessments", "omb_m26_04_assessments",
-            "nist_ai_600_1_assessments", "gao_ai_assessments",
-            "model_cards", "system_cards", "ai_use_case_inventory",
+            "omb_m25_21_assessments",
+            "omb_m26_04_assessments",
+            "nist_ai_600_1_assessments",
+            "gao_ai_assessments",
+            "model_cards",
+            "system_cards",
+            "ai_use_case_inventory",
         ],
         "file_patterns": ["**/ai_transparency_*.json", "**/model_card_*.json"],
         "required": False,
@@ -121,8 +124,7 @@ FRAMEWORK_EVIDENCE_MAP: Dict[str, Dict[str, Any]] = {
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get SQLite connection with Row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -135,9 +137,7 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     return row[0] > 0
 
 
-def _count_project_records(
-    conn: sqlite3.Connection, table_name: str, project_id: str
-) -> Dict[str, Any]:
+def _count_project_records(conn: sqlite3.Connection, table_name: str, project_id: str) -> Dict[str, Any]:
     """Count records for a project in a table, with freshness info."""
     if not _table_exists(conn, table_name):
         return {"table": table_name, "exists": False, "count": 0, "latest": None}
@@ -146,21 +146,21 @@ def _count_project_records(
     cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
     if "project_id" not in cols:
         # Table without project_id — count all records
-        row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+        row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         count = row[0]
         # Try to get latest timestamp
         latest = None
         for ts_col in ["created_at", "collected_at", "assessed_at", "timestamp"]:
             if ts_col in cols:
                 ts_row = conn.execute(
-                    f"SELECT MAX({ts_col}) FROM {table_name}"
+                    f"SELECT MAX({ts_col}) FROM {table_name}"  # nosec B608 -- table/column names are internal constants, not user input
                 ).fetchone()
                 latest = ts_row[0] if ts_row else None
                 break
         return {"table": table_name, "exists": True, "count": count, "latest": latest}
 
     row = conn.execute(
-        f"SELECT COUNT(*) FROM {table_name} WHERE project_id = ?",
+        f"SELECT COUNT(*) FROM {table_name} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
         (project_id,),
     ).fetchone()
     count = row[0]
@@ -170,7 +170,7 @@ def _count_project_records(
     for ts_col in ["created_at", "collected_at", "assessed_at", "timestamp"]:
         if ts_col in cols:
             ts_row = conn.execute(
-                f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = ?",
+                f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                 (project_id,),
             ).fetchone()
             latest = ts_row[0] if ts_row else None
@@ -266,12 +266,14 @@ def collect_evidence(
             for pattern in fw_config["file_patterns"]:
                 for match in Path(project_dir).glob(pattern):
                     total_files += 1
-                    fw_result["file_evidence"].append({
-                        "path": str(match),
-                        "name": match.name,
-                        "size": match.stat().st_size if match.exists() else 0,
-                        "hash": _hash_file(match),
-                    })
+                    fw_result["file_evidence"].append(
+                        {
+                            "path": str(match),
+                            "name": match.name,
+                            "size": match.stat().st_size if match.exists() else 0,
+                            "hash": _hash_file(match),
+                        }
+                    )
 
         # Determine status
         has_db = fw_tables_with_data > 0
@@ -288,17 +290,12 @@ def collect_evidence(
     conn.close()
 
     # Compute summary
-    frameworks_with_evidence = sum(
-        1 for r in results.values() if r["status"] in ("evidence_found", "partial")
-    )
+    frameworks_with_evidence = sum(1 for r in results.values() if r["status"] in ("evidence_found", "partial"))
     required_with_evidence = sum(
-        1 for r in results.values()
-        if r["required"] and r["status"] in ("evidence_found", "partial")
+        1 for r in results.values() if r["required"] and r["status"] in ("evidence_found", "partial")
     )
     required_total = sum(1 for r in results.values() if r["required"])
-    coverage_pct = (
-        round(frameworks_with_evidence / len(results) * 100, 1) if results else 0
-    )
+    coverage_pct = round(frameworks_with_evidence / len(results) * 100, 1) if results else 0
 
     return {
         "project_id": project_id,
@@ -374,12 +371,8 @@ def check_freshness(
     conn.close()
 
     # Overall health
-    required_stale = sum(
-        1 for r in results.values() if r["required"] and r["status"] == "stale"
-    )
-    required_missing = sum(
-        1 for r in results.values() if r["required"] and r["status"] == "missing"
-    )
+    required_stale = sum(1 for r in results.values() if r["required"] and r["status"] == "stale")
+    required_missing = sum(1 for r in results.values() if r["required"] and r["status"] == "missing")
     if required_stale > 0 or required_missing > 0:
         overall = "unhealthy"
     elif stale_count > 0:
@@ -423,9 +416,7 @@ def list_frameworks() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 def run_cli():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Universal Compliance Evidence Auto-Collector (D347)"
-    )
+    parser = argparse.ArgumentParser(description="Universal Compliance Evidence Auto-Collector (D347)")
     parser.add_argument("--project-id", required=True, help="Project ID")
     parser.add_argument("--project-dir", help="Project directory for file scanning")
     parser.add_argument("--framework", help="Specific framework to collect for")

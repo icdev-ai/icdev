@@ -31,13 +31,13 @@ import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 logger = logging.getLogger("icdev.profile_md_generator")
 
 try:
     from jinja2 import Environment, BaseLoader
+
     _HAS_JINJA2 = True
 except ImportError:
     _HAS_JINJA2 = False
@@ -89,7 +89,7 @@ PROFILE_MD_TEMPLATE = r"""# PROFILE.md
 ## Language Standards
 {% set lang = resolved.language %}
 {% set prov = provenance.get("language", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 - **Primary language**: {{ lang.get("primary", "not set") }}
 {% if lang.get("allowed") %}
@@ -122,7 +122,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Code Style
 {% set style = resolved.style %}
 {% set prov = provenance.get("style", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -170,7 +170,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Testing Standards
 {% set test = resolved.testing %}
 {% set prov = provenance.get("testing", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -208,7 +208,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Architecture
 {% set arch = resolved.architecture %}
 {% set prov = provenance.get("architecture", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -257,7 +257,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Security
 {% set sec = resolved.security %}
 {% set prov = provenance.get("security", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -299,7 +299,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Compliance
 {% set comp = resolved.compliance %}
 {% set prov = provenance.get("compliance", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -327,7 +327,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Operations
 {% set ops = resolved.operations %}
 {% set prov = provenance.get("operations", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -361,7 +361,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Documentation
 {% set doc = resolved.documentation %}
 {% set prov = provenance.get("documentation", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Requirement | Required |
 |-------------|----------|
@@ -392,7 +392,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## Git Workflow
 {% set git = resolved.git %}
 {% set prov = provenance.get("git", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -426,7 +426,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 ## AI / LLM Usage
 {% set ai = resolved.ai %}
 {% set prov = provenance.get("ai", {}) %}
-_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_
+_Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enforcement", "advisory") }}{{ " | LOCKED" if prov.get("locked") else "" }}_  # noqa: E501
 
 | Setting | Value |
 |---------|-------|
@@ -463,6 +463,7 @@ _Source: {{ prov.get("source_scope", "—") }} | Enforcement: {{ prov.get("enfor
 
 # ── Fallback Generator (no Jinja2) ──────────────────────────────────
 
+
 def _fallback_generate(resolved_profile):
     """Generate PROFILE.md without Jinja2 using string formatting."""
     resolved = resolved_profile.get("resolved", {})
@@ -476,8 +477,8 @@ def _fallback_generate(resolved_profile):
     lines = [
         "# PROFILE.md",
         "",
-        f"> **Auto-generated** from tenant development profile cascade.",
-        f"> Do not edit directly — update the profile via `dev_profile_manager.py`.",
+        "> **Auto-generated** from tenant development profile cascade.",
+        "> Do not edit directly — update the profile via `dev_profile_manager.py`.",
         f"> Generated: {now}",
         "",
         "---",
@@ -500,13 +501,15 @@ def _fallback_generate(resolved_profile):
         lines.append(f"{i}. **{anc['scope']}** → `{anc['scope_id']}`")
 
     if locks:
-        lines.extend([
-            "",
-            "### Locked Dimensions",
-            "",
-            "| Dimension | Status |",
-            "|-----------|--------|",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Locked Dimensions",
+                "",
+                "| Dimension | Status |",
+                "|-----------|--------|",
+            ]
+        )
         for lock in locks:
             lines.append(f"| {lock} | LOCKED |")
 
@@ -521,8 +524,7 @@ def _fallback_generate(resolved_profile):
 
         title = dim_name.replace("_", " ").title()
         lines.append(f"## {title}")
-        lines.append(f"_Source: {source} | Enforcement: {enforcement}"
-                      + (" | LOCKED" if locked else "") + "_")
+        lines.append(f"_Source: {source} | Enforcement: {enforcement}" + (" | LOCKED" if locked else "") + "_")
         lines.append("")
 
         if isinstance(dim_data, dict):
@@ -553,18 +555,21 @@ def _fallback_generate(resolved_profile):
             lines.append(f"- {dim_data}")
             lines.append("")
 
-    lines.extend([
-        "---",
-        "",
-        "> This PROFILE.md was auto-generated from the development profile cascade.",
-        "> To update standards, modify the profile at the appropriate scope layer",
-        "> using `python tools/builder/dev_profile_manager.py`.",
-    ])
+    lines.extend(
+        [
+            "---",
+            "",
+            "> This PROFILE.md was auto-generated from the development profile cascade.",
+            "> To update standards, modify the profile at the appropriate scope layer",
+            "> using `python tools/builder/dev_profile_manager.py`.",
+        ]
+    )
 
     return "\n".join(lines)
 
 
 # ── Main Generator ───────────────────────────────────────────────────
+
 
 def generate_profile_md(resolved_profile):
     """Generate PROFILE.md content from a resolved profile dict.
@@ -602,10 +607,10 @@ def generate_and_store(scope, scope_id, db_path=None):
     Returns dict with status, profile_md content, and metadata.
     """
     try:
-        from icdev.tools.builder.dev_profile_manager import resolve_profile, _get_connection
+        from tools.builder.dev_profile_manager import resolve_profile, _get_connection
     except ImportError:
         sys.path.insert(0, str(BASE_DIR))
-        from icdev.tools.builder.dev_profile_manager import resolve_profile, _get_connection
+        from tools.builder.dev_profile_manager import resolve_profile, _get_connection
 
     result = resolve_profile(scope, scope_id, db_path=db_path)
     if "error" in result:
@@ -642,22 +647,23 @@ def generate_and_store(scope, scope_id, db_path=None):
 
 # ── CLI ──────────────────────────────────────────────────────────────
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate PROFILE.md from resolved dev profile (D186)"
+    parser = argparse.ArgumentParser(description="Generate PROFILE.md from resolved dev profile (D186)")
+    parser.add_argument(
+        "--scope",
+        default="project",
+        choices=("platform", "tenant", "program", "project", "user"),
+        help="Profile scope (default: project)",
     )
-    parser.add_argument("--scope", default="project",
-                        choices=("platform", "tenant", "program", "project", "user"),
-                        help="Profile scope (default: project)")
     parser.add_argument("--scope-id", required=True, help="Scope entity ID")
-    parser.add_argument("--output", type=Path,
-                        help="Write PROFILE.md to file path")
+    parser.add_argument("--output", type=Path, help="Write PROFILE.md to file path")
     parser.add_argument("--db-path", type=Path, help="Database path override")
     parser.add_argument("--json", action="store_true", help="JSON envelope output")
-    parser.add_argument("--store", action="store_true", default=True,
-                        help="Store generated PROFILE.md in DB (default: true)")
-    parser.add_argument("--no-store", action="store_true",
-                        help="Do not store in DB, only output")
+    parser.add_argument(
+        "--store", action="store_true", default=True, help="Store generated PROFILE.md in DB (default: true)"
+    )
+    parser.add_argument("--no-store", action="store_true", help="Do not store in DB, only output")
 
     args = parser.parse_args()
     db = str(args.db_path) if args.db_path else None
@@ -665,10 +671,10 @@ def main():
     if args.no_store:
         # Resolve and render only, no DB write
         try:
-            from icdev.tools.builder.dev_profile_manager import resolve_profile
+            from tools.builder.dev_profile_manager import resolve_profile
         except ImportError:
             sys.path.insert(0, str(BASE_DIR))
-            from icdev.tools.builder.dev_profile_manager import resolve_profile
+            from tools.builder.dev_profile_manager import resolve_profile
 
         result = resolve_profile(args.scope, args.scope_id, db_path=db)
         if "error" in result:
@@ -680,19 +686,29 @@ def main():
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(profile_md, encoding="utf-8")
             if args.json:
-                print(json.dumps({
-                    "status": "written",
-                    "path": str(args.output),
-                    "content_hash": hashlib.sha256(profile_md.encode()).hexdigest()[:12],
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "status": "written",
+                            "path": str(args.output),
+                            "content_hash": hashlib.sha256(profile_md.encode()).hexdigest()[:12],
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(f"PROFILE.md written to {args.output}")
         else:
             if args.json:
-                print(json.dumps({
-                    "status": "generated",
-                    "profile_md": profile_md,
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "status": "generated",
+                            "profile_md": profile_md,
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(profile_md)
     else:

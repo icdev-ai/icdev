@@ -7,8 +7,9 @@
 (function () {
     "use strict";
 
-    var REFRESH_INTERVAL_MS = 30000;
+    var REFRESH_INTERVAL_MS = 300000; // 5 minutes
     var _kanbanTimer = null;
+    var _eventSource = null;
 
     /**
      * Render project cards into Kanban columns.
@@ -50,7 +51,7 @@
                 return;
             }
 
-            var esc = window.ICDEV™ && ICDEV™.escapeHTML ? ICDEV™.escapeHTML : function (s) { return String(s || ""); };
+            var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function (s) { return String(s || ""); };
             var html = items.map(function (p) {
                 var typeBadge = p.type
                     ? '<span class="badge badge-info">' + esc(p.type) + "</span>"
@@ -74,8 +75,8 @@
      * Fetch projects from API and re-render the Kanban board.
      */
     function refreshKanban() {
-        if (!window.ICDEV™ || !ICDEV™.fetchJSON) return;
-        ICDEV™.fetchJSON("/api/projects").then(function (data) {
+        if (!window.ICDEV || !ICDEV.fetchJSON) return;
+        ICDEV.fetchJSON("/api/projects").then(function (data) {
             if (data && data.projects) {
                 renderKanban(data.projects);
             }
@@ -97,17 +98,54 @@
         }
     }
 
-    // Initialize on page load
-    document.addEventListener("DOMContentLoaded", function () {
-        if (document.getElementById("kanban-board")) {
+    /**
+     * Connect to SSE for real-time kanban updates.
+     * Falls back to polling on connection failure.
+     */
+    function connectKanbanSSE() {
+        if (_eventSource) _eventSource.close();
+        _eventSource = new EventSource("/api/events/stream");
+
+        _eventSource.addEventListener("kanban", function () {
+            // Any kanban event triggers a board refresh
+            refreshKanban();
+        });
+
+        _eventSource.onerror = function () {
+            // Fallback to polling on SSE failure
+            _eventSource.close();
+            _eventSource = null;
             startKanbanRefresh();
+        };
+    }
+
+    function stopKanbanSSE() {
+        if (_eventSource) {
+            _eventSource.close();
+            _eventSource = null;
+        }
+    }
+
+    // Initialize on page load — prefer SSE, fall back to polling.
+    // Skip if the task board page owns #kanban-board (it has its own
+    // inline renderTaskKanban that uses task-specific columns).
+    document.addEventListener("DOMContentLoaded", function () {
+        var board = document.getElementById("kanban-board");
+        if (board && !board.querySelector('[data-status="in_progress"]')) {
+            if (typeof EventSource !== "undefined") {
+                connectKanbanSSE();
+            } else {
+                startKanbanRefresh();
+            }
         }
     });
 
     // Expose to global ICDEV™ namespace
-    if (window.ICDEV™) {
-        ICDEV™.refreshKanban = refreshKanban;
-        ICDEV™.startKanbanRefresh = startKanbanRefresh;
-        ICDEV™.stopKanbanRefresh = stopKanbanRefresh;
+    if (window.ICDEV) {
+        ICDEV.refreshKanban = refreshKanban;
+        ICDEV.startKanbanRefresh = startKanbanRefresh;
+        ICDEV.stopKanbanRefresh = stopKanbanRefresh;
+        ICDEV.connectKanbanSSE = connectKanbanSSE;
+        ICDEV.stopKanbanSSE = stopKanbanSSE;
     }
 })();

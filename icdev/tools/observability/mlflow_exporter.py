@@ -6,7 +6,7 @@ Supports deferred upload for air-gapped → connected transitions.
 Reads from otel_spans table, exports to MLflow tracking server via REST API.
 
 Usage:
-    from icdev.tools.observability.mlflow_exporter import MLflowExporter
+    from tools.observability.mlflow_exporter import MLflowExporter
     exporter = MLflowExporter(tracking_uri="http://localhost:5001")
     exporter.export_pending()
 
@@ -15,23 +15,22 @@ CLI:
     python tools/observability/mlflow_exporter.py --status --json
 """
 
-from icdev._paths import get_project_root
 import argparse
 import json
 import logging
 import sqlite3
-import sys
-from datetime import datetime, timezone
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, List, Optional
 
 logger = logging.getLogger("icdev.observability.mlflow_exporter")
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
     import mlflow
+
     HAS_MLFLOW = True
 except ImportError:
     HAS_MLFLOW = False
@@ -55,9 +54,8 @@ class MLflowExporter:
         self._experiment_name = experiment_name
 
         import os
-        self._tracking_uri = tracking_uri or os.environ.get(
-            "ICDEV_MLFLOW_TRACKING_URI", ""
-        )
+
+        self._tracking_uri = tracking_uri or os.environ.get("ICDEV_MLFLOW_TRACKING_URI", "")
 
         if HAS_MLFLOW and self._tracking_uri:
             mlflow.set_tracking_uri(self._tracking_uri)
@@ -109,8 +107,7 @@ class MLflowExporter:
     def _read_unexported_spans(self, limit: int) -> List[Dict]:
         """Read spans that haven't been exported yet."""
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection(db_path=str(self._db_path))
             # Note: we track export via a simple approach — spans older than last export
             rows = conn.execute(
                 """SELECT * FROM otel_spans
@@ -132,7 +129,7 @@ class MLflowExporter:
         with mlflow.start_run(run_name=f"trace-{trace_id[:12]}"):
             for span in spans:
                 attrs = json.loads(span.get("attributes", "{}"))
-                events = json.loads(span.get("events", "[]"))
+                json.loads(span.get("events", "[]"))
 
                 mlflow.log_param(f"span.{span['id']}.name", span["name"])
                 mlflow.log_metric(f"span.{span['id']}.duration_ms", span.get("duration_ms", 0))
@@ -156,7 +153,7 @@ class MLflowExporter:
 
         if self._db_path.exists():
             try:
-                conn = sqlite3.connect(str(self._db_path))
+                conn = get_connection(db_path=str(self._db_path))
                 count = conn.execute("SELECT COUNT(*) FROM otel_spans").fetchone()[0]
                 conn.close()
                 result["total_spans"] = count

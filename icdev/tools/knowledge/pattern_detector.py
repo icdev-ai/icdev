@@ -8,18 +8,40 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# D-EVO-7: Confidence decay config (from args/evolution_config.yaml)
+_DECAY_ENABLED = False
+_DECAY_HALF_LIFE_DAYS = 90
+_DECAY_MIN_FLOOR = 0.01
+
+try:
+    import yaml as _yaml
+
+    _decay_cfg_path = BASE_DIR / "args" / "evolution_config.yaml"
+    if _decay_cfg_path.exists():
+        with open(_decay_cfg_path, encoding="utf-8") as _f:
+            _decay_data = _yaml.safe_load(_f) or {}
+        _sh_cfg = _decay_data.get("self_healing", {}).get("confidence_decay", {})
+        _DECAY_ENABLED = _sh_cfg.get("enabled", False)
+        _DECAY_HALF_LIFE_DAYS = _sh_cfg.get("half_life_days", 90)
+        _DECAY_MIN_FLOOR = _sh_cfg.get("min_floor", 0.01)
+except Exception:
+    pass
 
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -65,7 +87,9 @@ def extract_features(error_data: dict) -> dict:
     features["has_timeout"] = 1 if re.search(r"timeout|timed?\s*out", message, re.I) else 0
     features["has_connection"] = 1 if re.search(r"connect|connection|refused|reset", message, re.I) else 0
     features["has_memory"] = 1 if re.search(r"memory|oom|out.of.memory|heap", message, re.I) else 0
-    features["has_permission"] = 1 if re.search(r"permission|denied|forbidden|unauthorized|403|401", message, re.I) else 0
+    features["has_permission"] = (
+        1 if re.search(r"permission|denied|forbidden|unauthorized|403|401", message, re.I) else 0
+    )
     features["has_not_found"] = 1 if re.search(r"not.found|404|missing|no.such", message, re.I) else 0
     features["has_disk"] = 1 if re.search(r"disk|storage|space|no.space|quota", message, re.I) else 0
     features["has_database"] = 1 if re.search(r"database|db|sql|postgres|mysql|connection.pool", message, re.I) else 0
@@ -109,7 +133,7 @@ def _ngrams(text: str, n: int = 3) -> set:
     text = text.lower().strip()
     if len(text) < n:
         return {text}
-    return {text[i:i + n] for i in range(len(text) - n + 1)}
+    return {text[i : i + n] for i in range(len(text) - n + 1)}
 
 
 def _similarity(a: str, b: str) -> float:
@@ -135,7 +159,8 @@ def match_known_pattern(features: dict, db_path: Path = None) -> list:
     try:
         patterns = conn.execute(
             """SELECT id, pattern_type, pattern_signature, description,
-                      root_cause, remediation, confidence, auto_healable
+                      root_cause, remediation, confidence, auto_healable,
+                      updated_at
                FROM knowledge_patterns
                ORDER BY confidence DESC"""
         ).fetchall()
@@ -167,20 +192,34 @@ def match_known_pattern(features: dict, db_path: Path = None) -> list:
             if features.get("has_database") and ("database" in desc or "pool" in desc):
                 type_boost += 0.1
 
-            combined_score = min((sig_score + type_boost) * p["confidence"], 1.0)
+            # D-EVO-7: Apply time-decay to confidence (lazy, at query time)
+            effective_confidence = p["confidence"]
+            updated = p["updated_at"] if "updated_at" in p.keys() else None
+            if updated and _DECAY_ENABLED:
+                try:
+                    updated_dt = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+                    age_days = (datetime.now(timezone.utc) - updated_dt).days
+                    decay = 2 ** (-(age_days / _DECAY_HALF_LIFE_DAYS))
+                    effective_confidence = max(p["confidence"] * decay, _DECAY_MIN_FLOOR)
+                except (ValueError, TypeError):
+                    pass
+
+            combined_score = min((sig_score + type_boost) * effective_confidence, 1.0)
 
             if combined_score > 0.1:  # Minimum threshold
-                matches.append({
-                    "pattern_id": p["id"],
-                    "pattern_type": p["pattern_type"],
-                    "description": p["description"],
-                    "root_cause": p["root_cause"],
-                    "remediation": p["remediation"],
-                    "confidence": p["confidence"],
-                    "similarity_score": round(sig_score, 3),
-                    "combined_score": round(combined_score, 3),
-                    "auto_healable": bool(p["auto_healable"]),
-                })
+                matches.append(
+                    {
+                        "pattern_id": p["id"],
+                        "pattern_type": p["pattern_type"],
+                        "description": p["description"],
+                        "root_cause": p["root_cause"],
+                        "remediation": p["remediation"],
+                        "confidence": p["confidence"],
+                        "similarity_score": round(sig_score, 3),
+                        "combined_score": round(combined_score, 3),
+                        "auto_healable": bool(p["auto_healable"]),
+                    }
+                )
 
         matches.sort(key=lambda m: m["combined_score"], reverse=True)
         return matches
@@ -226,23 +265,28 @@ def detect_frequency_anomaly(
                 (project_id, row["error_type"], window_start),
             ).fetchall()
 
-            anomalies.append({
-                "error_type": row["error_type"],
-                "count": row["count"],
-                "window_hours": window_hours,
-                "threshold": threshold,
-                "severity": "critical" if row["count"] > threshold * 3 else
-                           "high" if row["count"] > threshold * 2 else "warning",
-                "recent_occurrences": [
-                    {
-                        "id": r["id"],
-                        "message": r["error_message"][:200],
-                        "source": r["source"],
-                        "timestamp": r["created_at"],
-                    }
-                    for r in recent
-                ],
-            })
+            anomalies.append(
+                {
+                    "error_type": row["error_type"],
+                    "count": row["count"],
+                    "window_hours": window_hours,
+                    "threshold": threshold,
+                    "severity": "critical"
+                    if row["count"] > threshold * 3
+                    else "high"
+                    if row["count"] > threshold * 2
+                    else "warning",
+                    "recent_occurrences": [
+                        {
+                            "id": r["id"],
+                            "message": r["error_message"][:200],
+                            "source": r["source"],
+                            "timestamp": r["created_at"],
+                        }
+                        for r in recent
+                    ],
+                }
+            )
 
         return anomalies
 
@@ -313,21 +357,22 @@ def detect_deployment_correlation(
 
                 is_correlated = spike_ratio > 2.0 or (failures_after > 3 and baseline == 0)
 
-                correlations.append({
-                    "deployment_id": dep["id"],
-                    "version": dep["version"],
-                    "environment": dep["environment"],
-                    "deployment_status": dep["status"],
-                    "deployed_at": dep["created_at"],
-                    "failures_after_deploy": failures_after,
-                    "baseline_failures": baseline,
-                    "spike_ratio": round(spike_ratio, 2),
-                    "is_correlated": is_correlated,
-                    "failure_types": [
-                        {"error_type": r["error_type"], "count": r["count"]}
-                        for r in failure_details
-                    ],
-                })
+                correlations.append(
+                    {
+                        "deployment_id": dep["id"],
+                        "version": dep["version"],
+                        "environment": dep["environment"],
+                        "deployment_status": dep["status"],
+                        "deployed_at": dep["created_at"],
+                        "failures_after_deploy": failures_after,
+                        "baseline_failures": baseline,
+                        "spike_ratio": round(spike_ratio, 2),
+                        "is_correlated": is_correlated,
+                        "failure_types": [
+                            {"error_type": r["error_type"], "count": r["count"]} for r in failure_details
+                        ],
+                    }
+                )
 
         return correlations
 
@@ -429,30 +474,25 @@ def analyze_project(project_id: str, db_path: Path = None) -> dict:
             matches = match_known_pattern(features, db_path)
 
             if matches:
-                result["pattern_matches"].append({
-                    "failure_id": failure["id"],
-                    "error_type": failure["error_type"],
-                    "error_message": failure["error_message"][:100],
-                    "top_match": matches[0],
-                    "total_matches": len(matches),
-                })
+                result["pattern_matches"].append(
+                    {
+                        "failure_id": failure["id"],
+                        "error_type": failure["error_type"],
+                        "error_message": failure["error_message"][:100],
+                        "top_match": matches[0],
+                        "total_matches": len(matches),
+                    }
+                )
     finally:
         conn.close()
 
     # Summary
     result["summary"] = {
         "total_anomalies": len(result["frequency_anomalies"]),
-        "critical_anomalies": sum(
-            1 for a in result["frequency_anomalies"] if a["severity"] == "critical"
-        ),
-        "deployment_related": sum(
-            1 for c in result["deployment_correlations"] if c["is_correlated"]
-        ),
+        "critical_anomalies": sum(1 for a in result["frequency_anomalies"] if a["severity"] == "critical"),
+        "deployment_related": sum(1 for c in result["deployment_correlations"] if c["is_correlated"]),
         "pattern_matches_found": len(result["pattern_matches"]),
-        "auto_healable": sum(
-            1 for m in result["pattern_matches"]
-            if m.get("top_match", {}).get("auto_healable")
-        ),
+        "auto_healable": sum(1 for m in result["pattern_matches"] if m.get("top_match", {}).get("auto_healable")),
     }
 
     return result
@@ -528,10 +568,16 @@ def seed_code_quality_patterns(db_path: Path = None) -> dict:
                 (pattern_type, description, root_cause, resolution, confidence,
                  auto_healable, occurrence_count, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)""",
-                (p["pattern_type"], p["description"], p["root_cause"],
-                 p["resolution"], p["confidence"], 1 if p["auto_healable"] else 0,
-                 datetime.now(timezone.utc).isoformat(),
-                 datetime.now(timezone.utc).isoformat()),
+                (
+                    p["pattern_type"],
+                    p["description"],
+                    p["root_cause"],
+                    p["resolution"],
+                    p["confidence"],
+                    1 if p["auto_healable"] else 0,
+                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             seeded += 1
         conn.commit()
@@ -646,9 +692,7 @@ def main():
     if args.analyze or (not args.frequency and not args.correlation):
         result = analyze_project(args.project_id, db_path)
     elif args.frequency:
-        result = detect_frequency_anomaly(
-            args.project_id, args.window_hours, args.threshold, db_path
-        )
+        result = detect_frequency_anomaly(args.project_id, args.window_hours, args.threshold, db_path)
     elif args.correlation:
         result = detect_deployment_correlation(args.project_id, db_path=db_path)
     else:
@@ -675,16 +719,20 @@ def main():
                 if corr:
                     print("\n  DEPLOYMENT CORRELATIONS:")
                     for c in corr:
-                        print(f"    Deploy {c['version']} ({c['environment']}): "
-                              f"{c['failures_after_deploy']} failures (spike: {c['spike_ratio']}x)")
+                        print(
+                            f"    Deploy {c['version']} ({c['environment']}): "
+                            f"{c['failures_after_deploy']} failures (spike: {c['spike_ratio']}x)"
+                        )
 
             if result["pattern_matches"]:
                 print("\n  PATTERN MATCHES:")
                 for m in result["pattern_matches"]:
                     top = m["top_match"]
                     heal = " [auto-healable]" if top["auto_healable"] else ""
-                    print(f"    Failure #{m['failure_id']}: {top['description'][:50]} "
-                          f"(score: {top['combined_score']}){heal}")
+                    print(
+                        f"    Failure #{m['failure_id']}: {top['description'][:50]} "
+                        f"(score: {top['combined_score']}){heal}"
+                    )
         else:
             print(json.dumps(result, indent=2))
 

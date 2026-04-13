@@ -2,15 +2,13 @@
 # CUI // SP-CTI
 """Dashboard API: Evidence Collection (Phase 56, D347)."""
 
-import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -20,15 +18,14 @@ evidence_api = Blueprint("evidence_api", __name__, url_prefix="/api/evidence")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
 @evidence_api.route("/stats", methods=["GET"])
 def evidence_stats():
     """GET /api/evidence/stats — Overall evidence collection statistics."""
-    from icdev.tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, _table_exists
+    from tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, _table_exists
 
     conn = _get_connection()
     stats = {
@@ -41,14 +38,16 @@ def evidence_stats():
         total = 0
         for table_name in fw_config["tables"]:
             if _table_exists(conn, table_name):
-                row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                 total += row[0]
-        stats["frameworks"].append({
-            "id": fw_id,
-            "description": fw_config["description"],
-            "required": fw_config["required"],
-            "total_records": total,
-        })
+        stats["frameworks"].append(
+            {
+                "id": fw_id,
+                "description": fw_config["description"],
+                "required": fw_config["required"],
+                "total_records": total,
+            }
+        )
 
     conn.close()
     return jsonify(stats)
@@ -57,7 +56,7 @@ def evidence_stats():
 @evidence_api.route("/collect", methods=["POST"])
 def trigger_collection():
     """POST /api/evidence/collect — Trigger evidence collection for a project."""
-    from icdev.tools.compliance.evidence_collector import collect_evidence
+    from tools.compliance.evidence_collector import collect_evidence
 
     data = request.get_json(force=True, silent=True) or {}
     project_id = data.get("project_id") or request.args.get("project_id", "")
@@ -78,7 +77,7 @@ def trigger_collection():
 @evidence_api.route("/freshness", methods=["GET"])
 def evidence_freshness():
     """GET /api/evidence/freshness — Check evidence freshness for a project."""
-    from icdev.tools.compliance.evidence_collector import check_freshness
+    from tools.compliance.evidence_collector import check_freshness
 
     project_id = request.args.get("project_id", "")
     max_age = float(request.args.get("max_age_hours", "48"))
@@ -93,7 +92,7 @@ def evidence_freshness():
 @evidence_api.route("/frameworks", methods=["GET"])
 def evidence_frameworks():
     """GET /api/evidence/frameworks — List supported evidence frameworks."""
-    from icdev.tools.compliance.evidence_collector import list_frameworks
+    from tools.compliance.evidence_collector import list_frameworks
 
     frameworks = list_frameworks()
     return jsonify({"frameworks": frameworks, "total": len(frameworks)})

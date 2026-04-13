@@ -147,6 +147,55 @@ capabilities:
     description: "AST code quality metrics, smell detection, maintainability scoring, runtime feedback"
     source_dirs: ["tools/analysis"]
     includes: ["tools/analysis/*.py", "args/code_quality_config.yaml"]
+  rag:
+    always_on: false
+    trigger: { flag: "rag_enabled" }
+    description: "Universal RAG: vector store ABC (SQLite/ChromaDB/FAISS), adaptive chunking, two-stage retrieval, auto-inject into two-tier LLM"
+    source_dirs: ["tools/rag"]
+    includes: ["tools/rag/*.py", "args/rag_config.yaml", "context/rag/*.json", "hardprompts/rag_rerank.md"]
+    db_tables: ["rag_chunks", "rag_ingestion_log", "rag_retrieval_log", "rag_parent_cache"]
+  fine_tuning:
+    always_on: false
+    trigger: { flag: "fine_tuning_enabled" }
+    follows: "rag"
+    description: "QLoRA fine-tuning: dataset management, labeling, training (Unsloth/OpenAI/Bedrock/Azure), GGUF export, BLEU/ROUGE-L/perplexity evaluation, auto-promotion, LLM router override (D-FT-1 through D-FT-22)"
+    source_dirs: ["tools/finetune"]
+    includes: ["tools/finetune/*.py", "args/finetune_config.yaml"]
+    db_tables: ["ft_datasets", "ft_dataset_examples", "ft_training_jobs", "ft_training_job_events", "ft_model_versions", "ft_active_models", "ft_evaluations", "ft_promotion_log", "ft_hyperparam_results"]
+  orchestration:
+    always_on: true
+    description: "Prompt chains, dispatcher mode, session purpose, ANVIL adversarial critique"
+    source_dirs: []
+    includes: ["tools/agent/prompt_chain_executor.py", "tools/agent/dispatcher_mode.py", "tools/agent/session_purpose.py", "tools/agent/anvil_critique.py", "args/prompt_chains.yaml", "args/anvil_critique_config.yaml"]
+    db_tables: ["anvil_critique_sessions", "anvil_critique_findings", "prompt_chain_executions", "dispatcher_mode_overrides", "session_purposes"]
+  knowledge_graph:
+    always_on: false
+    trigger: { flag: "knowledge_graph_enabled" }
+    description: "GraphRAG with scoring profiles (D-KARL-1), context compression (D-KARL-2), parallel retrieval (D-KARL-3), entity/relationship extraction"
+    source_dirs: ["tools/knowledge_graph"]
+    includes: ["tools/knowledge_graph/*.py", "args/knowledge_graph_config.yaml", "context/knowledge_graph/*.json"]
+    db_tables: ["kg_graphs", "kg_nodes", "kg_edges", "kg_retrieval_log"]
+  genesis:
+    always_on: false
+    trigger: { flag: "genesis_enabled" }
+    description: "Autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers, GKP promoter (D-GEN-1 through D-GEN-12)"
+    source_dirs: ["tools/genesis", "tools/genesis/reflexes"]
+    includes: ["tools/genesis/*.py", "tools/genesis/reflexes/*.py", "args/genesis_config.yaml"]
+    db_tables: ["genesis_audit", "genesis_reflex_state", "genesis_gkp"]
+  autoresearch:
+    always_on: false
+    trigger: { overall_score_minimum: 3 }
+    description: "Bayesian Autoresearch — Karpathy-loop autonomous experiments with info-gain selection, Thompson Sampling, pgvector dedup, 6 fitness domains (D-AR-1 through D-AR-10)"
+    source_dirs: ["tools/autoresearch"]
+    includes: ["tools/autoresearch/*.py", "args/autoresearch_config.yaml", "args/experiment_programs/*.yaml"]
+    db_tables: ["experiment_programs", "experiment_candidates", "experiment_results", "experiment_landscapes", "bayesian_experiment_scores"]
+  databridge:
+    always_on: false
+    trigger: { flag: "databridge_enabled" }
+    description: "DataBridge connectors + Connector Forge (D-CF-1 through D-CF-10)"
+    source_dirs: ["tools/databridge", "tools/databridge/forge"]
+    includes: ["tools/databridge/**/*.py", "tools/databridge/forge/templates/*.py", "context/databridge/*.json"]
+    db_tables: []
   govcon:
     always_on: false
     trigger: { never: true }

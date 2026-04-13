@@ -1,175 +1,261 @@
-# [TEMPLATE: CUI // SP-CTI]
-# ICDEV™ Git Operations — branch, commit, push, PR/MR
-# Adapted from ADW git_ops.py with GitLab MR support
+# CUI // SP-CTI
+"""ICDEV™ git CLI helper for the CI/CD workflow scripts.
 
+A thin, safety-conscious wrapper around the local ``git`` binary plus
+the platform-agnostic VCS abstraction in ``tools.ci.modules.vcs``. The
+workflow scripts under ``tools/ci/workflows/icdev_*.py`` use this
+module to branch, commit, push, and open or update a PR/MR without
+caring whether the remote is GitHub or GitLab.
+
+Implements the contract documented in
+``docs/rewrite/adw/specs/tools/ci/modules/git_ops.md`` (OPT-75 Phase 3
+clean-room rewrite).
 """
-Git operations for ICDEV™ CI/CD workflows.
+from __future__ import annotations
 
-Provides branching, committing, pushing, and PR/MR creation
-using git CLI directly (platform-agnostic for git operations)
-and VCS abstraction for PR/MR creation.
-
-Usage:
-    from icdev.tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations
-    success, error = create_branch("feat-123-auth")
-    success, error = commit_changes("Add authentication module")
-    finalize_git_operations(state, logger)
-"""
-
+import logging
 import subprocess
 from pathlib import Path
-from typing import Tuple, Optional
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+from typing import Any, List, Optional, Sequence, Tuple
 
 
-def _git(args: list, cwd: str = None) -> Tuple[str, str, int]:
-    """Run a git command."""
-    proc = subprocess.run(
-        ["git"] + args,
-        capture_output=True, text=True,
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
+
+_module_logger = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Internal helper
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _run_git(
+    args: Sequence[str],
+    cwd: Optional[str] = None,
+) -> Tuple[str, str, int]:
+    """Run ``git`` with the given args and return ``(stdout, stderr, rc)``.
+
+    Output is captured, decoded as text, and stripped of trailing
+    whitespace. ``cwd`` defaults to the repo root.
+    """
+    completed = subprocess.run(
+        ["git", *list(args)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=cwd or str(PROJECT_ROOT),
     )
-    return proc.stdout.strip(), proc.stderr.strip(), proc.returncode
+    return (
+        (completed.stdout or "").strip(),
+        (completed.stderr or "").strip(),
+        completed.returncode,
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Branch / commit / push primitives
+# ────────────────────────────────────────────────────────────────────────────
 
 
 def create_branch(branch_name: str) -> Tuple[bool, Optional[str]]:
-    """Create and checkout a new branch (or checkout existing).
+    """Check out ``branch_name``, creating it if necessary.
 
-    Adapted from ADW create_branch pattern.
+    Tries ``git checkout -b <branch>`` first. If that fails (typically
+    because the branch already exists), tries a plain ``git checkout
+    <branch>`` as the fallback. Returns ``(True, None)`` on success or
+    ``(False, reason)`` on failure.
     """
-    # Try creating new branch
-    _, stderr, rc = _git(["checkout", "-b", branch_name])
-    if rc == 0:
+    _, create_err, create_rc = _run_git(["checkout", "-b", branch_name])
+    if create_rc == 0:
         return True, None
 
-    # Branch might already exist — try checking out
-    _, stderr2, rc2 = _git(["checkout", branch_name])
-    if rc2 == 0:
+    _, _, switch_rc = _run_git(["checkout", branch_name])
+    if switch_rc == 0:
         return True, None
 
-    return False, f"Failed to create branch '{branch_name}': {stderr}"
+    return False, f"Failed to create branch '{branch_name}': {create_err}"
 
 
-def commit_changes(message: str, paths: list = None) -> Tuple[bool, Optional[str]]:
-    """Stage changes and commit.
+def commit_changes(
+    message: str,
+    paths: Optional[List[str]] = None,
+) -> Tuple[bool, Optional[str]]:
+    """Stage changes and create a commit.
 
-    Args:
-        message: Commit message.
-        paths: Optional list of specific file paths to stage. If provided,
-               only these paths are staged (targeted add). If None, stages
-               all tracked modified files with ``git add -u`` (safer than
-               ``git add -A`` which also stages untracked files that may
-               include sensitive files like .env or credentials).
+    Staging is intentionally narrow:
+
+    * If ``paths`` is supplied, only those paths are added (``git add --
+      <paths>``).
+    * Otherwise the helper uses ``git add -u`` so only tracked, modified
+      files are staged. We deliberately avoid ``git add -A`` because it
+      would also pick up untracked files such as ``.env`` or credential
+      blobs that the developer never intended to commit.
+
+    A clean working tree is treated as a successful no-op, not an error.
     """
     if paths:
-        # Targeted staging — only specific files
-        _, stderr, rc = _git(["add", "--"] + paths)
+        _, add_err, add_rc = _run_git(["add", "--", *paths])
     else:
-        # Stage tracked modified files only (not untracked)
-        _, stderr, rc = _git(["add", "-u"])
-    if rc != 0:
-        return False, f"git add failed: {stderr}"
+        _, add_err, add_rc = _run_git(["add", "-u"])
+    if add_rc != 0:
+        return False, f"git add failed: {add_err}"
 
-    # Check if there's anything to commit
-    stdout, _, _ = _git(["status", "--porcelain"])
-    if not stdout.strip():
-        return True, None  # Nothing to commit, still success
+    porcelain, _, _ = _run_git(["status", "--porcelain"])
+    if not porcelain.strip():
+        return True, None
 
-    # Commit
-    _, stderr, rc = _git(["commit", "-m", message])
-    if rc != 0:
-        return False, f"git commit failed: {stderr}"
+    _, commit_err, commit_rc = _run_git(["commit", "-m", message])
+    if commit_rc != 0:
+        return False, f"git commit failed: {commit_err}"
 
     return True, None
 
 
 def push_branch(branch_name: str) -> Tuple[bool, Optional[str]]:
-    """Push branch to remote.
-
-    Adapted from ADW push_branch pattern.
-    """
-    _, stderr, rc = _git(["push", "-u", "origin", branch_name])
-    if rc != 0:
-        return False, f"git push failed: {stderr}"
+    """Push ``branch_name`` to ``origin`` with upstream tracking."""
+    _, push_err, push_rc = _run_git(["push", "-u", "origin", branch_name])
+    if push_rc != 0:
+        return False, f"git push failed: {push_err}"
     return True, None
 
 
 def get_current_branch() -> Optional[str]:
-    """Get the current branch name."""
-    stdout, _, rc = _git(["branch", "--show-current"])
-    return stdout if rc == 0 else None
+    """Return the name of the currently-checked-out branch, or ``None``
+    on error."""
+    branch, _, rc = _run_git(["branch", "--show-current"])
+    if rc != 0:
+        return None
+    return branch or None
 
 
-def finalize_git_operations(state, logger, vcs=None):
-    """Push changes and create/update PR or MR.
+# ────────────────────────────────────────────────────────────────────────────
+# Workflow finaliser
+# ────────────────────────────────────────────────────────────────────────────
 
-    Adapted from ADW finalize_git_operations pattern with dual platform support.
 
-    Args:
-        state: ICDevState instance
-        logger: Logger instance
-        vcs: VCS instance (auto-created if None)
+def _bot_comment(text: str) -> str:
+    return f"[ICDEV™-BOT] {text}"
+
+
+def _build_pr_body(run_id: str, issue_number: Optional[Any]) -> str:
+    parts: List[str] = ["## Summary",
+                        f"Automated by ICDEV™ workflow run `{run_id}`",
+                        ""]
+    if issue_number:
+        parts.append(f"Closes #{issue_number}")
+        parts.append("")
+    parts.append("## CUI // SP-CTI")
+    parts.append("Generated by ICDEV™ CI/CD system.")
+    return "\n".join(parts) + "\n"
+
+
+def _build_pr_title(run_id: str, issue_number: Optional[Any]) -> str:
+    if issue_number:
+        return f"ICDEV™-{run_id}: Issue #{issue_number}"
+    return f"ICDEV™-{run_id}"
+
+
+def finalize_git_operations(state: Any, logger: Any, vcs: Any = None) -> None:
+    """Push the current branch and ensure a PR/MR exists for it.
+
+    This is the tail of every ``tools/ci/workflows/icdev_*.py`` script.
+    Best-effort by design — every failure path logs and returns rather
+    than raising. Tests can inject a fake ``vcs`` object that quacks
+    like ``tools.ci.modules.vcs.VCS``.
     """
-    branch_name = state.get("branch_name")
-    issue_number = state.get("issue_number")
+    log = logger if logger is not None else _module_logger
+
+    branch_name = state.get("branch_name") if hasattr(state, "get") else None
+    issue_number = state.get("issue_number") if hasattr(state, "get") else None
+    run_id = state.get("run_id") if hasattr(state, "get") else None
+    if not run_id:
+        run_id = "unknown"
 
     if not branch_name:
-        logger.warning("No branch name in state, skipping finalize")
+        log.warning("finalize_git_operations: state has no branch_name")
         return
 
-    # Import VCS if needed
     if vcs is None:
-        from icdev.tools.ci.modules.vcs import VCS
         try:
+            from tools.ci.modules.vcs import VCS  # lazy import
             vcs = VCS()
-        except Exception as e:
-            logger.error(f"Cannot initialize VCS: {e}")
+        except Exception as exc:
+            log.error("finalize_git_operations: cannot init VCS: %s", exc)
             return
 
-    # Push
-    logger.info(f"Pushing branch {branch_name}...")
-    success, error = push_branch(branch_name)
-    if not success:
-        logger.error(f"Push failed: {error}")
+    log.info("finalize_git_operations: pushing %s", branch_name)
+    pushed, push_err = push_branch(branch_name)
+    if not pushed:
+        log.error("finalize_git_operations: push failed: %s", push_err)
         if issue_number:
-            vcs.comment_on_issue(int(issue_number), f"[ICDEV™-BOT] Push failed: {error}")
+            try:
+                vcs.comment_on_issue(
+                    int(issue_number),
+                    _bot_comment(f"Push failed: {push_err}"),
+                )
+            except Exception as exc:
+                log.warning(
+                    "finalize_git_operations: comment_on_issue raised: %s", exc
+                )
         return
 
-    logger.info("Push successful")
+    log.info("finalize_git_operations: push ok")
 
-    # Check if PR/MR exists
-    pr_url = vcs.check_pr_exists(branch_name)
-    if pr_url:
-        logger.info(f"PR/MR already exists: {pr_url}")
+    existing_url: Optional[str]
+    try:
+        existing_url = vcs.check_pr_exists(branch_name)
+    except Exception as exc:
+        log.warning(
+            "finalize_git_operations: check_pr_exists raised: %s", exc
+        )
+        existing_url = None
+
+    is_gitlab = bool(getattr(vcs, "is_gitlab", False))
+    pr_label_short = "MR" if is_gitlab else "PR"
+    pr_label_long = "Merge Request" if is_gitlab else "Pull Request"
+
+    if existing_url:
+        log.info(
+            "finalize_git_operations: %s already exists at %s",
+            pr_label_short, existing_url,
+        )
         if issue_number:
-            platform_name = "MR" if vcs.is_gitlab else "PR"
-            vcs.comment_on_issue(
-                int(issue_number),
-                f"[ICDEV™-BOT] Updated existing {platform_name}: {pr_url}"
-            )
+            try:
+                vcs.comment_on_issue(
+                    int(issue_number),
+                    _bot_comment(f"Updated existing {pr_label_short}: {existing_url}"),
+                )
+            except Exception as exc:
+                log.warning(
+                    "finalize_git_operations: comment_on_issue raised: %s", exc
+                )
         return
 
-    # Create new PR/MR
-    logger.info("Creating new PR/MR...")
-    run_id = state.get("run_id", "unknown")
-    title = f"ICDEV™-{run_id}: Issue #{issue_number}" if issue_number else f"ICDEV™-{run_id}"
-    body = (
-        f"## Summary\n"
-        f"Automated by ICDEV™ workflow run `{run_id}`\n\n"
-        f"Closes #{issue_number}\n\n"
-        f"## CUI // SP-CTI\n"
-        f"Generated by ICDEV™ CI/CD system.\n"
-    )
+    log.info("finalize_git_operations: creating new %s", pr_label_short)
+    title = _build_pr_title(run_id, issue_number)
+    body = _build_pr_body(run_id, issue_number)
+    try:
+        new_url = vcs.create_pr(title=title, body=body, head=branch_name)
+    except Exception as exc:
+        log.error("finalize_git_operations: create_pr raised: %s", exc)
+        return
 
-    pr_url = vcs.create_pr(title=title, body=body, head=branch_name)
-    if pr_url:
-        platform_name = "Merge Request" if vcs.is_gitlab else "Pull Request"
-        logger.info(f"{platform_name} created: {pr_url}")
+    if new_url:
+        log.info(
+            "finalize_git_operations: %s created at %s", pr_label_long, new_url
+        )
         if issue_number:
-            vcs.comment_on_issue(
-                int(issue_number),
-                f"[ICDEV™-BOT] Created {platform_name}: {pr_url}"
-            )
+            try:
+                vcs.comment_on_issue(
+                    int(issue_number),
+                    _bot_comment(f"Created {pr_label_long}: {new_url}"),
+                )
+            except Exception as exc:
+                log.warning(
+                    "finalize_git_operations: comment_on_issue raised: %s",
+                    exc,
+                )
     else:
-        logger.error("Failed to create PR/MR")
+        log.error("finalize_git_operations: %s create returned no URL",
+                  pr_label_short)

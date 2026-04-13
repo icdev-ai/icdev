@@ -22,18 +22,17 @@ import hashlib
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
-from icdev._paths import get_project_root
+from typing import Dict
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -131,8 +130,10 @@ def generate_model_card(
                 "license": bom_data.get("license", "See provider terms"),
             },
             "intended_use": {
-                "primary_use_cases": intended_use or "AI-assisted software development, compliance assessment, code generation",
-                "out_of_scope_uses": out_of_scope or "Autonomous decision-making without human oversight, safety-critical systems without human review",
+                "primary_use_cases": intended_use
+                or "AI-assisted software development, compliance assessment, code generation",
+                "out_of_scope_uses": out_of_scope
+                or "Autonomous decision-making without human oversight, safety-critical systems without human review",
                 "users": "Federal agency developers, compliance officers, system administrators",
             },
             "factors": {
@@ -166,7 +167,8 @@ def generate_model_card(
                 "data_privacy": "No customer data used for training. All interactions are inference-only.",
             },
             "ethical_considerations": {
-                "description": ethical_considerations or "Model is used within ICDEV™'s compliance framework with human oversight, audit trails, and appeal processes per OMB M-25-21 and M-26-04.",
+                "description": ethical_considerations
+                or "Model is used within ICDEV™'s compliance framework with human oversight, audit trails, and appeal processes per OMB M-25-21 and M-26-04.",
                 "risks": [
                     "Confabulation — mitigated by output validation and human review",
                     "Bias — mitigated by fairness assessments and disparity analysis",
@@ -181,7 +183,8 @@ def generate_model_card(
                 ],
             },
             "caveats_and_limitations": {
-                "description": caveats or "Model outputs require human review for high-impact decisions. Not suitable for autonomous safety-critical operations.",
+                "description": caveats
+                or "Model outputs require human review for high-impact decisions. Not suitable for autonomous safety-critical operations.",
                 "known_limitations": [
                     "May generate plausible but incorrect information (confabulation)",
                     "Performance varies by domain and prompt quality",
@@ -216,7 +219,8 @@ def generate_model_card(
                    (project_id, event_type, actor, action, details, classification)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id, "model_card_generated",
+                    project_id,
+                    "model_card_generated",
                     "icdev-compliance-engine",
                     f"Generated model card for {model_name}",
                     json.dumps({"model_name": model_name, "version": version, "hash": card_hash}),

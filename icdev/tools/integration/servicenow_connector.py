@@ -29,13 +29,12 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 INTEGRATION_TYPE = "servicenow"
@@ -44,17 +43,27 @@ INTEGRATION_TYPE = "servicenow"
 SAFE_SNOW_MAP = {
     "epic": {"table": "rm_epic", "type": "Epic", "fields": ["title", "description", "priority", "status"]},
     "capability": {"table": "rm_feature", "type": "Capability", "fields": ["title", "description", "priority"]},
-    "feature": {"table": "rm_story", "type": "Feature", "fields": ["title", "description", "acceptance_criteria", "story_points"]},
-    "story": {"table": "rm_story", "type": "Story", "fields": ["title", "description", "acceptance_criteria", "story_points"]},
+    "feature": {
+        "table": "rm_story",
+        "type": "Feature",
+        "fields": ["title", "description", "acceptance_criteria", "story_points"],
+    },
+    "story": {
+        "table": "rm_story",
+        "type": "Story",
+        "fields": ["title", "description", "acceptance_criteria", "story_points"],
+    },
     "enabler": {"table": "rm_story", "type": "Enabler", "fields": ["title", "description"]},
 }
 
 # Graceful import of audit logger
 try:
-    from icdev.tools.audit.audit_logger import log_event
+    from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs) -> int:  # type: ignore[misc]
         return -1
 
@@ -63,15 +72,13 @@ except ImportError:
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -89,8 +96,8 @@ def _now():
 # configure
 # ---------------------------------------------------------------------------
 
-def configure(project_id, instance_url, table_name, auth_secret_ref,
-              field_mappings=None, db_path=None):
+
+def configure(project_id, instance_url, table_name, auth_secret_ref, field_mappings=None, db_path=None):
     """Store a ServiceNow integration configuration.
 
     Args:
@@ -109,12 +116,15 @@ def configure(project_id, instance_url, table_name, auth_secret_ref,
         connection_id = _generate_id("snow")
         now = _now()
 
-        mapping_json = json.dumps(field_mappings or {
-            "epic": {"table": "rm_epic", "type": "Epic"},
-            "feature": {"table": "rm_story", "type": "Feature"},
-            "story": {"table": "rm_story", "type": "Story"},
-            "enabler": {"table": "rm_story", "type": "Enabler"},
-        })
+        mapping_json = json.dumps(
+            field_mappings
+            or {
+                "epic": {"table": "rm_epic", "type": "Epic"},
+                "feature": {"table": "rm_story", "type": "Feature"},
+                "story": {"table": "rm_story", "type": "Story"},
+                "enabler": {"table": "rm_story", "type": "Enabler"},
+            }
+        )
 
         conn.execute(
             """INSERT INTO integration_connections
@@ -122,10 +132,21 @@ def configure(project_id, instance_url, table_name, auth_secret_ref,
                 auth_secret_ref, sync_direction, sync_status, field_mapping,
                 filter_criteria, classification, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (connection_id, project_id, INTEGRATION_TYPE, instance_url,
-             "oauth2", auth_secret_ref, "bidirectional", "configured",
-             mapping_json, json.dumps({"table_name": table_name}),
-             "CUI", now, now),
+            (
+                connection_id,
+                project_id,
+                INTEGRATION_TYPE,
+                instance_url,
+                "oauth2",
+                auth_secret_ref,
+                "bidirectional",
+                "configured",
+                mapping_json,
+                json.dumps({"table_name": table_name}),
+                "CUI",
+                now,
+                now,
+            ),
         )
         conn.commit()
 
@@ -151,6 +172,7 @@ def configure(project_id, instance_url, table_name, auth_secret_ref,
 # ---------------------------------------------------------------------------
 # push_to_servicenow
 # ---------------------------------------------------------------------------
+
 
 def push_to_servicenow(project_id, session_id=None, dry_run=False, db_path=None):
     """Push SAFe decomposition items to ServiceNow.
@@ -270,8 +292,16 @@ def push_to_servicenow(project_id, session_id=None, dry_run=False, db_path=None)
                            (connection_id, icdev_type, icdev_id, external_id,
                             external_type, external_url, sync_status, last_synced)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (connection_id, "safe_decomposition", item_dict["id"],
-                         sys_id, snow_type, snow_url, "synced", now),
+                        (
+                            connection_id,
+                            "safe_decomposition",
+                            item_dict["id"],
+                            sys_id,
+                            snow_type,
+                            snow_url,
+                            "synced",
+                            now,
+                        ),
                     )
                 items_created += 1
 
@@ -284,9 +314,16 @@ def push_to_servicenow(project_id, session_id=None, dry_run=False, db_path=None)
                    (connection_id, sync_direction, items_synced, items_created,
                     items_updated, items_failed, error_details, synced_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (connection_id, "push", items_pushed, items_created,
-                 items_updated, items_failed,
-                 json.dumps(errors) if errors else None, now),
+                (
+                    connection_id,
+                    "push",
+                    items_pushed,
+                    items_created,
+                    items_updated,
+                    items_failed,
+                    json.dumps(errors) if errors else None,
+                    now,
+                ),
             )
             conn.execute(
                 """UPDATE integration_connections SET last_sync = ?, sync_status = 'synced',
@@ -321,6 +358,7 @@ def push_to_servicenow(project_id, session_id=None, dry_run=False, db_path=None)
 # ---------------------------------------------------------------------------
 # pull_from_servicenow
 # ---------------------------------------------------------------------------
+
 
 def pull_from_servicenow(project_id, db_path=None):
     """Simulate pulling status updates from ServiceNow.
@@ -404,6 +442,7 @@ def pull_from_servicenow(project_id, db_path=None):
 # get_sync_status
 # ---------------------------------------------------------------------------
 
+
 def get_sync_status(project_id, db_path=None):
     """Return last sync info and mapping count.
 
@@ -474,6 +513,7 @@ def get_sync_status(project_id, db_path=None):
 # Attachment vision analysis
 # ---------------------------------------------------------------------------
 
+
 def _analyze_image_attachment(image_path, source_context=""):
     """Analyze an image attachment using a vision LLM.
 
@@ -486,9 +526,9 @@ def _analyze_image_attachment(image_path, source_context=""):
         or None if vision unavailable.
     """
     try:
-        from icdev.tools.testing.screenshot_validator import encode_image
-        from icdev.tools.llm import get_router
-        from icdev.tools.llm.provider import LLMRequest
+        from tools.testing.screenshot_validator import encode_image
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
 
         router = get_router()
         provider, model_id, model_cfg = router.get_provider_for_function("attachment_analysis")
@@ -547,6 +587,7 @@ def _analyze_image_attachment(image_path, source_context=""):
             text = "\n".join(lines).strip()
 
         import json as _json
+
         return _json.loads(text)
 
     except Exception:
@@ -583,17 +624,17 @@ def analyze_attachments(project_id, attachment_paths=None, db_path=None):
         if p.suffix.lower() not in image_exts:
             continue
 
-        analysis = _analyze_image_attachment(
-            str(p), source_context=f"ServiceNow attachment for project {project_id}"
-        )
+        analysis = _analyze_image_attachment(str(p), source_context=f"ServiceNow attachment for project {project_id}")
         if analysis:
             results.append({"path": str(p), "analysis": analysis})
         else:
-            results.append({
-                "path": str(p),
-                "analysis": None,
-                "note": "Vision model not available",
-            })
+            results.append(
+                {
+                    "path": str(p),
+                    "analysis": None,
+                    "note": "Vision model not available",
+                }
+            )
 
     log_event(
         event_type="attachment_analyzed",
@@ -614,10 +655,9 @@ def analyze_attachments(project_id, attachment_paths=None, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ServiceNow integration connector for ICDEV™ RICOAS"
-    )
+    parser = argparse.ArgumentParser(description="ServiceNow integration connector for ICDEV™ RICOAS")
     parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
@@ -639,11 +679,13 @@ def main():
 
     # Attachment analysis
     parser.add_argument(
-        "--analyze-attachments", action="store_true",
+        "--analyze-attachments",
+        action="store_true",
         help="Analyze image attachments using vision LLM",
     )
     parser.add_argument(
-        "--attachment-paths", nargs="*",
+        "--attachment-paths",
+        nargs="*",
         help="Paths to image attachments to analyze",
     )
 

@@ -6,9 +6,8 @@ and monitoring configuration. All generated files include CUI headers."""
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 CUI_HEADER = (
@@ -562,7 +561,7 @@ def generate_monitoring(project_path: str) -> list:
 
     - name: Download node_exporter
       get_url:
-        url: "https://github.com/prometheus/node_exporter/releases/download/v{{{{ node_exporter_version }}}}/node_exporter-{{{{ node_exporter_version }}}}.linux-amd64.tar.gz"
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{{{ node_exporter_version }}}}/node_exporter-{{{{ node_exporter_version }}}}.linux-amd64.tar.gz"  # noqa: E501
         dest: /tmp/node_exporter.tar.gz
         mode: "0644"
       tags: [prometheus]

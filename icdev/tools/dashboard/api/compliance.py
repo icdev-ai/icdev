@@ -4,17 +4,16 @@ Flask Blueprint for compliance API.
 Queries ssp_documents, poam_items, stig_findings, sbom_records.
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 from flask import Blueprint, jsonify, request
 
-from icdev.tools.dashboard.config import DB_PATH
+from tools.dashboard.config import DB_PATH
 
 compliance_api = Blueprint("compliance_api", __name__, url_prefix="/api/compliance")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -102,9 +101,7 @@ def list_sbom():
                 (project_id,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM sbom_records ORDER BY generated_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM sbom_records ORDER BY generated_at DESC").fetchall()
         return jsonify({"sbom_records": [dict(r) for r in rows]})
     finally:
         conn.close()
@@ -142,14 +139,10 @@ def compliance_summary():
     conn = _get_db()
     try:
         # SSP counts by status
-        ssp_stats = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM ssp_documents GROUP BY status"
-        ).fetchall()
+        ssp_stats = conn.execute("SELECT status, COUNT(*) as cnt FROM ssp_documents GROUP BY status").fetchall()
 
         # POAM counts by status
-        poam_stats = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM poam_items GROUP BY status"
-        ).fetchall()
+        poam_stats = conn.execute("SELECT status, COUNT(*) as cnt FROM poam_items GROUP BY status").fetchall()
 
         # STIG counts by severity
         stig_stats = conn.execute(
@@ -161,11 +154,13 @@ def compliance_summary():
             "SELECT implementation_status, COUNT(*) as cnt FROM project_controls GROUP BY implementation_status"
         ).fetchall()
 
-        return jsonify({
-            "ssp_by_status": {r["status"]: r["cnt"] for r in ssp_stats},
-            "poam_by_status": {r["status"]: r["cnt"] for r in poam_stats},
-            "stig_findings": [dict(r) for r in stig_stats],
-            "controls_by_status": {r["implementation_status"]: r["cnt"] for r in control_stats},
-        })
+        return jsonify(
+            {
+                "ssp_by_status": {r["status"]: r["cnt"] for r in ssp_stats},
+                "poam_by_status": {r["status"]: r["cnt"] for r in poam_stats},
+                "stig_findings": [dict(r) for r in stig_stats],
+                "controls_by_status": {r["implementation_status"]: r["cnt"] for r in control_stats},
+            }
+        )
     finally:
         conn.close()

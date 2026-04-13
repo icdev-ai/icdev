@@ -26,17 +26,17 @@ import logging
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.compat.datetime_utils import utc_now_iso
+from tools.compat.datetime_utils import utc_now_iso  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "anvil_critique_config.yaml"
@@ -58,7 +58,12 @@ FINDING_TYPES = (
 SEVERITY_LEVELS = ("critical", "high", "medium", "low")
 
 SESSION_STATUSES = (
-    "in_progress", "go", "nogo", "conditional", "revised", "failed",
+    "in_progress",
+    "go",
+    "nogo",
+    "conditional",
+    "revised",
+    "failed",
 )
 
 CONSENSUS_VALUES = ("go", "nogo", "conditional")
@@ -70,6 +75,7 @@ CONSENSUS_VALUES = ("go", "nogo", "conditional")
 @dataclass
 class Finding:
     """A single critique finding from one agent."""
+
     id: str = ""
     session_id: str = ""
     critic_agent: str = ""
@@ -88,6 +94,7 @@ class Finding:
 @dataclass
 class CritiqueSession:
     """An ANVIL critique session spanning one or more rounds."""
+
     id: str = ""
     project_id: str = ""
     workflow_id: str = ""
@@ -115,6 +122,7 @@ def load_config(config_path: Path = None) -> dict:
     path = config_path or CONFIG_PATH
     try:
         import yaml
+
         with open(path, "r", encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
         return raw.get("anvil_critique", {})
@@ -132,16 +140,24 @@ def _default_config() -> dict:
         "enabled": True,
         "max_rounds": 3,
         "critics": [
-            {"agent": "security-agent", "role": "security_reviewer",
-             "focus": ["security_vulnerability", "data_handling_issue", "deployment_risk"],
-             "prompt_context": "Review the plan for security issues."},
-            {"agent": "compliance-agent", "role": "compliance_reviewer",
-             "focus": ["compliance_gap", "data_handling_issue"],
-             "prompt_context": "Review the plan for compliance gaps."},
-            {"agent": "knowledge-agent", "role": "patterns_reviewer",
-             "focus": ["architecture_flaw", "performance_risk",
-                       "maintainability_concern", "testing_gap"],
-             "prompt_context": "Review the plan for quality and pattern issues."},
+            {
+                "agent": "security-agent",
+                "role": "security_reviewer",
+                "focus": ["security_vulnerability", "data_handling_issue", "deployment_risk"],
+                "prompt_context": "Review the plan for security issues.",
+            },
+            {
+                "agent": "compliance-agent",
+                "role": "compliance_reviewer",
+                "focus": ["compliance_gap", "data_handling_issue"],
+                "prompt_context": "Review the plan for compliance gaps.",
+            },
+            {
+                "agent": "knowledge-agent",
+                "role": "patterns_reviewer",
+                "focus": ["architecture_flaw", "performance_risk", "maintainability_concern", "testing_gap"],
+                "prompt_context": "Review the plan for quality and pattern issues.",
+            },
         ],
         "consensus_rules": {
             "go": {"max_critical": 0, "max_high": 0},
@@ -160,8 +176,7 @@ def _default_config() -> dict:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Open a connection with row_factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -225,12 +240,13 @@ def ensure_tables(db_path: Path = None):
 # ---------------------------------------------------------------------------
 # Audit trail helper
 # ---------------------------------------------------------------------------
-def _audit(event_type: str, actor: str, action: str,
-           project_id: str = None, details: dict = None,
-           db_path: Path = None):
+def _audit(
+    event_type: str, actor: str, action: str, project_id: str = None, details: dict = None, db_path: Path = None
+):
     """Best-effort append-only audit logging."""
     try:
-        from icdev.tools.audit.audit_logger import log_event
+        from tools.audit.audit_logger import log_event
+
         log_event(
             event_type=event_type,
             actor=actor,
@@ -270,7 +286,8 @@ class AtlasCritique:
         """Return cached LLMRouter, creating if needed."""
         if self._llm_router is None:
             try:
-                from icdev.tools.llm.router import LLMRouter
+                from tools.llm.router import LLMRouter
+
                 self._llm_router = LLMRouter()
             except Exception:
                 self._llm_router = None
@@ -305,7 +322,10 @@ class AtlasCritique:
 
         effective_max = max_rounds or self._config.get("max_rounds", 3)
         session = self._create_session(
-            project_id, phase_output, workflow_id, effective_max,
+            project_id,
+            phase_output,
+            workflow_id,
+            effective_max,
         )
 
         current_plan = phase_output
@@ -319,7 +339,9 @@ class AtlasCritique:
 
             # 2. Collect and classify findings
             findings = self._collect_findings(
-                critic_results, session.id, round_num,
+                critic_results,
+                session.id,
+                round_num,
             )
             all_findings.extend(findings)
 
@@ -345,11 +367,11 @@ class AtlasCritique:
                 session.completed_at = utc_now_iso()
                 self._update_session(session)
                 _audit(
-                    "critique_completed", "atlas-critique",
+                    "critique_completed",
+                    "atlas-critique",
                     f"ANVIL critique GO after round {round_num}",
                     project_id=project_id,
-                    details={"session_id": session.id, "consensus": "go",
-                             "rounds": round_num},
+                    details={"session_id": session.id, "consensus": "go", "rounds": round_num},
                     db_path=self._db_path,
                 )
                 break
@@ -359,11 +381,11 @@ class AtlasCritique:
                 session.completed_at = utc_now_iso()
                 self._update_session(session)
                 _audit(
-                    "critique_completed", "atlas-critique",
+                    "critique_completed",
+                    "atlas-critique",
                     f"ANVIL critique NOGO — {counts['critical']} critical findings",
                     project_id=project_id,
-                    details={"session_id": session.id, "consensus": "nogo",
-                             "critical_count": counts["critical"]},
+                    details={"session_id": session.id, "consensus": "nogo", "critical_count": counts["critical"]},
                     db_path=self._db_path,
                 )
                 break
@@ -377,7 +399,8 @@ class AtlasCritique:
                 session.revision_summary = revision.get("summary", "")
                 self._update_session(session)
                 _audit(
-                    "critique_revision_requested", "atlas-critique",
+                    "critique_revision_requested",
+                    "atlas-critique",
                     f"ANVIL critique revision round {round_num}",
                     project_id=project_id,
                     details={"session_id": session.id, "round": round_num},
@@ -389,11 +412,11 @@ class AtlasCritique:
                 session.completed_at = utc_now_iso()
                 self._update_session(session)
                 _audit(
-                    "critique_completed", "atlas-critique",
+                    "critique_completed",
+                    "atlas-critique",
                     f"ANVIL critique CONDITIONAL — max rounds ({effective_max}) exhausted",
                     project_id=project_id,
-                    details={"session_id": session.id, "consensus": "conditional",
-                             "high_count": session.high_count},
+                    details={"session_id": session.id, "consensus": "conditional", "high_count": session.high_count},
                     db_path=self._db_path,
                 )
 
@@ -426,8 +449,7 @@ class AtlasCritique:
             result = dict(row)
             # Fetch associated findings
             findings = conn.execute(
-                "SELECT * FROM anvil_critique_findings WHERE session_id = ? "
-                "ORDER BY round_number, severity",
+                "SELECT * FROM anvil_critique_findings WHERE session_id = ? ORDER BY round_number, severity",
                 (session_id,),
             ).fetchall()
             result["findings"] = [dict(f) for f in findings]
@@ -440,8 +462,7 @@ class AtlasCritique:
         conn = _get_db(self._db_path)
         try:
             rows = conn.execute(
-                "SELECT * FROM anvil_critique_sessions "
-                "WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM anvil_critique_sessions WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
                 (project_id, limit),
             ).fetchall()
             sessions = [dict(r) for r in rows]
@@ -468,15 +489,11 @@ class AtlasCritique:
             id=f"crit-{uuid.uuid4().hex[:12]}",
             project_id=project_id,
             workflow_id=workflow_id or "",
-            phase_input_hash=hashlib.sha256(
-                phase_output.encode("utf-8")
-            ).hexdigest()[:16],
+            phase_input_hash=hashlib.sha256(phase_output.encode("utf-8")).hexdigest()[:16],
             status="in_progress",
             round_number=1,
             max_rounds=max_rounds,
-            critics_assigned=[
-                c["agent"] for c in self._config.get("critics", [])
-            ],
+            critics_assigned=[c["agent"] for c in self._config.get("critics", [])],
             created_at=utc_now_iso(),
         )
 
@@ -487,21 +504,28 @@ class AtlasCritique:
                    (id, project_id, workflow_id, phase_input_hash, status,
                     round_number, max_rounds, critics_assigned, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (session.id, session.project_id, session.workflow_id,
-                 session.phase_input_hash, session.status,
-                 session.round_number, session.max_rounds,
-                 json.dumps(session.critics_assigned), session.created_at),
+                (
+                    session.id,
+                    session.project_id,
+                    session.workflow_id,
+                    session.phase_input_hash,
+                    session.status,
+                    session.round_number,
+                    session.max_rounds,
+                    json.dumps(session.critics_assigned),
+                    session.created_at,
+                ),
             )
             conn.commit()
         finally:
             conn.close()
 
         _audit(
-            "critique_session_created", "atlas-critique",
+            "critique_session_created",
+            "atlas-critique",
             f"Created critique session {session.id}",
             project_id=project_id,
-            details={"session_id": session.id,
-                      "critics": session.critics_assigned},
+            details={"session_id": session.id, "critics": session.critics_assigned},
             db_path=self._db_path,
         )
         return session
@@ -517,11 +541,19 @@ class AtlasCritique:
                        high_count = ?, medium_count = ?, low_count = ?,
                        revision_summary = ?, completed_at = ?
                    WHERE id = ?""",
-                (session.status, session.round_number, session.consensus,
-                 session.total_findings, session.critical_count,
-                 session.high_count, session.medium_count, session.low_count,
-                 session.revision_summary, session.completed_at,
-                 session.id),
+                (
+                    session.status,
+                    session.round_number,
+                    session.consensus,
+                    session.total_findings,
+                    session.critical_count,
+                    session.high_count,
+                    session.medium_count,
+                    session.low_count,
+                    session.revision_summary,
+                    session.completed_at,
+                    session.id,
+                ),
             )
             conn.commit()
         finally:
@@ -563,27 +595,32 @@ class AtlasCritique:
             return {"agent": agent, "role": role, "findings": findings}
 
         with ThreadPoolExecutor(max_workers=len(critics) or 1) as executor:
-            futures = {
-                executor.submit(_invoke_critic, c): c for c in critics
-            }
+            futures = {executor.submit(_invoke_critic, c): c for c in critics}
             for future in as_completed(futures):
                 critic_cfg = futures[future]
                 try:
                     results.append(future.result())
                 except Exception as exc:
                     logger.error(
-                        "Critic %s failed: %s", critic_cfg["agent"], exc,
+                        "Critic %s failed: %s",
+                        critic_cfg["agent"],
+                        exc,
                     )
-                    results.append({
-                        "agent": critic_cfg["agent"],
-                        "role": critic_cfg.get("role", "reviewer"),
-                        "findings": [],
-                        "error": str(exc),
-                    })
+                    results.append(
+                        {
+                            "agent": critic_cfg["agent"],
+                            "role": critic_cfg.get("role", "reviewer"),
+                            "findings": [],
+                            "error": str(exc),
+                        }
+                    )
         return results
 
     def _call_agent(
-        self, agent_id: str, prompt: str, focus_areas: List[str],
+        self,
+        agent_id: str,
+        prompt: str,
+        focus_areas: List[str],
     ) -> List[dict]:
         """Invoke an agent for critique via LLM router.
 
@@ -595,7 +632,8 @@ class AtlasCritique:
             return []
 
         try:
-            from icdev.tools.llm.provider import LLMRequest
+            from tools.llm.provider import LLMRequest
+
             request = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -607,7 +645,9 @@ class AtlasCritique:
             return []
 
     def _parse_findings(
-        self, text: str, focus_areas: List[str],
+        self,
+        text: str,
+        focus_areas: List[str],
     ) -> List[dict]:
         """Parse LLM response text into structured findings.
 
@@ -662,9 +702,7 @@ class AtlasCritique:
                     "description": f.get("description", ""),
                     "evidence": f.get("evidence", ""),
                     "suggested_fix": f.get("suggested_fix", ""),
-                    "nist_controls": json.dumps(
-                        f.get("nist_controls", [])
-                    ),
+                    "nist_controls": json.dumps(f.get("nist_controls", [])),
                     "addressed_in_revision": 0,
                     "created_at": now,
                 }
@@ -685,11 +723,21 @@ class AtlasCritique:
                         evidence, suggested_fix, nist_controls,
                         addressed_in_revision, created_at)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (f["id"], f["session_id"], f["critic_agent"],
-                     f["round_number"], f["finding_type"], f["severity"],
-                     f["title"], f["description"], f["evidence"],
-                     f["suggested_fix"], f["nist_controls"],
-                     f["addressed_in_revision"], f["created_at"]),
+                    (
+                        f["id"],
+                        f["session_id"],
+                        f["critic_agent"],
+                        f["round_number"],
+                        f["finding_type"],
+                        f["severity"],
+                        f["title"],
+                        f["description"],
+                        f["evidence"],
+                        f["suggested_fix"],
+                        f["nist_controls"],
+                        f["addressed_in_revision"],
+                        f["created_at"],
+                    ),
                 )
             conn.commit()
         finally:
@@ -721,15 +769,16 @@ class AtlasCritique:
 
         # GO if 0 critical AND 0 high
         go_rules = rules.get("go", {"max_critical": 0, "max_high": 0})
-        if (counts["critical"] <= go_rules.get("max_critical", 0) and
-                counts["high"] <= go_rules.get("max_high", 0)):
+        if counts["critical"] <= go_rules.get("max_critical", 0) and counts["high"] <= go_rules.get("max_high", 0):
             return "go"
 
         # Otherwise CONDITIONAL
         return "conditional"
 
     def _request_revision(
-        self, findings: List[dict], original_plan: str,
+        self,
+        findings: List[dict],
+        original_plan: str,
     ) -> dict:
         """Ask the architect agent to revise the plan based on findings.
 
@@ -737,13 +786,9 @@ class AtlasCritique:
             dict with ``revised_plan`` and ``summary`` keys.
         """
         # Build findings summary for the revision prompt
-        high_and_critical = [
-            f for f in findings
-            if f.get("severity") in ("critical", "high")
-        ]
+        high_and_critical = [f for f in findings if f.get("severity") in ("critical", "high")]
         findings_text = "\n".join(
-            f"- [{f.get('severity', 'unknown').upper()}] {f.get('title', 'N/A')}: "
-            f"{f.get('description', '')}"
+            f"- [{f.get('severity', 'unknown').upper()}] {f.get('title', 'N/A')}: {f.get('description', '')}"
             for f in high_and_critical
         )
 
@@ -764,7 +809,8 @@ class AtlasCritique:
             }
 
         try:
-            from icdev.tools.llm.provider import LLMRequest
+            from tools.llm.provider import LLMRequest
+
             request = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -796,6 +842,7 @@ def _try_parse_json(text: str):
 
     # Try extracting from ```json ... ``` blocks
     import re
+
     match = re.search(r"```(?:json)?\s*\n(.*?)\n\s*```", text, re.DOTALL)
     if match:
         try:
@@ -809,7 +856,7 @@ def _try_parse_json(text: str):
         end = text.rfind(end_char)
         if start >= 0 and end > start:
             try:
-                return json.loads(text[start:end + 1])
+                return json.loads(text[start : end + 1])
             except (json.JSONDecodeError, ValueError):
                 pass
 
@@ -834,7 +881,9 @@ def main():
     parser.add_argument("--status", action="store_true", help="Get session status")
     parser.add_argument("--history", action="store_true", help="Get project critique history")
     parser.add_argument(
-        "--json", action="store_true", dest="json_output",
+        "--json",
+        action="store_true",
+        dest="json_output",
         help="Output as JSON",
     )
     parser.add_argument("--db-path", type=Path, help="Override database path")
@@ -873,7 +922,8 @@ def main():
     else:
         # Human-readable output
         try:
-            from icdev.tools.cli.output_formatter import format_banner  # noqa: F401
+            from tools.cli.output_formatter import format_banner  # noqa: F401
+
             print(format_banner("ANVIL Critique Phase"))
         except ImportError:
             print("=" * 60)

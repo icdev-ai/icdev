@@ -11,7 +11,7 @@ Architecture Decision D44: Flag-based backward compatibility —
 ICDEV_FORCE_POLLING=true overrides detection.
 
 Usage:
-    from icdev.tools.ci.core.air_gap_detector import detect_connectivity
+    from tools.ci.core.air_gap_detector import detect_connectivity
     result = detect_connectivity()
     # {"mode": "webhook", "can_reach_github": True, "can_reach_gitlab": True}
 """

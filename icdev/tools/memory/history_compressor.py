@@ -8,7 +8,7 @@ Summarization via LLMRouter (falls back to truncation).
 Originals preserved in DB (is_compressed=0).
 
 Usage:
-    from icdev.tools.memory.history_compressor import HistoryCompressor
+    from tools.memory.history_compressor import HistoryCompressor
 
     compressor = HistoryCompressor()
     compressed = compressor.compress(messages, budget_tokens=4000)
@@ -23,18 +23,105 @@ from typing import Dict, List, Optional
 logger = logging.getLogger("icdev.history_compressor")
 
 # Stopwords for keyword extraction (small set, air-gap safe)
-_STOPWORDS = frozenset({
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "must", "need", "this",
-    "that", "these", "those", "it", "its", "i", "you", "he", "she", "we",
-    "they", "me", "him", "her", "us", "them", "my", "your", "his", "our",
-    "their", "what", "which", "who", "whom", "when", "where", "why", "how",
-    "not", "no", "but", "or", "and", "if", "then", "else", "for", "in",
-    "on", "at", "to", "of", "by", "with", "from", "as", "into", "about",
-    "so", "up", "out", "just", "also", "very", "too", "all", "any", "each",
-    "some", "more", "most", "other", "than", "only", "own", "same", "such",
-})
+_STOPWORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "can",
+        "shall",
+        "must",
+        "need",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "i",
+        "you",
+        "he",
+        "she",
+        "we",
+        "they",
+        "me",
+        "him",
+        "her",
+        "us",
+        "them",
+        "my",
+        "your",
+        "his",
+        "our",
+        "their",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "when",
+        "where",
+        "why",
+        "how",
+        "not",
+        "no",
+        "but",
+        "or",
+        "and",
+        "if",
+        "then",
+        "else",
+        "for",
+        "in",
+        "on",
+        "at",
+        "to",
+        "of",
+        "by",
+        "with",
+        "from",
+        "as",
+        "into",
+        "about",
+        "so",
+        "up",
+        "out",
+        "just",
+        "also",
+        "very",
+        "too",
+        "all",
+        "any",
+        "each",
+        "some",
+        "more",
+        "most",
+        "other",
+        "than",
+        "only",
+        "own",
+        "same",
+        "such",
+    }
+)
 
 # Default budget allocation
 DEFAULT_BUDGET = {
@@ -119,52 +206,50 @@ class HistoryCompressor:
             bulk_topics = boundaries[:-2]
             bulk_messages = []
             for b in bulk_topics:
-                bulk_messages.extend(
-                    m for m in messages
-                    if b.start_turn <= m.get("turn_number", 0) <= b.end_turn
-                )
+                bulk_messages.extend(m for m in messages if b.start_turn <= m.get("turn_number", 0) <= b.end_turn)
             if bulk_messages:
                 bulk_summary = self._merge_summaries(
-                    [self._summarize_topic(
-                        [m for m in messages if b.start_turn <= m.get("turn_number", 0) <= b.end_turn],
-                        max_tokens=bulk_budget // max(len(bulk_topics), 1),
-                    ) for b in bulk_topics],
+                    [
+                        self._summarize_topic(
+                            [m for m in messages if b.start_turn <= m.get("turn_number", 0) <= b.end_turn],
+                            max_tokens=bulk_budget // max(len(bulk_topics), 1),
+                        )
+                        for b in bulk_topics
+                    ],
                     max_tokens=bulk_budget,
                 )
                 if bulk_summary:
-                    result.append({
-                        "role": "system",
-                        "content": f"[Compressed history — {len(bulk_topics)} topics]\n{bulk_summary}",
-                        "content_type": "summary",
-                        "is_compressed": True,
-                        "compression_tier": "bulk",
-                    })
+                    result.append(
+                        {
+                            "role": "system",
+                            "content": f"[Compressed history — {len(bulk_topics)} topics]\n{bulk_summary}",
+                            "content_type": "summary",
+                            "is_compressed": True,
+                            "compression_tier": "bulk",
+                        }
+                    )
 
         # Tier 2: Historical — summaries of middle topics
         if len(boundaries) > 1:
             hist_topics = boundaries[-2:-1] if len(boundaries) > 2 else boundaries[:-1]
             per_topic_budget = historical_budget // max(len(hist_topics), 1)
             for b in hist_topics:
-                topic_msgs = [
-                    m for m in messages
-                    if b.start_turn <= m.get("turn_number", 0) <= b.end_turn
-                ]
+                topic_msgs = [m for m in messages if b.start_turn <= m.get("turn_number", 0) <= b.end_turn]
                 summary = self._summarize_topic(topic_msgs, max_tokens=per_topic_budget)
                 if summary:
-                    result.append({
-                        "role": "system",
-                        "content": f"[Topic summary — turns {b.start_turn}-{b.end_turn}]\n{summary}",
-                        "content_type": "summary",
-                        "is_compressed": True,
-                        "compression_tier": "historical",
-                    })
+                    result.append(
+                        {
+                            "role": "system",
+                            "content": f"[Topic summary — turns {b.start_turn}-{b.end_turn}]\n{summary}",
+                            "content_type": "summary",
+                            "is_compressed": True,
+                            "compression_tier": "historical",
+                        }
+                    )
 
         # Tier 1: Current — keep most recent topic messages within budget
         current_boundary = boundaries[-1]
-        current_msgs = [
-            m for m in messages
-            if m.get("turn_number", 0) >= current_boundary.start_turn
-        ]
+        current_msgs = [m for m in messages if m.get("turn_number", 0) >= current_boundary.start_turn]
         result.extend(self._truncate_to_budget(current_msgs, current_budget))
 
         return result
@@ -197,8 +282,8 @@ class HistoryCompressor:
             # Check keyword shift
             if not is_boundary and i >= 3:
                 # Compare keywords of last 3 messages vs current 3 messages
-                prev_window = messages[max(0, i - 3):i]
-                curr_window = messages[i:min(len(messages), i + 3)]
+                prev_window = messages[max(0, i - 3) : i]
+                curr_window = messages[i : min(len(messages), i + 3)]
                 prev_kw = self._extract_keywords_from_messages(prev_window)
                 curr_kw = self._extract_keywords_from_messages(curr_window)
 
@@ -212,24 +297,28 @@ class HistoryCompressor:
             if is_boundary:
                 segment_msgs = messages[current_start:i]
                 keywords = list(self._extract_keywords_from_messages(segment_msgs))[:10]
-                boundaries.append(TopicBoundary(
-                    start_turn=messages[current_start].get("turn_number", current_start),
-                    end_turn=messages[i - 1].get("turn_number", i - 1),
-                    keywords=keywords,
-                    message_count=len(segment_msgs),
-                ))
+                boundaries.append(
+                    TopicBoundary(
+                        start_turn=messages[current_start].get("turn_number", current_start),
+                        end_turn=messages[i - 1].get("turn_number", i - 1),
+                        keywords=keywords,
+                        message_count=len(segment_msgs),
+                    )
+                )
                 current_start = i
 
         # Final segment
         final_msgs = messages[current_start:]
         if final_msgs:
             keywords = list(self._extract_keywords_from_messages(final_msgs))[:10]
-            boundaries.append(TopicBoundary(
-                start_turn=messages[current_start].get("turn_number", current_start),
-                end_turn=messages[-1].get("turn_number", len(messages) - 1),
-                keywords=keywords,
-                message_count=len(final_msgs),
-            ))
+            boundaries.append(
+                TopicBoundary(
+                    start_turn=messages[current_start].get("turn_number", current_start),
+                    end_turn=messages[-1].get("turn_number", len(messages) - 1),
+                    keywords=keywords,
+                    message_count=len(final_msgs),
+                )
+            )
 
         return boundaries
 
@@ -242,26 +331,26 @@ class HistoryCompressor:
         if not messages:
             return ""
 
-        combined = "\n".join(
-            f"{m.get('role', 'user')}: {m.get('content', '')}"
-            for m in messages
-        )
+        combined = "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages)
 
         # Try LLM summarization
         try:
-            from icdev.tools.llm.router import LLMRouter
+            from tools.llm.router import LLMRouter
+
             router = LLMRouter()
-            from icdev.tools.llm.provider import LLMRequest
+            from tools.llm.provider import LLMRequest
 
             request = LLMRequest(
-                messages=[{
-                    "role": "user",
-                    "content": f"Summarize this conversation segment in {max_tokens // 4} words or fewer:\n\n{combined[:3000]}",
-                }],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Summarize this conversation segment in {max_tokens // 4} words or fewer:\n\n{combined[:3000]}",
+                    }
+                ],
             )
             response = router.invoke("history_summarize", request)
             summary = response.content if response.content else str(response)
-            return summary[:max_tokens * 4]  # Rough token-to-char ratio
+            return summary[: max_tokens * 4]  # Rough token-to-char ratio
         except (ImportError, Exception) as exc:
             logger.debug("LLM summarization unavailable: %s — using truncation", exc)
 
@@ -269,7 +358,7 @@ class HistoryCompressor:
         max_chars = max_tokens * 4
         if len(combined) <= max_chars:
             return combined
-        return combined[:max_chars - 3] + "..."
+        return combined[: max_chars - 3] + "..."
 
     def _merge_summaries(
         self,
@@ -281,7 +370,7 @@ class HistoryCompressor:
         max_chars = max_tokens * 4
         if len(combined) <= max_chars:
             return combined
-        return combined[:max_chars - 3] + "..."
+        return combined[: max_chars - 3] + "..."
 
     def _truncate_to_budget(
         self,
@@ -307,7 +396,7 @@ class HistoryCompressor:
     @staticmethod
     def _extract_keywords(text: str) -> set:
         """Extract keywords from text using stdlib word extraction + stopword filter."""
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+        words = re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())
         return {w for w in words if w not in _STOPWORDS}
 
     def _extract_keywords_from_messages(self, messages: List[dict]) -> set:

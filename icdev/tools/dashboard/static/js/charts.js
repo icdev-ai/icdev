@@ -4,15 +4,15 @@
 (function () {
   'use strict';
 
-  var NS = window.ICDEV™ || (window.ICDEV™ = {});
+  var NS = window.ICDEV || (window.ICDEV = {});
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────────
 
   var _tooltipEl = null;
 
-  /** Delegate to shared ICDEV™.escapeHTML (api.js). */
+  /** Delegate to shared ICDEV.escapeHTML (api.js). */
   function escapeHTML(str) {
-    return ICDEV™.escapeHTML ? ICDEV™.escapeHTML(str) : String(str || '');
+    return ICDEV.escapeHTML ? ICDEV.escapeHTML(str) : String(str || '');
   }
 
   function cssVar(name, fallback) {
@@ -322,9 +322,11 @@
     opts = opts || {};
     var series   = opts.series || [];
     var labels   = opts.labels || [];
-    var H        = opts.height || 220;
+    var baseH    = opts.height || 220;
     var W        = container.offsetWidth || 400;
-    var padL = 48, padR = 12, padT = 16, padB = 32;
+    var rotateLabels = opts.rotateLabels !== undefined ? opts.rotateLabels : (labels.length > 4);
+    var padL = 48, padR = 12, padT = 16, padB = 28;
+    var H = baseH;
     var plotW = W - padL - padR;
     var plotH = H - padT - padB;
 
@@ -335,11 +337,13 @@
     });
     var scale = niceScale(0, Math.max.apply(null, allVals));
 
+    var svgH = rotateLabels ? H + 40 : H;
     var svg = svgEl('svg', {
-      width: W, height: H, viewBox: '0 0 ' + W + ' ' + H,
+      width: W, height: svgH, viewBox: '0 0 ' + W + ' ' + svgH,
       role: 'img', 'aria-label': 'Bar chart: ' + series.map(function (s) { return s.name; }).join(', ')
     });
     svg.style.display = 'block';
+    svg.style.overflow = 'visible';
 
     // Grid + y-axis
     scale.values.forEach(function (v) {
@@ -366,10 +370,15 @@
     labels.forEach(function (lbl, gi) {
       // X-axis label
       var gx = padL + gi * groupW + groupW / 2;
-      var txt = svgEl('text', {
-        x: gx, y: H - 4, fill: palette('muted'),
-        'font-size': '10', 'text-anchor': 'middle'
-      });
+      var lblY = baseline + 12;
+      var lblAttrs = {
+        x: gx, y: lblY, fill: palette('muted'),
+        'font-size': '11', 'text-anchor': rotateLabels ? 'end' : 'middle'
+      };
+      if (rotateLabels) {
+        lblAttrs.transform = 'rotate(-45,' + gx + ',' + lblY + ')';
+      }
+      var txt = svgEl('text', lblAttrs);
       txt.textContent = escapeHTML(String(lbl));
       svg.appendChild(txt);
 

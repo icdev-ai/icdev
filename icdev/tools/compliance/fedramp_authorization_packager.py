@@ -22,9 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 from uuid import uuid4
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -46,15 +45,17 @@ def package_authorization(project_id: str, output_dir: Path = None) -> Dict[str,
 
     # 1. KSI Evidence
     ksi_result = generate_all_ksis(project_id, DB_PATH)
-    artifacts.append({
-        "artifact": "KSI Evidence Bundle",
-        "available": ksi_result.get("total_ksis", 0) > 0,
-        "status": "ready",
-        "details": {
-            "total_ksis": ksi_result.get("total_ksis", 0),
-            "coverage_pct": ksi_result.get("coverage_pct", 0),
-        },
-    })
+    artifacts.append(
+        {
+            "artifact": "KSI Evidence Bundle",
+            "available": ksi_result.get("total_ksis", 0) > 0,
+            "status": "ready",
+            "details": {
+                "total_ksis": ksi_result.get("total_ksis", 0),
+                "coverage_pct": ksi_result.get("coverage_pct", 0),
+            },
+        }
+    )
 
     # 2. OSCAL SSP
     oscal_gen = BASE_DIR / "tools" / "compliance" / "oscal_generator.py"
@@ -122,7 +123,9 @@ def main():
 
     if args.human:
         print(f"\nFedRAMP 20x Authorization Package — {result['project_id']}")
-        print(f"Readiness: {result['readiness_pct']}% ({result['artifacts_ready']}/{result['artifacts_total']} artifacts)")
+        print(
+            f"Readiness: {result['readiness_pct']}% ({result['artifacts_ready']}/{result['artifacts_total']} artifacts)"
+        )
         print("-" * 50)
         for a in result["artifacts"]:
             icon = "+" if a.get("available") else "-"

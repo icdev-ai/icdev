@@ -13,15 +13,14 @@ Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
 
-import json
 import logging
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
 logger = logging.getLogger("icdev.extensions.ai_governance_chat")
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # ---------------------------------------------------------------------------
@@ -40,21 +39,41 @@ def _load_config() -> dict:
     config_path = BASE_DIR / "args" / "ai_governance_config.yaml"
     defaults = {
         "advisory_cooldown_turns": 5,
-        "ai_keywords": ["ai system", "machine learning", "ml model", "deep learning",
-                        "neural network", "nlp", "computer vision", "recommendation",
-                        "predictive model", "automated decision", "algorithmic",
-                        "chatbot", "generative ai", "llm", "foundation model",
-                        "model training", "model card", "model performance",
-                        "ai governance", "responsible ai"],
+        "ai_keywords": [
+            "ai system",
+            "machine learning",
+            "ml model",
+            "deep learning",
+            "neural network",
+            "nlp",
+            "computer vision",
+            "recommendation",
+            "predictive model",
+            "automated decision",
+            "algorithmic",
+            "chatbot",
+            "generative ai",
+            "llm",
+            "foundation model",
+            "model training",
+            "model card",
+            "model performance",
+            "ai governance",
+            "responsible ai",
+        ],
         "advisory_priority_order": [
-            "oversight_plan_missing", "impact_assessment_missing",
-            "model_card_missing", "caio_not_designated",
-            "fairness_not_assessed", "reassessment_overdue",
+            "oversight_plan_missing",
+            "impact_assessment_missing",
+            "model_card_missing",
+            "caio_not_designated",
+            "fairness_not_assessed",
+            "reassessment_overdue",
         ],
     }
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
             chat_cfg = cfg.get("ai_governance", {}).get("chat_governance", {})
@@ -91,6 +110,7 @@ def _record_advisory(context_id: str, turn_number: int):
 # Governance gap checking
 # ---------------------------------------------------------------------------
 
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     row = conn.execute(
         "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name=?",
@@ -105,8 +125,7 @@ def _check_governance_gaps(project_id: str) -> list:
         return []
 
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(DB_PATH))
     except Exception:
         return []
 
@@ -119,12 +138,14 @@ def _check_governance_gaps(project_id: str) -> list:
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
-                gaps.append({
-                    "id": "oversight_plan_missing",
-                    "severity": "high",
-                    "message": "No human oversight plan registered for AI systems in this project.",
-                    "action": "Register an oversight plan via /icdev-accountability.",
-                })
+                gaps.append(
+                    {
+                        "id": "oversight_plan_missing",
+                        "severity": "high",
+                        "message": "No human oversight plan registered for AI systems in this project.",
+                        "action": "Register an oversight plan via /icdev-accountability.",
+                    }
+                )
 
         # Check impact assessment
         if _table_exists(conn, "ai_ethics_reviews"):
@@ -134,12 +155,14 @@ def _check_governance_gaps(project_id: str) -> list:
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
-                gaps.append({
-                    "id": "impact_assessment_missing",
-                    "severity": "high",
-                    "message": "No algorithmic impact assessment has been completed.",
-                    "action": "Conduct an impact assessment via /icdev-accountability.",
-                })
+                gaps.append(
+                    {
+                        "id": "impact_assessment_missing",
+                        "severity": "high",
+                        "message": "No algorithmic impact assessment has been completed.",
+                        "action": "Conduct an impact assessment via /icdev-accountability.",
+                    }
+                )
 
         # Check model cards
         if _table_exists(conn, "ai_model_cards"):
@@ -148,12 +171,14 @@ def _check_governance_gaps(project_id: str) -> list:
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
-                gaps.append({
-                    "id": "model_card_missing",
-                    "severity": "medium",
-                    "message": "No model cards documented for AI models in this project.",
-                    "action": "Create model cards via /icdev-transparency.",
-                })
+                gaps.append(
+                    {
+                        "id": "model_card_missing",
+                        "severity": "medium",
+                        "message": "No model cards documented for AI models in this project.",
+                        "action": "Create model cards via /icdev-transparency.",
+                    }
+                )
 
         # Check CAIO designation
         if _table_exists(conn, "ai_caio_registry"):
@@ -162,12 +187,14 @@ def _check_governance_gaps(project_id: str) -> list:
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
-                gaps.append({
-                    "id": "caio_not_designated",
-                    "severity": "medium",
-                    "message": "No Chief AI Officer (CAIO) has been designated.",
-                    "action": "Designate a CAIO via /icdev-accountability.",
-                })
+                gaps.append(
+                    {
+                        "id": "caio_not_designated",
+                        "severity": "medium",
+                        "message": "No Chief AI Officer (CAIO) has been designated.",
+                        "action": "Designate a CAIO via /icdev-accountability.",
+                    }
+                )
 
         # Check reassessment schedule
         if _table_exists(conn, "ai_reassessment_schedule"):
@@ -176,12 +203,14 @@ def _check_governance_gaps(project_id: str) -> list:
                 (project_id,),
             ).fetchone()
             if (cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]) == 0:
-                gaps.append({
-                    "id": "reassessment_overdue",
-                    "severity": "low",
-                    "message": "No reassessment schedule configured for AI systems.",
-                    "action": "Schedule reassessments via /icdev-accountability.",
-                })
+                gaps.append(
+                    {
+                        "id": "reassessment_overdue",
+                        "severity": "low",
+                        "message": "No reassessment schedule configured for AI systems.",
+                        "action": "Schedule reassessments via /icdev-accountability.",
+                    }
+                )
     except Exception as exc:
         logger.debug("Error checking governance gaps: %s", exc)
     finally:
@@ -193,6 +222,7 @@ def _check_governance_gaps(project_id: str) -> list:
 # ---------------------------------------------------------------------------
 # Hook handler
 # ---------------------------------------------------------------------------
+
 
 def handle(context: dict) -> dict:
     """chat_message_after handler — inject governance advisory if AI topic detected.

@@ -24,14 +24,13 @@ import argparse
 import ast
 import hashlib
 import json
-import os
 import re
 import sys
 import textwrap
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 CUI_BANNER = "CUI // SP-CTI"
 
 SUPPORTED_LANGUAGES = {
@@ -45,9 +44,22 @@ SUPPORTED_LANGUAGES = {
 }
 
 EXCLUDE_DIRS = {
-    "__pycache__", ".git", "node_modules", "target", "bin", "obj",
-    ".venv", "venv", "env", ".tox", ".mypy_cache", ".pytest_cache",
-    "dist", "build", ".tmp", "vendor",
+    "__pycache__",
+    ".git",
+    "node_modules",
+    "target",
+    "bin",
+    "obj",
+    ".venv",
+    "venv",
+    "env",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".tmp",
+    "vendor",
 }
 
 EXCLUDE_FILES = {"__init__.py", "setup.py", "conftest.py"}
@@ -63,12 +75,14 @@ def _extract_python(source_code, file_path):
     try:
         tree = ast.parse(source_code)
     except SyntaxError as e:
-        return [{
-            "kind": "error",
-            "name": str(file_path),
-            "error": f"SyntaxError: {e}",
-            "line_start": getattr(e, "lineno", 0),
-        }]
+        return [
+            {
+                "kind": "error",
+                "name": str(file_path),
+                "error": f"SyntaxError: {e}",
+                "line_start": getattr(e, "lineno", 0),
+            }
+        ]
 
     lines = source_code.split("\n")
     imports = []
@@ -109,7 +123,7 @@ def _python_function_to_ir(node, lines, full_source):
 
     line_start = node.lineno
     line_end = node.end_lineno or node.lineno
-    source_lines = lines[line_start - 1: line_end]
+    source_lines = lines[line_start - 1 : line_end]
     source_text = "\n".join(source_lines)
 
     # Detect idioms
@@ -134,10 +148,7 @@ def _python_function_to_ir(node, lines, full_source):
         "idioms": idioms,
         "complexity": complexity,
         "dependencies": [],
-        "decorators": [
-            ast.get_source_segment(full_source, d) or ""
-            for d in node.decorator_list
-        ],
+        "decorators": [ast.get_source_segment(full_source, d) or "" for d in node.decorator_list],
     }
 
 
@@ -145,7 +156,7 @@ def _python_class_to_ir(node, lines, full_source):
     """Convert a Python class AST node to IR unit."""
     line_start = node.lineno
     line_end = node.end_lineno or node.lineno
-    source_lines = lines[line_start - 1: line_end]
+    source_lines = lines[line_start - 1 : line_end]
     source_text = "\n".join(source_lines)
 
     bases = []
@@ -157,12 +168,14 @@ def _python_class_to_ir(node, lines, full_source):
     methods = []
     for item in node.body:
         if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            methods.append({
-                "name": item.name,
-                "is_async": isinstance(item, ast.AsyncFunctionDef),
-                "line_start": item.lineno,
-                "line_end": item.end_lineno or item.lineno,
-            })
+            methods.append(
+                {
+                    "name": item.name,
+                    "is_async": isinstance(item, ast.AsyncFunctionDef),
+                    "line_start": item.lineno,
+                    "line_end": item.end_lineno or item.lineno,
+                }
+            )
 
     return {
         "kind": "class",
@@ -178,10 +191,7 @@ def _python_class_to_ir(node, lines, full_source):
         "idioms": _detect_python_idioms(source_text),
         "complexity": _count_branches(source_text),
         "dependencies": [],
-        "decorators": [
-            ast.get_source_segment(full_source, d) or ""
-            for d in node.decorator_list
-        ],
+        "decorators": [ast.get_source_segment(full_source, d) or "" for d in node.decorator_list],
     }
 
 
@@ -271,23 +281,25 @@ def _extract_regex(source_code, file_path, language):
                 groups = m.groups()
                 func_name = groups[1] if language in ("java", "csharp") else groups[0]
                 end_line = _find_block_end(lines, i)
-                source_text = "\n".join(lines[i:end_line + 1])
-                units.append({
-                    "kind": "function",
-                    "name": func_name,
-                    "is_async": "async" in line,
-                    "parameters": _parse_params_regex(groups),
-                    "return_type": _parse_return_type(groups, language),
-                    "line_start": i + 1,
-                    "line_end": end_line + 1,
-                    "line_count": end_line - i + 1,
-                    "source_code": source_text,
-                    "source_hash": hashlib.sha256(source_text.encode()).hexdigest()[:16],
-                    "idioms": _detect_language_idioms(source_text, language),
-                    "complexity": _count_branches(source_text),
-                    "dependencies": [],
-                    "file_path": str(file_path),
-                })
+                source_text = "\n".join(lines[i : end_line + 1])
+                units.append(
+                    {
+                        "kind": "function",
+                        "name": func_name,
+                        "is_async": "async" in line,
+                        "parameters": _parse_params_regex(groups),
+                        "return_type": _parse_return_type(groups, language),
+                        "line_start": i + 1,
+                        "line_end": end_line + 1,
+                        "line_count": end_line - i + 1,
+                        "source_code": source_text,
+                        "source_hash": hashlib.sha256(source_text.encode()).hexdigest()[:16],
+                        "idioms": _detect_language_idioms(source_text, language),
+                        "complexity": _count_branches(source_text),
+                        "dependencies": [],
+                        "file_path": str(file_path),
+                    }
+                )
 
     # Extract classes/structs
     if class_pat:
@@ -296,23 +308,29 @@ def _extract_regex(source_code, file_path, language):
             if m:
                 class_name = m.group(1)
                 end_line = _find_block_end(lines, i)
-                source_text = "\n".join(lines[i:end_line + 1])
-                units.append({
-                    "kind": "class",
-                    "name": class_name,
-                    "bases": [b.strip() for b in (m.group(2) or "").split(",") if b.strip()] if m.lastindex >= 2 else [],
-                    "methods": [],
-                    "method_count": source_text.count("func ") + source_text.count("def ") + source_text.count("fn "),
-                    "line_start": i + 1,
-                    "line_end": end_line + 1,
-                    "line_count": end_line - i + 1,
-                    "source_code": source_text,
-                    "source_hash": hashlib.sha256(source_text.encode()).hexdigest()[:16],
-                    "idioms": _detect_language_idioms(source_text, language),
-                    "complexity": _count_branches(source_text),
-                    "dependencies": [],
-                    "file_path": str(file_path),
-                })
+                source_text = "\n".join(lines[i : end_line + 1])
+                units.append(
+                    {
+                        "kind": "class",
+                        "name": class_name,
+                        "bases": [b.strip() for b in (m.group(2) or "").split(",") if b.strip()]
+                        if m.lastindex >= 2
+                        else [],
+                        "methods": [],
+                        "method_count": source_text.count("func ")
+                        + source_text.count("def ")
+                        + source_text.count("fn "),
+                        "line_start": i + 1,
+                        "line_end": end_line + 1,
+                        "line_count": end_line - i + 1,
+                        "source_code": source_text,
+                        "source_hash": hashlib.sha256(source_text.encode()).hexdigest()[:16],
+                        "idioms": _detect_language_idioms(source_text, language),
+                        "complexity": _count_branches(source_text),
+                        "dependencies": [],
+                        "file_path": str(file_path),
+                    }
+                )
 
     return units, imports
 
@@ -388,9 +406,18 @@ def _detect_language_idioms(source_text, language):
 def _count_branches(source_text):
     """Count approximate cyclomatic complexity."""
     branch_keywords = [
-        r"\bif\b", r"\belif\b", r"\belse\s+if\b", r"\bfor\b",
-        r"\bwhile\b", r"\bcase\b", r"\bcatch\b", r"\bexcept\b",
-        r"\b\?\b", r"\?\?", r"&&", r"\|\|",
+        r"\bif\b",
+        r"\belif\b",
+        r"\belse\s+if\b",
+        r"\bfor\b",
+        r"\bwhile\b",
+        r"\bcase\b",
+        r"\bcatch\b",
+        r"\bexcept\b",
+        r"\b\?\b",
+        r"\?\?",
+        r"&&",
+        r"\|\|",
     ]
     count = 1  # Base complexity
     for kw in branch_keywords:
@@ -519,10 +546,7 @@ def build_dependency_graph(units):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            f"{CUI_BANNER}\n"
-            "ICDEV™ Source Extractor — Phase 1: AST/Regex -> IR JSON (D243)"
-        ),
+        description=(f"{CUI_BANNER}\nICDEV™ Source Extractor — Phase 1: AST/Regex -> IR JSON (D243)"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\
             Examples:
@@ -534,8 +558,7 @@ def main():
         """),
     )
     parser.add_argument("--source-path", required=True, help="Source code directory or file")
-    parser.add_argument("--language", required=True, choices=list(SUPPORTED_LANGUAGES.keys()),
-                        help="Source language")
+    parser.add_argument("--language", required=True, choices=list(SUPPORTED_LANGUAGES.keys()), help="Source language")
     parser.add_argument("--output-ir", help="Output IR JSON file path")
     parser.add_argument("--project-id", default="", help="Project ID for audit trail")
     parser.add_argument("--exclude-tests", action="store_true", help="Exclude test files")
@@ -573,7 +596,8 @@ def main():
     if args.project_id:
         try:
             sys.path.insert(0, str(BASE_DIR))
-            from icdev.tools.audit.audit_logger import log_event
+            from tools.audit.audit_logger import log_event
+
             log_event(
                 event_type="translation.extract",
                 actor="source-extractor",
@@ -594,15 +618,14 @@ def main():
         # Don't include full source code in CLI output (too large)
         summary = dict(result)
         if "units" in summary:
-            summary["units"] = [
-                {k: v for k, v in u.items() if k != "source_code"}
-                for u in summary["units"]
-            ]
+            summary["units"] = [{k: v for k, v in u.items() if k != "source_code"} for u in summary["units"]]
         print(json.dumps(summary, indent=2))
     else:
-        print(f"[INFO] Extracted {result.get('total_units', 0)} units from "
-              f"{result.get('file_count', 0)} {args.language} files "
-              f"({result.get('total_lines', 0)} lines)")
+        print(
+            f"[INFO] Extracted {result.get('total_units', 0)} units from "
+            f"{result.get('file_count', 0)} {args.language} files "
+            f"({result.get('total_lines', 0)} lines)"
+        )
         if args.output_ir:
             print(f"[INFO] IR written to: {args.output_ir}")
 

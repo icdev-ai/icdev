@@ -24,15 +24,14 @@ import json
 import os
 import re
 import signal
-import sqlite3
 import subprocess
 import sys
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 if str(BASE_DIR) not in sys.path:
@@ -74,7 +73,7 @@ def extract_icdev_tag(text: str) -> Optional[str]:
 def is_claimed(issue_iid: int) -> bool:
     """Check if an issue has already been claimed."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         row = conn.execute(
             "SELECT id FROM gitlab_task_claims WHERE issue_iid = ? AND status NOT IN ('failed')",
             (issue_iid,),
@@ -88,15 +87,15 @@ def is_claimed(issue_iid: int) -> bool:
 def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: str = None) -> str:
     """Claim an issue for processing. Returns claim ID."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute(
+        conn = get_connection()
+        cur = conn.execute(
             """INSERT INTO gitlab_task_claims
                (issue_iid, issue_url, icdev_tag, worktree_name, status)
                VALUES (?, ?, ?, ?, 'claimed')""",
             (issue_iid, issue_url, icdev_tag, worktree_name),
         )
         conn.commit()
-        claim_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        claim_id = cur.lastrowid
         conn.close()
         return str(claim_id)
     except Exception as e:
@@ -107,10 +106,10 @@ def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: s
 def update_claim(issue_iid: int, status: str, run_id: str = None):
     """Update claim status."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         if run_id:
             conn.execute(
-                "UPDATE gitlab_task_claims SET status = ?, run_id = ?, completed_at = datetime('now') WHERE issue_iid = ? AND status = 'claimed'",
+                "UPDATE gitlab_task_claims SET status = ?, run_id = ?, completed_at = datetime('now') WHERE issue_iid = ? AND status = 'claimed'",  # noqa: E501
                 (status, run_id, issue_iid),
             )
         else:
@@ -130,7 +129,10 @@ def add_comment(issue_iid: int, message: str):
     try:
         subprocess.run(
             ["glab", "issue", "note", str(issue_iid), "-m", full_message],
-            capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(BASE_DIR),
         )
     except Exception as e:
         print(f"Warning: Failed to comment on issue {issue_iid}: {e}", file=sys.stderr)
@@ -141,14 +143,18 @@ def add_label(issue_iid: int, label: str):
     try:
         subprocess.run(
             ["glab", "issue", "update", str(issue_iid), "--label", label],
-            capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(BASE_DIR),
         )
     except Exception as e:
         print(f"Warning: Failed to add label to issue {issue_iid}: {e}", file=sys.stderr)
 
 
-def spawn_workflow(tag: str, issue_iid: int, issue_data: dict,
-                   worktree_path: str = None, dry_run: bool = False) -> Optional[str]:
+def spawn_workflow(
+    tag: str, issue_iid: int, issue_data: dict, worktree_path: str = None, dry_run: bool = False
+) -> Optional[str]:
     """Route issue through EventEnvelope + EventRouter (D132).
 
     Replaces the old hardcoded workflow_map routing. EventRouter determines
@@ -160,8 +166,8 @@ def spawn_workflow(tag: str, issue_iid: int, issue_data: dict,
         return "dry-run"
 
     try:
-        from icdev.tools.ci.core.event_envelope import EventEnvelope
-        from icdev.tools.ci.core.event_router import EventRouter
+        from tools.ci.core.event_envelope import EventEnvelope
+        from tools.ci.core.event_router import EventRouter
 
         # Normalize into EventEnvelope using GitLab tag factory
         envelope = EventEnvelope.from_gitlab_tag(issue_data, tag)
@@ -195,7 +201,9 @@ def spawn_workflow(tag: str, issue_iid: int, issue_data: dict,
             return None
         cwd = worktree_path or str(BASE_DIR)
         popen_kwargs = dict(
-            cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         if os.name == "nt":
@@ -214,7 +222,10 @@ def list_open_issues(label: str = "icdev") -> list:
     try:
         result = subprocess.run(
             ["glab", "issue", "list", "--label", label, "--state", "opened", "--output", "json"],
-            capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(BASE_DIR),
         )
         if result.returncode == 0 and result.stdout.strip():
             return json.loads(result.stdout)
@@ -274,7 +285,8 @@ def poll_gitlab_tasks(interval: int = 20, dry_run: bool = False):
                 # Optionally create worktree for isolation
                 worktree_path = None
                 try:
-                    from icdev.tools.ci.modules.worktree import create_worktree
+                    from tools.ci.modules.worktree import create_worktree
+
                     worktree_info = create_worktree(
                         task_id=str(iid),
                         target_dir=".",

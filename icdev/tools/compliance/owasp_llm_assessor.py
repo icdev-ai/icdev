@@ -21,13 +21,14 @@ import sqlite3
 import sys
 from pathlib import Path
 from typing import Dict, Optional
-from icdev._paths import get_project_root
 
 # Ensure base module is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from base_assessor import BaseAssessor
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
 class OWASPLLMAssessor(BaseAssessor):
     FRAMEWORK_ID = "owasp_llm"
     FRAMEWORK_NAME = "OWASP LLM Top 10 v2025"
@@ -35,7 +36,9 @@ class OWASPLLMAssessor(BaseAssessor):
     CATALOG_FILENAME = "owasp_llm_top10.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """OWASP LLM-specific automated checks.
 
@@ -228,7 +231,7 @@ class OWASPLLMAssessor(BaseAssessor):
             try:
                 row = conn.execute(
                     """SELECT COUNT(*) as cnt FROM ai_telemetry
-                       WHERE timestamp > datetime('now', '-30 days')"""
+                       WHERE logged_at > datetime('now', '-30 days')"""
                 ).fetchone()
                 return row and row["cnt"] > 0
             except Exception:

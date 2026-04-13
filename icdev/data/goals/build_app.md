@@ -84,14 +84,30 @@ See `context/agentic/fitness_rubric.md` for the scoring rubric.
    - Time (MVP vs full build)
    - Technical (must use Supabase, must integrate with X)
 
+### Karpathy Principles Check (Pre-Design Gate)
+
+Before proceeding to Trace, apply `hardprompts/karpathy_principles.md`:
+
+1. **State assumptions** — What are you assuming about the users, data, integrations, and constraints?
+2. **Enumerate interpretations** — If the problem statement is ambiguous, list every valid reading and select one explicitly.
+3. **Prefer simpler approach** — Compare at least two architecture options; choose the simpler one unless there is a written reason not to.
+4. **Bound your edit scope** — List what this architect phase will **not** touch (existing tables, services, auth flows, etc.).
+5. **Success criteria** — Rewrite each goal from the App Brief as a testable assertion (e.g., "Given a logged-in user, when they open the dashboard, then HTTP 200 and <10 JS errors in console").
+
+> **Partial:** `{% include 'hardprompts/karpathy_principles.md' %}` with `task_description` set to the problem statement.
+
+This gate runs **once** at the Architect phase. Do not repeat it at Assemble — the criteria defined here become the Stress-test acceptance criteria.
+
 ### Output
 
 ```markdown
 ## App Brief
 - **Problem:** [One sentence]
 - **User:** [Who specifically]
-- **Success:** [Measurable outcome]
+- **Success:** [Measurable outcome — expressed as testable criteria]
 - **Constraints:** [List]
+- **Assumptions:** [Explicit list]
+- **Interpretation chosen:** [Which reading of the requirement and why]
 ```
 
 ---
@@ -267,19 +283,19 @@ This phase is **optional** and controlled by `anvil_critique.enabled` in `args/a
 
 ```bash
 # Run critique on plan text
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --phase-output "plan text here" --json
 
 # Run critique on a file
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --phase-output /path/to/plan.md --json
 
 # Check session status
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --session-id "crit-abc123" --status --json
 
 # View critique history for a project
-python tools/agent/atlas_critique.py --project-id "proj-123" \
+python tools/agent/anvil_critique.py --project-id "proj-123" \
     --history --json
 ```
 
@@ -298,7 +314,7 @@ python tools/agent/atlas_critique.py --project-id "proj-123" \
 
 ### Configuration
 
-See `args/atlas_critique_config.yaml` for:
+See `args/anvil_critique_config.yaml` for:
 - Critic agent assignments and focus areas
 - Consensus rules (GO/NOGO/CONDITIONAL thresholds)
 - Revision prompt template
@@ -435,6 +451,97 @@ If no model exists, skip this phase — ANVIL starts at Architect (backward comp
 
 ---
 
+## Post-Implementation Checklist (Mandatory)
+
+After Stress-test passes, the following steps are **mandatory** before declaring a phase/feature complete:
+
+### 1. Playwright E2E Verification (if dashboard changes exist)
+
+If the implementation added or modified dashboard pages, routes, or templates:
+
+```
+[ ] Start dashboard: python tools/dashboard/app.py
+[ ] Login via Playwright MCP
+[ ] Navigate to the new/changed page
+[ ] Verify page loads (HTTP 200, no server errors)
+[ ] Test interactive elements (forms, buttons, dropdowns, modals)
+[ ] Verify form validation (submit with missing fields)
+[ ] Verify successful form submission (end-to-end: UI → API → DB → table update)
+[ ] Take screenshot at desktop viewport (1440x900)
+[ ] Take screenshot at tablet viewport (768x1024)
+[ ] Take screenshot at mobile viewport (375x812)
+[ ] Check browser console for errors (ignore pre-existing SSE polling errors)
+[ ] Fix ALL issues found — do not defer
+[ ] Create/update E2E test spec in .claude/commands/e2e/<page>.md
+```
+
+**Do NOT wait for the user to request this.** Playwright E2E is part of Stress-test, not a separate step.
+
+### 1b. Cross-Platform Compatibility (if new Python tools created)
+
+If the implementation added or modified Python tools:
+
+```
+[ ] All file paths use pathlib.Path (no string concatenation with / or \)
+[ ] All open() calls specify encoding='utf-8'
+[ ] No hardcoded /tmp or C:\ paths (use tempfile.gettempdir())
+[ ] No subprocess calls for Ollama (use HTTP /api/tags)
+[ ] datetime.now(timezone.utc) used, not datetime.utcnow()
+[ ] hashlib.sha256 used, not hashlib.md5 (bandit B324)
+[ ] .gitattributes exists with eol=lf rules
+[ ] Run: python tools/testing/platform_check.py --json (0 failures)
+```
+
+**Do NOT skip this.** Code developed on Windows must deploy to Linux without modification.
+
+### 2. Feature Documentation
+
+Create `docs/features/phase-{N}-{descriptive-slug}.md` following the standard format:
+
+```
+[ ] CUI // SP-CTI markings (top and bottom)
+[ ] Metadata table (Phase, Title, Status, Priority, Dependencies, Author, Date)
+[ ] Problem Statement — what gaps existed
+[ ] Goals — numbered list of objectives
+[ ] Architecture — pipeline stages, data flow, key components
+[ ] Database Schema — new tables with type (CRUD/append-only) and purpose
+[ ] Configuration — relevant args/*.yaml sections
+[ ] CLI Commands — all new tool commands with examples
+[ ] Dashboard — routes, pages, features
+[ ] Architecture Decisions — ADR table (D-XXX)
+[ ] Testing — test commands and categories
+[ ] Security Considerations — CUI, append-only, access control, etc.
+```
+
+**Do NOT wait for the user to request this.** Documentation is a mandatory deliverable of every phase.
+
+### 3. Companion Sync (LLM-Agnostic — Mandatory)
+
+ICDEV™ supports 10 AI coding platforms. After every phase:
+
+```
+[ ] Run: python tools/dx/companion.py --sync --write --json
+[ ] Verify instruction files updated (AGENTS.md, .clinerules, .cursor/, .windsurf/, etc.)
+[ ] Verify MCP configs updated for detected platforms
+[ ] Verify skills translated for all platforms
+```
+
+This ensures Codex, Cursor, Copilot, Windsurf, Gemini, Amazon Q, JetBrains, Cline, and Aider
+users all benefit from new capabilities. **Do NOT skip this.**
+
+### 4. CLAUDE.md Updates
+
+If the phase added new capabilities, update CLAUDE.md:
+- New DB tables → update table count
+- New tools → update tool count
+- New ADRs → add to Architecture Decisions section
+- New pipeline stages → update relevant section
+- New dashboard pages → update page list
+- New tests → add test command
+- New slash commands → update skills table
+
+---
+
 ## Note: Deployment
 
 Deployment is **not part of this workflow**. It's a separate, user-initiated action.
@@ -473,7 +580,7 @@ These are the mistakes "vibe coders" make:
 
 - **Args:** `args/app_defaults.yaml` (if created)
 - **Context:** `context/ui_patterns/` (design references)
-- **Hard Prompts:** `hardprompts/app_building/` (generation templates)
+- **Hard Prompts:** `hardprompts/app_building/` (generation templates), `hardprompts/karpathy_principles.md` (pre-design engineering gate)
 
 ---
 

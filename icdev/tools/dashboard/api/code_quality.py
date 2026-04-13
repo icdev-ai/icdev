@@ -10,16 +10,16 @@ import json
 import os
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 try:
-    from icdev.tools.compat.db_utils import get_db_connection
+    from tools.compat.db_utils import get_db_connection
 except ImportError:
     get_db_connection = None
 
@@ -29,12 +29,12 @@ code_quality_api = Blueprint("code_quality_api", __name__, url_prefix="/api/code
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
 # ── Metrics Summary ────────────────────────────────────────────
+
 
 @code_quality_api.route("/summary", methods=["GET"])
 def metrics_summary():
@@ -50,9 +50,7 @@ def metrics_summary():
             return jsonify({"error": "No scan data found", "has_data": False})
 
         scan_id = latest["scan_id"]
-        rows = conn.execute(
-            "SELECT * FROM code_quality_metrics WHERE scan_id = ?", (scan_id,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM code_quality_metrics WHERE scan_id = ?", (scan_id,)).fetchall()
         conn.close()
 
         metrics = [dict(r) for r in rows]
@@ -63,22 +61,25 @@ def metrics_summary():
         avg_maint = round(sum(m.get("maintainability_score", 0) for m in fn_metrics) / max(len(fn_metrics), 1), 4)
         high_cc = len([m for m in fn_metrics if m.get("cyclomatic_complexity", 0) > 15])
 
-        return jsonify({
-            "has_data": True,
-            "scan_id": scan_id,
-            "total_files": len(set(m.get("file_path") for m in metrics)),
-            "total_functions": len(fn_metrics),
-            "total_loc": total_loc,
-            "total_smells": total_smells,
-            "avg_complexity": avg_cc,
-            "avg_maintainability": avg_maint,
-            "high_complexity_count": high_cc,
-        })
+        return jsonify(
+            {
+                "has_data": True,
+                "scan_id": scan_id,
+                "total_files": len(set(m.get("file_path") for m in metrics)),
+                "total_functions": len(fn_metrics),
+                "total_loc": total_loc,
+                "total_smells": total_smells,
+                "avg_complexity": avg_cc,
+                "avg_maintainability": avg_maint,
+                "high_complexity_count": high_cc,
+            }
+        )
     except sqlite3.Error as e:
         return jsonify({"error": str(e)}), 500
 
 
 # ── Top Complex Functions ──────────────────────────────────────
+
 
 @code_quality_api.route("/top-complex", methods=["GET"])
 def top_complex():
@@ -87,10 +88,17 @@ def top_complex():
     try:
         conn = _get_db()
         rows = conn.execute(
-            """SELECT function_name, file_path, cyclomatic_complexity, cognitive_complexity,
-                      nesting_depth, parameter_count, smell_count, maintainability_score, loc
+            """SELECT function_name, file_path,
+                      MAX(cyclomatic_complexity) as cyclomatic_complexity,
+                      MAX(cognitive_complexity) as cognitive_complexity,
+                      MAX(nesting_depth) as nesting_depth,
+                      MAX(parameter_count) as parameter_count,
+                      MAX(smell_count) as smell_count,
+                      MIN(maintainability_score) as maintainability_score,
+                      MAX(loc) as loc
                FROM code_quality_metrics
                WHERE function_name IS NOT NULL
+               GROUP BY function_name, file_path
                ORDER BY cyclomatic_complexity DESC
                LIMIT ?""",
             (limit,),
@@ -102,6 +110,7 @@ def top_complex():
 
 
 # ── Smell Breakdown ────────────────────────────────────────────
+
 
 @code_quality_api.route("/smells", methods=["GET"])
 def smell_breakdown():
@@ -131,25 +140,40 @@ def smell_breakdown():
 
 # ── Trend Data ─────────────────────────────────────────────────
 
+
 @code_quality_api.route("/trend", methods=["GET"])
 def trend_data():
     """Maintainability trend over scans."""
-    project_id = request.args.get("project_id", "icdev")
+    project_id = request.args.get("project_id")
     try:
         conn = _get_db()
-        rows = conn.execute(
-            """SELECT scan_id, MIN(created_at) as scan_date,
-                      AVG(cyclomatic_complexity) as avg_complexity,
-                      AVG(maintainability_score) as avg_maintainability,
-                      SUM(smell_count) as total_smells,
-                      COUNT(DISTINCT file_path) as files_scanned
-               FROM code_quality_metrics
-               WHERE project_id = ? OR ?1 IS NULL
-               GROUP BY scan_id
-               ORDER BY scan_date ASC
-               LIMIT 30""",
-            (project_id,),
-        ).fetchall()
+        # Include all scans (project_id may be NULL for platform-wide scans)
+        if project_id:
+            rows = conn.execute(
+                """SELECT scan_id, MIN(created_at) as scan_date,
+                          AVG(cyclomatic_complexity) as avg_complexity,
+                          AVG(maintainability_score) as avg_maintainability,
+                          SUM(smell_count) as total_smells,
+                          COUNT(DISTINCT file_path) as files_scanned
+                   FROM code_quality_metrics
+                   WHERE project_id = ? OR project_id IS NULL
+                   GROUP BY scan_id
+                   ORDER BY scan_date ASC
+                   LIMIT 30""",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT scan_id, MIN(created_at) as scan_date,
+                          AVG(cyclomatic_complexity) as avg_complexity,
+                          AVG(maintainability_score) as avg_maintainability,
+                          SUM(smell_count) as total_smells,
+                          COUNT(DISTINCT file_path) as files_scanned
+                   FROM code_quality_metrics
+                   GROUP BY scan_id
+                   ORDER BY scan_date ASC
+                   LIMIT 30""",
+            ).fetchall()
         conn.close()
         return jsonify({"trend": [dict(r) for r in rows]})
     except sqlite3.Error as e:
@@ -157,6 +181,7 @@ def trend_data():
 
 
 # ── Runtime Feedback Stats ─────────────────────────────────────
+
 
 @code_quality_api.route("/feedback", methods=["GET"])
 def feedback_stats():
@@ -182,13 +207,15 @@ def feedback_stats():
         for r in rows:
             total = r["test_total"]
             passed = r["test_passed"]
-            results.append({
-                "source_function": r["source_function"],
-                "test_total": total,
-                "test_passed": passed,
-                "pass_rate": round(passed / max(total, 1), 4),
-                "avg_duration_ms": round(r["avg_duration"] or 0, 2),
-            })
+            results.append(
+                {
+                    "source_function": r["source_function"],
+                    "test_total": total,
+                    "test_passed": passed,
+                    "pass_rate": round(passed / max(total, 1), 4),
+                    "avg_duration_ms": round(r["avg_duration"] or 0, 2),
+                }
+            )
         return jsonify({"feedback": results})
     except sqlite3.Error as e:
         return jsonify({"error": str(e)}), 500
@@ -196,12 +223,14 @@ def feedback_stats():
 
 # ── Trigger Scan ───────────────────────────────────────────────
 
+
 @code_quality_api.route("/scan", methods=["POST"])
 def trigger_scan():
     """Trigger a code quality scan on the tools/ directory."""
     try:
         sys.path.insert(0, str(BASE_DIR))
-        from icdev.tools.analysis.code_analyzer import CodeAnalyzer
+        from tools.analysis.code_analyzer import CodeAnalyzer
+
         analyzer = CodeAnalyzer(
             project_dir=str(BASE_DIR / "tools"),
             project_id="icdev",

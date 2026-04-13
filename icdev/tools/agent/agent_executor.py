@@ -5,28 +5,34 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.agent.agent_models import AgentPromptRequest, AgentPromptResponse, RetryCode
+from tools.agent.agent_models import AgentPromptRequest, AgentPromptResponse, RetryCode  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 OUTPUT_DIR = BASE_DIR / "agents"
 
 # Safe environment variable allowlist
 SAFE_ENV_ALLOWLIST = [
-    "PATH", "HOME", "USER", "LANG", "TERM",
-    "ANTHROPIC_API_KEY", "AWS_DEFAULT_REGION", "AWS_REGION",
-    "ICDEV_DB_PATH", "ICDEV_PROJECT_ROOT",
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "TERM",
+    "ANTHROPIC_API_KEY",
+    "AWS_DEFAULT_REGION",
+    "AWS_REGION",
+    "ICDEV_DB_PATH",
+    "ICDEV_PROJECT_ROOT",
     "CLAUDE_SESSION_ID",
 ]
 
@@ -45,12 +51,10 @@ def get_safe_agent_env(extra_vars: dict = None) -> dict:
     return env
 
 
-def log_execution(execution_id: str, request: AgentPromptRequest,
-                  response: AgentPromptResponse, db_path: Path = None):
+def log_execution(execution_id: str, request: AgentPromptRequest, response: AgentPromptResponse, db_path: Path = None):
     """Log agent execution to database (append-only)."""
-    path = db_path or DB_PATH
     try:
-        conn = sqlite3.connect(str(path))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO agent_executions
                (execution_id, project_id, agent_type, model, prompt_hash,
@@ -149,8 +153,7 @@ def parse_jsonl_output(output_path: Path) -> AgentPromptResponse:
     return response
 
 
-def execute_agent(request: AgentPromptRequest, max_retries: int = 3,
-                  retry_delays: list = None) -> AgentPromptResponse:
+def execute_agent(request: AgentPromptRequest, max_retries: int = 3, retry_delays: list = None) -> AgentPromptResponse:
     """Execute a Claude Code CLI agent with retry logic and audit trail."""
     if retry_delays is None:
         retry_delays = [1, 3, 5]
@@ -175,9 +178,12 @@ def execute_agent(request: AgentPromptRequest, max_retries: int = 3,
         cmd = [
             "claude",
             "--print",
-            "--output-format", "json",
-            "--model", request.model,
-            "--max-turns", str(request.max_turns),
+            "--output-format",
+            "json",
+            "--model",
+            request.model,
+            "--max-turns",
+            str(request.max_turns),
         ]
 
         if request.allowed_tools:
@@ -225,11 +231,13 @@ def execute_agent(request: AgentPromptRequest, max_retries: int = 3,
 
             # Check if retryable
             if attempt < max_retries and final_response.retry_code in (
-                RetryCode.RETRYABLE_ERROR, RetryCode.RATE_LIMITED
+                RetryCode.RETRYABLE_ERROR,
+                RetryCode.RATE_LIMITED,
             ):
                 delay = retry_delays[min(attempt, len(retry_delays) - 1)]
-                print(f"Retry {attempt + 1}/{max_retries} after {delay}s: {final_response.error_message}",
-                      file=sys.stderr)
+                print(
+                    f"Retry {attempt + 1}/{max_retries} after {delay}s: {final_response.error_message}", file=sys.stderr
+                )
                 final_response.status = "retried"
                 log_execution(execution_id, request, final_response)
                 time.sleep(delay)
@@ -306,7 +314,8 @@ def execute_agent_bedrock(
     system_prompt = request.system_prompt or ""
     if agent_id and request.project_dir:
         try:
-            from icdev.tools.agent.agent_memory import inject_context
+            from tools.agent.agent_memory import inject_context
+
             memory_context = inject_context(
                 agent_id=agent_id,
                 project_id=request.project_dir,
@@ -336,24 +345,31 @@ def execute_agent_bedrock(
     # For tool_use loops, fall back to BedrockClient (it has invoke_with_tools)
     if tool_handlers:
         try:
-            from icdev.tools.agent.bedrock_client import BedrockClient, BedrockRequest
+            from tools.agent.bedrock_client import BedrockClient, BedrockRequest
+
             client = BedrockClient()
             model_map = {
-                "opus": "opus", "sonnet": "sonnet-4-5",
-                "sonnet-4-5": "sonnet-4-5", "sonnet-3-5": "sonnet-3-5",
+                "opus": "opus",
+                "sonnet": "sonnet-4-5",
+                "sonnet-4-5": "sonnet-4-5",
+                "sonnet-3-5": "sonnet-3-5",
                 "haiku": "sonnet-3-5",
             }
             model_preference = model_map.get(request.model, "sonnet-4-5")
             effort = client._agent_effort_overrides.get(agent_id, "medium")
             bedrock_req = BedrockRequest(
-                messages=messages, system_prompt=system_prompt,
-                agent_id=agent_id, project_id=request.project_dir or "",
-                model_preference=model_preference, effort=effort,
+                messages=messages,
+                system_prompt=system_prompt,
+                agent_id=agent_id,
+                project_id=request.project_dir or "",
+                model_preference=model_preference,
+                effort=effort,
                 max_tokens=request.max_turns * 4096,
                 classification=request.classification,
             )
             resp = client.invoke_with_tools(
-                bedrock_req, tool_handlers=tool_handlers,
+                bedrock_req,
+                tool_handlers=tool_handlers,
                 max_iterations=request.max_turns,
             )
         except ImportError:
@@ -362,8 +378,9 @@ def execute_agent_bedrock(
     else:
         # Use vendor-agnostic LLMRouter
         try:
-            from icdev.tools.llm.router import LLMRouter
-            from icdev.tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+
             router = LLMRouter()
             llm_req = LLMRequest(
                 messages=messages,
@@ -375,32 +392,46 @@ def execute_agent_bedrock(
                 classification=request.classification,
             )
             resp = router.invoke(routing_function, llm_req)
-        except ImportError:
-            # Fall back to BedrockClient
+        except (ImportError, RuntimeError) as router_err:
+            # ImportError: tools.llm.router or its deps missing.
+            # RuntimeError (incl. LLMUnavailableError): no provider in
+            # the chain could serve the request — e.g. no API keys, no
+            # local Ollama, or ICDEV_NO_LLM=true. Fall back to the
+            # BedrockClient path; if that also fails, fall back to CLI.
+            if isinstance(router_err, RuntimeError) and not isinstance(router_err, ImportError):
+                print(
+                    "Warning: LLMRouter unavailable ({}), trying BedrockClient".format(router_err),
+                    file=sys.stderr,
+                )
             try:
-                from icdev.tools.agent.bedrock_client import BedrockClient, BedrockRequest
+                from tools.agent.bedrock_client import BedrockClient, BedrockRequest
+
                 client = BedrockClient()
                 model_map = {
-                    "opus": "opus", "sonnet": "sonnet-4-5",
-                    "sonnet-4-5": "sonnet-4-5", "sonnet-3-5": "sonnet-3-5",
+                    "opus": "opus",
+                    "sonnet": "sonnet-4-5",
+                    "sonnet-4-5": "sonnet-4-5",
+                    "sonnet-3-5": "sonnet-3-5",
                     "haiku": "sonnet-3-5",
                 }
                 model_preference = model_map.get(request.model, "sonnet-4-5")
                 effort = client._agent_effort_overrides.get(agent_id, "medium")
                 bedrock_req = BedrockRequest(
-                    messages=messages, system_prompt=system_prompt,
-                    agent_id=agent_id, project_id=request.project_dir or "",
-                    model_preference=model_preference, effort=effort,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    agent_id=agent_id,
+                    project_id=request.project_dir or "",
+                    model_preference=model_preference,
+                    effort=effort,
                     max_tokens=request.max_turns * 4096,
                     classification=request.classification,
                 )
                 resp = client.invoke(bedrock_req)
-            except ImportError:
+            except (ImportError, RuntimeError):
                 print("Warning: No LLM backend available, falling back to CLI", file=sys.stderr)
                 return execute_agent(request, max_retries=max_retries)
 
     try:
-
         # Map BedrockResponse -> AgentPromptResponse
         final_response.status = "completed"
         final_response.retry_code = RetryCode.SUCCESS
@@ -415,7 +446,8 @@ def execute_agent_bedrock(
 
         # Audit trail
         try:
-            from icdev.tools.audit.audit_logger import log_event
+            from tools.audit.audit_logger import log_event
+
             log_event(
                 event_type="bedrock_invoked",
                 actor=agent_id or "agent-executor",
@@ -452,7 +484,8 @@ def execute_agent_bedrock(
         error_code = getattr(e, "response", {}).get("Error", {}).get("Code", "")
         if error_code in ("ThrottlingException", "TooManyRequestsException"):
             try:
-                from icdev.tools.audit.audit_logger import log_event
+                from tools.audit.audit_logger import log_event
+
                 log_event(
                     event_type="bedrock_rate_limited",
                     actor=agent_id or "agent-executor",
@@ -465,7 +498,8 @@ def execute_agent_bedrock(
 
         # Log fallback
         try:
-            from icdev.tools.audit.audit_logger import log_event
+            from tools.audit.audit_logger import log_event
+
             log_event(
                 event_type="bedrock_fallback",
                 actor=agent_id or "agent-executor",
@@ -490,8 +524,7 @@ def main():
     parser.add_argument("--timeout", type=int, default=300, help="Timeout in seconds")
     parser.add_argument("--max-turns", type=int, default=10)
     parser.add_argument("--json", action="store_true", help="Output JSON response")
-    parser.add_argument("--bedrock", action="store_true",
-                        help="Use Bedrock API instead of Claude Code CLI")
+    parser.add_argument("--bedrock", action="store_true", help="Use Bedrock API instead of Claude Code CLI")
     parser.add_argument("--system-prompt", default=None, help="System prompt for agent")
     args = parser.parse_args()
 
@@ -511,6 +544,7 @@ def main():
 
     if args.json:
         import dataclasses
+
         out = dataclasses.asdict(response)
         out["retry_code"] = response.retry_code.value
         print(json.dumps(out, indent=2))

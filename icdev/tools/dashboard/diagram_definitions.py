@@ -11,15 +11,13 @@ Centralized store of all Mermaid diagram strings used in the dashboard.
 Organized by category for the /diagrams catalog page and embedded views.
 
 Usage:
-    from icdev.tools.dashboard.diagram_definitions import DIAGRAM_CATALOG
+    from tools.dashboard.diagram_definitions import DIAGRAM_CATALOG
 """
 
 from __future__ import annotations
 
 DIAGRAM_CATALOG = {
-
     # ── Workflow Diagrams ───────────────────────────────────────────
-
     "atlas_workflow": {
         "title": "ANVIL Build Workflow",
         "description": "5-step application build process: Architect, Trace, Link, Assemble, Stress-test",
@@ -37,7 +35,6 @@ DIAGRAM_CATALOG = {
     style S fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 """,
     },
-
     "m_atlas_workflow": {
         "title": "M-ANVIL Workflow (MBSE-Enabled)",
         "description": "6-step build with Model pre-phase for MBSE projects",
@@ -58,7 +55,6 @@ DIAGRAM_CATALOG = {
     style M fill:#2d1a3a,stroke:#9b59b6,color:#e0e0e0
 """,
     },
-
     "tdd_cycle": {
         "title": "TDD Cycle (RED-GREEN-REFACTOR)",
         "description": "Test-Driven Development state machine: write failing test, implement, refactor",
@@ -88,7 +84,6 @@ DIAGRAM_CATALOG = {
     }
 """,
     },
-
     "tdd_sequence": {
         "title": "TDD Tool Sequence",
         "description": "Sequence diagram showing tool interactions during a TDD cycle",
@@ -120,9 +115,7 @@ DIAGRAM_CATALOG = {
     O->>AL: Log TDD cycle
 """,
     },
-
     # ── Compliance Diagrams ─────────────────────────────────────────
-
     "compliance_pipeline": {
         "title": "Compliance Pipeline",
         "description": "19-step ATO artifact generation: FIPS 199 through IV&V",
@@ -170,7 +163,6 @@ DIAGRAM_CATALOG = {
     style S19 fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 """,
     },
-
     "artifact_dependencies": {
         "title": "ATO Artifact Dependencies",
         "description": "Class diagram showing relationships between compliance artifacts",
@@ -210,9 +202,7 @@ DIAGRAM_CATALOG = {
     CUI_Markings --> POAM : applied to
 """,
     },
-
     # ── Security Diagrams ───────────────────────────────────────────
-
     "security_scan_pipeline": {
         "title": "Security Scan Pipeline",
         "description": "4-scanner chain with quality gate decision points",
@@ -246,7 +236,6 @@ DIAGRAM_CATALOG = {
     style REPORT fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 """,
     },
-
     "self_healing_flow": {
         "title": "Self-Healing Decision Logic",
         "description": "Confidence-based remediation flow with rate limiting",
@@ -268,9 +257,7 @@ DIAGRAM_CATALOG = {
     style SUGGEST fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
 """,
     },
-
     # ── Architecture Diagrams ───────────────────────────────────────
-
     "deploy_pipeline": {
         "title": "Deployment Pipeline",
         "description": "IaC generation through 7-stage CI/CD with gates",
@@ -303,7 +290,6 @@ DIAGRAM_CATALOG = {
     style HEALTH fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 """,
     },
-
     "agent_topology": {
         "title": "Multi-Agent Architecture",
         "description": "13 agents across 3 tiers communicating via A2A protocol",
@@ -344,7 +330,6 @@ DIAGRAM_CATALOG = {
     style ORCH fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
 """,
     },
-
     "gotcha_layers": {
         "title": "FORGE Framework Layers",
         "description": "6-layer agentic system: Frameworks, Orchestration, Routines, Guidance, Evidence, Args",
@@ -367,9 +352,7 @@ DIAGRAM_CATALOG = {
     style T fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 """,
     },
-
     # ── RICOAS Diagrams ─────────────────────────────────────────────
-
     "intake_flow": {
         "title": "Requirements Intake Flow",
         "description": "6-stage AI-driven conversational intake with readiness gate loop",
@@ -393,7 +376,6 @@ DIAGRAM_CATALOG = {
     style S6 fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 """,
     },
-
     "safe_hierarchy": {
         "title": "SAFe Decomposition Hierarchy",
         "description": "Epic > Capability > Feature > Story > Enabler hierarchy with sizing",
@@ -429,7 +411,6 @@ DIAGRAM_CATALOG = {
     Feature "1" --> "*" Enabler
 """,
     },
-
     "boundary_tiers": {
         "title": "ATO Boundary Impact Tiers",
         "description": "4-tier decision tree: GREEN, YELLOW, ORANGE, RED with risk scoring",
@@ -453,7 +434,6 @@ DIAGRAM_CATALOG = {
     style REAUTH fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
 """,
     },
-
     "isa_lifecycle": {
         "title": "ISA Lifecycle State Machine",
         "description": "Interconnection Security Agreement states from draft to expired",
@@ -474,7 +454,6 @@ DIAGRAM_CATALOG = {
     Terminated --> [*]
 """,
     },
-
     "simulation_workflow": {
         "title": "Digital Program Twin Simulation",
         "description": "Create scenario, simulate 6 dimensions, Monte Carlo, generate and compare COAs",
@@ -506,7 +485,6 @@ DIAGRAM_CATALOG = {
     style SELECT fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 """,
     },
-
     "integration_sync": {
         "title": "External Integration Sync",
         "description": "Bidirectional sync with Jira, ServiceNow, GitLab, and DOORS NG",
@@ -541,7 +519,6 @@ DIAGRAM_CATALOG = {
     style RTM fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
 """,
     },
-
     "rtm_traceability": {
         "title": "RTM Traceability Chain",
         "description": "Requirement to SysML to Code to Test to NIST Control tracing",
@@ -563,9 +540,7 @@ DIAGRAM_CATALOG = {
     Note over REQ,CTRL: Gap = any missing link in chain
 """,
     },
-
     # ── MOSA Diagrams ───────────────────────────────────────────────
-
     "mosa_workflow": {
         "title": "MOSA Assessment Workflow",
         "description": "8-step MOSA compliance: detect, assess, analyze, ICD, TSP, enforce, gate, cATO",
@@ -586,9 +561,7 @@ DIAGRAM_CATALOG = {
     style FIX fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
 """,
     },
-
     # ── Zero Trust Diagrams ─────────────────────────────────────────
-
     "zta_workflow": {
         "title": "Zero Trust Architecture Assessment",
         "description": "ZTA maturity assessment across 7 pillars per NIST 800-207",
@@ -630,12 +603,14 @@ def get_catalog_for_role(role=None):
         roles = val.get("roles", [])
         if roles and role and role not in roles:
             continue
-        catalog.append({
-            "id": key,
-            "title": val["title"],
-            "description": val["description"],
-            "category": val.get("category", "general"),
-        })
+        catalog.append(
+            {
+                "id": key,
+                "title": val["title"],
+                "description": val["description"],
+                "category": val.get("category", "general"),
+            }
+        )
     return catalog
 
 

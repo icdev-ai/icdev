@@ -16,27 +16,28 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 try:
     from jinja2 import Environment, BaseLoader
+
     _HAS_JINJA2 = True
 except ImportError:
     _HAS_JINJA2 = False
 
 try:
     import yaml as _yaml
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return _yaml.safe_load(f)
 except ImportError:
     _yaml = None  # type: ignore[assignment]
+
     def _load_yaml(path):
         with open(path, encoding="utf-8") as f:
             return json.loads(f.read())
@@ -46,6 +47,7 @@ REGISTRY_PATH = BASE_DIR / "args" / "companion_registry.yaml"
 
 
 # ── Template Helpers ────────────────────────────────────────────────────
+
 
 def _render(template_str, data):
     """Render a Jinja2 template string, fallback to str.format for basics."""
@@ -59,6 +61,7 @@ def _render(template_str, data):
 
 
 # ── Project Data Collection ─────────────────────────────────────────────
+
 
 def collect_project_data(directory=None):
     """Collect universal project data for template rendering.
@@ -93,7 +96,8 @@ def collect_project_data(directory=None):
 
     # Try to load icdev.yaml via manifest_loader
     try:
-        from icdev.tools.project.manifest_loader import load_manifest
+        from tools.project.manifest_loader import load_manifest
+
         result = load_manifest(directory=str(directory))
         if result["valid"]:
             cfg = result["normalized"]
@@ -145,6 +149,24 @@ def collect_project_data(directory=None):
 # ── Templates ───────────────────────────────────────────────────────────
 # Stored as string constants (D186 pattern). Each template is tailored
 # to its target tool's conventions and size constraints.
+
+# Canonical Karpathy principles block — enforced across all 10 AI platform
+# configs by tools/workflow/coherence_checker.py::check_karpathy_sync.
+# Edit here, then run: python tools/dx/companion.py --sync --write --json
+KARPATHY_PRINCIPLES_BLOCK = """
+## Karpathy Principles — Pre-Design Engineering Gate
+
+Before writing code, apply these 5 heuristics from `hardprompts/karpathy_principles.md`:
+
+1. **State assumptions** — Name the constraints, inputs, invariants you're relying on. Unstated assumptions are where bugs hide.
+2. **Enumerate interpretations** — For any ambiguous requirement, list the 2–4 ways it could be read before picking one. Surface them to the user if the choice is load-bearing.
+3. **Prefer simpler** — Three similar lines beats one clever abstraction. Don't design for hypothetical future requirements. YAGNI.
+4. **Bound your edit scope** — Only touch what the task requires. No drive-by refactors, no surrounding cleanup, no speculative error handling.
+5. **Success criteria** — State how you'll know the change is done before writing it. If you can't write the test / acceptance check, the spec is incomplete.
+
+Applies to: build, bug fix, refactor, TDD, and code review workflows.
+"""
+# ────────────────────────────────────────────────────────────────────────
 
 TEMPLATE_AGENTS_MD = r"""# AGENTS.md
 
@@ -628,6 +650,89 @@ python tools/compliance/stig_checker.py --project-id "{{ project_id }}" --json
 """
 
 
+TEMPLATE_GOOSEHINTS = r"""# .goosehints — {{ project_name }}
+# CUI // {{ classification_category }}
+
+## Project Overview
+
+{{ project_name }} is an ICDEV™-managed {{ project_type }} ({{ project_language }}).
+Classification: {{ classification_level }} // {{ classification_category }} ({{ impact_level }})
+
+## FORGE Framework (6 Layers)
+
+1. **Goals** (`goals/`) — Workflow definitions (check `goals/manifest.md` first)
+2. **Orchestration** (you) — Read goal, decide tool order, apply args, handle errors
+3. **Tools** (`tools/`) — Deterministic Python scripts, one job each (all support `--json`)
+4. **Args** (`args/`) — YAML/JSON behavior config (change behavior without editing code)
+5. **Context** (`context/`) — Static reference material
+6. **Hard Prompts** (`hardprompts/`) — Reusable LLM instruction templates
+
+## How to Operate
+
+- Check `goals/manifest.md` before starting any task
+- Check `tools/manifest.md` before writing new code
+- All tools support `--json` and `--gate` flags
+- When tools fail: read error, fix tool, update goal
+- Run `python tools/dx/companion.py --sync --write --json` after code changes
+
+## LLM Router
+
+Use the `llm_invoke` MCP tool (ICDEV™ LLM Router extension) for all LLM calls.
+Three tiers: Planner (Claude), Worker (qwen3.5 draft + Claude review), Scanner (Ollama only).
+Use `llm_resolve` to check which model handles a function before invoking.
+
+{% if cui_markings %}## Classification Markings
+
+Every generated file must include `# CUI // {{ classification_category }}` as the first comment line. This is a compliance requirement for {{ impact_level }} projects.
+{% endif %}
+
+## Testing
+
+- **Syntax:** `python -m py_compile <file>`
+- **Lint:** `ruff check <file>`
+- **Unit tests:** {{ test_framework }} (`pytest tests/ -q`)
+- **BDD tests:** {{ bdd_framework }} (`behave features/`)
+- **Security:** `python -m bandit -r <file> --severity-level medium`
+- **Tool verify:** Run each tool with `--json` and `--gate`
+
+## Key Directories
+
+| Dir | Purpose |
+|-----|---------|
+| `tools/` | 251+ Python tools (deterministic, one job each) |
+| `goals/` | Workflow definitions |
+| `args/` | YAML config (llm_config.yaml, security_gates.yaml) |
+| `data/` | SQLite databases (icdev.db, memory.db, activity.db) |
+| `hardprompts/` | Reusable LLM instruction templates |
+| `context/` | Static reference material |
+
+## Guardrails
+
+- Never delete audit tables (append-only, NIST AU)
+- Always include CUI classification markings
+- Use `pathlib.Path`, `encoding='utf-8'`, `datetime.now(timezone.utc)`
+- LLM config via `.env`, never hardcode model IDs
+- Cross-platform: forward slashes, `tempfile.gettempdir()`, `hashlib.sha256`
+- Security gates block on: CAT1 STIG, critical vulns, failed tests, missing markings
+
+## Available CLI Tools
+
+```bash
+python tools/project/session_context_builder.py --format markdown  # Load context
+python tools/testing/health_check.py --json                        # Health check
+python tools/testing/test_orchestrator.py --project-dir . --json   # Run tests
+python tools/compliance/ssp_generator.py --project-id "{{ project_id }}" --json
+python tools/security/sast_runner.py --project-dir . --json        # SAST scan
+python tools/dx/companion.py --sync --write --json                 # Companion sync
+python tools/workflow/coherence_checker.py --all --fix --gate      # Coherence
+```
+
+---
+
+*Generated by ICDEV™ Companion*
+"""
+
+
 # ── Template Registry ───────────────────────────────────────────────────
 
 TEMPLATES = {
@@ -640,13 +745,14 @@ TEMPLATES = {
     "junie": TEMPLATE_JUNIE_MD,
     "cline": TEMPLATE_CLINERULES,
     "aider": TEMPLATE_CONVENTIONS_MD,
+    "goose": TEMPLATE_GOOSEHINTS,
 }
 
 
 # ── Generator ───────────────────────────────────────────────────────────
 
-def generate_instructions(directory=None, platforms=None, style="full",
-                          write=False, dry_run=False):
+
+def generate_instructions(directory=None, platforms=None, style="full", write=False, dry_run=False):
     """Generate instruction files for specified platforms.
 
     Args:
@@ -683,6 +789,11 @@ def generate_instructions(directory=None, platforms=None, style="full",
         output_path = companion_cfg.get("instruction_file", f"{platform}.md")
         content = _render(template_str, data)
 
+        # Append Karpathy principles block — required in every platform config.
+        # Checked by tools/workflow/coherence_checker.py::check_karpathy_sync.
+        if "State assumptions" not in content:
+            content = content.rstrip() + "\n" + KARPATHY_PRINCIPLES_BLOCK
+
         full_path = directory / output_path
         written = False
 
@@ -704,9 +815,7 @@ def generate_instructions(directory=None, platforms=None, style="full",
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate AI coding tool instruction files"
-    )
+    parser = argparse.ArgumentParser(description="Generate AI coding tool instruction files")
     parser.add_argument("--dir", help="Project directory")
     parser.add_argument("--platform", help="Comma-separated platform IDs")
     parser.add_argument("--all", action="store_true", help="All platforms")
@@ -716,9 +825,7 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
 
-    platforms = ["all"] if args.all else (
-        [p.strip() for p in args.platform.split(",")] if args.platform else None
-    )
+    platforms = ["all"] if args.all else ([p.strip() for p in args.platform.split(",")] if args.platform else None)
 
     results = generate_instructions(
         directory=args.dir,

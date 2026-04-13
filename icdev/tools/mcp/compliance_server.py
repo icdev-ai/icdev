@@ -17,23 +17,24 @@ Runs as an MCP server over stdio with Content-Length framing.
 import os
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Lazy tool imports — tools may still be under construction
 # ---------------------------------------------------------------------------
 
+
 def _import_tool(module_path, func_name):
     """Dynamically import a function from a module. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -44,11 +45,12 @@ def _import_tool(module_path, func_name):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_nist_lookup(args: dict) -> dict:
     """Look up a NIST 800-53 control by ID or list controls by family."""
-    lookup = _import_tool("icdev.tools.compliance.nist_lookup", "lookup")
-    list_family = _import_tool("icdev.tools.compliance.nist_lookup", "list_family")
-    list_all_families = _import_tool("icdev.tools.compliance.nist_lookup", "list_all_families")
+    lookup = _import_tool("tools.compliance.nist_lookup", "lookup")
+    list_family = _import_tool("tools.compliance.nist_lookup", "list_family")
+    list_all_families = _import_tool("tools.compliance.nist_lookup", "list_all_families")
 
     control_id = args.get("control_id")
     family = args.get("family")
@@ -72,7 +74,7 @@ def handle_nist_lookup(args: dict) -> dict:
 
 def handle_ssp_generate(args: dict) -> dict:
     """Generate a System Security Plan for a project."""
-    generate = _import_tool("icdev.tools.compliance.ssp_generator", "generate_ssp")
+    generate = _import_tool("tools.compliance.ssp_generator", "generate_ssp")
     if not generate:
         return {"error": "ssp_generator module not available yet", "status": "pending"}
 
@@ -86,7 +88,7 @@ def handle_ssp_generate(args: dict) -> dict:
 
 def handle_poam_generate(args: dict) -> dict:
     """Generate a Plan of Action & Milestones document."""
-    generate = _import_tool("icdev.tools.compliance.poam_generator", "generate_poam")
+    generate = _import_tool("tools.compliance.poam_generator", "generate_poam")
     if not generate:
         return {"error": "poam_generator module not available yet", "status": "pending"}
 
@@ -100,7 +102,7 @@ def handle_poam_generate(args: dict) -> dict:
 
 def handle_stig_check(args: dict) -> dict:
     """Run STIG compliance checks against a project."""
-    check = _import_tool("icdev.tools.compliance.stig_checker", "check_project")
+    check = _import_tool("tools.compliance.stig_checker", "check_project")
     if not check:
         return {"error": "stig_checker module not available yet", "status": "pending"}
 
@@ -114,7 +116,7 @@ def handle_stig_check(args: dict) -> dict:
 
 def handle_sbom_generate(args: dict) -> dict:
     """Generate a Software Bill of Materials (CycloneDX format)."""
-    generate = _import_tool("icdev.tools.compliance.sbom_generator", "generate_sbom")
+    generate = _import_tool("tools.compliance.sbom_generator", "generate_sbom")
     if not generate:
         return {"error": "sbom_generator module not available yet", "status": "pending"}
 
@@ -128,8 +130,8 @@ def handle_sbom_generate(args: dict) -> dict:
 
 def handle_cui_mark(args: dict) -> dict:
     """Apply CUI markings to a file or content string."""
-    mark_file = _import_tool("icdev.tools.compliance.cui_marker", "mark_file")
-    mark_content = _import_tool("icdev.tools.compliance.cui_marker", "mark_content")
+    mark_file = _import_tool("tools.compliance.cui_marker", "mark_file")
+    mark_content = _import_tool("tools.compliance.cui_marker", "mark_content")
 
     file_path = args.get("file_path")
     content = args.get("content")
@@ -151,7 +153,7 @@ def handle_cui_mark(args: dict) -> dict:
 
 def handle_control_map(args: dict) -> dict:
     """Map a project activity to NIST 800-53 controls."""
-    map_activity = _import_tool("icdev.tools.compliance.control_mapper", "map_activity")
+    map_activity = _import_tool("tools.compliance.control_mapper", "map_activity")
     if not map_activity:
         return {"error": "control_mapper module not available"}
 
@@ -167,9 +169,10 @@ def handle_control_map(args: dict) -> dict:
 # CSSP tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_cssp_assess(args: dict) -> dict:
     """Run CSSP assessment per DI 8530.01."""
-    assess = _import_tool("icdev.tools.compliance.cssp_assessor", "assess_project")
+    assess = _import_tool("tools.compliance.cssp_assessor", "assess_project")
     if not assess:
         return {"error": "cssp_assessor module not available yet", "status": "pending"}
 
@@ -183,7 +186,7 @@ def handle_cssp_assess(args: dict) -> dict:
 
 def handle_cssp_report(args: dict) -> dict:
     """Generate a CSSP certification report."""
-    generate = _import_tool("icdev.tools.compliance.cssp_report_generator", "generate_cssp_report")
+    generate = _import_tool("tools.compliance.cssp_report_generator", "generate_cssp_report")
     if not generate:
         return {"error": "cssp_report_generator module not available yet", "status": "pending"}
 
@@ -197,7 +200,7 @@ def handle_cssp_report(args: dict) -> dict:
 
 def handle_cssp_ir_plan(args: dict) -> dict:
     """Generate an Incident Response Plan per CSSP SOC requirements."""
-    generate = _import_tool("icdev.tools.compliance.incident_response_plan", "generate_ir_plan")
+    generate = _import_tool("tools.compliance.incident_response_plan", "generate_ir_plan")
     if not generate:
         return {"error": "incident_response_plan module not available yet", "status": "pending"}
 
@@ -211,7 +214,7 @@ def handle_cssp_ir_plan(args: dict) -> dict:
 
 def handle_cssp_evidence(args: dict) -> dict:
     """Collect and index evidence artifacts for CSSP assessment."""
-    collect = _import_tool("icdev.tools.compliance.cssp_evidence_collector", "collect_evidence")
+    collect = _import_tool("tools.compliance.cssp_evidence_collector", "collect_evidence")
     if not collect:
         return {"error": "cssp_evidence_collector module not available yet", "status": "pending"}
 
@@ -227,9 +230,10 @@ def handle_cssp_evidence(args: dict) -> dict:
 # Xacta integration handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_xacta_sync(args: dict) -> dict:
     """Sync project compliance data to Xacta 360."""
-    sync = _import_tool("icdev.tools.compliance.xacta.xacta_sync", "sync_to_xacta")
+    sync = _import_tool("tools.compliance.xacta.xacta_sync", "sync_to_xacta")
     if not sync:
         return {"error": "xacta_sync module not available yet", "status": "pending"}
 
@@ -243,7 +247,7 @@ def handle_xacta_sync(args: dict) -> dict:
 
 def handle_xacta_export(args: dict) -> dict:
     """Generate Xacta 360-compatible export files."""
-    export_all = _import_tool("icdev.tools.compliance.xacta.xacta_export", "export_all")
+    export_all = _import_tool("tools.compliance.xacta.xacta_export", "export_all")
     if not export_all:
         return {"error": "xacta_export module not available yet", "status": "pending"}
 
@@ -259,9 +263,10 @@ def handle_xacta_export(args: dict) -> dict:
 # SbD (Secure by Design) handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_sbd_assess(args: dict) -> dict:
     """Run Secure by Design assessment per CISA commitments and DoDI 5000.87."""
-    assess = _import_tool("icdev.tools.compliance.sbd_assessor", "run_sbd_assessment")
+    assess = _import_tool("tools.compliance.sbd_assessor", "run_sbd_assessment")
     if not assess:
         return {"error": "sbd_assessor module not available yet", "status": "pending"}
 
@@ -276,7 +281,7 @@ def handle_sbd_assess(args: dict) -> dict:
 
 def handle_sbd_report(args: dict) -> dict:
     """Generate a Secure by Design assessment report."""
-    generate = _import_tool("icdev.tools.compliance.sbd_report_generator", "generate_sbd_report")
+    generate = _import_tool("tools.compliance.sbd_report_generator", "generate_sbd_report")
     if not generate:
         return {"error": "sbd_report_generator module not available yet", "status": "pending"}
 
@@ -292,9 +297,10 @@ def handle_sbd_report(args: dict) -> dict:
 # IV&V (Independent Verification & Validation) handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_ivv_assess(args: dict) -> dict:
     """Run IV&V assessment per IEEE 1012."""
-    assess = _import_tool("icdev.tools.compliance.ivv_assessor", "run_ivv_assessment")
+    assess = _import_tool("tools.compliance.ivv_assessor", "run_ivv_assessment")
     if not assess:
         return {"error": "ivv_assessor module not available yet", "status": "pending"}
 
@@ -309,7 +315,7 @@ def handle_ivv_assess(args: dict) -> dict:
 
 def handle_ivv_report(args: dict) -> dict:
     """Generate an IV&V certification report."""
-    generate = _import_tool("icdev.tools.compliance.ivv_report_generator", "generate_ivv_report")
+    generate = _import_tool("tools.compliance.ivv_report_generator", "generate_ivv_report")
     if not generate:
         return {"error": "ivv_report_generator module not available yet", "status": "pending"}
 
@@ -323,7 +329,7 @@ def handle_ivv_report(args: dict) -> dict:
 
 def handle_rtm_generate(args: dict) -> dict:
     """Generate a Requirements Traceability Matrix (RTM)."""
-    generate = _import_tool("icdev.tools.compliance.traceability_matrix", "generate_rtm")
+    generate = _import_tool("tools.compliance.traceability_matrix", "generate_rtm")
     if not generate:
         return {"error": "traceability_matrix module not available yet", "status": "pending"}
 
@@ -339,6 +345,7 @@ def handle_rtm_generate(args: dict) -> dict:
 # Multi-Framework Compliance handlers (Phase 17)
 # ---------------------------------------------------------------------------
 
+
 def handle_crosswalk_query(args: dict) -> dict:
     """Query the control crosswalk engine for multi-framework mappings."""
     action = args.get("action", "frameworks_for_control")
@@ -349,7 +356,7 @@ def handle_crosswalk_query(args: dict) -> dict:
     il_level = args.get("impact_level")
 
     if action == "frameworks_for_control":
-        fn = _import_tool("icdev.tools.compliance.crosswalk_engine", "get_frameworks_for_control")
+        fn = _import_tool("tools.compliance.crosswalk_engine", "get_frameworks_for_control")
         if not fn:
             return {"error": "crosswalk_engine module not available yet", "status": "pending"}
         if not control_id:
@@ -357,7 +364,7 @@ def handle_crosswalk_query(args: dict) -> dict:
         return {"control_id": control_id, "frameworks": fn(control_id)}
 
     elif action == "controls_for_framework":
-        fn = _import_tool("icdev.tools.compliance.crosswalk_engine", "get_controls_for_framework")
+        fn = _import_tool("tools.compliance.crosswalk_engine", "get_controls_for_framework")
         if not fn:
             return {"error": "crosswalk_engine module not available yet", "status": "pending"}
         if not framework:
@@ -366,7 +373,7 @@ def handle_crosswalk_query(args: dict) -> dict:
         return {"framework": framework, "baseline": baseline, "controls": controls, "count": len(controls)}
 
     elif action == "controls_for_impact_level":
-        fn = _import_tool("icdev.tools.compliance.crosswalk_engine", "get_controls_for_impact_level")
+        fn = _import_tool("tools.compliance.crosswalk_engine", "get_controls_for_impact_level")
         if not fn:
             return {"error": "crosswalk_engine module not available yet", "status": "pending"}
         if not il_level:
@@ -375,7 +382,7 @@ def handle_crosswalk_query(args: dict) -> dict:
         return {"impact_level": il_level, "controls": controls, "count": len(controls)}
 
     elif action == "coverage":
-        fn = _import_tool("icdev.tools.compliance.crosswalk_engine", "compute_crosswalk_coverage")
+        fn = _import_tool("tools.compliance.crosswalk_engine", "compute_crosswalk_coverage")
         if not fn:
             return {"error": "crosswalk_engine module not available yet", "status": "pending"}
         if not project_id:
@@ -383,7 +390,7 @@ def handle_crosswalk_query(args: dict) -> dict:
         return fn(project_id, db_path=str(DB_PATH))
 
     elif action == "gap_analysis":
-        fn = _import_tool("icdev.tools.compliance.crosswalk_engine", "get_gap_analysis")
+        fn = _import_tool("tools.compliance.crosswalk_engine", "get_gap_analysis")
         if not fn:
             return {"error": "crosswalk_engine module not available yet", "status": "pending"}
         if not project_id or not framework:
@@ -396,7 +403,7 @@ def handle_crosswalk_query(args: dict) -> dict:
 
 def handle_fedramp_assess(args: dict) -> dict:
     """Run FedRAMP assessment against a project."""
-    assess = _import_tool("icdev.tools.compliance.fedramp_assessor", "run_fedramp_assessment")
+    assess = _import_tool("tools.compliance.fedramp_assessor", "run_fedramp_assessment")
     if not assess:
         return {"error": "fedramp_assessor module not available yet", "status": "pending"}
 
@@ -411,7 +418,7 @@ def handle_fedramp_assess(args: dict) -> dict:
 
 def handle_fedramp_report(args: dict) -> dict:
     """Generate a FedRAMP assessment report."""
-    generate = _import_tool("icdev.tools.compliance.fedramp_report_generator", "generate_fedramp_report")
+    generate = _import_tool("tools.compliance.fedramp_report_generator", "generate_fedramp_report")
     if not generate:
         return {"error": "fedramp_report_generator module not available yet", "status": "pending"}
 
@@ -426,7 +433,7 @@ def handle_fedramp_report(args: dict) -> dict:
 
 def handle_cmmc_assess(args: dict) -> dict:
     """Run CMMC assessment against a project."""
-    assess = _import_tool("icdev.tools.compliance.cmmc_assessor", "run_cmmc_assessment")
+    assess = _import_tool("tools.compliance.cmmc_assessor", "run_cmmc_assessment")
     if not assess:
         return {"error": "cmmc_assessor module not available yet", "status": "pending"}
 
@@ -441,7 +448,7 @@ def handle_cmmc_assess(args: dict) -> dict:
 
 def handle_cmmc_report(args: dict) -> dict:
     """Generate a CMMC assessment report."""
-    generate = _import_tool("icdev.tools.compliance.cmmc_report_generator", "generate_cmmc_report")
+    generate = _import_tool("tools.compliance.cmmc_report_generator", "generate_cmmc_report")
     if not generate:
         return {"error": "cmmc_report_generator module not available yet", "status": "pending"}
 
@@ -462,7 +469,7 @@ def handle_oscal_generate(args: dict) -> dict:
         raise ValueError("'project_id' is required")
 
     if artifact_type == "all":
-        fn = _import_tool("icdev.tools.compliance.oscal_generator", "generate_all_oscal")
+        fn = _import_tool("tools.compliance.oscal_generator", "generate_all_oscal")
     else:
         fn_map = {
             "ssp": "generate_oscal_ssp",
@@ -471,7 +478,7 @@ def handle_oscal_generate(args: dict) -> dict:
             "component_definition": "generate_oscal_component_definition",
         }
         func_name = fn_map.get(artifact_type, "generate_oscal_ssp")
-        fn = _import_tool("icdev.tools.compliance.oscal_generator", func_name)
+        fn = _import_tool("tools.compliance.oscal_generator", func_name)
 
     if not fn:
         return {"error": "oscal_generator module not available yet", "status": "pending"}
@@ -482,7 +489,7 @@ def handle_oscal_generate(args: dict) -> dict:
 
 def handle_emass_sync(args: dict) -> dict:
     """Sync project compliance data to eMASS."""
-    sync = _import_tool("icdev.tools.compliance.emass.emass_sync", "sync_to_emass")
+    sync = _import_tool("tools.compliance.emass.emass_sync", "sync_to_emass")
     if not sync:
         return {"error": "emass_sync module not available yet", "status": "pending"}
 
@@ -502,15 +509,15 @@ def handle_cato_monitor(args: dict) -> dict:
         raise ValueError("'project_id' is required")
 
     if action == "check_freshness":
-        fn = _import_tool("icdev.tools.compliance.cato_monitor", "check_evidence_freshness")
+        fn = _import_tool("tools.compliance.cato_monitor", "check_evidence_freshness")
     elif action == "auto_reassess":
-        fn = _import_tool("icdev.tools.compliance.cato_monitor", "auto_reassess")
+        fn = _import_tool("tools.compliance.cato_monitor", "auto_reassess")
     elif action == "dashboard":
-        fn = _import_tool("icdev.tools.compliance.cato_monitor", "get_cato_dashboard_data")
+        fn = _import_tool("tools.compliance.cato_monitor", "get_cato_dashboard_data")
     elif action == "expire":
-        fn = _import_tool("icdev.tools.compliance.cato_monitor", "expire_old_evidence")
+        fn = _import_tool("tools.compliance.cato_monitor", "expire_old_evidence")
     else:
-        fn = _import_tool("icdev.tools.compliance.cato_monitor", "compute_cato_readiness")
+        fn = _import_tool("tools.compliance.cato_monitor", "compute_cato_readiness")
 
     if not fn:
         return {"error": "cato_monitor module not available yet", "status": "pending"}
@@ -526,7 +533,7 @@ def handle_pi_compliance(args: dict) -> dict:
         raise ValueError("'project_id' is required")
 
     if action == "start":
-        fn = _import_tool("icdev.tools.compliance.pi_compliance_tracker", "start_pi")
+        fn = _import_tool("tools.compliance.pi_compliance_tracker", "start_pi")
         if not fn:
             return {"error": "pi_compliance_tracker module not available yet", "status": "pending"}
         pi_number = args.get("pi_number")
@@ -537,7 +544,7 @@ def handle_pi_compliance(args: dict) -> dict:
         return fn(project_id, pi_number, start_date, end_date, db_path=str(DB_PATH))
 
     elif action == "record":
-        fn = _import_tool("icdev.tools.compliance.pi_compliance_tracker", "record_pi_progress")
+        fn = _import_tool("tools.compliance.pi_compliance_tracker", "record_pi_progress")
         if not fn:
             return {"error": "pi_compliance_tracker module not available yet", "status": "pending"}
         pi_number = args.get("pi_number")
@@ -546,7 +553,7 @@ def handle_pi_compliance(args: dict) -> dict:
         return fn(project_id, pi_number, db_path=str(DB_PATH))
 
     elif action == "close":
-        fn = _import_tool("icdev.tools.compliance.pi_compliance_tracker", "close_pi")
+        fn = _import_tool("tools.compliance.pi_compliance_tracker", "close_pi")
         if not fn:
             return {"error": "pi_compliance_tracker module not available yet", "status": "pending"}
         pi_number = args.get("pi_number")
@@ -555,13 +562,13 @@ def handle_pi_compliance(args: dict) -> dict:
         return fn(project_id, pi_number, db_path=str(DB_PATH))
 
     elif action == "burndown":
-        fn = _import_tool("icdev.tools.compliance.pi_compliance_tracker", "get_compliance_burndown")
+        fn = _import_tool("tools.compliance.pi_compliance_tracker", "get_compliance_burndown")
         if not fn:
             return {"error": "pi_compliance_tracker module not available yet", "status": "pending"}
         return fn(project_id, db_path=str(DB_PATH))
 
     elif action == "report":
-        fn = _import_tool("icdev.tools.compliance.pi_compliance_tracker", "generate_pi_compliance_report")
+        fn = _import_tool("tools.compliance.pi_compliance_tracker", "generate_pi_compliance_report")
         if not fn:
             return {"error": "pi_compliance_tracker module not available yet", "status": "pending"}
         pi_number = args.get("pi_number")
@@ -570,7 +577,7 @@ def handle_pi_compliance(args: dict) -> dict:
         return fn(project_id, pi_number, db_path=str(DB_PATH))
 
     else:  # velocity
-        fn = _import_tool("icdev.tools.compliance.pi_compliance_tracker", "get_pi_velocity")
+        fn = _import_tool("tools.compliance.pi_compliance_tracker", "get_pi_velocity")
         if not fn:
             return {"error": "pi_compliance_tracker module not available yet", "status": "pending"}
         return fn(project_id, db_path=str(DB_PATH))
@@ -583,26 +590,26 @@ def handle_classification_check(args: dict) -> dict:
     il_level = args.get("impact_level")
 
     if action == "validate" and project_id:
-        fn = _import_tool("icdev.tools.compliance.classification_manager", "validate_classification")
+        fn = _import_tool("tools.compliance.classification_manager", "validate_classification")
         if not fn:
             return {"error": "classification_manager module not available yet", "status": "pending"}
         return fn(project_id, db_path=str(DB_PATH))
 
     elif action == "banner":
-        fn = _import_tool("icdev.tools.compliance.classification_manager", "get_marking_banner")
+        fn = _import_tool("tools.compliance.classification_manager", "get_marking_banner")
         if not fn:
             return {"error": "classification_manager module not available yet", "status": "pending"}
         classification = args.get("classification", "CUI")
         return {"banner": fn(classification)}
 
     elif action == "baseline" and il_level:
-        fn = _import_tool("icdev.tools.compliance.classification_manager", "get_required_baseline")
+        fn = _import_tool("tools.compliance.classification_manager", "get_required_baseline")
         if not fn:
             return {"error": "classification_manager module not available yet", "status": "pending"}
         return fn(il_level)
 
     elif action == "profile" and il_level:
-        fn = _import_tool("icdev.tools.compliance.classification_manager", "get_impact_level_profile")
+        fn = _import_tool("tools.compliance.classification_manager", "get_impact_level_profile")
         if not fn:
             return {"error": "classification_manager module not available yet", "status": "pending"}
         return fn(il_level)
@@ -614,6 +621,7 @@ def handle_classification_check(args: dict) -> dict:
 # FIPS 199/200 Security Categorization handlers (Phase 20)
 # ---------------------------------------------------------------------------
 
+
 def handle_fips199_categorize(args: dict) -> dict:
     """Run FIPS 199 security categorization."""
     action = args.get("action", "categorize")
@@ -622,66 +630,74 @@ def handle_fips199_categorize(args: dict) -> dict:
         raise ValueError("'project_id' is required")
 
     if action == "list_catalog":
-        fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "list_catalog")
+        fn = _import_tool("tools.compliance.fips199_categorizer", "list_catalog")
         if not fn:
             return {"error": "fips199_categorizer not available"}
         return {"catalog": fn(category=args.get("category")), "status": "ok"}
 
     if action == "add_type":
-        fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "add_information_type")
+        fn = _import_tool("tools.compliance.fips199_categorizer", "add_information_type")
         if not fn:
             return {"error": "fips199_categorizer not available"}
-        return fn(project_id, args.get("type_id"),
-                  adjust_c=args.get("adjust_c"), adjust_i=args.get("adjust_i"),
-                  adjust_a=args.get("adjust_a"),
-                  adjustment_justification=args.get("justification"),
-                  db_path=str(DB_PATH))
+        return fn(
+            project_id,
+            args.get("type_id"),
+            adjust_c=args.get("adjust_c"),
+            adjust_i=args.get("adjust_i"),
+            adjust_a=args.get("adjust_a"),
+            adjustment_justification=args.get("justification"),
+            db_path=str(DB_PATH),
+        )
 
     if action == "remove_type":
-        fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "remove_information_type")
+        fn = _import_tool("tools.compliance.fips199_categorizer", "remove_information_type")
         if not fn:
             return {"error": "fips199_categorizer not available"}
         return fn(project_id, args.get("type_id"), db_path=str(DB_PATH))
 
     if action == "list_types":
-        fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "list_information_types")
+        fn = _import_tool("tools.compliance.fips199_categorizer", "list_information_types")
         if not fn:
             return {"error": "fips199_categorizer not available"}
         return {"types": fn(project_id, db_path=str(DB_PATH))}
 
     if action == "get":
-        fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "get_categorization")
+        fn = _import_tool("tools.compliance.fips199_categorizer", "get_categorization")
         if not fn:
             return {"error": "fips199_categorizer not available"}
         result = fn(project_id, db_path=str(DB_PATH))
         return result or {"project_id": project_id, "categorization": None}
 
     if action == "gate":
-        fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "evaluate_gate")
+        fn = _import_tool("tools.compliance.fips199_categorizer", "evaluate_gate")
         if not fn:
             return {"error": "fips199_categorizer not available"}
         return fn(project_id, db_path=str(DB_PATH))
 
     # Default: categorize
-    fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "categorize_project")
+    fn = _import_tool("tools.compliance.fips199_categorizer", "categorize_project")
     if not fn:
         return {"error": "fips199_categorizer not available"}
-    return fn(project_id, method=args.get("method", "information_type"),
-              manual_c=args.get("manual_c"), manual_i=args.get("manual_i"),
-              manual_a=args.get("manual_a"), justification=args.get("justification"),
-              db_path=str(DB_PATH))
+    return fn(
+        project_id,
+        method=args.get("method", "information_type"),
+        manual_c=args.get("manual_c"),
+        manual_i=args.get("manual_i"),
+        manual_a=args.get("manual_a"),
+        justification=args.get("justification"),
+        db_path=str(DB_PATH),
+    )
 
 
 def handle_fips200_validate(args: dict) -> dict:
     """Validate FIPS 200 minimum security requirements."""
-    fn = _import_tool("icdev.tools.compliance.fips200_validator", "validate_fips200")
+    fn = _import_tool("tools.compliance.fips200_validator", "validate_fips200")
     if not fn:
         return {"error": "fips200_validator not available"}
     project_id = args.get("project_id")
     if not project_id:
         raise ValueError("'project_id' is required")
-    return fn(project_id, project_dir=args.get("project_dir"),
-              gate=args.get("gate", False), db_path=str(DB_PATH))
+    return fn(project_id, project_dir=args.get("project_dir"), gate=args.get("gate", False), db_path=str(DB_PATH))
 
 
 def handle_security_categorize(args: dict) -> dict:
@@ -689,8 +705,8 @@ def handle_security_categorize(args: dict) -> dict:
     project_id = args.get("project_id")
     if not project_id:
         raise ValueError("'project_id' is required")
-    cat_fn = _import_tool("icdev.tools.compliance.fips199_categorizer", "categorize_project")
-    val_fn = _import_tool("icdev.tools.compliance.fips200_validator", "validate_fips200")
+    cat_fn = _import_tool("tools.compliance.fips199_categorizer", "categorize_project")
+    val_fn = _import_tool("tools.compliance.fips200_validator", "validate_fips200")
     result = {"project_id": project_id}
     if cat_fn:
         result["fips199"] = cat_fn(project_id, db_path=str(DB_PATH))
@@ -704,21 +720,21 @@ def handle_security_categorize(args: dict) -> dict:
 # OSCAL Ecosystem handlers (D302-D306)
 # ---------------------------------------------------------------------------
 
+
 def handle_oscal_validate_deep(args: dict) -> dict:
     """Run 3-layer deep OSCAL validation (structural → pydantic → Metaschema)."""
-    fn = _import_tool("icdev.tools.compliance.oscal_tools", "validate_oscal_deep")
+    fn = _import_tool("tools.compliance.oscal_tools", "validate_oscal_deep")
     if not fn:
         return {"error": "oscal_tools module not available", "status": "pending"}
     file_path = args.get("file_path")
     if not file_path:
         raise ValueError("'file_path' is required")
-    return fn(file_path, project_id=args.get("project_id"),
-              db_path=str(DB_PATH))
+    return fn(file_path, project_id=args.get("project_id"), db_path=str(DB_PATH))
 
 
 def handle_oscal_convert(args: dict) -> dict:
     """Convert OSCAL artifact between JSON, XML, and YAML formats."""
-    fn = _import_tool("icdev.tools.compliance.oscal_tools", "convert_oscal_format")
+    fn = _import_tool("tools.compliance.oscal_tools", "convert_oscal_format")
     if not fn:
         return {"error": "oscal_tools module not available", "status": "pending"}
     input_path = args.get("input_path")
@@ -730,7 +746,7 @@ def handle_oscal_convert(args: dict) -> dict:
 
 def handle_oscal_resolve_profile(args: dict) -> dict:
     """Flatten an OSCAL Profile into a resolved Catalog via oscal-cli."""
-    fn = _import_tool("icdev.tools.compliance.oscal_tools", "resolve_oscal_profile")
+    fn = _import_tool("tools.compliance.oscal_tools", "resolve_oscal_profile")
     if not fn:
         return {"error": "oscal_tools module not available", "status": "pending"}
     profile_path = args.get("profile_path")
@@ -745,7 +761,7 @@ def handle_oscal_catalog_lookup(args: dict) -> dict:
     family = args.get("family")
 
     if control_id:
-        fn = _import_tool("icdev.tools.compliance.oscal_tools", "catalog_lookup")
+        fn = _import_tool("tools.compliance.oscal_tools", "catalog_lookup")
         if not fn:
             return {"error": "oscal_tools module not available", "status": "pending"}
         result = fn(control_id)
@@ -754,13 +770,13 @@ def handle_oscal_catalog_lookup(args: dict) -> dict:
         return {"error": f"Control '{control_id}' not found"}
 
     if family:
-        fn = _import_tool("icdev.tools.compliance.oscal_tools", "catalog_list")
+        fn = _import_tool("tools.compliance.oscal_tools", "catalog_list")
         if not fn:
             return {"error": "oscal_tools module not available", "status": "pending"}
         controls = fn(family=family)
         return {"family": family, "controls": controls, "count": len(controls)}
 
-    fn = _import_tool("icdev.tools.compliance.oscal_tools", "catalog_stats")
+    fn = _import_tool("tools.compliance.oscal_tools", "catalog_stats")
     if not fn:
         return {"error": "oscal_tools module not available", "status": "pending"}
     return fn()
@@ -768,7 +784,7 @@ def handle_oscal_catalog_lookup(args: dict) -> dict:
 
 def handle_oscal_detect_tools(args: dict) -> dict:
     """Detect available OSCAL ecosystem tools (oscal-cli, oscal-pydantic, NIST catalog)."""
-    fn = _import_tool("icdev.tools.compliance.oscal_tools", "detect_oscal_tools")
+    fn = _import_tool("tools.compliance.oscal_tools", "detect_oscal_tools")
     if not fn:
         return {"error": "oscal_tools module not available", "status": "pending"}
     return fn()
@@ -777,6 +793,7 @@ def handle_oscal_detect_tools(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-compliance", version="1.0.0")
@@ -788,7 +805,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "control_id": {"type": "string", "description": "Control ID to look up (e.g., AC-2, SA-11)"},
-                "family": {"type": "string", "description": "Family code to list all controls (e.g., AC, AU, CM, IA, SA, SC)"},
+                "family": {
+                    "type": "string",
+                    "description": "Family code to list all controls (e.g., AC, AU, CM, IA, SA, SC)",
+                },
             },
         },
         handler=handle_nist_lookup,
@@ -875,7 +895,10 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "activity": {"type": "string", "description": "Activity type (e.g., code.commit, test.execute, security.scan, deploy.staging)"},
+                "activity": {
+                    "type": "string",
+                    "description": "Activity type (e.g., code.commit, test.execute, security.scan, deploy.staging)",
+                },
                 "project_id": {"type": "string", "description": "UUID of the project (optional)"},
             },
             "required": ["activity"],
@@ -997,11 +1020,23 @@ def create_server() -> MCPServer:
                 "project_id": {"type": "string", "description": "UUID of the project to assess"},
                 "domain": {
                     "type": "string",
-                    "enum": ["all", "Authentication", "Memory Safety", "Vulnerability Mgmt",
-                             "Intrusion Evidence", "Cryptography", "Access Control",
-                             "Input Handling", "Error Handling", "Supply Chain",
-                             "Threat Modeling", "Defense in Depth", "Secure Defaults",
-                             "CUI Compliance", "DoD Software Assurance"],
+                    "enum": [
+                        "all",
+                        "Authentication",
+                        "Memory Safety",
+                        "Vulnerability Mgmt",
+                        "Intrusion Evidence",
+                        "Cryptography",
+                        "Access Control",
+                        "Input Handling",
+                        "Error Handling",
+                        "Supply Chain",
+                        "Threat Modeling",
+                        "Defense in Depth",
+                        "Secure Defaults",
+                        "CUI Compliance",
+                        "DoD Software Assurance",
+                    ],
                     "default": "all",
                     "description": "Domain to assess (default: all)",
                 },
@@ -1037,11 +1072,18 @@ def create_server() -> MCPServer:
                 "project_id": {"type": "string", "description": "UUID of the project to assess"},
                 "process_area": {
                     "type": "string",
-                    "enum": ["all", "Requirements Verification", "Design Verification",
-                             "Code Verification", "Test Verification",
-                             "Integration Verification", "Traceability Analysis",
-                             "Security Verification", "Build/Deploy Verification",
-                             "Process Compliance"],
+                    "enum": [
+                        "all",
+                        "Requirements Verification",
+                        "Design Verification",
+                        "Code Verification",
+                        "Test Verification",
+                        "Integration Verification",
+                        "Traceability Analysis",
+                        "Security Verification",
+                        "Build/Deploy Verification",
+                        "Process Compliance",
+                    ],
                     "default": "all",
                     "description": "Process area to assess (default: all)",
                 },
@@ -1090,7 +1132,13 @@ def create_server() -> MCPServer:
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["frameworks_for_control", "controls_for_framework", "controls_for_impact_level", "coverage", "gap_analysis"],
+                    "enum": [
+                        "frameworks_for_control",
+                        "controls_for_framework",
+                        "controls_for_impact_level",
+                        "coverage",
+                        "gap_analysis",
+                    ],
                     "default": "frameworks_for_control",
                     "description": "Query action to perform",
                 },
@@ -1272,7 +1320,11 @@ def create_server() -> MCPServer:
                     "description": "Classification action",
                 },
                 "project_id": {"type": "string", "description": "UUID of the project (for validate)"},
-                "impact_level": {"type": "string", "enum": ["IL4", "IL5", "IL6"], "description": "Impact level (for baseline/profile)"},
+                "impact_level": {
+                    "type": "string",
+                    "enum": ["IL4", "IL5", "IL6"],
+                    "description": "Impact level (for baseline/profile)",
+                },
                 "classification": {"type": "string", "description": "Classification level (for banner)"},
             },
         },
@@ -1288,9 +1340,17 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Project UUID"},
-                "action": {"type": "string", "enum": ["categorize", "add_type", "remove_type", "list_types", "list_catalog", "get", "gate"], "default": "categorize"},
+                "action": {
+                    "type": "string",
+                    "enum": ["categorize", "add_type", "remove_type", "list_types", "list_catalog", "get", "gate"],
+                    "default": "categorize",
+                },
                 "type_id": {"type": "string", "description": "SP 800-60 info type ID (e.g., D.1.1.1)"},
-                "method": {"type": "string", "enum": ["information_type", "manual", "cnssi_1253"], "default": "information_type"},
+                "method": {
+                    "type": "string",
+                    "enum": ["information_type", "manual", "cnssi_1253"],
+                    "default": "information_type",
+                },
                 "manual_c": {"type": "string", "enum": ["Low", "Moderate", "High"]},
                 "manual_i": {"type": "string", "enum": ["Low", "Moderate", "High"]},
                 "manual_a": {"type": "string", "enum": ["Low", "Moderate", "High"]},
@@ -1354,8 +1414,16 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "input_path": {"type": "string", "description": "Path to input OSCAL file"},
-                "output_format": {"type": "string", "enum": ["json", "xml", "yaml"], "default": "xml", "description": "Target output format"},
-                "output_path": {"type": "string", "description": "Output file path (optional, auto-generated if omitted)"},
+                "output_format": {
+                    "type": "string",
+                    "enum": ["json", "xml", "yaml"],
+                    "default": "xml",
+                    "description": "Target output format",
+                },
+                "output_path": {
+                    "type": "string",
+                    "description": "Output file path (optional, auto-generated if omitted)",
+                },
             },
             "required": ["input_path"],
         },

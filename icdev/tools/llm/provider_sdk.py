@@ -6,7 +6,7 @@ helpers, and a test harness for validating custom implementations.
 
 Usage for building a custom provider::
 
-    from icdev.tools.llm.provider_sdk import (
+    from tools.llm.provider_sdk import (
         BaseProvider,
         LLMRequest,
         LLMResponse,
@@ -33,7 +33,7 @@ import logging
 from typing import List
 
 # Re-export core types
-from icdev.tools.llm.provider import (
+from tools.llm.provider import (
     LLMProvider as BaseProvider,
     LLMRequest,
     LLMResponse,
@@ -64,7 +64,7 @@ class ProviderTestHarness:
 
     Usage::
 
-        from icdev.tools.llm.provider_sdk import BaseProvider, ProviderTestHarness
+        from tools.llm.provider_sdk import BaseProvider, ProviderTestHarness
 
         class MyProvider(BaseProvider):
             ...
@@ -170,6 +170,8 @@ class ProviderTestHarness:
         total = len(results)
         logger.info(
             "ProviderTestHarness: %d/%d tests passed for %s",
-            passed, total, self.provider.provider_name,
+            passed,
+            total,
+            self.provider.provider_name,
         )
         return results

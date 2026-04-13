@@ -19,13 +19,12 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 try:
@@ -37,6 +36,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Config loader
 # ---------------------------------------------------------------------------
+
 
 def _load_config() -> dict:
     """Load DevSecOps config from YAML (fallback to defaults)."""
@@ -61,17 +61,41 @@ def _load_config() -> dict:
         "maturity_levels": {
             "level_1_initial": {"min_stages": 0, "required_stages": []},
             "level_2_managed": {"min_stages": 2, "required_stages": ["sast", "sca"]},
-            "level_3_defined": {"min_stages": 4, "required_stages": ["sast", "sca", "secret_detection", "container_scan"]},
-            "level_4_measured": {"min_stages": 6, "required_stages": ["sast", "sca", "secret_detection", "container_scan", "policy_as_code", "sbom_attestation"]},
-            "level_5_optimized": {"min_stages": 8, "required_stages": ["sast", "sca", "secret_detection", "container_scan", "policy_as_code", "sbom_attestation", "image_signing", "rasp"]},
+            "level_3_defined": {
+                "min_stages": 4,
+                "required_stages": ["sast", "sca", "secret_detection", "container_scan"],
+            },
+            "level_4_measured": {
+                "min_stages": 6,
+                "required_stages": [
+                    "sast",
+                    "sca",
+                    "secret_detection",
+                    "container_scan",
+                    "policy_as_code",
+                    "sbom_attestation",
+                ],
+            },
+            "level_5_optimized": {
+                "min_stages": 8,
+                "required_stages": [
+                    "sast",
+                    "sca",
+                    "secret_detection",
+                    "container_scan",
+                    "policy_as_code",
+                    "sbom_attestation",
+                    "image_signing",
+                    "rasp",
+                ],
+            },
         },
     }
 
 
 def _get_db():
     """Get database connection."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -80,8 +104,10 @@ def _get_db():
 # Profile CRUD
 # ---------------------------------------------------------------------------
 
-def create_profile(project_id: str, maturity_level: str = None,
-                   stages: list = None, stage_configs: dict = None) -> dict:
+
+def create_profile(
+    project_id: str, maturity_level: str = None, stages: list = None, stage_configs: dict = None
+) -> dict:
     """Create a DevSecOps profile for a project.
 
     Args:
@@ -102,8 +128,7 @@ def create_profile(project_id: str, maturity_level: str = None,
         maturity_level = "level_3_defined"
 
     if maturity_level not in maturity_defs:
-        return {"error": f"Invalid maturity level: {maturity_level}",
-                "valid_levels": list(maturity_defs.keys())}
+        return {"error": f"Invalid maturity level: {maturity_level}", "valid_levels": list(maturity_defs.keys())}
 
     # Determine active stages
     if stages is None:
@@ -125,10 +150,16 @@ def create_profile(project_id: str, maturity_level: str = None,
                (id, project_id, maturity_level, active_stages, stage_configs,
                 detected_at, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (profile_id, project_id, maturity_level,
-             json.dumps(sorted(active)),
-             json.dumps(stage_configs or {}),
-             now, now, now)
+            (
+                profile_id,
+                project_id,
+                maturity_level,
+                json.dumps(sorted(active)),
+                json.dumps(stage_configs or {}),
+                now,
+                now,
+                now,
+            ),
         )
         conn.commit()
 
@@ -153,14 +184,13 @@ def get_profile(project_id: str) -> dict:
     """
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT * FROM devsecops_profiles WHERE project_id = ?",
-            (project_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
 
         if not row:
-            return {"error": f"No DevSecOps profile for project {project_id}",
-                    "hint": "Run --create to initialize a profile"}
+            return {
+                "error": f"No DevSecOps profile for project {project_id}",
+                "hint": "Run --create to initialize a profile",
+            }
 
         return {
             "id": row["id"],
@@ -177,8 +207,7 @@ def get_profile(project_id: str) -> dict:
         conn.close()
 
 
-def update_profile(project_id: str, enable: list = None,
-                   disable: list = None, maturity_level: str = None) -> dict:
+def update_profile(project_id: str, enable: list = None, disable: list = None, maturity_level: str = None) -> dict:
     """Update an existing DevSecOps profile.
 
     Args:
@@ -209,7 +238,7 @@ def update_profile(project_id: str, enable: list = None,
             """UPDATE devsecops_profiles
                SET active_stages = ?, maturity_level = ?, updated_at = ?
                WHERE project_id = ?""",
-            (json.dumps(sorted(active)), new_maturity, now, project_id)
+            (json.dumps(sorted(active)), new_maturity, now, project_id),
         )
         conn.commit()
 
@@ -227,6 +256,7 @@ def update_profile(project_id: str, enable: list = None,
 # ---------------------------------------------------------------------------
 # Maturity detection and assessment
 # ---------------------------------------------------------------------------
+
 
 def detect_maturity_from_text(text: str) -> dict:
     """Detect DevSecOps maturity signals from customer text (used by intake).
@@ -265,8 +295,7 @@ def detect_maturity_from_text(text: str) -> dict:
     # Estimate maturity level
     maturity_defs = config.get("maturity_levels", {})
     estimated_level = "level_1_initial"
-    for level_id in ["level_5_optimized", "level_4_measured", "level_3_defined",
-                     "level_2_managed", "level_1_initial"]:
+    for level_id in ["level_5_optimized", "level_4_measured", "level_3_defined", "level_2_managed", "level_1_initial"]:
         level_def = maturity_defs.get(level_id, {})
         required = set(level_def.get("required_stages", []))
         if required and required.issubset(set(detected_stages)):
@@ -301,8 +330,7 @@ def assess_maturity(project_id: str) -> dict:
     current_level = profile["maturity_level"]
 
     # Check what's needed for next level
-    levels_ordered = ["level_1_initial", "level_2_managed", "level_3_defined",
-                      "level_4_measured", "level_5_optimized"]
+    levels_ordered = ["level_1_initial", "level_2_managed", "level_3_defined", "level_4_measured", "level_5_optimized"]
     current_idx = levels_ordered.index(current_level) if current_level in levels_ordered else 0
 
     gaps = []
@@ -336,6 +364,7 @@ def assess_maturity(project_id: str) -> dict:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="DevSecOps Profile Manager")
     parser.add_argument("--project-id", required=True, help="Project identifier")
@@ -358,8 +387,7 @@ def main():
     elif args.update:
         enable = args.enable.split(",") if args.enable else None
         disable = args.disable.split(",") if args.disable else None
-        result = update_profile(args.project_id, enable=enable, disable=disable,
-                                maturity_level=args.maturity)
+        result = update_profile(args.project_id, enable=enable, disable=disable, maturity_level=args.maturity)
     elif args.assess:
         result = assess_maturity(args.project_id)
     elif args.detect_text:

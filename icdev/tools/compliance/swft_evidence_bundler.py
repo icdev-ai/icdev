@@ -20,13 +20,12 @@ import argparse
 import hashlib
 import json
 import sqlite3
-import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # SWFT artifact categories per DoD Software Factory requirements
@@ -88,8 +87,7 @@ def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if path.exists():
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection(db_path=str(path))
         return conn
     return None
 
@@ -121,7 +119,7 @@ def _collect_artifact_evidence(project_id: str, category: str, conn) -> dict:
     table, id_col = query_info
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE {id_col} = ?",
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE {id_col} = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         if row and row["cnt"] > 0:
@@ -130,7 +128,7 @@ def _collect_artifact_evidence(project_id: str, category: str, conn) -> dict:
 
         # Get latest date
         date_row = conn.execute(
-            f"SELECT MAX(created_at) as latest FROM {table} WHERE {id_col} = ?",
+            f"SELECT MAX(created_at) as latest FROM {table} WHERE {id_col} = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         if date_row and date_row["latest"]:
@@ -212,9 +210,7 @@ def bundle_swft_evidence(
             },
             "integrity": {
                 "digest_algorithm": "sha256",
-                "bundle_hash": hashlib.sha256(
-                    json.dumps(artifacts, sort_keys=True, default=str).encode()
-                ).hexdigest(),
+                "bundle_hash": hashlib.sha256(json.dumps(artifacts, sort_keys=True, default=str).encode()).hexdigest(),
             },
         }
 
@@ -252,13 +248,15 @@ def validate_swft_bundle(
 
     for category, artifact in bundle["artifacts"].items():
         if artifact["required"] and not artifact["available"]:
-            gaps.append({
-                "category": category,
-                "description": artifact["description"],
-                "severity": "blocking",
-            })
+            gaps.append(
+                {
+                    "category": category,
+                    "description": artifact["description"],
+                    "severity": "blocking",
+                }
+            )
             rec_map = {
-                "provenance": "Run: python tools/compliance/slsa_attestation_generator.py --project-id {pid} --generate",
+                "provenance": "Run: python tools/compliance/slsa_attestation_generator.py --project-id {pid} --generate",  # noqa: E501
                 "sbom": "Run: python tools/compliance/sbom_generator.py --project-id {pid}",
                 "vex": "Run: python tools/compliance/slsa_attestation_generator.py --project-id {pid} --vex",
                 "sast_results": "Run: python tools/security/sast_runner.py --project-dir <path>",
@@ -266,15 +264,15 @@ def validate_swft_bundle(
                 "secret_detection": "Run: python tools/security/secret_detector.py --project-dir <path>",
                 "compliance_assessment": "Run: python tools/testing/production_audit.py --json",
             }
-            recommendations.append(
-                rec_map.get(category, f"Generate {category} evidence").format(pid=project_id)
-            )
+            recommendations.append(rec_map.get(category, f"Generate {category} evidence").format(pid=project_id))
         elif not artifact["required"] and not artifact["available"]:
-            gaps.append({
-                "category": category,
-                "description": artifact["description"],
-                "severity": "warning",
-            })
+            gaps.append(
+                {
+                    "category": category,
+                    "description": artifact["description"],
+                    "severity": "warning",
+                }
+            )
 
     return {
         "project_id": project_id,
@@ -289,9 +287,7 @@ def validate_swft_bundle(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="DoD SWFT Evidence Bundler"
-    )
+    parser = argparse.ArgumentParser(description="DoD SWFT Evidence Bundler")
     parser.add_argument("--project-id", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--bundle", action="store_true", help="Bundle SWFT evidence")
     parser.add_argument("--validate", action="store_true", help="Validate SWFT evidence completeness")
@@ -316,19 +312,19 @@ def main():
     else:
         if args.bundle:
             s = result["summary"]
-            print(f"\n=== SWFT Evidence Bundle ===")
+            print("\n=== SWFT Evidence Bundle ===")
             print(f"  Bundle ID: {result['bundle_id']}")
             print(f"  Readiness: {s['readiness_pct']}%")
             print(f"  Required: {s['required_met']}/{s['required_total']}")
             print(f"  Optional: {s['optional_met']}/{s['optional_total']}")
             print(f"  All Required Met: {s['all_required_met']}")
         else:
-            print(f"\n=== SWFT Validation ===")
+            print("\n=== SWFT Validation ===")
             print(f"  Valid: {result['valid']}")
             print(f"  Blocking Gaps: {result['blocking_gaps']}")
             print(f"  Warning Gaps: {result['warning_gaps']}")
             if result["recommendations"]:
-                print(f"  Recommendations:")
+                print("  Recommendations:")
                 for rec in result["recommendations"]:
                     print(f"    - {rec}")
 

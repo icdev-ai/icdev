@@ -30,8 +30,9 @@ def check_dashboard_running(base_url: str = "http://localhost:5000") -> bool:
     """Check if the dashboard is reachable."""
     try:
         import urllib.request
+
         req = urllib.request.Request(f"{base_url}/", method="HEAD")
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=5)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
         return True
     except Exception:
         return False
@@ -53,6 +54,7 @@ def start_dashboard() -> subprocess.Popen | None:
 
     # Wait for dashboard to be ready (max 15 seconds)
     import time
+
     for _ in range(30):
         time.sleep(0.5)
         if check_dashboard_running():
@@ -74,8 +76,11 @@ def run_e2e_tests(validate_screenshots: bool = True) -> dict:
         cmd.append("--validate-screenshots")
 
     result = subprocess.run(
-        cmd, cwd=str(PROJECT_ROOT),
-        capture_output=True, text=True, timeout=600,
+        cmd,
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=600,
         stdin=subprocess.DEVNULL,
     )
 
@@ -146,9 +151,9 @@ def main():
         print("\nDashboard already running")
 
     # Step 3: Run E2E tests
-    print(f"\n{'='*40}")
+    print(f"\n{'=' * 40}")
     print("  Running E2E Tests")
-    print(f"{'='*40}")
+    print(f"{'=' * 40}")
 
     try:
         results = run_e2e_tests(validate_screenshots=True)

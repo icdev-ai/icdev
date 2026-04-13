@@ -89,17 +89,18 @@ a:hover {
 .navbar {
     background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
-    padding: 0 24px;
+    padding: 0 16px;
     display: flex;
     align-items: center;
-    height: 52px;
+    flex-wrap: wrap;
+    min-height: 42px;
     gap: 0;
 }
 .navbar-brand {
     font-weight: 700;
     font-size: 1.15rem;
     color: var(--text-primary);
-    margin-right: 32px;
+    margin-right: 16px;
     white-space: nowrap;
 }
 .navbar-brand:hover {
@@ -109,24 +110,63 @@ a:hover {
 .navbar-nav {
     list-style: none;
     display: flex;
+    flex-wrap: wrap;
     gap: 0;
     margin: 0;
     padding: 0;
+    flex: 1;
+    min-width: 0;
 }
 .navbar-nav li a {
     display: block;
-    padding: 14px 18px;
+    padding: 8px 10px;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 0.78rem;
     font-weight: 500;
-    border-bottom: 3px solid transparent;
+    border-bottom: 2px solid transparent;
     transition: color 0.2s, border-color 0.2s;
+    white-space: nowrap;
 }
 .navbar-nav li a:hover,
 .navbar-nav li a.active {
     color: var(--text-primary);
     border-bottom-color: var(--accent-blue);
     text-decoration: none;
+}
+
+/* --- Nav Dropdowns --- */
+.nav-dropdown {
+    position: relative;
+}
+.nav-dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: var(--bg-secondary, #1e293b);
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 160px;
+    z-index: 100;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    list-style: none;
+    margin: 0;
+}
+.nav-dropdown:hover .nav-dropdown-menu {
+    display: block;
+}
+.nav-dropdown-menu li a {
+    padding: 6px 14px !important;
+    font-size: 0.78rem !important;
+    border-bottom: none !important;
+    display: block;
+    color: var(--text-secondary);
+}
+.nav-dropdown-menu li a:hover {
+    background: var(--bg-hover, #334155);
+    color: var(--text-primary);
+    border-bottom: none !important;
 }
 
 /* --- Main Content --- */
@@ -517,11 +557,11 @@ tbody tr:hover {
         grid-template-columns: 1fr;
     }
     .navbar {
-        padding: 0 12px;
+        padding: 0 8px;
     }
     .navbar-nav li a {
-        padding: 14px 10px;
-        font-size: 0.8rem;
+        padding: 6px 7px;
+        font-size: 0.72rem;
     }
 }
 
@@ -703,4 +743,20 @@ tbody tr:hover {
     .stat-bar {
         flex-direction: column;
     }
+}
+
+/* ── Print Styles (Base) ──────────────────────────────────────────────────── */
+@media print {
+  .navbar, .footer, .sidebar, .cui-banner, .page-actions,
+  .modal, .dropdown-menu, .toast, .notification-panel { display: none !important; }
+  .main-content { padding: 8px !important; margin: 0 !important; }
+  body { background: #fff !important; color: #111 !important; font-size: 11px; }
+  .card, .panel, .data-table { background: #fff !important; color: #111 !important; border: 1px solid #ccc !important; }
+  .card { break-inside: avoid; margin-bottom: 8px; }
+  .data-table th { background: #f0f0f0 !important; color: #111 !important; }
+  .data-table td { color: #111 !important; }
+  a { color: #111 !important; text-decoration: underline; }
+  .health-pill { border: 1px solid #999 !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  @page { margin: 0.5in; }
 }

@@ -15,15 +15,15 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 GATES_PATH = BASE_DIR / "args" / "security_gates.yaml"
 
 # Language support (Phase 16)
 try:
     import importlib.util as _ilu
+
     _ls_path = BASE_DIR / "tools" / "builder" / "language_support.py"
     if _ls_path.exists():
         _ls_spec = _ilu.spec_from_file_location("language_support", _ls_path)
@@ -104,7 +104,9 @@ def run_bandit(
     try:
         version_check = subprocess.run(
             [sys.executable, "-m", "bandit", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -117,17 +119,24 @@ def run_bandit(
 
     # Build bandit command
     cmd = [
-        sys.executable, "-m", "bandit",
+        sys.executable,
+        "-m",
+        "bandit",
         "-r",  # Recursive
-        "-f", "json",  # JSON output
+        "-f",
+        "json",  # JSON output
         "-ll" if severity_level == "medium" else "-l" if severity_level == "low" else "-lll",
-        "--exclude", "venv,node_modules,.git,__pycache__,build,dist,tests",
+        "--exclude",
+        "venv,node_modules,.git,__pycache__,build,dist,tests",
         str(root),
     ]
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
 
         # Bandit returns exit code 1 when it finds issues
@@ -159,9 +168,7 @@ def run_bandit(
         if output_file:
             report_path = Path(output_file)
             report_path.parent.mkdir(parents=True, exist_ok=True)
-            report_path.write_text(
-                json.dumps(result, indent=2), encoding="utf-8"
-            )
+            report_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
             result["report_path"] = str(report_path)
 
     except subprocess.TimeoutExpired:
@@ -190,21 +197,23 @@ def parse_report_json(json_str: str) -> List[Dict]:
         return findings
 
     for result in data.get("results", []):
-        findings.append({
-            "file": result.get("filename", ""),
-            "line": result.get("line_number", 0),
-            "col_offset": result.get("col_offset", 0),
-            "end_col_offset": result.get("end_col_offset", 0),
-            "severity": result.get("issue_severity", "LOW"),
-            "confidence": result.get("issue_confidence", "LOW"),
-            "test_id": result.get("test_id", ""),
-            "test_name": result.get("test_name", ""),
-            "issue_text": result.get("issue_text", ""),
-            "issue_cwe": result.get("issue_cwe", {}),
-            "more_info": result.get("more_info", ""),
-            "line_range": result.get("line_range", []),
-            "code": result.get("code", ""),
-        })
+        findings.append(
+            {
+                "file": result.get("filename", ""),
+                "line": result.get("line_number", 0),
+                "col_offset": result.get("col_offset", 0),
+                "end_col_offset": result.get("end_col_offset", 0),
+                "severity": result.get("issue_severity", "LOW"),
+                "confidence": result.get("issue_confidence", "LOW"),
+                "test_id": result.get("test_id", ""),
+                "test_name": result.get("test_name", ""),
+                "issue_text": result.get("issue_text", ""),
+                "issue_cwe": result.get("issue_cwe", {}),
+                "more_info": result.get("more_info", ""),
+                "line_range": result.get("line_range", []),
+                "code": result.get("code", ""),
+            }
+        )
 
     return findings
 
@@ -264,7 +273,9 @@ def run_spotbugs(
     try:
         version_check = subprocess.run(
             ["mvn", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -279,7 +290,11 @@ def run_spotbugs(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout + proc.stderr
         result["raw_output"] = raw
@@ -293,7 +308,7 @@ def run_spotbugs(
             # SpotBugs Maven output: [ERROR]/[WARNING] at File.java:[line,col] message
             for prefix, severity in [("[ERROR]", "HIGH"), ("[WARNING]", "MEDIUM")]:
                 if line.startswith(prefix):
-                    rest = line[len(prefix):].strip()
+                    rest = line[len(prefix) :].strip()
                     file_path = ""
                     line_num = 0
                     message = rest
@@ -306,20 +321,22 @@ def run_spotbugs(
                         bracket_idx = file_path.find("[")
                         if bracket_idx >= 0:
                             try:
-                                line_str = file_path[bracket_idx + 1:].split(",")[0].split("]")[0]
+                                line_str = file_path[bracket_idx + 1 :].split(",")[0].split("]")[0]
                                 line_num = int(line_str)
                             except (ValueError, IndexError):
                                 pass
                             file_path = file_path[:bracket_idx]
 
-                    findings.append({
-                        "file": file_path,
-                        "line": line_num,
-                        "severity": severity,
-                        "confidence": "MEDIUM",
-                        "message": message,
-                        "cwe": "",
-                    })
+                    findings.append(
+                        {
+                            "file": file_path,
+                            "line": line_num,
+                            "severity": severity,
+                            "confidence": "MEDIUM",
+                            "message": message,
+                            "cwe": "",
+                        }
+                    )
                     break
 
         result["findings"] = findings
@@ -374,11 +391,15 @@ def run_gosec(
     try:
         version_check = subprocess.run(
             ["gosec", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
-            result["raw_output"] = "gosec not found. Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"
+            result["raw_output"] = (
+                "gosec not found. Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"
+            )
             return result
     except (subprocess.TimeoutExpired, FileNotFoundError):
         result["success"] = False
@@ -389,7 +410,11 @@ def run_gosec(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout if proc.stdout else proc.stderr
         result["raw_output"] = raw
@@ -401,14 +426,18 @@ def run_gosec(
                 data = json.loads(proc.stdout)
                 for issue in data.get("Issues", []):
                     severity = issue.get("severity", "LOW").upper()
-                    findings.append({
-                        "file": issue.get("file", ""),
-                        "line": int(issue.get("line", 0)) if issue.get("line", "").isdigit() else 0,
-                        "severity": severity,
-                        "confidence": issue.get("confidence", "LOW").upper(),
-                        "message": issue.get("details", ""),
-                        "cwe": issue.get("cwe", {}).get("id", "") if isinstance(issue.get("cwe"), dict) else str(issue.get("cwe", "")),
-                    })
+                    findings.append(
+                        {
+                            "file": issue.get("file", ""),
+                            "line": int(issue.get("line", 0)) if issue.get("line", "").isdigit() else 0,
+                            "severity": severity,
+                            "confidence": issue.get("confidence", "LOW").upper(),
+                            "message": issue.get("details", ""),
+                            "cwe": issue.get("cwe", {}).get("id", "")
+                            if isinstance(issue.get("cwe"), dict)
+                            else str(issue.get("cwe", "")),
+                        }
+                    )
             except (json.JSONDecodeError, ValueError):
                 pass
 
@@ -464,7 +493,9 @@ def run_cargo_audit_sast(
     try:
         version_check = subprocess.run(
             ["cargo", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -479,7 +510,11 @@ def run_cargo_audit_sast(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         result["raw_output"] = proc.stdout + proc.stderr
 
@@ -512,14 +547,16 @@ def run_cargo_audit_sast(
                 code_info = message.get("code", {}) or {}
                 code_str = code_info.get("code", "") if isinstance(code_info, dict) else ""
 
-                findings.append({
-                    "file": file_path,
-                    "line": line_num,
-                    "severity": severity,
-                    "confidence": "MEDIUM",
-                    "message": message.get("message", ""),
-                    "cwe": code_str,
-                })
+                findings.append(
+                    {
+                        "file": file_path,
+                        "line": line_num,
+                        "severity": severity,
+                        "confidence": "MEDIUM",
+                        "message": message.get("message", ""),
+                        "cwe": code_str,
+                    }
+                )
             except json.JSONDecodeError:
                 continue
 
@@ -575,7 +612,9 @@ def run_security_code_scan(
     try:
         version_check = subprocess.run(
             ["dotnet", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -591,7 +630,11 @@ def run_security_code_scan(
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout + proc.stderr
         result["raw_output"] = raw
@@ -616,7 +659,7 @@ def run_security_code_scan(
                             paren_idx = location.rfind("(")
                             if paren_idx >= 0:
                                 file_path = location[:paren_idx]
-                                loc_str = location[paren_idx + 1:].rstrip(")")
+                                loc_str = location[paren_idx + 1 :].rstrip(")")
                                 loc_parts = loc_str.split(",")
                                 try:
                                     line_num = int(loc_parts[0].strip())
@@ -627,16 +670,18 @@ def run_security_code_scan(
                             colon_idx = rest.find(":")
                             if colon_idx > 0:
                                 code = rest[:colon_idx].strip()
-                                message = rest[colon_idx + 1:].strip()
+                                message = rest[colon_idx + 1 :].strip()
 
-                            findings.append({
-                                "file": file_path,
-                                "line": line_num,
-                                "severity": severity,
-                                "confidence": "MEDIUM",
-                                "message": message,
-                                "cwe": code,
-                            })
+                            findings.append(
+                                {
+                                    "file": file_path,
+                                    "line": line_num,
+                                    "severity": severity,
+                                    "confidence": "MEDIUM",
+                                    "message": message,
+                                    "cwe": code,
+                                }
+                            )
                         break
 
         result["findings"] = findings
@@ -691,7 +736,10 @@ def run_eslint_security(
     try:
         version_check = subprocess.run(
             ["npx", "eslint", "--version"],
-            capture_output=True, text=True, timeout=30, cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(root),
         )
         if version_check.returncode != 0:
             result["success"] = False
@@ -703,16 +751,24 @@ def run_eslint_security(
         return result
 
     cmd = [
-        "npx", "eslint",
-        "--plugin", "security",
-        "--ext", ".js,.ts,.jsx,.tsx",
-        "--format", "json",
+        "npx",
+        "eslint",
+        "--plugin",
+        "security",
+        "--ext",
+        ".js,.ts,.jsx,.tsx",
+        "--format",
+        "json",
         str(root / "src") if (root / "src").is_dir() else str(root),
     ]
 
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(root),
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(root),
         )
         raw = proc.stdout if proc.stdout else proc.stderr
         result["raw_output"] = raw
@@ -728,14 +784,16 @@ def run_eslint_security(
                         rule_id = msg.get("ruleId", "")
                         # Focus on security-related rules
                         severity_map = {2: "HIGH", 1: "MEDIUM", 0: "LOW"}
-                        findings.append({
-                            "file": file_path,
-                            "line": msg.get("line", 0),
-                            "severity": severity_map.get(msg.get("severity", 1), "MEDIUM"),
-                            "confidence": "MEDIUM",
-                            "message": msg.get("message", ""),
-                            "cwe": rule_id,
-                        })
+                        findings.append(
+                            {
+                                "file": file_path,
+                                "line": msg.get("line", 0),
+                                "severity": severity_map.get(msg.get("severity", 1), "MEDIUM"),
+                                "confidence": "MEDIUM",
+                                "message": msg.get("message", ""),
+                                "cwe": rule_id,
+                            }
+                        )
             except json.JSONDecodeError:
                 pass
 
@@ -876,17 +934,11 @@ def evaluate_gate(
     max_medium = thresholds.get("max_medium", 10)
 
     if severity_counts["CRITICAL"] > max_critical:
-        violations.append(
-            f"CRITICAL findings: {severity_counts['CRITICAL']} (max: {max_critical})"
-        )
+        violations.append(f"CRITICAL findings: {severity_counts['CRITICAL']} (max: {max_critical})")
     if severity_counts["HIGH"] > max_high:
-        violations.append(
-            f"HIGH findings: {severity_counts['HIGH']} (max: {max_high})"
-        )
+        violations.append(f"HIGH findings: {severity_counts['HIGH']} (max: {max_high})")
     if severity_counts["MEDIUM"] > max_medium:
-        violations.append(
-            f"MEDIUM findings: {severity_counts['MEDIUM']} (max: {max_medium})"
-        )
+        violations.append(f"MEDIUM findings: {severity_counts['MEDIUM']} (max: {max_medium})")
 
     return {
         "passed": len(violations) == 0,

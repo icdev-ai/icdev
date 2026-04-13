@@ -28,13 +28,12 @@ See also:
 import argparse
 import json
 import re
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CMMC_TEMPLATE_PATH = BASE_DIR / "context" / "compliance" / "cmmc_report_template.md"
 CMMC_PRACTICES_PATH = BASE_DIR / "context" / "compliance" / "cmmc_practices.json"
@@ -68,16 +67,13 @@ PRACTICE_STATUSES = ["met", "not_met", "partially_met", "not_applicable", "not_a
 # Helper functions
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection with Row factory."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -144,9 +140,7 @@ def _builtin_template():
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -159,7 +153,8 @@ def _load_cui_config():
     falls back to sensible defaults if unavailable.
     """
     try:
-        from icdev.tools.compliance.cui_marker import load_cui_config as _load
+        from tools.compliance.cui_marker import load_cui_config as _load
+
         return _load()
     except Exception:
         pass
@@ -169,6 +164,7 @@ def _load_cui_config():
         cui_marker_path = Path(__file__).resolve().parent / "cui_marker.py"
         if cui_marker_path.exists():
             import importlib.util
+
             spec = importlib.util.spec_from_file_location("cui_marker", cui_marker_path)
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
@@ -220,6 +216,7 @@ def _load_cmmc_practices():
 # Data retrieval
 # ---------------------------------------------------------------------------
 
+
 def _get_cmmc_assessments(conn, project_id, level=2):
     """Retrieve all CMMC assessment results for a project filtered by level."""
     rows = conn.execute(
@@ -234,6 +231,7 @@ def _get_cmmc_assessments(conn, project_id, level=2):
 # ---------------------------------------------------------------------------
 # Score calculation
 # ---------------------------------------------------------------------------
+
 
 def _calculate_domain_scores(assessments):
     """Calculate a compliance score for each CMMC domain.
@@ -323,6 +321,7 @@ def _calculate_overall_score(domain_scores):
 # Section builder functions
 # ---------------------------------------------------------------------------
 
+
 def _build_domain_scores_table(domain_scores):
     """Build a markdown table summarising per-domain scores."""
     lines = [
@@ -379,12 +378,8 @@ def _build_domain_details(assessments, domain_scores):
             sections.append("")
             continue
 
-        sections.append(
-            "| Practice ID | Status | NIST 171 | Evidence | Notes |"
-        )
-        sections.append(
-            "|-------------|--------|----------|----------|-------|"
-        )
+        sections.append("| Practice ID | Status | NIST 171 | Evidence | Notes |")
+        sections.append("|-------------|--------|----------|----------|-------|")
         for item in sorted(items, key=lambda x: x.get("practice_id", "")):
             practice_id = item.get("practice_id", "N/A")
             status = item.get("status", "not_assessed")
@@ -396,9 +391,7 @@ def _build_domain_details(assessments, domain_scores):
                 evidence = evidence[:77] + "..."
             if len(notes) > 80:
                 notes = notes[:77] + "..."
-            sections.append(
-                f"| {practice_id} | {status} | {nist_id} | {evidence} | {notes} |"
-            )
+            sections.append(f"| {practice_id} | {status} | {nist_id} | {evidence} | {notes} |")
         sections.append("")
 
     return "\n".join(sections)
@@ -431,9 +424,7 @@ def _build_gap_analysis(assessments, practices_catalog):
                 title = title[:37] + "..."
             if len(evidence_req) > 50:
                 evidence_req = evidence_req[:47] + "..."
-            lines.append(
-                f"| {practice_id} | {domain_name} | {title} | {priority} | {evidence_req} |"
-            )
+            lines.append(f"| {practice_id} | {domain_name} | {title} | {priority} | {evidence_req} |")
 
     return "\n".join(lines)
 
@@ -470,9 +461,7 @@ def _build_nist_171_mapping(assessments, practices_catalog):
         nist_53 = catalog.get("nist_800_53_controls", [])
         nist_53_str = ", ".join(nist_53) if nist_53 else "N/A"
         status = assessment_map.get(pid, {}).get("status", "not_assessed")
-        lines.append(
-            f"| {pid} | {domain_code} | {nist_171} | {nist_53_str} | {status} |"
-        )
+        lines.append(f"| {pid} | {domain_code} | {nist_171} | {nist_53_str} | {status} |")
 
     return "\n".join(lines)
 
@@ -554,9 +543,7 @@ def _build_recommendations(assessments, domain_scores, practices_catalog):
     if critical_gaps:
         lines.append("### Priority 1: Critical Practices Not Met")
         lines.append("")
-        lines.append(
-            "The following critical practices must be remediated immediately:"
-        )
+        lines.append("The following critical practices must be remediated immediately:")
         for pid in sorted(critical_gaps):
             title = practices_catalog.get(pid, {}).get("title", "")
             lines.append(f"- **{pid}**: {title}")
@@ -573,9 +560,7 @@ def _build_recommendations(assessments, domain_scores, practices_catalog):
     if weak_domains:
         lines.append("### Priority 2: Weak Domains")
         lines.append("")
-        lines.append(
-            "The following domains scored below 70% and need focused attention:"
-        )
+        lines.append("The following domains scored below 70% and need focused attention:")
         for code, name, score in sorted(weak_domains, key=lambda x: x[2]):
             lines.append(f"- **{name} ({code})**: {score:.1f}%")
         lines.append("")
@@ -585,8 +570,7 @@ def _build_recommendations(assessments, domain_scores, practices_catalog):
         lines.append("### Priority 3: Complete Partial Implementations")
         lines.append("")
         lines.append(
-            f"{len(partially_met)} practice(s) are partially met. "
-            "Complete implementation to achieve full compliance."
+            f"{len(partially_met)} practice(s) are partially met. Complete implementation to achieve full compliance."
         )
         lines.append("")
 
@@ -608,8 +592,7 @@ def _build_recommendations(assessments, domain_scores, practices_catalog):
 
 def _build_evidence_references(assessments):
     """Build evidence reference table grouped by domain."""
-    domain_counts = {code: {"with_evidence": 0, "without_evidence": 0, "total": 0}
-                     for code in CMMC_DOMAIN_CODES}
+    domain_counts = {code: {"with_evidence": 0, "without_evidence": 0, "total": 0} for code in CMMC_DOMAIN_CODES}
 
     for a in assessments:
         dom = a.get("domain")
@@ -631,29 +614,21 @@ def _build_evidence_references(assessments):
         c = domain_counts[code]
         if c["total"] == 0:
             continue
-        coverage = (
-            f"{100.0 * c['with_evidence'] / c['total']:.0f}%"
-            if c["total"] > 0 else "N/A"
-        )
+        coverage = f"{100.0 * c['with_evidence'] / c['total']:.0f}%" if c["total"] > 0 else "N/A"
         lines.append(
-            f"| {name} ({code}) | {c['total']} | {c['with_evidence']} "
-            f"| {c['without_evidence']} | {coverage} |"
+            f"| {name} ({code}) | {c['total']} | {c['with_evidence']} | {c['without_evidence']} | {coverage} |"
         )
 
     total_all = sum(c["total"] for c in domain_counts.values())
     total_with = sum(c["with_evidence"] for c in domain_counts.values())
     total_without = sum(c["without_evidence"] for c in domain_counts.values())
     total_cov = f"{100.0 * total_with / total_all:.0f}%" if total_all > 0 else "N/A"
-    lines.append(
-        f"| **Total** | **{total_all}** | **{total_with}** "
-        f"| **{total_without}** | **{total_cov}** |"
-    )
+    lines.append(f"| **Total** | **{total_all}** | **{total_with}** | **{total_without}** | **{total_cov}** |")
 
     return "\n".join(lines)
 
 
-def _build_executive_summary(overall_score, overall_status, gate_result,
-                             domain_scores, assessments, practices_catalog):
+def _build_executive_summary(overall_score, overall_status, gate_result, domain_scores, assessments, practices_catalog):
     """Build the executive summary paragraph."""
     total_assessed = len(assessments)
     total_met = sum(1 for a in assessments if a.get("status") == "met")
@@ -663,9 +638,7 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
     total_not_assessed = sum(1 for a in assessments if a.get("status") == "not_assessed")
 
     # Count domains with assessments
-    domains_with_data = sum(
-        1 for d in domain_scores.values() if d.get("total", 0) > 0
-    )
+    domains_with_data = sum(1 for d in domain_scores.values() if d.get("total", 0) > 0)
 
     # Count critical not_met
     critical_not_met = 0
@@ -677,7 +650,8 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
 
     # Identify weakest domain
     scored_domains = {
-        code: s for code, s in domain_scores.items()
+        code: s
+        for code, s in domain_scores.items()
         if s.get("total", 0) > 0 and s.get("total", 0) != s.get("not_applicable", 0)
     }
     weakest_code = ""
@@ -703,14 +677,11 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
     )
     if critical_not_met > 0:
         lines.append(
-            f"- **{critical_not_met} critical-priority practice(s) not met** "
-            "-- immediate remediation required."
+            f"- **{critical_not_met} critical-priority practice(s) not met** -- immediate remediation required."
         )
     if weakest_code:
         weakest_name = CMMC_DOMAIN_NAMES.get(weakest_code, weakest_code)
-        lines.append(
-            f"- Weakest domain: **{weakest_name} ({weakest_code})** ({weakest_score:.1f}%)."
-        )
+        lines.append(f"- Weakest domain: **{weakest_name} ({weakest_code})** ({weakest_score:.1f}%).")
 
     return "\n".join(lines)
 
@@ -718,6 +689,7 @@ def _build_executive_summary(overall_score, overall_status, gate_result,
 # ---------------------------------------------------------------------------
 # Variable substitution & CUI markings
 # ---------------------------------------------------------------------------
+
 
 def _apply_cui_markings(content, cui_config):
     """Apply CUI header and footer banners to the report content."""
@@ -734,15 +706,18 @@ def _apply_cui_markings(content, cui_config):
 
 def _substitute_variables(template, variables):
     """Replace {{variable_name}} placeholders in the template."""
+
     def replacer(match):
         key = match.group(1).strip()
         return str(variables.get(key, match.group(0)))
+
     return re.sub(r"\{\{(\w+)\}\}", replacer, template)
 
 
 # ---------------------------------------------------------------------------
 # Audit logging
 # ---------------------------------------------------------------------------
+
 
 def _log_audit_event(conn, project_id, action, details, file_path):
     """Log an audit trail event for CMMC report generation."""
@@ -770,6 +745,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
+
 
 def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
     """Generate a CMMC assessment report for a project.
@@ -822,19 +798,19 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
         nist_171_mapping = _build_nist_171_mapping(assessments, practices_catalog)
         readiness_by_domain = _build_readiness_by_domain(domain_scores)
         gate_details = _build_gate_details(assessments, level, gate_result)
-        recommendations = _build_recommendations(
-            assessments, domain_scores, practices_catalog
-        )
+        recommendations = _build_recommendations(assessments, domain_scores, practices_catalog)
         evidence_references = _build_evidence_references(assessments)
         executive_summary = _build_executive_summary(
-            overall_score, overall_status, gate_result,
-            domain_scores, assessments, practices_catalog,
+            overall_score,
+            overall_status,
+            gate_result,
+            domain_scores,
+            assessments,
+            practices_catalog,
         )
 
         # Count domains with data
-        domains_assessed = sum(
-            1 for d in domain_scores.values() if d.get("total", 0) > 0
-        )
+        domains_assessed = sum(1 for d in domain_scores.values() if d.get("total", 0) > 0)
 
         # Practice status counts
         total_practices = len(assessments)
@@ -881,7 +857,6 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
             "cmmc_level": str(level),
             "level": str(level),
             "assessment_type": assessment_type,
-
             # Report metadata
             "version": new_version,
             "report_version": new_version,
@@ -889,14 +864,12 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
             "date_prepared": now.strftime("%Y-%m-%d"),
             "assessor": assessor,
             "generation_timestamp": now.strftime("%Y-%m-%d %H:%M UTC"),
-
             # Overall scores
             "overall_score": f"{overall_score:.1f}",
             "overall_status": overall_status,
             "gate_result": gate_result,
             "domains_assessed": str(domains_assessed),
             "certification_readiness": certification_readiness,
-
             # Practice counts
             "total_practices": str(total_practices),
             "practices_met": str(practices_met),
@@ -914,10 +887,8 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
             "practices_not_assessed": str(practices_not_assessed),
             "practices_not_assessed_count": str(practices_not_assessed),
             "practices_not_assessed_pct": _pct(practices_not_assessed, total_practices),
-
             # Executive summary
             "executive_summary": executive_summary,
-
             # Section content
             "domain_scores_table": domain_scores_table,
             "domain_details": domain_details,
@@ -927,14 +898,9 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
             "gate_details": gate_details,
             "recommendations": recommendations,
             "evidence_references": evidence_references,
-
             # CUI banners
-            "cui_banner_top": cui_config.get(
-                "document_header", cui_config.get("banner_top", "CUI // SP-CTI")
-            ),
-            "cui_banner_bottom": cui_config.get(
-                "document_footer", cui_config.get("banner_bottom", "CUI // SP-CTI")
-            ),
+            "cui_banner_top": cui_config.get("document_header", cui_config.get("banner_top", "CUI // SP-CTI")),
+            "cui_banner_bottom": cui_config.get("document_footer", cui_config.get("banner_bottom", "CUI // SP-CTI")),
         }
 
         # Per-domain score variables (e.g., ac_score, at_score, etc.)
@@ -995,7 +961,8 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
             "output_file": str(out_file),
         }
         _log_audit_event(
-            conn, project_id,
+            conn,
+            project_id,
             f"CMMC L{level} report v{new_version} generated",
             audit_details,
             out_file,
@@ -1033,9 +1000,7 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
             "practices_not_assessed": practices_not_assessed,
             "certification_readiness": certification_readiness,
             "domain_scores": {
-                code: domain_scores[code]["score"]
-                for code in CMMC_DOMAIN_CODES
-                if domain_scores[code]["total"] > 0
+                code: domain_scores[code]["score"] for code in CMMC_DOMAIN_CODES if domain_scores[code]["total"] > 0
             },
             "generated_at": now.isoformat(),
         }
@@ -1065,21 +1030,13 @@ def generate_cmmc_report(project_id, level=2, output_path=None, db_path=None):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate CMMC assessment report"
-    )
+    parser = argparse.ArgumentParser(description="Generate CMMC assessment report")
     parser.add_argument("--project-id", required=True, help="Project ID")
-    parser.add_argument(
-        "--level", type=int, choices=[2, 3], default=2,
-        help="CMMC level (2 or 3, default: 2)"
-    )
+    parser.add_argument("--level", type=int, choices=[2, 3], default=2, help="CMMC level (2 or 3, default: 2)")
     parser.add_argument("--output-path", help="Output directory or file path")
+    parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
     parser.add_argument(
-        "--db-path", type=Path, default=DB_PATH, help="Database path"
-    )
-    parser.add_argument(
-        "--format", choices=["text", "json"], default="text",
-        help="Output format: text (default) or json"
+        "--format", choices=["text", "json"], default="text", help="Output format: text (default) or json"
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()

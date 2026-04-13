@@ -20,17 +20,15 @@ Usage:
     python tools/compliance/gao_ai_assessor.py --project-id proj-123 --json
 """
 
-import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
-from icdev._paths import get_project_root
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from base_assessor import BaseAssessor
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
@@ -41,7 +39,9 @@ class GAOAIAssessor(BaseAssessor):
     CATALOG_FILENAME = "gao_ai_accountability.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """GAO AI Accountability automated checks.
 
@@ -65,8 +65,7 @@ class GAOAIAssessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = sqlite3.connect(str(self.db_path))
-                conn.row_factory = sqlite3.Row
+                conn = get_connection(db_path=str(self._db_path))
                 project_id = project.get("id", "")
 
                 # GAO-PERF-4: Audit trail
@@ -98,7 +97,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -111,7 +110,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     for table in ["prov_entities", "ai_bom"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -124,7 +123,7 @@ class GAOAIAssessor(BaseAssessor):
                 try:
                     for table in ["nist_ai_rmf_assessments", "atlas_assessments"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -206,8 +205,7 @@ class GAOAIAssessor(BaseAssessor):
             for f in project_path.rglob("*.yaml"):
                 try:
                     content = f.read_text(encoding="utf-8", errors="ignore").lower()
-                    if ("agent" in content and "authority" in content) or \
-                       ("governance" in content and "ai" in content):
+                    if ("agent" in content and "authority" in content) or ("governance" in content and "ai" in content):
                         results["GAO-GOV-1"] = "satisfied"
                         break
                 except Exception:
@@ -217,8 +215,7 @@ class GAOAIAssessor(BaseAssessor):
             for f in project_path.rglob("*.yaml"):
                 try:
                     content = f.read_text(encoding="utf-8", errors="ignore").lower()
-                    if ("encrypt" in content or "fips" in content) and \
-                       ("data" in content or "secret" in content):
+                    if ("encrypt" in content or "fips" in content) and ("data" in content or "secret" in content):
                         results["GAO-DATA-3"] = "satisfied"
                         break
                 except Exception:

@@ -23,8 +23,8 @@
 (function () {
     "use strict";
 
-    var ICDEV™ = window.ICDEV™ || {};
-    window.ICDEV™ = ICDEV™;
+    var ICDEV = window.ICDEV || {};
+    window.ICDEV = ICDEV;
 
     // ── Constants ────────────────────────────────────────────────────────────
     var STORAGE_KEY = "icdev_tour_completed";
@@ -458,7 +458,7 @@
      * ICDEV™.startTour();    // Start from beginning
      * ICDEV™.startTour(3);   // Resume from step 4
      */
-    ICDEV™.startTour = function startTour(fromStep) {
+    ICDEV.startTour = function startTour(fromStep) {
         if (_active) teardown();
         injectStyles();
 
@@ -493,7 +493,7 @@
      * ICDEV™.resetTour();
      * location.reload(); // Tour will show again
      */
-    ICDEV™.resetTour = function resetTour() {
+    ICDEV.resetTour = function resetTour() {
         try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* air-gapped fallback */ }
     };
 
@@ -508,9 +508,9 @@
             injectStyles();
             loadStepsFromConfig(function () {
                 showWelcome(
-                    function () { ICDEV™.startTour(0); },
+                    function () { ICDEV.startTour(0); },
                     function () { completeTour(); },
-                    function (savedStep) { ICDEV™.startTour(savedStep); }
+                    function (savedStep) { ICDEV.startTour(savedStep); }
                 );
             });
         }, 500);

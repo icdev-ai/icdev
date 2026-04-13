@@ -7,11 +7,11 @@ SaaS gateway, and CLI tools. Backward compatible — existing dict returns
 work via to_dict() methods.
 """
 
-from icdev.tools.schemas.core import ProjectStatus, AgentHealth, AuditEvent
-from icdev.tools.schemas.compliance import ComplianceResult, SecurityScanResult
-from icdev.tools.schemas.chat import ChatMessage, ChatContext
-from icdev.tools.schemas.innovation import InnovationSignal
-from icdev.tools.schemas.validation import validate_output, SchemaValidationError
+from tools.schemas.core import ProjectStatus, AgentHealth, AuditEvent
+from tools.schemas.compliance import ComplianceResult, SecurityScanResult
+from tools.schemas.chat import ChatMessage, ChatContext
+from tools.schemas.innovation import InnovationSignal
+from tools.schemas.validation import validate_output, SchemaValidationError
 
 __all__ = [
     "ProjectStatus",

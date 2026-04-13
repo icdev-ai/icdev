@@ -41,6 +41,7 @@ class KMSProvider(ABC):
 # ============================================================
 try:
     import boto3 as _boto3_kms
+
     _HAS_BOTO3_KMS = True
 except ImportError:
     _HAS_BOTO3_KMS = False
@@ -88,9 +89,7 @@ class AWSKMSProvider(KMSProvider):
         if not client:
             return None
         try:
-            resp = client.generate_data_key(
-                KeyId=key_id or self._default_key, KeySpec="AES_256"
-            )
+            resp = client.generate_data_key(KeyId=key_id or self._default_key, KeySpec="AES_256")
             return resp["Plaintext"], resp["CiphertextBlob"]
         except Exception:
             return None
@@ -110,9 +109,6 @@ class AWSKMSProvider(KMSProvider):
 # Azure Key Vault (Cryptography)
 # ============================================================
 try:
-    from azure.keyvault.keys import KeyClient
-    from azure.keyvault.keys.crypto import CryptographyClient, EncryptionAlgorithm
-    from azure.identity import DefaultAzureCredential as _AzureCredKMS
     _HAS_AZURE_KMS = True
 except ImportError:
     _HAS_AZURE_KMS = False
@@ -145,7 +141,6 @@ class AzureKMSProvider(KMSProvider):
 # GCP Cloud KMS
 # ============================================================
 try:
-    from google.cloud import kms as _gcp_kms
     _HAS_GCP_KMS = True
 except ImportError:
     _HAS_GCP_KMS = False
@@ -154,8 +149,7 @@ except ImportError:
 class GCPKMSProvider(KMSProvider):
     """Google Cloud KMS implementation."""
 
-    def __init__(self, project_id: str = "", location: str = "us-east4",
-                 key_ring: str = "", key_name: str = ""):
+    def __init__(self, project_id: str = "", location: str = "us-east4", key_ring: str = "", key_name: str = ""):
         self._project_id = project_id or os.environ.get("GCP_PROJECT_ID", "")
         self._location = location
         self._key_ring = key_ring or os.environ.get("GCP_KMS_KEY_RING", "icdev")
@@ -210,6 +204,7 @@ class OCIKMSProvider(KMSProvider):
 try:
     from ibm_platform_services import KeyProtectV2
     from ibm_cloud_sdk_core.authenticators import IAMAuthenticator as _IBMKMSAuth
+
     _HAS_IBM_KP = True
 except ImportError:
     _HAS_IBM_KP = False
@@ -218,8 +213,7 @@ except ImportError:
 class IBMKMSProvider(KMSProvider):
     """IBM Key Protect implementation (D237)."""
 
-    def __init__(self, api_key: str = "", instance_id: str = "",
-                 region: str = "us-south"):
+    def __init__(self, api_key: str = "", instance_id: str = "", region: str = "us-south"):
         self._api_key = api_key or os.environ.get("IBM_CLOUD_API_KEY", "")
         self._instance_id = instance_id or os.environ.get("IBM_KEY_PROTECT_INSTANCE_ID", "")
         self._region = region
@@ -233,9 +227,7 @@ class IBMKMSProvider(KMSProvider):
         if self._client is None and _HAS_IBM_KP and self._api_key:
             authenticator = _IBMKMSAuth(apikey=self._api_key)
             self._client = KeyProtectV2(authenticator=authenticator)
-            self._client.set_service_url(
-                f"https://{self._region}.kms.cloud.ibm.com"
-            )
+            self._client.set_service_url(f"https://{self._region}.kms.cloud.ibm.com")
         return self._client
 
     def encrypt(self, plaintext: bytes, key_id: str = "") -> Optional[bytes]:
@@ -244,6 +236,7 @@ class IBMKMSProvider(KMSProvider):
             return None
         try:
             import base64
+
             encoded = base64.b64encode(plaintext).decode()
             resp = client.wrap_key(
                 id=self._instance_id,
@@ -260,6 +253,7 @@ class IBMKMSProvider(KMSProvider):
             return None
         try:
             import base64
+
             encoded = base64.b64encode(ciphertext).decode()
             resp = client.unwrap_key(
                 id=self._instance_id,
@@ -293,6 +287,7 @@ class IBMKMSProvider(KMSProvider):
 # ============================================================
 try:
     from cryptography.fernet import Fernet
+
     _HAS_FERNET = True
 except ImportError:
     _HAS_FERNET = False

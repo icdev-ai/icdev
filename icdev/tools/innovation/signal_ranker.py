@@ -6,14 +6,15 @@
 # POC: ICDEV™ System Administrator
 """Innovation Scoring Engine — score and rank innovation signals using weighted multi-dimension analysis.
 
-Scores innovation signals discovered by web_scanner.py using a 5-dimension weighted
+Scores innovation signals discovered by web_scanner.py using a 6-dimension weighted
 average (D21 deterministic scoring pattern):
 
-  1. community_demand  (0.30) — GitHub stars, SO votes, upvotes, issue frequency
-  2. impact_breadth    (0.25) — Potential number of ICDEV™ projects/tenants affected
-  3. feasibility       (0.20) — Can ICDEV™ build this with existing tools/layers?
+  1. community_demand  (0.25) — GitHub stars, SO votes, upvotes, issue frequency
+  2. impact_breadth    (0.20) — Potential number of ICDEV™ projects/tenants affected
+  3. feasibility       (0.15) — Can ICDEV™ build this with existing tools/layers?
   4. compliance_alignment (0.15) — Does it strengthen compliance posture?
   5. novelty           (0.10) — Not already addressed by existing ICDEV™ capabilities
+  6. technical_depth   (0.15) — How concretely does it map to ICDEV™ modules?
 
 Architecture:
     - Weights loaded from args/innovation_config.yaml under scoring.weights (D26 pattern)
@@ -40,16 +41,15 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
-from datetime import datetime, timezone
+from tools.common.helpers import now_iso
+from tools.db.storage import get_connection
 from pathlib import Path
-from icdev._paths import get_project_root
 
 # =========================================================================
 # PATH SETUP
 # =========================================================================
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -61,27 +61,32 @@ CONFIG_PATH = BASE_DIR / "args" / "innovation_config.yaml"
 # =========================================================================
 try:
     import yaml
+
     _HAS_YAML = True
 except ImportError:
     _HAS_YAML = False
 
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def audit_log_event(**kwargs):
         return -1
+
 
 # =========================================================================
 # DEFAULT CONFIGURATION
 # =========================================================================
 DEFAULT_WEIGHTS = {
-    "community_demand": 0.30,
-    "impact_breadth": 0.25,
-    "feasibility": 0.20,
-    "compliance_alignment": 0.15,
-    "novelty": 0.10,
+    "community_demand": 0.25,  # was 0.30
+    "impact_breadth": 0.20,  # was 0.25
+    "feasibility": 0.15,  # was 0.20
+    "compliance_alignment": 0.15,  # unchanged
+    "novelty": 0.10,  # unchanged
+    "technical_depth": 0.15,  # NEW — Phase 71: concrete module mapping
 }
 
 DEFAULT_THRESHOLDS = {
@@ -92,13 +97,19 @@ DEFAULT_THRESHOLDS = {
 
 # Categories that strengthen compliance posture (positive boost)
 COMPLIANCE_POSITIVE_CATEGORIES = {
-    "security_vulnerability", "compliance_gap", "supply_chain",
+    "security_vulnerability",
+    "compliance_gap",
+    "supply_chain",
 }
 
 # Categories neutral to compliance
 COMPLIANCE_NEUTRAL_CATEGORIES = {
-    "developer_experience", "performance", "infrastructure",
-    "testing", "ai_tooling", "modernization",
+    "developer_experience",
+    "performance",
+    "infrastructure",
+    "testing",
+    "ai_tooling",
+    "modernization",
 }
 
 # FORGE layer keyword mapping — used for feasibility scoring
@@ -119,17 +130,9 @@ def _get_db(db_path=None):
     """Get database connection with dict-like row access."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
-
-
-def _now():
-    """ISO-8601 UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, details=None, project_id=None):
@@ -250,9 +253,7 @@ def _score_impact_breadth(signal, conn):
 
     # Count total active projects
     try:
-        total_projects = conn.execute(
-            "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"
-        ).fetchone()["cnt"]
+        total_projects = conn.execute("SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'").fetchone()["cnt"]
     except Exception:
         total_projects = 0
 
@@ -260,11 +261,22 @@ def _score_impact_breadth(signal, conn):
         # No projects in DB — use heuristic based on category breadth
         # Security and compliance affect everyone; niche categories affect fewer
         broad_keywords = [
-            "security", "compliance", "testing", "ci/cd", "pipeline",
-            "deployment", "monitoring", "authentication", "authorization",
+            "security",
+            "compliance",
+            "testing",
+            "ci/cd",
+            "pipeline",
+            "deployment",
+            "monitoring",
+            "authentication",
+            "authorization",
         ]
         narrow_keywords = [
-            "specific", "niche", "legacy", "deprecated", "single",
+            "specific",
+            "niche",
+            "legacy",
+            "deprecated",
+            "single",
         ]
         broad_matches = sum(1 for kw in broad_keywords if kw in text_corpus)
         narrow_matches = sum(1 for kw in narrow_keywords if kw in text_corpus)
@@ -276,15 +288,15 @@ def _score_impact_breadth(signal, conn):
 
     # Category-to-project-type relevance mapping
     category_project_map = {
-        "security_vulnerability": None,       # Affects all projects
-        "compliance_gap": None,               # Affects all projects
-        "supply_chain": None,                 # Affects all projects
-        "developer_experience": None,         # Affects all projects
+        "security_vulnerability": None,  # Affects all projects
+        "compliance_gap": None,  # Affects all projects
+        "supply_chain": None,  # Affects all projects
+        "developer_experience": None,  # Affects all projects
         "infrastructure": ["microservice", "api", "webapp"],
-        "testing": None,                      # Affects all projects
+        "testing": None,  # Affects all projects
         "performance": ["webapp", "api", "microservice", "data_pipeline"],
         "modernization": ["webapp", "api", "microservice"],
-        "ai_tooling": None,                   # Affects all projects
+        "ai_tooling": None,  # Affects all projects
     }
 
     relevant_types = category_project_map.get(category)
@@ -295,8 +307,10 @@ def _score_impact_breadth(signal, conn):
     else:
         try:
             placeholders = ",".join("?" for _ in relevant_types)
+            # SEC: placeholders is only "?,?,?" — no user input in the SQL string
             affected = conn.execute(
-                f"SELECT COUNT(*) as cnt FROM projects WHERE status = 'active' AND type IN ({placeholders})",
+                "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"  # nosec B608
+                f" AND type IN ({placeholders})",
                 relevant_types,
             ).fetchone()["cnt"]
         except Exception:
@@ -398,17 +412,36 @@ def _score_compliance_alignment(signal, config=None):
 
     # Boost for compliance-related keywords in text
     compliance_keywords = [
-        "nist", "fedramp", "cmmc", "stig", "ato", "fips", "compliance",
-        "audit", "authorization", "security control", "cui", "classified",
-        "hipaa", "pci", "cjis", "soc 2", "iso 27001", "zero trust",
+        "nist",
+        "fedramp",
+        "cmmc",
+        "stig",
+        "ato",
+        "fips",
+        "compliance",
+        "audit",
+        "authorization",
+        "security control",
+        "cui",
+        "classified",
+        "hipaa",
+        "pci",
+        "cjis",
+        "soc 2",
+        "iso 27001",
+        "zero trust",
     ]
     keyword_hits = sum(1 for kw in compliance_keywords if kw in text_corpus)
     keyword_boost = min(0.15, keyword_hits * 0.03)
 
     # Penalty for potentially weakening compliance
     weakening_keywords = [
-        "bypass", "disable security", "skip auth", "remove check",
-        "ignore compliance", "workaround security",
+        "bypass",
+        "disable security",
+        "skip auth",
+        "remove check",
+        "ignore compliance",
+        "workaround security",
     ]
     weakening_hits = sum(1 for kw in weakening_keywords if kw in text_corpus)
     weakening_penalty = min(0.4, weakening_hits * 0.2)
@@ -436,9 +469,33 @@ def _score_novelty(signal, conn):
 
     # Extract significant words (simple tokenization, skip short words)
     stop_words = {
-        "the", "and", "for", "that", "this", "with", "from", "are", "was",
-        "have", "has", "not", "but", "can", "will", "all", "been", "they",
-        "how", "use", "new", "when", "what", "who", "why", "does", "into",
+        "the",
+        "and",
+        "for",
+        "that",
+        "this",
+        "with",
+        "from",
+        "are",
+        "was",
+        "have",
+        "has",
+        "not",
+        "but",
+        "can",
+        "will",
+        "all",
+        "been",
+        "they",
+        "how",
+        "use",
+        "new",
+        "when",
+        "what",
+        "who",
+        "why",
+        "does",
+        "into",
     }
     words = set()
     for token in f"{title} {description}".split():
@@ -454,13 +511,9 @@ def _score_novelty(signal, conn):
     total_checks = 0
 
     try:
-        patterns = conn.execute(
-            "SELECT pattern_signature, description FROM knowledge_patterns"
-        ).fetchall()
+        patterns = conn.execute("SELECT pattern_signature, description FROM knowledge_patterns").fetchall()
         for pattern in patterns:
-            sig_text = (
-                (pattern["pattern_signature"] or "") + " " + (pattern["description"] or "")
-            ).lower()
+            sig_text = ((pattern["pattern_signature"] or "") + " " + (pattern["description"] or "")).lower()
             matches = sum(1 for w in words if w in sig_text)
             if matches >= 3:  # At least 3 keyword overlaps = significant similarity
                 overlap_count += 1
@@ -478,9 +531,7 @@ def _score_novelty(signal, conn):
             (signal.get("id", ""),),
         ).fetchall()
         for recent in recent_signals:
-            recent_text = (
-                (recent["title"] or "") + " " + (recent["description"] or "")
-            ).lower()
+            recent_text = ((recent["title"] or "") + " " + (recent["description"] or "")).lower()
             matches = sum(1 for w in words if w in recent_text)
             if matches >= 3:
                 overlap_count += 1
@@ -498,11 +549,160 @@ def _score_novelty(signal, conn):
     return max(0.0, min(1.0, novelty))
 
 
+# High-value subsystems — matching these boosts technical_depth score
+HIGH_VALUE_SUBSYSTEMS = {
+    "rag": 0.15,
+    "finetune": 0.15,
+    "compliance": 0.12,
+    "security": 0.12,
+    "knowledge_graph": 0.10,
+    "testing": 0.08,
+    "marketplace": 0.08,
+    "innovation": 0.05,
+}
+
+
+def _score_technical_depth(signal, config=None):
+    """Score technical depth — how concretely the signal maps to ICDEV™ modules.
+
+    Phase 71 lesson: surface-level scoring misses the key question —
+    which specific tools/modules would this enhance?
+
+    Reads tools/manifest.md to find concrete integration points.
+    Higher score = more specific, actionable integration paths.
+
+    Args:
+        signal: Dict of signal row from DB.
+        config: Loaded innovation config (optional).
+
+    Returns:
+        Float in [0.0, 1.0].
+    """
+    manifest_path = BASE_DIR / "tools" / "manifest.md"
+
+    title = (signal.get("title") or "").lower()
+    description = (signal.get("description") or "").lower()
+    signal_text = f"{title} {description}"
+
+    # Extract significant keywords from signal text
+    stop_words = {
+        "the",
+        "and",
+        "for",
+        "that",
+        "this",
+        "with",
+        "from",
+        "are",
+        "was",
+        "have",
+        "has",
+        "not",
+        "but",
+        "can",
+        "will",
+        "all",
+        "been",
+        "they",
+        "how",
+        "use",
+        "new",
+        "when",
+        "what",
+        "who",
+        "why",
+        "does",
+        "into",
+        "its",
+        "also",
+        "more",
+        "just",
+        "than",
+        "some",
+        "such",
+        "these",
+    }
+    keywords = set()
+    for token in signal_text.split():
+        cleaned = token.strip(".,;:!?()[]{}\"'`-_/")
+        if len(cleaned) > 3 and cleaned not in stop_words:
+            keywords.add(cleaned)
+
+    if not keywords:
+        return 0.5  # No keywords to match — unknown depth
+
+    # Attempt to load and parse tools/manifest.md
+    if not manifest_path.exists():
+        # Fallback: keyword heuristic against known ICDEV™ subsystem names
+        subsystem_hits = sum(1 for sub in HIGH_VALUE_SUBSYSTEMS if sub in signal_text)
+        return max(0.0, min(1.0, subsystem_hits * 0.15 + 0.2))
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest_lines = f.readlines()
+    except OSError:
+        return 0.5  # Cannot read manifest — fallback
+
+    # Parse markdown table rows: lines containing | are table rows
+    matched_modules = []
+    matched_paths = set()
+
+    for line in manifest_lines:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        # Split columns, skip separator rows (---|---|---)
+        cols = [c.strip() for c in stripped.split("|") if c.strip()]
+        if not cols or all(set(c) <= set("-: ") for c in cols):
+            continue
+        # Each tool entry: first col is typically path/name, rest is description
+        row_text = " ".join(cols).lower()
+        # Count keyword overlaps between signal and this manifest entry
+        matches = sum(1 for kw in keywords if kw in row_text)
+        if matches >= 2:
+            matched_modules.append(row_text)
+            # Extract path prefix for layer diversity detection
+            first_col = cols[0].lower()
+            # Identify the top-level directory (tools/, args/, context/, etc.)
+            for prefix in ("tools/", "args/", "context/", "hardprompts/", "goals/"):
+                if prefix in first_col:
+                    matched_paths.add(prefix)
+                    break
+            # Also capture specific subsystem folder names from the path
+            for sub in HIGH_VALUE_SUBSYSTEMS:
+                if sub in first_col or sub in row_text:
+                    matched_paths.add(f"subsystem:{sub}")
+
+    n_matches = len(matched_modules)
+
+    if n_matches == 0:
+        return max(0.0, min(1.0, 0.1))
+
+    # Base score: saturates at ~10 matched modules = 0.6
+    base_score = min(0.6, n_matches * 0.06)
+
+    # Subsystem boost: credit for matching high-value subsystems
+    subsystem_boost = 0.0
+    for sub, boost_val in HIGH_VALUE_SUBSYSTEMS.items():
+        if any(f"subsystem:{sub}" == p for p in matched_paths):
+            subsystem_boost += boost_val
+    subsystem_boost = min(0.30, subsystem_boost)
+
+    # Layer diversity bonus: reward signals that span multiple FORGE layers
+    gotcha_layers_hit = sum(
+        1 for prefix in ("tools/", "args/", "context/", "hardprompts/", "goals/") if prefix in matched_paths
+    )
+    layer_diversity_bonus = min(0.10, (gotcha_layers_hit - 1) * 0.05) if gotcha_layers_hit > 1 else 0.0
+
+    score = base_score + subsystem_boost + layer_diversity_bonus
+    return max(0.0, min(1.0, score))
+
+
 # =========================================================================
 # SCORING FUNCTIONS
 # =========================================================================
 def score_signal(signal_id, db_path=None):
-    """Score a single innovation signal across all 5 dimensions.
+    """Score a single innovation signal across all 6 dimensions.
 
     Reads the signal from DB, computes each dimension score, calculates
     the weighted average, updates the signal row, and returns the result.
@@ -520,9 +720,7 @@ def score_signal(signal_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute(
-            "SELECT * FROM innovation_signals WHERE id = ?", (signal_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM innovation_signals WHERE id = ?", (signal_id,)).fetchone()
         if not row:
             raise ValueError(f"Signal not found: {signal_id}")
 
@@ -535,12 +733,11 @@ def score_signal(signal_id, db_path=None):
             "feasibility": _score_feasibility(signal, config),
             "compliance_alignment": _score_compliance_alignment(signal, config),
             "novelty": _score_novelty(signal, conn),
+            "technical_depth": _score_technical_depth(signal, config),
         }
 
         # Weighted average (D21 deterministic pattern)
-        overall_score = sum(
-            dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions
-        )
+        overall_score = sum(dimensions[dim] * weights.get(dim, 0.0) for dim in dimensions)
         overall_score = round(max(0.0, min(1.0, overall_score)), 4)
 
         # Determine threshold band
@@ -557,7 +754,7 @@ def score_signal(signal_id, db_path=None):
             "weights": weights,
             "overall": overall_score,
             "threshold_band": threshold_band,
-            "scored_at": _now(),
+            "scored_at": now_iso(),
         }
 
         # Update DB: set score, score_breakdown, transition status new -> scored
@@ -607,7 +804,7 @@ def score_signal(signal_id, db_path=None):
 def score_all_new(db_path=None):
     """Score all signals with status='new'.
 
-    Iterates through unscored signals and applies the 5-dimension scoring.
+    Iterates through unscored signals and applies the 6-dimension scoring.
     Respects max_signals_per_scan from config to prevent overload.
 
     Args:
@@ -665,7 +862,7 @@ def score_all_new(db_path=None):
         "errors": errors,
         "error_details": error_details[:10],  # Cap error details
         "score_distribution": score_distribution,
-        "scored_at": _now(),
+        "scored_at": now_iso(),
     }
 
 
@@ -708,9 +905,12 @@ def get_top_signals(limit=20, min_score=0.5, db_path=None):
             "SELECT COUNT(*) as cnt FROM innovation_signals WHERE innovation_score IS NOT NULL"
         ).fetchone()["cnt"]
 
-        avg_score = conn.execute(
-            "SELECT AVG(innovation_score) as avg_score FROM innovation_signals WHERE innovation_score IS NOT NULL"
-        ).fetchone()["avg_score"] or 0.0
+        avg_score = (
+            conn.execute(
+                "SELECT AVG(innovation_score) as avg_score FROM innovation_signals WHERE innovation_score IS NOT NULL"
+            ).fetchone()["avg_score"]
+            or 0.0
+        )
 
         distribution = {}
         thresholds = _get_thresholds()
@@ -728,13 +928,9 @@ def get_top_signals(limit=20, min_score=0.5, db_path=None):
 
         # Correct distribution to be non-overlapping
         distribution["auto_queue"] = distribution.get("auto_queue", 0)
-        distribution["suggest"] = (
-            distribution.get("suggest", 0) - distribution.get("auto_queue", 0)
-        )
+        distribution["suggest"] = distribution.get("suggest", 0) - distribution.get("auto_queue", 0)
         distribution["log_only"] = (
-            distribution.get("log_only", 0)
-            - distribution.get("suggest", 0)
-            - distribution.get("auto_queue", 0)
+            distribution.get("log_only", 0) - distribution.get("suggest", 0) - distribution.get("auto_queue", 0)
         )
 
         return {
@@ -773,13 +969,21 @@ def calibrate_weights(db_path=None):
 
     conn = _get_db(db_path)
     try:
-        # Collect signals that have been implemented and have marketplace feedback
-        # Join innovation_signals with marketplace_installations/ratings if available
+        # D-EVO-9: Collect signals with marketplace adoption feedback
+        # Join innovation_signals with marketplace_installations for success correlation
         completed_signals = []
         try:
+            # Try marketplace-enriched query first
             rows = conn.execute(
-                """SELECT s.id, s.innovation_score, s.score_breakdown, s.category
+                """SELECT s.id, s.innovation_score, s.score_breakdown, s.category,
+                          s.status,
+                          COALESCE(mi.install_count, 0) as installs
                    FROM innovation_signals s
+                   LEFT JOIN (
+                       SELECT asset_id, COUNT(*) as install_count
+                       FROM marketplace_installations
+                       GROUP BY asset_id
+                   ) mi ON mi.asset_id = s.solution_asset_id
                    WHERE s.status IN ('completed', 'queued')
                    AND s.innovation_score IS NOT NULL
                    AND s.score_breakdown IS NOT NULL
@@ -788,7 +992,21 @@ def calibrate_weights(db_path=None):
             ).fetchall()
             completed_signals = [dict(r) for r in rows]
         except Exception:
-            pass
+            # Fallback: no marketplace join
+            try:
+                rows = conn.execute(
+                    """SELECT s.id, s.innovation_score, s.score_breakdown, s.category,
+                              s.status, 0 as installs
+                       FROM innovation_signals s
+                       WHERE s.status IN ('completed', 'queued')
+                       AND s.innovation_score IS NOT NULL
+                       AND s.score_breakdown IS NOT NULL
+                       ORDER BY s.discovered_at DESC
+                       LIMIT 500"""
+                ).fetchall()
+                completed_signals = [dict(r) for r in rows]
+            except Exception:
+                pass
 
         if len(completed_signals) < min_data_points:
             return {
@@ -800,9 +1018,8 @@ def calibrate_weights(db_path=None):
                 "adjustments": {},
             }
 
-        # Analyze dimension correlations with success
-        # Success heuristic: signals that reached 'completed' status are successes;
-        # 'queued' signals with high scores that stalled may indicate scoring issues
+        # D-EVO-9: Enhanced success heuristic — marketplace installs boost success signal
+        # Success: completed + installs > 0; Partial: completed + 0 installs; Stall: queued
         dimension_success = {dim: [] for dim in DEFAULT_WEIGHTS}
         dimension_stall = {dim: [] for dim in DEFAULT_WEIGHTS}
 
@@ -813,10 +1030,13 @@ def calibrate_weights(db_path=None):
             except (json.JSONDecodeError, TypeError):
                 continue
 
-            if sig.get("status") == "completed":
+            # D-EVO-9: Completed with marketplace installs = strong success
+            is_success = sig.get("status") == "completed" and sig.get("installs", 0) > 0
+            is_weak_success = sig.get("status") == "completed" and sig.get("installs", 0) == 0
+            if is_success or is_weak_success:
                 for dim, val in dims.items():
                     if dim in dimension_success:
-                        dimension_success[dim].append(float(val))
+                        dimension_success[dim].extend([float(val)] * (2 if is_success else 1))
             else:
                 for dim, val in dims.items():
                     if dim in dimension_stall:
@@ -843,6 +1063,13 @@ def calibrate_weights(db_path=None):
                 current_weights[dim] = max(0.02, current_weights[dim] - adj)
             else:
                 adjustments[dim] = {"direction": "unchanged", "step": 0.0}
+
+        # D-EVO-9: Bound adjustments to +/-20% of original weights
+        for dim in current_weights:
+            orig = old_weights.get(dim, 0.1)
+            max_val = orig * 1.20
+            min_val = orig * 0.80
+            current_weights[dim] = max(min_val, min(max_val, current_weights[dim]))
 
         # Re-normalize to sum to 1.0
         total = sum(current_weights.values())
@@ -877,9 +1104,9 @@ def calibrate_weights(db_path=None):
             "new_weights": current_weights,
             "adjustments": adjustments,
             "data_points": len(completed_signals),
-            "calibrated_at": _now(),
+            "calibrated_at": now_iso(),
             "note": "Weights computed but NOT persisted to YAML. "
-                    "Review adjustments and update args/innovation_config.yaml manually.",
+            "Review adjustments and update args/innovation_config.yaml manually.",
         }
 
     finally:
@@ -890,28 +1117,18 @@ def calibrate_weights(db_path=None):
 # CLI
 # =========================================================================
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Innovation Scoring Engine — score and rank innovation signals"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Innovation Scoring Engine — score and rank innovation signals")
     parser.add_argument("--json", action="store_true", help="JSON output")
-    parser.add_argument(
-        "--db-path", type=Path, default=None, help="Database path override"
-    )
+    parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--score", action="store_true", help="Score a single signal")
     group.add_argument("--score-all", action="store_true", help="Score all new signals")
     group.add_argument("--top", action="store_true", help="Get top-scored signals")
-    group.add_argument(
-        "--calibrate", action="store_true", help="Recalibrate weights from feedback"
-    )
+    group.add_argument("--calibrate", action="store_true", help="Recalibrate weights from feedback")
 
-    parser.add_argument(
-        "--signal-id", type=str, help="Signal ID to score (with --score)"
-    )
-    parser.add_argument(
-        "--limit", type=int, default=20, help="Max signals to return (with --top)"
-    )
+    parser.add_argument("--signal-id", type=str, help="Signal ID to score (with --score)")
+    parser.add_argument("--limit", type=int, default=20, help="Max signals to return (with --top)")
     parser.add_argument(
         "--min-score",
         type=float,
@@ -929,9 +1146,7 @@ def main():
         elif args.score_all:
             result = score_all_new(db_path=args.db_path)
         elif args.top:
-            result = get_top_signals(
-                limit=args.limit, min_score=args.min_score, db_path=args.db_path
-            )
+            result = get_top_signals(limit=args.limit, min_score=args.min_score, db_path=args.db_path)
         elif args.calibrate:
             result = calibrate_weights(db_path=args.db_path)
         else:
@@ -1024,9 +1239,7 @@ def _print_human(args, result):
             for dim in DEFAULT_WEIGHTS:
                 adj = result.get("adjustments", {}).get(dim, {})
                 direction = adj.get("direction", "unchanged")
-                print(
-                    f"  {dim:<25s} {old_w.get(dim, 0):>8.4f} {new_w.get(dim, 0):>8.4f} {direction:>12s}"
-                )
+                print(f"  {dim:<25s} {old_w.get(dim, 0):>8.4f} {new_w.get(dim, 0):>8.4f} {direction:>12s}")
             print()
             print(f"NOTE: {result.get('note', '')}")
         else:

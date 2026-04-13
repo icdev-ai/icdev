@@ -29,20 +29,21 @@ Usage:
 import argparse
 import json
 import re
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 try:
-    from icdev.tools.audit.audit_logger import log_event
+    from tools.audit.audit_logger import log_event
+
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
+
     def log_event(**kwargs):
         return -1
 
@@ -82,11 +83,8 @@ def _get_connection(db_path=None):
     """Open a connection to the ICDEV™ database."""
     path = db_path or DB_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -98,6 +96,7 @@ def _generate_id(prefix="spec"):
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
 
 def _load_config() -> dict:
     """Load spec_directory section from args/spec_config.yaml.
@@ -120,6 +119,7 @@ def _load_config() -> dict:
     if config_path.exists():
         try:
             import yaml  # optional dependency
+
             with open(config_path, "r", encoding="utf-8") as fh:
                 cfg = yaml.safe_load(fh) or {}
             sd = cfg.get("spec_directory", {})
@@ -127,20 +127,12 @@ def _load_config() -> dict:
             return {
                 "enabled": sd.get("enabled", defaults["enabled"]),
                 "auto_migrate": sd.get("auto_migrate", defaults["auto_migrate"]),
-                "directory_pattern": sd.get(
-                    "directory_pattern", defaults["directory_pattern"]
-                ),
+                "directory_pattern": sd.get("directory_pattern", defaults["directory_pattern"]),
                 "files": sd.get("files", defaults["files"]),
                 "parallel_markers": {
-                    "enabled": pm.get(
-                        "enabled", defaults["parallel_markers"]["enabled"]
-                    ),
-                    "marker_prefix": pm.get(
-                        "marker_prefix", defaults["parallel_markers"]["marker_prefix"]
-                    ),
-                    "auto_detect": pm.get(
-                        "auto_detect", defaults["parallel_markers"]["auto_detect"]
-                    ),
+                    "enabled": pm.get("enabled", defaults["parallel_markers"]["enabled"]),
+                    "marker_prefix": pm.get("marker_prefix", defaults["parallel_markers"]["marker_prefix"]),
+                    "auto_detect": pm.get("auto_detect", defaults["parallel_markers"]["auto_detect"]),
                 },
             }
         except ImportError:
@@ -153,6 +145,7 @@ def _load_config() -> dict:
 # ---------------------------------------------------------------------------
 # Metadata / section parsing
 # ---------------------------------------------------------------------------
+
 
 def _slugify(text: str) -> str:
     """Convert free-form text into a URL/path-safe slug."""
@@ -253,6 +246,7 @@ def _parse_spec_sections(content: str) -> dict:
 # Extraction helpers
 # ---------------------------------------------------------------------------
 
+
 def extract_plan(spec_content: str) -> str:
     """Extract the Implementation Plan section and format as standalone plan.md."""
     metadata = _parse_spec_metadata(spec_content)
@@ -262,16 +256,7 @@ def extract_plan(spec_content: str) -> str:
     plan_body = sections.get("implementation plan", "")
     if not plan_body.strip():
         # Return template
-        return (
-            f"{_CUI_HEADER}\n"
-            f"# Plan: {title}\n"
-            "\n"
-            "## Phases\n"
-            "### Phase 1: Foundation\n"
-            "- TODO\n"
-            "\n"
-            f"{_CUI_HEADER}\n"
-        )
+        return f"{_CUI_HEADER}\n# Plan: {title}\n\n## Phases\n### Phase 1: Foundation\n- TODO\n\n{_CUI_HEADER}\n"
 
     lines = []
     lines.append(_CUI_HEADER)
@@ -390,9 +375,7 @@ def extract_tasks(spec_content: str) -> str:
                 idx += 1
             # Emit group comment if more than one step in the group
             if len(group_nums) > 1:
-                out.append(
-                    f"<!-- Parallel group: steps {', '.join(group_nums)} -->"
-                )
+                out.append(f"<!-- Parallel group: steps {', '.join(group_nums)} -->")
             # Emit each step in the group
             for gi in range(group_start, group_start + len(group_nums)):
                 _emit_step(steps[gi], out, marker_prefix, is_parallel=True)
@@ -434,6 +417,7 @@ def _emit_step(step: dict, out: list, marker_prefix: str, is_parallel: bool):
 # Directory operations
 # ---------------------------------------------------------------------------
 
+
 def init_spec_dir(
     issue_number: str,
     slug: str,
@@ -449,9 +433,7 @@ def init_spec_dir(
     """
     specs_dir = specs_dir or (BASE_DIR / "specs")
     config = _load_config()
-    dir_name = config["directory_pattern"].format(
-        issue_number=issue_number, slug=slug
-    )
+    dir_name = config["directory_pattern"].format(issue_number=issue_number, slug=slug)
     target_dir = specs_dir / dir_name
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -537,14 +519,7 @@ def init_spec_dir(
         files_created.append("spec.md")
 
         plan_template = (
-            f"{_CUI_HEADER}\n"
-            f"# Plan: {title}\n"
-            "\n"
-            "## Phases\n"
-            "### Phase 1: Foundation\n"
-            "- TODO\n"
-            "\n"
-            f"{_CUI_HEADER}\n"
+            f"{_CUI_HEADER}\n# Plan: {title}\n\n## Phases\n### Phase 1: Foundation\n- TODO\n\n{_CUI_HEADER}\n"
         )
         (target_dir / "plan.md").write_text(plan_template, encoding="utf-8")
         files_created.append("plan.md")
@@ -612,9 +587,7 @@ def migrate_flat_spec(spec_path: Path, specs_dir: Path = None) -> dict:
         specs_dir=specs_dir,
     )
 
-    files_created = [
-        f.name for f in target_dir.iterdir() if f.is_file()
-    ]
+    files_created = [f.name for f in target_dir.iterdir() if f.is_file()]
 
     return {
         "status": "ok",
@@ -644,11 +617,13 @@ def migrate_all(specs_dir: Path = None) -> list:
             result = migrate_flat_spec(md_file, specs_dir=specs_dir)
             results.append(result)
         except Exception as exc:
-            results.append({
-                "status": "error",
-                "source": str(md_file),
-                "error": str(exc),
-            })
+            results.append(
+                {
+                    "status": "error",
+                    "source": str(md_file),
+                    "error": str(exc),
+                }
+            )
 
     return results
 
@@ -656,6 +631,7 @@ def migrate_all(specs_dir: Path = None) -> list:
 # ---------------------------------------------------------------------------
 # Status / listing
 # ---------------------------------------------------------------------------
+
 
 def get_status(spec_dir: Path) -> dict:
     """Check which expected files exist in a spec directory.
@@ -691,21 +667,25 @@ def list_all_specs(specs_dir: Path = None) -> list:
     for entry in sorted(specs_dir.iterdir()):
         if entry.is_dir() and (entry / "spec.md").exists():
             status = get_status(entry)
-            items.append({
-                "type": "directory",
-                "name": entry.name,
-                "path": str(entry),
-                **status,
-            })
+            items.append(
+                {
+                    "type": "directory",
+                    "name": entry.name,
+                    "path": str(entry),
+                    **status,
+                }
+            )
 
     # Then flat markdown files
     for md_file in sorted(specs_dir.glob("*.md")):
         if md_file.is_file():
-            items.append({
-                "type": "flat",
-                "name": md_file.name,
-                "path": str(md_file),
-            })
+            items.append(
+                {
+                    "type": "flat",
+                    "name": md_file.name,
+                    "path": str(md_file),
+                }
+            )
 
     return items
 
@@ -713,6 +693,7 @@ def list_all_specs(specs_dir: Path = None) -> list:
 # ---------------------------------------------------------------------------
 # DB registration
 # ---------------------------------------------------------------------------
+
 
 def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
     """Insert or update an entry in the spec_registry table.
@@ -780,9 +761,7 @@ def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
 
     conn.commit()
 
-    row = conn.execute(
-        "SELECT * FROM spec_registry WHERE id = ?", (entry_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM spec_registry WHERE id = ?", (entry_id,)).fetchone()
     conn.close()
 
     result = dict(row) if row else {}
@@ -802,6 +781,7 @@ def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
 # ---------------------------------------------------------------------------
 # Checklist / constitution updates
 # ---------------------------------------------------------------------------
+
 
 def update_checklist(spec_dir: Path, check_results: dict) -> Path:
     """Write quality checklist results to checklist.md inside *spec_dir*.
@@ -870,7 +850,7 @@ def update_constitution_check(spec_dir: Path, validation_results: dict) -> Path:
     ]
 
     if summary:
-        lines.append(f"## Summary")
+        lines.append("## Summary")
         lines.append(summary)
         lines.append("")
 
@@ -898,10 +878,9 @@ def update_constitution_check(spec_dir: Path, validation_results: dict) -> Path:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="ICDEV™ Per-Feature Spec Directory Organizer"
-    )
+    parser = argparse.ArgumentParser(description="ICDEV™ Per-Feature Spec Directory Organizer")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--init", action="store_true", help="Initialize a new spec directory")
@@ -950,9 +929,7 @@ def main():
         elif args.migrate:
             if not args.spec_file:
                 parser.error("--migrate requires --spec-file")
-            result = migrate_flat_spec(
-                Path(args.spec_file), specs_dir=specs_dir
-            )
+            result = migrate_flat_spec(Path(args.spec_file), specs_dir=specs_dir)
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:

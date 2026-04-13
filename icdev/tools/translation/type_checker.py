@@ -25,9 +25,8 @@ import json
 import sys
 import textwrap
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TYPE_MAPPINGS_PATH = BASE_DIR / "context" / "translation" / "type_mappings.json"
 
 CUI_BANNER = "CUI // SP-CTI"
@@ -60,7 +59,13 @@ BUILTIN_TYPE_MAPPINGS = {
             "float64": {"python": "float", "java": "double", "rust": "f64", "csharp": "double", "typescript": "number"},
             "string": {"python": "str", "java": "String", "rust": "String", "csharp": "string", "typescript": "string"},
             "bool": {"python": "bool", "java": "boolean", "rust": "bool", "csharp": "bool", "typescript": "boolean"},
-            "error": {"python": "Exception", "java": "Exception", "rust": "Result", "csharp": "Exception", "typescript": "Error"},
+            "error": {
+                "python": "Exception",
+                "java": "Exception",
+                "rust": "Result",
+                "csharp": "Exception",
+                "typescript": "Error",
+            },
         },
         "rust": {
             "i32": {"python": "int", "java": "int", "go": "int32", "csharp": "int", "typescript": "number"},
@@ -175,7 +180,7 @@ def map_type(source_type, source_lang, target_lang, mappings=None):
             if target_lang in coll_map:
                 result["target_type"] = coll_map[target_lang]
                 result["confidence"] = 0.8
-                result["warnings"].append(f"Collection type mapping — inner types must be translated separately")
+                result["warnings"].append("Collection type mapping — inner types must be translated separately")
                 return result
 
     # Check nullable patterns
@@ -217,13 +222,15 @@ def check_signature_compatibility(unit, source_lang, target_lang, mappings=None)
     for param in unit.get("parameters", []):
         param_type = param.get("type")
         mapped = map_type(param_type, source_lang, target_lang, mappings)
-        param_mappings.append({
-            "param_name": param.get("name", "?"),
-            "source_type": param_type,
-            "target_type": mapped["target_type"],
-            "confidence": mapped["confidence"],
-            "warnings": mapped["warnings"],
-        })
+        param_mappings.append(
+            {
+                "param_name": param.get("name", "?"),
+                "source_type": param_type,
+                "target_type": mapped["target_type"],
+                "confidence": mapped["confidence"],
+                "warnings": mapped["warnings"],
+            }
+        )
         if mapped["confidence"] < 0.5:
             issues.append(
                 f"Parameter '{param.get('name', '?')}': low confidence type mapping "
@@ -234,9 +241,7 @@ def check_signature_compatibility(unit, source_lang, target_lang, mappings=None)
     return_type = unit.get("return_type")
     return_mapped = map_type(return_type, source_lang, target_lang, mappings)
     if return_mapped["confidence"] < 0.5 and return_type:
-        issues.append(
-            f"Return type: low confidence mapping ({return_type} -> {return_mapped['target_type']})"
-        )
+        issues.append(f"Return type: low confidence mapping ({return_type} -> {return_mapped['target_type']})")
 
     # Check error handling model differences
     pair_key = f"{source_lang}_to_{target_lang}"
@@ -302,10 +307,7 @@ def check_all_units(units, source_lang, target_lang, mappings=None):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            f"{CUI_BANNER}\n"
-            "ICDEV™ Type Checker — Phase 2: Type-Compatibility Pre-Check (D253)"
-        ),
+        description=(f"{CUI_BANNER}\nICDEV™ Type Checker — Phase 2: Type-Compatibility Pre-Check (D253)"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\
             Examples:
@@ -338,7 +340,8 @@ def main():
     if args.project_id:
         try:
             sys.path.insert(0, str(BASE_DIR))
-            from icdev.tools.audit.audit_logger import log_event
+            from tools.audit.audit_logger import log_event
+
             log_event(
                 event_type="translation.type_check",
                 actor="type-checker",
@@ -358,8 +361,10 @@ def main():
     if args.json_output:
         print(json.dumps(result, indent=2))
     else:
-        print(f"[INFO] Type-check: {result['compatible']}/{result['total_checked']} units compatible "
-              f"({result['compatibility_pct']}%)")
+        print(
+            f"[INFO] Type-check: {result['compatible']}/{result['total_checked']} units compatible "
+            f"({result['compatibility_pct']}%)"
+        )
         if result["incompatible"] > 0:
             print(f"[WARN] {result['incompatible']} units have type compatibility issues")
             for r in result["results"]:

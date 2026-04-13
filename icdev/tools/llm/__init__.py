@@ -8,8 +8,8 @@ function-to-model routing and automatic fallback chains.
 
 Usage::
 
-    from icdev.tools.llm import get_router, get_embedding_provider
-    from icdev.tools.llm.provider import LLMRequest
+    from tools.llm import get_router, get_embedding_provider
+    from tools.llm.provider import LLMRequest
 
     # LLM invocation
     router = get_router()
@@ -23,7 +23,7 @@ Usage::
     vector = emb_provider.embed("search query text")
 """
 
-from icdev.tools.llm.provider import (
+from tools.llm.provider import (
     LLMProvider,
     LLMRequest,
     LLMResponse,
@@ -44,7 +44,8 @@ def get_router(config_path=None):
     """
     global _router_instance
     if _router_instance is None:
-        from icdev.tools.llm.router import LLMRouter
+        from tools.llm.router import LLMRouter
+
         _router_instance = LLMRouter(config_path=config_path)
     return _router_instance
 

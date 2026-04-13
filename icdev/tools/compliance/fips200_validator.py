@@ -18,13 +18,12 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 FIPS200_PATH = BASE_DIR / "context" / "compliance" / "fips_200_areas.json"
 
@@ -37,8 +36,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found at {path}. Run: python tools/db/init_icdev_db.py")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -72,14 +70,16 @@ def _get_fips199_baseline(conn, project_id):
     """
     # Try fips199_categorizations table
     try:
-        row = conn.execute("""SELECT overall_categorization, baseline_selected, status
+        row = conn.execute(
+            """SELECT overall_categorization, baseline_selected, status
             FROM fips199_categorizations WHERE project_id = ? AND status IN ('approved', 'draft')
             ORDER BY CASE status WHEN 'approved' THEN 1 ELSE 2 END,
-                     categorization_date DESC LIMIT 1""", (project_id,)).fetchone()
+                     categorization_date DESC LIMIT 1""",
+            (project_id,),
+        ).fetchone()
         if row:
             baseline = row["baseline_selected"] or row["overall_categorization"]
-            return {"baseline": baseline, "source": "fips199_categorization",
-                    "status": row["status"]}
+            return {"baseline": baseline, "source": "fips199_categorization", "status": row["status"]}
     except Exception:
         pass  # Table may not exist
 
@@ -98,8 +98,7 @@ def _get_fips199_baseline(conn, project_id):
 def _get_project_controls(conn, project_id):
     """Get all project_controls keyed by control_id.
     Returns dict: control_id -> {implementation_status, ...}"""
-    rows = conn.execute(
-        "SELECT * FROM project_controls WHERE project_id = ?", (project_id,)).fetchall()
+    rows = conn.execute("SELECT * FROM project_controls WHERE project_id = ?", (project_id,)).fetchall()
     return {r["control_id"]: dict(r) for r in rows}
 
 
@@ -185,17 +184,31 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
             area_results.append(area_result)
 
             # Upsert into fips200_assessments
-            conn.execute("""INSERT OR REPLACE INTO fips200_assessments
+            conn.execute(
+                """INSERT OR REPLACE INTO fips200_assessments
                 (project_id, assessment_date, baseline, requirement_area_id,
                  requirement_area_name, family, total_required_controls,
                  mapped_controls, implemented_controls, planned_controls,
                  not_applicable_controls, coverage_pct, status, gap_controls, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (project_id, now, baseline.capitalize(), area["id"],
-                 area["name"], area["family"], len(required),
-                 len(mapped), len(implemented), len(planned),
-                 len(not_applicable), round(coverage, 1), status,
-                 json.dumps(gap), now))
+                (
+                    project_id,
+                    now,
+                    baseline.capitalize(),
+                    area["id"],
+                    area["name"],
+                    area["family"],
+                    len(required),
+                    len(mapped),
+                    len(implemented),
+                    len(planned),
+                    len(not_applicable),
+                    round(coverage, 1),
+                    status,
+                    json.dumps(gap),
+                    now,
+                ),
+            )
 
         overall_coverage = (total_implemented / total_required * 100) if total_required else 0.0
 
@@ -215,25 +228,31 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
                 gap_report[a["family"]] = {
                     "area": a["requirement_area_name"],
                     "gap_controls": a["gap_controls"],
-                    "recommendation": f"Map and implement {len(a['gap_controls'])} {a['family']} controls for {baseline.capitalize()} baseline"
+                    "recommendation": f"Map and implement {len(a['gap_controls'])} {a['family']} controls for {baseline.capitalize()} baseline",  # noqa: E501
                 }
 
         # Audit trail
-        conn.execute("""INSERT INTO audit_trail
+        conn.execute(
+            """INSERT INTO audit_trail
             (project_id, event_type, actor, action, details, classification)
             VALUES (?, 'fips200_assessed', 'icdev-compliance-engine', ?, ?, 'CUI')""",
-            (project_id,
-             f"FIPS 200 validation: {total_satisfied}/17 areas satisfied ({baseline.capitalize()} baseline)",
-             json.dumps({
-                 "baseline": baseline.capitalize(),
-                 "baseline_source": baseline_info["source"],
-                 "total_areas": len(areas),
-                 "satisfied": total_satisfied,
-                 "partially_satisfied": total_partial,
-                 "not_satisfied": total_not_satisfied,
-                 "overall_coverage_pct": round(overall_coverage, 1),
-                 "gate_status": "PASS" if gate_passed else "FAIL",
-             })))
+            (
+                project_id,
+                f"FIPS 200 validation: {total_satisfied}/17 areas satisfied ({baseline.capitalize()} baseline)",
+                json.dumps(
+                    {
+                        "baseline": baseline.capitalize(),
+                        "baseline_source": baseline_info["source"],
+                        "total_areas": len(areas),
+                        "satisfied": total_satisfied,
+                        "partially_satisfied": total_partial,
+                        "not_satisfied": total_not_satisfied,
+                        "overall_coverage_pct": round(overall_coverage, 1),
+                        "gate_status": "PASS" if gate_passed else "FAIL",
+                    }
+                ),
+            ),
+        )
 
         conn.commit()
 
@@ -274,9 +293,12 @@ def main():
 
     try:
         result = validate_fips200(
-            args.project_id, project_dir=args.project_dir,
-            gate=args.gate, output_dir=args.output_dir,
-            db_path=args.db_path)
+            args.project_id,
+            project_dir=args.project_dir,
+            gate=args.gate,
+            output_dir=args.output_dir,
+            db_path=args.db_path,
+        )
 
         if args.json:
             print(json.dumps(result, indent=2, default=str))
@@ -287,16 +309,30 @@ def main():
             print(f"{'Area':<50} {'Family':<8} {'Status':<20} {'Coverage':>8}")
             print("-" * 80)
             for a in result["areas"]:
-                status_icon = "PASS" if a["status"] == "satisfied" else "PARTIAL" if a["status"] == "partially_satisfied" else "FAIL" if a["status"] == "not_satisfied" else "N/A"
+                status_icon = (
+                    "PASS"
+                    if a["status"] == "satisfied"
+                    else "PARTIAL"
+                    if a["status"] == "partially_satisfied"
+                    else "FAIL"
+                    if a["status"] == "not_satisfied"
+                    else "N/A"
+                )
                 print(f"{a['requirement_area_name']:<50} {a['family']:<8} {status_icon:<20} {a['coverage_pct']:>7.1f}%")
             print("-" * 80)
-            print(f"Summary: {result['areas_satisfied']} satisfied, {result['areas_partially_satisfied']} partial, {result['areas_not_satisfied']} not satisfied")
-            print(f"Overall coverage: {result['overall_coverage_pct']:.1f}% ({result['total_implemented_controls']}/{result['total_required_controls']} controls)")
+            print(
+                f"Summary: {result['areas_satisfied']} satisfied, {result['areas_partially_satisfied']} partial, {result['areas_not_satisfied']} not satisfied"  # noqa: E501
+            )
+            print(
+                f"Overall coverage: {result['overall_coverage_pct']:.1f}% ({result['total_implemented_controls']}/{result['total_required_controls']} controls)"  # noqa: E501
+            )
 
             if result["gap_report"]:
                 print(f"\nGap Report ({len(result['gap_report'])} areas with gaps):")
                 for family, gap in result["gap_report"].items():
-                    print(f"  {family} ({gap['area']}): {len(gap['gap_controls'])} missing — {', '.join(gap['gap_controls'][:5])}{'...' if len(gap['gap_controls']) > 5 else ''}")
+                    print(
+                        f"  {family} ({gap['area']}): {len(gap['gap_controls'])} missing — {', '.join(gap['gap_controls'][:5])}{'...' if len(gap['gap_controls']) > 5 else ''}"  # noqa: E501
+                    )
 
             if args.gate:
                 gr = result["gate_result"]

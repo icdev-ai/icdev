@@ -13,15 +13,13 @@ CLI:
 import argparse
 import json
 import math
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
-DB_PATH = BASE_DIR / "data" / "memory.db"
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +51,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 # Config loading
 # ---------------------------------------------------------------------------
 
+
 def load_decay_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """Load time-decay configuration from YAML.
 
@@ -61,6 +60,7 @@ def load_decay_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     path = config_path or (BASE_DIR / "args" / "memory_config.yaml")
     try:
         import yaml  # type: ignore
+
         if path.exists():
             with open(path, encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
@@ -68,8 +68,7 @@ def load_decay_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
             config = dict(DEFAULT_CONFIG)
             if "half_lives" in td:
                 config["half_lives"] = {**config["half_lives"], **td["half_lives"]}
-            for key in ("default_half_life", "min_decay_factor",
-                        "importance_decay_resistance_threshold"):
+            for key in ("default_half_life", "min_decay_factor", "importance_decay_resistance_threshold"):
                 if key in td:
                     config[key] = td[key]
             if "weights" in td:
@@ -83,6 +82,7 @@ def load_decay_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Timestamp parsing
 # ---------------------------------------------------------------------------
+
 
 def _parse_timestamp(ts_str: str) -> datetime:
     """Parse an ISO-ish timestamp string into a timezone-aware datetime.
@@ -117,6 +117,7 @@ def _parse_timestamp(ts_str: str) -> datetime:
 # ---------------------------------------------------------------------------
 # Core decay computation
 # ---------------------------------------------------------------------------
+
 
 def compute_decay_factor(
     created_at: str,
@@ -191,17 +192,16 @@ def compute_time_aware_score(
 # DB helpers
 # ---------------------------------------------------------------------------
 
-def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Get a DB connection with Row factory."""
-    path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
-    return conn
+
+def _get_connection(db_path: Optional[Path] = None):
+    """Get a DB connection."""
+    return get_connection()
 
 
 # ---------------------------------------------------------------------------
 # Entry-level scoring
 # ---------------------------------------------------------------------------
+
 
 def score_entry(
     entry_id: int,
@@ -256,6 +256,7 @@ def score_entry(
 # Time-decay ranked search
 # ---------------------------------------------------------------------------
 
+
 def rank_with_decay(
     query: str,
     top_k: int = 10,
@@ -269,8 +270,7 @@ def rank_with_decay(
     conn = _get_connection(db_path)
 
     try:
-        sql = ("SELECT id, content, type, importance, embedding, created_at "
-               "FROM memory_entries WHERE 1=1")
+        sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE 1=1"
         params: list = []
         if user_id:
             sql += " AND (user_id = ? OR user_id IS NULL)"
@@ -279,7 +279,7 @@ def rank_with_decay(
             sql += " AND (tenant_id = ? OR tenant_id IS NULL)"
             params.append(tenant_id)
         rows = conn.execute(sql, params).fetchall()
-    except sqlite3.OperationalError:
+    except Exception:
         conn.close()
         return []
     conn.close()
@@ -288,13 +288,13 @@ def rank_with_decay(
         return []
 
     # Build entries list matching hybrid_search format
-    entries = [(r["id"], r["content"], r["type"], r["importance"],
-                r["embedding"], r["created_at"]) for r in rows]
+    entries = [(r["id"], r["content"], r["type"], r["importance"], r["embedding"], r["created_at"]) for r in rows]
 
     # Compute BM25 scores
     try:
         sys.path.insert(0, str(BASE_DIR))
-        from icdev.tools.memory.hybrid_search import bm25_search
+        from tools.memory.hybrid_search import bm25_search
+
         bm25_scores = bm25_search(query, entries)
     except (ImportError, Exception):
         # Fallback: simple term frequency
@@ -337,17 +337,19 @@ def rank_with_decay(
             reference_time=ref,
         )
 
-        results.append({
-            "entry_id": id_,
-            "content": content[:200] if content else "",
-            "type": type_,
-            "importance": imp,
-            "created_at": created_at,
-            "base_score": round(base_score, 4),
-            "decay_factor": round(decay, 4),
-            "time_aware_score": round(time_score, 4),
-            "age_days": round(age_days, 2),
-        })
+        results.append(
+            {
+                "entry_id": id_,
+                "content": content[:200] if content else "",
+                "type": type_,
+                "importance": imp,
+                "created_at": created_at,
+                "base_score": round(base_score, 4),
+                "decay_factor": round(decay, 4),
+                "time_aware_score": round(time_score, 4),
+                "age_days": round(age_days, 2),
+            }
+        )
 
     results.sort(key=lambda x: x["time_aware_score"], reverse=True)
     return results[:top_k]
@@ -357,34 +359,23 @@ def rank_with_decay(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Time-decay scoring for memory entries (D147)"
-    )
-    parser.add_argument("--score", action="store_true",
-                        help="Score a single entry")
-    parser.add_argument("--entry-id", type=int,
-                        help="Memory entry ID (for --score)")
-    parser.add_argument("--rank", action="store_true",
-                        help="Time-decay ranked search")
-    parser.add_argument("--query", type=str,
-                        help="Search query (for --rank)")
-    parser.add_argument("--top-k", type=int, default=10,
-                        help="Max results (default 10)")
-    parser.add_argument("--json", action="store_true",
-                        help="JSON output")
-    parser.add_argument("--user-id", type=str,
-                        help="Filter by user ID (D180)")
-    parser.add_argument("--tenant-id", type=str,
-                        help="Filter by tenant ID (D180)")
-    parser.add_argument("--db-path", type=Path,
-                        help="Override database path")
-    parser.add_argument("--config", type=Path,
-                        help="Override config path")
+    parser = argparse.ArgumentParser(description="Time-decay scoring for memory entries (D147)")
+    parser.add_argument("--score", action="store_true", help="Score a single entry")
+    parser.add_argument("--entry-id", type=int, help="Memory entry ID (for --score)")
+    parser.add_argument("--rank", action="store_true", help="Time-decay ranked search")
+    parser.add_argument("--query", type=str, help="Search query (for --rank)")
+    parser.add_argument("--top-k", type=int, default=10, help="Max results (default 10)")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    parser.add_argument("--user-id", type=str, help="Filter by user ID (D180)")
+    parser.add_argument("--tenant-id", type=str, help="Filter by tenant ID (D180)")
+    parser.add_argument("--db-path", type=Path, help="Override database path")
+    parser.add_argument("--config", type=Path, help="Override config path")
     args = parser.parse_args()
 
-    db = args.db_path or DB_PATH
+    db = args.db_path
     cfg = load_decay_config(args.config)
 
     if args.score:
@@ -395,36 +386,44 @@ def main() -> None:
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"Entry #{result['entry_id']} ({result['type']}, "
-                  f"importance={result['importance']})")
-            print(f"  Age: {result['age_days']} days | "
-                  f"Half-life: {result['half_life']}d | "
-                  f"Decay: {result['decay_factor']:.4f}")
+            print(f"Entry #{result['entry_id']} ({result['type']}, importance={result['importance']})")
+            print(
+                f"  Age: {result['age_days']} days | "
+                f"Half-life: {result['half_life']}d | "
+                f"Decay: {result['decay_factor']:.4f}"
+            )
             print(f"  Content: {result['content']}")
 
     elif args.rank:
         if not args.query:
             print("Error: --query required with --rank", file=sys.stderr)
             sys.exit(1)
-        results = rank_with_decay(args.query, top_k=args.top_k,
-                                  db_path=db, config=cfg,
-                                  user_id=args.user_id, tenant_id=args.tenant_id)
+        results = rank_with_decay(
+            args.query, top_k=args.top_k, db_path=db, config=cfg, user_id=args.user_id, tenant_id=args.tenant_id
+        )
         if args.json:
-            print(json.dumps({
-                "classification": "CUI // SP-CTI",
-                "query": args.query,
-                "top_k": args.top_k,
-                "results": results,
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "classification": "CUI // SP-CTI",
+                        "query": args.query,
+                        "top_k": args.top_k,
+                        "results": results,
+                    },
+                    indent=2,
+                )
+            )
         else:
             if not results:
                 print("No memory entries found.")
                 return
             for r in results:
-                print(f"[#{r['entry_id']}] score={r['time_aware_score']:.3f} "
-                      f"(base={r['base_score']:.3f}, decay={r['decay_factor']:.3f}) "
-                      f"| {r['type']}, imp={r['importance']} "
-                      f"| {r['age_days']}d ago")
+                print(
+                    f"[#{r['entry_id']}] score={r['time_aware_score']:.3f} "
+                    f"(base={r['base_score']:.3f}, decay={r['decay_factor']:.3f}) "
+                    f"| {r['type']}, imp={r['importance']} "
+                    f"| {r['age_days']}d ago"
+                )
                 print(f"  {r['content']}")
 
     else:

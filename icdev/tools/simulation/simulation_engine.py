@@ -18,12 +18,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 import os
-from icdev._paths import get_project_root
+from tools.db.storage import get_connection
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
-ALL_DIMENSIONS = ["architecture", "compliance", "supply_chain", "schedule", "cost", "risk"]
+ALL_DIMENSIONS = [
+    "architecture",
+    "compliance",
+    "supply_chain",
+    "schedule",
+    "cost",
+    "risk",
+    "resource_allocation",
+    "quality",
+]
 
 # T-shirt size to hours mapping for cost estimation
 TSHIRT_HOURS = {
@@ -45,16 +54,13 @@ SPRINTS_PER_PI = 5
 # Database helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Get a database connection."""
     path = db_path or DB_PATH
     if not Path(path).exists():
-        raise FileNotFoundError(
-            f"Database not found: {path}\n"
-            "Run: python tools/db/init_icdev_db.py"
-        )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+        raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -83,6 +89,7 @@ def _log_audit(conn, project_id, event_type, action, details):
 # State snapshot helpers
 # ---------------------------------------------------------------------------
 
+
 def _snapshot_project_state(conn, project_id):
     """Capture a lightweight JSON summary of current project state."""
     state = {"project_id": project_id, "captured_at": datetime.now(timezone.utc).isoformat()}
@@ -110,7 +117,7 @@ def _safe_count(conn, table, project_id):
     """Return row count for a table filtered by project_id, 0 if table missing."""
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) AS cnt FROM {table} WHERE project_id = ?",
+            f"SELECT COUNT(*) AS cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         return row["cnt"] if row else 0
@@ -134,6 +141,7 @@ def _safe_query_val(conn, sql, params=()):
 # Dimension simulators
 # ---------------------------------------------------------------------------
 
+
 def _simulate_architecture(conn, project_id, modifications):
     """Architecture dimension: components, API surface, complexity, coupling."""
     baseline_components = _safe_count(conn, "sysml_elements", project_id)
@@ -143,9 +151,7 @@ def _simulate_architecture(conn, project_id, modifications):
         (project_id,),
     )
     baseline_relationships = _safe_count(conn, "sysml_relationships", project_id)
-    baseline_coupling = (
-        baseline_relationships / baseline_components if baseline_components > 0 else 0.0
-    )
+    baseline_coupling = baseline_relationships / baseline_components if baseline_components > 0 else 0.0
 
     # Apply modifications
     added_req = modifications.get("add_requirements", 0)
@@ -186,7 +192,9 @@ def _simulate_architecture(conn, project_id, modifications):
 def _simulate_compliance(conn, project_id, modifications):
     """Compliance dimension: coverage, POAMs, boundary tier, frameworks."""
     total_controls = _safe_query_val(
-        conn, "SELECT COUNT(*) FROM project_controls WHERE project_id = ?", (project_id,),
+        conn,
+        "SELECT COUNT(*) FROM project_controls WHERE project_id = ?",
+        (project_id,),
     )
     implemented = _safe_query_val(
         conn,
@@ -479,7 +487,7 @@ def _simulate_risk(conn, project_id, modifications):
 
     compound = 1.0
     for p in risk_items:
-        compound *= (1.0 - p)
+        compound *= 1.0 - p
     compound_risk = round(1.0 - compound, 4)
 
     # Count mitigated (we consider non-open as mitigated)
@@ -504,7 +512,7 @@ def _simulate_risk(conn, project_id, modifications):
     sim_total_risks = len(new_risk_items)
     sim_compound = 1.0
     for p in new_risk_items:
-        sim_compound *= (1.0 - p)
+        sim_compound *= 1.0 - p
     sim_compound_risk = round(1.0 - sim_compound, 4)
 
     sim_total_risks - mitigated
@@ -537,9 +545,168 @@ def _simulate_risk(conn, project_id, modifications):
     return baseline, simulated, delta, delta_pct, chart_data
 
 
+def _simulate_resource_allocation(conn, project_id, modifications):
+    """Resource allocation dimension: FTE count, utilization, contention risk."""
+    # Baseline: count team members / resource assignments
+    total_fte = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM project_team_members WHERE project_id = ?",
+        (project_id,),
+    )
+    if total_fte == 0:
+        # Estimate from story count: ~1 FTE per 15 stories/PI
+        story_count = _safe_query_val(
+            conn,
+            "SELECT COUNT(*) FROM safe_decomposition WHERE project_id = ? AND level = 'story'",
+            (project_id,),
+        )
+        total_fte = max(1, story_count // 15) if story_count > 0 else 5
+
+    # Estimate utilization from active work
+    active_stories = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM safe_decomposition "
+        "WHERE project_id = ? AND level = 'story' "
+        "AND status IN ('in_progress', 'planned')",
+        (project_id,),
+    )
+    # Each FTE handles ~3 stories at a time; utilization caps at 1.0
+    utilization = min(1.0, (active_stories / (total_fte * 3)) if total_fte > 0 else 0.0)
+
+    # Contention: how many shared/critical resources
+    critical_roles = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM project_team_members "
+        "WHERE project_id = ? AND role IN "
+        "('security_architect', 'isso', 'lead_architect', 'dba')",
+        (project_id,),
+    )
+    contention_risk = min(1.0, critical_roles * 0.15)
+
+    # Apply modifications
+    added_staff = modifications.get("add_staff", 0)
+    added_req = modifications.get("add_requirements", 0)
+    removed_req = modifications.get("remove_requirements", 0)
+    net_work = added_req - removed_req
+
+    sim_fte = max(1, total_fte + added_staff)
+    sim_active = max(0, active_stories + net_work)
+    sim_utilization = min(1.0, (sim_active / (sim_fte * 3)) if sim_fte > 0 else 0.0)
+    sim_contention = min(
+        1.0, contention_risk + (0.1 if net_work > 5 else 0) - (0.05 * added_staff if added_staff > 0 else 0)
+    )
+    sim_contention = max(0.0, sim_contention)
+
+    baseline = {
+        "total_fte": total_fte,
+        "utilization": round(utilization, 4),
+        "contention_risk": round(contention_risk, 4),
+        "active_work_items": active_stories,
+    }
+    simulated = {
+        "total_fte": sim_fte,
+        "utilization": round(sim_utilization, 4),
+        "contention_risk": round(sim_contention, 4),
+        "active_work_items": sim_active,
+    }
+    delta = {k: simulated[k] - baseline[k] for k in baseline}
+    delta_pct = _pct(utilization, sim_utilization)
+
+    chart_data = {
+        "type": "bar",
+        "labels": ["FTE", "Utilization", "Contention", "Work Items"],
+        "baseline": [total_fte, utilization, contention_risk, active_stories],
+        "simulated": [sim_fte, sim_utilization, sim_contention, sim_active],
+    }
+    return baseline, simulated, delta, delta_pct, chart_data
+
+
+def _simulate_quality(conn, project_id, modifications):
+    """Quality dimension: test coverage, defect density, tech debt score."""
+    # Test coverage from test results
+    total_tests = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM test_results WHERE project_id = ?",
+        (project_id,),
+    )
+    passed_tests = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM test_results WHERE project_id = ? AND status = 'passed'",
+        (project_id,),
+    )
+    test_coverage = passed_tests / total_tests if total_tests > 0 else 0.0
+
+    # Defect density: open defects per component
+    open_defects = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM code_quality_findings "
+        "WHERE project_id = ? AND severity IN ('high', 'critical') "
+        "AND status = 'open'",
+        (project_id,),
+    )
+    component_count = max(1, _safe_count(conn, "sysml_elements", project_id))
+    defect_density = open_defects / component_count
+
+    # Tech debt score: ratio of findings to total lines
+    total_findings = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM code_quality_findings WHERE project_id = ?",
+        (project_id,),
+    )
+    # Normalize: 0 findings = 100 score, 50+ findings = 0 score
+    tech_debt_score = max(0.0, min(100.0, 100.0 - total_findings * 2.0))
+
+    # Apply modifications
+    added_req = modifications.get("add_requirements", 0)
+    added_components = modifications.get("change_architecture", {}).get("add_components", 0)
+
+    # New code = more potential defects, lower initial coverage
+    sim_component_count = max(1, component_count + added_components + added_req)
+    # New components start with ~60% test coverage
+    new_units = added_components + added_req
+    if total_tests > 0 and new_units > 0:
+        new_tests = int(new_units * 3 * 0.6)  # 3 tests/unit, 60% pass initially
+        sim_total_tests = total_tests + int(new_units * 3)
+        sim_passed = passed_tests + new_tests
+        sim_coverage = sim_passed / sim_total_tests if sim_total_tests > 0 else 0.0
+    else:
+        sim_total_tests = total_tests
+        sim_passed = passed_tests
+        sim_coverage = test_coverage
+
+    sim_defects = open_defects + max(0, int(new_units * 0.5))
+    sim_defect_density = sim_defects / sim_component_count
+    sim_findings = total_findings + max(0, int(new_units * 1.5))
+    sim_tech_debt = max(0.0, min(100.0, 100.0 - sim_findings * 2.0))
+
+    baseline = {
+        "test_coverage": round(test_coverage, 4),
+        "defect_density": round(defect_density, 4),
+        "tech_debt_score": round(tech_debt_score, 2),
+        "open_defects": open_defects,
+    }
+    simulated = {
+        "test_coverage": round(sim_coverage, 4),
+        "defect_density": round(sim_defect_density, 4),
+        "tech_debt_score": round(sim_tech_debt, 2),
+        "open_defects": sim_defects,
+    }
+    delta = {k: round(simulated[k] - baseline[k], 4) for k in baseline}
+    delta_pct = _pct(tech_debt_score, sim_tech_debt)
+
+    chart_data = {
+        "type": "bar",
+        "labels": ["Coverage", "Defect Density", "Debt Score", "Defects"],
+        "baseline": [test_coverage, defect_density, tech_debt_score, open_defects],
+        "simulated": [sim_coverage, sim_defect_density, sim_tech_debt, sim_defects],
+    }
+    return baseline, simulated, delta, delta_pct, chart_data
+
+
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------
+
 
 def _pct(baseline_val, simulated_val):
     """Compute percentage change, safe for zero baseline."""
@@ -555,12 +722,14 @@ def _impact_score(dimension_results):
     if not dimension_results:
         return 0.0
     weights = {
-        "architecture": 0.15,
-        "compliance": 0.25,
-        "supply_chain": 0.10,
+        "architecture": 0.12,
+        "compliance": 0.18,
+        "supply_chain": 0.08,
         "schedule": 0.15,
-        "cost": 0.20,
-        "risk": 0.15,
+        "cost": 0.15,
+        "risk": 0.12,
+        "resource_allocation": 0.10,
+        "quality": 0.10,
     }
     score = 0.0
     for dim, data in dimension_results.items():
@@ -576,7 +745,9 @@ def _generate_recommendations(dimension_results):
     for dim, data in dimension_results.items():
         pct = data.get("delta_pct", 0.0)
         if dim == "compliance" and pct < -5:
-            recs.append("Compliance coverage decreased significantly. Plan additional control implementations before proceeding.")
+            recs.append(
+                "Compliance coverage decreased significantly. Plan additional control implementations before proceeding."
+            )
         if dim == "cost" and pct > 20:
             recs.append(f"Cost increased by {pct:.1f}%. Consider phased delivery to spread budget impact across PIs.")
         if dim == "schedule" and pct > 15:
@@ -591,6 +762,14 @@ def _generate_recommendations(dimension_results):
             arch_delta = data.get("delta", {})
             if isinstance(arch_delta, dict) and arch_delta.get("coupling_score", 0) > 0.5:
                 recs.append("Coupling score increasing. Review architecture for modularity opportunities.")
+        if dim == "resource_allocation" and pct > 10:
+            recs.append(
+                f"Resource utilization increased by {pct:.1f}%. Risk of contention — consider adding staff or phasing scope."
+            )
+        if dim == "quality" and pct < -5:
+            recs.append(
+                f"Quality metrics decreased by {abs(pct):.1f}%. Plan additional testing and code review sprints."
+            )
     if not recs:
         recs.append("No significant concerns detected. Scenario impact is within acceptable thresholds.")
     return recs
@@ -607,11 +786,12 @@ DIMENSION_SIMULATORS = {
     "schedule": _simulate_schedule,
     "cost": _simulate_cost,
     "risk": _simulate_risk,
+    "resource_allocation": _simulate_resource_allocation,
+    "quality": _simulate_quality,
 }
 
 
-def create_scenario(project_id, scenario_name, scenario_type, modifications,
-                    base_session_id=None, db_path=None):
+def create_scenario(project_id, scenario_name, scenario_type, modifications, base_session_id=None, db_path=None):
     """Create a new simulation scenario.
 
     Args:
@@ -661,9 +841,13 @@ def create_scenario(project_id, scenario_name, scenario_type, modifications,
         )
         conn.commit()
 
-        _log_audit(conn, project_id, "simulation_created",
-                   f"Scenario '{scenario_name}' created",
-                   {"scenario_id": scenario_id, "scenario_type": scenario_type})
+        _log_audit(
+            conn,
+            project_id,
+            "simulation_created",
+            f"Scenario '{scenario_name}' created",
+            {"scenario_id": scenario_id, "scenario_type": scenario_type},
+        )
 
         return {
             "scenario_id": scenario_id,
@@ -694,7 +878,8 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
     try:
         # Load scenario
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Scenario not found: {scenario_id}")
@@ -717,9 +902,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
                 continue
 
             simulator = DIMENSION_SIMULATORS[dim]
-            baseline, simulated, delta, delta_pct, chart_data = simulator(
-                conn, project_id, modifications
-            )
+            baseline, simulated, delta, delta_pct, chart_data = simulator(conn, project_id, modifications)
 
             # Persist each dimension result
             str(uuid4())
@@ -762,10 +945,13 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
         )
         conn.commit()
 
-        _log_audit(conn, project_id, "simulation_completed",
-                   f"Simulation completed for scenario {scenario_id}",
-                   {"scenario_id": scenario_id, "dimensions": dimensions,
-                    "overall_impact": overall_impact})
+        _log_audit(
+            conn,
+            project_id,
+            "simulation_completed",
+            f"Simulation completed for scenario {scenario_id}",
+            {"scenario_id": scenario_id, "dimensions": dimensions, "overall_impact": overall_impact},
+        )
 
         return {
             "scenario_id": scenario_id,
@@ -801,7 +987,8 @@ def get_scenario(scenario_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id,),
         ).fetchone()
         if not row:
             raise ValueError(f"Scenario not found: {scenario_id}")
@@ -876,10 +1063,12 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
     conn = _get_connection(db_path)
     try:
         s1 = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id_1,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id_1,),
         ).fetchone()
         s2 = conn.execute(
-            "SELECT * FROM simulation_scenarios WHERE id = ?", (scenario_id_2,),
+            "SELECT * FROM simulation_scenarios WHERE id = ?",
+            (scenario_id_2,),
         ).fetchone()
         if not s1:
             raise ValueError(f"Scenario not found: {scenario_id_1}")
@@ -889,7 +1078,8 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
         # Fetch results for both
         def _get_results(sid):
             rows = conn.execute(
-                "SELECT * FROM simulation_results WHERE scenario_id = ?", (sid,),
+                "SELECT * FROM simulation_results WHERE scenario_id = ?",
+                (sid,),
             ).fetchall()
             by_dim = {}
             for r in rows:
@@ -928,9 +1118,13 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
 
         # Log audit
         project_id = dict(s1).get("project_id", "unknown")
-        _log_audit(conn, project_id, "coa_compared",
-                   f"Compared scenarios {scenario_id_1} vs {scenario_id_2}",
-                   {"scenario_1": scenario_id_1, "scenario_2": scenario_id_2})
+        _log_audit(
+            conn,
+            project_id,
+            "coa_compared",
+            f"Compared scenarios {scenario_id_1} vs {scenario_id_2}",
+            {"scenario_1": scenario_id_1, "scenario_2": scenario_id_2},
+        )
 
         return {
             "scenario_1": {"id": scenario_id_1, "name": dict(s1).get("scenario_name")},
@@ -945,10 +1139,9 @@ def compare_scenarios(scenario_id_1, scenario_id_2, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="RICOAS Digital Program Twin — 6-dimension simulation engine"
-    )
+    parser = argparse.ArgumentParser(description="RICOAS Digital Program Twin — 6-dimension simulation engine")
     parser.add_argument("--project-id", help="Project ID")
     parser.add_argument("--scenario-id", help="Scenario UUID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
@@ -962,15 +1155,17 @@ def main():
 
     # Create args
     parser.add_argument("--scenario-name", help="Scenario name (for --create-scenario)")
-    parser.add_argument("--scenario-type", default="what_if",
-                        choices=["what_if", "coa_comparison", "risk_analysis"],
-                        help="Scenario type")
+    parser.add_argument(
+        "--scenario-type",
+        default="what_if",
+        choices=["what_if", "coa_comparison", "risk_analysis"],
+        help="Scenario type",
+    )
     parser.add_argument("--modifications", help="JSON string of modifications")
     parser.add_argument("--base-session-id", help="Base intake session ID")
 
     # Run args
-    parser.add_argument("--dimensions", default="all",
-                        help="Comma-separated dimensions or 'all'")
+    parser.add_argument("--dimensions", default="all", help="Comma-separated dimensions or 'all'")
 
     # Compare args
     parser.add_argument("--scenario-1", help="First scenario ID for comparison")
@@ -1084,7 +1279,9 @@ def _print_human(result):
         print(f"Scenario 2: {s2['name']} ({s2['id'][:8]}...)")
         print()
         for dim, comp in result["comparison"].items():
-            print(f"  {dim}: S1={comp['scenario_1_value']:.2f}%  S2={comp['scenario_2_value']:.2f}%  Winner={comp['winner']}")
+            print(
+                f"  {dim}: S1={comp['scenario_1_value']:.2f}%  S2={comp['scenario_2_value']:.2f}%  Winner={comp['winner']}"
+            )
 
     elif "scenario_id" in result and "status" in result:
         # create_scenario or get_scenario result

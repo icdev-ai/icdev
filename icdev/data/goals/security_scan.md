@@ -248,7 +248,58 @@ Gate status: <PASS | FAIL — <reason>>
 
 ---
 
-### Step 5: Check Quality Gates (Aggregate)
+### Step 5: Boundary Tier Impact Tagging
+
+**Tool:** `python tools/security/boundary_tagger.py --report .tmp/security-reports/scan.json --project-id <id> [--system-id <sys-id>] --create-assessments --json`
+
+**What it does:** Each finding from Steps 1–4 is tagged with an ATO boundary tier impact:
+
+| Tier | Score | Trigger condition | ATO impact |
+|------|-------|-------------------|------------|
+| **GREEN** | 0–25 | LOW severity findings | None — existing controls sufficient |
+| **YELLOW** | 26–50 | MEDIUM severity findings | SSP addendum + ISSO notification (14-day delay) |
+| **ORANGE** | 51–75 | HIGH severity SAST/container/dependency; Dockerfile root/SSH findings | SSP revision + ISSO review + security assessment (60-day delay) |
+| **RED** | 76–100 | Any secret; CRITICAL findings; HIGH crypto/injection SAST; Dockerfile secrets-in-ENV; CRITICAL CVE | **FULL STOP** — ATO-invalidating. Generate alternative COAs. Notify AO within 24 hours. (180-day delay) |
+
+**Automatic actions:**
+- ORANGE/RED findings are persisted to `boundary_impact_assessments` table in DB
+- A `boundary_assessed` (or `boundary_impact_red`) audit event is logged for any scan with ORANGE/RED findings
+- The aggregated scan result includes `boundary_impact_summary` with tier counts and `highest_tier`
+
+**Bandit test IDs that escalate HIGH → RED** (crypto failures, code injection, hardcoded credentials):
+`B105, B106, B107, B201, B321, B323, B501–B504, B506, B601–B607`
+
+**Expected output:**
+```
+=== BOUNDARY TIER IMPACT SUMMARY ===
+  RED:    <count>
+  ORANGE: <count>
+  YELLOW: <count>
+  GREEN:  <count>
+  Highest tier: <GREEN|YELLOW|ORANGE|RED>
+  ATO action required: <True|False>
+  Assessments written to DB: <count>
+```
+
+**If RED tier findings exist:**
+1. FULL STOP — do not proceed to deployment
+2. Notify Authorizing Official within 24 hours
+3. Convene Security Review Board
+4. Run `boundary_analyzer.py --generate-alternatives` to produce alternative COAs
+5. Re-scan and re-assess after remediation
+
+**If ORANGE tier findings exist:**
+1. Pause deployment
+2. Notify ISSO
+3. Update SSP Sections 9 and 13
+4. Conduct security assessment
+5. Document in POAM
+
+**Verify:** `boundary_impact_summary.highest_tier` is present in scan JSON. ORANGE/RED findings appear in `boundary_impact_assessments` table.
+
+---
+
+### Step 6: Check Quality Gates (Aggregate)
 
 **Action:** Evaluate ALL scan results against the quality gates defined above.
 
@@ -278,7 +329,7 @@ Overall: <ALL GATES PASS | BLOCKED — gates X, Y failed>
 
 ---
 
-### Step 6: Generate Consolidated Security Report
+### Step 7: Generate Consolidated Security Report
 
 **Action:** Combine all scan results into a single report.
 
@@ -321,7 +372,7 @@ NEXT STEPS:
 
 ---
 
-### Step 7: Log to Audit Trail
+### Step 8: Log to Audit Trail
 
 **Tool:** `python tools/audit/audit_logger.py --event "security_scan_complete" --actor "orchestrator" --action "scan" --project <name>`
 
@@ -335,10 +386,12 @@ NEXT STEPS:
 - [ ] Dependency audit completed with all CVEs identified
 - [ ] Secret detection completed with 0 secrets in codebase
 - [ ] Container scan completed (or marked N/A if no containers)
+- [ ] All findings tagged with boundary tier (GREEN/YELLOW/ORANGE/RED)
+- [ ] ORANGE/RED findings persisted to `boundary_impact_assessments` table
 - [ ] All quality gates evaluated
 - [ ] Gate failures documented with remediation plans
-- [ ] Consolidated report generated
-- [ ] Audit trail entry logged
+- [ ] Consolidated report generated including `boundary_impact_summary`
+- [ ] Audit trail entry logged (including boundary tier event for ORANGE/RED)
 
 ---
 
@@ -362,15 +415,17 @@ NEXT STEPS:
 | Dependency audit | Tools | dependency_auditor.py |
 | Secret detection | Tools | secret_detector.py |
 | Container scan | Tools | container_scanner.py |
+| Boundary tier tagging | Tools | boundary_tagger.py |
 | Gate evaluation | Orchestration | AI (you) |
 | Scanner config | Args | scanner settings |
 | CVE references | Context | vulnerability databases |
+| Tier rules | Context | boundary_impact_rules.json |
 
 ---
 
 ## Related Files
 
-- **Tools:** `tools/security/sast_runner.py`, `tools/security/dependency_auditor.py`, `tools/security/secret_detector.py`, `tools/security/container_scanner.py`
+- **Tools:** `tools/security/sast_runner.py`, `tools/security/dependency_auditor.py`, `tools/security/secret_detector.py`, `tools/security/container_scanner.py`, `tools/security/boundary_tagger.py`
 - **Feeds into:** `goals/compliance_workflow.md` (POAM generation), `goals/deploy_workflow.md` (gate check)
 - **Database:** `data/icdev.db` (security_findings table)
 

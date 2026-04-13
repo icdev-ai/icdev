@@ -188,11 +188,11 @@
             }
 
             // Use charts.js if available
-            if (typeof ICDEV™ !== 'undefined' && ICDEV™.charts && ICDEV™.charts.line) {
+            if (typeof ICDEV !== 'undefined' && ICDEV.charts && ICDEV.charts.line) {
                 var labels = series.map(function(s) { return s.day; });
                 var values = series.map(function(s) { return s.cost || 0; });
                 container.innerHTML = '';
-                ICDEV™.charts.line(container, labels, values, {
+                ICDEV.charts.line(container, labels, values, {
                     title: 'Daily Cost ($)',
                     color: '#4a90d9',
                     height: 200

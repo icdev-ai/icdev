@@ -21,24 +21,24 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
 # ---------------------------------------------------------------------------
 # Path setup — the project root is 3 levels up from this file.
 # ---------------------------------------------------------------------------
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 PROJECTS_DIR = BASE_DIR / "projects"
 
 # Ensure we can import the base server from the same package
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 # Try to import the audit logger; fall back to direct DB writes if unavailable.
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
     audit_log_event = None
 
@@ -47,10 +47,10 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_db() -> sqlite3.Connection:
     """Open a connection to the ICDEV™ database."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -72,7 +72,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
 
     # Direct write fallback
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
@@ -88,6 +88,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
 # ---------------------------------------------------------------------------
 # Tool handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_project_create(args: dict) -> dict:
     """Create a new project: generate UUID, create directory, insert DB record, log audit."""
@@ -180,29 +181,29 @@ def handle_project_list(args: dict) -> dict:
                 (status_filter,),
             ).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT * FROM projects ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
 
         projects = []
         for row in rows:
-            projects.append({
-                "id": row["id"],
-                "name": row["name"],
-                "description": row["description"],
-                "type": row["type"],
-                "classification": row["classification"],
-                "status": row["status"],
-                "tech_stack": {
-                    "backend": row["tech_stack_backend"],
-                    "frontend": row["tech_stack_frontend"],
-                    "database": row["tech_stack_database"],
-                },
-                "directory_path": row["directory_path"],
-                "created_by": row["created_by"],
-                "created_at": row["created_at"],
-                "updated_at": row["updated_at"],
-            })
+            projects.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "type": row["type"],
+                    "classification": row["classification"],
+                    "status": row["status"],
+                    "tech_stack": {
+                        "backend": row["tech_stack_backend"],
+                        "frontend": row["tech_stack_frontend"],
+                        "database": row["tech_stack_database"],
+                    },
+                    "directory_path": row["directory_path"],
+                    "created_by": row["created_by"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+            )
     finally:
         conn.close()
 
@@ -322,7 +323,9 @@ def handle_project_status(args: dict) -> dict:
                 "version": dep["version"],
                 "status": dep["status"],
                 "deployed_by": dep["deployed_by"],
-                "health_check_passed": bool(dep["health_check_passed"]) if dep["health_check_passed"] is not None else None,
+                "health_check_passed": bool(dep["health_check_passed"])
+                if dep["health_check_passed"] is not None
+                else None,
                 "deployed_at": dep["created_at"],
                 "completed_at": dep["completed_at"],
             }
@@ -410,8 +413,8 @@ def handle_task_dispatch(args: dict) -> dict:
     dispatch_status = "submitted"
     dispatch_error = None
     try:
-        from icdev.tools.a2a.agent_registry import get_agent
-        from icdev.tools.a2a.agent_client import A2AAgentClient
+        from tools.a2a.agent_registry import get_agent
+        from tools.a2a.agent_client import A2AAgentClient
 
         agent_info = get_agent(target_agent_id)
         if agent_info and agent_info.get("url"):
@@ -467,9 +470,7 @@ def handle_agent_status(args: dict) -> dict:
     conn = _get_db()
     try:
         if agent_id:
-            rows = conn.execute(
-                "SELECT * FROM agents WHERE id = ?", (agent_id,)
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM agents ORDER BY name").fetchall()
 
@@ -488,17 +489,19 @@ def handle_agent_status(args: dict) -> dict:
                 (row["id"],),
             ).fetchone()
 
-            agents.append({
-                "id": row["id"],
-                "name": row["name"],
-                "description": row["description"],
-                "url": row["url"],
-                "status": row["status"],
-                "capabilities": capabilities,
-                "last_heartbeat": row["last_heartbeat"],
-                "active_tasks": task_count["cnt"] if task_count else 0,
-                "created_at": row["created_at"],
-            })
+            agents.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "description": row["description"],
+                    "url": row["url"],
+                    "status": row["status"],
+                    "capabilities": capabilities,
+                    "last_heartbeat": row["last_heartbeat"],
+                    "active_tasks": task_count["cnt"] if task_count else 0,
+                    "created_at": row["created_at"],
+                }
+            )
     finally:
         conn.close()
 
@@ -508,6 +511,7 @@ def handle_agent_status(args: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Resource handlers
 # ---------------------------------------------------------------------------
+
 
 def handle_resource_projects_list(uri: str) -> dict:
     """Resource handler for projects://list."""
@@ -525,6 +529,7 @@ def handle_resource_project_status(uri: str) -> dict:
 # ---------------------------------------------------------------------------
 # Server setup & main
 # ---------------------------------------------------------------------------
+
 
 def create_server() -> MCPServer:
     """Create and configure the core MCP server with all tools and resources."""

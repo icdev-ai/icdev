@@ -30,7 +30,9 @@ class HIPAAAssessor(BaseAssessor):
     CATALOG_FILENAME = "hipaa_security_rule.json"
 
     def get_automated_checks(
-        self, project: Dict, project_dir: Optional[str] = None,
+        self,
+        project: Dict,
+        project_dir: Optional[str] = None,
     ) -> Dict[str, str]:
         """HIPAA-specific automated checks.
 

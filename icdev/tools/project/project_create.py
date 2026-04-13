@@ -16,21 +16,21 @@ import json
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 PROJECTS_DIR = BASE_DIR / "projects"
 
 # Import project scaffolder
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.project.project_scaffold import scaffold_project, SCAFFOLDERS  # noqa: E402
+from tools.project.project_scaffold import scaffold_project, SCAFFOLDERS  # noqa: E402
 
 # Import audit logger
 try:
-    from icdev.tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event
 except ImportError:
     audit_log_event = None
 
@@ -59,7 +59,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
 
     # Direct fallback
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
@@ -153,7 +153,7 @@ def create_project(
         )
 
     # Insert into database
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO projects
@@ -242,61 +242,35 @@ def create_project(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Create a new ICDEV™-managed project"
+    parser = argparse.ArgumentParser(description="Create a new ICDEV™-managed project")
+    parser.add_argument("--name", required=True, help="Project name (human-readable)")
+    parser.add_argument("--type", default="webapp", choices=VALID_TYPES, help="Project type (default: webapp)")
+    parser.add_argument(
+        "--classification",
+        default="CUI",
+        choices=VALID_CLASSIFICATIONS,
+        help="Data classification level (default: CUI)",
+    )
+    parser.add_argument("--description", default="", help="Project description")
+    parser.add_argument("--tech-backend", default="", help="Backend technology stack (e.g. 'Python/Flask')")
+    parser.add_argument("--tech-frontend", default="", help="Frontend technology stack (e.g. 'React/TypeScript')")
+    parser.add_argument("--tech-database", default="", help="Database technology (e.g. 'PostgreSQL')")
+    parser.add_argument(
+        "--impact-level", default="IL5", choices=VALID_IMPACT_LEVELS, help="DoD Impact Level (default: IL5)"
     )
     parser.add_argument(
-        "--name", required=True,
-        help="Project name (human-readable)"
+        "--target-frameworks", default="", help="Comma-separated target frameworks (e.g. 'fedramp-high,cmmc-l2')"
     )
     parser.add_argument(
-        "--type", default="webapp", choices=VALID_TYPES,
-        help="Project type (default: webapp)"
+        "--cloud-environment",
+        default="aws-govcloud",
+        help="Cloud environment (e.g. 'aws-govcloud', 'azure-gov', 'on-prem')",
     )
+    parser.add_argument("--accrediting-authority", default="", help="Authorizing Official / accrediting authority")
     parser.add_argument(
-        "--classification", default="CUI", choices=VALID_CLASSIFICATIONS,
-        help="Data classification level (default: CUI)"
+        "--skip-scaffold", action="store_true", help="Create project record and directory but skip scaffolding"
     )
-    parser.add_argument(
-        "--description", default="",
-        help="Project description"
-    )
-    parser.add_argument(
-        "--tech-backend", default="",
-        help="Backend technology stack (e.g. 'Python/Flask')"
-    )
-    parser.add_argument(
-        "--tech-frontend", default="",
-        help="Frontend technology stack (e.g. 'React/TypeScript')"
-    )
-    parser.add_argument(
-        "--tech-database", default="",
-        help="Database technology (e.g. 'PostgreSQL')"
-    )
-    parser.add_argument(
-        "--impact-level", default="IL5", choices=VALID_IMPACT_LEVELS,
-        help="DoD Impact Level (default: IL5)"
-    )
-    parser.add_argument(
-        "--target-frameworks", default="",
-        help="Comma-separated target frameworks (e.g. 'fedramp-high,cmmc-l2')"
-    )
-    parser.add_argument(
-        "--cloud-environment", default="aws-govcloud",
-        help="Cloud environment (e.g. 'aws-govcloud', 'azure-gov', 'on-prem')"
-    )
-    parser.add_argument(
-        "--accrediting-authority", default="",
-        help="Authorizing Official / accrediting authority"
-    )
-    parser.add_argument(
-        "--skip-scaffold", action="store_true",
-        help="Create project record and directory but skip scaffolding"
-    )
-    parser.add_argument(
-        "--format", choices=["text", "json"], default="text",
-        help="Output format"
-    )
+    parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 

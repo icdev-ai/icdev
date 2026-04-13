@@ -24,12 +24,12 @@ import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
+from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Default endpoints — override via CLI args or environment
@@ -54,8 +54,7 @@ DEFAULT_PATTERNS = [
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Open a connection to the ICDEV™ database."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -86,8 +85,7 @@ def _parse_time_range(time_range: str) -> dict:
 # ---------------------------------------------------------------------------
 # Source queries
 # ---------------------------------------------------------------------------
-def _query_elk(index: str, query_str: str, time_range: str,
-               elk_url: str = None, size: int = 500) -> dict:
+def _query_elk(index: str, query_str: str, time_range: str, elk_url: str = None, size: int = 500) -> dict:
     """Execute a search query against Elasticsearch.
 
     Args:
@@ -107,9 +105,7 @@ def _query_elk(index: str, query_str: str, time_range: str,
         "query": {
             "bool": {
                 "must": [{"query_string": {"query": query_str}}] if query_str else [{"match_all": {}}],
-                "filter": [
-                    {"range": {"@timestamp": {"gte": tr["elk_format"], "lte": "now"}}}
-                ],
+                "filter": [{"range": {"@timestamp": {"gte": tr["elk_format"], "lte": "now"}}}],
             }
         },
         "size": size,
@@ -121,11 +117,12 @@ def _query_elk(index: str, query_str: str, time_range: str,
 
     try:
         req = urllib.request.Request(
-            endpoint, data=data,
+            endpoint,
+            data=data,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             result = json.loads(resp.read().decode("utf-8"))
             return {
                 "source": "elk",
@@ -135,16 +132,14 @@ def _query_elk(index: str, query_str: str, time_range: str,
                 "took_ms": result.get("took", 0),
             }
     except urllib.error.URLError as exc:
-        return {"source": "elk", "error": f"Connection failed: {exc}", "index": index,
-                "total_hits": 0, "hits": []}
+        return {"source": "elk", "error": f"Connection failed: {exc}", "index": index, "total_hits": 0, "hits": []}
     except Exception as exc:
-        return {"source": "elk", "error": str(exc), "index": index,
-                "total_hits": 0, "hits": []}
+        return {"source": "elk", "error": str(exc), "index": index, "total_hits": 0, "hits": []}
 
 
-def _query_splunk(search_query: str, time_range: str,
-                  splunk_url: str = None, splunk_token: str = None,
-                  max_results: int = 500) -> dict:
+def _query_splunk(
+    search_query: str, time_range: str, splunk_url: str = None, splunk_token: str = None, max_results: int = 500
+) -> dict:
     """Execute a search against the Splunk REST API.
 
     Args:
@@ -175,6 +170,7 @@ def _query_splunk(search_query: str, time_range: str,
 
     try:
         import ssl
+
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -184,7 +180,7 @@ def _query_splunk(search_query: str, time_range: str,
             headers["Authorization"] = f"Bearer {splunk_token}"
 
         req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             raw = resp.read().decode("utf-8")
             results = []
             for line in raw.strip().split("\n"):
@@ -195,14 +191,17 @@ def _query_splunk(search_query: str, time_range: str,
                             results.append(obj["result"])
                     except json.JSONDecodeError:
                         continue
-            return {"source": "splunk", "query": search_query,
-                    "total_hits": len(results), "hits": results}
+            return {"source": "splunk", "query": search_query, "total_hits": len(results), "hits": results}
     except urllib.error.URLError as exc:
-        return {"source": "splunk", "error": f"Connection failed: {exc}",
-                "query": search_query, "total_hits": 0, "hits": []}
+        return {
+            "source": "splunk",
+            "error": f"Connection failed: {exc}",
+            "query": search_query,
+            "total_hits": 0,
+            "hits": [],
+        }
     except Exception as exc:
-        return {"source": "splunk", "error": str(exc),
-                "query": search_query, "total_hits": 0, "hits": []}
+        return {"source": "splunk", "error": str(exc), "query": search_query, "total_hits": 0, "hits": []}
 
 
 # ---------------------------------------------------------------------------
@@ -237,12 +236,14 @@ def search_patterns(log_data: list, patterns: list = None) -> list:
                 matches.append(msg[:200])
 
         if matches:
-            results.append({
-                "name": name,
-                "regex": regex,
-                "count": len(matches),
-                "sample_messages": matches[:5],
-            })
+            results.append(
+                {
+                    "name": name,
+                    "regex": regex,
+                    "count": len(matches),
+                    "sample_messages": matches[:5],
+                }
+            )
 
     # Sort by count descending
     results.sort(key=lambda r: r["count"], reverse=True)
@@ -252,10 +253,16 @@ def search_patterns(log_data: list, patterns: list = None) -> list:
 # ---------------------------------------------------------------------------
 # Core analysis
 # ---------------------------------------------------------------------------
-def analyze_logs(source: str, query: str, time_range: str,
-                 db_path: Path = None, project_id: str = None,
-                 elk_url: str = None, splunk_url: str = None,
-                 splunk_token: str = None) -> dict:
+def analyze_logs(
+    source: str,
+    query: str,
+    time_range: str,
+    db_path: Path = None,
+    project_id: str = None,
+    elk_url: str = None,
+    splunk_url: str = None,
+    splunk_token: str = None,
+) -> dict:
     """Analyze logs from ELK or Splunk.
 
     Queries the specified source, extracts error patterns, counts occurrences,
@@ -290,8 +297,9 @@ def analyze_logs(source: str, query: str, time_range: str,
 
     # ---------- Query Splunk ----------
     if source in ("splunk", "both"):
-        splunk_query = query or (f'index="{project_id}" level=ERROR OR level=WARN'
-                                 if project_id else "level=ERROR OR level=WARN")
+        splunk_query = query or (
+            f'index="{project_id}" level=ERROR OR level=WARN' if project_id else "level=ERROR OR level=WARN"
+        )
         splunk_result = _query_splunk(splunk_query, time_range, splunk_url, splunk_token)
         all_logs.extend(splunk_result.get("hits", []))
         source_results["splunk"] = {
@@ -302,8 +310,9 @@ def analyze_logs(source: str, query: str, time_range: str,
     # ---------- Extract severity counts ----------
     severity_counts = Counter()
     for entry in all_logs:
-        level = (entry.get("level") or entry.get("log_level")
-                 or entry.get("severity") or entry.get("status") or "unknown")
+        level = (
+            entry.get("level") or entry.get("log_level") or entry.get("severity") or entry.get("status") or "unknown"
+        )
         if isinstance(level, str):
             level_lower = level.lower()
             if level_lower in ("error", "err", "fatal", "critical", "crit"):
@@ -326,11 +335,7 @@ def analyze_logs(source: str, query: str, time_range: str,
             normalized = re.sub(r"\d+", "N", msg[:120])
             message_counter[normalized] += 1
 
-    top_messages = [
-        {"message": msg, "count": count}
-        for msg, count in message_counter.most_common(10)
-        if count > 1
-    ]
+    top_messages = [{"message": msg, "count": count} for msg, count in message_counter.most_common(10) if count > 1]
 
     # ---------- Time-bucket anomaly detection (5-minute buckets) ----------
     frequency_anomalies = []
@@ -355,16 +360,18 @@ def analyze_logs(source: str, query: str, time_range: str,
             counts = list(buckets.values())
             mean = sum(counts) / len(counts)
             variance = sum((c - mean) ** 2 for c in counts) / len(counts)
-            std_dev = variance ** 0.5
+            std_dev = variance**0.5
 
             for bucket_time, count in buckets.items():
                 if std_dev > 0 and (count - mean) / std_dev > 2.0:
-                    frequency_anomalies.append({
-                        "bucket": bucket_time.isoformat(),
-                        "count": count,
-                        "mean": round(mean, 1),
-                        "z_score": round((count - mean) / std_dev, 2),
-                    })
+                    frequency_anomalies.append(
+                        {
+                            "bucket": bucket_time.isoformat(),
+                            "count": count,
+                            "mean": round(mean, 1),
+                            "z_score": round((count - mean) / std_dev, 2),
+                        }
+                    )
 
     # ---------- Error rate ----------
     total = len(all_logs)
@@ -407,9 +414,7 @@ def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> N
             "log_error_count": float(analysis.get("severity_counts", {}).get("error", 0)),
             "log_warning_count": float(analysis.get("severity_counts", {}).get("warning", 0)),
             "log_total_count": float(analysis.get("total_logs", 0)),
-            "log_pattern_match_count": float(
-                sum(p.get("count", 0) for p in analysis.get("matched_patterns", []))
-            ),
+            "log_pattern_match_count": float(sum(p.get("count", 0) for p in analysis.get("matched_patterns", []))),
             "log_anomaly_count": float(len(analysis.get("frequency_anomalies", []))),
         }
 
@@ -418,9 +423,14 @@ def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> N
                 """INSERT INTO metric_snapshots
                    (project_id, metric_name, metric_value, labels, source, collected_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (project_id, metric_name, metric_value,
-                 json.dumps({"query": analysis.get("query", ""), "time_range": analysis.get("time_range", "")}),
-                 "log_analyzer", now),
+                (
+                    project_id,
+                    metric_name,
+                    metric_value,
+                    json.dumps({"query": analysis.get("query", ""), "time_range": analysis.get("time_range", "")}),
+                    "log_analyzer",
+                    now,
+                ),
             )
         conn.commit()
         conn.close()
@@ -435,19 +445,21 @@ def main():
     parser = argparse.ArgumentParser(
         description="Log Analyzer — queries ELK/Splunk, detects error patterns, records findings"
     )
-    parser.add_argument("--source", choices=["elk", "splunk", "both"], default="elk",
-                        help="Log source to query (default: elk)")
-    parser.add_argument("--query", default="level:ERROR OR level:WARN",
-                        help='Search query string (default: "level:ERROR OR level:WARN")')
-    parser.add_argument("--time-range", default="24h",
-                        help="Time range for analysis (e.g., 30m, 1h, 24h, 7d)")
+    parser.add_argument(
+        "--source", choices=["elk", "splunk", "both"], default="elk", help="Log source to query (default: elk)"
+    )
+    parser.add_argument(
+        "--query",
+        default="level:ERROR OR level:WARN",
+        help='Search query string (default: "level:ERROR OR level:WARN")',
+    )
+    parser.add_argument("--time-range", default="24h", help="Time range for analysis (e.g., 30m, 1h, 24h, 7d)")
     parser.add_argument("--project-id", help="Project identifier (used as index prefix for ELK)")
     parser.add_argument("--elk-url", default=DEFAULT_ELK_URL, help="Elasticsearch URL")
     parser.add_argument("--splunk-url", default=DEFAULT_SPLUNK_URL, help="Splunk URL")
     parser.add_argument("--splunk-token", help="Splunk authentication token")
     parser.add_argument("--db-path", help="Override database path")
-    parser.add_argument("--format", choices=["json", "text"], default="text",
-                        help="Output format (default: text)")
+    parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format (default: text)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
@@ -470,8 +482,10 @@ def main():
         print(f"\n{'=' * 60}")
         print(f"  LOG ANALYSIS — {result.get('project_id', 'all')}")
         print(f"  Source: {result['source']} | Time range: {result['time_range']}")
-        print(f"  Total logs: {result['total_logs']} | Error rate: {result['error_rate'] * 100:.1f}%"
-              + (" ** SPIKE **" if result.get("error_rate_is_spike") else ""))
+        print(
+            f"  Total logs: {result['total_logs']} | Error rate: {result['error_rate'] * 100:.1f}%"
+            + (" ** SPIKE **" if result.get("error_rate_is_spike") else "")
+        )
         print(f"{'=' * 60}")
 
         # Severity breakdown

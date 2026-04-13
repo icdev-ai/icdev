@@ -14,46 +14,70 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, Optional
-from icdev._paths import get_project_root
 
 try:
     import yaml
 except ImportError:
     yaml = None
 
-from icdev.tools.cloud.secrets_provider import (
-    SecretsProvider, AWSSecretsProvider, AzureSecretsProvider,
-    GCPSecretsProvider, OCISecretsProvider, IBMSecretsProvider,
+from tools.cloud.secrets_provider import (
+    SecretsProvider,
+    AWSSecretsProvider,
+    AzureSecretsProvider,
+    GCPSecretsProvider,
+    OCISecretsProvider,
+    IBMSecretsProvider,
     LocalSecretsProvider,
 )
-from icdev.tools.cloud.storage_provider import (
-    StorageProvider, AWSS3Provider, AzureBlobProvider,
-    GCSProvider, OCIObjectStorageProvider, IBMStorageProvider,
+from tools.cloud.storage_provider import (
+    StorageProvider,
+    AWSS3Provider,
+    AzureBlobProvider,
+    GCSProvider,
+    OCIObjectStorageProvider,
+    IBMStorageProvider,
     LocalStorageProvider,
 )
-from icdev.tools.cloud.kms_provider import (
-    KMSProvider, AWSKMSProvider, AzureKMSProvider,
-    GCPKMSProvider, OCIKMSProvider, IBMKMSProvider, LocalKMSProvider,
+from tools.cloud.kms_provider import (
+    KMSProvider,
+    AWSKMSProvider,
+    AzureKMSProvider,
+    GCPKMSProvider,
+    OCIKMSProvider,
+    IBMKMSProvider,
+    LocalKMSProvider,
 )
-from icdev.tools.cloud.monitoring_provider import (
-    MonitoringProvider, AWSCloudWatchProvider, AzureMonitorProvider,
-    GCPMonitoringProvider, OCIMonitoringProvider, IBMMonitoringProvider,
+from tools.cloud.monitoring_provider import (
+    MonitoringProvider,
+    AWSCloudWatchProvider,
+    AzureMonitorProvider,
+    GCPMonitoringProvider,
+    OCIMonitoringProvider,
+    IBMMonitoringProvider,
     LocalMonitoringProvider,
 )
-from icdev.tools.cloud.iam_provider import (
-    IAMProvider, AWSIAMProvider, AzureEntraIDProvider,
-    GCPCloudIAMProvider, OCIIAMProvider, IBMIAMProvider,
+from tools.cloud.iam_provider import (
+    IAMProvider,
+    AWSIAMProvider,
+    AzureEntraIDProvider,
+    GCPCloudIAMProvider,
+    OCIIAMProvider,
+    IBMIAMProvider,
     LocalIAMProvider,
 )
-from icdev.tools.cloud.registry_provider import (
-    RegistryProvider, AWSECRProvider, AzureACRProvider,
-    GCPArtifactRegistryProvider, OCIOCIRProvider, IBMRegistryProvider,
+from tools.cloud.registry_provider import (
+    RegistryProvider,
+    AWSECRProvider,
+    AzureACRProvider,
+    GCPArtifactRegistryProvider,
+    OCIOCIRProvider,
+    IBMRegistryProvider,
     LocalDockerProvider,
 )
 
 logger = logging.getLogger("icdev.cloud.factory")
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "cloud_config.yaml"
 
 
@@ -61,13 +85,15 @@ def _expand_env(value):
     """Expand ${VAR:-default} patterns in string values."""
     if not isinstance(value, str):
         return value
-    pattern = r'\$\{([^}]+)\}'
+    pattern = r"\$\{([^}]+)\}"
+
     def replacer(match):
         expr = match.group(1)
         if ":-" in expr:
             var, default = expr.split(":-", 1)
             return os.environ.get(var, default)
         return os.environ.get(expr, match.group(0))
+
     return re.sub(pattern, replacer, value)
 
 
@@ -163,7 +189,9 @@ class CSPProviderFactory:
             region = ibm_cfg.get("region", "us-south")
             instance_id = _expand_env(ibm_cfg.get("secrets_manager_id", ""))
             provider = IBMSecretsProvider(
-                api_key=api_key, region=region, instance_id=instance_id,
+                api_key=api_key,
+                region=region,
+                instance_id=instance_id,
             )
         else:
             provider = LocalSecretsProvider()
@@ -200,7 +228,9 @@ class CSPProviderFactory:
             instance_id = _expand_env(ibm_cfg.get("cos_instance_id", ""))
             region = ibm_cfg.get("region", "us-south")
             provider = IBMStorageProvider(
-                api_key=api_key, instance_id=instance_id, region=region,
+                api_key=api_key,
+                instance_id=instance_id,
+                region=region,
             )
         else:
             provider = LocalStorageProvider()
@@ -237,7 +267,9 @@ class CSPProviderFactory:
             instance_id = _expand_env(ibm_cfg.get("key_protect_instance_id", ""))
             region = ibm_cfg.get("region", "us-south")
             provider = IBMKMSProvider(
-                api_key=api_key, instance_id=instance_id, region=region,
+                api_key=api_key,
+                instance_id=instance_id,
+                region=region,
             )
         else:
             provider = LocalKMSProvider()

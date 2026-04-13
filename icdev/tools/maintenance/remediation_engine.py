@@ -9,20 +9,19 @@ For each vulnerable/outdated dependency:
 4. Run verification tests
 5. Track in remediation_actions table
 
-CLI: python tools/maintenance/remediation_engine.py --project-id <id> [--vulnerability-id ID] [--auto] [--dry-run] [--json]
+CLI: python tools/maintenance/remediation_engine.py --project-id <id> [--vulnerability-id ID] [--auto] [--dry-run] [--json]  # noqa: E501
 """
 
 import argparse
 import json
 import re
-import sqlite3
 import subprocess
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "maintenance_config.yaml"
 
@@ -34,19 +33,17 @@ SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_connection(db_path=None):
     """Open a SQLite connection with row_factory set."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(path))
     return conn
 
 
 def _get_project(conn, project_id):
     """Fetch project row or raise ValueError."""
-    row = conn.execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project not found: {project_id}")
     return dict(row)
@@ -136,6 +133,7 @@ def _load_maintenance_config():
 # Prioritization
 # ---------------------------------------------------------------------------
 
+
 def _prioritize_remediations(conn, project_id):
     """Get vulnerabilities sorted by remediation priority.
 
@@ -150,7 +148,8 @@ def _prioritize_remediations(conn, project_id):
 
     Returns list of dicts from dependency_vulnerabilities + dependency_inventory join.
     """
-    rows = conn.execute("""
+    rows = conn.execute(
+        """
         SELECT dv.*, di.package_name, di.current_version, di.language,
                di.dependency_file, di.purl
         FROM dependency_vulnerabilities dv
@@ -163,13 +162,16 @@ def _prioritize_remediations(conn, project_id):
             END,
             CASE WHEN dv.sla_deadline < datetime('now') THEN 0 ELSE 1 END,
             dv.sla_deadline ASC
-    """, (project_id,)).fetchall()
+    """,
+        (project_id,),
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
 # Per-Language Dependency File Updaters
 # ---------------------------------------------------------------------------
+
 
 def _update_requirements_txt(file_path, package, from_ver, to_ver):
     """Update version in requirements.txt.
@@ -178,12 +180,9 @@ def _update_requirements_txt(file_path, package, from_ver, to_ver):
     """
     content = Path(file_path).read_text(encoding="utf-8")
     patterns = [
-        (rf'^({re.escape(package)})\s*==\s*{re.escape(from_ver)}',
-         rf'\1=={to_ver}'),
-        (rf'^({re.escape(package)})\s*>=\s*{re.escape(from_ver)}',
-         rf'\1>={to_ver}'),
-        (rf'^({re.escape(package)})\s*~=\s*{re.escape(from_ver)}',
-         rf'\1~={to_ver}'),
+        (rf"^({re.escape(package)})\s*==\s*{re.escape(from_ver)}", rf"\1=={to_ver}"),
+        (rf"^({re.escape(package)})\s*>=\s*{re.escape(from_ver)}", rf"\1>={to_ver}"),
+        (rf"^({re.escape(package)})\s*~=\s*{re.escape(from_ver)}", rf"\1~={to_ver}"),
     ]
     updated = False
     for pattern, replacement in patterns:
@@ -213,9 +212,7 @@ def _update_package_json(file_path, package, from_ver, to_ver):
             content[section][package] = f"{prefix}{to_ver}"
             updated = True
     if updated:
-        Path(file_path).write_text(
-            json.dumps(content, indent=2) + "\n", encoding="utf-8"
-        )
+        Path(file_path).write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8")
     return updated
 
 
@@ -224,11 +221,11 @@ def _update_pom_xml(file_path, package, from_ver, to_ver):
     content = Path(file_path).read_text(encoding="utf-8")
     group, artifact = package.split(":", 1) if ":" in package else ("", package)
     pattern = (
-        rf'(<groupId>{re.escape(group)}</groupId>\s*'
-        rf'<artifactId>{re.escape(artifact)}</artifactId>\s*'
-        rf'<version>){re.escape(from_ver)}(</version>)'
+        rf"(<groupId>{re.escape(group)}</groupId>\s*"
+        rf"<artifactId>{re.escape(artifact)}</artifactId>\s*"
+        rf"<version>){re.escape(from_ver)}(</version>)"
     )
-    new_content = re.sub(pattern, rf'\g<1>{to_ver}\g<2>', content, flags=re.DOTALL)
+    new_content = re.sub(pattern, rf"\g<1>{to_ver}\g<2>", content, flags=re.DOTALL)
     if new_content != content:
         Path(file_path).write_text(new_content, encoding="utf-8")
         return True
@@ -238,8 +235,8 @@ def _update_pom_xml(file_path, package, from_ver, to_ver):
 def _update_go_mod(file_path, module, from_ver, to_ver):
     """Update version in go.mod."""
     content = Path(file_path).read_text(encoding="utf-8")
-    pattern = rf'({re.escape(module)})\s+{re.escape(from_ver)}'
-    new_content = re.sub(pattern, rf'\1 {to_ver}', content)
+    pattern = rf"({re.escape(module)})\s+{re.escape(from_ver)}"
+    new_content = re.sub(pattern, rf"\1 {to_ver}", content)
     if new_content != content:
         Path(file_path).write_text(new_content, encoding="utf-8")
         return True
@@ -250,10 +247,8 @@ def _update_cargo_toml(file_path, crate, from_ver, to_ver):
     """Update version in Cargo.toml."""
     content = Path(file_path).read_text(encoding="utf-8")
     patterns = [
-        (rf'^({re.escape(crate)}\s*=\s*"){re.escape(from_ver)}(")',
-         rf'\g<1>{to_ver}\g<2>'),
-        (rf'({re.escape(crate)}\s*=\s*\{{[^}}]*version\s*=\s*"){re.escape(from_ver)}(")',
-         rf'\g<1>{to_ver}\g<2>'),
+        (rf'^({re.escape(crate)}\s*=\s*"){re.escape(from_ver)}(")', rf"\g<1>{to_ver}\g<2>"),
+        (rf'({re.escape(crate)}\s*=\s*\{{[^}}]*version\s*=\s*"){re.escape(from_ver)}(")', rf"\g<1>{to_ver}\g<2>"),
     ]
     updated = False
     for pattern, replacement in patterns:
@@ -274,7 +269,7 @@ def _update_csproj(file_path, package, from_ver, to_ver):
         rf'(<PackageReference\s+Include="{re.escape(package)}"\s+'
         rf'Version="){re.escape(from_ver)}(")'
     )
-    new_content = re.sub(pattern, rf'\g<1>{to_ver}\g<2>', content)
+    new_content = re.sub(pattern, rf"\g<1>{to_ver}\g<2>", content)
     if new_content != content:
         Path(file_path).write_text(new_content, encoding="utf-8")
         return True
@@ -296,6 +291,7 @@ UPDATERS = {
 # ---------------------------------------------------------------------------
 # Git Operations
 # ---------------------------------------------------------------------------
+
 
 def _is_git_repo(project_dir):
     """Check whether project_dir is inside a git repository."""
@@ -399,6 +395,7 @@ def _get_current_branch(project_dir):
 # Verification
 # ---------------------------------------------------------------------------
 
+
 def _run_verification_tests(project_dir, language):
     """Run basic verification after dependency update.
 
@@ -440,6 +437,7 @@ def _run_verification_tests(project_dir, language):
 # Auto-Remediation Severity Gating
 # ---------------------------------------------------------------------------
 
+
 def _severity_allowed_for_auto(severity, max_severity):
     """Check if a vulnerability severity is within auto-remediation threshold.
 
@@ -459,9 +457,19 @@ def _severity_allowed_for_auto(severity, max_severity):
 # Record Remediation Action
 # ---------------------------------------------------------------------------
 
+
 def _record_remediation_action(
-    conn, project_id, vuln, action_type, from_ver, to_ver,
-    dep_file, branch, commit_hash, status, test_results=None,
+    conn,
+    project_id,
+    vuln,
+    action_type,
+    from_ver,
+    to_ver,
+    dep_file,
+    branch,
+    commit_hash,
+    status,
+    test_results=None,
 ):
     """Insert a row into remediation_actions table."""
     conn.execute(
@@ -506,6 +514,7 @@ def _update_vulnerability_status(conn, vuln_id, new_status, action_desc=None):
 # Count Active Remediations
 # ---------------------------------------------------------------------------
 
+
 def _count_active_remediations(conn, project_id):
     """Return the number of remediation branches currently in-flight."""
     row = conn.execute(
@@ -519,6 +528,7 @@ def _count_active_remediations(conn, project_id):
 # ---------------------------------------------------------------------------
 # Main Remediation Logic
 # ---------------------------------------------------------------------------
+
 
 def remediate(
     project_id,
@@ -588,8 +598,7 @@ def remediate(
         if not vulns:
             conn.close()
             return {
-                "error": f"Vulnerability {vulnerability_id} not found, not open, "
-                         "or has no fix available",
+                "error": f"Vulnerability {vulnerability_id} not found, not open, or has no fix available",
             }
 
     # Check concurrency limit
@@ -653,9 +662,7 @@ def remediate(
         # Check concurrency slots
         if not dry_run and remaining_slots <= 0:
             action_detail["status"] = "skipped"
-            action_detail["reason"] = (
-                f"Concurrent remediation limit reached ({max_concurrent})"
-            )
+            action_detail["reason"] = f"Concurrent remediation limit reached ({max_concurrent})"
             summary["total_skipped"] += 1
             summary["actions"].append(action_detail)
             continue
@@ -708,19 +715,15 @@ def remediate(
                 f"from {vuln['current_version']} to {fix_version} "
                 f"in {dep_file_path.name}"
             )
-            action_detail["branch"] = (
-                f"{branch_prefix}{vuln['package_name']}-{fix_version}"
-            )
+            action_detail["branch"] = f"{branch_prefix}{vuln['package_name']}-{fix_version}"
             summary["total_remediated"] += 1
             summary["actions"].append(action_detail)
             continue
 
         # --- Live remediation ---
-        branch_name = (
-            f"{branch_prefix}{vuln['package_name']}-{fix_version}"
-        ).replace(" ", "-").replace("/", "-")
+        branch_name = (f"{branch_prefix}{vuln['package_name']}-{fix_version}").replace(" ", "-").replace("/", "-")
         # Avoid double-slash from prefix ending with /
-        branch_name = re.sub(r'/+', '/', branch_name)
+        branch_name = re.sub(r"/+", "/", branch_name)
 
         # Create git branch (if git available)
         branch_created = False
@@ -728,9 +731,7 @@ def remediate(
             branch_created = _create_remediation_branch(proj_dir, branch_name)
             if not branch_created:
                 action_detail["status"] = "failed"
-                action_detail["reason"] = (
-                    f"Failed to create git branch '{branch_name}'"
-                )
+                action_detail["reason"] = f"Failed to create git branch '{branch_name}'"
                 summary["total_failed"] += 1
                 summary["actions"].append(action_detail)
                 continue
@@ -818,21 +819,26 @@ def remediate(
             )
 
         # Log audit event
-        _log_audit_event(conn, project_id, (
-            f"Remediated {vuln['package_name']} "
-            f"{vuln['current_version']} -> {fix_version} "
-            f"({vuln['severity']} | {vuln.get('cve_id', 'N/A')})"
-        ), {
-            "vulnerability_id": vuln["id"],
-            "cve_id": vuln.get("cve_id"),
-            "package": vuln["package_name"],
-            "from_version": vuln["current_version"],
-            "to_version": fix_version,
-            "branch": branch_name if use_git else None,
-            "commit": commit_hash,
-            "tests_passed": tests_passed,
-            "status": final_status,
-        })
+        _log_audit_event(
+            conn,
+            project_id,
+            (
+                f"Remediated {vuln['package_name']} "
+                f"{vuln['current_version']} -> {fix_version} "
+                f"({vuln['severity']} | {vuln.get('cve_id', 'N/A')})"
+            ),
+            {
+                "vulnerability_id": vuln["id"],
+                "cve_id": vuln.get("cve_id"),
+                "package": vuln["package_name"],
+                "from_version": vuln["current_version"],
+                "to_version": fix_version,
+                "branch": branch_name if use_git else None,
+                "commit": commit_hash,
+                "tests_passed": tests_passed,
+                "status": final_status,
+            },
+        )
 
         # Switch back to original branch for next iteration
         if use_git and branch_created and original_branch:
@@ -846,9 +852,8 @@ def remediate(
         action_detail["branch"] = branch_name if use_git else None
         action_detail["commit"] = commit_hash
         action_detail["tests_passed"] = tests_passed
-        action_detail["reason"] = (
-            f"Updated {vuln['package_name']} to {fix_version}"
-            + ("" if tests_passed else " — tests failed, manual review needed")
+        action_detail["reason"] = f"Updated {vuln['package_name']} to {fix_version}" + (
+            "" if tests_passed else " — tests failed, manual review needed"
         )
         summary["total_remediated"] += 1
         summary["actions"].append(action_detail)
@@ -860,6 +865,7 @@ def remediate(
 # ---------------------------------------------------------------------------
 # CLI Output Formatting
 # ---------------------------------------------------------------------------
+
 
 def _print_summary(result):
     """Print human-readable remediation summary."""
@@ -909,24 +915,28 @@ def _print_summary(result):
 # CLI Entry Point
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(
-        description="Auto-remediate vulnerable dependencies"
-    )
+    parser = argparse.ArgumentParser(description="Auto-remediate vulnerable dependencies")
     parser.add_argument(
-        "--project-id", required=True,
+        "--project-id",
+        required=True,
         help="Project ID to remediate",
     )
     parser.add_argument(
-        "--vulnerability-id", type=int, default=None,
+        "--vulnerability-id",
+        type=int,
+        default=None,
         help="Specific vulnerability ID to fix",
     )
     parser.add_argument(
-        "--auto", action="store_true",
+        "--auto",
+        action="store_true",
         help="Auto-apply (respects max severity config)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Preview changes without applying",
     )
     parser.add_argument(
@@ -938,7 +948,8 @@ def main():
         help="Override database path",
     )
     parser.add_argument(
-        "--json", action="store_true",
+        "--json",
+        action="store_true",
         help="Output as JSON",
     )
     args = parser.parse_args()

@@ -31,12 +31,11 @@ import shutil
 import sys
 import textwrap
 from pathlib import Path
-from icdev._paths import get_project_root
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 RULES_PATH = BASE_DIR / "context" / "modernization" / "version_upgrade_rules.json"
 
 # ---------------------------------------------------------------------------
@@ -142,20 +141,24 @@ def _apply_transform_rules(content, rules):
         try:
             compiled = re.compile(pattern, flags)
         except re.error as exc:
-            applied.append({
-                "rule_id": rule.get("id", "unknown"),
-                "error": f"Bad regex: {exc}",
-            })
+            applied.append(
+                {
+                    "rule_id": rule.get("id", "unknown"),
+                    "error": f"Bad regex: {exc}",
+                }
+            )
             continue
 
         new_content, count = compiled.subn(py_replacement, content)
         if count > 0:
-            applied.append({
-                "rule_id": rule.get("id", "unknown"),
-                "description": rule.get("description", ""),
-                "matches": count,
-                "requires_manual_review": rule.get("requires_manual_review", False),
-            })
+            applied.append(
+                {
+                    "rule_id": rule.get("id", "unknown"),
+                    "description": rule.get("description", ""),
+                    "matches": count,
+                    "requires_manual_review": rule.get("requires_manual_review", False),
+                }
+            )
             content = new_content
 
     return content, applied
@@ -193,19 +196,14 @@ def _validate_transforms(original_path, transformed_path, language):
         try:
             ast.parse(content, filename=str(transformed_path))
         except SyntaxError as exc:
-            errors.append(
-                f"SyntaxError at line {exc.lineno}: {exc.msg}"
-            )
+            errors.append(f"SyntaxError at line {exc.lineno}: {exc.msg}")
 
     elif canonical in ("java", "dotnet"):
         # Brace balance check
         open_count = content.count("{")
         close_count = content.count("}")
         if open_count != close_count:
-            errors.append(
-                f"Brace mismatch: {open_count} opening vs "
-                f"{close_count} closing braces"
-            )
+            errors.append(f"Brace mismatch: {open_count} opening vs {close_count} closing braces")
         # Semicolon sanity — at least one semicolon expected in real code
         if len(content.strip()) > 0 and ";" not in content:
             errors.append("No semicolons found — possible incomplete migration")
@@ -279,152 +277,152 @@ def migrate_python2_to_3(source_path, output_path):
         # (a) print >>sys.stderr, "text" must come BEFORE generic print
         (
             "py2to3-print-redirect",
-            re.compile(r'^(\s*)print\s*>>\s*(\S+)\s*,\s*(.+)$', re.MULTILINE),
-            r'\1print(\3, file=\2)',
+            re.compile(r"^(\s*)print\s*>>\s*(\S+)\s*,\s*(.+)$", re.MULTILINE),
+            r"\1print(\3, file=\2)",
         ),
         # (a) print statement -> print function
         (
             "py2to3-print-stmt",
-            re.compile(r'^(\s*)print\s+(?![\(])(.+)$', re.MULTILINE),
-            r'\1print(\2)',
+            re.compile(r"^(\s*)print\s+(?![\(])(.+)$", re.MULTILINE),
+            r"\1print(\2)",
         ),
         # (c) except Exception, e -> except Exception as e
         (
             "py2to3-except-comma",
-            re.compile(r'\bexcept\s+(\w+(?:\.\w+)*)\s*,\s*(\w+)\s*:'),
-            r'except \1 as \2:',
+            re.compile(r"\bexcept\s+(\w+(?:\.\w+)*)\s*,\s*(\w+)\s*:"),
+            r"except \1 as \2:",
         ),
         # (m) raise Exception, "msg" -> raise Exception("msg")
         (
             "py2to3-raise-comma",
-            re.compile(r'\braise\s+(\w+(?:\.\w+)*)\s*,\s*(.+)'),
-            r'raise \1(\2)',
+            re.compile(r"\braise\s+(\w+(?:\.\w+)*)\s*,\s*(.+)"),
+            r"raise \1(\2)",
         ),
         # (n) exec-statement "code" -> exec-function("code")
         (
             "py2to3-exec-stmt",
-            re.compile(r'^(\s*)exec\s+(?![\(])(.+)$', re.MULTILINE),
-            r'\1exec(\2)',
+            re.compile(r"^(\s*)exec\s+(?![\(])(.+)$", re.MULTILINE),
+            r"\1exec(\2)",
         ),
         # (d) unicode(x) -> str(x)
         (
             "py2to3-unicode-call",
-            re.compile(r'\bunicode\('),
-            'str(',
+            re.compile(r"\bunicode\("),
+            "str(",
         ),
         # (d) u"string" -> "string"  (careful with ur"" raw strings)
         (
             "py2to3-unicode-prefix",
             re.compile(r'\bu(["\'])'),
-            r'\1',
+            r"\1",
         ),
         # (e) raw_input -> input
         (
             "py2to3-raw-input",
-            re.compile(r'\braw_input\('),
-            'input(',
+            re.compile(r"\braw_input\("),
+            "input(",
         ),
         # (f) xrange -> range
         (
             "py2to3-xrange",
-            re.compile(r'\bxrange\('),
-            'range(',
+            re.compile(r"\bxrange\("),
+            "range(",
         ),
         # (g) dict.has_key(k) -> k in dict
         (
             "py2to3-has-key",
-            re.compile(r'(\w+)\.has_key\(([^)]+)\)'),
-            r'\2 in \1',
+            re.compile(r"(\w+)\.has_key\(([^)]+)\)"),
+            r"\2 in \1",
         ),
         # (h) .iteritems() -> .items()
         (
             "py2to3-iteritems",
-            re.compile(r'\.iteritems\(\)'),
-            '.items()',
+            re.compile(r"\.iteritems\(\)"),
+            ".items()",
         ),
         # (h) .itervalues() -> .values()
         (
             "py2to3-itervalues",
-            re.compile(r'\.itervalues\(\)'),
-            '.values()',
+            re.compile(r"\.itervalues\(\)"),
+            ".values()",
         ),
         # (h) .iterkeys() -> .keys()
         (
             "py2to3-iterkeys",
-            re.compile(r'\.iterkeys\(\)'),
-            '.keys()',
+            re.compile(r"\.iterkeys\(\)"),
+            ".keys()",
         ),
         # (i) import ConfigParser -> import configparser
         (
             "py2to3-configparser-import",
-            re.compile(r'\bimport\s+ConfigParser\b'),
-            'import configparser',
+            re.compile(r"\bimport\s+ConfigParser\b"),
+            "import configparser",
         ),
         # (i) from ConfigParser -> from configparser
         (
             "py2to3-configparser-from",
-            re.compile(r'\bfrom\s+ConfigParser\b'),
-            'from configparser',
+            re.compile(r"\bfrom\s+ConfigParser\b"),
+            "from configparser",
         ),
         # (i) ConfigParser. -> configparser. (usage)
         (
             "py2to3-configparser-usage",
-            re.compile(r'\bConfigParser\.'),
-            'configparser.',
+            re.compile(r"\bConfigParser\."),
+            "configparser.",
         ),
         # (j) import urllib2 -> import urllib.request
         (
             "py2to3-urllib2-import",
-            re.compile(r'\bimport\s+urllib2\b'),
-            'import urllib.request',
+            re.compile(r"\bimport\s+urllib2\b"),
+            "import urllib.request",
         ),
         # (j) urllib2.urlopen -> urllib.request.urlopen
         (
             "py2to3-urllib2-usage",
-            re.compile(r'\burllib2\.urlopen\b'),
-            'urllib.request.urlopen',
+            re.compile(r"\burllib2\.urlopen\b"),
+            "urllib.request.urlopen",
         ),
         # (j) urllib2. (other usages)
         (
             "py2to3-urllib2-other",
-            re.compile(r'\burllib2\.'),
-            'urllib.request.',
+            re.compile(r"\burllib2\."),
+            "urllib.request.",
         ),
         # (k) import urlparse -> from urllib.parse import urlparse
         (
             "py2to3-urlparse-import",
-            re.compile(r'^(\s*)import\s+urlparse\s*$', re.MULTILINE),
-            r'\1from urllib.parse import urlparse',
+            re.compile(r"^(\s*)import\s+urlparse\s*$", re.MULTILINE),
+            r"\1from urllib.parse import urlparse",
         ),
         # (k) from urlparse import ... keep intact but fix module
         (
             "py2to3-urlparse-from",
-            re.compile(r'\bfrom\s+urlparse\s+import\b'),
-            'from urllib.parse import',
+            re.compile(r"\bfrom\s+urlparse\s+import\b"),
+            "from urllib.parse import",
         ),
         # (l) from StringIO import StringIO -> from io import StringIO
         (
             "py2to3-stringio",
-            re.compile(r'\bfrom\s+StringIO\s+import\s+StringIO\b'),
-            'from io import StringIO',
+            re.compile(r"\bfrom\s+StringIO\s+import\s+StringIO\b"),
+            "from io import StringIO",
         ),
         # (o) long(x) -> int(x)
         (
             "py2to3-long",
-            re.compile(r'\blong\('),
-            'int(',
+            re.compile(r"\blong\("),
+            "int(",
         ),
         # (p) basestring -> str
         (
             "py2to3-basestring",
-            re.compile(r'\bbasestring\b'),
-            'str',
+            re.compile(r"\bbasestring\b"),
+            "str",
         ),
         # (q) reduce( -> functools.reduce(  (we add import later)
         (
             "py2to3-reduce",
-            re.compile(r'(?<!\.)(?<!\w)reduce\('),
-            'functools.reduce(',
+            re.compile(r"(?<!\.)(?<!\w)reduce\("),
+            "functools.reduce(",
         ),
     ]
 
@@ -447,27 +445,29 @@ def migrate_python2_to_3(source_path, output_path):
             if new_content != content:
                 # Determine which lines changed
                 new_lines = new_content.splitlines(keepends=True)
-                for idx, (old_ln, new_ln) in enumerate(
-                    zip(original_lines, new_lines)
-                ):
+                for idx, (old_ln, new_ln) in enumerate(zip(original_lines, new_lines)):
                     if old_ln != new_ln:
-                        file_transforms.append({
-                            "file": str(py_file),
-                            "line": idx + 1,
-                            "rule": rule_id,
-                            "before": old_ln.rstrip("\n\r"),
-                            "after": new_ln.rstrip("\n\r"),
-                        })
+                        file_transforms.append(
+                            {
+                                "file": str(py_file),
+                                "line": idx + 1,
+                                "rule": rule_id,
+                                "before": old_ln.rstrip("\n\r"),
+                                "after": new_ln.rstrip("\n\r"),
+                            }
+                        )
                 # Lines may have been added/removed; capture extras
                 if len(new_lines) > len(original_lines):
                     for idx in range(len(original_lines), len(new_lines)):
-                        file_transforms.append({
-                            "file": str(py_file),
-                            "line": idx + 1,
-                            "rule": rule_id,
-                            "before": "",
-                            "after": new_lines[idx].rstrip("\n\r"),
-                        })
+                        file_transforms.append(
+                            {
+                                "file": str(py_file),
+                                "line": idx + 1,
+                                "rule": rule_id,
+                                "before": "",
+                                "after": new_lines[idx].rstrip("\n\r"),
+                            }
+                        )
 
                 content = new_content
                 original_lines = new_content.splitlines(keepends=True)
@@ -476,7 +476,7 @@ def migrate_python2_to_3(source_path, output_path):
         if "functools.reduce(" in content:
             has_functools_import = bool(
                 re.search(
-                    r'^\s*(import\s+functools|from\s+functools\s+import)',
+                    r"^\s*(import\s+functools|from\s+functools\s+import)",
                     content,
                     re.MULTILINE,
                 )
@@ -488,13 +488,15 @@ def migrate_python2_to_3(source_path, output_path):
                 content = content[:insert_pos] + import_line + content[insert_pos:]
                 # Also replace functools.reduce back to reduce since we imported it
                 content = content.replace("functools.reduce(", "reduce(")
-                file_transforms.append({
-                    "file": str(py_file),
-                    "line": 0,
-                    "rule": "py2to3-reduce-import-inject",
-                    "before": "",
-                    "after": import_line.rstrip(),
-                })
+                file_transforms.append(
+                    {
+                        "file": str(py_file),
+                        "line": 0,
+                        "rule": "py2to3-reduce-import-inject",
+                        "before": "",
+                        "after": import_line.rstrip(),
+                    }
+                )
 
         # Write back only if changed
         if content != original_content:
@@ -526,9 +528,7 @@ def _find_import_insert_position(content):
     for i, line in enumerate(lines):
         stripped = line.strip()
         # Skip shebangs / encoding / docstrings / comments at top
-        if stripped.startswith(("import ", "from ")) and not stripped.startswith(
-            "from __future__"
-        ):
+        if stripped.startswith(("import ", "from ")) and not stripped.startswith("from __future__"):
             last_import_end = offset + len(line)
         elif stripped.startswith("from __future__"):
             last_import_end = offset + len(line)
@@ -597,46 +597,38 @@ def migrate_java_version(source_path, output_path, from_ver="8", to_ver="17"):
         "websocket",
         "xml.bind",
     ]
-    javax_pattern = re.compile(
-        r'\bjavax\.(' + '|'.join(re.escape(p) for p in _JAVAX_PACKAGES) + r')\b'
-    )
+    javax_pattern = re.compile(r"\bjavax\.(" + "|".join(re.escape(p) for p in _JAVAX_PACKAGES) + r")\b")
 
     # var suggestion: Type name = new Type(...)  ->  var name = new Type(...)
     var_pattern = re.compile(
-        r'^(\s*)'
-        r'((?:(?:final|static)\s+)*)'                            # modifiers
-        r'(\w+(?:<[^>]+>)?)\s+'                                   # Type<Generic>
-        r'(\w+)\s*=\s*new\s+(\w+(?:<[^>]*>)?)\s*\(',             # name = new Type(
+        r"^(\s*)"
+        r"((?:(?:final|static)\s+)*)"  # modifiers
+        r"(\w+(?:<[^>]+>)?)\s+"  # Type<Generic>
+        r"(\w+)\s*=\s*new\s+(\w+(?:<[^>]*>)?)\s*\(",  # name = new Type(
         re.MULTILINE,
     )
 
     # Multiline string concatenation hint
-    multiline_concat_pattern = re.compile(
-        r'"[^"]*"\s*\+\s*\n\s*"[^"]*"'
-    )
+    multiline_concat_pattern = re.compile(r'"[^"]*"\s*\+\s*\n\s*"[^"]*"')
 
     # Anonymous inner class with single method -> lambda hint
     anon_class_pattern = re.compile(
-        r'new\s+(\w+)\s*\(\s*\)\s*\{\s*\n'
-        r'\s*@?\s*Override\s*\n'
-        r'\s*public\s+\w+\s+\w+\s*\([^)]*\)\s*\{',
+        r"new\s+(\w+)\s*\(\s*\)\s*\{\s*\n"
+        r"\s*@?\s*Override\s*\n"
+        r"\s*public\s+\w+\s+\w+\s*\([^)]*\)\s*\{",
         re.MULTILINE,
     )
 
     # Diamond operator: new Type<X,Y>() where LHS already has generics
     re.compile(
-        r'new\s+(\w+)<([^>]+)>\s*\(\)',
+        r"new\s+(\w+)<([^>]+)>\s*\(\)",
     )
 
     # .collect(Collectors.toList()) -> .toList()  (Java 16+)
-    collectors_tolist_pattern = re.compile(
-        r'\.collect\(Collectors\.toList\(\)\)'
-    )
+    collectors_tolist_pattern = re.compile(r"\.collect\(Collectors\.toList\(\)\)")
 
     # .collect(Collectors.toUnmodifiableList()) -> .toList()
-    collectors_unmod_pattern = re.compile(
-        r'\.collect\(Collectors\.toUnmodifiableList\(\)\)'
-    )
+    collectors_unmod_pattern = re.compile(r"\.collect\(Collectors\.toUnmodifiableList\(\)\)")
 
     for java_file in _collect_files(output_path, {".java"}):
         files_processed += 1
@@ -651,10 +643,13 @@ def migrate_java_version(source_path, output_path, from_ver="8", to_ver="17"):
         file_transforms = []
 
         # (a) javax -> jakarta
-        new_content = javax_pattern.sub(r'jakarta.\1', content)
+        new_content = javax_pattern.sub(r"jakarta.\1", content)
         if new_content != content:
             _record_line_diffs(
-                content, new_content, java_file, "java-javax-to-jakarta",
+                content,
+                new_content,
+                java_file,
+                "java-javax-to-jakarta",
                 file_transforms,
             )
             content = new_content
@@ -676,21 +671,26 @@ def migrate_java_version(source_path, output_path, from_ver="8", to_ver="17"):
         new_content = var_pattern.sub(_var_replace, content)
         if new_content != content:
             _record_line_diffs(
-                content, new_content, java_file, "java-var-inference",
+                content,
+                new_content,
+                java_file,
+                "java-var-inference",
                 file_transforms,
             )
             content = new_content
 
         # (c) Multiline string concat -> text block TODO comment
         for m in multiline_concat_pattern.finditer(content):
-            line_no = content[:m.start()].count("\n") + 1
-            file_transforms.append({
-                "file": str(java_file),
-                "line": line_no,
-                "rule": "java-text-block-suggestion",
-                "before": m.group(0).strip()[:80],
-                "after": "// TODO: Consider converting to text block (Java 13+)",
-            })
+            line_no = content[: m.start()].count("\n") + 1
+            file_transforms.append(
+                {
+                    "file": str(java_file),
+                    "line": line_no,
+                    "rule": "java-text-block-suggestion",
+                    "before": m.group(0).strip()[:80],
+                    "after": "// TODO: Consider converting to text block (Java 13+)",
+                }
+            )
         # Insert TODO comments above each multiline concat
         offset_adjust = 0
         for m in multiline_concat_pattern.finditer(original_content):
@@ -711,28 +711,36 @@ def migrate_java_version(source_path, output_path, from_ver="8", to_ver="17"):
 
         # (d) Anonymous inner class -> lambda suggestion (comment only)
         for m in anon_class_pattern.finditer(content):
-            line_no = content[:m.start()].count("\n") + 1
-            file_transforms.append({
-                "file": str(java_file),
-                "line": line_no,
-                "rule": "java-lambda-suggestion",
-                "before": m.group(0).strip()[:80],
-                "after": "// TODO: Consider replacing anonymous class with lambda",
-            })
+            line_no = content[: m.start()].count("\n") + 1
+            file_transforms.append(
+                {
+                    "file": str(java_file),
+                    "line": line_no,
+                    "rule": "java-lambda-suggestion",
+                    "before": m.group(0).strip()[:80],
+                    "after": "// TODO: Consider replacing anonymous class with lambda",
+                }
+            )
 
         # (e) Collectors.toList() -> .toList()
-        new_content = collectors_tolist_pattern.sub('.toList()', content)
+        new_content = collectors_tolist_pattern.sub(".toList()", content)
         if new_content != content:
             _record_line_diffs(
-                content, new_content, java_file, "java-collectors-tolist",
+                content,
+                new_content,
+                java_file,
+                "java-collectors-tolist",
                 file_transforms,
             )
             content = new_content
 
-        new_content = collectors_unmod_pattern.sub('.toList()', content)
+        new_content = collectors_unmod_pattern.sub(".toList()", content)
         if new_content != content:
             _record_line_diffs(
-                content, new_content, java_file, "java-collectors-unmod-tolist",
+                content,
+                new_content,
+                java_file,
+                "java-collectors-unmod-tolist",
                 file_transforms,
             )
             content = new_content
@@ -788,32 +796,32 @@ def migrate_dotnet_framework(source_path, output_path):
         # (a) System.Web -> Microsoft.AspNetCore.Http (general)
         (
             "dotnet-system-web",
-            re.compile(r'\busing\s+System\.Web\b(?!\.)', re.MULTILINE),
-            'using Microsoft.AspNetCore.Http',
+            re.compile(r"\busing\s+System\.Web\b(?!\.)", re.MULTILINE),
+            "using Microsoft.AspNetCore.Http",
         ),
         # (b) System.Web.Mvc -> Microsoft.AspNetCore.Mvc
         (
             "dotnet-web-mvc",
-            re.compile(r'\busing\s+System\.Web\.Mvc\b'),
-            'using Microsoft.AspNetCore.Mvc',
+            re.compile(r"\busing\s+System\.Web\.Mvc\b"),
+            "using Microsoft.AspNetCore.Mvc",
         ),
         # (c) System.Web.Http -> Microsoft.AspNetCore.Mvc
         (
             "dotnet-web-http",
-            re.compile(r'\busing\s+System\.Web\.Http\b'),
-            'using Microsoft.AspNetCore.Mvc',
+            re.compile(r"\busing\s+System\.Web\.Http\b"),
+            "using Microsoft.AspNetCore.Mvc",
         ),
         # System.Web.Security -> Microsoft.AspNetCore.Authentication
         (
             "dotnet-web-security",
-            re.compile(r'\busing\s+System\.Web\.Security\b'),
-            'using Microsoft.AspNetCore.Authentication',
+            re.compile(r"\busing\s+System\.Web\.Security\b"),
+            "using Microsoft.AspNetCore.Authentication",
         ),
         # (d) HttpContext.Current -> // TODO: Inject IHttpContextAccessor
         (
             "dotnet-httpcontext-current",
-            re.compile(r'\bHttpContext\.Current\b'),
-            '/* TODO: Inject IHttpContextAccessor */ _httpContextAccessor.HttpContext',
+            re.compile(r"\bHttpContext\.Current\b"),
+            "/* TODO: Inject IHttpContextAccessor */ _httpContextAccessor.HttpContext",
         ),
         # (e) ConfigurationManager.AppSettings["key"]
         (
@@ -824,26 +832,26 @@ def migrate_dotnet_framework(source_path, output_path):
         # (f) System.Data.SqlClient -> Microsoft.Data.SqlClient
         (
             "dotnet-sqlclient",
-            re.compile(r'\busing\s+System\.Data\.SqlClient\b'),
-            'using Microsoft.Data.SqlClient',
+            re.compile(r"\busing\s+System\.Data\.SqlClient\b"),
+            "using Microsoft.Data.SqlClient",
         ),
         # (g) WebClient -> TODO HttpClient
         (
             "dotnet-webclient",
-            re.compile(r'\bnew\s+WebClient\(\)'),
-            '/* TODO: Replace WebClient with HttpClient via IHttpClientFactory */ new HttpClient()',
+            re.compile(r"\bnew\s+WebClient\(\)"),
+            "/* TODO: Replace WebClient with HttpClient via IHttpClientFactory */ new HttpClient()",
         ),
         # Thread.Abort() removal
         (
             "dotnet-thread-abort",
-            re.compile(r'\bThread\.Abort\(\)'),
-            '/* REMOVED: Thread.Abort() — use CancellationToken instead */',
+            re.compile(r"\bThread\.Abort\(\)"),
+            "/* REMOVED: Thread.Abort() — use CancellationToken instead */",
         ),
         # ActionResult -> IActionResult
         (
             "dotnet-iactionresult",
-            re.compile(r'(\[Http\w+\]\s*\n\s*public\s+)ActionResult\b'),
-            r'\1IActionResult',
+            re.compile(r"(\[Http\w+\]\s*\n\s*public\s+)ActionResult\b"),
+            r"\1IActionResult",
         ),
     ]
 
@@ -863,7 +871,10 @@ def migrate_dotnet_framework(source_path, output_path):
             new_content = pattern.sub(replacement, content)
             if new_content != content:
                 _record_line_diffs(
-                    content, new_content, cs_file, rule_id,
+                    content,
+                    new_content,
+                    cs_file,
+                    rule_id,
                     all_transforms,
                 )
                 content = new_content
@@ -923,9 +934,7 @@ def _generate_appsettings_skeleton(web_config_path, transforms_list, errors_list
         conn_strings[m.group(1)] = m.group(2)
 
     appsettings = {
-        "Logging": {
-            "LogLevel": {"Default": "Information", "Microsoft.AspNetCore": "Warning"}
-        },
+        "Logging": {"LogLevel": {"Default": "Information", "Microsoft.AspNetCore": "Warning"}},
         "AllowedHosts": "*",
     }
     if settings:
@@ -938,13 +947,15 @@ def _generate_appsettings_skeleton(web_config_path, transforms_list, errors_list
         with open(output_json_path, "w", encoding="utf-8") as fh:
             json.dump(appsettings, fh, indent=2)
             fh.write("\n")
-        transforms_list.append({
-            "file": str(output_json_path),
-            "line": 0,
-            "rule": "dotnet-web-config-to-appsettings",
-            "before": f"web.config ({len(settings)} settings, {len(conn_strings)} connection strings)",
-            "after": "Generated appsettings.json skeleton",
-        })
+        transforms_list.append(
+            {
+                "file": str(output_json_path),
+                "line": 0,
+                "rule": "dotnet-web-config-to-appsettings",
+                "before": f"web.config ({len(settings)} settings, {len(conn_strings)} connection strings)",
+                "after": "Generated appsettings.json skeleton",
+            }
+        )
     except OSError as exc:
         errors_list.append(f"Write error {output_json_path}: {exc}")
 
@@ -990,13 +1001,15 @@ def _generate_program_cs_skeleton(global_asax_path, transforms_list, errors_list
     try:
         with open(program_cs_path, "w", encoding="utf-8") as fh:
             fh.write(skeleton)
-        transforms_list.append({
-            "file": str(program_cs_path),
-            "line": 0,
-            "rule": "dotnet-global-asax-to-program-cs",
-            "before": f"Global.asax ({global_asax_path.name})",
-            "after": "Generated Program.cs skeleton (minimal pipeline)",
-        })
+        transforms_list.append(
+            {
+                "file": str(program_cs_path),
+                "line": 0,
+                "rule": "dotnet-global-asax-to-program-cs",
+                "before": f"Global.asax ({global_asax_path.name})",
+                "after": "Generated Program.cs skeleton (minimal pipeline)",
+            }
+        )
     except OSError as exc:
         errors_list.append(f"Write error {program_cs_path}: {exc}")
 
@@ -1022,13 +1035,15 @@ def _record_line_diffs(old_content, new_content, file_path, rule_id, transforms_
                 before = old_chunk[k] if k < len(old_chunk) else ""
                 after = new_chunk[k] if k < len(new_chunk) else ""
                 line_no = (i1 + k + 1) if k < len(old_chunk) else (j1 + k + 1)
-                transforms_list.append({
-                    "file": str(file_path),
-                    "line": line_no,
-                    "rule": rule_id,
-                    "before": before,
-                    "after": after,
-                })
+                transforms_list.append(
+                    {
+                        "file": str(file_path),
+                        "line": line_no,
+                        "rule": rule_id,
+                        "before": before,
+                        "after": after,
+                    }
+                )
 
 
 # ====================================================================
@@ -1107,13 +1122,15 @@ def generate_migration_summary(source_path, output_path):
                         new_line_count = len(fh.readlines())
                 except OSError:
                     new_line_count = 0
-                per_file.append({
-                    "file": str(rel),
-                    "status": "new",
-                    "lines_added": new_line_count,
-                    "lines_removed": 0,
-                    "lines_modified": 0,
-                })
+                per_file.append(
+                    {
+                        "file": str(rel),
+                        "status": "new",
+                        "lines_added": new_line_count,
+                        "lines_removed": 0,
+                        "lines_modified": 0,
+                    }
+                )
                 total_lines_changed += new_line_count
                 files_changed += 1
                 continue
@@ -1147,13 +1164,15 @@ def generate_migration_summary(source_path, output_path):
 
             file_total = added + removed + modified
             total_lines_changed += file_total
-            per_file.append({
-                "file": str(rel),
-                "status": "modified",
-                "lines_added": added,
-                "lines_removed": removed,
-                "lines_modified": modified,
-            })
+            per_file.append(
+                {
+                    "file": str(rel),
+                    "status": "modified",
+                    "lines_added": added,
+                    "lines_removed": removed,
+                    "lines_modified": modified,
+                }
+            )
 
     return {
         "total_files": total_files,
@@ -1192,8 +1211,7 @@ def main():
     """CLI entry-point for the version migration tool."""
     parser = argparse.ArgumentParser(
         description=(
-            "ICDEV™ Version Migration Tool — transform legacy code to "
-            "newer language versions (CUI // SP-CTI)"
+            "ICDEV™ Version Migration Tool — transform legacy code to newer language versions (CUI // SP-CTI)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
@@ -1206,36 +1224,52 @@ def main():
         """),
     )
     parser.add_argument(
-        "--source", required=True, type=str,
+        "--source",
+        required=True,
+        type=str,
         help="Path to source directory containing legacy code",
     )
     parser.add_argument(
-        "--output", required=True, type=str,
+        "--output",
+        required=True,
+        type=str,
         help="Path to output directory (will be created; never overwrites source)",
     )
     parser.add_argument(
-        "--language", required=True, type=str,
+        "--language",
+        required=True,
+        type=str,
         choices=["python", "java", "csharp"],
         help="Source code language",
     )
     parser.add_argument(
-        "--from", dest="from_ver", type=str, default=None,
+        "--from",
+        dest="from_ver",
+        type=str,
+        default=None,
         help="Source version (e.g. 2.7, 8, 4.8)",
     )
     parser.add_argument(
-        "--to", dest="to_ver", type=str, default=None,
+        "--to",
+        dest="to_ver",
+        type=str,
+        default=None,
         help="Target version (e.g. 3.11, 17, 8.0)",
     )
     parser.add_argument(
-        "--validate", action="store_true",
+        "--validate",
+        action="store_true",
         help="Run syntax validation on migrated files",
     )
     parser.add_argument(
-        "--diff", action="store_true",
+        "--diff",
+        action="store_true",
         help="Print unified diffs for changed files",
     )
     parser.add_argument(
-        "--json", dest="json_output", action="store_true",
+        "--json",
+        dest="json_output",
+        action="store_true",
         help="Output results as JSON",
     )
 
@@ -1273,8 +1307,11 @@ def main():
 
     # Run migration
     result = _dispatch_migration(
-        args.language, source_path, output_path,
-        args.from_ver, args.to_ver,
+        args.language,
+        source_path,
+        output_path,
+        args.from_ver,
+        args.to_ver,
     )
 
     # Validation pass
@@ -1291,9 +1328,7 @@ def main():
                 validation_results[str(rel)] = vr
 
         result["validation"] = {
-            "files_validated": sum(
-                1 for _ in _collect_files(output_path, exts)
-            ),
+            "files_validated": sum(1 for _ in _collect_files(output_path, exts)),
             "files_with_errors": len(validation_results),
             "details": validation_results,
         }
@@ -1350,10 +1385,7 @@ def _print_human_report(result, args):
             added = pf.get("lines_added", 0)
             removed = pf.get("lines_removed", 0)
             modified = pf.get("lines_modified", 0)
-            print(
-                f"  {pf['file']:50s}  "
-                f"[{status}] +{added} -{removed} ~{modified}"
-            )
+            print(f"  {pf['file']:50s}  [{status}] +{added} -{removed} ~{modified}")
 
     # Group transformations by rule
     if transforms:

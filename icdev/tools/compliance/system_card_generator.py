@@ -22,18 +22,17 @@ import hashlib
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
-from icdev._paths import get_project_root
+from typing import Dict, List
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 
@@ -75,9 +74,7 @@ def _get_model_cards(conn: sqlite3.Connection, project_id: str) -> List[Dict]:
 
 def _get_agent_info(conn: sqlite3.Connection) -> List[Dict]:
     try:
-        rows = conn.execute(
-            "SELECT agent_id, agent_type, status FROM agents LIMIT 20"
-        ).fetchall()
+        rows = conn.execute("SELECT agent_id, agent_type, status FROM agents LIMIT 20").fetchall()
         return [dict(r) for r in rows]
     except Exception:
         return []
@@ -118,7 +115,8 @@ def generate_system_card(
             "system_overview": {
                 "name": project.get("name", project_id),
                 "project_id": project_id,
-                "purpose": system_purpose or "ICDEV™-generated application with AI-assisted development, compliance automation, and continuous monitoring.",
+                "purpose": system_purpose
+                or "ICDEV™-generated application with AI-assisted development, compliance automation, and continuous monitoring.",
                 "system_type": "Agentic AI Development Platform",
                 "deployment_status": project.get("status", "active"),
             },
@@ -235,7 +233,8 @@ def generate_system_card(
                    (project_id, event_type, actor, action, details, classification)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    project_id, "system_card_generated",
+                    project_id,
+                    "system_card_generated",
                     "icdev-compliance-engine",
                     "Generated system card",
                     json.dumps({"version": version, "hash": card_hash}),

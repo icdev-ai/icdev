@@ -17,16 +17,16 @@ Components (from args/ai_governance_config.yaml):
   - transparency_frameworks_selected (0.15)
 
 Usage:
-    from icdev.tools.requirements.ai_governance_scorer import score_ai_governance_readiness
+    from tools.requirements.ai_governance_scorer import score_ai_governance_readiness
     result = score_ai_governance_readiness(project_id, conn=conn)
 """
 
-from icdev._paths import get_project_root
-import json
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 DEFAULT_WEIGHTS = {
     "inventory_registered": 0.20,
     "model_cards_present": 0.15,
@@ -43,6 +43,7 @@ def _load_gov_config() -> dict:
     if config_path.exists():
         try:
             import yaml
+
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f) or {}
             return cfg.get("ai_governance", {}).get("readiness", {}).get("scoring", DEFAULT_WEIGHTS)
@@ -60,8 +61,7 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     return (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0
 
 
-def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = None,
-                                   db_path=None) -> dict:
+def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = None, db_path=None) -> dict:
     """Score AI governance readiness for a project.
 
     Returns:
@@ -69,9 +69,8 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     """
     close_conn = False
     if conn is None:
-        path = db_path or (BASE_DIR / "data" / "icdev.db")
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        db_path or (BASE_DIR / "data" / "icdev.db")
+        conn = get_connection()
         close_conn = True
 
     weights = _load_gov_config()
@@ -90,11 +89,13 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
         components["inventory_registered"] = 0.0
 
     if components["inventory_registered"] == 0.0:
-        gaps.append({
-            "component": "inventory_registered",
-            "message": "No AI/ML systems registered in inventory",
-            "remediation": "Register AI systems via /icdev-transparency inventory",
-        })
+        gaps.append(
+            {
+                "component": "inventory_registered",
+                "message": "No AI/ML systems registered in inventory",
+                "remediation": "Register AI systems via /icdev-transparency inventory",
+            }
+        )
 
     # 2. model_cards_present — ai_model_cards has entries
     if _table_exists(conn, "ai_model_cards"):
@@ -108,11 +109,13 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
         components["model_cards_present"] = 0.0
 
     if components["model_cards_present"] == 0.0:
-        gaps.append({
-            "component": "model_cards_present",
-            "message": "No model cards documented",
-            "remediation": "Create model cards via /icdev-transparency model-card",
-        })
+        gaps.append(
+            {
+                "component": "model_cards_present",
+                "message": "No model cards documented",
+                "remediation": "Create model cards via /icdev-transparency model-card",
+            }
+        )
 
     # 3. oversight_plan_exists — ai_oversight_plans has entries
     if _table_exists(conn, "ai_oversight_plans"):
@@ -126,17 +129,18 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
         components["oversight_plan_exists"] = 0.0
 
     if components["oversight_plan_exists"] == 0.0:
-        gaps.append({
-            "component": "oversight_plan_exists",
-            "message": "No human oversight plan registered",
-            "remediation": "Register oversight plan via /icdev-accountability",
-        })
+        gaps.append(
+            {
+                "component": "oversight_plan_exists",
+                "message": "No human oversight plan registered",
+                "remediation": "Register oversight plan via /icdev-accountability",
+            }
+        )
 
     # 4. impact_assessment_done — ai_ethics_reviews with review_type='impact_assessment'
     if _table_exists(conn, "ai_ethics_reviews"):
         count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ai_ethics_reviews "
-            "WHERE project_id = ? AND review_type = 'impact_assessment'",
+            "SELECT COUNT(*) as cnt FROM ai_ethics_reviews WHERE project_id = ? AND review_type = 'impact_assessment'",
             (project_id,),
         ).fetchone()
         cnt = count[0] if isinstance(count, (tuple, list)) else count["cnt"]
@@ -145,11 +149,13 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
         components["impact_assessment_done"] = 0.0
 
     if components["impact_assessment_done"] == 0.0:
-        gaps.append({
-            "component": "impact_assessment_done",
-            "message": "No algorithmic impact assessment completed",
-            "remediation": "Run impact assessment via /icdev-accountability",
-        })
+        gaps.append(
+            {
+                "component": "impact_assessment_done",
+                "message": "No algorithmic impact assessment completed",
+                "remediation": "Run impact assessment via /icdev-accountability",
+            }
+        )
 
     # 5. caio_designated — ai_caio_registry has entries
     if _table_exists(conn, "ai_caio_registry"):
@@ -163,11 +169,13 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
         components["caio_designated"] = 0.0
 
     if components["caio_designated"] == 0.0:
-        gaps.append({
-            "component": "caio_designated",
-            "message": "No Chief AI Officer (CAIO) designated",
-            "remediation": "Designate CAIO via /icdev-accountability",
-        })
+        gaps.append(
+            {
+                "component": "caio_designated",
+                "message": "No Chief AI Officer (CAIO) designated",
+                "remediation": "Designate CAIO via /icdev-accountability",
+            }
+        )
 
     # 6. transparency_frameworks_selected — check framework_applicability for AI frameworks
     if _table_exists(conn, "framework_applicability"):
@@ -183,17 +191,16 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
         components["transparency_frameworks_selected"] = 0.0
 
     if components["transparency_frameworks_selected"] == 0.0:
-        gaps.append({
-            "component": "transparency_frameworks_selected",
-            "message": "No AI transparency/governance framework selected",
-            "remediation": "Select frameworks (NIST AI RMF, ISO 42001, etc.) via compliance detector",
-        })
+        gaps.append(
+            {
+                "component": "transparency_frameworks_selected",
+                "message": "No AI transparency/governance framework selected",
+                "remediation": "Select frameworks (NIST AI RMF, ISO 42001, etc.) via compliance detector",
+            }
+        )
 
     # Calculate weighted score
-    score = sum(
-        components.get(comp, 0.0) * weights.get(comp, 0.0)
-        for comp in weights
-    )
+    score = sum(components.get(comp, 0.0) * weights.get(comp, 0.0) for comp in weights)
     score = round(min(1.0, max(0.0, score)), 4)
 
     if close_conn:

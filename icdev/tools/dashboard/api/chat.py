@@ -9,13 +9,12 @@ import sys
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
-from icdev._paths import get_project_root
 
 # ---------------------------------------------------------------------------
 # Path setup
 # ---------------------------------------------------------------------------
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -24,7 +23,8 @@ if str(BASE_DIR) not in sys.path:
 # ---------------------------------------------------------------------------
 
 try:
-    from icdev.tools.dashboard.chat_manager import chat_manager
+    from tools.dashboard.chat_manager import chat_manager
+
     _HAS_CHAT = True
 except ImportError:
     _HAS_CHAT = False
@@ -47,6 +47,7 @@ def _require_chat():
 # ---------------------------------------------------------------------------
 # Context endpoints
 # ---------------------------------------------------------------------------
+
 
 @chat_api.route("/contexts", methods=["POST"])
 def create_context():
@@ -120,6 +121,7 @@ def get_context(context_id):
 # Message endpoints
 # ---------------------------------------------------------------------------
 
+
 @chat_api.route("/<context_id>/send", methods=["POST"])
 def send_message(context_id):
     """Send a message to a context.
@@ -186,6 +188,7 @@ def get_messages(context_id):
 # State endpoints
 # ---------------------------------------------------------------------------
 
+
 @chat_api.route("/<context_id>/state", methods=["GET"])
 def get_state(context_id):
     """Get context state with dirty-tracking (Feature 4).
@@ -204,7 +207,8 @@ def get_state(context_id):
 
     # Get incremental updates from state tracker if available
     try:
-        from icdev.tools.dashboard.state_tracker import state_tracker
+        from tools.dashboard.state_tracker import state_tracker
+
         client_id = request.args.get("client_id", request.remote_addr or "unknown")
         updates = state_tracker.get_updates(client_id, context_id, since_version)
         ctx["state_updates"] = updates
@@ -230,6 +234,7 @@ def close_context(context_id):
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
+
 
 @chat_api.route("/diagnostics", methods=["GET"])
 def diagnostics():

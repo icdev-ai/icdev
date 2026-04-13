@@ -14,44 +14,44 @@ Usage:
 import argparse
 import json
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 # CUI banner applied to the top of generated source files
-CUI_HEADER_PYTHON = '''# //CUI
+CUI_HEADER_PYTHON = """# //CUI
 # CONTROLLED UNCLASSIFIED INFORMATION
 # Authorized distribution limited to authorized personnel only.
 # Handling: CUI Basic per 32 CFR Part 2002
 # //CUI
-'''
+"""
 
-CUI_HEADER_JS = '''// //CUI
+CUI_HEADER_JS = """// //CUI
 // CONTROLLED UNCLASSIFIED INFORMATION
 // Authorized distribution limited to authorized personnel only.
 // Handling: CUI Basic per 32 CFR Part 2002
 // //CUI
-'''
+"""
 
-CUI_HEADER_YAML = '''# //CUI
+CUI_HEADER_YAML = """# //CUI
 # CONTROLLED UNCLASSIFIED INFORMATION
 # Authorized distribution limited to authorized personnel only.
 # Handling: CUI Basic per 32 CFR Part 2002
 # //CUI
-'''
+"""
 
-CUI_HEADER_DOCKERFILE = '''# //CUI
+CUI_HEADER_DOCKERFILE = """# //CUI
 # CONTROLLED UNCLASSIFIED INFORMATION
 # Authorized distribution limited to authorized personnel only.
 # Handling: CUI Basic per 32 CFR Part 2002
 # //CUI
-'''
+"""
 
-CUI_HEADER_MARKDOWN = '''<!-- //CUI -->
+CUI_HEADER_MARKDOWN = """<!-- //CUI -->
 <!-- CONTROLLED UNCLASSIFIED INFORMATION -->
 <!-- Authorized distribution limited to authorized personnel only. -->
 <!-- Handling: CUI Basic per 32 CFR Part 2002 -->
 <!-- //CUI -->
-'''
+"""
 
 
 def get_cui_header(file_ext: str, classification: str = "CUI") -> str:
@@ -474,7 +474,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
     CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "src.{slug}.app:create_app()"]
-"""
+"""  # nosec B608 -- template content, not user input
     write_file(project_dir / "Dockerfile", dockerfile_content, classification)
     created.append(str(project_dir / "Dockerfile"))
 
@@ -615,7 +615,11 @@ def scaffold_microservice(project_dir: Path, project_name: str, classification: 
         created.append(str(d))
 
     # __init__.py files
-    write_file(project_dir / "src" / slug / "__init__.py", f'"""Microservice: {project_name}"""\n\n__version__ = "0.1.0"\n', classification)
+    write_file(
+        project_dir / "src" / slug / "__init__.py",
+        f'"""Microservice: {project_name}"""\n\n__version__ = "0.1.0"\n',
+        classification,
+    )
     write_file(project_dir / "src" / slug / "api" / "__init__.py", '"""API routes."""\n', classification)
     write_file(project_dir / "src" / slug / "models" / "__init__.py", '"""Data models."""\n', classification)
     write_file(project_dir / "src" / slug / "services" / "__init__.py", '"""Services."""\n', classification)
@@ -801,14 +805,16 @@ build-image:
 """
     write_file(project_dir / ".gitlab-ci.yml", gitlab_ci_content, classification)
 
-    created.extend([
-        str(project_dir / "src" / slug / "__init__.py"),
-        str(project_dir / "src" / slug / "main.py"),
-        str(project_dir / "pyproject.toml"),
-        str(project_dir / "conftest.py"),
-        str(project_dir / "Dockerfile"),
-        str(project_dir / ".gitlab-ci.yml"),
-    ])
+    created.extend(
+        [
+            str(project_dir / "src" / slug / "__init__.py"),
+            str(project_dir / "src" / slug / "main.py"),
+            str(project_dir / "pyproject.toml"),
+            str(project_dir / "conftest.py"),
+            str(project_dir / "Dockerfile"),
+            str(project_dir / ".gitlab-ci.yml"),
+        ]
+    )
     return created
 
 
@@ -863,7 +869,11 @@ def scaffold_cli(project_dir: Path, project_name: str, classification: str) -> l
         created.append(str(d))
 
     # __init__.py
-    write_file(project_dir / "src" / slug / "__init__.py", f'"""CLI tool: {project_name}"""\n\n__version__ = "0.1.0"\n', classification)
+    write_file(
+        project_dir / "src" / slug / "__init__.py",
+        f'"""CLI tool: {project_name}"""\n\n__version__ = "0.1.0"\n',
+        classification,
+    )
     write_file(project_dir / "src" / slug / "commands" / "__init__.py", '"""CLI commands."""\n', classification)
 
     # Main CLI entry
@@ -997,14 +1007,16 @@ build-image:
 """
     write_file(project_dir / ".gitlab-ci.yml", gitlab_ci_content, classification)
 
-    created.extend([
-        str(project_dir / "src" / slug / "__init__.py"),
-        str(project_dir / "src" / slug / "cli.py"),
-        str(project_dir / "pyproject.toml"),
-        str(project_dir / "conftest.py"),
-        str(project_dir / "Dockerfile"),
-        str(project_dir / ".gitlab-ci.yml"),
-    ])
+    created.extend(
+        [
+            str(project_dir / "src" / slug / "__init__.py"),
+            str(project_dir / "src" / slug / "cli.py"),
+            str(project_dir / "pyproject.toml"),
+            str(project_dir / "conftest.py"),
+            str(project_dir / "Dockerfile"),
+            str(project_dir / ".gitlab-ci.yml"),
+        ]
+    )
     return created
 
 
@@ -1031,9 +1043,15 @@ def scaffold_data_pipeline(project_dir: Path, project_name: str, classification:
         created.append(str(d))
 
     # __init__.py files
-    write_file(project_dir / "src" / slug / "__init__.py", f'"""Data Pipeline: {project_name}"""\n\n__version__ = "0.1.0"\n', classification)
+    write_file(
+        project_dir / "src" / slug / "__init__.py",
+        f'"""Data Pipeline: {project_name}"""\n\n__version__ = "0.1.0"\n',
+        classification,
+    )
     write_file(project_dir / "src" / slug / "extractors" / "__init__.py", '"""Data extractors."""\n', classification)
-    write_file(project_dir / "src" / slug / "transformers" / "__init__.py", '"""Data transformers."""\n', classification)
+    write_file(
+        project_dir / "src" / slug / "transformers" / "__init__.py", '"""Data transformers."""\n', classification
+    )
     write_file(project_dir / "src" / slug / "loaders" / "__init__.py", '"""Data loaders."""\n', classification)
 
     # Pipeline entry point
@@ -1191,14 +1209,16 @@ build-image:
 """
     write_file(project_dir / ".gitlab-ci.yml", gitlab_ci_content, classification)
 
-    created.extend([
-        str(project_dir / "src" / slug / "__init__.py"),
-        str(project_dir / "src" / slug / "pipeline.py"),
-        str(project_dir / "pyproject.toml"),
-        str(project_dir / "conftest.py"),
-        str(project_dir / "Dockerfile"),
-        str(project_dir / ".gitlab-ci.yml"),
-    ])
+    created.extend(
+        [
+            str(project_dir / "src" / slug / "__init__.py"),
+            str(project_dir / "src" / slug / "pipeline.py"),
+            str(project_dir / "pyproject.toml"),
+            str(project_dir / "conftest.py"),
+            str(project_dir / "Dockerfile"),
+            str(project_dir / ".gitlab-ci.yml"),
+        ]
+    )
     return created
 
 
@@ -1288,7 +1308,7 @@ variable "classification" {{
     write_file(project_dir / "terraform" / "variables.tf", tf_vars_content, classification)
 
     # Terraform outputs.tf
-    tf_outputs_content = '''output "project_name" {
+    tf_outputs_content = """output "project_name" {
   description = "Project name"
   value       = var.project_name
 }
@@ -1297,7 +1317,7 @@ output "environment" {
   description = "Current environment"
   value       = var.environment
 }
-'''
+"""
     write_file(project_dir / "terraform" / "outputs.tf", tf_outputs_content, classification)
 
     # Ansible inventory
@@ -1390,15 +1410,17 @@ ansible-lint:
 """
     write_file(project_dir / ".gitlab-ci.yml", gitlab_ci_content, classification)
 
-    created.extend([
-        str(project_dir / "terraform" / "main.tf"),
-        str(project_dir / "terraform" / "variables.tf"),
-        str(project_dir / "terraform" / "outputs.tf"),
-        str(project_dir / "ansible" / "inventory" / "hosts.ini"),
-        str(project_dir / "ansible" / "playbooks" / "site.yml"),
-        str(project_dir / "k8s" / "base" / "kustomization.yaml"),
-        str(project_dir / ".gitlab-ci.yml"),
-    ])
+    created.extend(
+        [
+            str(project_dir / "terraform" / "main.tf"),
+            str(project_dir / "terraform" / "variables.tf"),
+            str(project_dir / "terraform" / "outputs.tf"),
+            str(project_dir / "ansible" / "inventory" / "hosts.ini"),
+            str(project_dir / "ansible" / "playbooks" / "site.yml"),
+            str(project_dir / "k8s" / "base" / "kustomization.yaml"),
+            str(project_dir / ".gitlab-ci.yml"),
+        ]
+    )
     return created
 
 
@@ -1437,13 +1459,9 @@ def scaffold_js_frontend(project_dir: Path, project_name: str, classification: s
             "test:watch": "vitest",
             "test:coverage": "vitest run --coverage",
             "lint": "eslint src/ --ext .ts,.tsx",
-            "format": "prettier --write src/"
+            "format": "prettier --write src/",
         },
-        "dependencies": {
-            "react": "^18.2.0",
-            "react-dom": "^18.2.0",
-            "react-router-dom": "^6.20.0"
-        },
+        "dependencies": {"react": "^18.2.0", "react-dom": "^18.2.0", "react-router-dom": "^6.20.0"},
         "devDependencies": {
             "@types/react": "^18.2.0",
             "@types/react-dom": "^18.2.0",
@@ -1454,8 +1472,8 @@ def scaffold_js_frontend(project_dir: Path, project_name: str, classification: s
             "@testing-library/react": "^14.1.0",
             "@testing-library/jest-dom": "^6.1.0",
             "eslint": "^8.55.0",
-            "prettier": "^3.1.0"
-        }
+            "prettier": "^3.1.0",
+        },
     }
     pkg_path = project_dir / "package.json"
     pkg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1465,7 +1483,7 @@ def scaffold_js_frontend(project_dir: Path, project_name: str, classification: s
     created.append(str(pkg_path))
 
     # src/App.tsx
-    app_content = f'''import React from 'react';
+    app_content = f"""import React from 'react';
 
 const App: React.FC = () => {{
   return (
@@ -1482,11 +1500,11 @@ const App: React.FC = () => {{
 }};
 
 export default App;
-'''
+"""
     write_file(project_dir / "src" / "App.tsx", app_content, classification)
 
     # src/main.tsx
-    main_content = '''import React from 'react';
+    main_content = """import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
@@ -1495,7 +1513,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 );
-'''
+"""
     write_file(project_dir / "src" / "main.tsx", main_content, classification)
 
     # tsconfig.json
@@ -1515,10 +1533,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             "strict": True,
             "noUnusedLocals": True,
             "noUnusedParameters": True,
-            "noFallthroughCasesInSwitch": True
+            "noFallthroughCasesInSwitch": True,
         },
         "include": ["src"],
-        "references": [{"path": "./tsconfig.node.json"}]
+        "references": [{"path": "./tsconfig.node.json"}],
     }
     ts_path = project_dir / "tsconfig.json"
     with open(ts_path, "w", encoding="utf-8", newline="\n") as f:
@@ -1605,12 +1623,14 @@ build-image:
 """
     write_file(project_dir / ".gitlab-ci.yml", gitlab_ci_content, classification)
 
-    created.extend([
-        str(project_dir / "src" / "App.tsx"),
-        str(project_dir / "src" / "main.tsx"),
-        str(project_dir / "Dockerfile"),
-        str(project_dir / ".gitlab-ci.yml"),
-    ])
+    created.extend(
+        [
+            str(project_dir / "src" / "App.tsx"),
+            str(project_dir / "src" / "main.tsx"),
+            str(project_dir / "Dockerfile"),
+            str(project_dir / ".gitlab-ci.yml"),
+        ]
+    )
     return created
 
 
@@ -1626,7 +1646,9 @@ SCAFFOLDERS = {
 }
 
 
-def scaffold_project(project_dir: str, project_type: str, project_name: str = None, classification: str = "CUI") -> dict:
+def scaffold_project(
+    project_dir: str, project_type: str, project_name: str = None, classification: str = "CUI"
+) -> dict:
     """Main entry point: scaffold a project of the given type.
 
     Args:
@@ -1661,29 +1683,14 @@ def scaffold_project(project_dir: str, project_type: str, project_name: str = No
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate project directory structure based on type"
-    )
+    parser = argparse.ArgumentParser(description="Generate project directory structure based on type")
+    parser.add_argument("--project-dir", required=True, help="Path to the project directory to scaffold")
+    parser.add_argument("--type", required=True, choices=list(SCAFFOLDERS.keys()), help="Project type")
+    parser.add_argument("--name", help="Project name (defaults to directory name)")
     parser.add_argument(
-        "--project-dir", required=True,
-        help="Path to the project directory to scaffold"
+        "--classification", default="CUI", choices=["CUI", "FOUO", "Public"], help="Data classification level"
     )
-    parser.add_argument(
-        "--type", required=True, choices=list(SCAFFOLDERS.keys()),
-        help="Project type"
-    )
-    parser.add_argument(
-        "--name",
-        help="Project name (defaults to directory name)"
-    )
-    parser.add_argument(
-        "--classification", default="CUI", choices=["CUI", "FOUO", "Public"],
-        help="Data classification level"
-    )
-    parser.add_argument(
-        "--format", choices=["text", "json"], default="text",
-        help="Output format"
-    )
+    parser.add_argument("--format", choices=["text", "json"], default="text", help="Output format")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 

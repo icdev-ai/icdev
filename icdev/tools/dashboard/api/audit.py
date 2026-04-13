@@ -4,17 +4,16 @@ Flask Blueprint for audit API.
 Queries the audit_trail table in icdev.db.
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 from flask import Blueprint, jsonify, request
 
-from icdev.tools.dashboard.config import DB_PATH
+from tools.dashboard.config import DB_PATH
 
 audit_api = Blueprint("audit_api", __name__, url_prefix="/api/audit")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

@@ -22,7 +22,7 @@ Usage:
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from icdev.tools.ci.core.event_envelope import EventEnvelope
+from tools.ci.core.event_envelope import EventEnvelope
 
 
 class ChatConnectorAdapter(ABC):
@@ -44,7 +44,10 @@ class ChatConnectorAdapter(ABC):
 
     @abstractmethod
     def send_message(
-        self, channel_id: str, text: str, thread_id: str = None,
+        self,
+        channel_id: str,
+        text: str,
+        thread_id: str = None,
     ) -> bool:
         """Send a message to a channel/thread.
 

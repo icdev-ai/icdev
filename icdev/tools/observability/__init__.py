@@ -8,7 +8,7 @@ Provides a Haystack-style ProxyTracer with three backends:
   - NullTracer   (fallback, zero overhead)
 
 Usage:
-    from icdev.tools.observability import get_tracer
+    from tools.observability import get_tracer
     tracer = get_tracer()
 
     with tracer.start_span("my_operation") as span:
@@ -21,7 +21,7 @@ Configuration:
     ICDEV_MLFLOW_TRACKING_URI env var — auto-selects OTel backend when set
 """
 
-from icdev.tools.observability.tracer import (
+from tools.observability.tracer import (
     NullSpan,
     NullTracer,
     ProxyTracer,
@@ -71,14 +71,17 @@ def enable_tracing(backend: str = "auto") -> Tracer:
 
     if backend == "otel":
         try:
-            from icdev.tools.observability.otel_tracer import OTelTracer
+            from tools.observability.otel_tracer import OTelTracer
+
             tracer = OTelTracer()
         except ImportError:
             # D73: Graceful fallback when opentelemetry-sdk not installed
-            from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+            from tools.observability.sqlite_tracer import SQLiteTracer
+
             tracer = SQLiteTracer()
     elif backend == "sqlite":
-        from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+        from tools.observability.sqlite_tracer import SQLiteTracer
+
         tracer = SQLiteTracer()
     else:
         tracer = NullTracer()

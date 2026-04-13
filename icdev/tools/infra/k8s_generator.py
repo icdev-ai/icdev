@@ -8,9 +8,8 @@ import json
 import yaml as _yaml_mod
 from datetime import datetime, timezone
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 CUI_HEADER = (
@@ -170,7 +169,7 @@ def generate_deployment(project_path: str, app_config: dict = None) -> list:
                                 "periodSeconds": 10,
                             },
                             "volumeMounts": [
-                                {"name": "tmp", "mountPath": "/tmp"},
+                                {"name": "tmp", "mountPath": "/tmp"},  # nosec B108 -- temp path for ephemeral scratch files
                                 {"name": "config", "mountPath": "/etc/app/config", "readOnly": True},
                             ],
                             "env": [
@@ -338,13 +337,16 @@ def generate_configmap(project_path: str, config: dict = None) -> list:
     config = config or {}
     name = config.get("name", "icdev-app")
     namespace = config.get("namespace", "default")
-    data = config.get("data", {
-        "LOG_LEVEL": "info",
-        "APP_ENV": "production",
-        "CLASSIFICATION": "CUI",
-        "METRICS_ENABLED": "true",
-        "HEALTH_CHECK_PATH": "/health",
-    })
+    data = config.get(
+        "data",
+        {
+            "LOG_LEVEL": "info",
+            "APP_ENV": "production",
+            "CLASSIFICATION": "CUI",
+            "METRICS_ENABLED": "true",
+            "HEALTH_CHECK_PATH": "/health",
+        },
+    )
 
     k8s_dir = Path(project_path) / "k8s"
 
@@ -523,17 +525,94 @@ def generate_hpa(project_path: str, config: dict = None) -> list:
 # ---------------------------------------------------------------------------
 # Default agent definitions matching ICDEV™ multi-agent architecture
 DEFAULT_AGENTS = [
-    {"name": "orchestrator", "port": 8443, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
-    {"name": "architect", "port": 8444, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
-    {"name": "builder", "port": 8445, "cpu_request": "500m", "cpu_limit": "2000m", "mem_request": "512Mi", "mem_limit": "2Gi"},
-    {"name": "compliance", "port": 8446, "cpu_request": "100m", "cpu_limit": "500m", "mem_request": "128Mi", "mem_limit": "512Mi"},
-    {"name": "security", "port": 8447, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
-    {"name": "infrastructure", "port": 8448, "cpu_request": "100m", "cpu_limit": "500m", "mem_request": "128Mi", "mem_limit": "512Mi"},
-    {"name": "knowledge", "port": 8449, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
-    {"name": "monitor", "port": 8450, "cpu_request": "100m", "cpu_limit": "500m", "mem_request": "128Mi", "mem_limit": "512Mi"},
-    {"name": "mbse", "port": 8451, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
-    {"name": "modernization", "port": 8452, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
-    {"name": "devsecops", "port": 8457, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
+    {
+        "name": "orchestrator",
+        "port": 8443,
+        "cpu_request": "200m",
+        "cpu_limit": "1000m",
+        "mem_request": "256Mi",
+        "mem_limit": "1Gi",
+    },
+    {
+        "name": "architect",
+        "port": 8444,
+        "cpu_request": "200m",
+        "cpu_limit": "1000m",
+        "mem_request": "256Mi",
+        "mem_limit": "1Gi",
+    },
+    {
+        "name": "builder",
+        "port": 8445,
+        "cpu_request": "500m",
+        "cpu_limit": "2000m",
+        "mem_request": "512Mi",
+        "mem_limit": "2Gi",
+    },
+    {
+        "name": "compliance",
+        "port": 8446,
+        "cpu_request": "100m",
+        "cpu_limit": "500m",
+        "mem_request": "128Mi",
+        "mem_limit": "512Mi",
+    },
+    {
+        "name": "security",
+        "port": 8447,
+        "cpu_request": "200m",
+        "cpu_limit": "1000m",
+        "mem_request": "256Mi",
+        "mem_limit": "1Gi",
+    },
+    {
+        "name": "infrastructure",
+        "port": 8448,
+        "cpu_request": "100m",
+        "cpu_limit": "500m",
+        "mem_request": "128Mi",
+        "mem_limit": "512Mi",
+    },
+    {
+        "name": "knowledge",
+        "port": 8449,
+        "cpu_request": "200m",
+        "cpu_limit": "1000m",
+        "mem_request": "256Mi",
+        "mem_limit": "1Gi",
+    },
+    {
+        "name": "monitor",
+        "port": 8450,
+        "cpu_request": "100m",
+        "cpu_limit": "500m",
+        "mem_request": "128Mi",
+        "mem_limit": "512Mi",
+    },
+    {
+        "name": "mbse",
+        "port": 8451,
+        "cpu_request": "200m",
+        "cpu_limit": "1000m",
+        "mem_request": "256Mi",
+        "mem_limit": "1Gi",
+    },
+    {
+        "name": "modernization",
+        "port": 8452,
+        "cpu_request": "200m",
+        "cpu_limit": "1000m",
+        "mem_request": "256Mi",
+        "mem_limit": "1Gi",
+    },
+    {
+        "name": "devsecops",
+        "port": 8457,
+        "cpu_request": "200m",
+        "cpu_limit": "1000m",
+        "mem_request": "256Mi",
+        "mem_limit": "1Gi",
+    },
 ]
 
 
@@ -570,10 +649,13 @@ def generate_agent_deployments(project_path: str, blueprint: dict = None) -> lis
             "metadata": {
                 "name": agent_name,
                 "namespace": namespace,
-                "labels": _labels(agent_name, {
-                    "app.kubernetes.io/component": agent["name"],
-                    "icdev.io/tier": "agent",
-                }),
+                "labels": _labels(
+                    agent_name,
+                    {
+                        "app.kubernetes.io/component": agent["name"],
+                        "icdev.io/tier": "agent",
+                    },
+                ),
                 "annotations": {
                     "classification": "CUI",
                     "icdev.io/generated": datetime.now(timezone.utc).isoformat(),
@@ -591,10 +673,13 @@ def generate_agent_deployments(project_path: str, blueprint: dict = None) -> lis
                 },
                 "template": {
                     "metadata": {
-                        "labels": _labels(agent_name, {
-                            "app.kubernetes.io/component": agent["name"],
-                            "icdev.io/tier": "agent",
-                        }),
+                        "labels": _labels(
+                            agent_name,
+                            {
+                                "app.kubernetes.io/component": agent["name"],
+                                "icdev.io/tier": "agent",
+                            },
+                        ),
                         "annotations": {
                             "classification": "CUI",
                             "prometheus.io/scrape": "true",
@@ -656,7 +741,7 @@ def generate_agent_deployments(project_path: str, blueprint: dict = None) -> lis
                                     {"name": "TLS_CA_PATH", "value": "/etc/tls/ca.crt"},
                                 ],
                                 "volumeMounts": [
-                                    {"name": "tmp", "mountPath": "/tmp"},
+                                    {"name": "tmp", "mountPath": "/tmp"},  # nosec B108 -- temp path for ephemeral scratch files
                                     {"name": "tls-certs", "mountPath": "/etc/tls", "readOnly": True},
                                     {"name": "config", "mountPath": "/etc/agent/config", "readOnly": True},
                                 ],
@@ -781,11 +866,16 @@ def generate_predictive_hpa(project_path: str, blueprint: dict = None) -> list:
             "metadata": {
                 "name": f"{agent_name}-hpa",
                 "namespace": namespace,
-                "labels": _labels(agent_name, {
-                    "icdev.io/scaling-tier": "core" if name_key in core_agents
-                    else "domain" if name_key in domain_agents
-                    else "support",
-                }),
+                "labels": _labels(
+                    agent_name,
+                    {
+                        "icdev.io/scaling-tier": "core"
+                        if name_key in core_agents
+                        else "domain"
+                        if name_key in domain_agents
+                        else "support",
+                    },
+                ),
                 "annotations": {
                     "classification": "CUI",
                     "icdev.io/scaling-profile": "predictive",
@@ -851,8 +941,8 @@ def generate_predictive_hpa(project_path: str, blueprint: dict = None) -> list:
 # ZTA Service Mesh & Network Segmentation (Phase 25b)
 # ---------------------------------------------------------------------------
 
-def generate_service_mesh(project_path: str, mesh_type: str = "istio",
-                          app_config: dict = None) -> list:
+
+def generate_service_mesh(project_path: str, mesh_type: str = "istio", app_config: dict = None) -> list:
     """Generate service mesh configuration (Istio or Linkerd).
 
     Delegates to tools.devsecops.service_mesh_generator for full
@@ -872,10 +962,12 @@ def generate_service_mesh(project_path: str, mesh_type: str = "istio",
 
     try:
         if mesh_type == "linkerd":
-            from icdev.tools.devsecops.service_mesh_generator import generate_linkerd_config
+            from tools.devsecops.service_mesh_generator import generate_linkerd_config
+
             result = generate_linkerd_config(project_id)
         else:
-            from icdev.tools.devsecops.service_mesh_generator import generate_istio_config
+            from tools.devsecops.service_mesh_generator import generate_istio_config
+
             result = generate_istio_config(project_id)
 
         # Write generated configs to k8s/service-mesh/
@@ -895,8 +987,7 @@ def generate_service_mesh(project_path: str, mesh_type: str = "istio",
         return []
 
 
-def generate_zta_network_policies(project_path: str,
-                                  app_config: dict = None) -> list:
+def generate_zta_network_policies(project_path: str, app_config: dict = None) -> list:
     """Generate ZTA micro-segmentation network policies.
 
     Delegates to tools.devsecops.network_segmentation_generator for
@@ -914,7 +1005,7 @@ def generate_zta_network_policies(project_path: str,
     services = config.get("services", [])
 
     try:
-        from icdev.tools.devsecops.network_segmentation_generator import (
+        from tools.devsecops.network_segmentation_generator import (
             generate_namespace_isolation,
             generate_microsegmentation,
         )
@@ -953,10 +1044,11 @@ def main():
     parser.add_argument(
         "--manifests",
         default="deployment,service,ingress,configmap,networkpolicy,hpa",
-        help="Comma-separated manifests to generate (also: agent-deployments, agent-hpa, service-mesh, zta-network-policies)",
+        help="Comma-separated manifests to generate (also: agent-deployments, agent-hpa, service-mesh, zta-network-policies)",  # noqa: E501
     )
-    parser.add_argument("--mesh-type", default="istio", choices=["istio", "linkerd"],
-                        help="Service mesh type for service-mesh manifest")
+    parser.add_argument(
+        "--mesh-type", default="istio", choices=["istio", "linkerd"], help="Service mesh type for service-mesh manifest"
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 

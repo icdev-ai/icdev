@@ -15,12 +15,10 @@ Add new mappings without code changes.
 
 import argparse
 import json
-import sys
 import textwrap
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MAPPINGS_PATH = BASE_DIR / "context" / "translation" / "dependency_mappings.json"
 
 CUI_BANNER = "CUI // SP-CTI"
@@ -101,38 +99,106 @@ def resolve_import(import_name, source_lang, target_lang, mappings=None):
     # No mapping found — check if it's a stdlib module
     stdlib_modules = {
         "python": [
-            "os", "sys", "json", "re", "math", "datetime", "pathlib",
-            "collections", "itertools", "functools", "typing", "abc",
-            "hashlib", "uuid", "logging", "argparse", "textwrap",
-            "subprocess", "threading", "asyncio", "sqlite3", "io",
-            "copy", "time", "random", "shutil", "glob", "tempfile",
+            "os",
+            "sys",
+            "json",
+            "re",
+            "math",
+            "datetime",
+            "pathlib",
+            "collections",
+            "itertools",
+            "functools",
+            "typing",
+            "abc",
+            "hashlib",
+            "uuid",
+            "logging",
+            "argparse",
+            "textwrap",
+            "subprocess",
+            "threading",
+            "asyncio",
+            "sqlite3",
+            "io",
+            "copy",
+            "time",
+            "random",
+            "shutil",
+            "glob",
+            "tempfile",
         ],
         "java": [
-            "java.util", "java.io", "java.nio", "java.lang",
-            "java.math", "java.time", "java.util.stream",
-            "java.util.concurrent", "java.security",
+            "java.util",
+            "java.io",
+            "java.nio",
+            "java.lang",
+            "java.math",
+            "java.time",
+            "java.util.stream",
+            "java.util.concurrent",
+            "java.security",
         ],
         "go": [
-            "fmt", "os", "io", "strings", "strconv", "math",
-            "time", "encoding/json", "net/http", "path/filepath",
-            "sync", "context", "log", "crypto", "regexp", "sort",
+            "fmt",
+            "os",
+            "io",
+            "strings",
+            "strconv",
+            "math",
+            "time",
+            "encoding/json",
+            "net/http",
+            "path/filepath",
+            "sync",
+            "context",
+            "log",
+            "crypto",
+            "regexp",
+            "sort",
         ],
         "rust": [
-            "std::collections", "std::io", "std::fs", "std::path",
-            "std::fmt", "std::sync", "std::thread", "std::time",
+            "std::collections",
+            "std::io",
+            "std::fs",
+            "std::path",
+            "std::fmt",
+            "std::sync",
+            "std::thread",
+            "std::time",
         ],
         "csharp": [
-            "System", "System.IO", "System.Linq",
-            "System.Collections.Generic", "System.Threading.Tasks",
-            "System.Text.Json", "System.Net.Http",
+            "System",
+            "System.IO",
+            "System.Linq",
+            "System.Collections.Generic",
+            "System.Threading.Tasks",
+            "System.Text.Json",
+            "System.Net.Http",
         ],
         "javascript": [
-            "fs", "path", "os", "http", "https", "url",
-            "crypto", "util", "events", "stream",
+            "fs",
+            "path",
+            "os",
+            "http",
+            "https",
+            "url",
+            "crypto",
+            "util",
+            "events",
+            "stream",
         ],
         "typescript": [
-            "fs", "path", "os", "http", "https", "url",
-            "crypto", "util", "events", "stream",
+            "fs",
+            "path",
+            "os",
+            "http",
+            "https",
+            "url",
+            "crypto",
+            "util",
+            "events",
+            "stream",
         ],
     }
 
@@ -151,11 +217,7 @@ def resolve_imports(import_list, source_lang, target_lang, mappings=None):
     """
     if mappings is None:
         mappings = load_mappings()
-    return [
-        resolve_import(imp.strip(), source_lang, target_lang, mappings)
-        for imp in import_list
-        if imp.strip()
-    ]
+    return [resolve_import(imp.strip(), source_lang, target_lang, mappings) for imp in import_list if imp.strip()]
 
 
 def get_all_domains(mappings=None):
@@ -198,10 +260,7 @@ def get_domain_coverage(source_lang, target_lang, mappings=None):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            f"{CUI_BANNER}\n"
-            "ICDEV™ Dependency Mapper — Cross-Language Package Equivalents (D246)"
-        ),
+        description=(f"{CUI_BANNER}\nICDEV™ Dependency Mapper — Cross-Language Package Equivalents (D246)"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\
             Examples:
@@ -241,9 +300,11 @@ def main():
         if args.json_output:
             print(json.dumps(cov, indent=2))
         else:
-            print(f"Coverage {cov['source_language']} -> {cov['target_language']}: "
-                  f"{cov['covered_domains']}/{cov['total_domains']} domains "
-                  f"({cov['coverage_pct']}%)")
+            print(
+                f"Coverage {cov['source_language']} -> {cov['target_language']}: "
+                f"{cov['covered_domains']}/{cov['total_domains']} domains "
+                f"({cov['coverage_pct']}%)"
+            )
         return
 
     if args.imports:
@@ -254,14 +315,19 @@ def main():
         unmapped = [r for r in results if r["mapping_source"] not in ("table",)]
 
         if args.json_output:
-            print(json.dumps({
-                "resolutions": results,
-                "summary": {
-                    "total": len(results),
-                    "mapped": len(mapped),
-                    "unmapped": len(unmapped),
-                },
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "resolutions": results,
+                        "summary": {
+                            "total": len(results),
+                            "mapped": len(mapped),
+                            "unmapped": len(unmapped),
+                        },
+                    },
+                    indent=2,
+                )
+            )
         else:
             print(f"Resolved {len(mapped)}/{len(results)} imports:")
             for r in results:

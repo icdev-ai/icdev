@@ -8,9 +8,8 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONTROLS_PATH = BASE_DIR / "context" / "compliance" / "nist_800_53.json"
 
 
@@ -18,10 +17,7 @@ def load_controls(controls_path=None):
     """Load NIST 800-53 controls from JSON file. Returns list of control dicts."""
     path = controls_path or CONTROLS_PATH
     if not path.exists():
-        raise FileNotFoundError(
-            f"Controls file not found: {path}\n"
-            "Ensure context/compliance/nist_800_53.json exists."
-        )
+        raise FileNotFoundError(f"Controls file not found: {path}\nEnsure context/compliance/nist_800_53.json exists.")
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return data.get("controls", [])
@@ -93,11 +89,13 @@ def search_controls(query, controls=None, controls_path=None):
     query_lower = query.lower()
     results = []
     for ctrl in controls:
-        searchable = " ".join([
-            ctrl.get("title", ""),
-            ctrl.get("description", ""),
-            ctrl.get("supplemental_guidance", ""),
-        ]).lower()
+        searchable = " ".join(
+            [
+                ctrl.get("title", ""),
+                ctrl.get("description", ""),
+                ctrl.get("supplemental_guidance", ""),
+            ]
+        ).lower()
         if query_lower in searchable:
             results.append(ctrl)
     return results
@@ -134,9 +132,7 @@ def format_family_list(family_controls):
         f"{'─' * 70}",
     ]
     for ctrl in sorted(family_controls, key=lambda c: c["id"]):
-        lines.append(
-            f"{ctrl['id']:<10} {ctrl.get('impact_level', 'N/A'):<10} {ctrl['title']}"
-        )
+        lines.append(f"{ctrl['id']:<10} {ctrl.get('impact_level', 'N/A'):<10} {ctrl['title']}")
     lines.append(f"{'─' * 70}")
     lines.append(f"Total: {len(family_controls)} controls")
     return "\n".join(lines)
@@ -159,33 +155,18 @@ def _wrap(text, width):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="NIST 800-53 Rev 5 control reference lookup"
-    )
+    parser = argparse.ArgumentParser(description="NIST 800-53 Rev 5 control reference lookup")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--control-id", type=str,
-        help="Look up a specific control by ID (e.g., SA-11, AC-2)"
-    )
-    group.add_argument(
-        "--family", type=str,
-        help="List all controls in a family (e.g., SA, AC, CM)"
-    )
-    group.add_argument(
-        "--list-families", action="store_true",
-        help="List all available control families"
-    )
-    group.add_argument(
-        "--search", type=str,
-        help="Search controls by keyword"
-    )
+    group.add_argument("--control-id", type=str, help="Look up a specific control by ID (e.g., SA-11, AC-2)")
+    group.add_argument("--family", type=str, help="List all controls in a family (e.g., SA, AC, CM)")
+    group.add_argument("--list-families", action="store_true", help="List all available control families")
+    group.add_argument("--search", type=str, help="Search controls by keyword")
+    parser.add_argument("--json", action="store_true", help="Output in JSON format")
     parser.add_argument(
-        "--json", action="store_true",
-        help="Output in JSON format"
-    )
-    parser.add_argument(
-        "--controls-file", type=str, default=None,
-        help="Path to NIST controls JSON file (default: context/compliance/nist_800_53.json)"
+        "--controls-file",
+        type=str,
+        default=None,
+        help="Path to NIST controls JSON file (default: context/compliance/nist_800_53.json)",
     )
     args = parser.parse_args()
 

@@ -22,7 +22,7 @@ ICDEV™'s multi-agent architecture (15 agents, 3 tiers) handles task decomposit
 
 2. **No declarative prompt chaining** — Multi-step LLM reasoning (e.g., plan → critique → refine) requires ad-hoc Python code. Adding a new reasoning chain means writing new code rather than declaring steps in YAML.
 
-3. **No adversarial plan review** — ATLAS workflow moves from Integrate directly to Launch with no structured review phase. Critical architecture flaws, compliance gaps, and security vulnerabilities are caught late (during stress-testing) rather than early (during review).
+3. **No adversarial plan review** — ANVIL workflow moves from Integrate directly to Launch with no structured review phase. Critical architecture flaws, compliance gaps, and security vulnerabilities are caught late (during stress-testing) rather than early (during review).
 
 4. **No session intent tracking** — Agent sessions lack declared purpose, making NIST AU-3 audit traceability difficult. Post-incident forensics cannot determine what an agent session was authorized to do.
 
@@ -54,7 +54,7 @@ Phase 61 closes these gaps with 7 features that strengthen orchestration boundar
                     Multi-Agent Orchestration Improvements
     ┌─────────────────────────────────────────────────────────────────┐
     │                                                                 │
-    │   agent_config.yaml    prompt_chains.yaml    atlas_critique_    │
+    │   agent_config.yaml    prompt_chains.yaml    anvil_critique_    │
     │   (dispatcher mode)    (chain definitions)   config.yaml        │
     │                                                                 │
     │   file_access_tiers.yaml                                        │
@@ -72,7 +72,7 @@ Phase 61 closes these gaps with 7 features that strengthen orchestration boundar
     └───────┬──────┘  └─────┬──────┘ └┬────────┘ └┬──────────────┘
             │               │         │           │
             ▼               ▼         ▼           ▼
-    dispatcher_mode_    prompt_chain_  atlas_critique_  session_purposes
+    dispatcher_mode_    prompt_chain_  anvil_critique_  session_purposes
     overrides           executions     sessions +       (audit trail)
     (per-project)       (append-only)  findings
                                        (append-only)
@@ -108,7 +108,7 @@ Phase 61 closes these gaps with 7 features that strengthen orchestration boundar
 
 - **FORGE enforcement** — Dispatcher mode ensures the Orchestrator delegates to domain agents, never executes tools directly (D-DISP-1)
 - **Declarative configuration** — Prompt chains, critique roles, consensus rules, and file tiers are all YAML-driven; add new chains/critics/tiers without code changes (D26 pattern)
-- **Append-only audit** — `atlas_critique_findings` and `prompt_chain_executions` are immutable (D6, NIST AU compliance)
+- **Append-only audit** — `anvil_critique_findings` and `prompt_chain_executions` are immutable (D6, NIST AU compliance)
 - **Backward compatible** — All features default to disabled/optional; existing workflows unchanged without opt-in
 - **Air-gap safe** — All implementations use Python stdlib only (D22 pattern); no external dependencies
 
@@ -184,7 +184,7 @@ chains:
 
 ### Feature 3: ANVIL Adversarial Critique (`tools/agent/anvil_critique.py`)
 
-Multi-agent adversarial plan review inserted between the Integrate and Launch phases of M-ANVIL workflow.
+Multi-agent adversarial plan review inserted between the Assemble and Stress-test phases of M-ANVIL workflow.
 
 **Critic Agents (configurable):**
 | Critic | Focus Areas |
@@ -208,7 +208,7 @@ Multi-agent adversarial plan review inserted between the Integrate and Launch ph
 
 **Session Statuses:** `in_progress` → `go` | `nogo` | `conditional` → `revised` | `failed`
 
-**Config:** `args/atlas_critique_config.yaml`
+**Config:** `args/anvil_critique_config.yaml`
 
 ### Feature 4: Session Purpose Declaration (`tools/agent/session_purpose.py`)
 
@@ -309,8 +309,8 @@ Defense-in-depth file protection enforced by the pre_tool_use hook (D-ORCH-8).
 |-------|-------------|---------|
 | `dispatcher_mode_overrides` | No | Per-project dispatcher mode configuration |
 | `prompt_chain_executions` | **Yes** | Chain step execution audit trail |
-| `atlas_critique_sessions` | No | Critique session header (status updates allowed) |
-| `atlas_critique_findings` | **Yes** | Individual findings per critique session |
+| `anvil_critique_sessions` | No | Critique session header (status updates allowed) |
+| `anvil_critique_findings` | **Yes** | Individual findings per critique session |
 | `session_purposes` | No | Session intent declarations (status transitions allowed) |
 
 ### Table: `dispatcher_mode_overrides`
@@ -342,9 +342,9 @@ CREATE TABLE prompt_chain_executions (
 );
 ```
 
-### Table: `atlas_critique_sessions`
+### Table: `anvil_critique_sessions`
 ```sql
-CREATE TABLE atlas_critique_sessions (
+CREATE TABLE anvil_critique_sessions (
     id TEXT PRIMARY KEY,
     project_id TEXT,
     workflow_id TEXT,
@@ -360,11 +360,11 @@ CREATE TABLE atlas_critique_sessions (
 );
 ```
 
-### Table: `atlas_critique_findings`
+### Table: `anvil_critique_findings`
 ```sql
-CREATE TABLE atlas_critique_findings (
+CREATE TABLE anvil_critique_findings (
     id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL REFERENCES atlas_critique_sessions(id),
+    session_id TEXT NOT NULL REFERENCES anvil_critique_sessions(id),
     critic_agent TEXT NOT NULL,
     round_number INTEGER DEFAULT 1,
     finding_type TEXT NOT NULL,
@@ -401,7 +401,7 @@ CREATE TABLE session_purposes (
 |------|---------|---------|
 | `args/agent_config.yaml` | Existing config extended | `agents.orchestrator.dispatcher_mode` toggle + dispatch_only_tools list |
 | `args/prompt_chains.yaml` | D-PC-1, D26 | YAML chain definitions with variable substitution |
-| `args/atlas_critique_config.yaml` | D26 | Critic agent roles, focus areas, consensus thresholds, revision prompt |
+| `args/anvil_critique_config.yaml` | D26 | Critic agent roles, focus areas, consensus thresholds, revision prompt |
 | `args/file_access_tiers.yaml` | D-ORCH-8 | Three-tier glob patterns for file protection |
 
 ---
@@ -526,7 +526,7 @@ pytest tests/test_dispatcher_mode.py tests/test_prompt_chain_executor.py tests/t
 - **Dispatcher mode** prevents orchestrator privilege escalation — cannot execute compliance/security tools directly
 - **File access tiers** protect secrets (`.env`, `*.pem`, `*.tfstate`) from agent read/write/delete
 - **Session purpose** provides NIST AU-3 audit context for incident response forensics
-- **Append-only tables** (`atlas_critique_findings`, `prompt_chain_executions`) satisfy NIST AU-9 integrity requirements
+- **Append-only tables** (`anvil_critique_findings`, `prompt_chain_executions`) satisfy NIST AU-9 integrity requirements
 - **SSE streaming** uses `Cache-Control: no-cache` and `X-Accel-Buffering: no` to prevent proxy caching of sensitive data
 
 ---

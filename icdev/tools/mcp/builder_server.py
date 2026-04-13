@@ -18,19 +18,19 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from icdev._paths import get_project_root
 
-BASE_DIR = get_project_root()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.mcp.base_server import MCPServer  # noqa: E402
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 def _import_tool(module_path, func_name):
     """Dynamically import a function. Returns None if unavailable."""
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, func_name, None)
     except (ImportError, ModuleNotFoundError, AttributeError):
@@ -41,9 +41,10 @@ def _import_tool(module_path, func_name):
 # Tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_scaffold(args: dict) -> dict:
     """Generate project directory structure from templates."""
-    scaffold = _import_tool("icdev.tools.builder.scaffolder", "scaffold_project")
+    scaffold = _import_tool("tools.builder.scaffolder", "scaffold_project")
     if not scaffold:
         return {"error": "scaffolder module not available"}
 
@@ -65,7 +66,7 @@ def handle_scaffold(args: dict) -> dict:
 
 def handle_write_tests(args: dict) -> dict:
     """Generate test files from a feature description (RED phase of TDD)."""
-    write_tests = _import_tool("icdev.tools.builder.test_writer", "write_tests")
+    write_tests = _import_tool("tools.builder.test_writer", "write_tests")
     if not write_tests:
         return {"error": "test_writer module not available"}
 
@@ -87,7 +88,7 @@ def handle_write_tests(args: dict) -> dict:
 
 def handle_generate_code(args: dict) -> dict:
     """Generate code to make failing tests pass (GREEN phase of TDD)."""
-    generate = _import_tool("icdev.tools.builder.code_generator", "generate_code")
+    generate = _import_tool("tools.builder.code_generator", "generate_code")
     if not generate:
         return {"error": "code_generator module not available"}
 
@@ -123,9 +124,7 @@ def handle_run_tests(args: dict) -> dict:
         cmd.append(str(project_path / "tests"))
 
         try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path)
-            )
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path))
             results["pytest"] = {
                 "returncode": proc.returncode,
                 "passed": proc.returncode == 0,
@@ -146,9 +145,7 @@ def handle_run_tests(args: dict) -> dict:
                 cmd.append("--verbose")
 
             try:
-                proc = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path)
-                )
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(project_path))
                 results["behave"] = {
                     "returncode": proc.returncode,
                     "passed": proc.returncode == 0,
@@ -167,7 +164,7 @@ def handle_run_tests(args: dict) -> dict:
 
 def handle_lint(args: dict) -> dict:
     """Run linters on a project."""
-    lint = _import_tool("icdev.tools.builder.linter", "run_lint")
+    lint = _import_tool("tools.builder.linter", "run_lint")
     if lint:
         project_dir = args.get("project_dir")
         if not project_dir:
@@ -183,7 +180,9 @@ def handle_lint(args: dict) -> dict:
     try:
         proc = subprocess.run(
             [sys.executable, "-m", "bandit", "-r", project_dir, "-f", "json"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         results["bandit"] = {
             "returncode": proc.returncode,
@@ -197,7 +196,7 @@ def handle_lint(args: dict) -> dict:
 
 def handle_format(args: dict) -> dict:
     """Run code formatters on a project."""
-    fmt = _import_tool("icdev.tools.builder.formatter", "run_format")
+    fmt = _import_tool("tools.builder.formatter", "run_format")
     if fmt:
         project_dir = args.get("project_dir")
         if not project_dir:
@@ -214,7 +213,10 @@ def handle_format(args: dict) -> dict:
         try:
             proc = subprocess.run(
                 [sys.executable, "-m"] + cmd,
-                capture_output=True, text=True, timeout=60, cwd=project_dir,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=project_dir,
             )
             results[tool_name] = {
                 "returncode": proc.returncode,
@@ -230,9 +232,10 @@ def handle_format(args: dict) -> dict:
 # Phase 19: Agentic generation tool handlers
 # ---------------------------------------------------------------------------
 
+
 def handle_agentic_fitness(args: dict) -> dict:
     """Assess component fitness for agentic architecture (6-dimension scoring)."""
-    fitness = _import_tool("icdev.tools.builder.agentic_fitness", "assess_fitness")
+    fitness = _import_tool("tools.builder.agentic_fitness", "assess_fitness")
     if fitness:
         spec = args.get("spec")
         if not spec:
@@ -245,8 +248,7 @@ def handle_agentic_fitness(args: dict) -> dict:
     if not spec:
         raise ValueError("'spec' is required")
 
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "agentic_fitness.py"),
-           "--spec", spec, "--json"]
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "agentic_fitness.py"), "--spec", spec, "--json"]
     project_id = args.get("project_id")
     if project_id:
         cmd.extend(["--project-id", project_id])
@@ -262,7 +264,7 @@ def handle_agentic_fitness(args: dict) -> dict:
 
 def handle_generate_blueprint(args: dict) -> dict:
     """Generate deployment blueprint from fitness scorecard."""
-    blueprint = _import_tool("icdev.tools.builder.app_blueprint", "generate_blueprint")
+    blueprint = _import_tool("tools.builder.app_blueprint", "generate_blueprint")
     if blueprint:
         fitness_scorecard = args.get("fitness_scorecard")
         if not fitness_scorecard:
@@ -293,12 +295,20 @@ def handle_generate_blueprint(args: dict) -> dict:
     if not app_name:
         raise ValueError("'app_name' is required")
 
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "app_blueprint.py"),
-           "--fitness-scorecard", fitness_scorecard,
-           "--app-name", app_name, "--json"]
+    cmd = [
+        sys.executable,
+        str(BASE_DIR / "tools" / "builder" / "app_blueprint.py"),
+        "--fitness-scorecard",
+        fitness_scorecard,
+        "--app-name",
+        app_name,
+        "--json",
+    ]
     user_decisions = args.get("user_decisions")
     if user_decisions:
-        cmd.extend(["--user-decisions", json.dumps(user_decisions) if isinstance(user_decisions, dict) else user_decisions])
+        cmd.extend(
+            ["--user-decisions", json.dumps(user_decisions) if isinstance(user_decisions, dict) else user_decisions]
+        )
     cloud_provider = args.get("cloud_provider")
     if cloud_provider:
         cmd.extend(["--cloud-provider", cloud_provider])
@@ -323,7 +333,7 @@ def handle_generate_blueprint(args: dict) -> dict:
 
 def handle_dev_profile_create(args: dict) -> dict:
     """Create a dev profile from template or explicit data (Phase 34)."""
-    create = _import_tool("icdev.tools.builder.dev_profile_manager", "create_profile")
+    create = _import_tool("tools.builder.dev_profile_manager", "create_profile")
     if create:
         return create(
             scope=args.get("scope", "project"),
@@ -333,9 +343,16 @@ def handle_dev_profile_create(args: dict) -> dict:
             created_by=args.get("created_by", "mcp-client"),
         )
     # Fallback: subprocess
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
-           "--scope", args.get("scope", "project"),
-           "--scope-id", args["scope_id"], "--create", "--json"]
+    cmd = [
+        sys.executable,
+        str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+        "--scope",
+        args.get("scope", "project"),
+        "--scope-id",
+        args["scope_id"],
+        "--create",
+        "--json",
+    ]
     if args.get("template"):
         cmd.extend(["--template", args["template"]])
     if args.get("created_by"):
@@ -351,16 +368,23 @@ def handle_dev_profile_create(args: dict) -> dict:
 
 def handle_dev_profile_get(args: dict) -> dict:
     """Get the current dev profile for a scope (Phase 34)."""
-    get_fn = _import_tool("icdev.tools.builder.dev_profile_manager", "get_profile")
+    get_fn = _import_tool("tools.builder.dev_profile_manager", "get_profile")
     if get_fn:
         return get_fn(
             scope=args.get("scope", "project"),
             scope_id=args["scope_id"],
             version=args.get("version"),
         )
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
-           "--scope", args.get("scope", "project"),
-           "--scope-id", args["scope_id"], "--get", "--json"]
+    cmd = [
+        sys.executable,
+        str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+        "--scope",
+        args.get("scope", "project"),
+        "--scope-id",
+        args["scope_id"],
+        "--get",
+        "--json",
+    ]
     if args.get("version"):
         cmd.extend(["--version", str(args["version"])])
     try:
@@ -374,15 +398,22 @@ def handle_dev_profile_get(args: dict) -> dict:
 
 def handle_dev_profile_resolve(args: dict) -> dict:
     """Resolve 5-layer cascade for a scope (Phase 34)."""
-    resolve = _import_tool("icdev.tools.builder.dev_profile_manager", "resolve_profile")
+    resolve = _import_tool("tools.builder.dev_profile_manager", "resolve_profile")
     if resolve:
         return resolve(
             scope=args.get("scope", "project"),
             scope_id=args["scope_id"],
         )
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
-           "--scope", args.get("scope", "project"),
-           "--scope-id", args["scope_id"], "--resolve", "--json"]
+    cmd = [
+        sys.executable,
+        str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+        "--scope",
+        args.get("scope", "project"),
+        "--scope-id",
+        args["scope_id"],
+        "--resolve",
+        "--json",
+    ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
         if proc.returncode == 0:
@@ -394,17 +425,22 @@ def handle_dev_profile_resolve(args: dict) -> dict:
 
 def handle_dev_profile_detect(args: dict) -> dict:
     """Auto-detect dev profile from repository (Phase 34, D185 advisory)."""
-    detect = _import_tool("icdev.tools.builder.profile_detector", "detect_from_repo")
+    detect = _import_tool("tools.builder.profile_detector", "detect_from_repo")
     if detect:
         result = detect(args["repo_path"])
         # Optionally store detection results
         if args.get("store", False):
-            store = _import_tool("icdev.tools.builder.profile_detector", "store_detection")
+            store = _import_tool("tools.builder.profile_detector", "store_detection")
             if store:
                 store(result, tenant_id=args.get("tenant_id"), project_id=args.get("project_id"))
         return result
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "profile_detector.py"),
-           "--repo", args["repo_path"], "--json"]
+    cmd = [
+        sys.executable,
+        str(BASE_DIR / "tools" / "builder" / "profile_detector.py"),
+        "--repo",
+        args["repo_path"],
+        "--json",
+    ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(BASE_DIR))
         if proc.returncode == 0:
@@ -416,7 +452,7 @@ def handle_dev_profile_detect(args: dict) -> dict:
 
 def handle_generate_child_app(args: dict) -> dict:
     """Generate a mini-ICDEV™ clone child application."""
-    generate = _import_tool("icdev.tools.builder.child_app_generator", "generate_child_app")
+    generate = _import_tool("tools.builder.child_app_generator", "generate_child_app")
     if generate:
         blueprint = args.get("blueprint")
         if not blueprint:
@@ -429,8 +465,13 @@ def handle_generate_child_app(args: dict) -> dict:
     if not blueprint:
         raise ValueError("'blueprint' path is required")
 
-    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "child_app_generator.py"),
-           "--blueprint", blueprint, "--json"]
+    cmd = [
+        sys.executable,
+        str(BASE_DIR / "tools" / "builder" / "child_app_generator.py"),
+        "--blueprint",
+        blueprint,
+        "--json",
+    ]
     output = args.get("output")
     if output:
         cmd.extend(["--output", output])
@@ -448,6 +489,7 @@ def handle_generate_child_app(args: dict) -> dict:
 # Server setup
 # ---------------------------------------------------------------------------
 
+
 def create_server() -> MCPServer:
     server = MCPServer(name="icdev-builder", version="1.0.0")
 
@@ -462,12 +504,21 @@ def create_server() -> MCPServer:
                     "type": "string",
                     "description": "Project type (includes multi-language scaffolds)",
                     "enum": [
-                        "webapp", "microservice", "api", "cli", "data_pipeline", "iac",
-                        "java-backend", "java-microservice",
-                        "go-backend", "go-microservice",
+                        "webapp",
+                        "microservice",
+                        "api",
+                        "cli",
+                        "data_pipeline",
+                        "iac",
+                        "java-backend",
+                        "java-microservice",
+                        "go-backend",
+                        "go-microservice",
                         "rust-backend",
-                        "csharp-backend", "csharp-api",
-                        "typescript-backend", "typescript-api",
+                        "csharp-backend",
+                        "csharp-api",
+                        "typescript-backend",
+                        "typescript-api",
                     ],
                     "default": "webapp",
                 },
@@ -634,7 +685,10 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "blueprint": {"type": "string", "description": "Path to the blueprint JSON file"},
-                "output": {"type": "string", "description": "Output directory for the generated application (optional)"},
+                "output": {
+                    "type": "string",
+                    "description": "Output directory for the generated application (optional)",
+                },
             },
             "required": ["blueprint"],
         },
@@ -655,8 +709,14 @@ def create_server() -> MCPServer:
                     "default": "project",
                 },
                 "scope_id": {"type": "string", "description": "Scope entity ID (e.g., tenant-abc, proj-123)"},
-                "template": {"type": "string", "description": "Starter template name (e.g., dod_baseline, fedramp_baseline, startup)"},
-                "profile_data": {"type": "object", "description": "Explicit profile data (merged on top of template if both given)"},
+                "template": {
+                    "type": "string",
+                    "description": "Starter template name (e.g., dod_baseline, fedramp_baseline, startup)",
+                },
+                "profile_data": {
+                    "type": "object",
+                    "description": "Explicit profile data (merged on top of template if both given)",
+                },
                 "created_by": {"type": "string", "description": "Creator identity", "default": "mcp-client"},
             },
             "required": ["scope_id"],
@@ -710,7 +770,11 @@ def create_server() -> MCPServer:
                 "repo_path": {"type": "string", "description": "Path to repository to scan"},
                 "tenant_id": {"type": "string", "description": "Tenant ID (for storing detection results)"},
                 "project_id": {"type": "string", "description": "Project ID (for storing detection results)"},
-                "store": {"type": "boolean", "description": "Whether to store detection results in DB", "default": False},
+                "store": {
+                    "type": "boolean",
+                    "description": "Whether to store detection results in DB",
+                    "default": False,
+                },
             },
             "required": ["repo_path"],
         },
