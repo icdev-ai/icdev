@@ -713,6 +713,7 @@
 | UX Reflex | tools/review_board/reflexes/ux.py | Accessibility checks — ARIA coverage, template quality, form labels (D-RB-3) | config dict | Findings list |
 | Docs Reflex | tools/review_board/reflexes/docs.py | Documentation checks — stale docs, undocumented tools, broken refs, missing phases (D-RB-3) | config dict | Findings list |
 | Product Reflex | tools/review_board/reflexes/product.py | Product analytics — feature usage, gate pass rates, tool distribution (D-RB-3) | config dict | Findings list |
+| Report Reflex | tools/review_board/reflexes/report.py | Weekly digest reflex — generates Markdown summary of Review Board health score, findings, auto-remediation stats, and recommendations | config dict | Findings list |
 
 ## Workflow Discipline Engine (Phase 66, D-WF-1 through D-WF-7)
 | Tool | File | Description | Input | Output |
@@ -789,6 +790,8 @@
 | Innovation Signal Schema | tools/schemas/innovation.py | InnovationSignal dataclass — innovation pipeline signal model (source, scoring, triage result, FORGE layer, boundary tier, effort) (D275/Phase 44) | (library) | InnovationSignal class |
 | Chat Schemas | tools/schemas/chat.py | ChatMessage and ChatContext dataclass models for multi-stream parallel chat (D257/D275). Used by dashboard API and SaaS portal. Supports compression tiers (current/historical/bulk), CUI classification, role types (user/assistant/system/intervention). | (library) | ChatMessage, ChatContext |
 | Schema Validation | tools/schemas/validation.py | Schema validation utilities (Phase 44 — D275). Validates tool output dicts against shared dataclass models via validate_output(); backward compatible with plain dict returns. | (library) | SchemaValidationError, validate_output() |
+| Core Schemas | tools/schemas/core.py | Core domain dataclass schemas (ProjectStatus, AgentHealth, AuditEvent) shared across MCP servers, dashboard, and CLI tools (D275) | (library) | Core dataclass models |
+| Compliance Schemas | tools/schemas/compliance.py | Dataclass schema models for multi-framework compliance results and unified security scan findings across SAST, dependencies, secrets, and containers (D275) | (library) | Compliance + scan schema models |
 | Context Indexer | tools/mcp/context_indexer.py | CLAUDE.md section indexer by ## headers for semantic layer MCP delivery (D277) | (library) | Section index |
 
 ## Observability, Traceability & Explainable AI (Phase 46)
@@ -1077,6 +1080,7 @@
 | Impact Analyzer | tools/workflow/impact_analyzer.py | Cross-subsystem integration gap detection (D-WF-8f) | --analyze, --graph, --changed-files, --changed-tables, --json | Impact recommendations |
 | Replay Engine | tools/workflow/replay_engine.py | Event-sourced ANVIL pipeline recovery — deterministic state reconstruction from audit trail, resume-from-last-step (D-REPLAY-1..7) | --list-events, --resume-point, --begin, --complete, --fail, --status, --list-sessions, --workflow-id, --session-id, --gate, --json | Session record + resume point |
 | Validated Commit | tools/workflow/validated_commit.py | Unified commit/validate/push pipeline (guard-7 shared module) — runs CodeLens (py_compile + ruff + bandit) + Coherence (w/ main baseline comparison) + E2E + companion sync. Used by stop hook and kanban scheduler. Commit+push only after all gates pass. | (library: validate_working_tree(cwd, modified_files, compare_to_main, run_e2e, run_companion)) | (bool, reason, metrics) tuple |
+| Auto Remediate | tools/workflow/auto_remediate.py | Auto-fixes kanban task verification failures (rebase, ruff, manifest) with failure classification and remediable-category tracking; caps at 5 auto-fixes/hour | --fix, --task-id, --dry-run, --json | Remediation result |
 
 ## Internal Awareness Engine (Phase 1a-1g)
 Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `kg-icdev-self-awareness`. Provides the `/components-map` dashboard page (JointJS tree + graph + hover + detail drawer) and a post-tool hook that auto-reindexes on every Edit/Write/NotebookEdit. Enablement-aware: disabled modules are indexed but visually dimmed and excluded from probing. See docs/features/internal-awareness-engine.md for the full plan.
@@ -1359,6 +1363,9 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Video Generator | tools/pulse/engine/video_generator.py | Local GPU-accelerated video generation via LTX-Video 2B (optional, requires GPU) | (library) — `generate_video(prompt)` | Video file path |
 | WordPress Publisher | tools/pulse/engine/wordpress_publisher.py | Publish Pulse posts to WordPress (icdev.ai) via XML-RPC API | (library) — `publish(post)` | Published post URL |
 | Hostinger Publisher | tools/pulse/engine/hostinger_publisher.py | Publish Pulse posts to Hostinger Website Builder via browser automation | (library) — `publish(post)` | Published post URL |
+| Content Drafter | tools/pulse/engine/drafter.py | Template-aware content drafter using qwen3.5 (scanner tier) with WriteGuard quality checks and Claude rewriting (planner tier) | (library) — `draft(topic, template)` | Draft markdown |
+| Content Exporter | tools/pulse/engine/exporter.py | Generates blog posts as MDX with YAML frontmatter or standalone HTML with embedded styles and JSON-LD schema | (library) — `export(post, format)` | MDX or HTML string |
+| Pipeline Scheduler | tools/pulse/engine/scheduler.py | Multi-stage Pulse content pipeline orchestrator (research, draft, quality, rewrite, review, publish) with LLM router and WriteGuard integration | --run, --topic, --dry-run, --json | Pipeline run result |
 
 ## Testing (Additional)
 | Tool | File | Description | Input | Output |
@@ -1453,6 +1460,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | STIG Manager API | tools/dashboard/api/stig_manager.py | Flask Blueprint: STIG benchmark management — overall stats, benchmark list, paginated findings, finding detail, coverage heatmap by target/severity, open CAT1 blockers, and finding status assessment | GET /api/stig-manager/stats, /benchmarks, /findings, /findings/<id>, /coverage, /cat1; POST /api/stig-manager/assess | JSON responses |
 | ATO Package API | tools/dashboard/api/ato_package.py | Flask Blueprint: ATO package readiness status, SSP documents, controls summary, POAM summary, pre-submission checklist, and package generation across 10 package steps | GET /api/ato-package/status, /ssp, /controls-summary, /poam-summary, /checklist; POST /api/ato-package/generate | JSON responses |
 | Migration Cost API | tools/dashboard/api/migration_cost.py | Flask Blueprint: 7R migration cost estimator — per-app cost breakdown, all-strategy comparison, portfolio summary, ROI projection with breakeven analysis, and custom calculation with role-based itemization | GET /api/migration-cost/estimate, /comparison, /portfolio, /roi; POST /api/migration-cost/calculate | JSON cost/ROI data |
+| Findings Aggregator | tools/dashboard/findings_aggregator.py | Aggregates compliance findings from 7 canvas SQLite DBs, normalizes them, hashes identities, and joins with approval records for dashboard POA&M counter | (library) — `aggregate_findings()` | Normalized findings list |
 
 ## DataBridge (Additional)
 | Tool | File | Description | Input | Output |
@@ -1573,6 +1581,8 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Install Scheduler | tools/scout/install_scheduler.py | Scout installation scheduler | --json | Schedule status |
 | LLM Summarizer | tools/scout/llm_summarizer.py | LLM-powered Scout finding summarizer | --json | Summaries |
 | Trending Pillar | tools/scout/pillars/trending.py | Trending topic detection pillar | --json | Trending topics |
+| Introspect Pillar | tools/scout/pillars/introspect.py | Scout Pillar 1 — self-introspection; analyzes ICDEV codebase for test coverage, dead code, and configuration drift | --json | Introspection findings |
+| Competitive Pillar | tools/scout/pillars/competitive.py | Scout Pillar 3 — monitors competitors and identifies new ones by delegating to competitive intelligence scanner | --json | Competitive findings |
 | Preflight | tools/scout/preflight.py | Scout preflight validation | --json | Preflight results |
 | Daily Digest | tools/scout/digest.py | Scout daily digest generator — produces Markdown reports of Scout findings with LLM synthesis and recommended actions | --generate --date YYYY-MM-DD --json, --view --date YYYY-MM-DD, --list --json | Digest reports |
 
@@ -1581,6 +1591,9 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 |------|------|-------------|-------|--------|
 | Fundamental Analyst | tools/trading/analysts/fundamental.py | Fundamental analysis agent (SMA, valuation, trends) | --json | Analysis results |
 | Sentiment Analyst | tools/trading/analysts/sentiment.py | Keyword-based sentiment analysis agent | --json | Sentiment scores |
+| News Analyst | tools/trading/analysts/news.py | News analysis agent that categorizes market news into earnings, macro, sector, regulatory, and corporate action keywords | --json | Categorized news signals |
+| Quality Scorer | tools/trading/analysts/quality.py | 6-dimension fundamental quality scorer (valuation, profitability, growth, balance sheet, capital allocation, moat) with Piotroski F-Score composite | --json | Quality scores |
+| Technical Analyst | tools/trading/analysts/technical.py | Pure-Python technical analysis agent: RSI, EMA, and other indicators without external TA-Lib dependency | --json | Technical signals |
 | Market Data | tools/trading/data/market_data.py | Alpaca market data fetch and cache layer | --json | Market data |
 | Perspective Scorer | tools/trading/analysis/perspective_scorer.py | ICDEV™'s INTaaS bull/bear multiperspectivity scorer | --json | Perspective scores |
 | Signal Generator | tools/trading/analysis/signal_generator.py | Weighted composite signal generator | --json | Trading signals |
@@ -1627,6 +1640,9 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Kg Seeder | tools\trading\market_intel\kg_seeder.py | Auto-registered: market_intel/kg_seeder.py | --json | JSON |
 | Scenario Engine | tools\trading\market_intel\scenario_engine.py | Auto-registered: market_intel/scenario_engine.py | --json | JSON |
 | Universe | tools\trading\market_intel\universe.py | Auto-registered: market_intel/universe.py | --json | JSON |
+| Market Intel Daemon | tools/trading/market_intel/daemon.py | AlphaDesk autonomous trading daemon with schedule-driven reflexes for market scanning, macro watching, and knowledge graph enrichment | --start, --once, --json | Daemon run results |
+| Market Intel Gap Detector | tools/trading/market_intel/gap_detector.py | Structural gap detector for AlphaDesk knowledge graph using modularity-based community detection to identify blind spots in market pricing | --detect, --json | Gap findings |
+| Market Intel Judge | tools/trading/market_intel/judge.py | LLM-as-a-Judge for AlphaDesk with Socratic feedback loop; uses qwen3.5 for expert challenges and Claude for synthesis | --judge, --json | Judgment results |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1773,6 +1789,8 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | SDC NDC Bridge | tools/security_canvas/bridge.py | Bidirectional sync between Network Design Canvas and Security Design Canvas — imports NDC topology as SDC security design, syncs NDC compliance findings as SDC threats, pushes SDC remediation back to NDC as compliance fixes | import_ndc_topology(topology_id) / sync_ndc_compliance(topology_id) / push_sdc_remediation(design_id) | dict / JSON |
 | Remediation Engine | tools/security_canvas/remediation.py | Deterministic remediation planning: generates phased remediation plans, POA&M entries, and effort estimates from security assessment results. No LLM dependency. | (library) generate_remediation_plan(), generate_poam_entries(), estimate_effort() | Plan dict / POA&M list / effort string |
 | SDC IR Runbooks | tools/security_canvas/runbooks.py | Pre-built incident response playbooks for 12 incident types (credential compromise, ransomware, DDoS, data breach, insider threat, supply chain, zero-day, phishing, cloud misconfiguration, API abuse, privilege escalation, data integrity violation), aligned to NIST 800-53 IR/CP/SC control families. Five-phase IR lifecycle (Detect→Contain→Eradicate→Recover→Lessons Learned). No LLM dependency. | (library) get_all_runbooks() / get_runbook_by_id(id) / get_applicable_runbooks(findings) | list[dict] / dict |
+| SDC Collaboration | tools/security_canvas/collaboration.py | Polling-based real-time collaboration engine for Security Design Canvas with participant tracking and operation queuing (no WebSocket) | (library) | Collaboration state dict |
+| SDC DB Init | tools/security_canvas/db/init_db.py | Database initializer for Security Design Canvas — creates schema and seeds canonical templates; supports SQLite or PostgreSQL backend | --init, --json | DB init status |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1830,6 +1848,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Plan Decomposer | tools\kanban\plan_decomposer.py | Auto-registered: kanban/plan_decomposer.py | --json | JSON |
+| Source Stats | tools/kanban/source_stats.py | Analyzes kanban task dispatch sources and verification patterns to identify root causes of failures | --stats, --json | Source/failure breakdown |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1913,6 +1932,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Sops | tools\pipeline\sops.py | Auto-registered: pipeline/sops.py | --json | JSON |
 | Gate Executor | tools\qdc_canvas\gate_executor.py | Auto-registered: qdc_canvas/gate_executor.py | --json | JSON |
 | Qdc Engine | tools\qdc_canvas\qdc_engine.py | Auto-registered: qdc_canvas/qdc_engine.py | --json | JSON |
+| QDC DB Init | tools/qdc_canvas/db/init_db.py | Database initializer for Quality Design Canvas — creates schema and seeds templates, snippets, runbooks, and SOPs; supports SQLite or PostgreSQL backend | --init, --json | DB init status |
 | Sops | tools\security_canvas\sops.py | Auto-registered: security_canvas/sops.py | --json | JSON |
 | E2E Qdc Canvas | tools\testing\e2e_qdc_canvas.py | Auto-registered: testing/e2e_qdc_canvas.py | --json | JSON |
 | Lens Quality | tools\oracle\lenses\lens_quality.py | Auto-registered: lenses/lens_quality.py | --json | JSON |
