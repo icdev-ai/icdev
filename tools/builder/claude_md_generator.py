@@ -344,17 +344,19 @@ This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- yo
 
 ### Memory System Architecture
 
-Dual storage: markdown files (human-readable) + SQLite databases (searchable).
+Dual storage: markdown files (human-readable) + database (searchable, SQLite or PostgreSQL).
 
-**Databases:**
-- `data/memory.db` -- `memory_entries` (with embeddings), `daily_logs`, `memory_access_log`
-- `data/activity.db` -- `tasks` table for tracking
+**Tables (in main DB via `get_connection()`):**
+- `memory_entries` -- content, type, importance, embeddings (BLOBs), content_hash, user_id
+- `daily_logs` -- date, content
+- `memory_access_log` -- query, results_count, search_type (audit trail)
+- `activity_tasks` -- title, description, status, priority (consolidated from activity.db)
 
 **Memory types:** fact, preference, event, insight, task, relationship
 
 **Search ranking:** Hybrid search uses 0.7 * BM25 (keyword) + 0.3 * semantic (vector).  Configurable via `--bm25-weight` and `--semantic-weight` flags.
 
-**Embeddings:** OpenAI text-embedding-3-small (1536 dims), stored as BLOBs in SQLite.
+**Embeddings:** OpenAI text-embedding-3-small (1536 dims), stored as BLOBs.
 
 ---
 
@@ -548,9 +550,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 
 | Database | Purpose |
 |----------|---------|
-| `data/{{ db_name }}` | Main operational DB: projects, agents, audit trail{% if capabilities.get("compliance", False) %}, compliance{% endif %}{% if capabilities.get("mbse", False) %}, MBSE{% endif %}{% if capabilities.get("ricoas", False) %}, RICOAS{% endif %}{% if capabilities.get("ai_security", False) %}, AI security{% endif %}{% if capabilities.get("ai_governance", False) %}, AI governance{% endif %}{% if capabilities.get("observability", False) %}, observability{% endif %}{% if capabilities.get("devsecops_zta", False) %}, DevSecOps/ZTA{% endif %}{% if capabilities.get("code_intelligence", False) %}, code intelligence{% endif %} |
-| `data/memory.db` | Memory system: entries, daily logs, access log |
-| `data/activity.db` | Task tracking |
+| `data/{{ db_name }}` | Main operational DB: projects, agents, audit trail, memory + activity{% if capabilities.get("compliance", False) %}, compliance{% endif %}{% if capabilities.get("mbse", False) %}, MBSE{% endif %}{% if capabilities.get("ricoas", False) %}, RICOAS{% endif %}{% if capabilities.get("ai_security", False) %}, AI security{% endif %}{% if capabilities.get("ai_governance", False) %}, AI governance{% endif %}{% if capabilities.get("observability", False) %}, observability{% endif %}{% if capabilities.get("devsecops_zta", False) %}, DevSecOps/ZTA{% endif %}{% if capabilities.get("code_intelligence", False) %}, code intelligence{% endif %} |
 
 **Audit trail is append-only/immutable** -- no UPDATE/DELETE operations.  Satisfies NIST 800-53 AU controls.
 {% if goals_list %}
@@ -1477,17 +1477,19 @@ This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- yo
 
 ### Memory System Architecture
 
-Dual storage: markdown files (human-readable) + SQLite databases (searchable).
+Dual storage: markdown files (human-readable) + database (searchable, SQLite or PostgreSQL).
 
-**Databases:**
-- `data/memory.db` -- `memory_entries` (with embeddings), `daily_logs`, `memory_access_log`
-- `data/activity.db` -- `tasks` table for tracking
+**Tables (in main DB via `get_connection()`):**
+- `memory_entries` -- content, type, importance, embeddings (BLOBs), content_hash, user_id
+- `daily_logs` -- date, content
+- `memory_access_log` -- query, results_count, search_type (audit trail)
+- `activity_tasks` -- title, description, status, priority (consolidated from activity.db)
 
 **Memory types:** fact, preference, event, insight, task, relationship
 
 **Search ranking:** Hybrid search uses 0.7 * BM25 (keyword) + 0.3 * semantic (vector).  Configurable via `--bm25-weight` and `--semantic-weight` flags.
 
-**Embeddings:** OpenAI text-embedding-3-small (1536 dims), stored as BLOBs in SQLite.
+**Embeddings:** OpenAI text-embedding-3-small (1536 dims), stored as BLOBs.
 """
 
 
@@ -1627,9 +1629,8 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
         purpose_parts.append("DevSecOps/ZTA")
     if caps.get("code_intelligence", False):
         purpose_parts.append("code intelligence")
+    purpose_parts.append("memory + activity")
     parts.append(f"| `data/{db_name}` | Main operational DB: {', '.join(purpose_parts)} |")
-    parts.append("| `data/memory.db` | Memory system: entries, daily logs, access log |")
-    parts.append("| `data/activity.db` | Task tracking |")
     parts.append("")
     parts.append(
         "**Audit trail is append-only/immutable** -- no UPDATE/DELETE operations.  Satisfies NIST 800-53 AU controls.\n"

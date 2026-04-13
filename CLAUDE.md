@@ -245,11 +245,12 @@ Meta-builder that autonomously builds Gov/DoD applications using FORGE + ANVIL w
 15 agents across 3 tiers (Core, Domain, Support) on ports 8443-8458. See [docs/reference/architecture.md](docs/reference/architecture.md).
 
 ### Memory System
-Dual storage: markdown (human-readable) + SQLite (searchable).
-- `data/memory.db` — entries, daily logs, access log
-- `data/activity.db` — task tracking
+Dual storage: markdown (human-readable) + DB (searchable, SQLite or PostgreSQL).
+- Tables in main `data/icdev.db` (or PostgreSQL): `memory_entries`, `daily_logs`, `memory_access_log`, `memory_consolidation_log`, `memory_buffer`
+- Activity tracking: `tasks`, `activity_tasks` tables (also in main DB)
 - Types: fact, preference, event, insight, task, relationship
 - Search: hybrid_search.py (0.7 BM25 + 0.3 semantic)
+- All tools use `get_connection()` — supports both SQLite and PostgreSQL backends
 
 ### Self-Healing
 - **≥ 0.7** confidence → auto-remediate (max 5/hour)
@@ -259,11 +260,9 @@ Dual storage: markdown (human-readable) + SQLite (searchable).
 ### Databases
 | Database | Purpose |
 |----------|---------|
-| `data/icdev.db` | Main operational DB (391 tables) |
+| `data/icdev.db` | Main operational DB (391 tables, incl. memory + activity) |
 | `data/platform.db` | SaaS platform DB |
 | `data/tenants/{slug}.db` | Per-tenant isolated DB |
-| `data/memory.db` | Memory system |
-| `data/activity.db` | Task tracking |
 
 Audit trail is **append-only/immutable** (NIST AU). Full schema: [docs/reference/databases.md](docs/reference/databases.md).
 

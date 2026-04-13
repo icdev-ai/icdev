@@ -71,8 +71,21 @@ class MigrationRunner:
     # ------------------------------------------------------------------
     # Connection helpers
     # ------------------------------------------------------------------
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a SQLite connection with WAL mode and row factory."""
+    def _get_connection(self):
+        """Get a database connection.
+
+        Uses get_connection() from storage abstraction when
+        ICDEV_STORAGE_BACKEND=postgresql; falls back to direct sqlite3
+        so the runner remains stdlib-only on SQLite deployments.
+        """
+        import os
+
+        backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+        if backend == "postgresql":
+            from tools.db.storage import get_connection
+
+            return get_connection()
+        # SQLite default
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -93,6 +106,20 @@ class MigrationRunner:
 
     def has_migrations_table(self) -> bool:
         """Check if the schema_migrations table exists."""
+        import os
+
+        backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+        if backend == "postgresql":
+            conn = self._get_connection()
+            try:
+                result = conn.execute(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_name = 'schema_migrations' AND table_schema = 'public'"
+                ).fetchone()
+                return result is not None
+            finally:
+                conn.close()
+        # SQLite
         if not self.db_path.exists():
             return False
         conn = self._get_connection()
