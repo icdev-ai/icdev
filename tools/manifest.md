@@ -821,6 +821,7 @@
 | Code Quality API | tools/dashboard/api/code_quality.py | Flask Blueprint: summary stats, top-complex functions, smell distribution, trend data, runtime feedback, scan trigger | /api/code-quality/* | REST endpoints |
 | Code Quality Page | tools/dashboard/templates/code_quality.html | Dashboard: stat grid (7 metrics), SVG trend chart, smell bar chart, complex functions table, runtime feedback table | (template) | HTML page |
 | Code Quality Config | args/code_quality_config.yaml | Smell thresholds, maintainability weights (D337), audit thresholds, scan exclusion dirs | (config) | YAML config |
+| Architecture Audit | tools/analysis/architecture_audit.py | OPT-54 — Ousterhout deep-module analysis + import-coupling cluster detection. Computes depth_ratio (public_symbols / impl_lines) across all .py files, classifies deep/balanced/shallow, finds tightly-coupled package pairs | --path, --format markdown\|json, --top, --min-edges, --out, --json | RFC-style markdown or JSON report |
 
 ## AI Governance Integration (Phase 50)
 | Tool | File | Description | Input | Output |
