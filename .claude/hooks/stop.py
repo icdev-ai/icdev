@@ -175,8 +175,39 @@ def _auto_commit_and_push():
     if not status.stdout.strip():
         return  # Nothing to commit
 
-    # Stage tracked (modified) files only — skip untracked to avoid committing junk
+    # Stage modified tracked files first
     run(["git", "add", "-u"])
+
+    # CRITICAL FIX: also stage NEW files in safe directories. The previous
+    # `git add -u` only path silently dropped Claude's new file creations
+    # (Write tool output) — verification then saw "no commits" and rejected
+    # the task as a no-op when in fact the agent had done the work. We
+    # whitelist source directories to stage and let .gitignore handle junk.
+    SAFE_DIRS = [
+        "tools/", "tests/", "args/", "docs/", "goals/", "hardprompts/",
+        "context/", ".claude/", ".github/", ".gitlab/",
+        "scripts/", "schemas/", "marketplace-saas/",
+    ]
+    SAFE_ROOT_FILES = {
+        "CLAUDE.md", "AGENTS.md", "CONVENTIONS.md", "README.md",
+        "requirements.txt", "pyproject.toml", "setup.py", "setup.cfg",
+    }
+    untracked = [
+        ln[3:].strip()
+        for ln in (status.stdout or "").splitlines()
+        if ln.startswith("?? ") and ln[3:].strip()
+    ]
+    to_add: list = []
+    for path in untracked:
+        if any(path.startswith(d) for d in SAFE_DIRS) or path in SAFE_ROOT_FILES:
+            # Skip nested .tmp/ paths inside otherwise-safe dirs
+            if "/.tmp/" in path or path.startswith(".tmp/"):
+                continue
+            to_add.append(path)
+    if to_add:
+        # Stage in batches to avoid exceeding command-line length limits
+        for i in range(0, len(to_add), 50):
+            run(["git", "add"] + to_add[i:i+50])
 
     staged = run(["git", "diff", "--cached", "--quiet"])
     if staged.returncode == 0:
