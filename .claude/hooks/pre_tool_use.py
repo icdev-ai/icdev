@@ -84,6 +84,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Core audit
         "audit_trail",
         "hook_events",
+        # AlphaDesk auto-trading (append-only NIST AU)
+        "ad_trade_audit",
+        "ad_kill_switch",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
