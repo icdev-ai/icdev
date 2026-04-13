@@ -1625,6 +1625,7 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Cost Model | tools\trading\factors\cost_model.py | Auto-registered: factors/cost_model.py | --json | JSON |
 | Factor Data | tools\trading\factors\factor_data.py | Auto-registered: factors/factor_data.py | --json | JSON |
 | Factor Regression | tools\trading\factors\factor_regression.py | Auto-registered: factors/factor_regression.py | --json | JSON |
+| Election Phase | tools\trading\factors\election_phase.py | US presidential 4-year cycle classifier (POST/MIDTERM/PRE/ELECTION) + sweet-spot detector + premium multipliers | --date YYYY-MM-DD, --history, --json | JSON |
 | Regime Premiums | tools\trading\factors\regime_premiums.py | Auto-registered: factors/regime_premiums.py | --json | JSON |
 | Signal Validator | tools\trading\factors\signal_validator.py | Auto-registered: factors/signal_validator.py | --json | JSON |
 | Skill Tracker | tools\trading\factors\skill_tracker.py | Auto-registered: factors/skill_tracker.py | --json | JSON |
