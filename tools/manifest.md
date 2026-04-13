@@ -1088,7 +1088,7 @@
 | Shape Reflex | tools/proposal_genesis/reflexes/shape.py | R03: Win strategy, discriminators, partner fit assessment | --json | Strategy recommendations |
 | Engage Reflex | tools/proposal_genesis/reflexes/engage.py | R04: CRM account/contact/engagement tracking | --json | Engagement records |
 | Extract Reflex | tools/proposal_genesis/reflexes/extract.py | R05: Shall statement mining + amendment re-extraction. Wraps govcon/requirement_extractor.py. Scanner-tier only (zero Claude tokens). Re-extracts from pg_amendment_diffs where re_extracted=0 | run(config, trust) | {success, metric_value, details{opportunities_processed, total_statements_extracted, amendment_re_extractions}} |
-| Map Reflex | tools/proposal_genesis/reflexes/map.py | R06: Map requirements to ICDEV™ capabilities | --json | Capability map |
+| Map Reflex | tools/proposal_genesis/reflexes/map.py | R06: Expanded capability matching — wraps govcon/capability_mapper.py with ICDEV™ + consulting + partner catalog (D-PG-6). GraphRAG/KARL enrichment for compliance-neighborhood discovery (§3.4, D-KARL-1/3). Scanner-tier only (zero Claude tokens). | run(config, trust) | {success, metric_value, details{opportunities_mapped, avg_coverage_score, partner_capabilities_available, graph_discovered_capabilities, mapping_results}} |
 | Draft Reflex | tools/proposal_genesis/reflexes/draft.py | R07: Generate proposal section drafts | --json | Draft sections |
 | Polish Reflex | tools/proposal_genesis/reflexes/polish.py | R08: Grammar, readability, tone, AI detection quality checks | --json | Quality report |
 | Decide Reflex | tools/proposal_genesis/reflexes/decide.py | R09: Bid/no-bid decision with scoring | --json | Decision + score |
