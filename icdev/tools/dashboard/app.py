@@ -7899,11 +7899,33 @@ if __name__ == "__main__":
     # Launches kanban_scheduler.py as a child process so backlog tasks
     # are promoted and dispatched regardless of which LLM/IDE is in use.
     # The subprocess dies automatically when the dashboard exits.
+    #
+    # Dedup: the dashboard debug-reloader (and operators running
+    # `python tools/dashboard/app.py` a second time) would otherwise
+    # accumulate scheduler processes. A heartbeat file (refreshed every
+    # cycle by kanban_scheduler.py) is the single source of truth; if a
+    # fresh heartbeat exists, another instance is already running.
     try:
         import subprocess as _ks_sp
+        import time as _ks_time
 
         _ks_script = Path(__file__).resolve().parent.parent / "genesis" / "kanban_scheduler.py"
-        if _ks_script.exists():
+        _ks_hb = BASE_DIR / ".tmp" / "kanban_scheduler.heartbeat"
+        _ks_hb_fresh = False
+        if _ks_hb.exists():
+            try:
+                _ks_hb_age = _ks_time.time() - _ks_hb.stat().st_mtime
+                # Scheduler default interval is 60s; allow 3× slack for slow hosts.
+                _ks_hb_fresh = _ks_hb_age < 180
+            except OSError:
+                _ks_hb_fresh = False
+
+        if _ks_hb_fresh:
+            print(
+                "[ICDEV™ Dashboard] Kanban scheduler already running "
+                f"(fresh heartbeat at {_ks_hb}) — not spawning another"
+            )
+        elif _ks_script.exists():
             _ks_log_dir = BASE_DIR / ".tmp"
             _ks_log_dir.mkdir(parents=True, exist_ok=True)
             _ks_log = open(str(_ks_log_dir / "kanban_scheduler.log"), "a", encoding="utf-8")  # noqa: SIM115
@@ -7919,11 +7941,43 @@ if __name__ == "__main__":
     except Exception as _ks_err:
         print(f"[ICDEV™ Dashboard] Kanban scheduler failed to start: {_ks_err}")
 
+    # Optional inbound TLS / mTLS (IL5+/GovCloud). Env vars:
+    #   ICDEV_DASHBOARD_TLS_CERT      server certificate (PEM)
+    #   ICDEV_DASHBOARD_TLS_KEY       server private key (PEM)
+    #   ICDEV_DASHBOARD_TLS_CA_BUNDLE CA bundle — enables client-cert
+    #                                 verification (mTLS) when set
+    # When both cert+key are set the dashboard listens on HTTPS. When a CA
+    # bundle is also set, clients must present a valid certificate signed by
+    # that CA (CERT_REQUIRED). For dev/non-TLS deployments leave all three
+    # unset.
+    _ssl_context = None
+    _tls_cert = os.environ.get("ICDEV_DASHBOARD_TLS_CERT")
+    _tls_key = os.environ.get("ICDEV_DASHBOARD_TLS_KEY")
+    _tls_ca = os.environ.get("ICDEV_DASHBOARD_TLS_CA_BUNDLE")
+    if _tls_cert and _tls_key:
+        import ssl as _ssl
+
+        _ctx = _ssl.create_default_context(purpose=_ssl.Purpose.CLIENT_AUTH)
+        _ctx.load_cert_chain(certfile=_tls_cert, keyfile=_tls_key)
+        if _tls_ca:
+            _ctx.load_verify_locations(cafile=_tls_ca)
+            _ctx.verify_mode = _ssl.CERT_REQUIRED
+            print(f"[ICDEV™ Dashboard] mTLS enabled (CA: {_tls_ca})")
+        else:
+            print(f"[ICDEV™ Dashboard] TLS enabled (server-only; no client CA)")
+        _ssl_context = _ctx
+
     # Use SocketIO runner if available (D170), otherwise plain Flask
     socketio = get_socketio()
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
-        socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+        if _ssl_context is not None:
+            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+        else:
+            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
-        app.run(host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+        if _ssl_context is not None:
+            app.run(host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+        else:
+            app.run(host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment

@@ -57,12 +57,19 @@ class A2AAgentClient:
         self.session = get_session()
         self.timeout = timeout
 
-        # Mutual TLS
-        if client_cert and client_key:
+        # Mutual TLS. The central client already applied ICDEV_MTLS_* env vars
+        # to `self.session` during get_session(); those take precedence over
+        # ctor arguments so operator-level env config wins over per-call
+        # wiring. Only fall back to ctor args when env is not set.
+        import os as _os
+        _env_cert = _os.environ.get("ICDEV_MTLS_CLIENT_CERT")
+        _env_key = _os.environ.get("ICDEV_MTLS_CLIENT_KEY")
+        _env_ca = _os.environ.get("ICDEV_MTLS_CA_BUNDLE")
+        if not (_env_cert and _env_key) and client_cert and client_key:
             self.session.cert = (client_cert, client_key)
-        if ca_cert:
+        if not _env_ca and ca_cert:
             self.session.verify = ca_cert
-        elif not verify_ssl:
+        elif not _env_ca and not verify_ssl:
             self.session.verify = False
         # API key
         if api_key:
