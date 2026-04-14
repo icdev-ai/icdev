@@ -26,6 +26,11 @@ Configuration:
     ICDEV_PG_USER=icdev
     ICDEV_PG_PASSWORD=...
     ICDEV_PG_DATABASE=icdev
+    ICDEV_PG_SSLMODE=verify-full       (optional, for mTLS / IL5+)
+    ICDEV_PG_SSLCERT=/path/client.crt  (optional, client cert for mTLS)
+    ICDEV_PG_SSLKEY=/path/client.key   (optional, client key for mTLS)
+    ICDEV_PG_SSLROOTCERT=/path/ca.crt  (optional, CA bundle)
+    ICDEV_PG_SSLCRL=/path/crl.pem      (optional, revocation list)
     ICDEV_DB_PATH=data/icdev.db  (SQLite path)
     ICDEV_PG_NO_FALLBACK=true  (optional: crash instead of falling back to SQLite)
 
@@ -594,13 +599,38 @@ class StorageConnection:
 # ---------------------------------------------------------------------------
 # Connection factory
 # ---------------------------------------------------------------------------
+def _pg_ssl_kwargs() -> dict:
+    """Build psycopg2 SSL kwargs from ICDEV_PG_SSL* env vars.
+
+    Supports mTLS for GovCloud/IL5/IL6 deployments. Any unset var is omitted
+    so libpq falls back to its default (typically sslmode=prefer).
+
+        ICDEV_PG_SSLMODE        disable|allow|prefer|require|verify-ca|verify-full
+        ICDEV_PG_SSLCERT        path to client certificate (PEM)
+        ICDEV_PG_SSLKEY         path to client private key (PEM)
+        ICDEV_PG_SSLROOTCERT    path to CA bundle used to verify the server
+        ICDEV_PG_SSLCRL         path to certificate revocation list (optional)
+    """
+    mapping = {
+        "sslmode": "ICDEV_PG_SSLMODE",
+        "sslcert": "ICDEV_PG_SSLCERT",
+        "sslkey": "ICDEV_PG_SSLKEY",
+        "sslrootcert": "ICDEV_PG_SSLROOTCERT",
+        "sslcrl": "ICDEV_PG_SSLCRL",
+    }
+    return {k: os.environ[v] for k, v in mapping.items() if os.environ.get(v)}
+
+
 def _get_pg_connection(db_url: str = None):
     """Create a PostgreSQL connection via psycopg2."""
     import psycopg2
     import psycopg2.extras
 
+    ssl_kwargs = _pg_ssl_kwargs()
     if db_url:
-        conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn = psycopg2.connect(
+            db_url, cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs
+        )
     else:
         conn = psycopg2.connect(
             host=os.environ.get("ICDEV_PG_HOST", "localhost"),
@@ -609,6 +639,7 @@ def _get_pg_connection(db_url: str = None):
             password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
             dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
             cursor_factory=psycopg2.extras.RealDictCursor,
+            **ssl_kwargs,
         )
     conn.autocommit = False
     return conn
