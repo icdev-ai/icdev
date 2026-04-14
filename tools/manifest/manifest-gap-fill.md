@@ -5,6 +5,7 @@
 ## Manifest Gap Fill (2026-04-12)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Network Topology Merge | tools/network/topology_merge.py | Network Design Canvas — merge multiple topology graphs (from separate team diagrams) into a single canonical graph. Collapses duplicate-label nodes, rewrites edges to canonical IDs, auto-discovers cross-graph edges via label matching, and records per-node/edge provenance. Core utility for stitching site-ops, cloud, DC, and security diagram slices. | `(library) merge_topologies(graphs, match_on="label")` | `{nodes, edges, _sources, _stitched_hosts, _stats}` |
 | Network Config Import | tools/network/config_import.py | Network Design Canvas — parse Cisco IOS/NX-OS/Junos config files into a topology graph. Auto-detects vendor; infers adjacency from LLDP/CDP tables, shared subnets, and interface descriptions. Emits `{nodes, edges}` compatible with `export_import.to_drawio`, `visio_export.export_vsdx`, and `layout.auto_layout`. | `--file <cfg>` \| `--dir <dir>` `[--output <file>]` `[--auto-layout]` `[--json]` | Topology graph JSON `{nodes, edges, _devices, _edges_by_method}` |
 | Network Backup | tools/network/backup.py | Network Design Canvas — backup/restore CLI for device configs and topology | --backup, --list, --restore, --notes | Backup metadata + JSON |
 | Network Compliance | tools/network/compliance.py | Network Design Canvas — compliance audit engine (STIG/CIS/NIST alignment) | --audit, --device, --json | Findings + compliance report |
