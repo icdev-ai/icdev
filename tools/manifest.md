@@ -34,6 +34,7 @@
 - [Monitoring](manifest/monitoring.md)
 - [Dashboard](manifest/dashboard.md)
 - [CLI Output Formatting](manifest/cli-output-formatting.md)
+- [Browser Automation (Selenium Driver Manager)](manifest/browser.md)
 - [Testing Framework (Adapted from ADW)](manifest/testing-framework.md)
 - [CI/CD Integration (GitHub + GitLab)](manifest/ci-cd-integration.md)
 - [Maintenance Audit](manifest/maintenance-audit.md)
@@ -148,3 +149,9 @@
 
 | Pdf Import | tools\network\pdf_import.py | Auto-registered: network/pdf_import.py | --json | JSON |
 | Snapshot Builder | tools\trading\market_intel\snapshot_builder.py | Auto-registered: market_intel/snapshot_builder.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Schedule Enterprise Frontend Plan | tools\scripts\schedule_enterprise_frontend_plan.py | Auto-registered: scripts/schedule_enterprise_frontend_plan.py | --json | JSON |

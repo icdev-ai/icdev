@@ -17,12 +17,13 @@ Usage::
     #   python -m tools.airgap --check
 """
 
-from tools.airgap.detector import is_airgap, detect_environment
+from tools.airgap.detector import is_airgap, detect_environment, has_vendored_driver
 from tools.airgap.config_patcher import activate_airgap, deactivate_airgap
 
 __all__ = [
     "is_airgap",
     "detect_environment",
+    "has_vendored_driver",
     "activate_airgap",
     "deactivate_airgap",
 ]

@@ -272,6 +272,47 @@ def clear_cache() -> None:
     _cached_result = None
 
 
+# ── Vendored driver detection ──────────────────────────────────────────
+
+def has_vendored_driver(driver_type: str = "any") -> bool:
+    """Return True if at least one vendored browser driver binary exists.
+
+    Parameters
+    ----------
+    driver_type:
+        ``"edge"``      — check only msedgedriver vendor tree
+        ``"chrome"``    — check only chromedriver vendor tree
+        ``"any"``       — True if either tree contains a binary (default)
+
+    The vendor tree lives at ``vendor/drivers/{msedgedriver,chromedriver}/{major}/``
+    relative to the project root.  A directory is considered populated when
+    the platform-appropriate executable is present inside a versioned sub-dir.
+    """
+    import platform as _platform
+
+    exe_suffix = ".exe" if _platform.system() == "Windows" else ""
+    vendor_root = BASE_DIR / "vendor" / "drivers"
+
+    def _has_binary(driver_dir_name: str, exe_name: str) -> bool:
+        driver_dir = vendor_root / driver_dir_name
+        if not driver_dir.exists():
+            return False
+        for sub in driver_dir.iterdir():
+            if sub.is_dir():
+                if (sub / exe_name).exists():
+                    return True
+        return False
+
+    check_edge = driver_type in ("edge", "any")
+    check_chrome = driver_type in ("chrome", "any")
+
+    if check_edge and _has_binary("msedgedriver", f"msedgedriver{exe_suffix}"):
+        return True
+    if check_chrome and _has_binary("chromedriver", f"chromedriver{exe_suffix}"):
+        return True
+    return False
+
+
 # ── CLI ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import json
