@@ -83,8 +83,6 @@ except ImportError:
     _HAS_NUMPY = False
 
 try:
-    import requests as _requests
-
     from tools.http.client import request as _http_request
 
     _HAS_REQUESTS = True

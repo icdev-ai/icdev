@@ -150,8 +150,6 @@ class SlackConnector(ChatConnectorAdapter):
             text = f"{BOT_IDENTIFIER} {text}"
 
         try:
-            import requests
-
             payload = {
                 "channel": channel_id or self._default_channel,
                 "text": text,
