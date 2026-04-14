@@ -750,6 +750,10 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
             continue
         if t in system_tables:
             continue
+        # Catch any pg_*, sqlite_*, or information_schema.* catalog the
+        # explicit set above hasn't enumerated yet.
+        if t.startswith(("pg_", "sqlite_")) or t == "information_schema":
+            continue
         if len(t) < 3:
             # Tables named ``a``, ``id`` etc. are almost certainly
             # sub-query aliases, not real missing tables.
