@@ -179,6 +179,40 @@ CREATE TABLE IF NOT EXISTS ddc_runbook_executions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ddc_runbook_exec_runbook ON ddc_runbook_executions(runbook_id);
+
+CREATE TABLE IF NOT EXISTS ddc_sops (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    category            TEXT DEFAULT 'general',
+    description         TEXT DEFAULT '',
+    purpose             TEXT DEFAULT '',
+    scope               TEXT DEFAULT '',
+    steps_json          TEXT DEFAULT '[]',
+    references_json     TEXT DEFAULT '[]',
+    version             TEXT DEFAULT '1.0',
+    status              TEXT DEFAULT 'draft',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    linked_design_id    TEXT,
+    owner               TEXT DEFAULT '',
+    reviewer            TEXT DEFAULT '',
+    approver            TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ddc_sops_category ON ddc_sops(category);
+CREATE INDEX IF NOT EXISTS idx_ddc_sops_status   ON ddc_sops(status);
+
+CREATE TABLE IF NOT EXISTS ddc_sop_approvals (
+    id          TEXT PRIMARY KEY,
+    sop_id      TEXT REFERENCES ddc_sops(id) ON DELETE CASCADE,
+    reviewer    TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    comment     TEXT DEFAULT '',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ddc_sop_approvals_sop ON ddc_sop_approvals(sop_id);
 """
 
 
