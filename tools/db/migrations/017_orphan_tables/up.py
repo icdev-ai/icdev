@@ -9,7 +9,7 @@ gap detector. These tables are written by tool code (INSERT INTO / SELECT)
 but had no CREATE TABLE statement in any migration, so fresh sqlite
 deployments would 500 on first use.
 
-This migration covers 54 distinct orphan tables.
+This migration covers 55 distinct orphan tables.
 All CREATE TABLE statements are idempotent (IF NOT EXISTS).
 
 REVIEW GATE: Human review required before applying. Run:
@@ -22,12 +22,13 @@ import sqlite3
 MIGRATION_ID = "017"
 MIGRATION_NAME = "orphan_tables"
 DESCRIPTION = (
-    "Create 54 orphan tables identified by the Internal Awareness Engine "
+    "Create 55 orphan tables identified by the Internal Awareness Engine "
     "gap detector. Resolves schema drift — tables referenced by tool code but missing "
     "from any migration, causing fresh sqlite deploys to 500 on first use."
 )
 
 _ORPHAN_TABLES = [
+    "ad_news_catalysts",
 "agent_chat_turns",
     "agent_registry",
     "ai_model_cards",
@@ -85,6 +86,8 @@ _ORPHAN_TABLES = [
 ]
 
 _CREATE_STMTS = [
+    # ad_news_catalysts — first referenced in tools/trading/analysis/confluence_pillars/event_stack.py [known_schema]
+    "CREATE TABLE IF NOT EXISTS ad_news_catalysts (\n    id TEXT PRIMARY KEY,\n    ticker TEXT NOT NULL,\n    headline TEXT DEFAULT '',\n    source TEXT DEFAULT '',\n    sentiment TEXT DEFAULT '',\n    url TEXT DEFAULT '',\n    created_at TEXT\n);",
     # agent_chat_turns — first referenced in tools/gateway/adapters/internal.py [known_schema]
     "CREATE TABLE IF NOT EXISTS agent_chat_turns (\n    id TEXT PRIMARY KEY,\n    session_id TEXT NOT NULL,\n    role TEXT DEFAULT 'agent',\n    content TEXT DEFAULT '',\n    created_at TEXT\n);",
     # agent_registry — first referenced in tools/agent/a2a_discovery_server.py [known_schema]
