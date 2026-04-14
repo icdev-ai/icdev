@@ -1470,6 +1470,56 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     print(f"  Kanban: dispatched {task_id} via LLMRouter (no Claude CLI)")
 
 
+def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
+    """Check if a gap task is already resolved BEFORE dispatching Claude.
+
+    For common false-positive gap types (tool_not_in_manifest,
+    route_not_listed, etc.) we can validate the expected state DIRECTLY
+    without running the agent. If the state is already as desired, the
+    task is auto-completed — no tokens spent, no worktree created.
+
+    Returns (already_resolved: bool, reason: str). If True, the caller
+    should mark the task done and skip dispatch entirely.
+    """
+    title = (task.get("title") or "")
+    description = (task.get("description") or "")
+
+    # tool_not_in_manifest gap: is the tool already in the manifest?
+    tool_match = re.search(r"tool_not_in_manifest[^:]*:\s*(tools/[A-Za-z0-9_/\-]+\.py)", title)
+    if not tool_match:
+        tool_match = re.search(r"(tools/[A-Za-z0-9_/\-]+\.py)", description)
+    if tool_match and ("tool_not_in_manifest" in title or "tool_not_in_manifest" in description):
+        tool_path = tool_match.group(1)
+        try:
+            manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(encoding="utf-8")
+            if tool_path in manifest_text:
+                return True, (
+                    f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
+                    f"(false-positive gap)"
+                )
+        except Exception:
+            pass
+
+    # route_not_listed gap: is the route already in start.md Pages line?
+    route_match = re.search(r"route_not_listed[^:]*:\s*(/[A-Za-z0-9_<>/\-]+)", title)
+    if route_match:
+        route = route_match.group(1)
+        # API routes don't belong in Pages list — treat as resolved
+        if route.startswith("/api/"):
+            return True, f"Pre-dispatch check: {route} is an API route (N/A for Pages list)"
+        try:
+            start_md = (BASE_DIR / ".claude" / "commands" / "start.md").read_text(encoding="utf-8")
+            if route in start_md:
+                return True, (
+                    f"Pre-dispatch check: {route} is already in "
+                    f".claude/commands/start.md (false-positive gap)"
+                )
+        except Exception:
+            pass
+
+    return False, ""
+
+
 def _dispatch_to_claude(task: dict, prompt_path: str):
     """Dispatch a task to the appropriate executor.
 
@@ -1479,9 +1529,29 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
 
     Creates a git worktree for isolation so parallel tasks don't collide.
     Falls back to BASE_DIR if worktree creation fails.
+
+    FAST-PATH: _pre_dispatch_check runs first. If the task is a
+    false-positive gap (tool already in manifest, route already in start.md,
+    etc.), we mark it done immediately and skip Claude entirely — saving
+    tokens and preventing false-negative "no commits" rejections.
     """
     task_id = task["id"]
     title = task.get("title", "Untitled")
+
+    # Fast-path: auto-complete false-positive gaps without dispatching.
+    already_resolved, resolution_reason = _pre_dispatch_check(task)
+    if already_resolved:
+        logger.info("kanban: %s auto-resolved pre-dispatch: %s", task_id, resolution_reason)
+        _write_verification_log(task_id, True, f"AUTO-RESOLVED (pre-dispatch): {resolution_reason}")
+        try:
+            _move_task(task_id, "done")
+        except Exception:
+            pass
+        _send_notification({"id": task_id, "title": title,
+                            "task_type": task.get("task_type", "chore"),
+                            "priority": task.get("priority", "medium")},
+                           event="done")
+        return
 
     prompt_text = Path(prompt_path).read_text(encoding="utf-8")
 

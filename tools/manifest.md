@@ -1708,6 +1708,8 @@ Reads the ICDEV filesystem and populates `kg_nodes`/`kg_edges` under graph_id `k
 | Confluence: Event Stack | tools\trading\analysis\confluence_pillars\event_stack.py | Analyst upgrades / earnings beat / insider buys / news cluster pillar. | library module | PillarVote |
 | Decision Snapshot | tools\trading\audit\decision_snapshot.py | Append-only immutable per-signal decision context (sha256-hashed for tamper detection). Append-only via APPEND_ONLY_TABLES. | --get SIGID, --list, --ticker SYM, --verify SIGID, --limit N, --json | JSON |
 | Decision Replay | tools\trading\audit\decision_replay.py | Reconstructs full signal→order→fill→exit chain for one signal_id; supports diff between two snapshots. | --signal-id SIGID, --diff ID_A ID_B, --json | JSON |
+| Signal Explainer | tools\trading\llm\signal_explainer.py | LLM-backed narrative per signal_id; templates when no LLM available. Cached in ad_signal_narratives. | --signal-id SIGID, --refresh, --json | JSON |
+| Pillar Weight Learner | tools\trading\ml\pillar_weight_learner.py | Elastic-net learns confluence pillar weights from realized P&L; learned weights override confluence_scorer defaults automatically. | --train, --active, --days N, --alpha N, --l1-ratio N, --json | JSON |
 | Batch Scanner | tools\trading\market_intel\batch_scanner.py | Auto-registered: market_intel/batch_scanner.py | --json | JSON |
 | Cascade Engine | tools\trading\market_intel\cascade_engine.py | Auto-registered: market_intel/cascade_engine.py | --json | JSON |
 | Expert Agents | tools\trading\market_intel\expert_agents.py | Auto-registered: market_intel/expert_agents.py | --json | JSON |
