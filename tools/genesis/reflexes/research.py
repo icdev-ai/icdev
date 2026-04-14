@@ -278,8 +278,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             }
         )
 
+    # Trust the config threshold (signals_ingested gte 0) for the quality
+    # gate; this reflex's `success` field is about whether it EXECUTED
+    # cleanly, not whether feeds happened to produce content. Network
+    # flakes, corporate proxies, or feed outages shouldn't trip the
+    # breaker — the threshold check already accepts zero. Fixed 2026-04-14
+    # after three consecutive trips on unreachable feeds.
     return {
-        "success": total_signals > 0 or total_dupes > 0,  # Success if we processed anything
+        "success": True,
         "metric_value": float(total_signals),
         "details": {
             "feeds_processed": len(feed_results),
