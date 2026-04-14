@@ -2009,9 +2009,26 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
         if tool_match:
             tool_path = tool_match.group(1)
             try:
-                manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(
-                    encoding="utf-8"
-                )
+                # Read the manifest from the kanban branch (where the agent
+                # committed), NOT main — the agent's manifest update hasn't
+                # been merged yet at verification time.
+                manifest_text = ""
+                try:
+                    import subprocess as _sp
+                    r = _sp.run(
+                        ["git", "show", f"kanban/{task_id}:tools/manifest.md"],
+                        capture_output=True, text=True,
+                        encoding="utf-8", errors="replace",
+                        cwd=str(BASE_DIR), timeout=10,
+                    )
+                    if r.returncode == 0:
+                        manifest_text = r.stdout
+                except Exception:
+                    pass
+                if not manifest_text:
+                    manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(
+                        encoding="utf-8"
+                    )
                 if tool_path not in manifest_text:
                     return False, (
                         f"SPECIFIC CHECK FAILED: task mentions {tool_path} "
