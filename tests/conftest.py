@@ -1156,6 +1156,18 @@ CREATE TABLE IF NOT EXISTS ad_insider_transactions (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ad_insider_txn_ticker_date ON ad_insider_transactions (ticker, created_at DESC);
+
+-- AlphaDesk: news catalyst table (migration 024)
+CREATE TABLE IF NOT EXISTS ad_news_catalysts (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    headline TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    sentiment TEXT DEFAULT '',
+    url TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_news_catalysts_ticker_date ON ad_news_catalysts (ticker, created_at DESC);
 """
 
 # ---------------------------------------------------------------------------
