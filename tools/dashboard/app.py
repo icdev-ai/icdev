@@ -7941,11 +7941,43 @@ if __name__ == "__main__":
     except Exception as _ks_err:
         print(f"[ICDEV™ Dashboard] Kanban scheduler failed to start: {_ks_err}")
 
+    # Optional inbound TLS / mTLS (IL5+/GovCloud). Env vars:
+    #   ICDEV_DASHBOARD_TLS_CERT      server certificate (PEM)
+    #   ICDEV_DASHBOARD_TLS_KEY       server private key (PEM)
+    #   ICDEV_DASHBOARD_TLS_CA_BUNDLE CA bundle — enables client-cert
+    #                                 verification (mTLS) when set
+    # When both cert+key are set the dashboard listens on HTTPS. When a CA
+    # bundle is also set, clients must present a valid certificate signed by
+    # that CA (CERT_REQUIRED). For dev/non-TLS deployments leave all three
+    # unset.
+    _ssl_context = None
+    _tls_cert = os.environ.get("ICDEV_DASHBOARD_TLS_CERT")
+    _tls_key = os.environ.get("ICDEV_DASHBOARD_TLS_KEY")
+    _tls_ca = os.environ.get("ICDEV_DASHBOARD_TLS_CA_BUNDLE")
+    if _tls_cert and _tls_key:
+        import ssl as _ssl
+
+        _ctx = _ssl.create_default_context(purpose=_ssl.Purpose.CLIENT_AUTH)
+        _ctx.load_cert_chain(certfile=_tls_cert, keyfile=_tls_key)
+        if _tls_ca:
+            _ctx.load_verify_locations(cafile=_tls_ca)
+            _ctx.verify_mode = _ssl.CERT_REQUIRED
+            print(f"[ICDEV™ Dashboard] mTLS enabled (CA: {_tls_ca})")
+        else:
+            print(f"[ICDEV™ Dashboard] TLS enabled (server-only; no client CA)")
+        _ssl_context = _ctx
+
     # Use SocketIO runner if available (D170), otherwise plain Flask
     socketio = get_socketio()
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
-        socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+        if _ssl_context is not None:
+            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+        else:
+            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
-        app.run(host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+        if _ssl_context is not None:
+            app.run(host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+        else:
+            app.run(host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
