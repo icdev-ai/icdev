@@ -8,4 +8,5 @@
 | Confabulation Detector | tools/security/confabulation_detector.py | Deterministic confabulation detection (D310) | --check-output, --summary, --json | Detection results |
 | Endpoint Security Scanner | tools/security/endpoint_security_scanner.py | API endpoint security assessment | --scan, --json | Scan results |
 | Sandbox Executor | tools/security/sandbox_executor.py | Container-isolated code execution with resource limits, network isolation, and audit logging (D-SEC-10) | --execute --code, --execute-file --path, --health, --gate, --language, --timeout, --memory, --json | SandboxResult JSON |
+| HTTP Client (mTLS) | tools/http/client.py | Central outbound HTTP session with mTLS client cert, CA bundle, proxy, and default timeout applied via env. Env: ICDEV_MTLS_CLIENT_CERT, ICDEV_MTLS_CLIENT_KEY, ICDEV_MTLS_CA_BUNDLE, ICDEV_MTLS_VERIFY, ICDEV_HTTP_TIMEOUT, ICDEV_HTTP_PROXY, ICDEV_HTTPS_PROXY. | `get_session()` / `request(method, url, **kwargs)` | `requests.Session` / `requests.Response` |
 
