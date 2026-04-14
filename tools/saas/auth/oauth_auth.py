@@ -59,9 +59,9 @@ def _fetch_jwks(jwks_uri: str) -> Optional[dict]:
             return cached["keys"]
 
     try:
-        import requests
+        from tools.http.client import request
 
-        resp = requests.get(jwks_uri, timeout=10)
+        resp = request("GET", jwks_uri, timeout=10)
         resp.raise_for_status()
         keys = resp.json()
         _jwks_cache[jwks_uri] = {"keys": keys, "fetched_at": now}
