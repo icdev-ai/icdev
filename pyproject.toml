@@ -186,8 +186,9 @@ minimal-airgap = [
 ]
 
 [project.scripts]
-icdev = "icdev.tools.cli.init:main"
+icdev = "icdev.tools.cli.__main__:main"
 icdev-init = "icdev.tools.cli.init:main"
+icdev-enable = "icdev.tools.cli.enable:main"
 icdev-init-db = "icdev.tools.db.init_icdev_db:main"
 icdev-dashboard = "icdev.tools.dashboard.app:main"
 icdev-mcp = "icdev.tools.mcp.unified_server:main"
