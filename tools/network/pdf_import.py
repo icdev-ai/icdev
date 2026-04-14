@@ -230,14 +230,25 @@ def _parse_page(
         return  # no shapes — skip edge work entirely
 
     # ── Edges ──
-    # Build edge segments from lines + straight curves
+    # Build edge segments from lines + straight curves.
+    # pdfplumber lines expose (x0, top, x1, bottom) as the bbox, not the
+    # endpoints — for diagonal lines the actual endpoints could be
+    # (x0,top)→(x1,bottom) OR (x0,bottom)→(x1,top). We emit both and let
+    # the edge-dedup step collapse duplicates; the wrong diagonal won't
+    # match any rects and is silently dropped.
     segments: list[tuple[float, float, float, float]] = []
     for ln in lines:
         try:
-            segments.append((float(ln["x0"]), float(ln["top"]),
-                             float(ln["x1"]), float(ln["bottom"])))
+            x0 = float(ln["x0"])
+            x1 = float(ln["x1"])
+            top = float(ln["top"])
+            bot = float(ln["bottom"])
         except (KeyError, TypeError, ValueError):
             continue
+        segments.append((x0, top, x1, bot))
+        if abs(top - bot) > 1 and abs(x0 - x1) > 1:
+            # Diagonal — also emit the opposite diagonal
+            segments.append((x0, bot, x1, top))
     for cv in curves:
         pts = cv.get("pts") or []
         if len(pts) < 2:
