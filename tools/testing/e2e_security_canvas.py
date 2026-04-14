@@ -19,9 +19,8 @@ from pathlib import Path
 # UTF-8 safe output on Windows
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from tools.browser.driver_manager import get_driver
 from selenium.webdriver.support.ui import WebDriverWait
 
 BASE = "http://localhost:5050"
@@ -86,14 +85,7 @@ print("=" * 60)
 print("Security Design Canvas — Full Lifecycle E2E Test")
 print("=" * 60)
 
-opts = Options()
-opts.add_argument("--headless=new")
-opts.add_argument("--window-size=1920,1080")
-opts.add_argument("--disable-gpu")
-opts.add_argument("--no-sandbox")
-opts.set_capability("goog:loggingPrefs", {"browser": "ALL"})
-
-driver = webdriver.Chrome(options=opts)
+driver = get_driver()
 wait = WebDriverWait(driver, 10)
 driver_cookies_str = ""
 
