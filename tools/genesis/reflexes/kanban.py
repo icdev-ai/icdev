@@ -2308,7 +2308,10 @@ def _verify_task_completed(task_id, claude_output):
 
     # guard-21: try to auto-remediate common, safe failures before giving up.
     # Only one attempt — if it doesn't work, backlog is the answer.
-    if not verified:
+    # Skip remediation for PHANTOM COMPLETION — hallucinated output has nothing
+    # on disk to fix; running git commands would be pointless noise.
+    _is_phantom = "PHANTOM COMPLETION" in reason
+    if not verified and not _is_phantom:
         try:
             from tools.workflow.auto_remediate import attempt_remediation
             work_dir = _worktrees.get(task_id) or str(BASE_DIR)
