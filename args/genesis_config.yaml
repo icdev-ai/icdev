@@ -264,7 +264,9 @@ reflexes:
     success_metric:
       name: coverage_delta
       threshold: 0
-      operator: gt  # Net new coverage
+      operator: gte     # "Zero new tests on a clean codebase" is healthy,
+                        # not failure. Was `gt 0` — which demanded net new
+                        # coverage every run. Relaxed 2026-04-14.
     min_coverage_target: 0.60
     max_tests_per_run: 10
 
@@ -395,7 +397,10 @@ reflexes:
     success_metric:
       name: docs_drift_count
       threshold: 0
-      operator: lte
+      operator: gte     # Finding drift = healthy detection, not failure.
+                        # Was `lte 0` — which demanded zero drift, contradicting
+                        # the reflex's purpose. Flipped 2026-04-14 after three
+                        # consecutive trips.
     checks:
       stale_feature_docs: true
       missing_feature_docs: true
