@@ -105,16 +105,47 @@ EXCLUDE_PATTERNS = (
     "*.lock",
     "scheduled_tasks.lock",
     "*.egg-info",
+    # Runtime state that shouldn't ship (users initialize their own DBs)
+    "*.db",
+    "*.db-journal",
+    "*.sqlite",
+    "*.sqlite3",
+    # Dev screenshots and binary test artifacts
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.mp4",
+    "*.mov",
+    # Backup / swap files
+    "*.bak",
+    "*.swp",
+    "*.orig",
+)
+
+# Directories to exclude wholesale (path suffix match)
+EXCLUDE_DIRS = (
+    "screenshots",       # dashboard test screenshots (1.2 MB)
+    "logs",              # runtime logs
+    "__pycache__",
 )
 
 
 def _should_skip(path: Path) -> bool:
     name = path.name
+    # File-name pattern match
     for pat in EXCLUDE_PATTERNS:
         if pat.startswith("*"):
             if name.endswith(pat[1:]):
                 return True
         elif name == pat:
+            return True
+    # Directory-name match (wholesale exclude)
+    if path.is_dir() and name in EXCLUDE_DIRS:
+        return True
+    # Also skip if any parent dir name is in EXCLUDE_DIRS
+    for part in path.parts:
+        if part in EXCLUDE_DIRS:
             return True
     return False
 
