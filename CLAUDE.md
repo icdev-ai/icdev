@@ -73,7 +73,7 @@ See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic,
 
 ### Key Files
 - `goals/manifest.md` — Index of all goal workflows. Check before starting any task.
-- `tools/manifest.md` — Master list of all tools. Check before writing a new script.
+- `tools/manifest.md` — Thin index of all tool shards. Detail lives in `tools/manifest/<topic>.md`. Grep the shard directory (not the index) when searching for an existing tool.
 - `memory/MEMORY.md` — Curated long-term facts/preferences.
 - `.env` — API keys, LLM model names. **Admins configure LLM here, not in code.**
 - `.tmp/` — Disposable scratch work. Never store important data here.
@@ -83,7 +83,7 @@ See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic,
 ## How to Operate
 
 1. **Check goals first** — Read `goals/manifest.md` before starting a task. If a goal exists, follow it.
-2. **Check tools first** — Read `tools/manifest.md` before writing new code. If you create a new tool, add it to the manifest.
+2. **Check tools first** — Before writing new code, grep `tools/manifest/` shards for existing tools. If you create a new tool, add its entry to the appropriate topic shard (e.g. `tools/manifest/memory-system.md`), not the thin index.
 3. **When tools fail** — Read the error, fix the tool, update the goal with what you learned.
 4. **Goals are living docs** — Update when better approaches emerge. Never modify/create without permission.
 5. **When stuck** — Explain what's missing. Don't guess or invent capabilities.
@@ -208,7 +208,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 
 ## Guardrails
 
-- Always check `tools/manifest.md` before writing a new script
+- Always grep `tools/manifest/` shards before writing a new script
 - Verify tool output format before chaining into another tool
 - Don't assume APIs support batch operations — check first
 - When a workflow fails mid-execution, preserve intermediate outputs before retrying
@@ -226,7 +226,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 - **Cross-platform:** pathlib.Path, `encoding='utf-8'`, `tempfile.gettempdir()`, `datetime.now(timezone.utc)`, `hashlib.sha256` not md5
 - **LLM config via `.env`**, never hardcode model IDs in Python
 - **New tool/module registration checklist (8 points):**
-  1. `tools/manifest.md` — add tool entry
+  1. `tools/manifest/<topic>.md` — add tool entry to the appropriate shard (index at `tools/manifest.md`)
   2. `CLAUDE.md` — add CLI commands to [docs/reference/commands.md](docs/reference/commands.md)
   3. `args/security_gates.yaml` — add gate if blocking/warning conditions
   4. `tools/mcp/tool_registry.py` + `gap_handlers.py` — register in MCP gateway

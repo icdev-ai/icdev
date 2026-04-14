@@ -66,11 +66,11 @@ def _safe_get(
 ) -> Tuple[Optional[Dict], Optional[str]]:
     """HTTP GET with error handling.  Returns (data, error)."""
     try:
-        import requests
+        from tools.http.client import request as _http_request
     except ImportError:
         return None, "requests library not installed"
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        resp = _http_request("GET", url, headers=headers, params=params, timeout=timeout)
         if resp.status_code == 429:
             return None, "rate_limited"
         if resp.status_code == 403:
