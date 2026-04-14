@@ -377,6 +377,7 @@
 | Maintenance Auditor | tools/maintenance/maintenance_auditor.py | Full audit lifecycle: scan + check + score + SLA + trend + CUI report | --project-id, --output-dir, --gate, --json | Audit report + score |
 | Remediation Engine | tools/maintenance/remediation_engine.py | Auto-implement dependency fixes: version bumps, branch creation, test verification | --project-id, --auto, --dry-run, --json | Remediation actions |
 | Sandbox Smoke | tools/maintenance/sandbox_smoke.py | OPT-57 daily liveness probe — health_check() + tiny smoke payload through SandboxExecutor; writes audit row per run | --json, --timeout, --no-audit | Exit 0=healthy / 1=degraded / 2=smoke_failed + JSON |
+| Disk Audit | tools/maintenance/disk_audit.py | OPT-29 — Walk key data dirs (genesis, scout, research, backups, .tmp, bak files), report per-dir size + file count, flag stale entries older than N days. JSON output for cron + dashboard. Exit 1 in --gate mode if stale found. | --stale-days, --json, --gate | Size/staleness report per dir + summary |
 | Sandbox API | tools/dashboard/api/sandbox.py | OPT-57 `/api/sandbox/liveness`, `/api/sandbox/log`, `/sandbox` page — surfaces latest probe + execution log | HTTP GET | JSON / HTML |
 
 ## MBSE Integration (Phase 18)
