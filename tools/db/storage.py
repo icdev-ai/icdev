@@ -64,7 +64,23 @@ except ImportError:
                     os.environ[_k] = _v
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db"))
+
+
+def _default_db_path() -> str:
+    # When running from an installed wheel, BASE_DIR lives under site-packages
+    # (or sys.prefix). Writing the DB inside the package dir is undesirable —
+    # read-only filesystems, stale data on upgrade, multiple projects sharing
+    # state. Default to the user's cwd instead.
+    import sys
+
+    base = str(BASE_DIR).replace("\\", "/").lower()
+    prefix = str(Path(sys.prefix).resolve()).replace("\\", "/").lower()
+    if "site-packages" in base or (prefix and base.startswith(prefix)):
+        return str(Path.cwd() / "data" / "icdev.db")
+    return str(BASE_DIR / "data" / "icdev.db")
+
+
+DB_PATH = os.environ.get("ICDEV_DB_PATH", _default_db_path())
 
 # Backend detection
 _BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()

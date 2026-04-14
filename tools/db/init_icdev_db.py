@@ -2,12 +2,32 @@
 # CUI // SP-CTI
 """Initialize the ICDEV™ operational database with full schema."""
 
-import sqlite3
 import argparse
+import os
+import sqlite3
+import sys
 from pathlib import Path
 
+# UTF-8 safe stdout on Windows (default cp1252 mangles ™ and other glyphs).
+try:
+    if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+
+def _default_db_path() -> Path:
+    # Mirror tools/db/storage.py: don't default inside site-packages.
+    base = str(BASE_DIR).replace("\\", "/").lower()
+    prefix = str(Path(sys.prefix).resolve()).replace("\\", "/").lower()
+    if "site-packages" in base or (prefix and base.startswith(prefix)):
+        return Path.cwd() / "data" / "icdev.db"
+    return BASE_DIR / "data" / "icdev.db"
+
+
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_default_db_path())))
 
 SCHEMA_SQL = """
 -- ============================================================
@@ -9929,7 +9949,21 @@ def init_db(db_path=None):
 
     If the migration system (schema_migrations table) is detected, redirects
     to the migration runner instead of re-running the monolithic init script.
+
+    For PostgreSQL backends (ICDEV_STORAGE_BACKEND=postgresql), this monolithic
+    SQLite-flavored init is not the right tool — delegate to the migration
+    runner which handles cross-backend DDL via the SQL translator.
     """
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    if backend == "postgresql":
+        print(
+            "ICDEV_STORAGE_BACKEND=postgresql detected. This monolithic "
+            "init script is SQLite-only. Run the migration framework "
+            "instead: `python -m icdev.tools.db.migrate --up` (or "
+            "`python tools/db/migrate.py --up` from a checkout)."
+        )
+        return []
+
     path = Path(db_path) if db_path and not isinstance(db_path, Path) else (db_path or DB_PATH)
 
     # D150: Detect migration system — if active, delegate to migration runner
