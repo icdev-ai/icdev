@@ -488,9 +488,9 @@ def list_vendored() -> List[Dict[str, Any]]:
                 continue
             for exe_name in (
                 f"msedgedriver{'.exe' if _IS_WIN else ''}",
-                f"msedgedriver",
+                "msedgedriver",
                 f"chromedriver{'.exe' if _IS_WIN else ''}",
-                f"chromedriver",
+                "chromedriver",
             ):
                 candidate = major_dir / exe_name
                 if candidate.exists():

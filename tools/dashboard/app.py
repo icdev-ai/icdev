@@ -7829,7 +7829,7 @@ if __name__ == "__main__":
             _ctx.verify_mode = _ssl.CERT_REQUIRED
             print(f"[ICDEV™ Dashboard] mTLS enabled (CA: {_tls_ca})")
         else:
-            print(f"[ICDEV™ Dashboard] TLS enabled (server-only; no client CA)")
+            print("[ICDEV™ Dashboard] TLS enabled (server-only; no client CA)")
         _ssl_context = _ctx
 
     # Use SocketIO runner if available (D170), otherwise plain Flask
