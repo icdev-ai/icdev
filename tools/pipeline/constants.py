@@ -774,6 +774,23 @@ PIPELINE_OBJECTS = {
             "stage": "policy_gate",
             "license": "Apache-2.0",
         },
+        # Rust-specific supply chain provenance
+        {
+            "type": "sc-cargo-vet",
+            "label": "cargo-vet",
+            "icon": "CV",
+            "desc": "Mozilla cargo-vet — Rust dependency audit enforcement; requires explicit audits for each crate version before use in CI",
+            "stage": "build",
+            "license": "MIT/Apache-2.0",
+        },
+        {
+            "type": "sc-cargo-auditable",
+            "label": "cargo-auditable",
+            "icon": "CA",
+            "desc": "rust-secure-code/cargo-auditable — embeds full dependency tree in Rust binaries for post-build SBOM extraction and vulnerability scanning",
+            "stage": "build",
+            "license": "MIT/Apache-2.0",
+        },
     ],
     "policy_governance": [
         {
@@ -1101,6 +1118,15 @@ PIPELINE_OBJECTS = {
             "icon": "FF",
             "desc": "Feature flag service (LaunchDarkly, Unleash, Flagsmith)",
             "stage": "deploy_prod",
+        },
+        # K8s cluster hygiene
+        {
+            "type": "k8s-eraser",
+            "label": "Eraser",
+            "icon": "ER",
+            "desc": "eraser-dev/eraser — K8s unused container image garbage collection; removes non-running images from cluster nodes to reclaim disk",
+            "stage": "monitor",
+            "license": "Apache-2.0",
         },
     ],
     "monitoring_response": [
@@ -1874,6 +1900,25 @@ PIPELINE_OBJECTS = {
             "desc": "Jenkinsci/JenkinsPipelineUnit — unit tests for Declarative and Scripted Jenkinsfiles",
             "stage": "test",
             "license": "Apache-2.0",
+        },
+    ],
+    "iac_lifecycle": [
+        # IaC refactor helpers — manage Terraform state through structural changes
+        {
+            "type": "tf-tfautomv",
+            "label": "tfautomv",
+            "icon": "TM",
+            "desc": "busser/tfautomv — auto-generates `terraform moved` blocks when resources are renamed or reorganized; eliminates manual state surgery",
+            "stage": "build",
+            "license": "MIT",
+        },
+        {
+            "type": "tf-tfmigrate",
+            "label": "tfmigrate",
+            "icon": "TG",
+            "desc": "minamijoyo/tfmigrate — file-based Terraform state migrations across workspaces and modules; runs in CI to apply state changes safely without manual `terraform state mv`",
+            "stage": "build",
+            "license": "MIT",
         },
     ],
 }
