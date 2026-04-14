@@ -33,6 +33,15 @@ skips:
   # at the orchestration layer (LLMRouter, retry utility), not at call site.
   - B113
 
+  # B608: hardcoded SQL expression — ICDEV™ uses parameterized SQL
+  # throughout. Where table/column names are interpolated, they come
+  # from validated registry constants (storage.py translate_sql, schema
+  # registries), never user input. Ruff S608 already covers the same
+  # rule; bandit duplicate forces a project-wide '# nosec B608' +
+  # '# noqa: S608' double annotation. Suppress here so only ruff's
+  # noqa is required. (OPT-16)
+  - B608
+
 exclude_dirs:
   - .tmp
   - node_modules
