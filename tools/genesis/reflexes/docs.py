@@ -124,6 +124,15 @@ def _check_manifest_drift() -> List[Dict[str, Any]]:
     except OSError:
         return issues
 
+    # Manifest split into shards (2026-04-14) — include shard bodies in lookup.
+    shard_dir = BASE_DIR / "tools" / "manifest"
+    if shard_dir.is_dir():
+        for shard in shard_dir.glob("*.md"):
+            try:
+                manifest_content += "\n" + shard.read_text(encoding="utf-8", errors="replace").lower()
+            except OSError:
+                pass
+
     tools_dir = BASE_DIR / "tools"
     for py_file in tools_dir.rglob("*.py"):
         if py_file.name.startswith("_") or py_file.name in (

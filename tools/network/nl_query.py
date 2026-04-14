@@ -34,9 +34,12 @@ except ImportError:
 try:
     import requests
 
+    from tools.http.client import request as _http_request
+
     _HAS_REQUESTS = True
 except ImportError:
     requests = None
+    _http_request = None  # type: ignore[assignment]
     _HAS_REQUESTS = False
 
 logger = logging.getLogger(__name__)
@@ -656,7 +659,8 @@ def _llm_query(question: str, graph: TopologyGraphAdapter, topology_name: str = 
             "engine": "llm_unavailable",
         }
     try:
-        resp = requests.post(
+        resp = _http_request(
+            "POST",
             f"{_OLLAMA_HOST}/api/chat",
             json=payload,
             timeout=_LLM_TIMEOUT,
