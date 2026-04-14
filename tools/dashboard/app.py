@@ -54,68 +54,11 @@ from tools.dashboard.config import (  # noqa: E402
 )
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
-from tools.dashboard.api.projects import projects_api  # noqa: E402
-from tools.dashboard.api.kanban import kanban_api  # noqa: E402
-from tools.dashboard.api.kanban_plan import kanban_plan_api  # noqa: E402
-from tools.dashboard.api.agents import agents_api  # noqa: E402
-from tools.dashboard.api.compliance import compliance_api  # noqa: E402
-from tools.dashboard.api.poam import poam_api  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
     close_canvas_connections as _close_canvas_connections,
 )
-from tools.dashboard.api.audit import audit_api  # noqa: E402
-from tools.dashboard.api.metrics import metrics_api  # noqa: E402
-from tools.dashboard.api.events import events_bp  # noqa: E402
-from tools.dashboard.api.nlq import nlq_bp  # noqa: E402
-from tools.dashboard.api.batch import batch_api  # noqa: E402
-from tools.dashboard.api.diagrams import diagrams_api  # noqa: E402
-from tools.dashboard.api.cicd import cicd_api  # noqa: E402
-from tools.dashboard.api.intake import intake_api  # noqa: E402
-from tools.dashboard.api.admin import admin_api  # noqa: E402
-from tools.dashboard.api.activity import activity_api  # noqa: E402
-from tools.dashboard.api.usage import usage_api  # noqa: E402
-from tools.dashboard.api.traces import traces_api, provenance_api, xai_api  # noqa: E402
-from tools.dashboard.api.oscal import oscal_api  # noqa: E402
-from tools.dashboard.api.prod_audit import prod_audit_api  # noqa: E402
-from tools.dashboard.api.ai_transparency import ai_transparency_api  # noqa: E402
-from tools.dashboard.api.ai_accountability import ai_accountability_api  # noqa: E402
-from tools.dashboard.api.code_quality import code_quality_api  # noqa: E402
-from tools.dashboard.api.fedramp_20x import fedramp_20x_api  # noqa: E402
-from tools.dashboard.api.evidence import evidence_api  # noqa: E402
-from tools.dashboard.api.lineage import lineage_api  # noqa: E402
-from tools.dashboard.api.filesync import filesync_api  # noqa: E402
-from tools.dashboard.api.security_scan import security_scan_api  # noqa: E402
-from tools.dashboard.api.migration import migration_api  # noqa: E402
-from tools.dashboard.api.sbd import sbd_api  # noqa: E402
-from tools.dashboard.api.pr_intel import pr_intel_api  # noqa: E402
-from tools.dashboard.api.iac import iac_api  # noqa: E402
-from tools.dashboard.api.cato import cato_api  # noqa: E402
-from tools.dashboard.api.control_inheritance import control_inheritance_api  # noqa: E402
-from tools.dashboard.api.migration_cost import migration_cost_api  # noqa: E402
-from tools.dashboard.api.compliance_debt import compliance_debt_api  # noqa: E402
-from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
-from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
-from tools.dashboard.api.oracle import oracle_api  # noqa: E402
-from tools.dashboard.api.sandbox import sandbox_api  # noqa: E402 (OPT-57)
-from tools.dashboard.api.analytics import analytics_api  # noqa: E402
-from tools.dashboard.api.ndc_labs import ndc_labs_api  # noqa: E402
-from tools.dashboard.api.ndc_sops import ndc_sops_api  # noqa: E402
-from tools.dashboard.api.canvas_projects import canvas_projects_api  # noqa: E402
-from tools.dashboard.api.writeguard import writeguard_api  # noqa: E402
-
-try:
-    from tools.dashboard.api.finetune import finetune_api  # noqa: E402
-
-    _HAS_FINETUNE_API = True
-except ImportError:
-    _HAS_FINETUNE_API = False
-try:
-    from tools.dashboard.api.rag_eval import rag_eval_api  # noqa: E402
-
-    _HAS_RAG_EVAL_API = True
-except ImportError:
-    _HAS_RAG_EVAL_API = False
+from tools.dashboard.api import register_api_blueprints  # noqa: E402
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
@@ -161,34 +104,9 @@ _GOVCON_ENABLED = (
     os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() == "true"
     and not _AIRGAP_MODE
 )
-_HAS_GOVCON = False
-if _GOVCON_ENABLED:
-    try:
-        from tools.dashboard.api.proposals import proposals_api  # noqa: E402
-        from tools.dashboard.api.govcon import govcon_api  # noqa: E402
-        from tools.dashboard.api.cpmp import cpmp_api  # noqa: E402
-
-        _HAS_GOVCON = True
-    except ImportError:
-        _HAS_GOVCON = False
-    try:
-        from tools.dashboard.api.proposal_genesis import proposal_genesis_api  # noqa: E402
-
-        _HAS_PROPOSAL_GENESIS = True
-    except ImportError:
-        _HAS_PROPOSAL_GENESIS = False
-else:
-    _HAS_PROPOSAL_GENESIS = False
-from tools.dashboard.api.orchestration import orchestration_api  # noqa: E402
-
-try:
-    from tools.dashboard.api.chat import chat_api  # noqa: E402
-
-    _HAS_CHAT_API = True
-except ImportError:
-    _HAS_CHAT_API = False
+# _HAS_GOVCON: derived from env only (import failures are handled in register_api_blueprints)
+_HAS_GOVCON = _GOVCON_ENABLED
 from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
-from tools.dashboard.api.studio import studio_api  # noqa: E402
 
 # ── Design Canvases (conditional registration) ────────────────────────────
 _CANVAS_FLAGS = {}
@@ -1120,77 +1038,8 @@ def create_app() -> Flask:
     except Exception as exc:
         app.logger.debug("Agent auto-registration skipped: %s", exc)
 
-    # ---- Register API blueprints ----
-    app.register_blueprint(projects_api)
-    app.register_blueprint(kanban_api)
-    app.register_blueprint(kanban_plan_api)
-    app.register_blueprint(agents_api)
-    app.register_blueprint(compliance_api)
-    app.register_blueprint(poam_api)
-    app.register_blueprint(audit_api)
-    app.register_blueprint(metrics_api)
-    app.register_blueprint(events_bp)
-    app.register_blueprint(nlq_bp)
-    app.register_blueprint(batch_api)
-    app.register_blueprint(diagrams_api)
-    app.register_blueprint(cicd_api)
-    app.register_blueprint(intake_api)
-    app.register_blueprint(admin_api)
-    app.register_blueprint(activity_api)
-    app.register_blueprint(usage_api)
-    app.register_blueprint(traces_api)
-    app.register_blueprint(provenance_api)
-    app.register_blueprint(xai_api)
-    app.register_blueprint(oscal_api)
-    app.register_blueprint(prod_audit_api)
-    app.register_blueprint(ai_transparency_api)
-    app.register_blueprint(ai_accountability_api)
-    app.register_blueprint(code_quality_api)
-    app.register_blueprint(fedramp_20x_api)
-    app.register_blueprint(evidence_api)
-    app.register_blueprint(lineage_api)
-    app.register_blueprint(filesync_api)
-    app.register_blueprint(security_scan_api)
-    app.register_blueprint(migration_api)
-    app.register_blueprint(sbd_api)
-    app.register_blueprint(pr_intel_api)
-    app.register_blueprint(iac_api)
-    app.register_blueprint(cato_api)
-    app.register_blueprint(control_inheritance_api)
-    app.register_blueprint(migration_cost_api)
-    app.register_blueprint(compliance_debt_api)
-    app.register_blueprint(stig_manager_api)
-    app.register_blueprint(ato_package_api)
-    app.register_blueprint(oracle_api)
-    app.register_blueprint(sandbox_api)  # OPT-57
-    app.register_blueprint(analytics_api)
-    app.register_blueprint(ndc_labs_api)
-    app.register_blueprint(ndc_sops_api)
-    app.register_blueprint(canvas_projects_api)
-    app.register_blueprint(writeguard_api)
-    if _HAS_FINETUNE_API:
-        app.register_blueprint(finetune_api)
-    if _HAS_RAG_EVAL_API:
-        app.register_blueprint(rag_eval_api)
-    if _HAS_GOVCON:
-        app.register_blueprint(proposals_api)
-        app.register_blueprint(govcon_api)
-        app.register_blueprint(cpmp_api)
-    if _HAS_PROPOSAL_GENESIS:
-        app.register_blueprint(proposal_genesis_api)
-    app.register_blueprint(orchestration_api)
-    if _HAS_CHAT_API:
-        app.register_blueprint(chat_api)
-    app.register_blueprint(studio_api)
-
-    # ---- SRE API Blueprint ----
-    try:
-        from tools.dashboard.api.sre import sre_api
-
-        app.register_blueprint(sre_api)
-        app.logger.info("SRE API registered at /api/sre/")
-    except ImportError as exc:
-        app.logger.warning("SRE API failed to register: %s", exc)
+    # ---- Register API blueprints (/api/v1/ canonical, /api/ legacy alias) ----
+    register_api_blueprints(app)
 
     # ---- SRE Dashboard Page ----
     @app.route("/sre")
