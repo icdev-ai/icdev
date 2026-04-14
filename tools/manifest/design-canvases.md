@@ -15,3 +15,9 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | **ODC** Observability | tools\observability_canvas\blueprint.py | tools\observability_canvas\observability_engine.py | args\observability_canvas_config.yaml | observability_canvas.db | /observability | ICDEV_OBSERVABILITY_ENABLED | SIEM/SOAR/log stack design, MITRE ATT&CK detection coverage, source type weighting, NIST AU/SI control assessment, log retention policy |
 | **DDC** Data | tools\data_canvas\blueprint.py | tools\data_canvas\data_engine.py | args\data_canvas_config.yaml | data_canvas.db | /data | ICDEV_DATA_CANVAS_ENABLED | Data model design with PII/PHI/CUI/SECRET classification, retention policy enforcement, Privacy Act/HIPAA/GDPR assessment, ER diagram export |
 
+## IDC Sub-Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| IDC SOPs | tools/infra_canvas/sops.py | Infrastructure Design Canvas — Standard Operating Procedures CRUD + draft→pending_review→approved approval workflow. Seeds change management, capacity planning, and cloud account onboarding SOPs into `idc_sops` table. No LLM dependency. | (library) `get_all_sops`, `get_sop_by_id`, `create_sop`, `update_sop`, `transition_status`, `delete_sop`, `seed_sops` | SOP dict / list |
+| IDC Runbooks | tools/infra_canvas/runbooks.py | Infrastructure Design Canvas — operational runbooks for common infrastructure incidents (provisioning failure, capacity breach, cloud drift, patch rollback). CRUD + seed for `idc_runbooks` table; no LLM dependency. | (library) | Runbook dict / list |
+
