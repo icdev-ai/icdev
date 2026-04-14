@@ -1239,6 +1239,101 @@ RUNBOOKS = [
 ]
 
 
+SOPS = [
+    {
+        "id": "sop-ddc-data-classification-review",
+        "title": "Data Classification Review",
+        "category": "data_classification",
+        "description": "Procedure for reviewing and labeling all data assets with the correct NIST SP 800-60 impact level and CUI/SECRET markings before ATO submission.",
+        "purpose": "Ensure every dataset and table in a data design is assigned an accurate classification level (UNCLASSIFIED, CUI, or SECRET) so that boundary controls, encryption, and access policies can be correctly applied.",
+        "scope": "All data designs in the DDC that are scheduled for ATO review or have been flagged with classification coverage below 90% by the automated assessment engine.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Run DDC Classification Assessment", "description": "POST /data/api/designs/{id}/assess and collect the classification_coverage score. Flag any design with score < 0.90 for immediate remediation.", "owner": "Data Steward", "sla_minutes": 15},
+            {"order": 2, "title": "Inventory Data Assets", "description": "Export the full node list from the design. For each entity node, record: (a) data type, (b) presence of PII/PHI/CUI fields, (c) current classification label.", "owner": "Data Steward", "sla_minutes": 30},
+            {"order": 3, "title": "Apply NIST SP 800-60 Mapping", "description": "Cross-reference each data type against the NIST SP 800-60 Vol. II information type taxonomy. Assign Confidentiality, Integrity, and Availability impact levels (Low/Moderate/High).", "owner": "ISSO", "sla_minutes": 60},
+            {"order": 4, "title": "Update Classification Labels in DDC", "description": "Edit each node's classification attribute in the canvas. Move nodes into the correct classification boundary (UNCLASSIFIED, CUI, SECRET). Ensure no CUI node sits outside a CUI boundary.", "owner": "Developer", "sla_minutes": 90},
+            {"order": 5, "title": "Verify and Re-assess", "description": "Re-run POST /data/api/designs/{id}/assess. Confirm classification_coverage >= 0.90 and posture_grade is B or better. Resolve any remaining findings.", "owner": "ISSO", "sla_minutes": 30},
+            {"order": 6, "title": "Update ATO Evidence Package", "description": "Export the updated design to JSON and attach to the System Security Plan (SSP) Section 13 — Information System Component Inventory. Record review date and reviewer name.", "owner": "ISSO", "sla_minutes": 30},
+        ]),
+        "version": "1.1",
+        "status": "approved",
+        "classification": "CUI // SP-CTI",
+        "owner": "Data Steward",
+        "reviewer": "ISSO",
+        "approver": "AO Representative",
+    },
+    {
+        "id": "sop-ddc-retention-policy-enforcement",
+        "title": "Retention Policy Enforcement",
+        "category": "retention",
+        "description": "Procedure for enforcing DoD/FISMA records retention schedules — identifying overdue data, executing approved purge jobs, and obtaining Certificates of Destruction.",
+        "purpose": "Comply with NIST 800-53 SI-12 (Information Management and Retention) and DoD 5015.02 records schedules by ensuring data is not held beyond its mandated retention window and that destruction is certified.",
+        "scope": "All entity nodes in data designs that store persistent records: relational tables, object storage buckets, data lakes, and NoSQL collections. Applies to IL2 through IL5 environments.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Identify Designs Without Retention Controls", "description": "Run POST /data/api/designs/{id}/assess for each active design. Flag all designs with 'No retention policy found' in findings or missing a ctrl-retention node.", "owner": "Data Steward", "sla_minutes": 30},
+            {"order": 2, "title": "Determine Governing Retention Schedule", "description": "For each flagged design, identify the governing policy: NIST AU-11 (3 years for audit logs), FISMA (varies by data type), DoD 5015.02 (DoD official records). Document the required retention window in days.", "owner": "Compliance Officer", "sla_minutes": 60},
+            {"order": 3, "title": "Add Retention Control Nodes in DDC", "description": "In the data canvas, add a ctrl-retention node labelled with the policy (e.g., '3-Year Retention per AU-11'). Connect it to all entity nodes in the design. Commit the updated design.", "owner": "Developer", "sla_minutes": 60},
+            {"order": 4, "title": "Configure Automated Enforcement", "description": "Enable automated enforcement in the data pipeline: set S3 lifecycle rules, PostgreSQL partition pruning jobs, or TTL indexes on time-series collections. Validate in non-production first.", "owner": "Data Engineer", "sla_minutes": 240},
+            {"order": 5, "title": "Execute Approved Purge Jobs", "description": "For records already past their retention window, generate a purge manifest (table, row count, date range). Submit through the approved data destruction workflow. Halt if volume exceeds 1M records — escalate to ISSO.", "owner": "Data Steward", "sla_minutes": 480},
+            {"order": 6, "title": "Obtain Certificate of Destruction", "description": "After purge completion, obtain a signed Certificate of Destruction from the storage administrator. Attach to the ATO evidence package under SI-12 evidence.", "owner": "ISSO", "sla_minutes": 60},
+            {"order": 7, "title": "Re-assess and Close Finding", "description": "Re-run the DDC assessment to confirm retention score >= 75. Update the design's compliance notes with the retention window and Certificate of Destruction reference number.", "owner": "ISSO", "sla_minutes": 30},
+        ]),
+        "version": "1.0",
+        "status": "approved",
+        "classification": "CUI // SP-CTI",
+        "owner": "Compliance Officer",
+        "reviewer": "Data Steward",
+        "approver": "ISSO",
+    },
+    {
+        "id": "sop-ddc-pii-handling-procedure",
+        "title": "PII Handling Procedure",
+        "category": "pii_handling",
+        "description": "Standard procedure for identifying, protecting, and auditing Personally Identifiable Information (PII) throughout its lifecycle in data designs — per Privacy Act of 1974, OMB M-17-12, and NIST SP 800-188.",
+        "purpose": "Prevent unauthorized disclosure of PII by ensuring all PII fields are identified in data designs, encrypted at rest and in transit, access-logged, and that breach response procedures are defined before system authorization.",
+        "scope": "Any data design that contains col-pii nodes, or entity tables with fields classified as PII under NIST SP 800-188 (name, SSN, address, biometrics, financial account numbers, health information). Applies to all IL levels.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Identify All PII Nodes in Design", "description": "In the DDC canvas, run the assessment and review PII findings. Manually audit each entity node for hidden PII fields not yet labeled (search for: name, email, ssn, dob, phone, address, ip_address, biometric).", "owner": "Data Steward", "sla_minutes": 45},
+            {"order": 2, "title": "Label PII Fields as col-pii Nodes", "description": "For every confirmed PII field, ensure it is represented as a col-pii node type in the canvas. Attach it to its parent entity. Add a 'PII' annotation to the node's classification attribute.", "owner": "Developer", "sla_minutes": 60},
+            {"order": 3, "title": "Apply Encryption Controls", "description": "Confirm AES-256 encryption at rest for all tables containing PII. Verify TLS 1.2+ is enforced on all data-in-transit paths touching PII. Add ctrl-encrypt nodes to the design for each enforcement point.", "owner": "Security Engineer", "sla_minutes": 120},
+            {"order": 4, "title": "Implement Access Logging and RBAC", "description": "Ensure all PII tables have row-level access logging enabled (e.g., PostgreSQL pgaudit, AWS CloudTrail). Define RBAC roles in the design: only data-specific roles may SELECT PII columns. Document in the design's RBAC node.", "owner": "Developer", "sla_minutes": 90},
+            {"order": 5, "title": "Define Breach Response Procedure", "description": "Link this SOP to the Incident Response plan. Confirm that a PII breach triggers: (a) notification to ISSO within 1 hour, (b) OMB M-17-12 breach report within 72 hours, (c) affected individual notification per agency policy.", "owner": "ISSO", "sla_minutes": 60},
+            {"order": 6, "title": "Validate with DDC Assessment", "description": "Re-run POST /data/api/designs/{id}/assess and verify: pii_coverage >= 0.95, all PII nodes have encryption control edges, no PII node is in an UNCLASSIFIED boundary. Resolve all findings.", "owner": "ISSO", "sla_minutes": 30},
+            {"order": 7, "title": "Document PIA Reference", "description": "Record the Privacy Impact Assessment (PIA) document ID in the design's metadata. Attach PIA summary to ATO evidence package under PL-8 (Information Security Architecture).", "owner": "Privacy Officer", "sla_minutes": 30},
+        ]),
+        "version": "1.2",
+        "status": "approved",
+        "classification": "CUI // SP-CTI",
+        "owner": "Privacy Officer",
+        "reviewer": "Security Engineer",
+        "approver": "ISSO",
+    },
+    {
+        "id": "sop-ddc-backup-verification",
+        "title": "Backup Verification",
+        "category": "backup_verification",
+        "description": "Procedure for verifying that backup jobs for all DDC-tracked databases and data stores have completed successfully, checksums match, and restoration can be performed within the required RTO — per NIST 800-53 CP-9.",
+        "purpose": "Satisfy NIST 800-53 CP-9 (Information System Backup) and CP-10 (Information System Recovery and Reconstitution) by ensuring backups are complete, cryptographically verified, and restorable within the RTO defined in the Contingency Plan.",
+        "scope": "All production databases and object storage buckets tracked in data designs with status 'approved'. Applies at every IL level. Test frequency: weekly for IL2, daily for IL4/IL5.",
+        "steps_json": json.dumps([
+            {"order": 1, "title": "Trigger Scheduled Backup", "description": "Initiate backup job via the approved backup tool (e.g., pg_dump, AWS Backup, Veeam). Record: start time, target storage location, backup type (full/incremental), and job ID.", "owner": "Data Engineer", "sla_minutes": 30},
+            {"order": 2, "title": "Verify Backup Completion", "description": "Confirm backup job exited with status 0 (or equivalent success code). Check job logs for warnings. If the job failed or was incomplete, immediately escalate to on-call DBA. Do NOT proceed to step 3.", "owner": "Data Engineer", "sla_minutes": 15},
+            {"order": 3, "title": "Validate Checksums", "description": "Compute SHA-256 hash of the backup artifact. Compare against the hash generated by the backup tool. If checksums mismatch, the backup is corrupt — discard and re-run. Log result (PASS/FAIL) with timestamp.", "owner": "Data Engineer", "sla_minutes": 20},
+            {"order": 4, "title": "Test Restoration to Isolated Environment", "description": "Restore the backup to an isolated (non-production) environment. Run a minimal smoke test: connect to the restored DB, execute SELECT COUNT(*) on 3 critical tables, verify row counts match the production snapshot taken at backup time.", "owner": "DBA", "sla_minutes": 60},
+            {"order": 5, "title": "Verify Data Integrity Post-Restore", "description": "Run referential integrity checks (FOREIGN KEY validation). Confirm no orphaned records. For PostgreSQL: run pg_dump --schema-only on restored DB and diff against the source schema. Record pass/fail.", "owner": "DBA", "sla_minutes": 45},
+            {"order": 6, "title": "Log Verification Result", "description": "Record the verification outcome in the backup verification log: date, backup ID, checksum result, restoration result, integrity result, RTO measured. Store log in the ATO evidence package under CP-9 evidence.", "owner": "ISSO", "sla_minutes": 15},
+            {"order": 7, "title": "Escalate on Failure", "description": "If any step (2–5) fails: (a) alert ISSO and mission owner immediately, (b) open a P1 incident ticket, (c) initiate the Contingency Plan activation checklist, (d) notify AO if RTO will be exceeded.", "owner": "ISSO", "sla_minutes": 15},
+        ]),
+        "version": "1.0",
+        "status": "draft",
+        "classification": "CUI // SP-CTI",
+        "owner": "DBA",
+        "reviewer": "Data Engineer",
+        "approver": "ISSO",
+    },
+]
+
+
 def init_db():
     """Initialize the Data Design Canvas database — create tables and seed templates and snippets."""
     conn = get_connection()
@@ -1352,6 +1447,44 @@ def init_db():
             print(f"[init_db] Seeded {rb_added} new DDC runbooks (total: {rb_count + rb_added}).")
         else:
             print(f"[init_db] All {rb_count} DDC runbooks up to date.")
+
+        # Seed SOPs (upsert)
+        try:
+            cur.execute("SELECT COUNT(*) FROM ddc_sops")
+            sop_count = cur.fetchone()[0]
+        except Exception:
+            sop_count = 0
+        sop_added = 0
+        for sop in SOPS:
+            cur.execute("SELECT 1 FROM ddc_sops WHERE id=?", (sop["id"],))
+            if not cur.fetchone():
+                conn.execute(
+                    "INSERT INTO ddc_sops "
+                    "(id, title, category, description, purpose, scope, steps_json, version, "
+                    "status, classification, owner, reviewer, approver) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        sop["id"],
+                        sop["title"],
+                        sop["category"],
+                        sop["description"],
+                        sop["purpose"],
+                        sop["scope"],
+                        sop["steps_json"],
+                        sop["version"],
+                        sop["status"],
+                        sop["classification"],
+                        sop["owner"],
+                        sop["reviewer"],
+                        sop["approver"],
+                    ),
+                )
+                sop_added += 1
+        if sop_added:
+            conn.commit()
+            print(f"[init_db] Seeded {sop_added} new DDC SOPs (total: {sop_count + sop_added}).")
+        else:
+            print(f"[init_db] All {sop_count} DDC SOPs up to date.")
 
     finally:
         conn.close()
