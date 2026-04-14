@@ -63,7 +63,7 @@ def _http_json(url: str, method: str = "GET", data: dict | None = None, timeout:
         body = json.dumps(data).encode("utf-8")
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — localhost test harness
         return resp.status, json.loads(resp.read().decode("utf-8"))
 
 
