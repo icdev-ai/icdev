@@ -269,7 +269,14 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "tier": "suggest",
         "strategy": "append_only_hook_edit",
         "command": None,
-        "suggestion": (
+        "suggestion": None,
+        "suggestion_factory": lambda: (
+            "Add missing append-only tables to the APPEND_ONLY_TABLES list in "
+            "tools/airgap/hook_compat.py (run_pre_tool_check). "
+            "Check init_icdev_db.py for tables with 'append-only' or 'immutable' in comments."
+        )
+        if not (PROJECT_ROOT / ".claude").exists()
+        else (
             "Add missing append-only tables to APPEND_ONLY_TABLES list in "
             ".claude/hooks/pre_tool_use.py. Check init_icdev_db.py for tables "
             "with 'append-only' or 'immutable' in comments."
@@ -679,6 +686,11 @@ def run_remediation(
                 auto_fixed += 1  # Count as would-fix for dry-run reporting
 
         elif reg["tier"] == "suggest":
+            suggestion_text = (
+                reg["suggestion_factory"]()
+                if "suggestion_factory" in reg and callable(reg["suggestion_factory"])
+                else reg.get("suggestion") or "Review required"
+            )
             action = RemediationAction(
                 check_id=cid,
                 check_name=check.get("check_name", ""),
@@ -688,12 +700,12 @@ def run_remediation(
                 status="suggested",
                 fix_strategy=reg["strategy"],
                 fix_command=None,
-                message=reg["suggestion"] or "Review required",
+                message=suggestion_text,
                 details=check.get("details", {}),
             )
             suggested += 1
             if stream:
-                print(f"    Suggestion: {reg['suggestion']}", file=sys.stderr)
+                print(f"    Suggestion: {suggestion_text}", file=sys.stderr)
 
         elif reg["tier"] == "escalate":
             action = RemediationAction(
