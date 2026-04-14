@@ -12,8 +12,6 @@ import threading
 import time
 from pathlib import Path
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -22,6 +20,7 @@ from werkzeug.serving import make_server
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tools.browser.driver_manager import get_driver  # noqa: E402
 from tools.trading.dashboard.app import app  # noqa: E402
 
 PORT = 5199
@@ -45,11 +44,7 @@ def main() -> int:
     server.start()
     time.sleep(1.0)
 
-    opts = Options()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument("--no-sandbox")
-    driver = webdriver.Chrome(options=opts)
+    driver = get_driver()
     try:
         driver.get(URL)
         WebDriverWait(driver, 10).until(

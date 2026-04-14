@@ -12,9 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from tools.browser.driver_manager import get_driver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -49,13 +48,7 @@ class TestResult:
 
 
 def create_driver():
-    opts = Options()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--no-sandbox")
-    opts.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(options=opts)
+    return get_driver(extra_args=["--disable-dev-shm-usage"])
 
 
 def screenshot(driver, name):
