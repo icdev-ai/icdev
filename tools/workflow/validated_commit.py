@@ -27,7 +27,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -204,6 +206,19 @@ def _run_companion_sync() -> Tuple[bool, str]:
         return False, f"companion sync skipped: {exc}"
 
 
+def _verify_budget_sec() -> float:
+    """Total wall-clock budget for a single task's verification suite.
+
+    Read from ICDEV_KANBAN_VERIFY_BUDGET_SEC (default: 300 = 5 min).
+    Kanban backlogs of 100+ tasks would otherwise see coherence (120s) +
+    E2E (180s) + companion (60s) per task, exceeding 10 hours total.
+    """
+    try:
+        return float(os.environ.get("ICDEV_KANBAN_VERIFY_BUDGET_SEC", "300"))
+    except ValueError:
+        return 300.0
+
+
 def validate_working_tree(
     cwd: str,
     modified_files: Optional[List[str]] = None,
@@ -213,6 +228,11 @@ def validate_working_tree(
 ) -> Tuple[bool, str, Dict[str, Any]]:
     """Run the four-gate validation suite.
 
+    Early-exits on the first failure (CodeLens → Coherence → E2E →
+    Companion-best-effort). A total wall-clock budget (env:
+    ``ICDEV_KANBAN_VERIFY_BUDGET_SEC``, default 300s) caps the whole
+    suite so queue throughput doesn't collapse under a slow gate.
+
     Args:
         cwd: Working directory to validate (worktree path or main repo).
         modified_files: List of changed file paths (relative). If None, auto-detect.
@@ -221,7 +241,8 @@ def validate_working_tree(
         run_companion: Run companion sync at the end (default True).
 
     Returns:
-        (passed, reason, metrics): passed is False on any gate failure.
+        (passed, reason, metrics): passed is False on any gate failure
+        or on budget exhaustion.
     """
     if modified_files is None:
         modified_files = _list_modified_files(cwd)
@@ -230,6 +251,15 @@ def validate_working_tree(
         f for f in modified_files
         if f.endswith(".py") and (Path(cwd) / f).exists()
     ]
+
+    budget = _verify_budget_sec()
+    t0 = time.monotonic()
+
+    def _remaining() -> float:
+        return budget - (time.monotonic() - t0)
+
+    def _over_budget() -> bool:
+        return _remaining() <= 0
 
     metrics: Dict[str, Any] = {
         "codelens_passed": None,
@@ -241,6 +271,7 @@ def validate_working_tree(
         "companion_synced": False,
         "modified_files": len(modified_files),
         "modified_py": len(modified_py),
+        "budget_sec": budget,
     }
 
     # 1. CodeLens
@@ -248,14 +279,24 @@ def validate_working_tree(
     metrics.update(cl_metrics)
     if not ok:
         metrics["codelens_passed"] = False
+        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
         return False, reason, metrics
     metrics["codelens_passed"] = True
+
+    if _over_budget():
+        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
+        return False, f"BUDGET EXHAUSTED after CodeLens ({budget:.0f}s)", metrics
 
     # 2. Coherence
     ok, reason = _run_coherence(cwd, compare_to_main)
     metrics["coherence_passed"] = ok
     if not ok:
+        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
         return False, reason, metrics
+
+    if _over_budget():
+        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
+        return False, f"BUDGET EXHAUSTED after Coherence ({budget:.0f}s)", metrics
 
     # 3. E2E
     ui_touched = any(
@@ -266,11 +307,13 @@ def validate_working_tree(
         ok, reason, e2e_metrics = _run_e2e(cwd, ui_touched)
         metrics.update(e2e_metrics)
         if not ok:
+            metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
             return False, reason, metrics
 
-    # 4. Companion sync (best-effort)
-    if run_companion:
+    # 4. Companion sync (best-effort — still skip if out of budget)
+    if run_companion and not _over_budget():
         ok, _reason = _run_companion_sync()
         metrics["companion_synced"] = ok
 
+    metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
     return True, "All validation gates passed", metrics
