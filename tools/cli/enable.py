@@ -25,7 +25,6 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
 
 
 # Canonical name → list of required env flags (all must be true to enable).
