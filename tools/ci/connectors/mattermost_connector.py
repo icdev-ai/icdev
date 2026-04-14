@@ -109,8 +109,6 @@ class MattermostConnector(ChatConnectorAdapter):
             text = f"{BOT_IDENTIFIER} {text}"
 
         try:
-            import requests
-
             payload = {
                 "channel_id": channel_id or self._default_channel,
                 "message": text,
