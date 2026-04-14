@@ -129,12 +129,19 @@ def parse_schedule(schedule_str: str) -> Optional[Dict[str, Any]]:
     """Parse schedule string into structured form.
 
     Supports:
-        "every 6h"          -> interval-based
-        "daily 07:00"       -> daily at time
-        "nightly 02:00"     -> daily at time (alias)
-        "weekly Sun 20:00"  -> weekly at day+time
-        "continuous"        -> interval-based (default 300s)
-        "on_demand"         -> None (triggered by pipeline chain)
+        "every 30s"            -> interval-based (seconds)
+        "every 2m"             -> interval-based (minutes)
+        "every 6h"             -> interval-based (hours)
+        "daily 07:00"          -> daily at time (UTC)
+        "nightly 02:00"        -> daily at time (alias, UTC)
+        "weekly Sun 20:00"     -> weekly at day+time (UTC)
+        "monthly 15 10:00"     -> monthly on day-of-month at time (UTC)
+        "continuous"           -> interval-based (default 300s)
+        "on_demand"            -> None (triggered by pipeline chain)
+
+    All times are UTC. For US/Eastern daytime coverage, pick UTC hours:
+        EDT (Mar-Nov) 10:00 ET = 14:00 UTC
+        EST (Nov-Mar) 10:00 ET = 15:00 UTC
     """
     s = schedule_str.strip().lower()
 
@@ -144,22 +151,30 @@ def parse_schedule(schedule_str: str) -> Optional[Dict[str, Any]]:
     if s == "continuous":
         return {"type": "interval", "seconds": 300}
 
-    # "every Nh"
-    m = re.match(r"every\s+(\d+)h", s)
+    # "every Ns" / "every Nm" / "every Nh"
+    m = re.match(r"every\s+(\d+)\s*([smh])", s)
     if m:
-        return {"type": "interval", "seconds": int(m.group(1)) * 3600}
+        n = int(m.group(1))
+        mult = {"s": 1, "m": 60, "h": 3600}[m.group(2)]
+        return {"type": "interval", "seconds": n * mult}
 
     # "daily HH:MM" or "nightly HH:MM"
-    m = re.match(r"(?:daily|nightly)\s+(\d{2}):(\d{2})", s)
+    m = re.match(r"(?:daily|nightly)\s+(\d{1,2}):(\d{2})", s)
     if m:
         return {"type": "daily", "hour": int(m.group(1)), "minute": int(m.group(2))}
 
     # "weekly DAY HH:MM"
-    m = re.match(r"weekly\s+(\w+)\s+(\d{2}):(\d{2})", s)
+    m = re.match(r"weekly\s+(\w+)\s+(\d{1,2}):(\d{2})", s)
     if m:
         day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
         day = day_map.get(m.group(1)[:3], 6)
         return {"type": "weekly", "weekday": day, "hour": int(m.group(2)), "minute": int(m.group(3))}
+
+    # "monthly DD HH:MM"
+    m = re.match(r"monthly\s+(\d{1,2})\s+(\d{1,2}):(\d{2})", s)
+    if m:
+        return {"type": "monthly", "day": max(1, min(28, int(m.group(1)))),
+                "hour": int(m.group(2)), "minute": int(m.group(3))}
 
     return None
 
@@ -193,6 +208,21 @@ def is_due(schedule: Dict[str, Any], last_run: Optional[str]) -> bool:
         target = now.replace(hour=schedule["hour"], minute=schedule["minute"], second=0, microsecond=0)
         days_since = (now.weekday() - schedule["weekday"]) % 7
         target = target - timedelta(days=days_since)
+        if now < target:
+            return False
+        if last_run is None:
+            return True
+        try:
+            last = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return True
+        return last < target
+
+    if schedule["type"] == "monthly":
+        # Target this month at day/hour/minute (capped at 28 to avoid Feb edge cases)
+        day = min(schedule["day"], 28)
+        target = now.replace(day=day, hour=schedule["hour"], minute=schedule["minute"],
+                             second=0, microsecond=0)
         if now < target:
             return False
         if last_run is None:
