@@ -147,5 +147,4 @@
 |------|------|-------------|-------|--------|
 
 | Pdf Import | tools\network\pdf_import.py | Auto-registered: network/pdf_import.py | --json | JSON |
-| Topology Merge | tools\network\topology_merge.py | Auto-registered: network/topology_merge.py | --json | JSON |
 | Snapshot Builder | tools\trading\market_intel\snapshot_builder.py | Auto-registered: market_intel/snapshot_builder.py | --json | JSON |
