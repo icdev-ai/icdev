@@ -9,6 +9,16 @@ from tools.trading.analysis import confluence_scorer as cs
 def _bootstrap(monkeypatch):
     monkeypatch.delenv("ICDEV_CONFLUENCE_ENABLED", raising=False)
     cs._conn().close()
+    # Clear learned pillar weights so default weights are used for scoring tests
+    from tools.db.storage import get_connection
+
+    try:
+        c = get_connection()
+        c.execute("DELETE FROM ad_learned_pillar_weights WHERE 1=1")
+        c.commit()
+        c.close()
+    except Exception:
+        pass
 
 
 def test_enabled_by_default():
