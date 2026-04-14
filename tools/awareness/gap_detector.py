@@ -409,6 +409,12 @@ def _rule_tool_not_in_manifest() -> List[Dict[str, Any]]:
     if not manifest_path.exists():
         return findings
     manifest_src = _read_text(manifest_path)
+    # Also read all manifest shards — the main manifest.md is now an index
+    # of shard files; the actual tool entries live in tools/manifest/*.md.
+    shard_dir = BASE_DIR / "tools" / "manifest"
+    if shard_dir.exists():
+        for shard in sorted(shard_dir.glob("*.md")):
+            manifest_src += "\n" + _read_text(shard)
 
     # Collect every "tools/..." path mentioned in the manifest table.
     # The manifest uses mixed separators (forward slashes AND backslashes)
