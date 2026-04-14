@@ -12,5 +12,6 @@
 | PDF Fallback | tools/airgap/pdf_fallback.py | Local-only PDF extraction — pypdf text extraction + LLaVA vision OCR fallback; registers into RAG pipeline pdf_provider chain | (library) | LocalPDFProvider, register_local_fallback() |
 | Session Compat | tools/airgap/session_compat.py | Session management for non-Claude-Code environments — transcript capture, event correlation, session lifecycle without Claude Code CLI | (library) SessionManager.start(), .log_prompt(), .log_tool_use(), .end() | Session dict with session_id, duration_seconds, event_count |
 | Health Check | tools/airgap/health_check.py | Air-gap-aware health check — replaces cloud-dependent checks with local equivalents, reports degraded vs. functional capabilities | --json | Health status dict |
+| Driver Vendor | tools/airgap/driver_vendor.py | Admin fetcher — downloads msedgedriver / chromedriver into `vendor/drivers/{type}/{major}/` with SHA256 verification; no-network at runtime | `--fetch-edge`, `--fetch-chrome`, `--version`, `--major`, `--verify`, `--list`, `--json` | Driver path + SHA256 digest |
 
 
