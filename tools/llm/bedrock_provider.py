@@ -101,8 +101,10 @@ class BedrockLLMProvider(LLMProvider):
         max_output = model_config.get("max_output_tokens", 8192)
         effective_max = min(request.max_tokens, max_output)
 
-        # Convert messages to Anthropic format
-        messages = messages_to_anthropic(request.messages)
+        # Convert messages to Anthropic format. Any role=system messages in
+        # the input are extracted and merged with request.system_prompt —
+        # Bedrock's Anthropic profile uses the same top-level system param.
+        messages, extracted_system = messages_to_anthropic(request.messages)
 
         body: Dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -110,8 +112,9 @@ class BedrockLLMProvider(LLMProvider):
             "messages": messages,
         }
 
-        if request.system_prompt:
-            body["system"] = [{"type": "text", "text": request.system_prompt}]
+        system_parts = [s for s in (request.system_prompt, extracted_system) if s]
+        if system_parts:
+            body["system"] = [{"type": "text", "text": "\n\n".join(system_parts)}]
 
         if request.temperature is not None:
             body["temperature"] = request.temperature

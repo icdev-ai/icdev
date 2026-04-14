@@ -3580,6 +3580,44 @@ function _fetchAndApplyHeatmap(metric) {
       if (config.eol_date) html += '<div class="tt-row"><span class="tt-key">EOL Date</span><span class="tt-val" style="color:#f57c00;">' + _esc(config.eol_date) + '</span></div>';
       if (config.bandwidth) html += '<div class="tt-row"><span class="tt-key">Bandwidth</span><span class="tt-val">' + _esc(config.bandwidth) + '</span></div>';
 
+      // Imported properties (PDF/VSDX/config-import) — render any extra
+      // key/value pairs not already shown above
+      var _shownKeys = ['ip','site','rack','vendor','model','os','serial','sw_version','eol_date','bandwidth','hostname','label','type','interfaces','sources'];
+      var extraProps = config.properties || {};
+      var extraKeys = Object.keys(extraProps).filter(function(k){
+        return _shownKeys.indexOf(k.toLowerCase()) === -1 && extraProps[k] != null && extraProps[k] !== '';
+      });
+      if (extraKeys.length > 0) {
+        html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #333;font-size:11px;">';
+        html += '<strong style="color:#8899aa;">Properties:</strong>';
+        extraKeys.slice(0, 10).forEach(function(k){
+          html += '<div class="tt-row"><span class="tt-key">' + _esc(k) + '</span><span class="tt-val">' + _esc(String(extraProps[k])) + '</span></div>';
+        });
+        if (extraKeys.length > 10) html += '<div style="color:#666;">+ ' + (extraKeys.length - 10) + ' more</div>';
+        html += '</div>';
+      }
+
+      // Interfaces (config-import-derived) — list of port objects
+      var ifaces = config.interfaces || extraProps.interfaces;
+      if (Array.isArray(ifaces) && ifaces.length > 0) {
+        html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #333;font-size:11px;">';
+        html += '<strong style="color:#8899aa;">Interfaces (' + ifaces.length + '):</strong>';
+        ifaces.slice(0, 8).forEach(function(i){
+          var line = (i.name || '') + (i.ip ? ' [' + i.ip + ']' : '') + (i.description ? ' — ' + i.description : '');
+          html += '<div style="margin:2px 0;font-family:monospace;">' + _esc(line) + '</div>';
+        });
+        if (ifaces.length > 8) html += '<div style="color:#666;">+ ' + (ifaces.length - 8) + ' more</div>';
+        html += '</div>';
+      }
+
+      // Source diagrams — provenance from multi-PDF stitching / merge
+      var sources = config.sources || extraProps.sources;
+      if (Array.isArray(sources) && sources.length > 0) {
+        html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid #333;font-size:11px;color:#8899aa;">';
+        html += '<strong>From source(s):</strong> ' + sources.map(_esc).join(', ');
+        html += '</div>';
+      }
+
       // Port connections summary
       var links = graph.getConnectedLinks(cell);
       if (links.length > 0) {

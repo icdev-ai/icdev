@@ -77,7 +77,7 @@ class AnthropicLLMProvider(LLMProvider):
 
         max_output = model_config.get("max_output_tokens", 8192)
         effective_max = min(request.max_tokens, max_output)
-        messages = messages_to_anthropic(request.messages)
+        messages, extracted_system = messages_to_anthropic(request.messages)
 
         kwargs: Dict[str, Any] = {
             "model": model_id,
@@ -85,8 +85,12 @@ class AnthropicLLMProvider(LLMProvider):
             "messages": messages,
         }
 
-        if request.system_prompt:
-            kwargs["system"] = request.system_prompt
+        # Merge any role=system messages extracted from the input list with
+        # the top-level system_prompt. Anthropic's Messages API only accepts
+        # system text as a top-level parameter.
+        system_parts = [s for s in (request.system_prompt, extracted_system) if s]
+        if system_parts:
+            kwargs["system"] = "\n\n".join(system_parts)
 
         if request.temperature is not None:
             kwargs["temperature"] = request.temperature
