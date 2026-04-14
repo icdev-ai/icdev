@@ -29,6 +29,8 @@
   <div class="ddc-stats">
     <div class="ddc-stat"><div class="val">{{ designs | length }}</div><div class="lbl">Designs</div></div>
     <div class="ddc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>
+    <div class="ddc-stat"><div class="val">{{ sop_count | default(0) }}</div><div class="lbl">SOPs</div></div>
+    <div class="ddc-stat"><div class="val">{{ approved_sop_count | default(0) }}</div><div class="lbl">Approved</div></div>
   </div>
 </div>
 
