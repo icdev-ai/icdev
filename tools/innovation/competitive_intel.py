@@ -75,6 +75,8 @@ except ImportError:
 # -- CONSTANTS ----------------------------------------------------------------
 GITHUB_API = "https://api.github.com"
 _FEAT_RE = re.compile(r"(?:feat|add|new|support|introduc|implement|enabl)", re.I)
+# Matches bare version strings like "3.2.508", "v3.2.508", "3.2.508-rc1" — no feature description
+_VERSION_TAG_RE = re.compile(r"^v?\d+(\.\d+)+([-._]\w+)?$")
 _STOPS = {
     "the",
     "and",
@@ -293,6 +295,27 @@ def _load_manifest_keywords():
     return {t for t in re.findall(r"[a-z][a-z_-]{2,}", content) if t not in _STOPS and len(t) > 3}
 
 
+def _is_version_release_noise(name: str, tag: str) -> bool:
+    """Return True when a release name adds no feature signal beyond a bare version number.
+
+    Checkov (and many tools) publish releases whose name == tag == "3.2.508".
+    These contain zero alphabetic content, so _has_capability() scores them
+    0.0 and they fall through to gap_identified — producing phantom gap signals
+    like "Gap: checkov has '[3.2.508] 3.2.508'".
+    """
+    name_clean = name.strip()
+    tag_clean = tag.strip()
+    if not name_clean or name_clean.lower() == "release":
+        return True
+    # Pure version string as name (e.g. "3.2.508", "v3.2.508")
+    if _VERSION_TAG_RE.match(name_clean):
+        return True
+    # Name is just the tag, possibly with a leading "v" stripped
+    if name_clean == tag_clean or name_clean == tag_clean.lstrip("vV"):
+        return True
+    return False
+
+
 def _has_capability(feature_text, kw_set):
     """Check if manifest keywords cover a feature. Returns (bool, score)."""
     tokens = set(re.findall(r"[a-z][a-z_-]{2,}", feature_text.lower()))
@@ -433,10 +456,19 @@ def gap_analysis(db_path=None):
             stats[nm] = {"status": "no_scan_data", "message": f"No scan data for '{nm}'. Run --scan first."}
             continue
         meta = json.loads(row["metadata"] or "{}")
-        feats = [f"[{r.get('tag', '')}] {r.get('name', 'release')}" for r in meta.get("releases", [])]
+        # Filter out releases whose name is a bare version string (e.g. "3.2.508").
+        # These produce zero alphabetic tokens → score 0.0 → false gap signals.
+        feats = [
+            f"[{r.get('tag', '')}] {r.get('name', 'release')}"
+            for r in meta.get("releases", [])
+            if not _is_version_release_noise(r.get("name", ""), r.get("tag", ""))
+        ]
         feats += _CAT_FEATURES.get(cat, [])
         covered, comp_gaps = 0, []
         for feat in feats:
+            # Secondary guard: skip any feature with no alphabetic content (pure noise)
+            if not re.search(r"[a-z]{3,}", feat, re.I):
+                continue
             ok, sc = _has_capability(feat, mkw)
             if ok:
                 covered += 1
