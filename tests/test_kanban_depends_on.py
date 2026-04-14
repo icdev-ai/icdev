@@ -245,8 +245,17 @@ class TestKanbanApiDependency:
         b = client.post(
             "/api/kanban/tasks", json={"title": "B", "depends_on_task_id": a}
         ).get_json()["id"]
-        # Mark A done via the move endpoint
-        client.post(f"/api/kanban/tasks/{a}/move", json={"status": "done"})
+        # Mark A done via the move endpoint (guard-22: bypass verification
+        # gate for this unit-test fixture; we're exercising dependency
+        # unblocking, not the verification pipeline).
+        client.post(
+            f"/api/kanban/tasks/{a}/move",
+            json={
+                "status": "done",
+                "bypass_verification": True,
+                "bypass_reason": "unit test: test_list_unblocks_when_parent_done",
+            },
+        )
         tasks = {t["id"]: t for t in client.get("/api/kanban/tasks").get_json()["tasks"]}
         assert tasks[b]["is_blocked"] is False
         assert tasks[b]["depends_on_status"] == "done"

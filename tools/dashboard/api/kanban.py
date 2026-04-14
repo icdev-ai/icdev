@@ -655,11 +655,27 @@ def promote_all_suggested():
 
 @kanban_api.route("/tasks/<task_id>/move", methods=["POST"])
 def move_task(task_id):
-    """Move a task to a new status column."""
+    """Move a task to a new status column.
+
+    When moving to ``done``, the request is gated on the task having a
+    passing ``kanban_verifications`` row (guard-7 — CodeLens + Coherence +
+    E2E + Companion). Callers can bypass the gate by passing
+    ``"bypass_verification": true`` **and** a non-empty ``"bypass_reason"``;
+    every bypass is audit-logged into ``kanban_verifications``.
+
+    The scheduler's own completion path (``_move_task`` in
+    tools/genesis/reflexes/kanban.py) writes directly to the DB and is
+    unaffected — it runs the full verification pipeline *before* calling
+    the DB update, so the gate here only fires for external callers
+    (dashboard drag-drop, curl, tests).
+    """
     data = request.get_json(force=True)
     new_status = data.get("status")
     if new_status not in _VALID_STATUSES:
         return jsonify({"error": "Invalid status"}), 400
+
+    bypass = bool(data.get("bypass_verification"))
+    bypass_reason = (data.get("bypass_reason") or "").strip()
 
     now = _utcnow()
     conn = get_connection()
@@ -667,6 +683,37 @@ def move_task(task_id):
         existing = conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
+
+        # guard-22: block direct transitions to "done" unless verification
+        # passed (or operator explicitly bypasses with a reason).
+        moving_to_done = new_status == "done" and existing["status"] != "done"
+        if moving_to_done and _verification_gate_enabled():
+            if bypass:
+                if not bypass_reason:
+                    return jsonify({
+                        "error": "bypass_reason_required",
+                        "detail": (
+                            "bypass_verification=true requires a non-empty "
+                            "bypass_reason (audit trail)."
+                        ),
+                    }), 400
+                _log_verification_bypass(conn, task_id, bypass_reason)
+            else:
+                latest = _latest_verification(conn, task_id)
+                if not _verification_passed(latest):
+                    reason = (latest or {}).get("reason") or "no verification row"
+                    return jsonify({
+                        "error": "verification_required",
+                        "detail": (
+                            "Task has no passing kanban_verifications row. "
+                            "Run the full validation suite (CodeLens + "
+                            "Coherence + E2E + Companion) first, or POST "
+                            "with `bypass_verification: true` and "
+                            "`bypass_reason: \"...\"` to override."
+                        ),
+                        "last_verification": latest,
+                        "last_reason": reason,
+                    }), 409
 
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
