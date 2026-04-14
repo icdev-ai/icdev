@@ -1975,3 +1975,276 @@ def api_health():
             "classification": "CUI // SP-CTI",
         }
     )
+
+
+# ============================================================================
+# PHASE 11 — MULTI-AGENT ARCHITECTURE
+# Endpoint groups:
+#   GET  /api/v1/agents                         - list all registered agents
+#   GET  /api/v1/agents/routing                 - skill-routing table
+#   GET  /api/v1/agents/<id>                    - single agent
+#   POST /api/v1/agents/<id>/heartbeat          - update heartbeat
+#   GET  /api/v1/workflows                      - list workflows
+#   POST /api/v1/workflows                      - create workflow
+#   GET  /api/v1/workflows/<id>                 - single workflow
+#   GET  /api/v1/authority                      - authority matrix
+#   POST /api/v1/authority/check                - check agent authority
+# ============================================================================
+
+
+def _get_agents_db_path():
+    """Return the path to the main ICDEV™ database (for agent/workflow data).
+
+    Patchable by tests via: patch("tools.saas.rest_api._get_agents_db_path", ...)
+    """
+    return BASE_DIR / "data" / "icdev.db"
+
+
+def _agents_conn():
+    """Open a connection to the agents database."""
+    return get_connection(db_path=str(_get_agents_db_path()))
+
+
+# ----------------------------------------------------------------------------
+# AGENTS
+# ----------------------------------------------------------------------------
+
+
+@api_bp.route("/agents", methods=["GET"])
+def list_agents():
+    """GET /api/v1/agents -- List all registered agents."""
+    try:
+        conn = _agents_conn()
+        rows = conn.execute(
+            "SELECT * FROM agents WHERE status = 'active' ORDER BY name"
+        ).fetchall()
+        conn.close()
+        agents = [dict(r) for r in rows]
+        return jsonify({"agents": agents, "total": len(agents)})
+    except Exception as exc:
+        logger.error("list_agents error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/agents/routing", methods=["GET"])
+def agents_routing():
+    """GET /api/v1/agents/routing -- Skill routing table.
+
+    Optional query param ?skill=<skill_id> filters to agents that handle
+    that skill.
+    """
+    skill_filter = request.args.get("skill", "").strip()
+    try:
+        conn = _agents_conn()
+        rows = conn.execute(
+            "SELECT * FROM agents WHERE status = 'active' ORDER BY name"
+        ).fetchall()
+        conn.close()
+
+        agents = [dict(r) for r in rows]
+
+        # Parse capabilities JSON for each agent
+        for agent in agents:
+            caps = agent.get("capabilities")
+            if isinstance(caps, str):
+                try:
+                    agent["capabilities"] = json_mod.loads(caps)
+                except (ValueError, TypeError):
+                    agent["capabilities"] = {}
+
+        if skill_filter:
+            def _has_skill(agent):
+                caps = agent.get("capabilities") or {}
+                if isinstance(caps, dict):
+                    for skill in caps.get("skills", []):
+                        sid = skill.get("id", "") if isinstance(skill, dict) else skill
+                        if sid == skill_filter:
+                            return True
+                return False
+
+            agents = [a for a in agents if _has_skill(a)]
+
+        return jsonify({"agents": agents, "total": len(agents), "skill_filter": skill_filter or None})
+    except Exception as exc:
+        logger.error("agents_routing error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/agents/<agent_id>", methods=["GET"])
+def get_agent(agent_id):
+    """GET /api/v1/agents/<agent_id> -- Return a single agent."""
+    try:
+        conn = _agents_conn()
+        row = conn.execute(
+            "SELECT * FROM agents WHERE id = ?", (agent_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return _error("Agent not found", code="NOT_FOUND", status=404)
+        agent = dict(row)
+        caps = agent.get("capabilities")
+        if isinstance(caps, str):
+            try:
+                agent["capabilities"] = json_mod.loads(caps)
+            except (ValueError, TypeError):
+                agent["capabilities"] = {}
+        return jsonify({"agent": agent})
+    except Exception as exc:
+        logger.error("get_agent error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/agents/<agent_id>/heartbeat", methods=["POST"])
+def agent_heartbeat(agent_id):
+    """POST /api/v1/agents/<agent_id>/heartbeat -- Update heartbeat timestamp."""
+    try:
+        conn = _agents_conn()
+        cur = conn.execute(
+            "UPDATE agents SET last_heartbeat = CURRENT_TIMESTAMP WHERE id = ?",
+            (agent_id,),
+        )
+        conn.commit()
+        found = cur.rowcount > 0
+        conn.close()
+        if not found:
+            return _error("Agent not found", code="NOT_FOUND", status=404)
+        return jsonify({"acknowledged": True, "agent_id": agent_id, "timestamp": _utcnow()})
+    except Exception as exc:
+        logger.error("agent_heartbeat error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ----------------------------------------------------------------------------
+# WORKFLOWS
+# ----------------------------------------------------------------------------
+
+
+@api_bp.route("/workflows", methods=["GET"])
+def list_workflows():
+    """GET /api/v1/workflows -- List agent workflows (optionally filter by project)."""
+    project_id = request.args.get("project_id", "").strip()
+    try:
+        conn = _agents_conn()
+        if project_id:
+            rows = conn.execute(
+                "SELECT * FROM agent_workflows WHERE project_id = ? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM agent_workflows ORDER BY created_at DESC"
+            ).fetchall()
+        conn.close()
+        workflows = [dict(r) for r in rows]
+        return jsonify({"workflows": workflows, "total": len(workflows)})
+    except Exception as exc:
+        logger.error("list_workflows error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/workflows", methods=["POST"])
+def create_workflow():
+    """POST /api/v1/workflows -- Create a new agent workflow record."""
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return _error("'name' is required", code="VALIDATION_ERROR", status=400)
+
+    project_id = (data.get("project_id") or "").strip() or None
+    created_by = (data.get("created_by") or g.user_id or "orchestrator-agent").strip()
+    workflow_id = str(uuid.uuid4())
+    now = _utcnow()
+
+    try:
+        conn = _agents_conn()
+        conn.execute(
+            """INSERT INTO agent_workflows
+               (id, name, project_id, status, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, 'pending', ?, ?, ?)""",
+            (workflow_id, name, project_id, created_by, now, now),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM agent_workflows WHERE id = ?", (workflow_id,)
+        ).fetchone()
+        conn.close()
+        return jsonify({"workflow": dict(row)}), 201
+    except Exception as exc:
+        logger.error("create_workflow error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/workflows/<workflow_id>", methods=["GET"])
+def get_workflow(workflow_id):
+    """GET /api/v1/workflows/<workflow_id> -- Return a single workflow with subtasks."""
+    try:
+        conn = _agents_conn()
+        row = conn.execute(
+            "SELECT * FROM agent_workflows WHERE id = ?", (workflow_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return _error("Workflow not found", code="NOT_FOUND", status=404)
+        workflow = dict(row)
+
+        # Include subtasks if the table exists
+        try:
+            subtask_rows = conn.execute(
+                "SELECT * FROM agent_subtasks WHERE workflow_id = ? ORDER BY created_at",
+                (workflow_id,),
+            ).fetchall()
+            workflow["subtasks"] = [dict(s) for s in subtask_rows]
+        except Exception:
+            workflow["subtasks"] = []
+
+        conn.close()
+        return jsonify({"workflow": workflow})
+    except Exception as exc:
+        logger.error("get_workflow error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ----------------------------------------------------------------------------
+# AUTHORITY
+# ----------------------------------------------------------------------------
+
+
+@api_bp.route("/authority", methods=["GET"])
+def get_authority_matrix():
+    """GET /api/v1/authority -- Return the full domain authority matrix."""
+    try:
+        from tools.agent.authority import load_authority_matrix
+
+        matrix = load_authority_matrix()
+        return jsonify({"matrix": matrix})
+    except Exception as exc:
+        logger.error("get_authority_matrix error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/authority/check", methods=["POST"])
+def check_authority():
+    """POST /api/v1/authority/check -- Check if an agent has authority over a topic.
+
+    Request body:
+        agent_id (str): The agent to check.
+        topic    (str): The domain topic.
+
+    Returns:
+        has_authority (bool), veto_type (str|null), topics (list), description (str).
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    agent_id = (data.get("agent_id") or "").strip()
+    topic = (data.get("topic") or "").strip()
+
+    if not agent_id or not topic:
+        return _error("'agent_id' and 'topic' are required", code="VALIDATION_ERROR", status=400)
+
+    try:
+        from tools.agent.authority import check_authority as _check
+
+        result = _check(agent_id=agent_id, topic=topic)
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("check_authority error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)

@@ -14,7 +14,7 @@
 | CAC Auth | tools/saas/auth/cac_auth.py | CAC/PIV authentication: CN lookup from X-Client-Cert-CN header | Client cert header | Auth context |
 | RBAC | tools/saas/auth/rbac.py | Role-based access control: 5 roles × 9 endpoint categories permission matrix | role, path, method | Allow/deny |
 | API Gateway | tools/saas/api_gateway.py | Main Flask app: REST + MCP Streamable HTTP + auth + rate limiting + request logging | --port, --debug | Web server |
-| REST API | tools/saas/rest_api.py | Flask Blueprint: tenants, users, keys, projects, compliance, security, builder, audit, usage | /api/v1/* | JSON responses |
+| REST API | tools/saas/rest_api.py | Flask Blueprint: tenants, users, keys, projects, compliance, security, builder, audit, usage; Phase 11 agents/workflows/authority endpoints | /api/v1/* | JSON responses |
 | MCP Streamable HTTP | tools/saas/mcp_http.py | MCP Streamable HTTP transport (spec 2025-03-26): single endpoint, session-based | POST/GET/DELETE /mcp/v1/ | JSON + SSE |
 | Rate Limiter | tools/saas/rate_limiter.py | Per-tenant rate limiting by subscription tier (in-memory, thread-safe) | tenant_id, tier | Allow/deny + headers |
 | Request Logger | tools/saas/request_logger.py | Audit logging: every API call → usage_records + audit_platform | Flask hooks | Log entries |
