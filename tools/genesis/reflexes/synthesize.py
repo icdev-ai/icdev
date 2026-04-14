@@ -49,10 +49,14 @@ def _load_reflex_config() -> Dict[str, Any]:
         return {}
 
 
-def run(*, config: Dict = None, **kwargs) -> Dict[str, Any]:
+def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
     """Execute the Synthesize reflex.
 
-    Called by Genesis daemon with reflex config.
+    Called by Genesis daemon positionally as ``run(config, trust)`` — mirror
+    that signature. The keyword-only form was the root cause of breaker
+    trips on 2026-03-28 (``run() takes 0 positional arguments but 2 were
+    given``). ``trust`` is accepted for API parity; this reflex doesn't
+    consume it.
 
     Pipeline:
       1. Detect recurring tool-chain patterns (pattern_detector)
