@@ -2012,32 +2012,63 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                 # Read the manifest from the kanban branch (where the agent
                 # committed), NOT main — the agent's manifest update hasn't
                 # been merged yet at verification time.
+                # Manifest is sharded (2026-04-14): root tools/manifest.md is a
+                # thin index; tool entries live in tools/manifest/<topic>.md.
+                # Search the kanban branch first (agent's commits), fall back to
+                # working-tree shards.
                 manifest_text = ""
                 try:
                     import subprocess as _sp
                     r = _sp.run(
-                        ["git", "show", f"kanban/{task_id}:tools/manifest.md"],
+                        ["git", "ls-tree", "-r", "--name-only",
+                         f"kanban/{task_id}", "tools/"],
                         capture_output=True, text=True,
                         encoding="utf-8", errors="replace",
                         cwd=str(BASE_DIR), timeout=10,
                     )
                     if r.returncode == 0:
-                        manifest_text = r.stdout
+                        shard_files = [
+                            f for f in r.stdout.splitlines()
+                            if f == "tools/manifest.md"
+                            or f.startswith("tools/manifest/")
+                        ]
+                        chunks = []
+                        for sf in shard_files:
+                            sr = _sp.run(
+                                ["git", "show", f"kanban/{task_id}:{sf}"],
+                                capture_output=True, text=True,
+                                encoding="utf-8", errors="replace",
+                                cwd=str(BASE_DIR), timeout=10,
+                            )
+                            if sr.returncode == 0:
+                                chunks.append(sr.stdout)
+                        manifest_text = "\n".join(chunks)
                 except Exception:
                     pass
                 if not manifest_text:
-                    manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(
-                        encoding="utf-8"
-                    )
+                    parts = [
+                        (BASE_DIR / "tools" / "manifest.md").read_text(
+                            encoding="utf-8"
+                        )
+                    ]
+                    shard_dir = BASE_DIR / "tools" / "manifest"
+                    if shard_dir.is_dir():
+                        for shard in shard_dir.glob("*.md"):
+                            try:
+                                parts.append(shard.read_text(encoding="utf-8"))
+                            except Exception:
+                                continue
+                    manifest_text = "\n".join(parts)
                 if tool_path not in manifest_text:
                     return False, (
                         f"SPECIFIC CHECK FAILED: task mentions {tool_path} "
-                        f"but it is NOT in tools/manifest.md"
+                        f"but it is NOT in tools/manifest.md or any "
+                        f"tools/manifest/*.md shard"
                     )
                 # Positive signal: tool IS in manifest — task state is as expected
                 return True, (
                     f"Task-specific check passed: {tool_path} is present in "
-                    f"tools/manifest.md (expected outcome achieved)"
+                    f"the manifest (root or shard)"
                 )
             except Exception as exc:
                 return True, f"Manifest read failed ({exc}) — skipping manifest check"
@@ -2068,14 +2099,38 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                 except Exception as exc:
                     return True, f"start.md read failed ({exc}) — skipping route check"
 
-    # Table/schema check: task creates a DB table
-    table_match = re.search(
-        r"(?:create\s+table|add\s+(?:table|DB\s+table|schema))\s+(\w+)",
-        description,
-        re.IGNORECASE,
-    )
-    if table_match:
-        table_name = table_match.group(1)
+    # Table/schema check: task creates a DB table.
+    # Special case: orphan_db_table gap reports describe an *existing*
+    # missing CREATE TABLE for a known orphan; the table name lives in the
+    # title ("gap: <name>") or "Subject:" / "table:" lines, not after a
+    # "create table" verb. Use that, and skip the generic verb-regex which
+    # otherwise false-matches the "Evidence:" section header that follows
+    # "...without a matching CREATE TABLE\n\nEvidence:".
+    table_name = None
+    if "orphan_db_table" in desc_lower:
+        m = (
+            re.search(r"orphan_db_table\s+gap:\s*(\w+)", title, re.IGNORECASE)
+            or re.search(r"orphan_db_table\s+on\s+(\w+)", description, re.IGNORECASE)
+            or re.search(r"^\s*(?:Subject|table)\s*:\s*(\w+)", description, re.IGNORECASE | re.MULTILINE)
+        )
+        if m:
+            table_name = m.group(1)
+        # Skip pg_*, sqlite_*, information_schema.* — system catalogs are
+        # never "orphan" tables to create.
+        if table_name and re.match(r"^(pg_|sqlite_|information_schema)", table_name, re.IGNORECASE):
+            return True, (
+                f"Skipped orphan_db_table check: {table_name} is a system catalog"
+            )
+    else:
+        # Anchor to a single line so newlines don't pull in section headers.
+        table_match = re.search(
+            r"(?:create\s+table|add\s+(?:table|DB\s+table|schema))[ \t]+(\w+)",
+            description,
+            re.IGNORECASE,
+        )
+        if table_match:
+            table_name = table_match.group(1)
+    if table_name:
         try:
             conn = get_connection()
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
