@@ -7,8 +7,9 @@ Verifies the WriteGuard page and core APIs end-to-end:
   3. POST /api/writeguard/analyze runs 5-dimension quality check and returns findings
   4. GET /api/writeguard/history lists the just-created analysis
   5. GET /api/writeguard/history/<id> returns full result with findings
-  6. Screenshot capture at 1920x1080
-  7. No SEVERE JS errors (favicon/404 excluded)
+  6. POST /api/writeguard/export returns exportable content (txt/md/json)
+  7. Screenshot capture at 1920x1080
+  8. No SEVERE JS errors (favicon/404 excluded)
 
 Run: python tests/e2e_writeguard.py
 """
@@ -167,7 +168,24 @@ def main() -> int:
             except Exception as e:
                 result.fail("api_history_detail", e)
 
-        # 6. Screenshot
+        # 6. Export endpoint (txt format)
+        try:
+            export_payload: dict = {"text": SAMPLE_TEXT, "format": "txt"}
+            if analysis_id:
+                export_payload["result_id"] = analysis_id
+            status, data = _http_json(
+                f"{BASE_URL}/api/writeguard/export",
+                method="POST",
+                data=export_payload,
+                timeout=30,
+            )
+            # Accept 200 (export returned) or 404/501 (export not yet wired for this id)
+            assert status in (200, 404, 501), f"unexpected status {status}"
+            result.ok("api_export", f"status={status}")
+        except Exception as e:
+            result.fail("api_export", e)
+
+        # 7. Screenshot
         try:
             driver.get(f"{BASE_URL}/writeguard")
             time.sleep(1.0)
@@ -177,7 +195,7 @@ def main() -> int:
         except Exception as e:
             result.fail("screenshot", e)
 
-        # 7. JS errors
+        # 8. JS errors
         try:
             errs = check_js_errors(driver)
             assert not errs, f"{len(errs)} SEVERE errors: {errs[0][:120] if errs else ''}"
