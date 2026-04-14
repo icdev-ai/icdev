@@ -1084,7 +1084,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Discover Reflex | tools/proposal_genesis/reflexes/discover.py | R01: Scan SAM.gov and internal signals for new opportunities | --json | Opportunity list |
-| Scout Reflex | tools/proposal_genesis/reflexes/scout.py | R02: Competitive intelligence and market analysis | --json | Intel report |
+| Scout Reflex | tools/proposal_genesis/reflexes/scout.py | R02: Competitive intelligence briefs for GovCon. Wraps govcon/award_tracker.py + competitor_profiler.py. Steps: scan SAM.gov awards, match awards to bid decisions → record outcomes + win/loss records (R13 feed), build competitor leaderboard, detect competitive overlaps with active opportunities, generate markdown intel brief. Scanner-tier only (zero Claude tokens). Briefs stored to data/proposal_genesis/briefs/. | run(config, trust) | {success, metric_value, details{briefs_generated, brief_path, new_awards, competitors_tracked, overlaps_found, outcomes_recorded, win_loss_created, air_gapped}} |
 | Shape Reflex | tools/proposal_genesis/reflexes/shape.py | R03: Win strategy, discriminators, partner fit assessment | --json | Strategy recommendations |
 | Engage Reflex | tools/proposal_genesis/reflexes/engage.py | R04: CRM account/contact/engagement tracking | --json | Engagement records |
 | Extract Reflex | tools/proposal_genesis/reflexes/extract.py | R05: Shall statement mining + amendment re-extraction. Wraps govcon/requirement_extractor.py. Scanner-tier only (zero Claude tokens). Re-extracts from pg_amendment_diffs where re_extracted=0 | run(config, trust) | {success, metric_value, details{opportunities_processed, total_statements_extracted, amendment_re_extractions}} |
