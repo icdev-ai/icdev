@@ -190,8 +190,11 @@ def remediate_missing_manifest(
     tool paths that need a manifest entry. Adds a minimal placeholder row
     under an "Unclassified" section so the coherence check passes.
     """
-    manifest_path = Path(cwd) / "tools" / "manifest.md"
-    if not manifest_path.exists():
+    # Manifest was split into shards (2026-04-14). Auto-added entries land in
+    # tools/manifest/unclassified.md so the thin index stays clean.
+    index_path = Path(cwd) / "tools" / "manifest.md"
+    shard_path = Path(cwd) / "tools" / "manifest" / "unclassified.md"
+    if not index_path.exists():
         return False, "tools/manifest.md not in worktree"
 
     # Find tool paths that need adding
@@ -205,11 +208,17 @@ def remediate_missing_manifest(
         return False, "no candidate tools to add to manifest"
 
     try:
-        content = manifest_path.read_text(encoding="utf-8")
+        # Combined text: index + all shards — used only for dedup lookup.
+        combined_text = index_path.read_text(encoding="utf-8")
+        shard_dir = Path(cwd) / "tools" / "manifest"
+        if shard_dir.is_dir():
+            for s in shard_dir.glob("*.md"):
+                combined_text += "\n" + s.read_text(encoding="utf-8")
+
         added = []
         lines_to_append: List[str] = []
         for tp in missing:
-            if tp in content:
+            if tp in combined_text:
                 continue
             lines_to_append.append(
                 f"| Auto-added {tp.rsplit('/', 1)[-1]} | {tp} | (auto-added by remediation; update description) | --json | stdout |"
@@ -219,17 +228,30 @@ def remediate_missing_manifest(
         if not lines_to_append:
             return False, "all candidate paths already in manifest"
 
-        # Ensure "Unclassified" section exists
-        if "## Unclassified (auto-added)" not in content:
-            content = content.rstrip() + (
-                "\n\n## Unclassified (auto-added)\n"
+        changed: List[str] = []
+        if shard_path.exists():
+            shard_content = shard_path.read_text(encoding="utf-8")
+        else:
+            shard_dir.mkdir(parents=True, exist_ok=True)
+            shard_content = (
+                "# Unclassified (auto-added)\n\n"
+                "> Shard of `tools/manifest.md`. Entries added by auto-remediation.\n"
+                "> Move to the correct topic shard and update descriptions.\n\n"
                 "| Tool | File | Description | Input | Output |\n"
                 "|------|------|-------------|-------|--------|\n"
             )
-        content = content.rstrip() + "\n" + "\n".join(lines_to_append) + "\n"
-        manifest_path.write_text(content, encoding="utf-8")
+            # Add index link.
+            index_text = index_path.read_text(encoding="utf-8")
+            if "manifest/unclassified.md" not in index_text:
+                index_text = index_text.rstrip() + "\n- [Unclassified (auto-added)](manifest/unclassified.md)\n"
+                index_path.write_text(index_text, encoding="utf-8")
+                changed.append("tools/manifest.md")
 
-        if _git_commit_amend(cwd, ["tools/manifest.md"]):
+        shard_content = shard_content.rstrip() + "\n" + "\n".join(lines_to_append) + "\n"
+        shard_path.write_text(shard_content, encoding="utf-8")
+        changed.append("tools/manifest/unclassified.md")
+
+        if _git_commit_amend(cwd, changed):
             return True, f"added {len(added)} path(s) to manifest"
         return False, "manifest updated but amend failed"
     except Exception as exc:

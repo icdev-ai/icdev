@@ -18,6 +18,7 @@ from uuid import uuid4
 import requests
 from bs4 import BeautifulSoup
 
+from tools.http.client import get_session, request as _http_request
 from tools.pulse import config
 from tools.pulse.db import insert_row, query_rows
 
@@ -154,7 +155,7 @@ RECENCY_TOKENS: list[str] = [
 
 def _session() -> requests.Session:
     """Build a requests session with realistic headers."""
-    s = requests.Session()
+    s = get_session()
     s.headers.update(
         {
             "User-Agent": USER_AGENT,
@@ -698,7 +699,7 @@ def research_with_local_first(
 def _ollama_available() -> bool:
     """Check whether Ollama is reachable."""
     try:
-        resp = requests.get(f"{config.OLLAMA_BASE_URL}/api/tags", timeout=5)
+        resp = _http_request("GET", f"{config.OLLAMA_BASE_URL}/api/tags", timeout=5)
         return resp.status_code == 200
     except (requests.ConnectionError, requests.Timeout):
         return False
@@ -769,7 +770,7 @@ def synthesize_research(results: list[dict]) -> dict:
         # Pick a fast model: avoid qwen3.5 (thinking mode burns tokens)
         available_fast = ["gemma3:latest", "llama3.2:3b", "ministral-3:8b"]
         try:
-            resp = requests.get(f"{config.OLLAMA_BASE_URL}/api/tags", timeout=3)
+            resp = _http_request("GET", f"{config.OLLAMA_BASE_URL}/api/tags", timeout=3)
             installed = {m["name"] for m in resp.json().get("models", [])}
             model = next((m for m in available_fast if m in installed), "qwen3.5:latest")
         except Exception:
@@ -778,7 +779,8 @@ def synthesize_research(results: list[dict]) -> dict:
     if _ollama_available():
         try:
             logger.info("Synthesizing research with Ollama (%s)...", model)
-            resp = requests.post(
+            resp = _http_request(
+                "POST",
                 ollama_url,
                 json={
                     "model": model,

@@ -80,9 +80,9 @@ class BGERerankerProvider(RerankerProvider):
     def _get_session(self):
         """Get or create HTTP session for connection reuse."""
         if self._session is None:
-            import requests
+            from tools.http.client import get_session
 
-            self._session = requests.Session()
+            self._session = get_session()
         return self._session
 
     def rerank(
@@ -133,9 +133,9 @@ class BGERerankerProvider(RerankerProvider):
     def check_availability(self) -> bool:
         """Check if Ollama has the BGE reranker model."""
         try:
-            import requests
+            from tools.http.client import request
 
-            resp = requests.get(f"{self._base_url}/api/tags", timeout=5)
+            resp = request("GET", f"{self._base_url}/api/tags", timeout=5)
             if resp.status_code != 200:
                 return False
             models = resp.json().get("models", [])

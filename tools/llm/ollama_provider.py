@@ -26,9 +26,12 @@ logger = logging.getLogger("icdev.llm.ollama")
 try:
     import requests
 
+    from tools.http.client import request as _http_request
+
     HAS_REQUESTS = True
 except ImportError:
     requests = None  # type: ignore[assignment]
+    _http_request = None  # type: ignore[assignment]
     HAS_REQUESTS = False
 
 
@@ -175,7 +178,8 @@ class OllamaProvider(LLMProvider):
             payload["format"] = "json"
 
         try:
-            resp_http = requests.post(
+            resp_http = _http_request(
+                "POST",
                 f"{self._base_url}/api/chat",
                 json=payload,
                 timeout=self._timeout,
@@ -263,7 +267,8 @@ class OllamaProvider(LLMProvider):
             payload["format"] = "json"
 
         try:
-            resp_http = requests.post(
+            resp_http = _http_request(
+                "POST",
                 f"{self._base_url}/api/chat",
                 json=payload,
                 stream=True,
@@ -315,7 +320,8 @@ class OllamaProvider(LLMProvider):
         if not HAS_REQUESTS:
             return False
         try:
-            resp = requests.get(
+            resp = _http_request(
+                "GET",
                 f"{self._base_url}/api/tags",
                 timeout=5,
             )

@@ -615,6 +615,12 @@ def check_manifest() -> CoherenceCheck:
         )
 
     manifest_text = _read_text(manifest_path).lower()
+    # Manifest was split into shards (2026-04-14). Concatenate shards so tool
+    # filename lookups span the whole documented surface, not just the index.
+    shard_dir = PROJECT_ROOT / "tools" / "manifest"
+    if shard_dir.is_dir():
+        for shard in shard_dir.glob("*.md"):
+            manifest_text += "\n" + _read_text(shard).lower()
 
     # Find tool directories with Python files
     config = _load_config()

@@ -18,6 +18,8 @@ from urllib.parse import urlparse, parse_qs
 import requests
 from bs4 import BeautifulSoup
 
+from tools.http.client import get_session
+
 
 def _is_air_gapped() -> bool:
     return os.environ.get("ICDEV_ENVIRONMENT", "").lower() == "air-gapped"
@@ -90,7 +92,7 @@ RELEVANCE_KEYWORDS: list[str] = [
 
 def _session() -> requests.Session:
     """Build a requests session with realistic headers."""
-    s = requests.Session()
+    s = get_session()
     s.headers.update(
         {
             "User-Agent": random.choice(USER_AGENTS),

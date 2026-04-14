@@ -173,9 +173,10 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
         prompt = _NER_PROMPT.format(text=text_truncated)
 
         # Use low-level chat API (no thinking mode)
-        import requests
+        from tools.http.client import request as _http_request
 
-        resp = requests.post(
+        resp = _http_request(
+            "POST",
             "http://localhost:11434/api/chat",
             json={
                 "model": model,
@@ -335,9 +336,9 @@ def _check_ollama_cached() -> bool:
     if _OLLAMA_CACHE["available"] is not None and (now - _OLLAMA_CACHE["checked_at"]) < _OLLAMA_CACHE_TTL:
         return _OLLAMA_CACHE["available"]
     try:
-        import requests
+        from tools.http.client import request
 
-        resp = requests.get("http://localhost:11434/api/tags", timeout=1.5)
+        resp = request("GET", "http://localhost:11434/api/tags", timeout=1.5)
         _OLLAMA_CACHE["available"] = resp.status_code == 200
     except Exception:
         _OLLAMA_CACHE["available"] = False

@@ -1,0 +1,15 @@
+# Infrastructure
+
+> Shard of `tools/manifest.md`. See index at `tools/manifest.md`.
+
+## Infrastructure
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Terraform Generator | tools/infra/terraform_generator.py | Generate Terraform for GovCloud | --project | .tf files |
+| Ansible Generator | tools/infra/ansible_generator.py | Generate Ansible playbooks | --project | .yml playbooks |
+| K8s Generator | tools/infra/k8s_generator.py | Generate Kubernetes manifests | --project | .yaml manifests |
+| Dockerfile Generator | tools/infra/dockerfile_generator.py | STIG-hardened Dockerfiles | --project | Dockerfile |
+| Pipeline Generator | tools/infra/pipeline_generator.py | Generate .gitlab-ci.yml | --project | Pipeline file |
+| Rollback Manager | tools/infra/rollback.py | Deployment rollback | --project, --environment | Rollback result |
+| Infra Status | tools/infra/infra_status.py | Infrastructure status report | --project | Status |
+

@@ -267,10 +267,10 @@ class VisionPDFProvider(PDFProvider):
 
     def check_availability(self) -> bool:
         try:
-            import requests
+            from tools.http.client import request
 
             base = self._base_url or self._get_base_url()
-            resp = requests.get(f"{base}/api/tags", timeout=3)
+            resp = request("GET", f"{base}/api/tags", timeout=3)
             if resp.status_code == 200:
                 models = resp.json().get("models", [])
                 return any("llava" in m.get("name", "").lower() for m in models)
@@ -292,7 +292,8 @@ class VisionPDFProvider(PDFProvider):
             raise RuntimeError("pypdf required for vision extraction (page rendering)")
 
         import base64
-        import requests
+
+        from tools.http.client import request as _http_request
 
         reader = PdfReader(str(pdf_path))
         pages: List[PDFPage] = []
@@ -327,7 +328,8 @@ class VisionPDFProvider(PDFProvider):
                 images[0].save(buf, format="PNG")
                 img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
-                resp = requests.post(
+                resp = _http_request(
+                    "POST",
                     f"{base_url}/api/generate",
                     json={
                         "model": self._model,

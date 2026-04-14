@@ -7756,7 +7756,8 @@ Output ONLY the JSON object. No other text."""
             return jsonify({"error": "description required"}), 400
 
         import re
-        import requests as _req
+
+        from tools.http.client import request as _req_request
 
         def _parse_llm_response(content):
             """Extract and validate JSON from LLM response text."""
@@ -7794,7 +7795,8 @@ Output ONLY the JSON object. No other text."""
             if not api_key:
                 return None, "No ANTHROPIC_API_KEY set"
             model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req.post(
+            r = _req_request(
+                "POST",
                 "https://api.anthropic.com/v1/messages",
                 headers={
                     "x-api-key": api_key,
@@ -7818,7 +7820,8 @@ Output ONLY the JSON object. No other text."""
             """Call Ollama local LLM."""
             ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
             ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
-            r = _req.post(
+            r = _req_request(
+                "POST",
                 f"{ollama_url}/api/chat",
                 json={
                     "model": ollama_model,

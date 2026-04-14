@@ -85,9 +85,12 @@ except ImportError:
 try:
     import requests as _requests
 
+    from tools.http.client import request as _http_request
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
+    _http_request = None  # type: ignore[assignment]
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
@@ -350,7 +353,8 @@ def _generate_embedding_ollama(text):
             return None
 
     try:
-        resp = _requests.post(
+        resp = _http_request(
+            "POST",
             f"{OLLAMA_BASE_URL}/api/embeddings",
             json={"model": OLLAMA_EMBED_MODEL, "prompt": text},
             timeout=30,
