@@ -27,9 +27,12 @@ logger = logging.getLogger("databridge.connectors.health_base")
 try:
     import requests
 
+    from tools.http.client import get_session
+
     HAS_REQUESTS = True
 except ImportError:
     requests = None  # type: ignore[assignment]
+    get_session = None  # type: ignore[assignment]
     HAS_REQUESTS = False
 
 try:
@@ -125,7 +128,7 @@ class HealthBaseConnector(DataConnector):
         if proto == HealthProtocol.FHIR_REST:
             if not HAS_REQUESTS:
                 raise ImportError("requests required for FHIR REST connectors")
-            self._session = requests.Session()
+            self._session = get_session()
             self._session.headers.update(self._auth_headers(config))
             self._session.headers["Accept"] = "application/fhir+json"
             return True
@@ -136,7 +139,7 @@ class HealthBaseConnector(DataConnector):
 
         if proto == HealthProtocol.CDA_XML:
             if HAS_REQUESTS:
-                self._session = requests.Session()
+                self._session = get_session()
                 self._session.headers.update(self._auth_headers(config))
                 self._session.headers["Accept"] = "application/xml"
             return True

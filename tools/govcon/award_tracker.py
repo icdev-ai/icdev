@@ -77,9 +77,9 @@ def _load_config():
 def _safe_get(url, params=None, headers=None, timeout=30):
     """Safe HTTP GET with error handling."""
     try:
-        import requests
+        from tools.http.client import request
 
-        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        resp = request("GET", url, params=params, headers=headers, timeout=timeout)
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
