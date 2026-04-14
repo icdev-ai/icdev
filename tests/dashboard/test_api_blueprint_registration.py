@@ -13,7 +13,6 @@ Tests verify:
 """
 from __future__ import annotations
 
-import importlib
 import inspect
 import sys
 from pathlib import Path
@@ -158,37 +157,37 @@ class TestV1PrefixRegistration:
     def test_agents_v1_route_exists(self, registered_app):
         rules = _all_rules(registered_app)
         v1_routes = [r for r in rules if r.startswith("/api/v1/agents")]
-        assert v1_routes, f"No /api/v1/agents/* routes found."
+        assert v1_routes, "No /api/v1/agents/* routes found."
 
     def test_compliance_v1_route_exists(self, registered_app):
         rules = _all_rules(registered_app)
         v1_routes = [r for r in rules if r.startswith("/api/v1/compliance")]
-        assert v1_routes, f"No /api/v1/compliance/* routes found."
+        assert v1_routes, "No /api/v1/compliance/* routes found."
 
     def test_audit_v1_route_exists(self, registered_app):
         rules = _all_rules(registered_app)
         v1_routes = [r for r in rules if r.startswith("/api/v1/audit")]
-        assert v1_routes, f"No /api/v1/audit/* routes found."
+        assert v1_routes, "No /api/v1/audit/* routes found."
 
     def test_metrics_v1_route_exists(self, registered_app):
         rules = _all_rules(registered_app)
         v1_routes = [r for r in rules if r.startswith("/api/v1/metrics")]
-        assert v1_routes, f"No /api/v1/metrics/* routes found."
+        assert v1_routes, "No /api/v1/metrics/* routes found."
 
     def test_security_scan_v1_route_exists(self, registered_app):
         rules = _all_rules(registered_app)
         v1_routes = [r for r in rules if r.startswith("/api/v1/security-scan")]
-        assert v1_routes, f"No /api/v1/security-scan/* routes found."
+        assert v1_routes, "No /api/v1/security-scan/* routes found."
 
     def test_orchestration_v1_route_exists(self, registered_app):
         rules = _all_rules(registered_app)
         v1_routes = [r for r in rules if r.startswith("/api/v1/orchestration")]
-        assert v1_routes, f"No /api/v1/orchestration/* routes found."
+        assert v1_routes, "No /api/v1/orchestration/* routes found."
 
     def test_studio_v1_route_exists(self, registered_app):
         rules = _all_rules(registered_app)
         v1_routes = [r for r in rules if r.startswith("/api/v1/studio")]
-        assert v1_routes, f"No /api/v1/studio/* routes found."
+        assert v1_routes, "No /api/v1/studio/* routes found."
 
     def test_minimum_v1_blueprint_count(self, registered_app):
         """At least 35 distinct /api/v1/* route prefixes must exist."""
