@@ -203,20 +203,52 @@ def _has_image_blocks(content: list) -> bool:
     return False
 
 
-def messages_to_anthropic(messages: List[Dict]) -> List[Dict]:
+def messages_to_anthropic(messages: List[Dict]):
     """Convert universal message format to Anthropic format.
 
-    Anthropic expects: {"role": "user"/"assistant", "content": [{"type": "text", "text": "..."}]}
-    Universal may use: {"role": "user", "content": "plain string"} (OpenAI style)
+    Anthropic's Messages API rejects messages with ``role="system"`` — the
+    system prompt must be passed as a top-level ``system`` parameter. This
+    helper handles the OpenAI-style convention where the system prompt
+    travels as the first message: any ``role="system"`` messages are
+    extracted (concatenated by newline if multiple) and returned
+    separately so the caller can merge them with
+    ``LLMRequest.system_prompt``.
+
+    Returns:
+        (messages, system_text) tuple.
+          * ``messages`` — list with role=user/assistant only, in
+            Anthropic content-block form
+          * ``system_text`` — concatenated text of any extracted
+            system-role messages, or ``None`` if there were none
 
     Handles image blocks:
     - OpenAI image_url blocks are converted to Anthropic image blocks
     - Anthropic image blocks are passed through unchanged
     """
-    result = []
+    result: List[Dict] = []
+    system_fragments: List[str] = []
+
+    def _extract_text_from_content(content) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: List[str] = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+            return "\n".join(p for p in parts if p)
+        return ""
+
     for msg in messages:
         content = msg.get("content", "")
         role = msg.get("role", "user")
+
+        if role == "system":
+            text = _extract_text_from_content(content)
+            if text:
+                system_fragments.append(text)
+            continue
+
         if isinstance(content, str):
             result.append(
                 {
@@ -235,7 +267,9 @@ def messages_to_anthropic(messages: List[Dict]) -> List[Dict]:
             result.append({"role": role, "content": converted_blocks})
         else:
             result.append(msg)
-    return result
+
+    system_text = "\n\n".join(system_fragments) if system_fragments else None
+    return result, system_text
 
 
 def messages_to_openai(messages: List[Dict]) -> List[Dict]:
