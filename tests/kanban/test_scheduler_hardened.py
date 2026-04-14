@@ -341,6 +341,79 @@ def test_guard18_third_failure_flags_for_decomposition(db_conn):
     _cleanup_test_tasks(db_conn)
 
 
+def test_guard25_coherence_misclass_regression():
+    """Regression: 'coherence broken' reasons must classify as coherence_broken
+    even when the reason ALSO mentions bandit in the remediation annotation.
+    """
+    from tools.workflow.auto_remediate import (
+        classify_failure, FAILURE_COHERENCE_BROKEN, REMEDIABLE,
+    )
+    # This is the exact reason that caused the Webhook Wiring task to fail:
+    reason = (
+        "Verified: branch has commits since dispatch: 2c8d98ef fix: "
+        "suppress B108 false positive | "
+        "Task-specific checks passed | "
+        "VALIDATION FAILED: coherence broken by cwd changes | "
+        "REMEDIATION=bandit_security: bandit_security is not auto-remediable"
+    )
+    assert classify_failure(reason) == FAILURE_COHERENCE_BROKEN, (
+        "Coherence broken must be detected BEFORE bandit even when the "
+        "reason string mentions bandit (from a prior REMEDIATION annotation)"
+    )
+    # And coherence_broken IS remediable (rebase onto main), so the task
+    # shouldn't have been rejected with 'human review needed'.
+    assert FAILURE_COHERENCE_BROKEN in REMEDIABLE
+
+
+def test_guard25_pre_dispatch_autoresolves_false_positive_manifest(db_conn):
+    """Pre-dispatch check: tool_not_in_manifest task where tool IS already
+    in manifest.md returns (True, reason) so the task auto-completes
+    without ever dispatching Claude.
+    """
+    from tools.genesis.reflexes.kanban import _pre_dispatch_check
+
+    # tools/genesis/reflexes/awareness.py is in the real manifest
+    t = {
+        "id": "test-predisp",
+        "title": "tool_not_in_manifest gap: tools/genesis/reflexes/awareness.py",
+        "description": "Python tool not documented in tools/manifest.md",
+    }
+    resolved, reason = _pre_dispatch_check(t)
+    assert resolved, f"Expected auto-resolve, got: {reason}"
+    assert "already in tools/manifest.md" in reason.lower() or "manifest" in reason.lower()
+
+
+def test_guard25_pre_dispatch_skips_real_gaps():
+    """Pre-dispatch check: tool_not_in_manifest with a tool that is NOT
+    in manifest should NOT auto-resolve (real gap must be fixed by agent).
+    """
+    from tools.genesis.reflexes.kanban import _pre_dispatch_check
+
+    t = {
+        "id": "test-predisp-real",
+        "title": "tool_not_in_manifest gap: tools/imaginary_subsystem_xyz/fake_tool.py",
+        "description": "fake tool not in manifest",
+    }
+    resolved, _reason = _pre_dispatch_check(t)
+    assert not resolved, "Real gaps must NOT auto-resolve"
+
+
+def test_guard25_pre_dispatch_api_routes_are_auto_resolved():
+    """Pre-dispatch: route_not_listed for /api/* routes is N/A (API routes
+    don't belong in the Pages list), so those are auto-resolved.
+    """
+    from tools.genesis.reflexes.kanban import _pre_dispatch_check
+
+    t = {
+        "id": "test-predisp-api",
+        "title": "route_not_listed gap: /api/some/endpoint",
+        "description": "API route",
+    }
+    resolved, reason = _pre_dispatch_check(t)
+    assert resolved
+    assert "api" in reason.lower()
+
+
 def test_guard21_classifier_routes_failures_correctly():
     """classify_failure maps verification reasons to the right category."""
     from tools.workflow.auto_remediate import (

@@ -58,28 +58,50 @@ UNREMEDIABLE = {
 
 
 def classify_failure(reason: str, metrics: Optional[Dict[str, Any]] = None) -> str:
-    """Classify a verification failure from its reason text + metrics."""
-    r = (reason or "").lower()
+    """Classify a verification failure from its reason text + metrics.
+
+    Order matters — earlier patterns win. Coherence + stale-baseline are
+    checked BEFORE bandit/ruff because a "REMEDIATION=bandit_security"
+    annotation from a prior attempt can pollute the reason text and
+    mis-classify the real failure on retry.
+    """
+    # Strip any REMEDIATION annotation the previous attempt left behind so
+    # we classify on the ORIGINAL failure cause, not on a stale remediation hint.
+    r = (reason or "")
+    if "| REMEDIATION=" in r:
+        r = r.split("| REMEDIATION=")[0]
+    r = r.lower()
     m = metrics or {}
 
+    # "No commits" wins — can't fix work that wasn't done
     if "no git commits" in r or "no commits" in r:
         return FAILURE_NO_COMMITS
+
+    # Phantom paths (agent claimed files that don't exist) — can't fix
     if "phantom" in r and "path" in r:
         return FAILURE_PHANTOM_PATHS
     if "claimed 0 file paths" in r:
         return FAILURE_PHANTOM_PATHS
+
+    # Coherence / stale-baseline BEFORE bandit/ruff: a "coherence broken"
+    # message may mention ruff/bandit in its details, but the root cause
+    # is coherence. Rebasing onto main fixes most of these.
+    if "coherence" in r and ("broke" in r or "broken" in r):
+        return FAILURE_COHERENCE_BROKEN
+    if "stale" in r or "diverg" in r or "not possible to fast-forward" in r:
+        return FAILURE_STALE_BASELINE
+
+    # Lint / security issues in the agent's own output (only when not a
+    # coherence/stale baseline situation)
     if "ruff found" in r or (m.get("ruff_issues") and m["ruff_issues"] > 0):
         return FAILURE_RUFF_ISSUES
-    if "bandit" in r or (m.get("bandit_issues") and m["bandit_issues"] > 0):
+    if "bandit found" in r or (m.get("bandit_issues") and m["bandit_issues"] > 0):
         return FAILURE_BANDIT_SECURITY
     if "e2e" in r and ("fail" in r or "regression" in r):
         return FAILURE_E2E_REGRESSION
     if "manifest" in r:
         return FAILURE_MISSING_MANIFEST
-    if "coherence" in r and "broke" in r:
-        return FAILURE_COHERENCE_BROKEN
-    if "stale" in r or "diverg" in r or "not possible to fast-forward" in r:
-        return FAILURE_STALE_BASELINE
+
     return FAILURE_UNKNOWN
 
 
