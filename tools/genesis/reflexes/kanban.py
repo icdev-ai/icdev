@@ -2131,6 +2131,50 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
         if table_match:
             table_name = table_match.group(1)
     if table_name:
+        # For orphan_db_table fixes, the agent commits a new migration
+        # file with CREATE TABLE <name>, but that migration has not been
+        # applied to the working-tree DB at validation time. So check for
+        # the CREATE TABLE statement in the agent's branch files instead
+        # of querying the live DB.
+        if "orphan_db_table" in desc_lower:
+            import subprocess as _sp
+            pattern = rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{re.escape(table_name)}\b"
+            found = False
+            try:
+                r = _sp.run(
+                    ["git", "grep", "-l", "-i", "-E", pattern,
+                     f"kanban/{task_id}", "--", "tools/db/", "tools/"],
+                    capture_output=True, text=True,
+                    encoding="utf-8", errors="replace",
+                    cwd=str(BASE_DIR), timeout=15,
+                )
+                found = r.returncode == 0 and bool(r.stdout.strip())
+            except Exception:
+                pass
+            if not found:
+                # Fall back to working tree (may be main or agent-merged).
+                try:
+                    r = _sp.run(
+                        ["git", "grep", "-l", "-i", "-E", pattern, "--",
+                         "tools/db/", "tools/"],
+                        capture_output=True, text=True,
+                        encoding="utf-8", errors="replace",
+                        cwd=str(BASE_DIR), timeout=15,
+                    )
+                    found = r.returncode == 0 and bool(r.stdout.strip())
+                except Exception:
+                    pass
+            if not found:
+                return False, (
+                    f"SPECIFIC CHECK FAILED: orphan_db_table task for "
+                    f"'{table_name}' but no CREATE TABLE statement found "
+                    f"in branch kanban/{task_id} or working tree"
+                )
+            return True, (
+                f"Task-specific check passed: CREATE TABLE {table_name} "
+                f"found in branch or tree"
+            )
+        # Non-orphan_db_table path: verify table exists in live DB
         try:
             conn = get_connection()
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
