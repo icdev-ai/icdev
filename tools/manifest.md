@@ -140,3 +140,12 @@
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
 - [Dashboard UX Enhancements (OPT-68, 2026-04-12)](manifest/dashboard-ux-enhancements.md)
 - [Manifest Gap Fill (2026-04-12)](manifest/manifest-gap-fill.md)
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Import | tools\network\config_import.py | Auto-registered: network/config_import.py | --json | JSON |
+| Pdf Import | tools\network\pdf_import.py | Auto-registered: network/pdf_import.py | --json | JSON |
+| Topology Merge | tools\network\topology_merge.py | Auto-registered: network/topology_merge.py | --json | JSON |
+| Snapshot Builder | tools\trading\market_intel\snapshot_builder.py | Auto-registered: market_intel/snapshot_builder.py | --json | JSON |
