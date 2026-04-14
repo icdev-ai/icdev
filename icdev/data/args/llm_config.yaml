@@ -62,10 +62,10 @@ providers:
 # Model Registry
 # -----------------------------------------------------------------------
 models:
-  # -- Anthropic via Bedrock --
+  # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
   claude-opus:
-    provider: bedrock
-    model_id: anthropic.claude-opus-4-6-20260215-v1:0
+    provider: anthropic
+    model_id: claude-opus-4-6
     max_output_tokens: 128000
     supports_thinking: true
     supports_tools: true
@@ -74,7 +74,7 @@ models:
     pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
 
   claude-sonnet:
-    provider: anthropic
+    provider: anthropic  # Anthropic direct API (not Bedrock) — ANTHROPIC_API_KEY
     model_id: "claude-sonnet-4-5-20250929"
     max_output_tokens: 64000
     supports_thinking: true
@@ -84,13 +84,13 @@ models:
     pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
 
   claude-haiku:
-    provider: bedrock
-    model_id: anthropic.claude-3-5-sonnet-20241022-v2:0
+    provider: anthropic
+    model_id: claude-haiku-4-5-20251001
     max_output_tokens: 8192
     supports_thinking: false
     supports_tools: true
     supports_structured_output: false
-    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+    pricing: { input_per_1k: 0.001, output_per_1k: 0.005 }
 
   # -- Anthropic Direct API --
   claude-opus-api:
@@ -611,29 +611,11 @@ two_tier:
     - child_app
     - saas_proxy
 
-  worker_functions:
-    - agent_builder
-    - agent_compliance
-    - agent_security
-    - agent_infra
-    - agent_knowledge
-    - code_generation
-    - code_translation
-    - code_translation_repair
-    - code_translation_review
-    - test_translation
-    - bdd_preview
-    - nlq_sql
-    - narrative_generation
-    - compliance_export
-    - intake_persona_response
-    - collaboration
-    - dependency_suggestion
-    - research_forecast
-    - research_youtube_summarize
-    - verify_loop_repair
-    - formal_verification
-    - default
+  # Worker tier emptied — functions fall through to normal chain routing,
+  # which starts with claude-sonnet (Anthropic direct). No qwen3 draft step.
+  # Reason: qwen3.5 thinking-mode timeouts + Sonnet reliability preferred.
+  # To restore draft → review behavior, move functions back into this list.
+  worker_functions: []
 
   scanner_functions:
     - agent_monitor
