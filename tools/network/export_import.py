@@ -214,130 +214,425 @@ def import_vdx(xml_str: str) -> dict:
 
 
 def import_vsdx(file_path: str) -> dict:
-    """Parse Visio VSDX (ZIP/OPC) file into graph dict.
+    """Parse Visio VSDX (ZIP/OPC) file into a graph dict.
 
-    Reads visio/pages/page1.xml from the VSDX archive. Shapes with
-    a ``Width`` cell are treated as nodes; shapes with a ``BeginX``
-    cell are treated as connectors (edges).
+    Uses the ``vsdx`` library when available (handles stencil masters,
+    multi-page documents, ``<Connect>`` connector wiring, real page
+    geometry, and unit conversion). Falls back to a hardened stdlib
+    parser when ``vsdx`` isn't installed.
+
+    Both paths return the same shape: ``{"nodes": [...], "edges": [...],
+    "_pages": N, "_errors": [...]}``. Callers that only consumed the old
+    ``{nodes, edges}`` keys still work unchanged.
 
     Args:
         file_path: Path to a .vsdx file on disk.
 
     Returns:
-        Dict with "nodes" and "edges" lists.
+        Dict with ``nodes`` and ``edges`` lists, plus diagnostic
+        ``_pages`` (page count) and ``_errors`` (list of strings).
     """
-    import zipfile
-
-    nodes, edges = [], []
-    node_shape_ids: dict[str, str] = {}  # shape ID -> node id (for edge lookup)
+    try:
+        import vsdx  # type: ignore
+    except ImportError:
+        logger.info("vsdx library not installed; using stdlib fallback parser")
+        return _import_vsdx_stdlib(file_path)
 
     try:
-        with zipfile.ZipFile(file_path, "r") as zf:
-            # Find the page XML — usually visio/pages/page1.xml
-            page_path = None
-            for name in zf.namelist():
-                if "pages/page" in name.lower() and name.endswith(".xml"):
-                    page_path = name
-                    break
-            if not page_path:
-                return {"nodes": nodes, "edges": edges}
+        return _import_vsdx_lib(file_path, vsdx)
+    except Exception as e:
+        logger.warning("vsdx lib parse failed (%s); falling back to stdlib", e)
+        result = _import_vsdx_stdlib(file_path)
+        result.setdefault("_errors", []).insert(0, f"vsdx-lib: {e}")
+        return result
 
-            page_xml = zf.read(page_path).decode("utf-8")
 
-        page_xml = _sanitize_xml(page_xml)
-        # Strip namespaces for easier parsing
-        page_xml = re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', "", page_xml)
-        root = ET.fromstring(page_xml)  # nosec B314
+def _import_vsdx_lib(file_path: str, vsdx_mod) -> dict:
+    """Parse VSDX using the ``vsdx`` library (preferred path).
 
-        shape_id_map: dict[str, dict] = {}  # Shape ID -> parsed attrs
-        connector_shapes: list[ET.Element] = []
+    Handles master-shape inheritance, multi-page documents, explicit
+    ``<Connect>`` wiring, and correct page geometry for Y-axis inversion.
+    """
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    errors: list[str] = []
+    # Map (page_idx, shape_id) -> canonical node_id for edge resolution
+    sheet_to_node: dict[tuple[int, str], str] = {}
+    page_count = 0
 
-        for shape in root.iter("Shape"):
-            sid = shape.get("ID", str(uuid.uuid4())[:8])
+    with vsdx_mod.VisioFile(file_path) as vis:
+        for page_idx, page in enumerate(vis.pages):
+            page_count += 1
+            try:
+                page_h = float(page.height or 11.0)
+            except (TypeError, ValueError):
+                page_h = 11.0
 
-            # Collect Cell values
-            cells: dict[str, str] = {}
-            for cell in shape.findall("Cell"):
-                n = cell.get("N", "")
-                v = cell.get("V", "")
-                cells[n] = v
+            connector_shapes: list = []
+            for shape in page.all_shapes:
+                sid = str(shape.ID) if hasattr(shape, "ID") else shape.shape_id
+                # 1D connector shapes have begin_x/end_x set
+                is_connector = (
+                    getattr(shape, "begin_x", None) is not None
+                    or getattr(shape, "end_x", None) is not None
+                )
 
-            text_el = shape.find("Text")
-            label = ""
-            if text_el is not None:
-                label = "".join(text_el.itertext()).strip()
-
-            # Extract metadata from Property section
-            props: dict[str, str] = {}
-            for section in shape.findall("Section"):
-                if section.get("N") == "Property":
-                    for row in section.findall("Row"):
-                        row_name = row.get("N", "")
-                        val_cell = row.find("Cell[@N='Value']")
-                        if val_cell is not None and val_cell.get("V"):
-                            props[row_name] = val_cell.get("V", "")
-
-            # Connector detection: shapes with BeginX are 1D connectors
-            if "BeginX" in cells:
-                connector_shapes.append(shape)
-                shape_id_map[sid] = {"label": label, "cells": cells}
-                continue
-
-            # Node detection: shapes with Width are 2D shapes
-            if "Width" in cells or "PinX" in cells:
-                pin_x = float(cells.get("PinX", "0"))
-                pin_y = float(cells.get("PinY", "0"))
-                x_px = round(pin_x * 96)
-                y_px = round((12 - pin_y) * 96)  # invert Y (Visio origin bottom-left)
-
-                node_id = f"vsdx-{sid}"
+                # Pull label — text, then master text, then property
+                label = ""
+                try:
+                    label = (shape.text or "").strip()
+                except Exception:
+                    pass
                 if not label:
-                    label = props.get("hostname", f"Shape-{sid}")
+                    try:
+                        master = shape.master_shape
+                        if master is not None:
+                            label = (master.text or "").strip()
+                    except Exception:
+                        pass
 
-                node = {
+                # Extract data properties via library (resolves master inheritance)
+                props: dict[str, str] = {}
+                try:
+                    for p in (shape.data_properties or {}).values():
+                        key = getattr(p, "label", None) or getattr(p, "name", "")
+                        val = getattr(p, "value", "")
+                        if key and val not in (None, ""):
+                            props[str(key)] = str(val)
+                except Exception as e:
+                    errors.append(f"props page{page_idx} sid={sid}: {e}")
+
+                if is_connector:
+                    connector_shapes.append((sid, shape, label))
+                    continue
+
+                # Skip group containers with no geometry and no label
+                try:
+                    x_in = float(shape.x) if shape.x is not None else 0.0
+                    y_in = float(shape.y) if shape.y is not None else 0.0
+                except (TypeError, ValueError):
+                    x_in, y_in = 0.0, 0.0
+
+                # Require something identifiable — either label, props, or geometry
+                if not label and not props and x_in == 0.0 and y_in == 0.0:
+                    continue
+
+                if not label:
+                    # Fallbacks: hostname property, master universal name, then Shape-ID
+                    label = (
+                        props.get("hostname")
+                        or props.get("Hostname")
+                        or props.get("Name")
+                        or getattr(shape, "universal_name", None)
+                        or f"Shape-{sid}"
+                    )
+
+                node_id = f"vsdx-p{page_idx}-{sid}"
+                node: dict = {
                     "id": node_id,
                     "label": label,
                     "type": "imported",
-                    "x": x_px,
-                    "y": y_px,
+                    "x": round(x_in * 96),
+                    "y": round((page_h - y_in) * 96),  # invert using real page height
                 }
+                if page_count > 1:
+                    node["page"] = page_idx
                 if props:
                     node["properties"] = props
                 nodes.append(node)
-                node_shape_ids[sid] = node_id
-                shape_id_map[sid] = {"label": label, "node_id": node_id}
+                sheet_to_node[(page_idx, str(sid))] = node_id
 
-        # Resolve connectors to edges
-        for shape in connector_shapes:
-            sid = shape.get("ID", "")
-            info = shape_id_map.get(sid, {})
-            label = info.get("label", "")
+            # Resolve connectors via page.connects (authoritative <Connect> data)
+            resolved: set = set()
+            try:
+                for conn in page.connects or []:
+                    connector_sid = str(getattr(conn, "connector_shape_id", "") or "")
+                    from_sid = str(getattr(conn, "shape_id", "") or getattr(conn, "to_id", "") or "")
+                    from_cell = getattr(conn, "from_rel", "") or getattr(conn, "from_cell", "")
+                    # vsdx Connect model exposes: shape_id (the node), connector_shape_id, from_rel
+                    # We need to pair two Connect rows for the same connector (one begin, one end)
+                    resolved.add((connector_sid, from_sid, str(from_cell)))
+            except Exception as e:
+                errors.append(f"connects page{page_idx}: {e}")
 
-            # Look for BegTrigger/EndTrigger formulas referencing Sheet.N
-            src_id, dst_id = "", ""
+            # Build edge src/dst by pairing Connect rows per connector
+            pair: dict[str, dict[str, str]] = {}
+            for connector_sid, node_sid, from_cell in resolved:
+                if not connector_sid or not node_sid:
+                    continue
+                slot = pair.setdefault(connector_sid, {})
+                role = "source" if from_cell.lower().startswith("begin") else "target"
+                slot[role] = node_sid
+
+            for connector_sid, shape, label in connector_shapes:
+                ends = pair.get(str(connector_sid), {})
+                src_sid = ends.get("source")
+                dst_sid = ends.get("target")
+                src_node = sheet_to_node.get((page_idx, src_sid)) if src_sid else None
+                dst_node = sheet_to_node.get((page_idx, dst_sid)) if dst_sid else None
+                if src_node and dst_node:
+                    edges.append({
+                        "id": f"vsdx-p{page_idx}-e-{connector_sid}",
+                        "source": src_node,
+                        "target": dst_node,
+                        "label": label,
+                    })
+                else:
+                    errors.append(
+                        f"unresolved connector page{page_idx} sid={connector_sid} "
+                        f"src={src_sid} dst={dst_sid}"
+                    )
+
+    result: dict = {"nodes": nodes, "edges": edges, "_pages": page_count}
+    if errors:
+        result["_errors"] = errors
+    return result
+
+
+def _import_vsdx_stdlib(file_path: str) -> dict:
+    """Hardened stdlib VSDX parser — no external deps.
+
+    Handles:
+    - Multi-page traversal (all ``visio/pages/page*.xml``)
+    - Master-shape inheritance (Text, Cells, Property sections resolved
+      from ``visio/masters/master*.xml`` when shape has ``Master=`` attr)
+    - ``<Connect>`` elements for connector wiring (primary) with
+      ``BegTrigger``/``EndTrigger`` as fallback
+    - Real ``PageHeight`` from ``PageSheet`` (no hardcoded 12 inches)
+    - Structured error diagnostics instead of silent ``except: pass``
+    """
+    import zipfile
+
+    nodes: list[dict] = []
+    edges: list[dict] = []
+    errors: list[str] = []
+    sheet_to_node: dict[tuple[int, str], str] = {}
+    page_count = 0
+
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            names = zf.namelist()
+            masters = _vsdx_load_masters(zf, names, errors)
+            page_files = sorted(
+                n for n in names
+                if re.match(r"^visio/pages/page\d+\.xml$", n.lower())
+            )
+            if not page_files:
+                return {"nodes": nodes, "edges": edges, "_pages": 0,
+                        "_errors": errors + ["no page xml found"]}
+
+            for page_idx, page_path in enumerate(page_files):
+                page_count += 1
+                try:
+                    raw = zf.read(page_path).decode("utf-8", errors="replace")
+                    _vsdx_parse_page(
+                        raw, page_idx, masters, nodes, edges,
+                        sheet_to_node, errors,
+                    )
+                except Exception as e:
+                    errors.append(f"page {page_path}: {e}")
+    except zipfile.BadZipFile as e:
+        errors.append(f"not a valid vsdx/zip: {e}")
+    except Exception as e:
+        errors.append(f"vsdx read: {e}")
+
+    result: dict = {"nodes": nodes, "edges": edges, "_pages": page_count}
+    if errors:
+        result["_errors"] = errors
+    return result
+
+
+def _vsdx_load_masters(zf, names, errors: list) -> dict:
+    """Load master shapes keyed by master ID.
+
+    Returns ``{master_id: {"text": str, "cells": {name: val}, "props": {...}}}``.
+    Master inheritance is how stencil-based Visio diagrams (Cisco, AWS, etc.)
+    carry their hostname/IP/model properties — without this, those shapes
+    come back with empty labels and no metadata.
+    """
+    masters: dict[str, dict] = {}
+    master_files = [n for n in names if re.match(r"^visio/masters/master\d+\.xml$", n.lower())]
+    for mf in master_files:
+        m_id = re.search(r"master(\d+)\.xml", mf.lower())
+        if not m_id:
+            continue
+        try:
+            xml = zf.read(mf).decode("utf-8", errors="replace")
+            xml = _sanitize_xml(xml)
+            xml = re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', "", xml)
+            root = ET.fromstring(xml)  # nosec B314
+            # Master file wraps its shape(s) — take first Shape
+            shape = root.find(".//Shape")
+            if shape is None:
+                continue
+            text_el = shape.find("Text")
+            text = "".join(text_el.itertext()).strip() if text_el is not None else ""
+            cells = {c.get("N", ""): c.get("V", "") for c in shape.findall("Cell")}
+            props = _vsdx_extract_properties(shape)
+            masters[m_id.group(1)] = {"text": text, "cells": cells, "props": props}
+        except Exception as e:
+            errors.append(f"master {mf}: {e}")
+    return masters
+
+
+def _vsdx_extract_properties(shape: ET.Element) -> dict:
+    """Extract Property section rows as a flat dict.
+
+    Prefers the human-friendly ``Label`` cell over the internal row name
+    when present (real Visio property rows often have ``Row N="Row_1"``
+    with a separate ``Cell N="Label" V="Hostname"``).
+    """
+    props: dict[str, str] = {}
+    for section in shape.findall("Section"):
+        if section.get("N") != "Property":
+            continue
+        for row in section.findall("Row"):
+            row_name = row.get("N", "")
+            label_cell = row.find("Cell[@N='Label']")
+            val_cell = row.find("Cell[@N='Value']")
+            if val_cell is None:
+                continue
+            val = val_cell.get("V", "")
+            if val in (None, ""):
+                continue
+            key = (label_cell.get("V", "") if label_cell is not None else "") or row_name
+            if key:
+                props[key] = val
+    return props
+
+
+def _vsdx_parse_page(
+    page_xml: str,
+    page_idx: int,
+    masters: dict,
+    nodes: list,
+    edges: list,
+    sheet_to_node: dict,
+    errors: list,
+) -> None:
+    """Parse a single page XML, appending nodes/edges."""
+    page_xml = _sanitize_xml(page_xml)
+    page_xml = re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', "", page_xml)
+    root = ET.fromstring(page_xml)  # nosec B314
+
+    # Real page height — fall back to 11" (US Letter portrait) only if absent
+    page_h_in = 11.0
+    for cell in root.iter("Cell"):
+        if cell.get("N") == "PageHeight":
+            try:
+                page_h_in = float(cell.get("V", "11"))
+                break
+            except ValueError:
+                pass
+
+    connector_shapes: list[tuple[str, ET.Element, str]] = []
+
+    for shape in root.iter("Shape"):
+        sid = shape.get("ID", str(uuid.uuid4())[:8])
+        master_id = shape.get("Master") or shape.get("MasterShape")
+        master = masters.get(master_id, {}) if master_id else {}
+
+        cells = {c.get("N", ""): c.get("V", "") for c in shape.findall("Cell")}
+        # Merge master cells as defaults (shape overrides)
+        for mk, mv in (master.get("cells") or {}).items():
+            cells.setdefault(mk, mv)
+
+        text_el = shape.find("Text")
+        label = "".join(text_el.itertext()).strip() if text_el is not None else ""
+        if not label:
+            label = master.get("text", "")
+
+        props = _vsdx_extract_properties(shape)
+        for mk, mv in (master.get("props") or {}).items():
+            props.setdefault(mk, mv)
+
+        # Connector detection: 1D shapes have BeginX
+        if "BeginX" in cells:
+            connector_shapes.append((sid, shape, label))
+            continue
+
+        # Node detection
+        if "Width" in cells or "PinX" in cells:
+            try:
+                pin_x = float(cells.get("PinX", "0") or 0)
+                pin_y = float(cells.get("PinY", "0") or 0)
+            except ValueError:
+                pin_x = pin_y = 0.0
+
+            node_id = f"vsdx-p{page_idx}-{sid}"
+            if not label:
+                label = (
+                    props.get("hostname")
+                    or props.get("Hostname")
+                    or props.get("Name")
+                    or f"Shape-{sid}"
+                )
+
+            node: dict = {
+                "id": node_id,
+                "label": label,
+                "type": "imported",
+                "x": round(pin_x * 96),
+                "y": round((page_h_in - pin_y) * 96),
+            }
+            if page_idx > 0:
+                node["page"] = page_idx
+            if props:
+                node["properties"] = props
+            nodes.append(node)
+            sheet_to_node[(page_idx, sid)] = node_id
+
+    # ── Edge resolution ─────────────────────────────────────────────────
+    # Primary: <Connect> elements — the authoritative Visio wiring
+    connected_ids: set = set()
+    pair: dict[str, dict[str, str]] = {}
+    for conn in root.iter("Connect"):
+        from_sheet = conn.get("FromSheet", "")
+        to_sheet = conn.get("ToSheet", "")
+        from_cell = conn.get("FromCell", "")
+        if not from_sheet or not to_sheet:
+            continue
+        slot = pair.setdefault(from_sheet, {})
+        # FromCell indicates which end: "BeginX" = source, "EndX" = target
+        role = "source" if from_cell.lower().startswith("begin") else "target"
+        slot[role] = to_sheet
+
+    for connector_sid, shape, label in connector_shapes:
+        ends = pair.get(connector_sid, {})
+        src_sid = ends.get("source")
+        dst_sid = ends.get("target")
+
+        # Fallback: BegTrigger/EndTrigger formulas reference Sheet.N
+        if not src_sid or not dst_sid:
             for cell in shape.findall("Cell"):
                 n = cell.get("N", "")
                 f = cell.get("F", "")
-                if n == "BegTrigger" and "Sheet." in f:
-                    ref = re.search(r"Sheet\.(\d+)", f)
-                    if ref:
-                        src_id = node_shape_ids.get(ref.group(1), "")
-                elif n == "EndTrigger" and "Sheet." in f:
-                    ref = re.search(r"Sheet\.(\d+)", f)
-                    if ref:
-                        dst_id = node_shape_ids.get(ref.group(1), "")
+                if "Sheet." not in f:
+                    continue
+                ref = re.search(r"Sheet\.(\d+)", f)
+                if not ref:
+                    continue
+                if n == "BegTrigger" and not src_sid:
+                    src_sid = ref.group(1)
+                elif n == "EndTrigger" and not dst_sid:
+                    dst_sid = ref.group(1)
 
-            if src_id and dst_id:
-                edges.append({
-                    "id": f"vsdx-e-{sid}",
-                    "source": src_id,
-                    "target": dst_id,
-                    "label": label,
-                })
-    except Exception:
-        pass
+        src_node = sheet_to_node.get((page_idx, src_sid)) if src_sid else None
+        dst_node = sheet_to_node.get((page_idx, dst_sid)) if dst_sid else None
 
-    return {"nodes": nodes, "edges": edges}
+        if src_node and dst_node:
+            edges.append({
+                "id": f"vsdx-p{page_idx}-e-{connector_sid}",
+                "source": src_node,
+                "target": dst_node,
+                "label": label,
+            })
+            connected_ids.add(connector_sid)
+        else:
+            errors.append(
+                f"unresolved connector page{page_idx} sid={connector_sid} "
+                f"src={src_sid} dst={dst_sid}"
+            )
 
 
 def import_svg(svg_str: str) -> dict:
