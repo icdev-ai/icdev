@@ -143,6 +143,8 @@ image-gen = [
 network = [
     "defusedxml>=0.7",   # Safe XML parsing for STIG import
     "networkx>=3.2",     # Graph analysis for NL topology queries
+    "vsdx>=0.5",         # Visio VSDX import (masters, multi-page, Connect wiring)
+    "lxml>=4.9",         # Required by vsdx for fast XML parsing
 ]
 # PostgreSQL backend (adds psycopg2 + production WSGI to any profile)
 postgresql = [
