@@ -124,6 +124,43 @@ CREATE TABLE IF NOT EXISTS idc_runbooks (
 
 CREATE INDEX IF NOT EXISTS idx_idc_runbooks_category ON idc_runbooks(category);
 CREATE INDEX IF NOT EXISTS idx_idc_runbooks_severity ON idc_runbooks(severity);
+
+CREATE TABLE IF NOT EXISTS idc_sops (
+    id                      TEXT PRIMARY KEY,
+    title                   TEXT NOT NULL,
+    category                TEXT NOT NULL DEFAULT 'general'
+                                CHECK (category IN (
+                                    'infra_change_management',
+                                    'capacity_planning',
+                                    'cloud_account_onboarding',
+                                    'patch_management',
+                                    'disaster_recovery',
+                                    'access_management',
+                                    'general'
+                                )),
+    description             TEXT DEFAULT '',
+    purpose                 TEXT DEFAULT '',
+    scope                   TEXT DEFAULT '',
+    steps                   TEXT DEFAULT '[]',
+    status                  TEXT NOT NULL DEFAULT 'draft'
+                                CHECK (status IN ('draft','pending_review','approved','rejected','archived')),
+    version                 TEXT DEFAULT '1.0',
+    owner                   TEXT DEFAULT '',
+    reviewer                TEXT DEFAULT '',
+    approver                TEXT DEFAULT '',
+    reviewed_at             TEXT DEFAULT '',
+    approved_at             TEXT DEFAULT '',
+    effective_date          TEXT DEFAULT '',
+    review_interval_days    INTEGER DEFAULT 365,
+    nist_controls           TEXT DEFAULT '[]',
+    tags                    TEXT DEFAULT '[]',
+    classification          TEXT DEFAULT 'CUI',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_idc_sops_category ON idc_sops(category);
+CREATE INDEX IF NOT EXISTS idx_idc_sops_status ON idc_sops(status);
 """
 
 # ── Templates ────────────────────────────────────────────────────────────────

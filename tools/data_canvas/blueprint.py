@@ -1395,6 +1395,298 @@ def create_data_canvas_blueprint():
 
     # ── External Catalog Sync ──────────────────────────────────────────────────
 
+    # ══════════════════════════════════════════════════════════════════════
+    # SOP PAGE ROUTES
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/sops")
+    @dc_login_required
+    def dc_sops():
+        """SOP list page — all DDC standard operating procedures."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, title, category, status, version, owner, classification, created_at, updated_at "
+            "FROM ddc_sops ORDER BY category, title"
+        ).fetchall()
+        conn.close()
+        sops = [row_to_dict(r) for r in rows]
+        return render_template("data_canvas/sops.html", sops=sops)
+
+    @bp.route("/sops/<sop_id>")
+    @dc_login_required
+    def dc_sop_detail(sop_id):
+        """SOP detail page."""
+        conn = get_connection()
+        sop_row = conn.execute("SELECT * FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
+        if not sop_row:
+            conn.close()
+            return redirect("/data/sops")
+        import json as _json
+        sop = row_to_dict(sop_row)
+        try:
+            sop["steps"] = _json.loads(sop.get("steps_json") or "[]")
+        except Exception:
+            sop["steps"] = []
+        try:
+            sop["references"] = _json.loads(sop.get("references_json") or "[]")
+        except Exception:
+            sop["references"] = []
+        approvals = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM ddc_sop_approvals WHERE sop_id=? ORDER BY created_at DESC",
+                (sop_id,),
+            ).fetchall()
+        ]
+        conn.close()
+        return render_template("data_canvas/sops.html", sop=sop, approvals=approvals, detail=True)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SOP API ROUTES
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/sops", methods=["GET"])
+    @dc_login_required
+    def dc_api_sops_list():
+        """List all SOPs, optionally filtered by category or status."""
+        category = request.args.get("category", "")
+        status = request.args.get("status", "")
+        conn = get_connection()
+        if category and status:
+            rows = conn.execute(
+                "SELECT * FROM ddc_sops WHERE category=? AND status=? ORDER BY title",
+                (category, status),
+            ).fetchall()
+        elif category:
+            rows = conn.execute(
+                "SELECT * FROM ddc_sops WHERE category=? ORDER BY title", (category,)
+            ).fetchall()
+        elif status:
+            rows = conn.execute(
+                "SELECT * FROM ddc_sops WHERE status=? ORDER BY title", (status,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM ddc_sops ORDER BY category, title"
+            ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows])
+
+    @bp.route("/api/sops", methods=["POST"])
+    @dc_login_required
+    def dc_api_sops_create():
+        """Create a new SOP."""
+        import json as _json
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("title"):
+            return jsonify({"error": "title is required"}), 400
+        sop_id = str(_uuid.uuid4())
+        steps = data.get("steps", [])
+        refs = data.get("references", [])
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO ddc_sops "
+            "(id, title, category, description, purpose, scope, steps_json, references_json, "
+            "version, status, classification, linked_design_id, owner, reviewer, approver, "
+            "created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                sop_id,
+                data["title"],
+                data.get("category", "general"),
+                data.get("description", ""),
+                data.get("purpose", ""),
+                data.get("scope", ""),
+                _json.dumps(steps),
+                _json.dumps(refs),
+                data.get("version", "1.0"),
+                "draft",
+                data.get("classification", "CUI // SP-CTI"),
+                data.get("linked_design_id"),
+                data.get("owner", ""),
+                data.get("reviewer", ""),
+                data.get("approver", ""),
+                now_isoformat(),
+                now_isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+        _audit(sop_id, session.get("user_id", "system"), "SOP_CREATE", data["title"])
+        return jsonify({"id": sop_id, "status": "created"}), 201
+
+    @bp.route("/api/sops/<sop_id>", methods=["GET"])
+    @dc_login_required
+    def dc_api_sops_get(sop_id):
+        """Get a single SOP by ID."""
+        import json as _json
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        sop = row_to_dict(row)
+        try:
+            sop["steps"] = _json.loads(sop.get("steps_json") or "[]")
+        except Exception:
+            sop["steps"] = []
+        try:
+            sop["references"] = _json.loads(sop.get("references_json") or "[]")
+        except Exception:
+            sop["references"] = []
+        return jsonify(sop)
+
+    @bp.route("/api/sops/<sop_id>", methods=["PUT"])
+    @dc_login_required
+    def dc_api_sops_update(sop_id):
+        """Update an existing SOP."""
+        import json as _json
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        steps = data.get("steps")
+        refs = data.get("references")
+        conn.execute(
+            "UPDATE ddc_sops SET title=?, category=?, description=?, purpose=?, scope=?, "
+            "steps_json=?, references_json=?, version=?, classification=?, owner=?, "
+            "reviewer=?, approver=?, linked_design_id=?, updated_at=? "
+            "WHERE id=?",
+            (
+                data.get("title", ""),
+                data.get("category", "general"),
+                data.get("description", ""),
+                data.get("purpose", ""),
+                data.get("scope", ""),
+                _json.dumps(steps) if steps is not None else "[]",
+                _json.dumps(refs) if refs is not None else "[]",
+                data.get("version", "1.0"),
+                data.get("classification", "CUI // SP-CTI"),
+                data.get("owner", ""),
+                data.get("reviewer", ""),
+                data.get("approver", ""),
+                data.get("linked_design_id"),
+                now_isoformat(),
+                sop_id,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        _audit(sop_id, session.get("user_id", "system"), "SOP_UPDATE", data.get("title", ""))
+        return jsonify({"id": sop_id, "status": "updated"})
+
+    @bp.route("/api/sops/<sop_id>", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_sops_delete(sop_id):
+        """Delete a SOP and its approval history."""
+        conn = get_connection()
+        conn.execute("DELETE FROM ddc_sop_approvals WHERE sop_id=?", (sop_id,))
+        conn.execute("DELETE FROM ddc_sops WHERE id=?", (sop_id,))
+        conn.commit()
+        conn.close()
+        _audit(sop_id, session.get("user_id", "system"), "SOP_DELETE", "")
+        return jsonify({"status": "deleted"})
+
+    @bp.route("/api/sops/<sop_id>/submit", methods=["POST"])
+    @dc_login_required
+    def dc_api_sops_submit(sop_id):
+        """Submit a SOP for review (draft → pending_review)."""
+        conn = get_connection()
+        row = conn.execute("SELECT id, status FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        data = request.get_json(force=True, silent=True) or {}
+        reviewer = data.get("reviewer") or session.get("user_id", "system")
+        approval_id = str(_uuid.uuid4())
+        conn.execute(
+            "UPDATE ddc_sops SET status='pending_review', updated_at=? WHERE id=?",
+            (now_isoformat(), sop_id),
+        )
+        conn.execute(
+            "INSERT INTO ddc_sop_approvals (id, sop_id, reviewer, action, comment, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (approval_id, sop_id, reviewer, "submitted", data.get("comment", ""), now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        _audit(sop_id, session.get("user_id", "system"), "SOP_SUBMIT", f"reviewer={reviewer}")
+        return jsonify({"id": sop_id, "status": "pending_review"})
+
+    @bp.route("/api/sops/<sop_id>/approve", methods=["POST"])
+    @dc_login_required
+    def dc_api_sops_approve(sop_id):
+        """Approve or reject a SOP."""
+        data = request.get_json(force=True, silent=True) or {}
+        action = data.get("action", "approved")
+        if action not in ("approved", "rejected"):
+            return jsonify({"error": "action must be 'approved' or 'rejected'"}), 400
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        new_status = action  # 'approved' or 'rejected' maps directly to status
+        if action == "rejected":
+            new_status = "draft"  # rejected goes back to draft
+        approver = data.get("approver") or session.get("user_id", "system")
+        approval_id = str(_uuid.uuid4())
+        conn.execute(
+            "UPDATE ddc_sops SET status=?, approver=?, updated_at=? WHERE id=?",
+            (new_status, approver, now_isoformat(), sop_id),
+        )
+        conn.execute(
+            "INSERT INTO ddc_sop_approvals (id, sop_id, reviewer, action, comment, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (approval_id, sop_id, approver, action, data.get("comment", ""), now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        _audit(sop_id, session.get("user_id", "system"), f"SOP_{action.upper()}", f"approver={approver}")
+        return jsonify({"id": sop_id, "status": new_status})
+
+    @bp.route("/api/sops/<sop_id>/retire", methods=["POST"])
+    @dc_login_required
+    def dc_api_sops_retire(sop_id):
+        """Retire a SOP (approved → retired)."""
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM ddc_sops WHERE id=?", (sop_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        reviewer = data.get("reviewer") or session.get("user_id", "system")
+        approval_id = str(_uuid.uuid4())
+        conn.execute(
+            "UPDATE ddc_sops SET status='retired', updated_at=? WHERE id=?",
+            (now_isoformat(), sop_id),
+        )
+        conn.execute(
+            "INSERT INTO ddc_sop_approvals (id, sop_id, reviewer, action, comment, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (approval_id, sop_id, reviewer, "retired", data.get("comment", ""), now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        _audit(sop_id, session.get("user_id", "system"), "SOP_RETIRE", "")
+        return jsonify({"id": sop_id, "status": "retired"})
+
+    @bp.route("/api/sops/<sop_id>/approvals", methods=["GET"])
+    @dc_login_required
+    def dc_api_sops_approvals(sop_id):
+        """Get approval history for a SOP."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM ddc_sop_approvals WHERE sop_id=? ORDER BY created_at DESC",
+            (sop_id,),
+        ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows])
+
+    # ── External Catalog Sync ──────────────────────────────────────────────────
+
     @bp.route("/api/sync/datahub", methods=["POST"])
     @dc_login_required
     def dc_api_sync_datahub():
