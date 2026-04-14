@@ -39,6 +39,19 @@ from typing import Dict, List, Optional, Set
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _is_airgap() -> bool:
+    """Return True if ICDEV™ is running in air-gapped mode.
+
+    Tries to import the canonical detector; falls back to False on import
+    error so that this module stays importable in minimal environments.
+    """
+    try:
+        from tools.airgap.detector import is_airgap  # noqa: PLC0415
+        return is_airgap()
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Result types (follows ConsistencyResult pattern from consistency_analyzer.py)
 # ---------------------------------------------------------------------------
@@ -314,15 +327,17 @@ def check_settings_deny_rules(
     ]
 
     if not settings_path.exists():
+        status = "warn" if _is_airgap() else "fail"
+        hint = " (air-gap: settings.json not required)" if status == "warn" else ""
         return ClaudeConfigCheck(
             check_id="settings_deny_rules",
             check_name="Settings Deny Rules",
-            status="fail",
+            status=status,
             expected=required_patterns,
             actual=[],
             missing=required_patterns,
             extra=[],
-            message="settings.json not found",
+            message=f"settings.json not found{hint}",
         )
 
     try:
@@ -438,15 +453,17 @@ def check_hook_syntax(
         hooks_dir = PROJECT_ROOT / ".claude" / "hooks"
 
     if not hooks_dir.exists():
+        status = "warn" if _is_airgap() else "fail"
+        hint = " (air-gap: use tools/airgap/hook_compat.py instead)" if status == "warn" else ""
         return ClaudeConfigCheck(
             check_id="hook_syntax",
             check_name="Hook Syntax Validation",
-            status="fail",
+            status=status,
             expected=[],
             actual=[],
             missing=[],
             extra=[],
-            message="Hooks directory not found",
+            message=f"Hooks directory not found{hint}",
         )
 
     py_files = [f for f in hooks_dir.glob("*.py") if f.name != "__init__.py"]
@@ -490,15 +507,17 @@ def check_settings_hook_references(
         hooks_dir = PROJECT_ROOT / ".claude" / "hooks"
 
     if not settings_path.exists():
+        status = "warn" if _is_airgap() else "fail"
+        hint = " (air-gap: settings.json not required)" if status == "warn" else ""
         return ClaudeConfigCheck(
             check_id="hook_references",
             check_name="Hook File References",
-            status="fail",
+            status=status,
             expected=[],
             actual=[],
             missing=[],
             extra=[],
-            message="settings.json not found",
+            message=f"settings.json not found{hint}",
         )
 
     try:
