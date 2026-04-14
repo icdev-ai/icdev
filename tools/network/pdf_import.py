@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ── Public entry points ────────────────────────────────────────────────
 
 
-def import_pdf(file_path: str, *, spatial_tolerance: float = 8.0) -> dict:
+def import_pdf(file_path: str, *, spatial_tolerance: float = 18.0) -> dict:
     """Parse a PDF diagram into a graph dict via the vector path.
 
     Returns ``{nodes, edges, _pages, _errors}``. ``nodes`` and ``edges``
@@ -254,13 +254,27 @@ def _parse_page(
         if len(pts) < 2:
             continue
         try:
-            # Take only the endpoints of each polyline segment
+            # Per-segment polyline endpoints
             for j in range(len(pts) - 1):
                 x0, y0 = pts[j]
                 x1, y1 = pts[j + 1]
                 segments.append((float(x0), float(y0), float(x1), float(y1)))
+            # Also emit the full chord (first→last point) so that bezier
+            # arrows whose intermediate points sit far from rect borders
+            # still produce a single src→dst edge.
+            if len(pts) > 2:
+                segments.append((
+                    float(pts[0][0]), float(pts[0][1]),
+                    float(pts[-1][0]), float(pts[-1][1]),
+                ))
         except (TypeError, ValueError):
             continue
+
+    # Chars NOT inside any node rect — candidates for connector labels
+    free_chars = [
+        ch for ch in chars
+        if not _point_in_any_rect(merged, _char_center(ch))
+    ]
 
     seen_edges: set = set()
     for seg_idx, (x0, y0, x1, y1) in enumerate(segments):
@@ -282,11 +296,16 @@ def _parse_page(
             continue
         seen_edges.add(key)
 
+        # Edge label: text near the segment midpoint (interface refs like
+        # "Gi0/1", "ge-0/0/24", or VLAN/speed annotations).
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        label = _text_near_point(free_chars, mx, my, radius=24)
+
         edges.append({
             "id": f"pdf-p{page_idx}-e-{seg_idx}",
             "source": src_id,
             "target": dst_id,
-            "label": "",
+            "label": label,
         })
 
 
@@ -359,6 +378,59 @@ def _text_inside(chars: list, x0: float, top: float, x1: float, bot: float) -> s
         pieces.append(text)
         prev_x1 = cx1
         prev_top = ctop
+    return "".join(pieces).strip()
+
+
+def _char_center(ch: dict) -> tuple[float, float]:
+    try:
+        return (
+            (float(ch.get("x0", 0)) + float(ch.get("x1", 0))) / 2,
+            (float(ch.get("top", 0)) + float(ch.get("bottom", 0))) / 2,
+        )
+    except (TypeError, ValueError):
+        return (0.0, 0.0)
+
+
+def _point_in_any_rect(merged: list[dict], pt: tuple[float, float]) -> bool:
+    px, py = pt
+    for r in merged:
+        x0 = float(r["x0"])
+        top = float(r["top"])
+        if x0 <= px <= x0 + float(r["width"]) and top <= py <= top + float(r["height"]):
+            return True
+    return False
+
+
+def _text_near_point(
+    chars: list,
+    mx: float,
+    my: float,
+    *,
+    radius: float,
+) -> str:
+    """Concatenate chars whose center is within ``radius`` of (mx, my).
+
+    Used to capture connector labels (interface names, speed/VLAN tags)
+    that float beside an edge line. Sorts by Y then X to read naturally.
+    """
+    near = []
+    for ch in chars:
+        cx, cy = _char_center(ch)
+        if math.hypot(cx - mx, cy - my) <= radius:
+            near.append((cy, cx, ch.get("text", "")))
+    if not near:
+        return ""
+    near.sort()
+    pieces: list[str] = []
+    prev_y: float | None = None
+    prev_x: float | None = None
+    for y, x, t in near:
+        if prev_y is not None and abs(y - prev_y) > 4:
+            pieces.append(" ")
+        elif prev_x is not None and x - prev_x > 2:
+            pieces.append(" ")
+        pieces.append(t)
+        prev_y, prev_x = y, x
     return "".join(pieces).strip()
 
 

@@ -11,6 +11,7 @@ or takes XML/SVG strings and returns graph dicts.
 """
 
 import logging
+import math
 import re
 import uuid
 import xml.etree.ElementTree as ET
@@ -548,7 +549,8 @@ def _vsdx_parse_page(
 
         # Connector detection: 1D shapes have BeginX
         if "BeginX" in cells:
-            connector_shapes.append((sid, shape, label))
+            # Capture connector properties (interface, speed, vlan, etc.)
+            connector_shapes.append((sid, shape, label, cells, props))
             continue
 
         # Node detection
@@ -597,12 +599,35 @@ def _vsdx_parse_page(
         role = "source" if from_cell.lower().startswith("begin") else "target"
         slot[role] = to_sheet
 
-    for connector_sid, shape, label in connector_shapes:
+    # Build (sid -> (pin_x_in, pin_y_in)) for spatial fallback
+    sid_to_pin: dict[str, tuple[float, float]] = {}
+    for shape in root.iter("Shape"):
+        sid_x = shape.get("ID", "")
+        cmap = {c.get("N", ""): c.get("V", "") for c in shape.findall("Cell")}
+        if "PinX" in cmap and "PinY" in cmap:
+            try:
+                sid_to_pin[sid_x] = (float(cmap["PinX"]), float(cmap["PinY"]))
+            except ValueError:
+                pass
+
+    def _nearest_node_sid(x_in: float, y_in: float, *, max_in: float = 1.5) -> str | None:
+        best_sid = None
+        best_d = max_in
+        for n_sid, (nx, ny) in sid_to_pin.items():
+            if (page_idx, n_sid) not in sheet_to_node:
+                continue
+            d = math.hypot(nx - x_in, ny - y_in)
+            if d < best_d:
+                best_d = d
+                best_sid = n_sid
+        return best_sid
+
+    for connector_sid, shape, label, cells_c, props_c in connector_shapes:
         ends = pair.get(connector_sid, {})
         src_sid = ends.get("source")
         dst_sid = ends.get("target")
 
-        # Fallback: BegTrigger/EndTrigger formulas reference Sheet.N
+        # Fallback 1: BegTrigger/EndTrigger formulas reference Sheet.N
         if not src_sid or not dst_sid:
             for cell in shape.findall("Cell"):
                 n = cell.get("N", "")
@@ -617,16 +642,37 @@ def _vsdx_parse_page(
                 elif n == "EndTrigger" and not dst_sid:
                     dst_sid = ref.group(1)
 
+        # Fallback 2: spatial — match BeginX/EndX coords to nearest node Pin.
+        # Catches connectors with neither <Connect> rows nor triggers (manual
+        # drops, dynamic-glue rewrites, exports from auto-layout tools).
+        if not src_sid:
+            try:
+                bx = float(cells_c.get("BeginX", "0") or 0)
+                by = float(cells_c.get("BeginY", "0") or 0)
+                src_sid = _nearest_node_sid(bx, by)
+            except ValueError:
+                pass
+        if not dst_sid:
+            try:
+                ex = float(cells_c.get("EndX", "0") or 0)
+                ey = float(cells_c.get("EndY", "0") or 0)
+                dst_sid = _nearest_node_sid(ex, ey)
+            except ValueError:
+                pass
+
         src_node = sheet_to_node.get((page_idx, src_sid)) if src_sid else None
         dst_node = sheet_to_node.get((page_idx, dst_sid)) if dst_sid else None
 
         if src_node and dst_node:
-            edges.append({
+            edge: dict = {
                 "id": f"vsdx-p{page_idx}-e-{connector_sid}",
                 "source": src_node,
                 "target": dst_node,
                 "label": label,
-            })
+            }
+            if props_c:
+                edge["properties"] = props_c
+            edges.append(edge)
             connected_ids.add(connector_sid)
         else:
             errors.append(
