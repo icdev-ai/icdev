@@ -22,8 +22,11 @@ from pathlib import Path
 
 try:
     import requests
+
+    from tools.http.client import get_session
 except ImportError:
     requests = None
+    get_session = None  # type: ignore[assignment]
 
 try:
     import yaml
@@ -112,7 +115,7 @@ class XactaClient:
         if requests is None:
             raise ImportError("requests library required for Xacta API. Install with: pip install requests")
 
-        self._session = requests.Session()
+        self._session = get_session()
         self._session.headers.update(
             {
                 "Content-Type": "application/json",

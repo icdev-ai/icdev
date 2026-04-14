@@ -1595,7 +1595,7 @@ def _extract_and_fetch_urls(text):
 
     results = []
     try:
-        import requests as _requests
+        from tools.http.client import request as _http_request
     except ImportError:
         for u in urls:
             results.append({"url": u, "title": "", "summary": "(requests library not available)"})
@@ -1603,7 +1603,8 @@ def _extract_and_fetch_urls(text):
 
     for url in urls[:3]:  # limit to 3 URLs per message
         try:
-            resp = _requests.get(
+            resp = _http_request(
+                "GET",
                 url,
                 timeout=10,
                 headers={

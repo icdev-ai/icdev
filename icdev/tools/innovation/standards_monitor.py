@@ -49,9 +49,12 @@ except ImportError:
 try:
     import requests
 
+    from tools.http.client import request as _http_request
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
+    _http_request = None  # type: ignore[assignment]
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
 
@@ -148,7 +151,7 @@ def _safe_get(url, timeout=DEFAULT_TIMEOUT):
     if not _HAS_REQUESTS:
         return None, "requests not installed (air-gapped)"
     try:
-        resp = requests.get(url, timeout=timeout)
+        resp = _http_request("GET", url, timeout=timeout)
         if resp.status_code in (429, 403):
             return None, f"http_{resp.status_code}"
         resp.raise_for_status()

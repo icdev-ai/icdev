@@ -1314,7 +1314,7 @@ def check_cross_imports() -> AuditCheck:
 def check_dashboard_health() -> AuditCheck:
     """INT-004: Dashboard page health (requires running dashboard)."""
     try:
-        import requests
+        from tools.http.client import get_session, request as _http_request
     except ImportError:
         return AuditCheck(
             check_id="INT-004",
@@ -1328,7 +1328,7 @@ def check_dashboard_health() -> AuditCheck:
     port = os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
     base = f"http://localhost:{port}"
     try:
-        r = requests.get(f"{base}/login", timeout=3)
+        r = _http_request("GET", f"{base}/login", timeout=3)
         if r.status_code != 200:
             return AuditCheck(
                 check_id="INT-004",
@@ -1350,7 +1350,7 @@ def check_dashboard_health() -> AuditCheck:
             details={},
         )
     # Dashboard is running — test pages
-    session = requests.Session()
+    session = get_session()
     # Create temp API key for auth
     try:
         conn = get_connection()
@@ -2102,6 +2102,11 @@ def check_tools_manifest() -> AuditCheck:
         )
     try:
         content = manifest.read_text(encoding="utf-8")
+        # Manifest was split into shards (2026-04-14) — include shard bodies.
+        shard_dir = PROJECT_ROOT / "tools" / "manifest"
+        if shard_dir.is_dir():
+            for shard in shard_dir.glob("*.md"):
+                content += "\n" + shard.read_text(encoding="utf-8")
         # Count tools mentioned in manifest
         listed = set(re.findall(r"(\w+\.py)", content))
         # Count actual tool files

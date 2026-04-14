@@ -29,6 +29,7 @@ import os
 import time
 from typing import Optional
 
+from tools.http.client import request
 from tools.ci.connectors.base_connector import ChatConnectorAdapter
 from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
 
@@ -160,7 +161,8 @@ class SlackConnector(ChatConnectorAdapter):
             if thread_id:
                 payload["thread_ts"] = thread_id
 
-            response = requests.post(
+            response = request(
+                "POST",
                 f"{SLACK_API_BASE}/chat.postMessage",
                 headers={
                     "Authorization": f"Bearer {self._bot_token}",
