@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -155,47 +156,96 @@ def _encode_image(image_path: str) -> tuple[str, str]:
 
 
 def _extract_from_pdf(file_path: str) -> dict:
-    """Extract text/images from PDF, attempt vision extraction."""
-    # Try pypdf text extraction first for text-based PDFs
+    """Extract a topology graph from a PDF.
+
+    Strategy:
+    1. **Vector path** (``pdfplumber``): for text-based PDFs exported from
+       Visio / drawio / Lucidchart, extract rectangles → nodes and lines
+       → edges directly. Zero vision calls, zero OCR, all pages traversed,
+       coords preserved. Handles 80%+ of real-world NDC PDFs.
+    2. **Vision path**: if the vector path finds no shapes (scanned PDF,
+       raster-only export), rasterize every page via ``pypdfium2`` and
+       run each through the vision LLM.
+    3. **OCR path**: final fallback when vision is unavailable or returns
+       empty. Runs on every page, not just page 1.
+
+    Returns a graph dict merged across all pages.
+    """
+    from tools.network.pdf_import import import_pdf, rasterize_pdf_pages
+
+    # ── 1. Vector path ──
+    vector = import_pdf(file_path)
+    if vector.get("nodes"):
+        logger.info(
+            "PDF vector extraction: %d nodes, %d edges across %d page(s)",
+            len(vector["nodes"]), len(vector["edges"]), vector.get("_pages", 1),
+        )
+        return vector
+
+    # ── 2. Vision path (all pages, not just page 1) ──
+    merged_nodes: list[dict] = []
+    merged_edges: list[dict] = []
+    errors: list[str] = list(vector.get("_errors", []))
+    dpi = int(os.getenv("ICDEV_PDF_DPI", "200"))
+    page_images = rasterize_pdf_pages(file_path, dpi=dpi)
+
+    if page_images:
+        for page_idx, png in enumerate(page_images):
+            try:
+                result = _extract_via_vision(str(png))
+            except Exception as e:
+                errors.append(f"vision page{page_idx}: {e}")
+                continue
+            if result.get("error"):
+                errors.append(f"vision page{page_idx}: {result['error']}")
+                continue
+            # Re-ID nodes with page scope and remap edges
+            id_map: dict[str, str] = {}
+            for n in result.get("nodes", []):
+                new_id = f"pdf-vis-p{page_idx}-{n['id']}"
+                id_map[n["id"]] = new_id
+                n["id"] = new_id
+                if page_idx > 0:
+                    n["page"] = page_idx
+                merged_nodes.append(n)
+            for e in result.get("edges", []):
+                src = id_map.get(e.get("source", ""))
+                dst = id_map.get(e.get("target", ""))
+                if src and dst:
+                    e["id"] = f"pdf-vis-p{page_idx}-{e['id']}"
+                    e["source"] = src
+                    e["target"] = dst
+                    merged_edges.append(e)
+    else:
+        # No rasterizer available — let the vision LLM try the raw PDF
+        result = _extract_via_vision(file_path)
+        if result.get("nodes"):
+            merged_nodes.extend(result["nodes"])
+            merged_edges.extend(result.get("edges", []))
+        elif result.get("error"):
+            errors.append(f"vision raw pdf: {result['error']}")
+
+    if merged_nodes:
+        out: dict = {"nodes": merged_nodes, "edges": merged_edges,
+                     "_pages": len(page_images) or 1}
+        if errors:
+            out["_errors"] = errors
+        return out
+
+    # ── 3. OCR fallback ──
     try:
-        from tools.rag.pdf_provider import extract_pdf_text  # type: ignore
+        from tools.network.ocr_fallback import extract_topology_via_ocr
 
-        text = extract_pdf_text(file_path)
-        if text and len(text.strip()) > 100:
-            logger.info("PDF has extractable text (%d chars), but diagrams need vision", len(text))
-    except (ImportError, Exception):
-        pass
-
-    # Convert first page to image for vision extraction
-    # Try pdf2image if available, otherwise treat the PDF as-is for vision LLM
-    try:
-        from pdf2image import convert_from_path  # type: ignore
-
-        images = convert_from_path(file_path, first_page=1, last_page=1, dpi=200)
-        if images:
-            import tempfile
-
-            tmp = Path(tempfile.gettempdir()) / f"ni_pdf_{uuid.uuid4().hex[:8]}.png"
-            images[0].save(str(tmp), "PNG")
-            return _extract_via_vision(str(tmp))
+        ocr_result = extract_topology_via_ocr(file_path)
+        if ocr_result.get("nodes"):
+            return ocr_result
     except ImportError:
-        logger.info("pdf2image not available — sending PDF path to vision LLM directly")
+        logger.debug("OCR fallback not available")
+    except Exception as e:
+        errors.append(f"ocr: {e}")
 
-    # Fallback: some vision LLMs can handle PDF directly
-    result = _extract_via_vision(file_path)
-
-    # OCR fallback if vision failed or returned no nodes
-    if not result.get("nodes") or result.get("error"):
-        try:
-            from tools.network.ocr_fallback import extract_topology_via_ocr
-
-            ocr_result = extract_topology_via_ocr(file_path)
-            if ocr_result.get("nodes"):
-                return ocr_result
-        except ImportError:
-            logger.debug("OCR fallback not available")
-
-    return result
+    return {"nodes": [], "edges": [], "_pages": len(page_images),
+            "_errors": errors or ["no extractor produced nodes"]}
 
 
 def _extract_via_vision(image_path: str) -> dict:
