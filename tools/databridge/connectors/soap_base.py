@@ -34,9 +34,12 @@ except ImportError:
 try:
     import requests
 
+    from tools.http.client import request as _http_request
+
     HAS_REQUESTS = True
 except ImportError:
     requests = None  # type: ignore[assignment]
+    _http_request = None  # type: ignore[assignment]
     HAS_REQUESTS = False
 
 try:
@@ -131,7 +134,7 @@ class SoapBaseConnector(DataConnector):
         # Stdlib fallback: verify WSDL URL is reachable
         if HAS_REQUESTS:
             try:
-                resp = requests.get(wsdl, timeout=10)
+                resp = _http_request("GET", wsdl, timeout=10)
                 return resp.status_code < 400
             except Exception:
                 return False
@@ -146,7 +149,7 @@ class SoapBaseConnector(DataConnector):
         wsdl = self._wsdl_url(self._config)
         if HAS_REQUESTS:
             try:
-                resp = requests.get(wsdl, timeout=10)
+                resp = _http_request("GET", wsdl, timeout=10)
                 return {
                     "status": "healthy" if resp.status_code < 400 else "unhealthy",
                     "latency_ms": int((time.time() - start) * 1000),

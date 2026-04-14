@@ -72,9 +72,12 @@ except ImportError:
 try:
     import requests
 
+    from tools.http.client import request as http_request
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
+    http_request = None  # type: ignore[assignment]
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
@@ -254,7 +257,7 @@ def _parse_rss_feed(url: str, filter_keywords: List[str] = None, timeout: int = 
         return []
 
     try:
-        resp = requests.get(url, timeout=timeout, headers={"User-Agent": "ICDEV-CSP-Monitor/1.0"})
+        resp = http_request("GET", url, timeout=timeout, headers={"User-Agent": "ICDEV-CSP-Monitor/1.0"})
         resp.raise_for_status()
     except Exception as exc:
         logger.error("Failed to fetch %s: %s", url, exc)

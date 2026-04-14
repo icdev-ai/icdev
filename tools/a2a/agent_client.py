@@ -20,8 +20,11 @@ from typing import Any, Dict, List, Optional
 
 try:
     import requests
+
+    from tools.http.client import get_session
 except ImportError:
     requests = None  # Handled at runtime
+    get_session = None  # type: ignore[assignment]
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -51,7 +54,7 @@ class A2AAgentClient:
         if requests is None:
             raise ImportError("requests is required. Install with: pip install requests")
 
-        self.session = requests.Session()
+        self.session = get_session()
         self.timeout = timeout
 
         # Mutual TLS
