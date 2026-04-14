@@ -7899,11 +7899,33 @@ if __name__ == "__main__":
     # Launches kanban_scheduler.py as a child process so backlog tasks
     # are promoted and dispatched regardless of which LLM/IDE is in use.
     # The subprocess dies automatically when the dashboard exits.
+    #
+    # Dedup: the dashboard debug-reloader (and operators running
+    # `python tools/dashboard/app.py` a second time) would otherwise
+    # accumulate scheduler processes. A heartbeat file (refreshed every
+    # cycle by kanban_scheduler.py) is the single source of truth; if a
+    # fresh heartbeat exists, another instance is already running.
     try:
         import subprocess as _ks_sp
+        import time as _ks_time
 
         _ks_script = Path(__file__).resolve().parent.parent / "genesis" / "kanban_scheduler.py"
-        if _ks_script.exists():
+        _ks_hb = BASE_DIR / ".tmp" / "kanban_scheduler.heartbeat"
+        _ks_hb_fresh = False
+        if _ks_hb.exists():
+            try:
+                _ks_hb_age = _ks_time.time() - _ks_hb.stat().st_mtime
+                # Scheduler default interval is 60s; allow 3× slack for slow hosts.
+                _ks_hb_fresh = _ks_hb_age < 180
+            except OSError:
+                _ks_hb_fresh = False
+
+        if _ks_hb_fresh:
+            print(
+                "[ICDEV™ Dashboard] Kanban scheduler already running "
+                f"(fresh heartbeat at {_ks_hb}) — not spawning another"
+            )
+        elif _ks_script.exists():
             _ks_log_dir = BASE_DIR / ".tmp"
             _ks_log_dir.mkdir(parents=True, exist_ok=True)
             _ks_log = open(str(_ks_log_dir / "kanban_scheduler.log"), "a", encoding="utf-8")  # noqa: SIM115
