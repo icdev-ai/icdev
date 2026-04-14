@@ -149,11 +149,19 @@ def create_data_canvas_blueprint():
                 "SELECT id, name, category, description, tags FROM dd_templates ORDER BY category, name"
             ).fetchall()
         ]
+        sop_row = conn.execute("SELECT COUNT(*) AS cnt FROM ddc_sops").fetchone()
+        sop_count = sop_row["cnt"] if sop_row else 0
+        approved_sop_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM ddc_sops WHERE status='approved'"
+        ).fetchone()
+        approved_sop_count = approved_sop_row["cnt"] if approved_sop_row else 0
         conn.close()
         return render_template(
             "data_canvas/index.html",
             designs=designs,
             templates=templates,
+            sop_count=sop_count,
+            approved_sop_count=approved_sop_count,
             objects=DATA_OBJECTS,
             classification_levels=DATA_CLASSIFICATION_LEVELS,
         )
