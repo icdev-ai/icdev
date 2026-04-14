@@ -907,3 +907,75 @@ def api_runbook_execute(runbook_id):
     if not rb:
         return jsonify({"error": "not found"}), 404
     return jsonify(rb)
+
+
+# ── SOPs ──────────────────────────────────────────────────────────────────────
+
+@infra_bp.route("/sops")
+def sops_page():
+    """Standard Operating Procedures management page."""
+    from tools.infra_canvas.sops import get_all_sops
+    sops = get_all_sops()
+    return render_template("infra_canvas/sops.html", sops=sops)
+
+
+@infra_bp.route("/api/sops", methods=["GET"])
+def api_sops_list():
+    """List SOPs with optional category/status filters."""
+    from tools.infra_canvas.sops import get_all_sops
+    category = request.args.get("category")
+    status = request.args.get("status")
+    return jsonify(get_all_sops(category=category, status=status))
+
+
+@infra_bp.route("/api/sops/<sop_id>", methods=["GET"])
+def api_sop_get(sop_id):
+    """Get a single SOP by ID."""
+    from tools.infra_canvas.sops import get_sop_by_id
+    sop = get_sop_by_id(sop_id)
+    if not sop:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(sop)
+
+
+@infra_bp.route("/api/sops", methods=["POST"])
+def api_sop_create():
+    """Create a new SOP (starts in draft)."""
+    from tools.infra_canvas.sops import create_sop
+    sop = create_sop(request.get_json() or {})
+    return jsonify(sop), 201
+
+
+@infra_bp.route("/api/sops/<sop_id>", methods=["PUT"])
+def api_sop_update(sop_id):
+    """Update an existing SOP's content fields."""
+    from tools.infra_canvas.sops import update_sop
+    sop = update_sop(sop_id, request.get_json() or {})
+    if not sop:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(sop)
+
+
+@infra_bp.route("/api/sops/<sop_id>", methods=["DELETE"])
+def api_sop_delete(sop_id):
+    """Delete a SOP."""
+    from tools.infra_canvas.sops import delete_sop
+    deleted = delete_sop(sop_id)
+    return jsonify({"deleted": deleted})
+
+
+@infra_bp.route("/api/sops/<sop_id>/transition", methods=["POST"])
+def api_sop_transition(sop_id):
+    """Advance or revert SOP approval status.
+
+    Body: {"status": "pending_review"|"approved"|"rejected"|"archived", "actor": "..."}
+    """
+    from tools.infra_canvas.sops import transition_status
+    body = request.get_json() or {}
+    new_status = body.get("status", "")
+    if not new_status:
+        return jsonify({"error": "status is required"}), 400
+    result = transition_status(sop_id, new_status, actor=body.get("actor", ""))
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
