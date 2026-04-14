@@ -182,14 +182,20 @@ class EMASSClient:
             self._session.headers["api-key"] = api_key
 
         # PKI/CAC certificate-based authentication.
+        # get_session() already applied ICDEV_MTLS_* env vars; respect that
+        # precedence — operator env wins over per-client config.
         if self.config.get("auth_method") == "pki":
+            import os as _os
+            _env_cert = _os.environ.get("ICDEV_MTLS_CLIENT_CERT")
+            _env_key = _os.environ.get("ICDEV_MTLS_CLIENT_KEY")
+            _env_ca = _os.environ.get("ICDEV_MTLS_CA_BUNDLE")
             cert_path = self.config.get("client_cert_path")
             key_path = self.config.get("client_key_path")
             ca_path = self.config.get("ca_bundle_path")
 
-            if cert_path and key_path:
+            if not (_env_cert and _env_key) and cert_path and key_path:
                 self._session.cert = (cert_path, key_path)
-            if ca_path:
+            if not _env_ca and ca_path:
                 self._session.verify = ca_path
 
         return self._session
