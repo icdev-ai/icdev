@@ -1092,6 +1092,70 @@ CREATE TABLE IF NOT EXISTS ad_quality_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_qs_ticker_date ON ad_quality_scores(ticker, as_of_date);
 CREATE INDEX IF NOT EXISTS idx_ad_qs_composite ON ad_quality_scores(composite_quality_score);
+
+-- AlphaDesk: perspective scores (confluence_scorer lookups)
+CREATE TABLE IF NOT EXISTS ad_perspective_scores (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    run_id TEXT,
+    net_score REAL NOT NULL DEFAULT 0.0,
+    consensus INTEGER NOT NULL DEFAULT 0,
+    signal TEXT DEFAULT '',
+    bull_conviction REAL DEFAULT 0.0,
+    bear_conviction REAL DEFAULT 0.0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_ps_ticker ON ad_perspective_scores(ticker);
+
+-- AlphaDesk: event_stack confluence pillar tables (migration 022)
+CREATE TABLE IF NOT EXISTS ad_earnings_history (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    report_date TEXT NOT NULL,
+    surprise_pct REAL,
+    eps_actual REAL,
+    eps_estimate REAL,
+    revenue_actual REAL,
+    revenue_estimate REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_earnings_history_ticker_date ON ad_earnings_history (ticker, report_date DESC);
+
+CREATE TABLE IF NOT EXISTS ad_analyst_actions (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    action TEXT DEFAULT '',
+    analyst TEXT DEFAULT '',
+    firm TEXT DEFAULT '',
+    price_target REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_analyst_actions_ticker_date ON ad_analyst_actions (ticker, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ad_analyst_ratings (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    change TEXT DEFAULT '',
+    rating TEXT DEFAULT '',
+    analyst TEXT DEFAULT '',
+    firm TEXT DEFAULT '',
+    price_target REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_analyst_ratings_ticker_date ON ad_analyst_ratings (ticker, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ad_insider_transactions (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    transaction_type TEXT DEFAULT '',
+    insider_name TEXT DEFAULT '',
+    insider_title TEXT DEFAULT '',
+    shares REAL,
+    price REAL,
+    value REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_insider_txn_ticker_date ON ad_insider_transactions (ticker, created_at DESC);
 """
 
 # ---------------------------------------------------------------------------
