@@ -84,9 +84,9 @@ def _audit(conn, action, details="", actor="sam_contract_sync"):
 def _safe_get(url, params=None, headers=None, timeout=30):
     """HTTP GET with error handling. Returns (data, error)."""
     try:
-        import requests
+        from tools.http.client import request
 
-        resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+        resp = request("GET", url, params=params, headers=headers, timeout=timeout)
         resp.raise_for_status()
         return resp.json(), None
     except ImportError:

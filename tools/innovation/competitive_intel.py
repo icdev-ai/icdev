@@ -58,9 +58,12 @@ except ImportError:
 try:
     import requests as _requests
 
+    from tools.http.client import request as _http_request
+
     _HAS_REQUESTS = True  # noqa: E702
 except ImportError:
     _HAS_REQUESTS = False
+    _http_request = None  # type: ignore[assignment]
 try:
     from tools.audit.audit_logger import log_event as _audit_log
 
@@ -225,7 +228,7 @@ def _safe_get(url, headers=None, params=None):
     if not _HAS_REQUESTS:
         return None, "requests library not installed"
     try:
-        resp = _requests.get(url, headers=headers, params=params, timeout=30)
+        resp = _http_request("GET", url, headers=headers, params=params, timeout=30)
         if resp.status_code in (403, 429):
             return None, "rate_limited" if resp.status_code == 429 else "forbidden"
         if resp.status_code == 404:

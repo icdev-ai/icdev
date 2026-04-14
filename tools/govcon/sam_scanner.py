@@ -73,9 +73,12 @@ except ImportError:
 try:
     import requests
 
+    from tools.http.client import request as _http_request
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
+    _http_request = None  # type: ignore[assignment]
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event
@@ -192,7 +195,7 @@ def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT, track_quo
             return None, f"quota_exhausted:resets_{reset}"
 
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        resp = _http_request("GET", url, headers=headers, params=params, timeout=timeout)
 
         # Track successful call
         if track_quota and _HAS_QUOTA:
