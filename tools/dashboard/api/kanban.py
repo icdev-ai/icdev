@@ -1,6 +1,7 @@
 # CUI // SP-CTI
 """Kanban Task Board API — CRUD for task cards on the dashboard Kanban."""
 
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -19,6 +20,75 @@ def _utcnow():
 
 def _gen_id():
     return f"task-{uuid.uuid4().hex[:10]}"
+
+
+def _verification_gate_enabled() -> bool:
+    # Operators can disable the gate by setting ICDEV_KANBAN_VERIFY_GATE=false
+    # (e.g. during bulk migrations). Default ON — phantom completions are the
+    # reason this gate exists.
+    return os.environ.get("ICDEV_KANBAN_VERIFY_GATE", "true").strip().lower() not in (
+        "0", "false", "no", "off"
+    )
+
+
+def _latest_verification(conn, task_id: str):
+    """Return the most recent kanban_verifications row for a task, or None."""
+    try:
+        row = conn.execute(
+            "SELECT result, codelens_passed, coherence_passed, "
+            "e2e_ran, e2e_passed, companion_synced, verified_at, reason "
+            "FROM kanban_verifications "
+            "WHERE task_id = ? "
+            "ORDER BY verified_at DESC LIMIT 1",
+            (task_id,),
+        ).fetchone()
+    except Exception:
+        return None
+    return dict(row) if row else None
+
+
+def _verification_passed(row) -> bool:
+    """True iff every applicable gate is green on the latest verification.
+
+    Logic:
+      * result must be 'passed'
+      * codelens_passed must be truthy (1) when set
+      * coherence_passed must be truthy (1) when set
+      * if e2e_ran, e2e_passed must be truthy
+      * companion_synced is best-effort — not required
+    """
+    if not row or row.get("result") != "passed":
+        return False
+    for key in ("codelens_passed", "coherence_passed"):
+        val = row.get(key)
+        if val is not None and not val:
+            return False
+    if row.get("e2e_ran"):
+        if not row.get("e2e_passed"):
+            return False
+    return True
+
+
+def _log_verification_bypass(conn, task_id: str, reason: str) -> None:
+    """Append an audit row recording an operator-approved bypass."""
+    try:
+        conn.execute(
+            "INSERT INTO kanban_verifications "
+            "(id, task_id, verified_at, result, reason) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                f"kv-bypass-{uuid.uuid4().hex[:12]}",
+                task_id,
+                _utcnow(),
+                "bypassed",
+                reason[:500],
+            ),
+        )
+        conn.commit()
+    except Exception:
+        # Audit failure must not block the operator-intended move; the
+        # bypass is logged downstream via dashboard SSE regardless.
+        pass
 
 
 @kanban_api.route("/tasks", methods=["GET"])
