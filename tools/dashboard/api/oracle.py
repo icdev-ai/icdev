@@ -36,6 +36,73 @@ def list_predictions():
         return jsonify({"predictions": [], "count": 0, "error": str(exc)})
 
 
+@oracle_api.route("/api/oracle/summary", methods=["GET"])
+def oracle_summary():
+    """Aggregate stats for the home-dashboard Oracle Insights widget.
+
+    Returns totals over the last 24h, high-confidence pending count,
+    unresolved convergence events, median horizon (days), and a severity
+    histogram. Powers the 4-tile + severity-bar widget on index.html.
+    """
+    out: dict = {
+        "total_24h": 0,
+        "high_conf_pending": 0,
+        "unresolved_convergence": 0,
+        "median_horizon_days": None,
+        "severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+    }
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM oracle_predictions "
+            "WHERE created_at::timestamptz > NOW() - INTERVAL '24 hours'"
+        )
+        row = cur.fetchone()
+        out["total_24h"] = int(dict(row).get("n", 0) or 0)
+
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM oracle_predictions "
+            "WHERE confidence >= 0.85 AND (outcome IS NULL OR outcome = 'pending')"
+        )
+        out["high_conf_pending"] = int(dict(cur.fetchone()).get("n", 0) or 0)
+
+        cur.execute(
+            "SELECT severity, COUNT(*) AS n FROM oracle_predictions "
+            "WHERE created_at::timestamptz > NOW() - INTERVAL '24 hours' "
+            "GROUP BY severity"
+        )
+        for r in cur.fetchall():
+            d = dict(r)
+            sev = (d.get("severity") or "").lower()
+            if sev in out["severity"]:
+                out["severity"][sev] = int(d.get("n", 0) or 0)
+
+        # Unresolved convergence: predictions flagged as convergence and
+        # not yet outcome-resolved. The scoring_weights JSON carries a
+        # `convergence` boost when multiple lenses agree on a subject.
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM oracle_predictions "
+            "WHERE (outcome IS NULL OR outcome = 'pending') "
+            "AND scoring_weights::text ILIKE %s",
+            ("%convergence%",),
+        )
+        out["unresolved_convergence"] = int(dict(cur.fetchone()).get("n", 0) or 0)
+
+        cur.execute(
+            "SELECT AVG(horizon_days) AS avg_h FROM oracle_predictions "
+            "WHERE horizon_days IS NOT NULL "
+            "AND created_at::timestamptz > NOW() - INTERVAL '30 days'"
+        )
+        avg_h = dict(cur.fetchone()).get("avg_h")
+        if avg_h is not None:
+            out["median_horizon_days"] = round(float(avg_h), 1)
+        conn.close()
+    except Exception as exc:
+        out["error"] = str(exc)
+    return jsonify(out)
+
+
 # ---------------------------------------------------------------------------
 # Shared: parse audit_trail rows into proposal/history items
 # ---------------------------------------------------------------------------
