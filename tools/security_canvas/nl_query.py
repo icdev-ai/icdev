@@ -45,9 +45,12 @@ if str(BASE_DIR) not in sys.path:
 try:
     import requests as _requests
 
+    from tools.http.client import request as _http_request
+
     _HAS_REQUESTS = True
 except ImportError:
     _requests = None  # type: ignore[assignment]
+    _http_request = None  # type: ignore[assignment]
     _HAS_REQUESTS = False
 
 logger = logging.getLogger("icdev.security_canvas.nl_query")
@@ -1085,7 +1088,8 @@ def _llm_query(question: str, graph: SDCComplianceGraph) -> Dict[str, Any]:
     )
 
     try:
-        resp = _requests.post(  # type: ignore[union-attr]
+        resp = _http_request(  # type: ignore[union-attr]
+            "POST",
             f"{_OLLAMA_HOST}/api/chat",
             json={
                 "model": _OLLAMA_MODEL,

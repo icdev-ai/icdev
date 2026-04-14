@@ -204,7 +204,7 @@ Return ONLY valid JSON. No markdown code fences."""
 
 def _invoke_prometheus(prompt: str) -> dict:
     """Call Prometheus-2 via Ollama native API."""
-    import requests
+    from tools.http.client import request as _http_request
 
     config = _load_config()
     model_config = config.get("model", {})
@@ -213,7 +213,8 @@ def _invoke_prometheus(prompt: str) -> dict:
     max_tokens = model_config.get("max_tokens", 1024)
 
     try:
-        resp = requests.post(
+        resp = _http_request(
+            "POST",
             "http://localhost:11434/api/chat",
             json={
                 "model": model_name,
@@ -558,9 +559,10 @@ def check_health() -> dict:
 
     # Ping model
     try:
-        import requests
+        from tools.http.client import request
 
-        resp = requests.post(
+        resp = request(
+            "POST",
             "http://localhost:11434/api/chat",
             json={
                 "model": model_name,
