@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.devsecops.profile_manager import (
+from tools.devsecops.profile_manager import (
     _load_config,
     assess_maturity,
     create_profile,
@@ -61,7 +61,7 @@ class TestCreateProfile:
     """create_profile: insert a new DevSecOps profile into the database."""
 
     def test_create_with_default_maturity(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = create_profile("proj-test-001")
 
         assert result["status"] == "created"
@@ -71,7 +71,7 @@ class TestCreateProfile:
         assert result["id"].startswith("dsp-")
 
     def test_create_with_explicit_maturity(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = create_profile("proj-test-001", maturity_level="level_2_managed")
 
         assert result["maturity_level"] == "level_2_managed"
@@ -79,7 +79,7 @@ class TestCreateProfile:
         assert "sca" in result["active_stages"]
 
     def test_create_with_invalid_maturity_returns_error(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = create_profile("proj-test-001", maturity_level="level_99_fake")
 
         assert "error" in result
@@ -87,20 +87,20 @@ class TestCreateProfile:
         assert "valid_levels" in result
 
     def test_create_with_explicit_stages(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = create_profile("proj-test-001", stages=["sast", "dast"])
 
         assert result["active_stages"] == ["dast", "sast"]
 
     def test_create_with_stage_configs(self, devsecops_db):
         cfg = {"sast": {"tool": "bandit"}}
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = create_profile("proj-test-001", stage_configs=cfg)
 
         assert result["stage_configs"] == cfg
 
     def test_create_persists_to_database(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             create_profile("proj-test-001")
             fetched = get_profile("proj-test-001")
 
@@ -117,7 +117,7 @@ class TestGetProfile:
     """get_profile: retrieve a stored profile by project ID."""
 
     def test_get_existing_profile(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             create_profile("proj-test-001", maturity_level="level_4_measured")
             result = get_profile("proj-test-001")
 
@@ -128,7 +128,7 @@ class TestGetProfile:
         assert "updated_at" in result
 
     def test_get_nonexistent_profile_returns_error(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = get_profile("proj-does-not-exist")
 
         assert "error" in result
@@ -145,7 +145,7 @@ class TestUpdateProfile:
     """update_profile: modify active stages and maturity level."""
 
     def test_enable_stage(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             create_profile("proj-test-001", maturity_level="level_2_managed")
             result = update_profile("proj-test-001", enable=["dast"])
 
@@ -153,7 +153,7 @@ class TestUpdateProfile:
         assert "dast" in result["active_stages"]
 
     def test_disable_stage(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             create_profile("proj-test-001", stages=["sast", "sca", "dast"])
             result = update_profile("proj-test-001", disable=["dast"])
 
@@ -161,14 +161,14 @@ class TestUpdateProfile:
         assert "sast" in result["active_stages"]
 
     def test_update_maturity_level(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             create_profile("proj-test-001")
             result = update_profile("proj-test-001", maturity_level="level_5_optimized")
 
         assert result["maturity_level"] == "level_5_optimized"
 
     def test_update_nonexistent_profile_returns_error(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = update_profile("proj-ghost", enable=["sast"])
 
         assert "error" in result
@@ -230,7 +230,7 @@ class TestAssessMaturity:
     """assess_maturity: evaluate profile against maturity requirements."""
 
     def test_assess_level_3_requirements_met(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             create_profile("proj-test-001", maturity_level="level_3_defined")
             result = assess_maturity("proj-test-001")
 
@@ -251,7 +251,7 @@ class TestAssessMaturity:
             "image_signing",
             "rasp",
         ]
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             create_profile("proj-test-001", maturity_level="level_5_optimized", stages=all_stages)
             result = assess_maturity("proj-test-001")
 
@@ -260,7 +260,7 @@ class TestAssessMaturity:
         assert result["recommendation"] == "At maximum maturity"
 
     def test_assess_nonexistent_returns_error(self, devsecops_db):
-        with patch("icdev.tools.devsecops.profile_manager.DB_PATH", devsecops_db):
+        with patch("tools.devsecops.profile_manager.DB_PATH", devsecops_db):
             result = assess_maturity("proj-ghost")
 
         assert "error" in result
@@ -275,7 +275,7 @@ class TestConfigFallback:
     """_load_config: YAML loading with built-in fallback defaults."""
 
     def test_fallback_has_devsecops_stages(self):
-        with patch("icdev.tools.devsecops.profile_manager.yaml", None):
+        with patch("tools.devsecops.profile_manager.yaml", None):
             config = _load_config()
 
         assert "devsecops_stages" in config
@@ -283,7 +283,7 @@ class TestConfigFallback:
         assert config["devsecops_stages"]["sast"]["default"] is True
 
     def test_fallback_has_maturity_levels(self):
-        with patch("icdev.tools.devsecops.profile_manager.yaml", None):
+        with patch("tools.devsecops.profile_manager.yaml", None):
             config = _load_config()
 
         assert "maturity_levels" in config
@@ -291,7 +291,7 @@ class TestConfigFallback:
         assert "level_5_optimized" in config["maturity_levels"]
 
     def test_fallback_level_3_requires_four_stages(self):
-        with patch("icdev.tools.devsecops.profile_manager.yaml", None):
+        with patch("tools.devsecops.profile_manager.yaml", None):
             config = _load_config()
 
         level_3 = config["maturity_levels"]["level_3_defined"]

@@ -17,7 +17,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from icdev.tools.testing.production_remediate import (
+from tools.testing.production_remediate import (
     REMEDIATION_REGISTRY,
     RemediationAction,
     RemediationReport,
@@ -26,7 +26,7 @@ from icdev.tools.testing.production_remediate import (
     _store_remediation,
     run_remediation,
 )
-from icdev.tools.testing.production_audit import AuditCheck, CHECK_REGISTRY
+from tools.testing.production_audit import AuditCheck, CHECK_REGISTRY
 
 
 # ---------------------------------------------------------------------------
@@ -489,7 +489,7 @@ class TestStoreRemediation:
             details={"count": 3},
             duration_ms=500,
         )
-        with mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db:
+        with mock.patch("tools.testing.production_remediate._get_db") as mock_db:
             conn = sqlite3.connect(str(temp_db))
             conn.row_factory = sqlite3.Row
             mock_db.return_value = conn
@@ -517,7 +517,7 @@ class TestStoreRemediation:
             message="Would rebuild",
             details={},
         )
-        with mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db:
+        with mock.patch("tools.testing.production_remediate._get_db") as mock_db:
             conn = sqlite3.connect(str(temp_db))
             conn.row_factory = sqlite3.Row
             mock_db.return_value = conn
@@ -539,14 +539,14 @@ class TestRunRemediation:
     def test_with_mocked_audit(self, sample_audit_report, temp_db):
         """Test full pipeline with mocked audit and mocked subprocess."""
         with (
-            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
-            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
-            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
-            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
-            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+            mock.patch("tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("tools.testing.production_remediate._verify_fix") as mock_verify,
         ):
             # Setup mocks
-            from icdev.tools.testing.production_audit import AuditReport
+            from tools.testing.production_audit import AuditReport
 
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
@@ -586,11 +586,11 @@ class TestRunRemediation:
     def test_dry_run_pipeline(self, sample_audit_report, temp_db):
         """Dry run should preview without executing."""
         with (
-            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
-            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
-            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("tools.testing.production_remediate._get_db") as mock_db,
         ):
-            from icdev.tools.testing.production_audit import AuditReport
+            from tools.testing.production_audit import AuditReport
 
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
@@ -619,10 +619,10 @@ class TestRunRemediation:
     def test_skip_audit(self, sample_audit_report, temp_db):
         """Test using stored audit instead of re-running."""
         with (
-            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
-            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
-            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
-            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+            mock.patch("tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("tools.testing.production_remediate._verify_fix") as mock_verify,
         ):
             mock_latest.return_value = {**sample_audit_report, "_db_id": 5}
             mock_db.return_value = sqlite3.connect(str(temp_db))
@@ -636,13 +636,13 @@ class TestRunRemediation:
     def test_single_check_filter(self, sample_audit_report, temp_db):
         """Test targeting a specific check ID."""
         with (
-            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
-            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
-            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
-            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
-            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+            mock.patch("tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("tools.testing.production_remediate._verify_fix") as mock_verify,
         ):
-            from icdev.tools.testing.production_audit import AuditReport
+            from tools.testing.production_audit import AuditReport
 
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
@@ -678,11 +678,11 @@ class TestRunRemediation:
     def test_no_auto_flag_skips_auto_fix(self, sample_audit_report, temp_db):
         """Without --auto, auto-fix items should be skipped."""
         with (
-            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
-            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
-            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("tools.testing.production_remediate._get_db") as mock_db,
         ):
-            from icdev.tools.testing.production_audit import AuditReport
+            from tools.testing.production_audit import AuditReport
 
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
@@ -710,13 +710,13 @@ class TestRunRemediation:
     def test_category_filter(self, sample_audit_report, temp_db):
         """Test filtering by category."""
         with (
-            mock.patch("icdev.tools.testing.production_remediate.run_audit") as mock_audit,
-            mock.patch("icdev.tools.testing.production_remediate._get_latest_audit") as mock_latest,
-            mock.patch("icdev.tools.testing.production_remediate._get_db") as mock_db,
-            mock.patch("icdev.tools.testing.production_remediate._run_subprocess") as mock_sub,
-            mock.patch("icdev.tools.testing.production_remediate._verify_fix") as mock_verify,
+            mock.patch("tools.testing.production_remediate.run_audit") as mock_audit,
+            mock.patch("tools.testing.production_remediate._get_latest_audit") as mock_latest,
+            mock.patch("tools.testing.production_remediate._get_db") as mock_db,
+            mock.patch("tools.testing.production_remediate._run_subprocess") as mock_sub,
+            mock.patch("tools.testing.production_remediate._verify_fix") as mock_verify,
         ):
-            from icdev.tools.testing.production_audit import AuditReport
+            from tools.testing.production_audit import AuditReport
 
             mock_audit.return_value = AuditReport(
                 overall_pass=False,
@@ -768,7 +768,7 @@ class TestVerificationTargeting:
 
 class TestFormatHuman:
     def test_format_basic(self):
-        from icdev.tools.testing.production_remediate import _format_human
+        from tools.testing.production_remediate import _format_human
 
         report = RemediationReport(
             timestamp="2026-02-22T00:00:00+00:00",
@@ -818,7 +818,7 @@ class TestFormatHuman:
         assert "BLOCKERS REMAIN" in output
 
     def test_format_dry_run(self):
-        from icdev.tools.testing.production_remediate import _format_human
+        from tools.testing.production_remediate import _format_human
 
         report = RemediationReport(
             timestamp="2026-02-22T00:00:00+00:00",
@@ -839,7 +839,7 @@ class TestFormatHuman:
         assert "DRY RUN" in output
 
     def test_format_all_clear(self):
-        from icdev.tools.testing.production_remediate import _format_human
+        from tools.testing.production_remediate import _format_human
 
         report = RemediationReport(
             timestamp="2026-02-22T00:00:00+00:00",

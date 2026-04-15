@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from icdev.tools.saas.openapi_spec import (
+from tools.saas.openapi_spec import (
     ENDPOINT_DOCS,
     OPENAPI_BASE,
     SCHEMAS,

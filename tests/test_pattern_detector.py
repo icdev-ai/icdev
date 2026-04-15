@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from icdev.tools.knowledge.pattern_detector import (
+from tools.knowledge.pattern_detector import (
     _similarity,
     analyze_project,
     detect_frequency_anomaly,

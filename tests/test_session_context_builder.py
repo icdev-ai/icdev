@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from icdev.tools.project.session_context_builder import (
+from tools.project.session_context_builder import (
     build_session_context,
     init_from_manifest,
     _detect_project,

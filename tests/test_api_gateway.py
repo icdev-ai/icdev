@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 try:
-    from icdev.tools.saas.api_gateway import create_app, _format_uptime, GATEWAY_VERSION
+    from tools.saas.api_gateway import create_app, _format_uptime, GATEWAY_VERSION
 except ImportError:
     pytestmark = pytest.mark.skip("tools.saas.api_gateway not available")
 

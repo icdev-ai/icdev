@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from icdev.tools.dashboard.chat_manager import ChatManager, ChatContext, MAX_CONCURRENT_PER_USER
+from tools.dashboard.chat_manager import ChatManager, ChatContext, MAX_CONCURRENT_PER_USER
 
 
 @pytest.fixture

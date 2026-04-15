@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 try:
-    from icdev.tools.builder.scaffolder import (
+    from tools.builder.scaffolder import (
         scaffold_python_backend,
         scaffold_api,
         scaffold_cli,

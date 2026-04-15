@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-from icdev.tools.requirements.consistency_analyzer import (
+from tools.requirements.consistency_analyzer import (
     analyze_spec_consistency,
     _check_acceptance_vs_testing,
     _check_phases_vs_tasks,

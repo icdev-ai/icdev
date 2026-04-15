@@ -21,10 +21,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.compliance.omb_m25_21_assessor import OMBM2521Assessor
-from icdev.tools.compliance.omb_m26_04_assessor import OMBM2604Assessor
-from icdev.tools.compliance.gao_ai_assessor import GAOAIAssessor
-from icdev.tools.compliance.fairness_assessor import assess_fairness, evaluate_gate
+from tools.compliance.omb_m25_21_assessor import OMBM2521Assessor
+from tools.compliance.omb_m26_04_assessor import OMBM2604Assessor
+from tools.compliance.gao_ai_assessor import GAOAIAssessor
+from tools.compliance.fairness_assessor import assess_fairness, evaluate_gate
 
 
 # ============================================================

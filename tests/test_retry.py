@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from icdev.tools.resilience.retry import backoff_delay, retry
+from tools.resilience.retry import backoff_delay, retry
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ class TestBackoffDelay:
 class TestRetryDecorator:
     """Tests for the @retry decorator."""
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_succeeds_on_first_try(self, mock_sleep):
         call_count = 0
 
@@ -72,7 +72,7 @@ class TestRetryDecorator:
         assert call_count == 1
         mock_sleep.assert_not_called()
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_retries_on_failure_then_succeeds(self, mock_sleep):
         call_count = 0
 
@@ -91,7 +91,7 @@ class TestRetryDecorator:
         # verify at least 2 retry sleeps occurred (may be more from other callers)
         assert mock_sleep.call_count >= 2
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_exhausts_all_retries_then_raises(self, mock_sleep):
         @retry(max_retries=2, retryable_exceptions=(RuntimeError,))
         def always_fail():
@@ -103,7 +103,7 @@ class TestRetryDecorator:
         # (mock patches globally so background threads may also increment)
         assert mock_sleep.call_count >= 2
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_only_catches_specified_exceptions(self, mock_sleep):
         @retry(max_retries=3, retryable_exceptions=(ValueError,))
         def wrong_error():
@@ -114,7 +114,7 @@ class TestRetryDecorator:
         # Should NOT have retried — TypeError is not in the retryable list
         mock_sleep.assert_not_called()
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_calls_on_retry_callback(self, mock_sleep):
         callback = MagicMock()
         call_count = 0
@@ -136,7 +136,7 @@ class TestRetryDecorator:
         assert isinstance(first_call_args[1], ValueError)
         assert isinstance(first_call_args[2], float)  # delay
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_max_retries_zero_no_retries(self, mock_sleep):
         @retry(max_retries=0, retryable_exceptions=(RuntimeError,))
         def fail_once():
@@ -162,7 +162,7 @@ class TestRetryDecorator:
 
         assert documented.__doc__ == "This is the docstring."
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_multiple_exception_types(self, mock_sleep):
         call_count = 0
 
@@ -181,7 +181,7 @@ class TestRetryDecorator:
         assert call_count == 3
         assert mock_sleep.call_count == 2
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_return_value_preserved(self, mock_sleep):
         @retry(max_retries=1)
         def returns_dict():
@@ -190,7 +190,7 @@ class TestRetryDecorator:
         result = returns_dict()
         assert result == {"key": "value", "count": 42}
 
-    @patch("icdev.tools.resilience.retry.time.sleep")
+    @patch("tools.resilience.retry.time.sleep")
     def test_args_and_kwargs_forwarded(self, mock_sleep):
         @retry(max_retries=1)
         def add(a, b, extra=0):

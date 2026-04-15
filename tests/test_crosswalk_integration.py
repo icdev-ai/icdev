@@ -16,7 +16,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 try:
-    from icdev.tools.compliance.crosswalk_engine import (
+    from tools.compliance.crosswalk_engine import (
         FRAMEWORK_KEYS,
         IL_KEYS,
         _ensure_crosswalk_tables,  # noqa: F401
@@ -112,7 +112,7 @@ def crosswalk_db(tmp_path):
 @pytest.fixture(autouse=True)
 def _clear_crosswalk_cache():
     """Clear the module-level crosswalk cache before each test."""
-    import icdev.tools.compliance.crosswalk_engine as cwe
+    import tools.compliance.crosswalk_engine as cwe
 
     cwe._CROSSWALK_CACHE = None
     cwe._ISO_BRIDGE_CACHE = None

@@ -24,7 +24,7 @@ if str(BASE_DIR) not in sys.path:
 # Guarded imports — each module may or may not exist yet
 # -----------------------------------------------------------------------
 try:
-    from icdev.tools.security.confabulation_detector import (
+    from tools.security.confabulation_detector import (
         check_citation_patterns,
         check_internal_contradictions,
         check_confidence_indicators,
@@ -37,7 +37,7 @@ except ImportError:
     _HAS_CONFAB = False
 
 try:
-    from icdev.tools.compliance.fairness_assessor import (
+    from tools.compliance.fairness_assessor import (
         FairnessAssessor,
         FAIRNESS_DIMENSIONS,
     )
@@ -47,7 +47,7 @@ except ImportError:
     _HAS_FAIRNESS = False
 
 try:
-    from icdev.tools.compliance.ai_inventory_manager import (
+    from tools.compliance.ai_inventory_manager import (
         register_ai_component,
         list_inventory,
         export_inventory,
@@ -58,7 +58,7 @@ except ImportError:
     _HAS_INVENTORY = False
 
 try:
-    from icdev.tools.compliance.gao_evidence_builder import (
+    from tools.compliance.gao_evidence_builder import (
         build_evidence,
     )
 
@@ -67,7 +67,7 @@ except ImportError:
     _HAS_GAO = False
 
 try:
-    from icdev.tools.compliance.ai_transparency_audit import (
+    from tools.compliance.ai_transparency_audit import (
         run_transparency_audit,
     )
 

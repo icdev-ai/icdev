@@ -12,28 +12,28 @@ import pytest
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.translation.translation_manager import (
+from tools.translation.translation_manager import (
     run_pipeline,
     VALID_LANGUAGES,
 )
-from icdev.tools.translation.code_translator import (
+from tools.translation.code_translator import (
     _get_translation_order,
     _generate_mock,
     CUI_HEADERS,
     NAMING_CONVENTIONS,
 )
-from icdev.tools.translation.project_assembler import (
+from tools.translation.project_assembler import (
     assemble_project,
     _ensure_cui_header,
     _format_dependencies,
 )
-from icdev.tools.translation.translation_validator import (
+from tools.translation.translation_validator import (
     check_api_surface,
     check_compliance,
     check_complexity,
 )
-from icdev.tools.translation.feature_map import FeatureMapLoader
-from icdev.tools.translation.type_checker import (
+from tools.translation.feature_map import FeatureMapLoader
+from tools.translation.type_checker import (
     load_type_mappings,
     map_type,
 )
@@ -48,7 +48,7 @@ from icdev.tools.translation.type_checker import (
 def _patch_db_path(tmp_path):
     """Redirect DB_PATH to a non-existent temp path to avoid locking the real DB."""
     fake_db = tmp_path / "translation_test.db"
-    with patch("icdev.tools.translation.translation_manager.DB_PATH", fake_db):
+    with patch("tools.translation.translation_manager.DB_PATH", fake_db):
         yield
 
 

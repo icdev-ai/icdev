@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.marketplace.search_engine import (
+from tools.marketplace.search_engine import (
     _bm25_score,
     _bm25_score_corpus,
     _cosine_similarity,
@@ -286,14 +286,14 @@ class TestBM25Fallback:
 
     def test_corpus_scoring_returns_list(self):
         docs = ["stig compliance checker", "bdd test generator", "oracle database scanner"]
-        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus(["stig"], docs)
         assert isinstance(scores, list)
         assert len(scores) == 3
 
     def test_matching_doc_scores_highest(self):
         docs = ["stig compliance checker", "bdd test generator", "oracle database scanner"]
-        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus(["stig"], docs)
         # First doc contains "stig", should score highest
         assert scores[0] > scores[1]
@@ -301,12 +301,12 @@ class TestBM25Fallback:
 
     def test_empty_query_all_zeros(self):
         docs = ["doc one", "doc two"]
-        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus([], docs)
         assert scores == [0.0, 0.0]
 
     def test_empty_corpus_returns_empty(self):
-        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus(["test"], [])
         assert scores == []
 
@@ -341,7 +341,7 @@ class TestCombinedSearch:
             emb = _generate_embedding_fallback(text)
             return emb, "hashlib-fallback", 256
 
-        with patch("icdev.tools.marketplace.search_engine.generate_embedding", side_effect=_fallback_generate):
+        with patch("tools.marketplace.search_engine.generate_embedding", side_effect=_fallback_generate):
             result = search_assets("stig", db_path=marketplace_db_with_embeddings)
         assert result["search_method"] == "hybrid"
         assert result["total"] > 0

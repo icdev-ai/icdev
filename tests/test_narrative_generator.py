@@ -16,7 +16,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 try:
-    from icdev.tools.compliance.narrative_generator import (
+    from tools.compliance.narrative_generator import (
         ControlEvidence,
         NarrativeGenerator,
         NarrativeResult,

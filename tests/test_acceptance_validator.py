@@ -13,7 +13,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from icdev.tools.testing.acceptance_validator import (
+from tools.testing.acceptance_validator import (
     parse_acceptance_criteria,
     map_criteria_to_evidence,
     check_page,

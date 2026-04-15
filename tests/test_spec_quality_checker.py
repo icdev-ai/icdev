@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-from icdev.tools.requirements.spec_quality_checker import (
+from tools.requirements.spec_quality_checker import (
     parse_spec_sections,
     check_required_sections,
     check_ambiguity,

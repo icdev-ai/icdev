@@ -19,31 +19,31 @@ class TestIBMSecretsProvider:
     """Test IBMSecretsProvider class."""
 
     def test_import(self):
-        from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
+        from tools.cloud.secrets_provider import IBMSecretsProvider
 
         assert IBMSecretsProvider is not None
 
     def test_provider_name(self):
-        from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
+        from tools.cloud.secrets_provider import IBMSecretsProvider
 
         p = IBMSecretsProvider()
         assert p.provider_name == "ibm_secrets_manager"
 
     def test_check_availability_no_sdk(self):
-        from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
+        from tools.cloud.secrets_provider import IBMSecretsProvider
 
         p = IBMSecretsProvider()
         # Without IBM SDK and credentials, should return False
         assert p.check_availability() is False
 
     def test_get_secret_no_sdk(self):
-        from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
+        from tools.cloud.secrets_provider import IBMSecretsProvider
 
         p = IBMSecretsProvider()
         assert p.get_secret("test") is None
 
     def test_list_secrets_no_sdk(self):
-        from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
+        from tools.cloud.secrets_provider import IBMSecretsProvider
 
         p = IBMSecretsProvider()
         assert p.list_secrets() == []
@@ -53,30 +53,30 @@ class TestIBMStorageProvider:
     """Test IBMStorageProvider class."""
 
     def test_import(self):
-        from icdev.tools.cloud.storage_provider import IBMStorageProvider
+        from tools.cloud.storage_provider import IBMStorageProvider
 
         assert IBMStorageProvider is not None
 
     def test_provider_name(self):
-        from icdev.tools.cloud.storage_provider import IBMStorageProvider
+        from tools.cloud.storage_provider import IBMStorageProvider
 
         p = IBMStorageProvider()
         assert p.provider_name == "ibm_cos"
 
     def test_check_availability_no_sdk(self):
-        from icdev.tools.cloud.storage_provider import IBMStorageProvider
+        from tools.cloud.storage_provider import IBMStorageProvider
 
         p = IBMStorageProvider()
         assert p.check_availability() is False
 
     def test_upload_no_sdk(self):
-        from icdev.tools.cloud.storage_provider import IBMStorageProvider
+        from tools.cloud.storage_provider import IBMStorageProvider
 
         p = IBMStorageProvider()
         assert p.upload("bucket", "key", b"data") is False
 
     def test_download_no_sdk(self):
-        from icdev.tools.cloud.storage_provider import IBMStorageProvider
+        from tools.cloud.storage_provider import IBMStorageProvider
 
         p = IBMStorageProvider()
         assert p.download("bucket", "key") is None
@@ -86,24 +86,24 @@ class TestIBMKMSProvider:
     """Test IBMKMSProvider class."""
 
     def test_import(self):
-        from icdev.tools.cloud.kms_provider import IBMKMSProvider
+        from tools.cloud.kms_provider import IBMKMSProvider
 
         assert IBMKMSProvider is not None
 
     def test_provider_name(self):
-        from icdev.tools.cloud.kms_provider import IBMKMSProvider
+        from tools.cloud.kms_provider import IBMKMSProvider
 
         p = IBMKMSProvider()
         assert p.provider_name == "ibm_key_protect"
 
     def test_check_availability_no_sdk(self):
-        from icdev.tools.cloud.kms_provider import IBMKMSProvider
+        from tools.cloud.kms_provider import IBMKMSProvider
 
         p = IBMKMSProvider()
         assert p.check_availability() is False
 
     def test_encrypt_no_sdk(self):
-        from icdev.tools.cloud.kms_provider import IBMKMSProvider
+        from tools.cloud.kms_provider import IBMKMSProvider
 
         p = IBMKMSProvider()
         assert p.encrypt(b"data") is None
@@ -113,24 +113,24 @@ class TestIBMMonitoringProvider:
     """Test IBMMonitoringProvider class."""
 
     def test_import(self):
-        from icdev.tools.cloud.monitoring_provider import IBMMonitoringProvider
+        from tools.cloud.monitoring_provider import IBMMonitoringProvider
 
         assert IBMMonitoringProvider is not None
 
     def test_provider_name(self):
-        from icdev.tools.cloud.monitoring_provider import IBMMonitoringProvider
+        from tools.cloud.monitoring_provider import IBMMonitoringProvider
 
         p = IBMMonitoringProvider()
         assert p.provider_name == "ibm_cloud_monitoring"
 
     def test_check_availability_no_creds(self):
-        from icdev.tools.cloud.monitoring_provider import IBMMonitoringProvider
+        from tools.cloud.monitoring_provider import IBMMonitoringProvider
 
         p = IBMMonitoringProvider()
         assert p.check_availability() is False
 
     def test_query_metrics_stub(self):
-        from icdev.tools.cloud.monitoring_provider import IBMMonitoringProvider
+        from tools.cloud.monitoring_provider import IBMMonitoringProvider
 
         p = IBMMonitoringProvider()
         assert p.query_metrics("test", "cpu_usage") == []
@@ -140,24 +140,24 @@ class TestIBMIAMProvider:
     """Test IBMIAMProvider class."""
 
     def test_import(self):
-        from icdev.tools.cloud.iam_provider import IBMIAMProvider
+        from tools.cloud.iam_provider import IBMIAMProvider
 
         assert IBMIAMProvider is not None
 
     def test_provider_name(self):
-        from icdev.tools.cloud.iam_provider import IBMIAMProvider
+        from tools.cloud.iam_provider import IBMIAMProvider
 
         p = IBMIAMProvider()
         assert p.provider_name == "ibm_iam"
 
     def test_check_availability_no_sdk(self):
-        from icdev.tools.cloud.iam_provider import IBMIAMProvider
+        from tools.cloud.iam_provider import IBMIAMProvider
 
         p = IBMIAMProvider()
         assert p.check_availability() is False
 
     def test_list_accounts_no_sdk(self):
-        from icdev.tools.cloud.iam_provider import IBMIAMProvider
+        from tools.cloud.iam_provider import IBMIAMProvider
 
         p = IBMIAMProvider()
         assert p.list_service_accounts() == []
@@ -167,30 +167,30 @@ class TestIBMRegistryProvider:
     """Test IBMRegistryProvider class."""
 
     def test_import(self):
-        from icdev.tools.cloud.registry_provider import IBMRegistryProvider
+        from tools.cloud.registry_provider import IBMRegistryProvider
 
         assert IBMRegistryProvider is not None
 
     def test_provider_name(self):
-        from icdev.tools.cloud.registry_provider import IBMRegistryProvider
+        from tools.cloud.registry_provider import IBMRegistryProvider
 
         p = IBMRegistryProvider()
         assert p.provider_name == "ibm_container_registry"
 
     def test_check_availability_no_creds(self):
-        from icdev.tools.cloud.registry_provider import IBMRegistryProvider
+        from tools.cloud.registry_provider import IBMRegistryProvider
 
         p = IBMRegistryProvider()
         assert p.check_availability() is False
 
     def test_login_command(self):
-        from icdev.tools.cloud.registry_provider import IBMRegistryProvider
+        from tools.cloud.registry_provider import IBMRegistryProvider
 
         p = IBMRegistryProvider()
         assert p.get_login_command() == "ibmcloud cr login"
 
     def test_list_repos_no_creds(self):
-        from icdev.tools.cloud.registry_provider import IBMRegistryProvider
+        from tools.cloud.registry_provider import IBMRegistryProvider
 
         p = IBMRegistryProvider()
         assert p.list_repositories() == []
@@ -200,24 +200,24 @@ class TestIBMWatsonxProvider:
     """Test IBMWatsonxProvider class."""
 
     def test_import(self):
-        from icdev.tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+        from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
 
         assert IBMWatsonxProvider is not None
 
     def test_provider_name(self):
-        from icdev.tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+        from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
 
         p = IBMWatsonxProvider()
         assert p.provider_name == "ibm_watsonx"
 
     def test_check_availability_no_sdk(self):
-        from icdev.tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+        from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
 
         p = IBMWatsonxProvider()
         assert p.check_availability() is False
 
     def test_messages_to_prompt(self):
-        from icdev.tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+        from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
 
         messages = [
             {"role": "system", "content": "You are helpful."},
@@ -231,7 +231,7 @@ class TestIBMWatsonxProvider:
         assert prompt.endswith("<|assistant|>\n")
 
     def test_messages_to_prompt_empty(self):
-        from icdev.tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+        from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
 
         assert IBMWatsonxProvider._messages_to_prompt([]) == ""
 
@@ -257,7 +257,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         provider = factory.get_secrets_provider()
@@ -281,7 +281,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         provider = factory.get_storage_provider()
@@ -305,7 +305,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         provider = factory.get_kms_provider()
@@ -325,7 +325,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         assert factory.cloud_mode == "air_gapped"
@@ -338,7 +338,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         provider = factory.get_monitoring_provider()
@@ -352,7 +352,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         provider = factory.get_iam_provider()
@@ -366,7 +366,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         provider = factory.get_registry_provider()
@@ -380,7 +380,7 @@ class TestProviderFactoryIBM:
         cfg_file = tmp_path / "cloud_config.yaml"
         cfg_file.write_text(yaml.dump(config))
 
-        from icdev.tools.cloud.provider_factory import CSPProviderFactory
+        from tools.cloud.provider_factory import CSPProviderFactory
 
         factory = CSPProviderFactory(config_path=str(cfg_file))
         result = factory.health_check()

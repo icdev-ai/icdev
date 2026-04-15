@@ -10,7 +10,7 @@ from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from icdev.tools.project.manifest_loader import (
+from tools.project.manifest_loader import (
     _apply_defaults,
     _apply_env_overrides,
     _deep_get,

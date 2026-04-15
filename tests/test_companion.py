@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from icdev.tools.dx.companion import setup_companion
+from tools.dx.companion import setup_companion
 
 
 def _setup_project(tmp_path):

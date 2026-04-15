@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.testing.production_audit import (
+from tools.testing.production_audit import (
     AuditCheck,
     AuditReport,
     CHECK_REGISTRY,
@@ -178,25 +178,25 @@ class TestSecurityChecks:
         assert result.check_id == "SEC-005"
         assert result.status in ("pass", "warn")
 
-    @patch("icdev.tools.testing.production_audit._run_subprocess")
+    @patch("tools.testing.production_audit._run_subprocess")
     def test_sast_bandit_not_installed(self, mock_sub):
         mock_sub.return_value = (-1, "", "Command not found: bandit")
         result = check_sast_bandit()
         assert result.status == "skip"
 
-    @patch("icdev.tools.testing.production_audit._run_subprocess")
+    @patch("tools.testing.production_audit._run_subprocess")
     def test_sast_bandit_clean(self, mock_sub):
         mock_sub.return_value = (0, json.dumps({"results": []}), "")
         result = check_sast_bandit()
         assert result.status == "pass"
 
-    @patch("icdev.tools.testing.production_audit._run_subprocess")
+    @patch("tools.testing.production_audit._run_subprocess")
     def test_secret_detection_clean(self, mock_sub):
         mock_sub.return_value = (0, json.dumps({"results": {}}), "")
         result = check_secret_detection()
         assert result.status == "pass"
 
-    @patch("icdev.tools.testing.production_audit._run_subprocess")
+    @patch("tools.testing.production_audit._run_subprocess")
     def test_secret_detection_found(self, mock_sub):
         mock_sub.return_value = (0, json.dumps({"results": {"file.py": [{"type": "Secret"}]}}), "")
         result = check_secret_detection()
@@ -293,30 +293,30 @@ class TestDocumentationChecks:
 
 
 class TestRunAudit:
-    @patch("icdev.tools.testing.production_audit._store_report")
+    @patch("tools.testing.production_audit._store_report")
     def test_run_single_category(self, mock_store):
         report = run_audit(categories=["platform"])
         assert isinstance(report, AuditReport)
         assert "platform" in report.categories
         assert len(report.categories) == 1
 
-    @patch("icdev.tools.testing.production_audit._store_report")
+    @patch("tools.testing.production_audit._store_report")
     def test_run_multiple_categories(self, mock_store):
         report = run_audit(categories=["platform", "documentation"])
         assert len(report.categories) == 2
 
-    @patch("icdev.tools.testing.production_audit._store_report")
+    @patch("tools.testing.production_audit._store_report")
     def test_overall_pass_with_no_blockers(self, mock_store):
         report = run_audit(categories=["platform"])
         # Platform checks should pass on any dev machine
         assert report.overall_pass is True
 
-    @patch("icdev.tools.testing.production_audit._store_report")
+    @patch("tools.testing.production_audit._store_report")
     def test_report_has_duration(self, mock_store):
         report = run_audit(categories=["platform"])
         assert report.duration_total_ms >= 0
 
-    @patch("icdev.tools.testing.production_audit._store_report")
+    @patch("tools.testing.production_audit._store_report")
     def test_report_json_serializable(self, mock_store):
         report = run_audit(categories=["platform"])
         serialized = json.dumps(report.to_dict())
@@ -331,12 +331,12 @@ class TestRunAudit:
 
 
 class TestCategoryFiltering:
-    @patch("icdev.tools.testing.production_audit._store_report")
+    @patch("tools.testing.production_audit._store_report")
     def test_invalid_category_ignored(self, mock_store):
         report = run_audit(categories=["nonexistent"])
         assert report.total_checks == 0
 
-    @patch("icdev.tools.testing.production_audit._store_report")
+    @patch("tools.testing.production_audit._store_report")
     def test_none_runs_all(self, mock_store):
         # Don't actually run all (slow), just verify the logic
         assert ALL_CATEGORIES == set(CATEGORY_ORDER)

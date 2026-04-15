@@ -32,7 +32,7 @@ class TestCommandEnvelope:
     """Test CommandEnvelope dataclass and command parsing."""
 
     def test_default_envelope(self):
-        from icdev.tools.gateway.event_envelope import CommandEnvelope
+        from tools.gateway.event_envelope import CommandEnvelope
 
         env = CommandEnvelope()
         assert env.channel == ""
@@ -42,7 +42,7 @@ class TestCommandEnvelope:
         assert env.gate_results == {}
 
     def test_envelope_to_dict(self):
-        from icdev.tools.gateway.event_envelope import CommandEnvelope
+        from tools.gateway.event_envelope import CommandEnvelope
 
         env = CommandEnvelope(channel="telegram", command="icdev-status")
         d = env.to_dict()
@@ -51,21 +51,21 @@ class TestCommandEnvelope:
         assert "id" in d
 
     def test_parse_basic_command(self):
-        from icdev.tools.gateway.event_envelope import parse_command_text
+        from tools.gateway.event_envelope import parse_command_text
 
         cmd, args = parse_command_text("/icdev-status")
         assert cmd == "icdev-status"
         assert args == {}
 
     def test_parse_command_with_project(self):
-        from icdev.tools.gateway.event_envelope import parse_command_text
+        from tools.gateway.event_envelope import parse_command_text
 
         cmd, args = parse_command_text("/icdev-status proj-123")
         assert cmd == "icdev-status"
         assert args["project_id"] == "proj-123"
 
     def test_parse_command_with_flags(self):
-        from icdev.tools.gateway.event_envelope import parse_command_text
+        from tools.gateway.event_envelope import parse_command_text
 
         cmd, args = parse_command_text("/icdev-test --project-id proj-456 --verbose true")
         assert cmd == "icdev-test"
@@ -73,14 +73,14 @@ class TestCommandEnvelope:
         assert args["verbose"] == "true"
 
     def test_parse_without_slash(self):
-        from icdev.tools.gateway.event_envelope import parse_command_text
+        from tools.gateway.event_envelope import parse_command_text
 
         cmd, args = parse_command_text("icdev-status proj-123")
         assert cmd == "icdev-status"
         assert args["project_id"] == "proj-123"
 
     def test_parse_empty(self):
-        from icdev.tools.gateway.event_envelope import parse_command_text
+        from tools.gateway.event_envelope import parse_command_text
 
         cmd, args = parse_command_text("")
         assert cmd == ""
@@ -96,7 +96,7 @@ class TestSecurityChain:
     """Test individual security gates."""
 
     def _make_envelope(self, **kwargs):
-        from icdev.tools.gateway.event_envelope import CommandEnvelope
+        from tools.gateway.event_envelope import CommandEnvelope
 
         defaults = {
             "channel": "slack",
@@ -108,7 +108,7 @@ class TestSecurityChain:
         return CommandEnvelope(**defaults)
 
     def test_gate2_bot_rejected(self):
-        from icdev.tools.gateway.security_chain import gate_2_bot_replay
+        from tools.gateway.security_chain import gate_2_bot_replay
 
         env = self._make_envelope(is_bot=True)
         result = gate_2_bot_replay(env, {})
@@ -116,7 +116,7 @@ class TestSecurityChain:
         assert "bot" in result.reason.lower()
 
     def test_gate2_replay_rejected(self):
-        from icdev.tools.gateway.security_chain import gate_2_bot_replay
+        from tools.gateway.security_chain import gate_2_bot_replay
 
         old_time = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
         env = self._make_envelope(timestamp=old_time)
@@ -126,23 +126,23 @@ class TestSecurityChain:
         assert "old" in result.reason.lower()
 
     def test_gate2_valid(self):
-        from icdev.tools.gateway.security_chain import gate_2_bot_replay
+        from tools.gateway.security_chain import gate_2_bot_replay
 
         env = self._make_envelope()
         result = gate_2_bot_replay(env, {})
         assert result.passed
 
     def test_gate3_no_binding(self):
-        from icdev.tools.gateway.security_chain import gate_3_identity
+        from tools.gateway.security_chain import gate_3_identity
 
         env = self._make_envelope()
-        with patch("icdev.tools.gateway.security_chain.resolve_binding", return_value=None):
+        with patch("tools.gateway.security_chain.resolve_binding", return_value=None):
             result = gate_3_identity(env, {})
         assert not result.passed
         assert "no active binding" in result.reason
 
     def test_gate3_with_binding(self):
-        from icdev.tools.gateway.security_chain import gate_3_identity
+        from tools.gateway.security_chain import gate_3_identity
 
         env = self._make_envelope()
         binding = {
@@ -150,14 +150,14 @@ class TestSecurityChain:
             "icdev_user_id": "user@mil",
             "tenant_id": "tenant-abc",
         }
-        with patch("icdev.tools.gateway.security_chain.resolve_binding", return_value=binding):
+        with patch("tools.gateway.security_chain.resolve_binding", return_value=binding):
             result = gate_3_identity(env, {})
         assert result.passed
         assert env.binding_id == "bind-123"
         assert env.icdev_user_id == "user@mil"
 
     def test_gate5_classification_pass(self):
-        from icdev.tools.gateway.security_chain import gate_5_classification
+        from tools.gateway.security_chain import gate_5_classification
 
         env = self._make_envelope(command="icdev-status")
         channel_config = {"max_il": "IL5"}
@@ -166,7 +166,7 @@ class TestSecurityChain:
         assert result.passed
 
     def test_gate5_classification_fail(self):
-        from icdev.tools.gateway.security_chain import gate_5_classification
+        from tools.gateway.security_chain import gate_5_classification
 
         env = self._make_envelope(command="icdev-comply")
         channel_config = {"max_il": "IL2"}  # low channel
@@ -176,7 +176,7 @@ class TestSecurityChain:
         assert "channel max" in result.reason
 
     def test_gate6_rbac_read_allowed(self):
-        from icdev.tools.gateway.security_chain import gate_6_rbac
+        from tools.gateway.security_chain import gate_6_rbac
 
         env = self._make_envelope(command="icdev-status", user_role="viewer", channel="slack")
         allowlist = [{"command": "icdev-status", "category": "read", "channels": "*"}]
@@ -184,7 +184,7 @@ class TestSecurityChain:
         assert result.passed
 
     def test_gate6_rbac_write_denied_for_viewer(self):
-        from icdev.tools.gateway.security_chain import gate_6_rbac
+        from tools.gateway.security_chain import gate_6_rbac
 
         env = self._make_envelope(command="icdev-intake", user_role="viewer", channel="internal_chat")
         allowlist = [{"command": "icdev-intake", "category": "write", "channels": "internal_chat"}]
@@ -193,7 +193,7 @@ class TestSecurityChain:
         assert "cannot perform" in result.reason
 
     def test_gate6_channel_not_allowed(self):
-        from icdev.tools.gateway.security_chain import gate_6_rbac
+        from tools.gateway.security_chain import gate_6_rbac
 
         env = self._make_envelope(command="icdev-build", user_role="developer", channel="telegram")
         allowlist = [{"command": "icdev-build", "category": "execute", "channels": "internal_chat"}]
@@ -211,22 +211,22 @@ class TestResponseFilter:
     """Test IL-aware response filtering."""
 
     def test_detect_public(self):
-        from icdev.tools.gateway.response_filter import detect_response_il
+        from tools.gateway.response_filter import detect_response_il
 
         assert detect_response_il("Hello world, status OK") == "IL2"
 
     def test_detect_cui(self):
-        from icdev.tools.gateway.response_filter import detect_response_il
+        from tools.gateway.response_filter import detect_response_il
 
         assert detect_response_il("CUI // SP-CTI\nProject status: healthy") == "IL5"
 
     def test_detect_secret(self):
-        from icdev.tools.gateway.response_filter import detect_response_il
+        from tools.gateway.response_filter import detect_response_il
 
         assert detect_response_il("SECRET // NOFORN\nClassified data") == "IL6"
 
     def test_filter_no_redaction(self):
-        from icdev.tools.gateway.response_filter import filter_response
+        from tools.gateway.response_filter import filter_response
 
         text = "Status: OK, all tests passing"
         filtered, was_filtered, il = filter_response(text, "IL5")
@@ -235,7 +235,7 @@ class TestResponseFilter:
         assert il == "IL2"
 
     def test_filter_redaction(self):
-        from icdev.tools.gateway.response_filter import filter_response
+        from tools.gateway.response_filter import filter_response
 
         text = "CUI // SP-CTI\nSSP generated for project X"
         filtered, was_filtered, il = filter_response(text, "IL2")
@@ -244,7 +244,7 @@ class TestResponseFilter:
         assert il in ("IL4", "IL5")
 
     def test_filter_secret_on_cui_channel(self):
-        from icdev.tools.gateway.response_filter import filter_response
+        from tools.gateway.response_filter import filter_response
 
         text = "SECRET // NOFORN\nClassified assessment results"
         filtered, was_filtered, il = filter_response(text, "IL5")
@@ -252,13 +252,13 @@ class TestResponseFilter:
         assert "REDACTED" in filtered
 
     def test_truncate_short(self):
-        from icdev.tools.gateway.response_filter import truncate_response
+        from tools.gateway.response_filter import truncate_response
 
         text = "short message"
         assert truncate_response(text, 100) == text
 
     def test_truncate_long(self):
-        from icdev.tools.gateway.response_filter import truncate_response
+        from tools.gateway.response_filter import truncate_response
 
         text = "x" * 5000
         result = truncate_response(text, 4000)
@@ -298,14 +298,14 @@ class TestUserBinder:
         return db
 
     def test_create_challenge(self):
-        from icdev.tools.gateway.user_binder import create_challenge
+        from tools.gateway.user_binder import create_challenge
 
         code = create_challenge("telegram", "user123")
         assert len(code) == 8  # 4 bytes hex = 8 chars
         assert code == code.upper()
 
     def test_verify_challenge(self, db_path):
-        from icdev.tools.gateway.user_binder import create_challenge, verify_challenge
+        from tools.gateway.user_binder import create_challenge, verify_challenge
 
         code = create_challenge("telegram", "user123")
         result = verify_challenge(code, "analyst@mil", "tenant-1", db_path)
@@ -313,7 +313,7 @@ class TestUserBinder:
         assert "binding_id" in result
 
     def test_verify_expired_challenge(self, db_path):
-        from icdev.tools.gateway.user_binder import create_challenge, verify_challenge, _ACTIVE_CHALLENGES
+        from tools.gateway.user_binder import create_challenge, verify_challenge, _ACTIVE_CHALLENGES
 
         code = create_challenge("telegram", "user123", ttl_minutes=0)
         # Manually expire
@@ -323,7 +323,7 @@ class TestUserBinder:
         assert "expired" in result["error"].lower()
 
     def test_provision_binding(self, db_path):
-        from icdev.tools.gateway.user_binder import provision_binding, resolve_binding
+        from tools.gateway.user_binder import provision_binding, resolve_binding
 
         result = provision_binding("mattermost", "mm-user-1", "admin@enclave.mil", "tenant-1", db_path)
         assert result["success"]
@@ -335,7 +335,7 @@ class TestUserBinder:
         assert binding["binding_status"] == "active"
 
     def test_revoke_binding(self, db_path):
-        from icdev.tools.gateway.user_binder import provision_binding, revoke_binding, resolve_binding
+        from tools.gateway.user_binder import provision_binding, revoke_binding, resolve_binding
 
         result = provision_binding("slack", "U456", "dev@mil", "tenant-1", db_path)
         bid = result["binding_id"]
@@ -348,7 +348,7 @@ class TestUserBinder:
         assert binding is None
 
     def test_list_bindings(self, db_path):
-        from icdev.tools.gateway.user_binder import provision_binding, list_bindings
+        from tools.gateway.user_binder import provision_binding, list_bindings
 
         provision_binding("slack", "U1", "user1@mil", "", db_path)
         provision_binding("telegram", "T1", "user2@mil", "", db_path)
@@ -401,50 +401,50 @@ class TestCommandRouter:
     ]
 
     def test_allowed_everywhere(self):
-        from icdev.tools.gateway.command_router import is_command_allowed
+        from tools.gateway.command_router import is_command_allowed
 
         allowed, entry = is_command_allowed("icdev-status", "telegram", self.ALLOWLIST)
         assert allowed
 
     def test_allowed_on_specific_channel(self):
-        from icdev.tools.gateway.command_router import is_command_allowed
+        from tools.gateway.command_router import is_command_allowed
 
         allowed, _ = is_command_allowed("icdev-test", "slack", self.ALLOWLIST)
         assert allowed
 
     def test_not_allowed_on_channel(self):
-        from icdev.tools.gateway.command_router import is_command_allowed
+        from tools.gateway.command_router import is_command_allowed
 
         allowed, _ = is_command_allowed("icdev-test", "telegram", self.ALLOWLIST)
         assert not allowed
 
     def test_deploy_disabled(self):
-        from icdev.tools.gateway.command_router import is_command_allowed
+        from tools.gateway.command_router import is_command_allowed
 
         allowed, _ = is_command_allowed("icdev-deploy", "slack", self.ALLOWLIST)
         assert not allowed
 
     def test_deploy_disabled_internal(self):
-        from icdev.tools.gateway.command_router import is_command_allowed
+        from tools.gateway.command_router import is_command_allowed
 
         allowed, _ = is_command_allowed("icdev-deploy", "internal_chat", self.ALLOWLIST)
         assert not allowed
 
     def test_unknown_command(self):
-        from icdev.tools.gateway.command_router import is_command_allowed
+        from tools.gateway.command_router import is_command_allowed
 
         allowed, entry = is_command_allowed("unknown-cmd", "slack", self.ALLOWLIST)
         assert not allowed
         assert entry is None
 
     def test_requires_confirmation(self):
-        from icdev.tools.gateway.command_router import requires_confirmation
+        from tools.gateway.command_router import requires_confirmation
 
         assert requires_confirmation("icdev-test", self.ALLOWLIST)
         assert not requires_confirmation("icdev-status", self.ALLOWLIST)
 
     def test_internal_only_command(self):
-        from icdev.tools.gateway.command_router import is_command_allowed
+        from tools.gateway.command_router import is_command_allowed
 
         allowed, _ = is_command_allowed("icdev-build", "internal_chat", self.ALLOWLIST)
         assert allowed
@@ -461,7 +461,7 @@ class TestAdapterBase:
     """Test adapter availability logic."""
 
     def test_available_connected(self):
-        from icdev.tools.gateway.adapters.base import BaseChannelAdapter
+        from tools.gateway.adapters.base import BaseChannelAdapter
 
         class DummyAdapter(BaseChannelAdapter):
             def verify_signature(self, p, s):
@@ -486,7 +486,7 @@ class TestAdapterBase:
         assert not adapter.is_available("air_gapped")
 
     def test_available_air_gapped(self):
-        from icdev.tools.gateway.adapters.base import BaseChannelAdapter
+        from tools.gateway.adapters.base import BaseChannelAdapter
 
         class DummyAdapter(BaseChannelAdapter):
             def verify_signature(self, p, s):
@@ -511,7 +511,7 @@ class TestAdapterBase:
         assert adapter.is_available("air_gapped")
 
     def test_disabled_adapter(self):
-        from icdev.tools.gateway.adapters.base import BaseChannelAdapter
+        from tools.gateway.adapters.base import BaseChannelAdapter
 
         class DummyAdapter(BaseChannelAdapter):
             def verify_signature(self, p, s):

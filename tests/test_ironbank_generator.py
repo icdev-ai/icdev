@@ -19,7 +19,7 @@ import pytest
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
-from icdev.tools.infra.ironbank_metadata_generator import (
+from tools.infra.ironbank_metadata_generator import (
     IRONBANK_BASE_IMAGES,
     generate_hardening_manifest,
     validate_hardening_manifest,

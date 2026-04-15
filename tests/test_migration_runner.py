@@ -11,7 +11,7 @@ import sqlite3
 
 import pytest
 
-from icdev.tools.db.migration_runner import MigrationRunner
+from tools.db.migration_runner import MigrationRunner
 
 
 @pytest.fixture

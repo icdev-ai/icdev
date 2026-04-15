@@ -25,8 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
-from icdev.tools.ci.core.air_gap_detector import detect_connectivity, _probe_host
+from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
+from tools.ci.core.air_gap_detector import detect_connectivity, _probe_host
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -709,7 +709,7 @@ class TestEventRouter:
         db_path = str(tmp_path / "test_icdev.db")
         # Ensure DB directory exists
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        from icdev.tools.ci.core.event_router import EventRouter
+        from tools.ci.core.event_router import EventRouter
 
         return EventRouter(db_path=db_path)
 

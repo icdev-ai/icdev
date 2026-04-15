@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 
-from icdev.tools.monitor.heartbeat_daemon import (
+from tools.monitor.heartbeat_daemon import (
     CHECK_REGISTRY,
     _ensure_table,
     _load_config,

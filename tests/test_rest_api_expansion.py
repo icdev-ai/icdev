@@ -168,8 +168,8 @@ def rest_app(platform_db_path):
     app = Flask(__name__)
     app.config["TESTING"] = True
 
-    with patch("icdev.tools.saas.rest_api.PLATFORM_DB_PATH", platform_db_path):
-        from icdev.tools.saas.rest_api import api_bp
+    with patch("tools.saas.rest_api.PLATFORM_DB_PATH", platform_db_path):
+        from tools.saas.rest_api import api_bp
 
         try:
             app.register_blueprint(api_bp)
@@ -197,8 +197,8 @@ def developer_app(platform_db_path):
     app = Flask(__name__)
     app.config["TESTING"] = True
 
-    with patch("icdev.tools.saas.rest_api.PLATFORM_DB_PATH", platform_db_path):
-        from icdev.tools.saas.rest_api import api_bp
+    with patch("tools.saas.rest_api.PLATFORM_DB_PATH", platform_db_path):
+        from tools.saas.rest_api import api_bp
 
         try:
             app.register_blueprint(api_bp)
@@ -239,17 +239,17 @@ class TestDevSecOpsProfile:
     def test_get_devsecops_returns_profile(self, client):
         """GET /devsecops returns profile when tool and project exist."""
         mock_profile = {"id": "dsp-abc", "project_id": SEED_PROJECT_ID, "maturity_level": "level_3_defined"}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_profile
-            with patch.dict("sys.modules", {"icdev.tools.devsecops.profile_manager": MagicMock()}):
-                with patch("icdev.tools.saas.rest_api.get_profile", create=True):
+            with patch.dict("sys.modules", {"tools.devsecops.profile_manager": MagicMock()}):
+                with patch("tools.saas.rest_api.get_profile", create=True):
                     resp = client.get("/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID))
                     assert resp.status_code in (200, 500)
 
     def test_get_devsecops_404_for_missing_project(self, client):
         """GET /devsecops returns 404 when project does not exist."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.get("/api/v1/projects/proj-missing/devsecops")
             assert resp.status_code == 404
@@ -258,7 +258,7 @@ class TestDevSecOpsProfile:
 
     def test_get_devsecops_503_when_tool_missing(self, client):
         """GET /devsecops returns 503 when profile_manager import fails."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             # Force ImportError on the inner import — rest_api uses
             # ``from tools.devsecops.profile_manager import get_profile``
@@ -267,7 +267,7 @@ class TestDevSecOpsProfile:
                 "sys.modules",
                 {
                     "tools.devsecops.profile_manager": None,
-                    "icdev.tools.devsecops.profile_manager": None,
+                    "tools.devsecops.profile_manager": None,
                 },
             ):
                 resp = client.get("/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID))
@@ -276,10 +276,10 @@ class TestDevSecOpsProfile:
     def test_post_devsecops_creates_profile(self, client):
         """POST /devsecops creates a profile (admin role)."""
         mock_result = {"id": "dsp-new", "maturity_level": "level_2_managed", "status": "created"}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_result
-            with patch.dict("sys.modules", {"icdev.tools.devsecops.profile_manager": MagicMock()}):
+            with patch.dict("sys.modules", {"tools.devsecops.profile_manager": MagicMock()}):
                 resp = client.post(
                     "/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID),
                     data=json.dumps({"maturity_level": "level_2_managed"}),
@@ -310,29 +310,29 @@ class TestZTAMaturity:
     def test_get_zta_returns_scores(self, client):
         """GET /zta returns pillar scores when tool available."""
         mock_scores = {"pillars": {"user_identity": 0.6}, "overall": 0.5}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_scores
-            with patch.dict("sys.modules", {"icdev.tools.devsecops.zta_maturity_scorer": MagicMock()}):
+            with patch.dict("sys.modules", {"tools.devsecops.zta_maturity_scorer": MagicMock()}):
                 resp = client.get("/api/v1/projects/{}/zta".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_zta_404_for_missing_project(self, client):
         """GET /zta returns 404 when project does not exist."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.get("/api/v1/projects/proj-missing/zta")
             assert resp.status_code == 404
 
     def test_get_zta_503_when_tool_missing(self, client):
         """GET /zta returns 503 when scorer import fails."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             with patch.dict(
                 "sys.modules",
                 {
                     "tools.devsecops.zta_maturity_scorer": None,
-                    "icdev.tools.devsecops.zta_maturity_scorer": None,
+                    "tools.devsecops.zta_maturity_scorer": None,
                 },
             ):
                 resp = client.get("/api/v1/projects/{}/zta".format(SEED_PROJECT_ID))
@@ -384,7 +384,7 @@ class TestMarketplaceSearch:
             "sys.modules",
             {
                 "tools.marketplace.search_engine": None,
-                "icdev.tools.marketplace.search_engine": None,
+                "tools.marketplace.search_engine": None,
             },
         ):
             resp = client.get("/api/v1/marketplace/search?q=test")
@@ -413,16 +413,16 @@ class TestSimulations:
     def test_get_simulations_lists_scenarios(self, client):
         """GET /simulations returns list of scenarios."""
         mock_list = {"scenarios": [], "total": 0}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_list
-            with patch.dict("sys.modules", {"icdev.tools.simulation.simulation_engine": MagicMock()}):
+            with patch.dict("sys.modules", {"tools.simulation.simulation_engine": MagicMock()}):
                 resp = client.get("/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_simulations_404_missing_project(self, client):
         """GET /simulations returns 404 for missing project."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.get("/api/v1/projects/proj-missing/simulations")
             assert resp.status_code == 404
@@ -430,10 +430,10 @@ class TestSimulations:
     def test_post_simulations_creates_scenario(self, client):
         """POST /simulations creates a new scenario."""
         mock_result = {"scenario_id": "scn-1", "status": "pending"}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_result
-            with patch.dict("sys.modules", {"icdev.tools.simulation.simulation_engine": MagicMock()}):
+            with patch.dict("sys.modules", {"tools.simulation.simulation_engine": MagicMock()}):
                 resp = client.post(
                     "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID),
                     data=json.dumps(
@@ -449,7 +449,7 @@ class TestSimulations:
 
     def test_post_simulations_400_missing_name(self, client):
         """POST /simulations returns 400 when scenario_name is missing."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             resp = client.post(
                 "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID),
@@ -460,7 +460,7 @@ class TestSimulations:
 
     def test_post_simulations_400_invalid_type(self, client):
         """POST /simulations returns 400 for invalid scenario_type."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             resp = client.post(
                 "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID),
@@ -482,7 +482,7 @@ class TestSimulations:
 
     def test_post_simulations_404_missing_project(self, client):
         """POST /simulations returns 404 for missing project."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.post(
                 "/api/v1/projects/proj-missing/simulations",
@@ -498,13 +498,13 @@ class TestSimulations:
 
     def test_get_simulations_503_when_tool_missing(self, client):
         """GET /simulations returns 503 when simulation_engine unavailable."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             with patch.dict(
                 "sys.modules",
                 {
                     "tools.simulation.simulation_engine": None,
-                    "icdev.tools.simulation.simulation_engine": None,
+                    "tools.simulation.simulation_engine": None,
                 },
             ):
                 resp = client.get("/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID))
@@ -522,31 +522,31 @@ class TestMOSAAssessment:
     def test_get_mosa_returns_assessment(self, client):
         """GET /mosa returns assessment when tool available."""
         mock_result = {"framework": "mosa", "overall_status": "partial"}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_result
             mock_assessor = MagicMock()
             mock_assessor.assess = MagicMock(return_value=mock_result)
-            with patch("icdev.tools.compliance.mosa_assessor.MOSAAssessor", return_value=mock_assessor):
+            with patch("tools.compliance.mosa_assessor.MOSAAssessor", return_value=mock_assessor):
                 resp = client.get("/api/v1/projects/{}/mosa".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_mosa_404_for_missing_project(self, client):
         """GET /mosa returns 404 for missing project."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.get("/api/v1/projects/proj-missing/mosa")
             assert resp.status_code == 404
 
     def test_get_mosa_503_when_tool_missing(self, client):
         """GET /mosa returns 503 when mosa_assessor import fails."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             with patch.dict(
                 "sys.modules",
                 {
                     "tools.compliance.mosa_assessor": None,
-                    "icdev.tools.compliance.mosa_assessor": None,
+                    "tools.compliance.mosa_assessor": None,
                 },
             ):
                 resp = client.get("/api/v1/projects/{}/mosa".format(SEED_PROJECT_ID))
@@ -564,29 +564,29 @@ class TestSupplyChainGraph:
     def test_get_graph_returns_data(self, client):
         """GET /supply-chain/graph returns graph data."""
         mock_graph = {"project_id": SEED_PROJECT_ID, "nodes": [], "edges": []}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             mock_imp.return_value[0].return_value = mock_graph
-            with patch.dict("sys.modules", {"icdev.tools.supply_chain.dependency_graph": MagicMock()}):
+            with patch.dict("sys.modules", {"tools.supply_chain.dependency_graph": MagicMock()}):
                 resp = client.get("/api/v1/projects/{}/supply-chain/graph".format(SEED_PROJECT_ID))
                 assert resp.status_code in (200, 500)
 
     def test_get_graph_404_for_missing_project(self, client):
         """GET /supply-chain/graph returns 404 for missing project."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.get("/api/v1/projects/proj-missing/supply-chain/graph")
             assert resp.status_code == 404
 
     def test_get_graph_503_when_tool_missing(self, client):
         """GET /supply-chain/graph returns 503 when unavailable."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
             with patch.dict(
                 "sys.modules",
                 {
                     "tools.supply_chain.dependency_graph": None,
-                    "icdev.tools.supply_chain.dependency_graph": None,
+                    "tools.supply_chain.dependency_graph": None,
                 },
             ):
                 resp = client.get("/api/v1/projects/{}/supply-chain/graph".format(SEED_PROJECT_ID))
@@ -694,7 +694,7 @@ class TestExpansionResponseFormats:
 
     def test_404_has_standard_error_shape(self, client):
         """404 responses from new endpoints have error + code fields."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             resp = client.get("/api/v1/projects/nope/devsecops")
             assert resp.status_code == 404
@@ -725,7 +725,7 @@ class TestExpansionResponseFormats:
             "/api/v1/projects/missing/mosa",
             "/api/v1/projects/missing/supply-chain/graph",
         ]
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(False)
             for ep in endpoints:
                 resp = client.get(ep)

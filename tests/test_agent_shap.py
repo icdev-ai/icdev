@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from icdev.tools.observability.shap.agent_shap import AgentSHAP
+from tools.observability.shap.agent_shap import AgentSHAP
 
 
 def _create_test_db(db_path: Path) -> None:

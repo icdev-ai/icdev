@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.marketplace.publish_pipeline import (
+from tools.marketplace.publish_pipeline import (
     parse_skill_md,
     validate_asset_structure,
     publish_asset,
@@ -161,7 +161,7 @@ def mock_scan_pass():
         "gates_scanned": 7,
         "gate_results": [],
     }
-    with patch("icdev.tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
+    with patch("tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
         yield scan_result
 
 
@@ -175,7 +175,7 @@ def mock_scan_fail():
         "gates_scanned": 7,
         "gate_results": [{"gate": "sast_scan", "status": "fail"}],
     }
-    with patch("icdev.tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
+    with patch("tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
         yield scan_result
 
 
@@ -398,7 +398,7 @@ class TestILValidation:
             "gates_scanned": 7,
             "gate_results": [],
         }
-        with patch("icdev.tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
+        with patch("tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
             result = publish_asset(
                 asset_path=str(asset_dir),
                 asset_type="skill",

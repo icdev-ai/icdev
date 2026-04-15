@@ -9,7 +9,7 @@ from pathlib import Path
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.translation.dependency_mapper import (
+from tools.translation.dependency_mapper import (
     load_mappings,
     resolve_import,
     resolve_imports,

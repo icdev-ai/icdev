@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.compliance.ai_reassessment_scheduler import (
+from tools.compliance.ai_reassessment_scheduler import (
     FREQUENCY_DAYS,
     VALID_FREQUENCIES,
     check_overdue,

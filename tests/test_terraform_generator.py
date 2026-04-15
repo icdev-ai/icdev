@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 try:
-    from icdev.tools.infra.terraform_generator import (
+    from tools.infra.terraform_generator import (
         generate_base,
         generate_rds,
         generate_ecr,

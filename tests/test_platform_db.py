@@ -9,8 +9,8 @@ from unittest import mock
 
 import pytest
 
-import icdev.tools.saas.platform_db as platform_db_mod
-from icdev.tools.saas.platform_db import (
+import tools.saas.platform_db as platform_db_mod
+from tools.saas.platform_db import (
     init_platform_db,
 )
 

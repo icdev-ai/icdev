@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 """Tests for tools.mosa.modular_design_analyzer -- static modularity metrics."""
 
 
-from icdev.tools.mosa.modular_design_analyzer import (
+from tools.mosa.modular_design_analyzer import (
     _build_dependency_graph,
     _detect_circular_deps,
     _extract_python_imports,

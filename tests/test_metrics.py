@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from icdev.tools.saas.metrics import (
+from tools.saas.metrics import (
     MetricsCollector,
     _FallbackCounter,
     _FallbackGauge,
@@ -197,7 +197,7 @@ class TestGetCollector:
     def test_returns_metrics_collector(self):
         """get_collector() must return a MetricsCollector instance."""
         # Reset the global singleton for isolation
-        import icdev.tools.saas.metrics as metrics_module
+        import tools.saas.metrics as metrics_module
 
         original = metrics_module._collector
         metrics_module._collector = None
@@ -209,7 +209,7 @@ class TestGetCollector:
 
     def test_returns_same_instance(self):
         """get_collector() must return the same instance on second call."""
-        import icdev.tools.saas.metrics as metrics_module
+        import tools.saas.metrics as metrics_module
 
         original = metrics_module._collector
         metrics_module._collector = None

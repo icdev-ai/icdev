@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.observability import configure_tracer
-from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+from tools.observability import configure_tracer
+from tools.observability.sqlite_tracer import SQLiteTracer
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ class TestMCPInstrumentation:
 
     def test_tool_call_creates_span(self, tracer, tmp_db):
         """Verify that _handle_tools_call creates a trace span."""
-        from icdev.tools.mcp.base_server import MCPServer
+        from tools.mcp.base_server import MCPServer
 
         server = MCPServer("test-server")
         server.server_name = "test-server"
@@ -92,7 +92,7 @@ class TestMCPInstrumentation:
 
     def test_tool_call_error_span(self, tracer, tmp_db):
         """Verify error spans are created for failing tool calls."""
-        from icdev.tools.mcp.base_server import MCPServer
+        from tools.mcp.base_server import MCPServer
 
         server = MCPServer("test-server")
 
@@ -116,7 +116,7 @@ class TestMCPInstrumentation:
 
     def test_tool_call_result_hash(self, tracer, tmp_db):
         """Verify result hash is recorded on successful calls."""
-        from icdev.tools.mcp.base_server import MCPServer
+        from tools.mcp.base_server import MCPServer
 
         server = MCPServer("hash-server")
         server.server_name = "hash-server"
@@ -139,7 +139,7 @@ class TestMCPInstrumentation:
 
     def test_span_kind_is_server(self, tracer, tmp_db):
         """MCP tool call spans should have SERVER kind."""
-        from icdev.tools.mcp.base_server import MCPServer
+        from tools.mcp.base_server import MCPServer
 
         server = MCPServer("kind-server")
 
@@ -159,7 +159,7 @@ class TestMCPInstrumentation:
 
     def test_multiple_tool_calls(self, tracer, tmp_db):
         """Multiple tool calls create separate spans."""
-        from icdev.tools.mcp.base_server import MCPServer
+        from tools.mcp.base_server import MCPServer
 
         server = MCPServer("multi-server")
 
@@ -181,7 +181,7 @@ class TestMCPInstrumentation:
 
     def test_genai_operation_attribute(self, tracer, tmp_db):
         """Verify gen_ai.operation.name is set to execute_tool."""
-        from icdev.tools.mcp.base_server import MCPServer
+        from tools.mcp.base_server import MCPServer
 
         server = MCPServer("genai-server")
 
@@ -206,8 +206,8 @@ class TestLLMRouterInstrumentation:
 
     def test_successful_invoke_creates_span(self, tracer, tmp_db):
         """Verify successful LLM invocation creates a span with GenAI attributes."""
-        from icdev.tools.llm.router import LLMRouter
-        from icdev.tools.llm.provider import LLMRequest, LLMResponse
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest, LLMResponse
 
         mock_response = LLMResponse(
             content="test response",
@@ -254,8 +254,8 @@ class TestLLMRouterInstrumentation:
 
     def test_failed_invoke_error_span(self, tracer, tmp_db):
         """Verify failed LLM invocation creates an error span."""
-        from icdev.tools.llm.router import LLMRouter
-        from icdev.tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
 
         router = LLMRouter.__new__(LLMRouter)
         router._config = {}
