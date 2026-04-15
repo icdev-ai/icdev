@@ -46,15 +46,16 @@ REMEDIABLE = {
     FAILURE_RUFF_ISSUES,
     FAILURE_MISSING_MANIFEST,
     FAILURE_COHERENCE_BROKEN,  # only if due to ruff or manifest
-    # feedback_kanban_vv_policy.md: phantom_paths is auto-remediable via
-    # git cross-check — if the worktree has real file changes since
-    # dispatch, override the verdict. Dropped false-positives blocked the
-    # whole E-F-G-H-I chain in the E3 incident 2026-04-15.
-    FAILURE_PHANTOM_PATHS,
 }
 
 UNREMEDIABLE = {
     FAILURE_NO_COMMITS,
+    # Phantom completion means the agent hallucinated file creation — nothing
+    # on disk to fix. Previously in REMEDIABLE as a workaround for false
+    # positives caused by _git_worktree_has_real_changes check-2 using
+    # BASE_DIR dirty state for unregistered worktrees. That root cause is
+    # fixed: check-2 now only fires when task_id is in _worktrees.
+    FAILURE_PHANTOM_PATHS,
     FAILURE_BANDIT_SECURITY,
     FAILURE_E2E_REGRESSION,
     FAILURE_UNKNOWN,
