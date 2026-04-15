@@ -48,19 +48,33 @@ def openapi_json():
     return jsonify(spec)
 
 
-@swagger_bp.route("/docs", methods=["GET"])
-def swagger_docs():
-    """GET /api/v1/docs -- Render Swagger UI documentation page."""
-    html = """<!DOCTYPE html>
-<html lang="en">
+def render_swagger_ui_html(
+    openapi_url: str = "/api/v1/openapi.json",
+    title: str = "ICDEV\u2122 SaaS API \u2014 Documentation",
+    cui_banner: str = "CUI // SP-CTI",
+) -> str:
+    """Render a Swagger UI HTML page that points at *openapi_url*.
+
+    Reusable across SaaS and dashboard blueprints so both surfaces share
+    one Swagger UI template. Callers (dashboard meta blueprint) supply
+    their own title + openapi.json URL.
+
+    Air-gap consideration: the ``unpkg.com`` CDN must be replaced with a
+    locally vendored ``swagger-ui-dist`` bundle when ``is_airgap()`` is
+    true. That switch will land as part of Phase H air-gap frontend work
+    (``tools/airgap/npm_mirror_sync.py`` vendors swagger-ui alongside
+    node_modules).
+    """
+    return f"""<!DOCTYPE html>
+<html lang=\"en\">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ICDEV™ SaaS API &mdash; Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+  <title>{title}</title>
+  <link rel=\"stylesheet\" href=\"https://unpkg.com/swagger-ui-dist@5/swagger-ui.css\" />
   <style>
-    body { margin: 0; padding: 0; }
-    .cui-banner {
+    body {{ margin: 0; padding: 0; }}
+    .cui-banner {{
       background: #d4380d;
       color: white;
       text-align: center;
@@ -68,26 +82,35 @@ def swagger_docs():
       font-family: monospace;
       font-size: 14px;
       font-weight: bold;
-    }
+    }}
   </style>
 </head>
 <body>
-  <div class="cui-banner">CUI // SP-CTI</div>
-  <div id="swagger-ui"></div>
-  <div class="cui-banner">CUI // SP-CTI</div>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <div class=\"cui-banner\">{cui_banner}</div>
+  <div id=\"swagger-ui\"></div>
+  <div class=\"cui-banner\">{cui_banner}</div>
+  <script src=\"https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js\"></script>
   <script>
-    SwaggerUIBundle({
-      url: "/api/v1/openapi.json",
-      dom_id: "#swagger-ui",
+    SwaggerUIBundle({{
+      url: \"{openapi_url}\",
+      dom_id: \"#swagger-ui\",
       deepLinking: true,
       presets: [
         SwaggerUIBundle.presets.apis,
         SwaggerUIBundle.SwaggerUIStandalonePreset
       ],
-      layout: "BaseLayout"
-    });
+      layout: \"BaseLayout\"
+    }});
   </script>
 </body>
 </html>"""
+
+
+@swagger_bp.route("/docs", methods=["GET"])
+def swagger_docs():
+    """GET /api/v1/docs -- Render Swagger UI documentation page."""
+    html = render_swagger_ui_html(
+        openapi_url="/api/v1/openapi.json",
+        title="ICDEV\u2122 SaaS API \u2014 Documentation",
+    )
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
