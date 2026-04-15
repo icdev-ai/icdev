@@ -649,7 +649,12 @@ def _get_due_tasks() -> list:
             "              AND dep.status = 'done'))"
         )
 
-        # Always pick up scheduled-and-due tasks
+        # Always pick up scheduled-and-due tasks.
+        # Chain-priority (2026-04-15): tasks with depends_on_task_id IS NOT NULL
+        # are part of an explicit dependency sequence — finish those FIRST,
+        # before picking up standalone tasks at the same priority tier. Prevents
+        # high-priority one-off followups from leapfrogging a mid-phase chain
+        # task and starving the pipeline.
         scheduled = conn.execute(
             "SELECT kt.* FROM kanban_tasks kt "
             "WHERE kt.status = 'scheduled' "
@@ -657,6 +662,7 @@ def _get_due_tasks() -> list:
             "  AND kt.scheduled_at <= datetime('now') "
             f"  AND {dep_clause} "  # nosec B608 -- internal constant
             "ORDER BY "
+            "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
             "CASE kt.priority "
             "  WHEN 'critical' THEN 0 "
             "  WHEN 'high' THEN 1 "
@@ -692,6 +698,7 @@ def _get_due_tasks() -> list:
             "       OR kt.updated_at <= datetime('now', '-10 minutes')) "
             f"  AND {dep_clause} "  # nosec B608 -- internal constant
             "ORDER BY "
+            "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
             "CASE kt.priority "
             "  WHEN 'critical' THEN 0 "
             "  WHEN 'high' THEN 1 "
@@ -914,10 +921,116 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
         return "backlog"
 
 
-def _move_task(task_id: str, new_status: str):
-    """Update task status in the database."""
+def _record_status_transition(
+    task_id: str, from_status: str | None, to_status: str,
+    actor: str = "scheduler", reason: str | None = None,
+) -> None:
+    """Append a row to kanban_status_transitions (best-effort).
+
+    Created by migration 025 (2026-04-15) after the E-gate orphan-done
+    incident where investigators had no forensic trail for the rogue
+    status=done UPDATE. Never raises — audit log failure must not block
+    the primary state transition.
+    """
+    try:
+        import secrets as _secrets  # noqa: PLC0415
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO kanban_status_transitions "
+                "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "kst-" + _secrets.token_hex(6),
+                    task_id, from_status, to_status, actor, reason,
+                    _utcnow_iso(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        # Audit-log writes are best-effort. If the table is missing
+        # (migration 025 not yet run) or the DB is locked, we do NOT
+        # block the primary state transition. The alternative \u2014
+        # crashing _move_task on an audit write \u2014 would be worse.
+        pass
+
+
+def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
+    """Return (True, None) if task has no parent OR parent is done.
+
+    Used by _move_task's done-transition guard. Defense-in-depth against
+    manually set status=done bypassing _get_due_tasks' dependency check
+    (the E-gate orphan-done incident, 2026-04-15).
+    """
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT t.depends_on_task_id, p.status AS parent_status "
+            "FROM kanban_tasks t "
+            "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
+            "WHERE t.id = ?",
+            (task_id,),
+        ).fetchone()
+        conn.close()
+    except Exception:
+        return True, None  # fail-open on DB error
+    if not row:
+        return True, None
+    row = dict(row)
+    parent_id = row.get("depends_on_task_id")
+    if not parent_id:
+        return True, None
+    parent_status = row.get("parent_status")
+    if parent_status == "done":
+        return True, None
+    return False, f"parent {parent_id} status={parent_status!r}"
+
+
+def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
+               reason: str | None = None):
+    """Update task status in the database.
+
+    Policy changes (2026-04-15 V&V hardening):
+      * Done-transition guard: if a task has a non-null
+        ``depends_on_task_id`` and that parent is NOT in ``done`` state,
+        REFUSE the transition to ``done``. Logs a warning and is a no-op.
+        Defense-in-depth against manually set done bypassing
+        ``_get_due_tasks`` (E-gate orphan-done incident).
+      * Cascade rollback: if a task transitions FROM ``done`` to anything
+        else (remediation, orphan sweep, manual reset), every downstream
+        task whose ``depends_on_task_id`` points at it is rolled back to
+        ``scheduled`` (only those currently ``in_progress`` or ``backlog``;
+        already-done descendants stay done \u2014 that's a separate decision
+        the operator can make explicitly).
+      * Audit log: every transition (accepted or refused) is appended to
+        ``kanban_status_transitions`` via ``_record_status_transition``.
+    """
     conn = get_connection()
     try:
+        # Look up current status for audit + cascade logic
+        row = conn.execute(
+            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,),
+        ).fetchone()
+        prior_status = dict(row)["status"] if row else None
+
+        # Done-transition guard
+        if new_status == "done":
+            ok, guard_reason = _parent_is_done(task_id)
+            if not ok:
+                logger.warning(
+                    "_move_task: REFUSED done transition for %s \u2014 %s",
+                    task_id, guard_reason,
+                )
+                conn.close()
+                _record_status_transition(
+                    task_id, prior_status, "REFUSED_done",
+                    actor=actor,
+                    reason=f"guard: {guard_reason}",
+                )
+                return
+
         now = _utcnow_iso()
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
@@ -928,8 +1041,43 @@ def _move_task(task_id: str, new_status: str):
         vals.append(task_id)
         conn.execute(sql, tuple(vals))
         conn.commit()
+
+        # Cascade rollback: done \u2192 not-done demotes active descendants
+        rolled_back: list[str] = []
+        if prior_status == "done" and new_status != "done":
+            desc_rows = conn.execute(
+                "SELECT id FROM kanban_tasks "
+                "WHERE depends_on_task_id = ? "
+                "  AND status IN ('in_progress', 'backlog')",
+                (task_id,),
+            ).fetchall()
+            for r in desc_rows:
+                rolled_back.append(dict(r)["id"])
+            if rolled_back:
+                placeholders = ",".join("?" * len(rolled_back))
+                conn.execute(
+                    f"UPDATE kanban_tasks SET status='scheduled', "  # nosec B608
+                    f"updated_at=?, failure_count=0, "
+                    f"last_failure_reason=?, last_failure_at=NULL "
+                    f"WHERE id IN ({placeholders})",
+                    (now, f"cascade: parent {task_id} demoted from done", *rolled_back),
+                )
+                conn.commit()
+                logger.info(
+                    "_move_task: cascade rolled back %d descendant(s) of %s: %s",
+                    len(rolled_back), task_id, rolled_back,
+                )
     finally:
         conn.close()
+
+    _record_status_transition(task_id, prior_status, new_status, actor=actor, reason=reason)
+    if prior_status == "done" and new_status != "done" and rolled_back:
+        for dep_id in rolled_back:
+            _record_status_transition(
+                dep_id, None, "scheduled", actor="cascade",
+                reason=f"parent {task_id} demoted {prior_status}\u2192{new_status}",
+            )
+
     # Broadcast SSE event for real-time dashboard updates
     try:
         from tools.dashboard.sse_manager import sse_manager
@@ -944,6 +1092,58 @@ def _move_task(task_id: str, new_status: str):
         )
     except Exception:
         pass  # SSE is best-effort
+
+
+def _detect_orphan_done_tasks() -> list[dict]:
+    """Find done tasks whose parent isn't done and roll them back.
+
+    Runs at the start of each scheduler cycle. Catches the class of bugs
+    where a row was SET to done without its prerequisite work completing
+    (E-gate incident 2026-04-15: E-gate done while E4/E5/E6 were not).
+
+    Returns a list of ``{id, parent_id, prior_parent_status}`` dicts for
+    every row rolled back. The rollback itself goes through ``_move_task``
+    so the audit trail captures the orphan-sweep actor.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT t.id AS id, t.depends_on_task_id AS parent_id, "
+                "       p.status AS parent_status "
+                "FROM kanban_tasks t "
+                "JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
+                "WHERE t.status = 'done' AND p.status != 'done'"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("orphan-done sweep: DB error %s", exc)
+        return []
+
+    orphans: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        orphans.append({
+            "id": d["id"],
+            "parent_id": d["parent_id"],
+            "parent_status": d.get("parent_status"),
+        })
+
+    for o in orphans:
+        logger.warning(
+            "ORPHAN-DONE detected: %s was done but parent %s is %r \u2014 rolling back to scheduled",
+            o["id"], o["parent_id"], o["parent_status"],
+        )
+        # _move_task will cascade-rollback any descendants of o["id"]
+        # that were in_progress/backlog.
+        _move_task(
+            o["id"], "scheduled",
+            actor="orphan_sweep",
+            reason=f"parent {o['parent_id']} status={o['parent_status']!r} at sweep",
+        )
+
+    return orphans
 
 
 def _write_prompt_file(task: dict):
@@ -2881,6 +3081,20 @@ def _check_token_exhausted_tasks() -> list:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
+    # 0. Orphan-done sweep — roll back any done task whose parent isn't done.
+    # Defense-in-depth against manual SQL / spurious automation that marked
+    # a row done while its prerequisite work hadn't completed. See memory
+    # feedback_kanban_vv_policy.md and the 2026-04-15 E-gate incident.
+    try:
+        orphans = _detect_orphan_done_tasks()
+        if orphans:
+            print(
+                f"  Kanban: orphan-done sweep rolled back {len(orphans)} "
+                f"task(s): {[o['id'] for o in orphans]}"
+            )
+    except Exception as _osw_exc:
+        logger.warning("orphan-done sweep failed: %s", _osw_exc)
+
     # 1. Check for completed claude subprocesses
     completed = _check_completed()
 
