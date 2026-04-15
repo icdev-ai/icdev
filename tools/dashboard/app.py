@@ -120,6 +120,9 @@ if _GOVCON_ENABLED:
     _HAS_PROPOSAL_GENESIS = _ilu.find_spec("tools.dashboard.api.proposal_genesis") is not None
 else:
     _HAS_PROPOSAL_GENESIS = False
+# Feature flags for finetune and chat API (always available — routes exist unconditionally)
+_HAS_FINETUNE_API = True
+_HAS_CHAT_API = True
 from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
 
 # ── Design Canvases (conditional registration) ────────────────────────────
