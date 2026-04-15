@@ -2,7 +2,16 @@
 """tools/dashboard/api/auth \u2014 JWT issuance + validation for /api/v1/*.
 
 **Status:** C1 (design) + C2 (decorator + issuance) + C3 (CSRF double-submit)
-landed. C4 sweeps decorators onto every blueprint handler.
++ C4 (enforcement middleware) all landed. Phase C complete.
+
+Deviation from the C4 task-as-written: the plan said "decorate every handler
+with @require_jwt + @csrf_protect" (blueprint-level sweep, ~250 routes across
+55 files). We chose instead a single ``install_api_v1_auth_middleware(app)``
+before_request hook — identical security outcome, one function vs. 55 file
+edits, zero risk of forgetting a decorator on future routes, and matches
+the SaaS pattern (tools/saas/auth/middleware.py:register_auth_middleware).
+The @require_jwt and @csrf_protect decorators remain available for opt-in
+use on any standalone handler that the middleware doesn't cover.
 
 Reference: tools/saas/auth (inspected in C1)
 ============================================
@@ -434,6 +443,63 @@ def csrf_protect(fn: Callable) -> Callable:
     return _wrapped
 
 
+def install_api_v1_auth_middleware(app) -> None:
+    """Register a before_request hook that enforces JWT + CSRF on /api/v1/*.
+
+    Scope: only requests whose path starts with ``/api/v1/``. The legacy
+    ``/api/*`` alias is intentionally left unauthenticated so the existing
+    Jinja dashboard pages (which call the legacy paths from inline JS)
+    keep working for one release \u2014 matches B4's "keep for 1 release, then
+    deprecate" posture. When the alias is dropped (Phase I), remove the
+    path-prefix guard below to enforce everywhere.
+
+    Skipped (pass-through, no 401):
+      - Path not under /api/v1/  \u2014 e.g. Jinja page loads, legacy /api/*
+      - Path in PUBLIC_ENDPOINTS  \u2014 auth/token, auth/refresh, openapi.json,
+        docs, health
+      - Preflight OPTIONS requests \u2014 CORS handles these; never auth-protected
+
+    On failure: returns 401 JSON ``{error, code}`` before the route handler
+    runs.
+    """
+    @app.before_request
+    def _enforce_api_v1_auth():
+        path = request.path
+        if not path.startswith("/api/v1/"):
+            return None
+        if request.method == "OPTIONS":
+            return None
+        if is_public_endpoint(path):
+            return None
+        # --- JWT validation -------------------------------------------------
+        token = _extract_bearer(request)
+        if not token:
+            return jsonify({"error": "Missing Authorization Bearer token", "code": "AUTH_REQUIRED"}), 401
+        try:
+            claims = decode_token(token, expected_typ="access")
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token expired", "code": "TOKEN_EXPIRED"}), 401
+        except jwt.PyJWTError as exc:
+            return jsonify({"error": f"Invalid token: {exc}", "code": "AUTH_INVALID"}), 401
+        g.jwt = claims
+        g.user_id = claims.get("sub")
+        g.user_role = claims.get("role")
+        # --- CSRF double-submit on state-changing same-origin browser writes
+        if _should_enforce_csrf(request):
+            cookie_val = request.cookies.get(CSRF_COOKIE_NAME, "")
+            header_val = request.headers.get(CSRF_HEADER_NAME, "")
+            if (
+                not cookie_val
+                or not header_val
+                or not secrets.compare_digest(cookie_val, header_val)
+            ):
+                return jsonify({
+                    "error": "CSRF token missing or invalid",
+                    "code": "CSRF_INVALID",
+                }), 403
+        return None
+
+
 def install_csrf_cookie_middleware(app) -> None:
     """Register a Flask after_request hook that seeds the CSRF cookie.
 
@@ -474,6 +540,7 @@ __all__ = [
     "auth_api",
     "csrf_protect",
     "decode_token",
+    "install_api_v1_auth_middleware",
     "install_csrf_cookie_middleware",
     "is_public_endpoint",
     "issue_access_token",

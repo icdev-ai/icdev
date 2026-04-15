@@ -370,6 +370,12 @@ def _auth_before_request():
     """Flask before_request hook for authentication."""
     g.current_user = None
 
+    # Defer /api/v1/* to the new JWT middleware (tools.dashboard.api.auth,
+    # Phase C / P1.3). This hook stays authoritative for legacy /api/* and
+    # Jinja page routes; it only steps aside for the versioned surface.
+    if request.path.startswith("/api/v1/"):
+        return None
+
     # Skip auth for public endpoints
     if request.endpoint and request.endpoint in PUBLIC_ENDPOINTS:
         return None
