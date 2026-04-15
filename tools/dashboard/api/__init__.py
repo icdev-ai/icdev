@@ -65,6 +65,17 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
             logger.warning("Failed to mount inline-route blueprint %s: %s", bp.name, exc)
 
     # ------------------------------------------------------------------ #
+    #  Meta blueprint (OpenAPI spec + Swagger UI) \u2014 P1.2 / B4             #
+    #  No /api/ legacy alias: this is a v1-only surface.                  #
+    # ------------------------------------------------------------------ #
+    try:
+        from tools.dashboard.api.meta import meta_api
+        app.register_blueprint(meta_api, url_prefix="/api/v1")
+        logger.info("meta_api registered at /api/v1/openapi.json + /api/v1/docs")
+    except Exception as exc:
+        logger.warning("Failed to mount meta_api: %s", exc)
+
+    # ------------------------------------------------------------------ #
     #  Core blueprints (explicit url_prefix)                              #
     # ------------------------------------------------------------------ #
     from tools.dashboard.api.projects import projects_api
@@ -271,6 +282,7 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
 
 ALL_BLUEPRINTS = [
     # (blueprint_name, v1_prefix, is_optional)
+    ("meta_api", "/api/v1", False),                       # openapi.json + /docs
     ("projects_api", "/api/v1/projects", False),
     ("kanban_api", "/api/v1/kanban", False),
     ("kanban_plan_api", "/api/v1/kanban/plans", False),   # inline routes
