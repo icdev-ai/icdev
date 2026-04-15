@@ -14,5 +14,6 @@ Config lives at args/sharepoint.yaml (E1).
 from __future__ import annotations
 
 from tools.sharepoint.client import SharePointClient, SharePointAuthError, SharePointError
+from tools.sharepoint import selectors  # noqa: F401 — re-exported for convenience
 
-__all__ = ["SharePointClient", "SharePointAuthError", "SharePointError"]
+__all__ = ["SharePointClient", "SharePointAuthError", "SharePointError", "selectors"]

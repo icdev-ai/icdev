@@ -5,6 +5,7 @@
 ## External Integration (RICOAS Phase 4)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| SharePoint DOM Selectors | tools/sharepoint/selectors.py | Centralized CSS/XPath selector constants for the Selenium fallback scraper (Phase F/P4.2). One file = one point of failure when SharePoint DOM drifts. Last-verified version in module docstring. | (import) | Module-level string constants |
 | Jira Connector | tools/integration/jira_connector.py | Bidirectional Jira sync — SAFe items map to Jira issue types (Epic/Story/Sub-task) | --project-id, --configure, --push, --pull, --json | Sync results |
 | ServiceNow Connector | tools/integration/servicenow_connector.py | Bidirectional ServiceNow sync — requirements map to ServiceNow incidents/requests/changes | --project-id, --configure, --push, --pull, --json | Sync results |
 | GitLab Connector | tools/integration/gitlab_connector.py | Bidirectional GitLab sync — SAFe items map to GitLab epics/issues/merge requests | --project-id, --configure, --push, --pull, --json | Sync results |
