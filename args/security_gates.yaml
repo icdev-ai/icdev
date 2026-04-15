@@ -1257,3 +1257,24 @@ canvas_compliance:
     assessment_max_age_days: 30
     require_migration_assessment: true
     kg_build_required: false
+
+# API Contract Drift Gate (Phase B / P1.2)
+# Detects divergence between the live Flask /api/v1/* route surface and the
+# published OpenAPI 3.1 spec served at /api/v1/openapi.json. Implemented by
+# tools/workflow/coherence_checker.py::check_openapi_parity (Phase B6).
+# Not yet merge-blocking while the frontend is in build-up; flip
+# warning->blocking when Phase I closes.
+api_contract_drift:
+  description: "Warns on any /api/v1/* route missing from OpenAPI spec or any spec path without a live route"
+  blocking: []
+  warning:
+    - route_missing_from_spec
+    - spec_path_missing_route
+    - operation_missing_response_schema
+    - query_param_declared_but_unused
+  thresholds:
+    max_undocumented_routes: 0
+    max_orphan_spec_paths: 0
+    # When flipped to true (post-Phase I), `route_missing_from_spec` and
+    # `spec_path_missing_route` promote from warning -> blocking.
+    enforce_as_blocking: false
