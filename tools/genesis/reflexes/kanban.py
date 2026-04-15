@@ -551,6 +551,69 @@ def _merge_worktree_to_main(task_id: str) -> bool:
         return False
 
 
+# Batch 4 worktree age sweep threshold — worktrees whose owning task is NOT
+# currently in_progress and whose marker/dir mtime is older than this are
+# force-cleaned. Disk hygiene for the failure-train class (many failed tasks
+# leaving 500 MB worktrees each).
+_WORKTREE_STALE_AGE_DAYS = 7
+
+
+def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[str]:
+    """Force-clean worktrees older than max_age_days whose task isn't in_progress.
+
+    Returns a list of task_ids whose worktrees were cleaned. Non-fatal:
+    any cleanup error is logged and skipped. Runs opportunistically
+    from the scheduler cycle (not a separate thread).
+    """
+    import subprocess as _sp
+    import time as _time
+
+    removed: list[str] = []
+    if not WORKTREE_BASE.exists():
+        return removed
+
+    now_ts = _time.time()
+    threshold_sec = max_age_days * 86400
+
+    try:
+        conn = get_connection()
+        try:
+            in_progress_rows = conn.execute(
+                "SELECT id FROM kanban_tasks WHERE status = 'in_progress'"
+            ).fetchall()
+            in_progress_ids = {dict(r)["id"] for r in in_progress_rows}
+        finally:
+            conn.close()
+    except Exception:
+        in_progress_ids = set()
+
+    for sub in sorted(WORKTREE_BASE.iterdir() if WORKTREE_BASE.is_dir() else []):
+        if not sub.is_dir():
+            continue
+        task_id = sub.name
+        if task_id in in_progress_ids:
+            continue
+        try:
+            age_sec = now_ts - sub.stat().st_mtime
+        except OSError:
+            continue
+        if age_sec < threshold_sec:
+            continue
+        try:
+            _sp.run(
+                ["git", "worktree", "remove", str(sub), "--force"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            )
+            logger.info(
+                "Sweep: removed stale worktree %s (age %.1f days, task not in_progress)",
+                sub, age_sec / 86400,
+            )
+            removed.append(task_id)
+        except Exception as exc:
+            logger.warning("Sweep: could not remove %s: %s", sub, exc)
+    return removed
+
+
 def _cleanup_worktree(task_id: str):
     """Merge the kanban task branch to main (fast-forward) then remove
     the worktree. If merge fails, the branch is preserved for manual
@@ -620,6 +683,48 @@ def _check_worktree_commits(task_id: str) -> bool:
     return False
 
 
+_PHASE_ID_RE = re.compile(r"^(?P<prefix>[a-z0-9]+)-(?P<phase>[A-Z])(?:[0-9.]+|-gate)")
+
+
+def _extract_phase(task_id: str) -> tuple[str, str] | None:
+    """Return ``(prefix, phase)`` for phased task IDs like ``efa-E3-*``.
+
+    Returns None for non-phased tasks (standalone/followup). The phase
+    letter matches ``[A-Z]`` only; digits-only or lower-case prefixes are
+    ignored. ``-gate`` suffixes are treated as belonging to the gate's
+    phase (``efa-E-gate`` → phase ``E``).
+    """
+    m = _PHASE_ID_RE.match(task_id)
+    if not m:
+        return None
+    return m.group("prefix"), m.group("phase")
+
+
+def _phase_complete(prefix: str, phase: str) -> tuple[bool, list[str]]:
+    """Return ``(all_done, unfinished_ids)`` for every task matching prefix+phase.
+
+    Used by ``_get_due_tasks`` to gate phase-F dispatches on phase-E being
+    fully done — defense in depth against a task whose immediate parent
+    is marked done while earlier siblings in the same phase are not
+    (the E-gate orphan-done incident class).
+    """
+    pattern = f"{prefix}-{phase}%"
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, status FROM kanban_tasks "
+                "WHERE id LIKE ? AND status != 'done'",
+                (pattern,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return True, []  # fail-open on DB error
+    unfinished = [dict(r)["id"] for r in rows]
+    return len(unfinished) == 0, unfinished
+
+
 def _get_due_tasks() -> list:
     """Find tasks ready for execution:
     1. Scheduled tasks whose scheduled_at has passed (always promoted)
@@ -671,6 +776,33 @@ def _get_due_tasks() -> list:
             "kt.created_at ASC"
         ).fetchall()
         result = [dict(r) for r in scheduled]
+
+        # Phase-exit validation (2026-04-15 V&V Batch 2): for phased task IDs
+        # like ``efa-E3-*``, refuse to dispatch phase N+1 tasks until phase N
+        # is 100% done. Defense-in-depth against the orphan-done class where
+        # a task's immediate parent is done but earlier same-phase siblings
+        # aren't (E-gate incident). Non-phased IDs pass through untouched.
+        filtered_result = []
+        for t in result:
+            phase_info = _extract_phase(t["id"])
+            if not phase_info:
+                filtered_result.append(t)
+                continue
+            prefix, phase = phase_info
+            if phase == "A":
+                filtered_result.append(t)
+                continue
+            prior_phase = chr(ord(phase) - 1)
+            prior_complete, unfinished = _phase_complete(prefix, prior_phase)
+            if prior_complete:
+                filtered_result.append(t)
+            else:
+                logger.info(
+                    "phase-exit gate: holding %s until phase %s completes "
+                    "(%d task(s) still not done: %s)",
+                    t["id"], prior_phase, len(unfinished), unfinished[:3],
+                )
+        result = filtered_result
 
         # Rate-limit backlog auto-promotion
         current_in_progress = _count_in_progress()
@@ -2025,15 +2157,26 @@ def _run_verify_checks(task_id, claude_output):
     # Rationale: filesystem truth beats stdout heuristics. E3 (2026-04-15)
     # shipped migration 023_sharepoint correctly but the text heuristic
     # returned phantom, blocking the whole E-F-G-H-I chain. If the
-    # worktree has real file changes or commits, trust that and return
-    # verified=True without running Check 4's phantom text heuristic.
+    # worktree has real file changes or commits, trust that.
     #
-    # Dangerous tasks (deploy/delete/destructive ops) bypass this shortcut
-    # — they still run every downstream guard so the audit trail is full.
-    if not _is_dangerous_task(task_id):
-        _git_ok, _git_reason = _git_worktree_has_real_changes(task_id)
-        if _git_ok:
-            return True, f"Verified (git-first): {_git_reason}"
+    # Policy (2026-04-15 Batch 3): run the git-first check for EVERY task.
+    # Dangerous tasks (deploy/delete/destructive) do NOT skip it — they
+    # instead require BOTH git-first AND the full downstream chain to
+    # pass. This tightens the verifier without creating new false-positive
+    # surface for safe tasks.
+    _git_ok, _git_reason = _git_worktree_has_real_changes(task_id)
+    _is_dangerous = _is_dangerous_task(task_id)
+    if _git_ok and not _is_dangerous:
+        return True, f"Verified (git-first): {_git_reason}"
+    # Dangerous task: git-first is a necessary condition but not sufficient.
+    # Fall through to the full check chain; at the end we require the
+    # git-first signal to have fired as well.
+    if _is_dangerous and not _git_ok:
+        return False, (
+            "Dangerous task has no git-side evidence of work (no commits, "
+            "no uncommitted changes, no recent main advance). Running full "
+            "check chain would be pointless — failing fast."
+        )
 
     # Check 1: Claude output must be substantial
     if not claude_output or len(claude_output) < 200:
@@ -2224,18 +2367,42 @@ def _run_verify_checks(task_id, claude_output):
             return True, "Verified: found commits referencing task"
 
         # Fallback C: legitimate no-change case. If the agent claimed
-        # "no changes needed" AND _verify_task_specific confirms the
-        # expected state (e.g., tool IS in manifest for a
-        # tool_not_in_manifest task), accept as completed. False-positive
-        # gaps are legitimate completions.
+        # "no changes needed" AND _verify_task_specific returns AFFIRMATIVE
+        # confirmation (not the "not applicable" default), accept as
+        # completed. False-positive gaps are legitimate completions.
+        #
+        # Batch 3 tightening (2026-04-15): the default ``return True,
+        # "Task-specific checks passed or not applicable"`` from
+        # ``_verify_task_specific`` is NOT sufficient on its own — an
+        # unmatched task pattern always returns that, so any no-change
+        # claim on an efa-* task would silently pass. Require that the
+        # task-specific reason indicate a POSITIVE check ran (keyword
+        # "Verified" / "exists" / "present" in reason) — the
+        # "not applicable" or "skipping" variants are rejected.
         if has_nochange_signal:
             try:
                 specific_ok, specific_reason = _verify_task_specific(task_id)
-                if specific_ok:
+                specific_lower = (specific_reason or "").lower()
+                is_affirmative = specific_ok and not any(
+                    marker in specific_lower
+                    for marker in (
+                        "not applicable", "skipping", "skip ", "no check",
+                        "skipped", "failed ("  # e.g. "Manifest read failed (...)"
+                    )
+                )
+                if is_affirmative:
                     return True, (
                         "Verified: agent reported no changes needed AND "
-                        f"task-specific state check passed ({specific_reason[:80]})"
+                        f"task-specific state check confirmed ({specific_reason[:80]})"
                     )
+                # Soft no-change signal without affirmative specific-check
+                # confirmation → reject. Better to fail-closed on ambiguous
+                # signals than to accept a phantom completion.
+                return False, (
+                    "Agent signaled no-change but task-specific check was "
+                    f"non-affirmative ({specific_reason[:80]!r}) \u2014 "
+                    "unable to confirm claimed state"
+                )
             except Exception:
                 pass
 
@@ -2895,14 +3062,26 @@ def _check_completed():
 
             # ── NORMAL SUCCESS PATH ───────────────────────────────────
             if ret == 0:
-                # VERIFICATION GATE — prevent false positives
+                # VERIFICATION GATE — prevent false positives.
+                # Batch 4 atomic-ish wrap (2026-04-15): verify first, then
+                # state-change. If _move_task raises, we DO NOT swallow the
+                # exception silently — that was the class of bug where a
+                # verified task could stay in_progress after DB glitches.
                 verified, reason = _verify_task_completed(task_id, claude_output)
 
                 if verified:
                     try:
-                        _move_task(task_id, "done")
-                    except Exception:
-                        pass
+                        _move_task(task_id, "done",
+                                   actor="scheduler",
+                                   reason=f"verified: {reason[:80]}")
+                    except Exception as _mt_exc:
+                        # Loud fail: task stays in_progress; next cycle's
+                        # orphan detection / stale-dispatch sweep will pick
+                        # it up. Logging beats silent pass.
+                        logger.error(
+                            "_move_task(done) failed for %s after verified=True: %s",
+                            task_id, _mt_exc,
+                        )
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
                 else:
@@ -2911,9 +3090,14 @@ def _check_completed():
                     # after repeated failures (task is probably too big).
                     new_status = _record_failure_and_maybe_flag(task_id, reason)
                     try:
-                        _move_task(task_id, new_status)
-                    except Exception:
-                        pass
+                        _move_task(task_id, new_status,
+                                   actor="scheduler",
+                                   reason=f"unverified: {reason[:80]}")
+                    except Exception as _mt_exc:
+                        logger.error(
+                            "_move_task(%s) failed for %s: %s",
+                            new_status, task_id, _mt_exc,
+                        )
 
                 if verified:
                     _send_notification(task_dict, event="done")
@@ -3081,7 +3265,7 @@ def _check_token_exhausted_tasks() -> list:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
-    # 0. Orphan-done sweep — roll back any done task whose parent isn't done.
+    # 0a. Orphan-done sweep — roll back any done task whose parent isn't done.
     # Defense-in-depth against manual SQL / spurious automation that marked
     # a row done while its prerequisite work hadn't completed. See memory
     # feedback_kanban_vv_policy.md and the 2026-04-15 E-gate incident.
@@ -3094,6 +3278,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             )
     except Exception as _osw_exc:
         logger.warning("orphan-done sweep failed: %s", _osw_exc)
+
+    # 0b. Worktree age sweep — remove worktrees older than the threshold
+    # whose owning task is not in_progress. Disk hygiene; prevents long
+    # runs from filling disk with failure-train worktrees. Opportunistic
+    # (only runs when cycle count % 30 == 0 to avoid spending every 60s
+    # walking the tree).
+    try:
+        import random as _r  # noqa: PLC0415
+        if _r.random() < 0.033:  # ~1 in 30 cycles ≈ once per 30 min  # noqa: S311
+            swept = _sweep_old_worktrees()
+            if swept:
+                print(f"  Kanban: worktree age sweep removed {len(swept)} stale worktree(s)")
+    except Exception as _ws_exc:
+        logger.warning("worktree age sweep failed: %s", _ws_exc)
 
     # 1. Check for completed claude subprocesses
     completed = _check_completed()
