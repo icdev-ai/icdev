@@ -76,6 +76,18 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         logger.warning("Failed to mount meta_api: %s", exc)
 
     # ------------------------------------------------------------------ #
+    #  Auth blueprint (JWT token issuance) — P1.3 / C2                    #
+    #  /api/v1/auth/token + /api/v1/auth/refresh. v1-only, no alias.      #
+    #  @require_jwt lives here; C4 sweeps it onto other blueprints.       #
+    # ------------------------------------------------------------------ #
+    try:
+        from tools.dashboard.api.auth import auth_api
+        app.register_blueprint(auth_api, url_prefix="/api/v1")
+        logger.info("auth_api registered at /api/v1/auth/token + /api/v1/auth/refresh")
+    except Exception as exc:
+        logger.warning("Failed to mount auth_api: %s", exc)
+
+    # ------------------------------------------------------------------ #
     #  Core blueprints (explicit url_prefix)                              #
     # ------------------------------------------------------------------ #
     from tools.dashboard.api.projects import projects_api
@@ -283,6 +295,7 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
 ALL_BLUEPRINTS = [
     # (blueprint_name, v1_prefix, is_optional)
     ("meta_api", "/api/v1", False),                       # openapi.json + /docs
+    ("auth_api", "/api/v1", False),                       # /auth/token + /auth/refresh
     ("projects_api", "/api/v1/projects", False),
     ("kanban_api", "/api/v1/kanban", False),
     ("kanban_plan_api", "/api/v1/kanban/plans", False),   # inline routes
