@@ -1,9 +1,9 @@
 # CUI // SP-CTI
 """tools/dashboard/api/openapi_generator — Dashboard OpenAPI 3.1 spec generator.
 
-**Status:** B1 (pattern reference) + B2 (route walker + minimal spec) landed.
-B3 (query-param + response schema), B4 (routes), B5 (drift gate), B6
-(coherence check) still to come in the Phase B chain.
+**Status:** B1 (pattern reference), B2 (route walker + minimal spec), and
+B3 (query-param AST extraction + live response-sample schema inference) all
+landed. B4 (routes), B5 (drift gate), B6 (coherence check) still to come.
 
 Pattern reference — `tools/saas/openapi_spec.py` (1,396 lines, OpenAPI 3.0.3)
 ============================================================================
@@ -68,12 +68,21 @@ Air-gap considerations (will land in B4 / Phase H)
 """
 from __future__ import annotations
 
+import ast
 import copy
+import inspect
+import json
+import logging
 import re
-from typing import TYPE_CHECKING, Iterator
+import textwrap
+import urllib.error
+import urllib.request
+from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     from flask import Flask
+
+logger = logging.getLogger("icdev.dashboard.api.openapi_generator")
 
 # ---------------------------------------------------------------------------
 # OpenAPI 3.1 base skeleton
@@ -190,40 +199,264 @@ def walk_api_v1_routes(app: "Flask") -> Iterator[tuple[str, str, list[dict], str
 # ---------------------------------------------------------------------------
 
 
-def _minimal_operation(method: str, endpoint: str, path_params: list[dict]) -> dict:
-    """Build a stub OpenAPI operation object.
+# ---------------------------------------------------------------------------
+# B3 \u2014 query-param extraction via AST walk of handler source
+# ---------------------------------------------------------------------------
+# Patterns we recognize:
+#   request.args.get('name')                 \u2192 optional, string
+#   request.args.get('name', 'default')      \u2192 optional with default
+#   request.args.get('name', type=int)       \u2192 optional, integer
+#   request.args.get('name', type=float)     \u2192 optional, number
+#   request.args.get('name', type=bool)      \u2192 optional, boolean
+#   request.args['name']                     \u2192 required, string
+#   request.args.getlist('name')             \u2192 optional, array of strings
+# We do not recognize dynamic key lookups (request.args.get(var_name)) \u2014
+# those degrade to no-param, not a crash. Phase B6 coherence flags any route
+# whose parameters[] looks empty but has runtime query-param usage.
 
-    Fields emitted here are the minimum a schemathesis run (Phase G1) needs
-    to enumerate the route: operationId, parameters, and a default response.
-    B3 replaces the default response with an inferred schema per route.
+
+_ARGS_TYPE_TO_SCHEMA: dict[str, dict] = {
+    "str": {"type": "string"},
+    "int": {"type": "integer"},
+    "float": {"type": "number"},
+    "bool": {"type": "boolean"},
+}
+
+
+class _QueryParamVisitor(ast.NodeVisitor):
+    """Collect (name, required, schema) triples from a handler's AST."""
+
+    def __init__(self) -> None:
+        self.params: dict[str, dict] = {}
+
+    def _record(self, name: str, *, required: bool, schema: dict) -> None:
+        # First sighting wins for schema, but `required` escalates: if any
+        # call-site uses args[name] (required), the param is required.
+        existing = self.params.get(name)
+        if existing is None:
+            self.params[name] = {"schema": dict(schema), "required": required}
+        elif required and not existing["required"]:
+            existing["required"] = True
+
+    def visit_Call(self, node: ast.Call) -> None:
+        func = node.func
+        # request.args.get('name', ...) / request.args.getlist('name')
+        if (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Attribute)
+            and isinstance(func.value.value, ast.Name)
+            and func.value.value.id == "request"
+            and func.value.attr == "args"
+            and func.attr in ("get", "getlist")
+        ):
+            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                name = node.args[0].value
+                if func.attr == "getlist":
+                    self._record(name, required=False, schema={"type": "array", "items": {"type": "string"}})
+                else:
+                    schema = {"type": "string"}
+                    # Inspect keyword `type=` for type hinting
+                    for kw in node.keywords:
+                        if kw.arg == "type" and isinstance(kw.value, ast.Name):
+                            schema = dict(_ARGS_TYPE_TO_SCHEMA.get(kw.value.id, schema))
+                    self._record(name, required=False, schema=schema)
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        # request.args['name']  -> required string
+        val = node.value
+        if (
+            isinstance(val, ast.Attribute)
+            and val.attr == "args"
+            and isinstance(val.value, ast.Name)
+            and val.value.id == "request"
+        ):
+            # ast.Subscript.slice is the key in 3.9+
+            sl = node.slice
+            if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
+                self._record(sl.value, required=True, schema={"type": "string"})
+        self.generic_visit(node)
+
+
+def extract_query_params(handler: Any) -> list[dict]:
+    """Return an OpenAPI parameters[] list for `request.args` usage in handler.
+
+    On any failure (C-backed callable, lambda, unparseable source), returns
+    []. This is intentional: partial spec is better than a crash, and
+    Phase B6 coherence flags empty-params routes whose handler source hints
+    at query usage.
     """
+    try:
+        source = inspect.getsource(handler)
+    except (OSError, TypeError):
+        return []
+    # textwrap.dedent (not inspect.cleandoc) \u2014 we need to preserve the
+    # function body's relative indentation, only stripping the common
+    # leading whitespace introduced by nesting.
+    try:
+        tree = ast.parse(textwrap.dedent(source))
+    except SyntaxError:
+        return []
+    visitor = _QueryParamVisitor()
+    visitor.visit(tree)
+    params = []
+    for name, info in sorted(visitor.params.items()):
+        params.append({
+            "name": name,
+            "in": "query",
+            "required": info["required"],
+            "schema": info["schema"],
+        })
+    return params
+
+
+# ---------------------------------------------------------------------------
+# B3 \u2014 response schema inference (live sampling + homegrown inferrer)
+# ---------------------------------------------------------------------------
+# We avoid the `genson` dependency (extra install footprint in air-gap) and
+# walk JSON values ourselves. This covers ~90% of real responses cleanly;
+# operators can hand-override in B4's registration if a route needs richer
+# schema (oneOf, discriminator, etc.).
+
+
+_JSON_PRIMITIVE_TYPE: dict[type, str] = {
+    bool: "boolean",
+    int: "integer",
+    float: "number",
+    str: "string",
+    type(None): "null",
+}
+
+
+def infer_schema_from_json(value: Any, *, max_depth: int = 8, _depth: int = 0) -> dict:
+    """Recursively infer an OpenAPI 3.1 schema from a decoded JSON value.
+
+    Depth-bounded so pathological payloads (deep self-referential dicts)
+    don't blow the stack. Beyond max_depth we fall back to `{"type": "object"}`.
+    """
+    if _depth >= max_depth:
+        return {"type": "object"}
+    t = type(value)
+    if t in _JSON_PRIMITIVE_TYPE:
+        return {"type": _JSON_PRIMITIVE_TYPE[t]}
+    if isinstance(value, list):
+        if not value:
+            return {"type": "array", "items": {}}
+        # Use the first element as the representative item schema. Mixed-type
+        # arrays degrade silently to the first shape; a future pass can
+        # compute a union if it matters.
+        item = infer_schema_from_json(value[0], max_depth=max_depth, _depth=_depth + 1)
+        return {"type": "array", "items": item}
+    if isinstance(value, dict):
+        props: dict[str, dict] = {}
+        for k, v in value.items():
+            props[str(k)] = infer_schema_from_json(v, max_depth=max_depth, _depth=_depth + 1)
+        return {"type": "object", "properties": props}
+    # Fallback for exotic types (datetime, Decimal, etc. \u2014 shouldn't reach
+    # here from json.loads output, but defensive).
+    return {"type": "string"}
+
+
+def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) -> dict | None:
+    """GET `base_url + path`; infer schema from JSON payload; return schema or None.
+
+    Returns None on: network error, non-2xx, non-JSON, or timeout. Callers
+    should treat None as "keep the default placeholder response schema".
+    Path-parameter routes (with `{id}` segments) are skipped at the call
+    site \u2014 there's no generic way to pick a legal id value.
+    """
+    if "{" in path:
+        return None
+    try:
+        with urllib.request.urlopen(base_url.rstrip("/") + path, timeout=timeout) as resp:
+            if resp.status // 100 != 2:
+                return None
+            ctype = resp.headers.get("Content-Type", "")
+            if "application/json" not in ctype:
+                return None
+            body = resp.read()
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+        logger.debug("sample_response_schema(%s): %s", path, exc)
+        return None
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.debug("sample_response_schema(%s): non-JSON body: %s", path, exc)
+        return None
+    return infer_schema_from_json(payload)
+
+
+# ---------------------------------------------------------------------------
+# Operation assembly (enriched in B3)
+# ---------------------------------------------------------------------------
+
+
+def _operation(
+    method: str,
+    endpoint: str,
+    path_params: list[dict],
+    query_params: list[dict],
+    response_schema: dict | None,
+) -> dict:
+    """Build an OpenAPI operation with path + query params and (optionally) an inferred response schema."""
+    parameters = list(path_params) + list(query_params)
+    response_body = (
+        response_schema
+        if response_schema is not None
+        else {"type": "object"}
+    )
+    response_desc = (
+        "Inferred from live sample." if response_schema is not None
+        else "Response schema not sampled (non-GET, path-parametric, or unreachable)."
+    )
     operation: dict = {
         "operationId": f"{method}_{endpoint.replace('.', '_')}",
         "summary": f"{method.upper()} {endpoint}",
         "responses": {
-            "default": {
-                "description": "Response schema pending (B3 inference).",
-                "content": {"application/json": {"schema": {"type": "object"}}},
+            "200": {
+                "description": response_desc,
+                "content": {"application/json": {"schema": response_body}},
             },
         },
     }
-    if path_params:
-        operation["parameters"] = path_params
+    if parameters:
+        operation["parameters"] = parameters
     return operation
 
 
-def generate_openapi_spec(app: "Flask") -> dict:
-    """Build a minimal OpenAPI 3.1 spec for the dashboard's /api/v1/* surface.
+def generate_openapi_spec(
+    app: "Flask",
+    *,
+    sample_responses: bool = False,
+    base_url: str = "http://localhost:5050",
+    sample_timeout: float = 2.0,
+) -> dict:
+    """Build an OpenAPI 3.1 spec for the dashboard's /api/v1/* surface.
 
-    B2 scope: emit version, info, paths with operationId + path params,
-    empty components.schemas. B3 populates query params + response schemas
-    by introspecting handlers and (optionally) sampling against a live dev
-    server. B5/B6 enforce route-vs-spec parity via coherence_checker.
+    Args:
+        app: The live Flask application.
+        sample_responses: When True, issue a live GET against `base_url + path`
+            for every GET route without path parameters, and infer a JSON
+            schema from the response body. Skipped for POST/PATCH/DELETE.
+            Default False so the call is fast and has zero external side
+            effects (e.g. during Swagger UI page rendering).
+        base_url: Base URL to sample against (only used when
+            `sample_responses=True`).
+        sample_timeout: Per-request timeout in seconds. Default 2.0.
+
+    Returns:
+        A dict conforming to OpenAPI 3.1.0, with paths populated from
+        `app.url_map` for all /api/v1/* routes.
     """
     spec = copy.deepcopy(OPENAPI_BASE)
     paths: dict[str, dict] = {}
-    for method, path, params, endpoint in walk_api_v1_routes(app):
-        op = _minimal_operation(method, endpoint, params)
+    for method, path, path_params, endpoint in walk_api_v1_routes(app):
+        handler = app.view_functions.get(endpoint)
+        query_params = extract_query_params(handler) if handler else []
+        response_schema: dict | None = None
+        if sample_responses and method == "get":
+            response_schema = sample_response_schema(path, base_url, timeout=sample_timeout)
+        op = _operation(method, endpoint, path_params, query_params, response_schema)
         paths.setdefault(path, {})[method] = op
     spec["paths"] = paths
     return spec
@@ -231,6 +464,9 @@ def generate_openapi_spec(app: "Flask") -> dict:
 
 __all__ = [
     "OPENAPI_BASE",
+    "extract_query_params",
     "generate_openapi_spec",
+    "infer_schema_from_json",
+    "sample_response_schema",
     "walk_api_v1_routes",
 ]
