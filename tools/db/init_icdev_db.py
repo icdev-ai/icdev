@@ -4630,12 +4630,16 @@ CREATE INDEX IF NOT EXISTS idx_ai_inventory_project ON ai_use_case_inventory(pro
 CREATE TABLE IF NOT EXISTS fairness_assessments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
-    assessment_data TEXT NOT NULL,
-    overall_score REAL DEFAULT 0.0,
-    created_at TEXT DEFAULT (datetime('now'))
+    dimension TEXT NOT NULL,
+    status TEXT DEFAULT 'not_assessed',
+    evidence TEXT,
+    score REAL DEFAULT 0.0,
+    assessed_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE(project_id, dimension)
 );
 CREATE INDEX IF NOT EXISTS idx_fairness_project ON fairness_assessments(project_id);
-CREATE INDEX IF NOT EXISTS idx_fairness_created ON fairness_assessments(created_at);
+CREATE INDEX IF NOT EXISTS idx_fairness_assessed ON fairness_assessments(assessed_at);
 
 -- ============================================================
 -- AI ACCOUNTABILITY (Phase 49, D316-D321)
