@@ -238,6 +238,34 @@ def remediate_ruff_issues(cwd: str, modified_py: List[str]) -> Tuple[bool, str]:
         return False, f"ruff remediation error: {exc}"
 
 
+def _reset_broken_worktree(cwd: str) -> None:
+    """Tear down a structurally broken worktree so the next dispatch rebuilds.
+
+    A worktree is "broken" when its cwd is under `.tmp/worktrees/` but
+    essential files (e.g. tools/manifest.md) are missing — usually because
+    a prior `git worktree remove --force` failed on Windows file locks and
+    left an empty orphan dir. Without this reset, `_create_worktree`
+    would short-circuit on the existing path and Claude would run in the
+    empty dir again, looping forever.
+    """
+    import shutil
+    p = Path(cwd).resolve()
+    if ".tmp" not in p.parts or "worktrees" not in p.parts:
+        return  # not a worktree — nothing to do
+    task_id = p.name
+    logger.warning("Resetting broken worktree %s (empty/orphan)", p)
+    shutil.rmtree(p, ignore_errors=True)
+    for cmd in (
+        ["git", "worktree", "prune"],
+        ["git", "branch", "-D", f"kanban/{task_id}"],
+    ):
+        try:
+            subprocess.run(cmd, cwd=str(BASE_DIR), capture_output=True,
+                           text=True, timeout=10)
+        except Exception:
+            pass
+
+
 def remediate_missing_manifest(
     cwd: str, reason: str, modified_py: List[str]
 ) -> Tuple[bool, str]:
@@ -252,7 +280,11 @@ def remediate_missing_manifest(
     index_path = Path(cwd) / "tools" / "manifest.md"
     shard_path = Path(cwd) / "tools" / "manifest" / "unclassified.md"
     if not index_path.exists():
-        return False, "tools/manifest.md not in worktree"
+        # Structural break: worktree is empty/orphan (not a task-level bug).
+        # Actively reset it so the next dispatch rebuilds from a clean HEAD
+        # instead of reusing the broken dir and looping forever.
+        _reset_broken_worktree(cwd)
+        return False, "worktree structurally broken (no tools/manifest.md) — reset; next dispatch will rebuild"
 
     # Find tool paths that need adding
     missing: List[str] = []
