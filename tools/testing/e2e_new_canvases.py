@@ -11,11 +11,15 @@ Verifies:
 import sys
 import os
 import time
+from pathlib import Path
+
+# Ensure the project root is on sys.path so ``tools.browser.driver_manager``
+# resolves when this file is run directly as a script (added in D7 pilot).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 
 BASE_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5050")
 SCREENSHOT_DIR = os.path.join(
@@ -34,13 +38,10 @@ CANVASES = [
 
 
 def main():
-    opts = Options()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--no-sandbox")
-
-    driver = webdriver.Chrome(options=opts)
+    # Phase D7 pilot: vendored driver via driver_manager.
+    # get_driver() applies the same defaults the inline Options previously did.
+    from tools.browser.driver_manager import get_driver
+    driver = get_driver(headless=True, window_size=(1920, 1080))
     results = []
     passed = 0
     failed = 0
