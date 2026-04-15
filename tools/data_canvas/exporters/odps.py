@@ -4,7 +4,7 @@
 Wraps a DDC data design as an ODPS-conformant data product with:
   - Input ports  — upstream flows feeding the product (ETL, CDC, replication)
   - Output ports — downstream-consumable datasets with field schemas
-  - SLAs         — derived from backup/retention controls and compliance rules
+  - SLAs         — computed from backup and retention controls plus compliance rules
   - Security     — classification, RBAC, encryption, audit markings
 
 Specification references:
