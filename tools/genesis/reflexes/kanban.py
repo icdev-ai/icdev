@@ -1497,6 +1497,18 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
                     f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
                     f"(false-positive gap)"
                 )
+            # Also search shard files under tools/manifest/
+            manifest_dir = BASE_DIR / "tools" / "manifest"
+            if manifest_dir.is_dir():
+                for shard in manifest_dir.glob("*.md"):
+                    try:
+                        if tool_path in shard.read_text(encoding="utf-8"):
+                            return True, (
+                                f"Pre-dispatch check: {tool_path} is already in "
+                                f"tools/manifest/{shard.name} (false-positive gap)"
+                            )
+                    except Exception:
+                        pass
         except Exception:
             pass
 
