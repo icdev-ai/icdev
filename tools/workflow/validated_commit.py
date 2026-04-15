@@ -26,12 +26,14 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
+import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +67,147 @@ def _list_modified_files(cwd: str) -> List[str]:
         return []
 
 
-def _run_codelens(cwd: str, modified_py: List[str]) -> Tuple[bool, str, Dict[str, Any]]:
+def _bandit_findings_json(
+    files: List[str], cwd: str, config_flags: List[str]
+) -> List[Dict[str, Any]]:
+    """Run bandit with JSON output on *files*; return the raw results list.
+
+    Bandit exits 0 (clean) or 1 (issues found) — both are valid runs.
+    Any other return code or parse failure returns an empty list.
+    """
+    if not files:
+        return []
+    cmd = (
+        ["python", "-m", "bandit", "-r"]
+        + files
+        + ["--severity-level", "medium", "-f", "json"]
+        + config_flags
+    )
+    try:
+        r = subprocess.run(
+            cmd,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=cwd, timeout=60,
+        )
+        if r.returncode in (0, 1) and r.stdout:
+            try:
+                data = json.loads(r.stdout)
+                return data.get("results", [])
+            except json.JSONDecodeError:
+                pass
+    except Exception as exc:
+        logger.warning("bandit JSON run error: %s", exc)
+    return []
+
+
+def _bandit_delta(
+    cwd: str, modified_py: List[str], config_flags: List[str]
+) -> Tuple[int, str]:
+    """Return (new_count, detail) for bandit findings introduced by this branch.
+
+    Compares branch HEAD vs the main baseline for each modified file by
+    fetching the main version with ``git show main:<relpath>``.
+
+    **Matching key:** (normalized_relpath, test_id, issue_text)
+    Line numbers are deliberately excluded: inserting code above a finding
+    shifts its line without creating a new vulnerability, and should not
+    re-trigger a failure that was already pre-existing on main.
+
+    A finding is "new" when its key exists in the branch scan but is absent
+    from the baseline scan.  If a file doesn't exist on main (new file), all
+    of its findings are considered new.  If the baseline scan itself fails,
+    we conservatively treat all branch findings as new.
+
+    Returns (0, "") when no new findings are detected.
+    """
+    # --- branch findings ---
+    branch_results = _bandit_findings_json(modified_py, cwd, config_flags)
+    if not branch_results:
+        return 0, ""
+
+    cwd_resolved = Path(cwd).resolve()
+
+    def _rel(fname: str, base: Path) -> str:
+        """Normalize a bandit filename to a path relative to *base*."""
+        try:
+            return str(Path(fname).resolve().relative_to(base))
+        except ValueError:
+            return Path(fname).name
+
+    def _branch_key(f: Dict[str, Any]) -> tuple:
+        return (
+            _rel(f.get("filename", ""), cwd_resolved),
+            f.get("test_id", ""),
+            (f.get("issue_text") or "").strip(),
+        )
+
+    branch_keys: Set[tuple] = {_branch_key(f) for f in branch_results}
+
+    # --- baseline findings (main) ---
+    baseline_keys: Set[tuple] = set()
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            tmp_files: List[str] = []
+
+            for relpy in modified_py:
+                try:
+                    gshow = subprocess.run(
+                        ["git", "show", f"main:{relpy}"],
+                        capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        cwd=cwd, timeout=15,
+                    )
+                    if gshow.returncode != 0:
+                        # File is new on this branch — all its findings are new
+                        continue
+                    dest = tmp_path / relpy
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_text(gshow.stdout, encoding="utf-8")
+                    tmp_files.append(str(dest))
+                except Exception as exc:
+                    logger.warning("git show %s: %s — treating as new file", relpy, exc)
+
+            if tmp_files:
+                baseline_results = _bandit_findings_json(tmp_files, tmpdir, config_flags)
+                for f in baseline_results:
+                    key = (
+                        _rel(f.get("filename", ""), tmp_path),
+                        f.get("test_id", ""),
+                        (f.get("issue_text") or "").strip(),
+                    )
+                    baseline_keys.add(key)
+    except Exception as exc:
+        logger.warning(
+            "bandit baseline comparison failed: %s — treating all findings as new", exc
+        )
+
+    # --- delta ---
+    new_findings = [f for f in branch_results if _branch_key(f) not in baseline_keys]
+    if not new_findings:
+        return 0, ""
+
+    lines = []
+    for f in new_findings[:5]:
+        rel = _rel(f.get("filename", ""), cwd_resolved)
+        lines.append(
+            f"  [{f.get('test_id', '')}] {rel}:{f.get('line_number', '')} "
+            f"— {(f.get('issue_text') or '')[:80]}"
+        )
+    if len(new_findings) > 5:
+        lines.append(f"  … and {len(new_findings) - 5} more")
+    return len(new_findings), "\n".join(lines)
+
+
+def _run_codelens(
+    cwd: str, modified_py: List[str], compare_to_main: bool = False
+) -> Tuple[bool, str, Dict[str, Any]]:
     """Run py_compile + ruff + bandit on agent's modified .py files.
+
+    When *compare_to_main* is True the bandit gate is delta-aware: only
+    findings that are NEW to this branch (absent from the main baseline)
+    cause a failure.  Pre-existing findings on untouched lines are silently
+    suppressed.  When False, any medium+ finding fails the gate (legacy
+    behaviour, used when cwd IS main).
 
     Returns (passed, reason, metrics).
     """
@@ -104,22 +245,42 @@ def _run_codelens(cwd: str, modified_py: List[str]) -> Tuple[bool, str, Dict[str
 
     # bandit medium+
     # Pass --configfile pyproject.toml so [tool.bandit] skips (e.g. B608) are respected.
-    bandit_cmd = ["python", "-m", "bandit", "-r"] + modified_py + ["--severity-level", "medium"]
+    config_flags: List[str] = []
     if (Path(cwd) / "pyproject.toml").exists():
-        bandit_cmd += ["--configfile", "pyproject.toml"]
-    try:
-        r = subprocess.run(
-            bandit_cmd,
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=cwd, timeout=60,
+        config_flags = ["--configfile", "pyproject.toml"]
+
+    if compare_to_main:
+        # Delta-aware path: only flag findings that are NEW to this branch.
+        # Pre-existing findings on main are suppressed so a pre-existing
+        # B108 in tests/conftest.py doesn't block an unrelated change.
+        new_count, detail = _bandit_delta(cwd, modified_py, config_flags)
+        metrics["bandit_issues"] = new_count
+        if new_count > 0:
+            msg = f"bandit found {new_count} new medium+ issue(s) (not in main baseline)"
+            if detail:
+                msg += f"\n{detail}"
+            return False, msg, metrics
+    else:
+        # Legacy path: cwd IS main — any finding fails the gate.
+        bandit_cmd = (
+            ["python", "-m", "bandit", "-r"]
+            + modified_py
+            + ["--severity-level", "medium"]
+            + config_flags
         )
-        if r.returncode == 1:
-            count = r.stdout.count(">> Issue:")
-            metrics["bandit_issues"] = count
-            if count > 0:
-                return False, f"bandit found {count} medium+ issues", metrics
-    except Exception as exc:
-        logger.warning("bandit error: %s", exc)
+        try:
+            r = subprocess.run(
+                bandit_cmd,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=cwd, timeout=60,
+            )
+            if r.returncode == 1:
+                count = r.stdout.count(">> Issue:")
+                metrics["bandit_issues"] = count
+                if count > 0:
+                    return False, f"bandit found {count} medium+ issues", metrics
+        except Exception as exc:
+            logger.warning("bandit error: %s", exc)
 
     return True, "CodeLens passed", metrics
 
@@ -275,7 +436,7 @@ def validate_working_tree(
     }
 
     # 1. CodeLens
-    ok, reason, cl_metrics = _run_codelens(cwd, modified_py)
+    ok, reason, cl_metrics = _run_codelens(cwd, modified_py, compare_to_main=compare_to_main)
     metrics.update(cl_metrics)
     if not ok:
         metrics["codelens_passed"] = False
