@@ -46,6 +46,7 @@
 - [Supply Chain Intelligence (RICOAS Phase 2)](manifest/supply-chain-intelligence.md)
 - [Digital Program Twin Simulation (RICOAS Phase 3)](manifest/digital-program-twin-simulation.md)
 - [External Integration (RICOAS Phase 4)](manifest/external-integration.md)
+- [SharePoint Integration (Phase E / P4.1)](manifest/sharepoint.md)
 - [Agent Execution Framework (Phase 39)](manifest/agent-execution-framework.md)
 - [LLM Provider Abstraction (Vendor-Agnostic)](manifest/llm-provider-abstraction.md)
 - [Bedrock Client (Opus 4.6 Multi-Agent — Phase A)](manifest/bedrock-client.md)

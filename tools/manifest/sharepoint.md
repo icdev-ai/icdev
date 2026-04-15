@@ -1,0 +1,11 @@
+# SharePoint Integration (Phase E / P4.1)
+
+> Shard of `tools/manifest.md`. See index at `tools/manifest.md`.
+> Targets on-prem SharePoint Server 2016/2019/SE via REST `/_api/web/*`.
+> SharePoint Online / M365 (needs Microsoft Graph + MSAL) is out of scope.
+
+## SharePoint Integration (Phase E / P4.1)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| SharePoint Client | tools/sharepoint/client.py | On-prem SharePoint REST client. Handles NTLM/Kerberos/Basic auth, exponential backoff on 5xx, hard-fail on 401. Methods: list_sites(), get_lists(site_url), get_list_items(site_url, list_id), get_file(site_url, server_rel_url), search(query). | endpoint, auth_mode, username, password, timeout, verify | list[dict] / bytes |
+| SharePoint Ingest | tools/sharepoint/ingest.py | Walk all sites in site_scope (args/sharepoint.yaml), enumerate lists+items+documents, upsert to sharepoint_* tables via get_connection(). Emits integration_sync_pull audit event. Public API: ingest_all(config, site_override, dry_run). | --site URL, --dry-run, --json, --config PATH | JSON: {status, sites_processed, total_lists, total_items, total_documents, total_errors, dry_run} |
