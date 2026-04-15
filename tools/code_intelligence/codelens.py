@@ -27,7 +27,7 @@ def _run_analyzer(project_dir: Path, *, json_out: bool = True) -> dict:
     cmd = [sys.executable, str(_ANALYZER), "--project-dir", str(project_dir)]
     if json_out:
         cmd.append("--json")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         return {
             "status": "error",
@@ -63,7 +63,7 @@ def main() -> int:
         cmd = [sys.executable, str(_ANALYZER), "--file", args.file]
         if args.json:
             cmd.append("--json")
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if args.json:
             try:
                 data = json.loads(r.stdout)

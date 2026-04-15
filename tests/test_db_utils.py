@@ -82,7 +82,8 @@ class TestGetMemoryDbPath:
         env.pop("ICDEV_MEMORY_DB_PATH", None)
         with mock.patch.dict(os.environ, env, clear=True):
             result = get_memory_db_path()
-            assert result.name == "memory.db"
+            # Memory tables are consolidated into the main icdev.db backend
+            assert result.name == "icdev.db"
 
     def test_env_var_override(self):
         with mock.patch.dict(os.environ, {"ICDEV_MEMORY_DB_PATH": "/env/mem.db"}):

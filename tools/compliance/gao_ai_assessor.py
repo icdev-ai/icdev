@@ -65,7 +65,7 @@ class GAOAIAssessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = get_connection(db_path=str(self._db_path))
+                conn = get_connection(db_path=str(self.db_path))
                 project_id = project.get("id", "")
 
                 # GAO-PERF-4: Audit trail

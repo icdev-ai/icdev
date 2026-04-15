@@ -419,20 +419,23 @@ class TestWriteSuggestedCardsDryRun:
         conn = MockConn()
         preds = [self._fake_pred("p1"), self._fake_pred("p2")]
         with patch("tools.awareness.suggested_card_writer._load_pending_predictions", return_value=preds):
-            with patch("tools.awareness.suggested_card_writer._card_already_exists", return_value=False):
-                with patch("tools.awareness.suggested_card_writer.get_connection", return_value=conn):
-                    result = scw.write_suggested_cards(dry_run=True)
+            with patch("tools.awareness.suggested_card_writer._find_open_card", return_value=None):
+                with patch("tools.awareness.suggested_card_writer._load_existing_subjects", return_value=set()):
+                    with patch("tools.awareness.suggested_card_writer.get_connection", return_value=conn):
+                        result = scw.write_suggested_cards(dry_run=True)
         assert result["created"] == 2
         assert result["dry_run"] is True
 
     def test_existing_card_is_skipped(self):
         conn = MockConn()
         preds = [self._fake_pred("p1"), self._fake_pred("p2"), self._fake_pred("p3")]
-        # p2 already has a card
-        def exists(_c, pid):
-            return pid == "p2"
+        # p2 already has an open card
+        def find_open(_c, pid, title):
+            if pid == "p2":
+                return {"id": "card-p2", "title": title, "status": "suggested"}
+            return None
         with patch("tools.awareness.suggested_card_writer._load_pending_predictions", return_value=preds):
-            with patch("tools.awareness.suggested_card_writer._card_already_exists", side_effect=exists):
+            with patch("tools.awareness.suggested_card_writer._find_open_card", side_effect=find_open):
                 with patch("tools.awareness.suggested_card_writer._load_existing_subjects", return_value=set()):
                     with patch("tools.awareness.suggested_card_writer.get_connection", return_value=conn):
                         result = scw.write_suggested_cards(dry_run=True)

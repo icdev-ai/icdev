@@ -273,32 +273,48 @@ def log_event(
         except ImportError:
             pass
 
-    path = db_path or DB_PATH
-    if get_db_connection:
-        conn = get_db_connection(path, row_factory=False)
+    if db_path is not None:
+        # Explicit db_path provided (e.g. test isolation): use SQLite directly
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(str(db_path))
+        conn.row_factory = _sqlite3.Row
+        placeholder = "?"
     else:
         conn = get_connection()
+        from tools.db.storage import sql_placeholder as _ph
+        placeholder = _ph(conn)
+
     c = conn.cursor()
-    c.execute(
-        """INSERT INTO audit_trail
-           (project_id, event_type, actor, action, details, affected_files,
-            classification, ip_address, session_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            project_id,
-            event_type,
-            actor,
-            action,
-            json.dumps(details) if details else None,
-            json.dumps(affected_files) if affected_files else None,
-            classification,
-            ip_address,
-            session_id,
-        ),
-    )
-    conn.commit()
-    entry_id = c.lastrowid
-    conn.close()
+    try:
+        c.execute(
+            f"""INSERT INTO audit_trail
+               (project_id, event_type, actor, action, details, affected_files,
+                classification, ip_address, session_id)
+               VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})""",
+            (
+                project_id,
+                event_type,
+                actor,
+                action,
+                json.dumps(details) if details else None,
+                json.dumps(affected_files) if affected_files else None,
+                classification,
+                ip_address,
+                session_id,
+            ),
+        )
+        conn.commit()
+        entry_id = c.lastrowid
+    except Exception:
+        # Audit logging is non-fatal — never let an audit write failure break
+        # business logic (e.g. FK violation when project_id not in projects table).
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        entry_id = -1
+    finally:
+        conn.close()
     return entry_id
 
 

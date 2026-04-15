@@ -412,40 +412,50 @@ _MANIFEST_ROW_RE = re.compile(
 
 
 def _parse_tools_manifest(base: Path) -> List[Node]:
-    """Parse tools/manifest.md for every row mapping a tool name to a file path."""
+    """Parse tools/manifest.md (and shard files in tools/manifest/) for tool rows."""
     manifest_path = base / "tools" / "manifest.md"
     if not manifest_path.exists():
         return []
 
-    try:
-        lines = manifest_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
+    # Collect all files to parse: the index + any shard files
+    manifest_files: List[Path] = [manifest_path]
+    shard_dir = base / "tools" / "manifest"
+    if shard_dir.is_dir():
+        manifest_files.extend(sorted(shard_dir.glob("*.md")))
 
+    seen: set = set()
     nodes: List[Node] = []
-    current_section = "General"
-    for raw in lines:
-        if raw.startswith("## "):
-            current_section = raw[3:].strip()
+    for mf in manifest_files:
+        try:
+            lines = mf.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
             continue
-        m = _MANIFEST_ROW_RE.match(raw)
-        if not m:
-            continue
-        name = m.group(1).strip()
-        file_rel = m.group(2).strip()
-        description = m.group(3).strip()
-        # Skip header/separator rows
-        if name.lower() in ("tool", "tool name", "----", "---") or "---" in name:
-            continue
-        node = Node(
-            id=_node_id("tool", file_rel),
-            label=name,
-            entity_type="tool",
-            description=_truncate(description),
-            file_path=file_rel,
-            extra={"category": current_section},
-        )
-        nodes.append(node)
+        current_section = "General"
+        for raw in lines:
+            if raw.startswith("## "):
+                current_section = raw[3:].strip()
+                continue
+            m = _MANIFEST_ROW_RE.match(raw)
+            if not m:
+                continue
+            name = m.group(1).strip()
+            file_rel = m.group(2).strip()
+            description = m.group(3).strip()
+            # Skip header/separator rows
+            if name.lower() in ("tool", "tool name", "----", "---") or "---" in name:
+                continue
+            if file_rel in seen:
+                continue
+            seen.add(file_rel)
+            node = Node(
+                id=_node_id("tool", file_rel),
+                label=name,
+                entity_type="tool",
+                description=_truncate(description),
+                file_path=file_rel,
+                extra={"category": current_section},
+            )
+            nodes.append(node)
     return nodes
 
 
