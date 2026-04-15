@@ -392,7 +392,11 @@ def sample_get_route(url: str, *, timeout: float = 2.0) -> Any:
     """
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # nosec B310 — url is always http://localhost:<port>/api/v1/... constructed
+        # from the base_url parameter (default "http://localhost:5050").  No user-
+        # controlled input reaches this call; file:/ and custom schemes are never
+        # passed here.
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             return json.loads(resp.read())
     except Exception:
         return None
