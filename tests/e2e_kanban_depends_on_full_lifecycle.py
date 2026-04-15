@@ -196,6 +196,16 @@ def _cleanup_stale_e2e_rows() -> int:
 
 
 def create_driver():
+    """Phase D7 pilot (advanced path) — uses DriverManager for resolution
+    but builds Options locally so we can preserve ``goog:loggingPrefs``.
+
+    ``get_driver()`` doesn't expose capability-setting yet; until it does,
+    complex tests like this one (which needs ``driver.get_log('browser')``
+    to capture JS console errors) go through the lower-level DriverManager
+    API. Documented as a D7 finding in tools/browser/README.md.
+    """
+    from tools.browser.driver_manager import DriverManager
+
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--window-size=1920,1080")
@@ -203,7 +213,33 @@ def create_driver():
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.set_capability("goog:loggingPrefs", {"browser": "ALL"})
-    return webdriver.Chrome(options=opts)
+
+    mgr = DriverManager.instance()
+    driver_path = mgr.resolved_driver_path
+    if mgr.resolved_browser == "edge":
+        from selenium.webdriver.edge.service import Service as EdgeService
+        from selenium.webdriver.edge.options import Options as EdgeOptions
+
+        # Translate Chrome Options to Edge Options (args + caps are compatible)
+        edge_opts = EdgeOptions()
+        for arg in opts.arguments:
+            edge_opts.add_argument(arg)
+        edge_opts.set_capability("ms:loggingPrefs", {"browser": "ALL"})
+        service = EdgeService(executable_path=driver_path) if driver_path else None
+        return (
+            webdriver.Edge(service=service, options=edge_opts)
+            if service
+            else webdriver.Edge(options=edge_opts)
+        )
+    # Chrome path
+    from selenium.webdriver.chrome.service import Service as ChromeService
+
+    service = ChromeService(executable_path=driver_path) if driver_path else None
+    return (
+        webdriver.Chrome(service=service, options=opts)
+        if service
+        else webdriver.Chrome(options=opts)
+    )
 
 
 def check_js_errors(driver) -> list:
@@ -309,7 +345,7 @@ def main() -> int:
             assert c_id not in due_ids, f"C should be blocked; got {due_ids}"
             result.ok(
                 "listener excludes blocked tasks",
-                f"A eligible, B/C blocked",
+                "A eligible, B/C blocked",
             )
         except Exception as e:
             result.fail("Phase B — listener gate at backlog", e)
@@ -354,7 +390,7 @@ def main() -> int:
             assert by_id[b_id]["depends_on_status"] == "in_progress"
             result.ok(
                 "API surfaces in_progress dep status",
-                f"B.depends_on_status=in_progress, is_blocked=True",
+                "B.depends_on_status=in_progress, is_blocked=True",
             )
         except Exception as e:
             result.fail("Phase C — API reflects in_progress state", e)

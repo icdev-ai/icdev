@@ -5,25 +5,28 @@ import sys
 import time
 from pathlib import Path
 
+# Ensure the project root is on sys.path for tools.browser.driver_manager (D7 pilot)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 BASE_URL = "http://localhost:5100"
 SCREENSHOT_DIR = Path(__file__).resolve().parent.parent / "playwright" / "screenshots"
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from tools.browser.driver_manager import get_driver
+
 
 def create_driver():
-    opts = Options()
-    opts.add_argument("--headless=new")
-    opts.add_argument("--window-size=1920,1080")
-    opts.add_argument("--disable-gpu")
-    opts.add_argument("--no-sandbox")
-    return webdriver.Chrome(options=opts)
+    # Phase D7 pilot: vendored msedgedriver / chromedriver via driver_manager.
+    # Default flags (--headless=new, --window-size, --disable-gpu, --no-sandbox)
+    # match the inline Chrome construction this replaced.
+    return get_driver(headless=True, window_size=(1920, 1080))
 
 
 passed = 0
