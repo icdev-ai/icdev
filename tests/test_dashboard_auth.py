@@ -43,8 +43,8 @@ def tmp_db(tmp_path, monkeypatch):
     import tools.dashboard.config  # Ensure module is loaded before setattr
     import tools.dashboard.auth
 
-    monkeypatch.setattr(icdev.tools.dashboard.config, "DB_PATH", str(db_file))
-    monkeypatch.setattr(icdev.tools.dashboard.auth, "DB_PATH", str(db_file))
+    monkeypatch.setattr(tools.dashboard.config, "DB_PATH", str(db_file))
+    monkeypatch.setattr(tools.dashboard.auth, "DB_PATH", str(db_file))
 
     return db_file
 

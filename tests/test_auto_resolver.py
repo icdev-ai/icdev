@@ -110,7 +110,10 @@ def _init_test_db(db_path: Path) -> None:
             root_cause TEXT,
             remediation TEXT,
             confidence REAL DEFAULT 0.0,
-            auto_healable INTEGER DEFAULT 0
+            auto_healable INTEGER DEFAULT 0,
+            occurrence_count INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
     conn.commit()

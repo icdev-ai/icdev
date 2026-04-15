@@ -212,9 +212,9 @@ class TestLogEventSessionId:
         ):
             # We need to patch the import inside log_event
             with patch.dict(
-                "sys.modules", {"icdev.tools.resilience.correlation": type(sys)("icdev.tools.resilience.correlation")}
+                "sys.modules", {"tools.resilience.correlation": type(sys)("tools.resilience.correlation")}
             ):
-                sys.modules["icdev.tools.resilience.correlation"].get_correlation_id = lambda: mock_corr_id
+                sys.modules["tools.resilience.correlation"].get_correlation_id = lambda: mock_corr_id
                 entry_id = log_event(
                     event_type="project_created",
                     actor="test",

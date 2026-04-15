@@ -306,8 +306,22 @@ def _create_worktree(task_id: str) -> Optional[str]:
     worktree_path = WORKTREE_BASE / task_id
 
     if worktree_path.exists():
-        # Already exists from a previous attempt
-        return str(worktree_path)
+        # Validate it's a real git worktree, not an orphan empty dir left over
+        # from a failed `git worktree remove`. Orphans cause Claude to run in
+        # an empty cwd and coherence checks to fail (no tools/manifest.md).
+        listed = _sp.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        if str(worktree_path).replace("\\", "/") in listed.stdout.replace("\\", "/"):
+            return str(worktree_path)
+        logger.warning("Orphan worktree dir at %s — removing and recreating", worktree_path)
+        import shutil
+        shutil.rmtree(worktree_path, ignore_errors=True)
+        _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                capture_output=True, text=True, timeout=10)
+        _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+                capture_output=True, text=True, timeout=10)
 
     try:
         # Create a new branch from HEAD for this task
