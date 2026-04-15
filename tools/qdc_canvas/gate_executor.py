@@ -630,18 +630,42 @@ def execute_all_gates(project_dir: str | None = None) -> list[dict]:
     return results
 
 
+def _tool_available_fast(name: str) -> bool:
+    """Check if a tool is available using shutil.which (fast, no subprocess)."""
+    import shutil
+
+    # Check as direct binary
+    if shutil.which(name) is not None:
+        return True
+    # Check as python module (pip_audit → pip-audit, etc.)
+    module_name = name.replace("_", "-")
+    if shutil.which(module_name) is not None:
+        return True
+    # Check importability as a quick module probe
+    try:
+        result = subprocess.run(  # noqa: S603
+            [sys.executable, "-c", f"import {name.replace('-', '_')}"],
+            capture_output=True,
+            timeout=3,
+            stdin=subprocess.DEVNULL,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def check_tool_availability() -> dict:
     """Check which QA/QC tools are installed and available."""
     tools = {
-        "ruff": _tool_available("ruff"),
-        "bandit": _tool_available("bandit"),
-        "mypy": _tool_available("mypy"),
-        "vulture": _tool_available("vulture"),
-        "radon": _tool_available("radon"),
-        "interrogate": _tool_available("interrogate"),
-        "pyupgrade": _tool_available("pyupgrade"),
-        "pip_audit": _tool_available("pip_audit"),
-        "pytest": _tool_available("pytest"),
+        "ruff": _tool_available_fast("ruff"),
+        "bandit": _tool_available_fast("bandit"),
+        "mypy": _tool_available_fast("mypy"),
+        "vulture": _tool_available_fast("vulture"),
+        "radon": _tool_available_fast("radon"),
+        "interrogate": _tool_available_fast("interrogate"),
+        "pyupgrade": _tool_available_fast("pyupgrade"),
+        "pip_audit": _tool_available_fast("pip_audit"),
+        "pytest": _tool_available_fast("pytest"),
         "diagram_validator": (ICDEV_ROOT / "tools" / "compliance" / "diagram_validator.py").exists(),
     }
     return {
