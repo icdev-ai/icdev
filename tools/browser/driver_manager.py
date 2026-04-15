@@ -415,20 +415,78 @@ def get_driver(
     window_size: tuple = (1920, 1080),
     extra_args: Optional[List[str]] = None,
 ) -> Any:
-    """Return a ready-to-use Selenium WebDriver.
+    """Return a ready-to-use Selenium WebDriver (the public Phase-D3.1 entry point).
 
     Convenience wrapper around ``DriverManager.instance().create_driver()``.
-    Resolves the driver binary once per process (singleton) then creates a
-    new ``WebDriver`` session on each call.
 
     Parameters
     ----------
     headless:
-        Run browser in headless mode (default True).
+        Run browser in headless mode. Default ``True``. Add ``'--headless=new'``
+        (Chromium family) and ``'--window-size=WxH'`` to the launch flags.
     window_size:
-        ``(width, height)`` tuple.
+        ``(width, height)`` tuple. Default ``(1920, 1080)``. Applied via
+        ``--window-size`` launch flag regardless of headless mode.
     extra_args:
-        Additional CLI flags forwarded to the browser binary.
+        Additional browser CLI flags forwarded verbatim. Merged after the
+        air-gap-safe defaults (``--no-sandbox``, ``--disable-gpu``,
+        ``--disable-dev-shm-usage``, ``--disable-features=...``) so caller
+        flags can override them.
+
+    Return type
+    -----------
+    Declared as ``Any`` to keep import-time coupling to the ``selenium``
+    package optional (air-gap environments without selenium installed can
+    still import this module for resolution probing). At runtime the value
+    is always one of ``selenium.webdriver.Edge`` or ``selenium.webdriver.Chrome``
+    \u2014 determined by ``resolve_driver()`` at first call, then reused
+    for the lifetime of the Python process. A future ``browser='edge'|'chrome'|'auto'``
+    keyword will expose explicit override; for now auto-selection matches
+    whatever is present under ``vendor/drivers/``.
+
+    Caching / side effects
+    ----------------------
+    - **Driver-binary resolution is cached** at the process level via
+      ``DriverManager.instance()`` (a classmethod-backed singleton). First
+      call walks ``vendor/drivers/``, picks a binary, and records the
+      decision; subsequent calls are O(1).
+    - **WebDriver instances are NOT cached**. Each ``get_driver()`` call
+      returns a *fresh* ``WebDriver`` session. This intentionally differs
+      from a connection-pool design because Selenium sessions are stateful
+      (cookies, URL, window handle) and sharing them across tests produces
+      flaky results.
+
+    Cleanup contract
+    ----------------
+    **The caller owns the returned driver and MUST call ``driver.quit()``
+    before the process exits.** ``get_driver()`` does not register any
+    ``atexit`` hook, and there is no context-manager helper at this layer.
+    The canonical pattern is ``try/finally``::
+
+        driver = get_driver(headless=True)
+        try:
+            driver.get(url)
+            ...
+        finally:
+            driver.quit()
+
+    A context-manager helper (``with managed_driver(...) as d:``) is a
+    candidate for D7's pilot refactor if the first three migrated tests
+    find the try/finally boilerplate noisy.
+
+    Thread safety
+    -------------
+    ``DriverManager.instance()`` is not thread-locked; concurrent first-call
+    threads may race on the resolution cache. That's acceptable because
+    resolution is idempotent (same ``vendor/drivers/`` scan, same result).
+    Within a test, the returned ``WebDriver`` is single-threaded per
+    selenium's own contract \u2014 do not share across threads.
+
+    Air-gap behaviour
+    -----------------
+    If no driver binary is resolvable (no vendored binary, none on PATH),
+    ``create_driver()`` raises ``AirgapDriverMissingError`` with the admin
+    refresh command. **Never triggers a CDN download.**
     """
     return DriverManager.instance().create_driver(
         headless=headless,
