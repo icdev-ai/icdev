@@ -1664,10 +1664,149 @@ def _verify_claimed_files_exist(
     return existing, len(paths), missing[:5]
 
 
+# ---------------------------------------------------------------------------
+# Git-first fast-path helpers (memory: feedback_kanban_vv_policy.md)
+# ---------------------------------------------------------------------------
+
+# Destructive / externally-visible / shared-infra task_types and description
+# keywords that MUST NOT use the git-first shortcut. Dangerous tasks run
+# every downstream verifier guard for full audit trail.
+_DANGEROUS_TASK_TYPES = frozenset({"deploy", "delete", "destructive"})
+_DANGEROUS_DESCRIPTION_KEYWORDS = (
+    "drop table", "force-push", "force push", "push --force",
+    "rm -rf", "git reset --hard", "public release",
+    "marketplace publish", "DELETE FROM audit", "UPDATE audit",
+    "k8s deploy", "kubectl apply", "dns change", "cert rotation",
+    "iam policy",
+)
+
+
+def _is_dangerous_task(task_id: str) -> bool:
+    """Return True if the task is destructive, external-visible, or shared-infra.
+
+    Dangerous tasks skip the git-first shortcut so every downstream guard
+    runs. Lookup uses task_type + description keyword scan.
+    """
+    try:
+        _c = get_connection()
+        row = _c.execute(
+            "SELECT task_type, description FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        _c.close()
+    except Exception:
+        return False
+    if not row:
+        return False
+    row = dict(row)
+    task_type = (row.get("task_type") or "").lower()
+    if task_type in _DANGEROUS_TASK_TYPES:
+        return True
+    desc = (row.get("description") or "").lower()
+    return any(kw.lower() in desc for kw in _DANGEROUS_DESCRIPTION_KEYWORDS)
+
+
+def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
+    """Fast-path: did the agent actually touch the filesystem / commit work?
+
+    Checks in order (any positive → True):
+      1. ``git log <dispatch_baseline>..kanban/<task_id> --name-only`` —
+         real commits on the task branch since dispatch, with at least
+         one changed file path.
+      2. ``git status --porcelain`` in the worktree — staged or unstaged
+         file changes.
+      3. ``git log <dispatch_baseline>..HEAD --name-only`` on main — the
+         scheduler's own auto-merge may have landed the work before the
+         verifier ran. If main advanced AND the worktree is clean, the
+         agent's commits are there already.
+
+    Returns ``(ok, reason)``. On git failure or no evidence, ``(False, "")``.
+    """
+    import subprocess as _sp
+
+    branch_name = f"kanban/{task_id}"
+    work_dir = _worktrees.get(task_id) or str(BASE_DIR)
+    dispatch_baseline = _dispatch_main_heads.get(task_id, None)
+
+    # 1. branch commits with file changes since dispatch
+    if dispatch_baseline:
+        try:
+            r = _sp.run(
+                ["git", "log", f"{dispatch_baseline}..{branch_name}",
+                 "--name-only", "--pretty=format:"],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                cwd=str(BASE_DIR), timeout=10,
+            )
+            files = [
+                ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()
+            ]
+            if files:
+                preview = ", ".join(sorted(set(files))[:3])
+                return True, (
+                    f"{len(set(files))} file(s) changed on {branch_name} "
+                    f"(e.g. {preview})"
+                )
+        except Exception:
+            pass
+
+    # 2. uncommitted changes in the worktree
+    try:
+        r = _sp.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+            cwd=work_dir, timeout=10,
+        )
+        porcelain = [
+            ln for ln in (r.stdout or "").splitlines() if ln.strip()
+        ]
+        if porcelain:
+            return True, f"{len(porcelain)} uncommitted change(s) in worktree"
+    except Exception:
+        pass
+
+    # 3. main advanced since dispatch AND worktree is clean → likely merged
+    if dispatch_baseline:
+        try:
+            r = _sp.run(
+                ["git", "log", f"{dispatch_baseline}..HEAD",
+                 "--name-only", "--pretty=format:"],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                cwd=str(BASE_DIR), timeout=10,
+            )
+            main_files = [
+                ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()
+            ]
+            if main_files:
+                dirty = _sp.run(
+                    ["git", "status", "--porcelain"],
+                    capture_output=True, text=True,
+                    encoding="utf-8", errors="replace",
+                    cwd=work_dir, timeout=10,
+                )
+                if not (dirty.stdout or "").strip():
+                    preview = ", ".join(sorted(set(main_files))[:3])
+                    return True, (
+                        f"main advanced {len(set(main_files))} file(s) since dispatch; "
+                        f"worktree clean (likely merged) — e.g. {preview}"
+                    )
+        except Exception:
+            pass
+
+    return False, ""
+
+
 def _run_verify_checks(task_id, claude_output):
     """Inner check implementation — called only by _verify_task_completed.
 
-    Checks (order matters; early returns on failure):
+    Checks (order matters; early returns on success/failure):
+    0. **Git-first fast-path** (memory: feedback_kanban_vv_policy.md):
+       if the worktree branch has commits or file changes vs dispatch
+       baseline, trust the filesystem truth and return verified=True.
+       Skipped for dangerous task types (see _is_dangerous_task) so
+       destructive ops still go through every downstream guard.
     1. Claude output must be substantial (>200 chars)
     2. No obvious failure indicators in output
     3. Output must contain evidence of actual file changes (keywords)
@@ -1682,6 +1821,20 @@ def _run_verify_checks(task_id, claude_output):
 
     Returns: (verified: bool, reason: str)
     """
+    # Check 0 — GIT-FIRST FAST-PATH (memory: feedback_kanban_vv_policy.md).
+    # Rationale: filesystem truth beats stdout heuristics. E3 (2026-04-15)
+    # shipped migration 023_sharepoint correctly but the text heuristic
+    # returned phantom, blocking the whole E-F-G-H-I chain. If the
+    # worktree has real file changes or commits, trust that and return
+    # verified=True without running Check 4's phantom text heuristic.
+    #
+    # Dangerous tasks (deploy/delete/destructive ops) bypass this shortcut
+    # — they still run every downstream guard so the audit trail is full.
+    if not _is_dangerous_task(task_id):
+        _git_ok, _git_reason = _git_worktree_has_real_changes(task_id)
+        if _git_ok:
+            return True, f"Verified (git-first): {_git_reason}"
+
     # Check 1: Claude output must be substantial
     if not claude_output or len(claude_output) < 200:
         return False, "Output too short — likely no work done"

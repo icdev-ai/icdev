@@ -46,11 +46,15 @@ REMEDIABLE = {
     FAILURE_RUFF_ISSUES,
     FAILURE_MISSING_MANIFEST,
     FAILURE_COHERENCE_BROKEN,  # only if due to ruff or manifest
+    # feedback_kanban_vv_policy.md: phantom_paths is auto-remediable via
+    # git cross-check — if the worktree has real file changes since
+    # dispatch, override the verdict. Dropped false-positives blocked the
+    # whole E-F-G-H-I chain in the E3 incident 2026-04-15.
+    FAILURE_PHANTOM_PATHS,
 }
 
 UNREMEDIABLE = {
     FAILURE_NO_COMMITS,
-    FAILURE_PHANTOM_PATHS,
     FAILURE_BANDIT_SECURITY,
     FAILURE_E2E_REGRESSION,
     FAILURE_UNKNOWN,
@@ -126,6 +130,58 @@ def _git_commit_amend(cwd: str, files: List[str]) -> bool:
         _run(["git", "add", "-u"], cwd)
     r = _run(["git", "commit", "--amend", "--no-edit", "--no-verify"], cwd)
     return r.returncode == 0
+
+
+def remediate_phantom_paths(cwd: str, task_id: str) -> Tuple[bool, str]:
+    """Override the phantom-paths verdict when git shows real file changes.
+
+    The phantom-paths failure fires when the agent output's text heuristic
+    couldn't find file-path strings, regardless of what the filesystem
+    actually says. This handler consults git directly — if the worktree
+    has commits since dispatch OR any uncommitted file changes, the verdict
+    was a false positive and we return True so the task proceeds.
+
+    Rationale (memory: feedback_kanban_vv_policy.md): the E3 incident
+    (2026-04-15) shipped migration 023_sharepoint to main as commit
+    a89e1e10, but the stdout heuristic returned phantom, blocking every
+    downstream task until manual unblock. Git is authoritative.
+    """
+    branch = f"kanban/{task_id}"
+    try:
+        # 1) Commits on the task branch
+        r = _run(
+            ["git", "log", f"main..{branch}", "--name-only", "--pretty=format:"],
+            cwd, timeout=10,
+        )
+        files = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+        if files:
+            preview = ", ".join(sorted(set(files))[:3])
+            return True, (
+                f"phantom override: {len(set(files))} file(s) changed on {branch} "
+                f"(e.g. {preview})"
+            )
+        # 2) Uncommitted changes in the worktree
+        r = _run(["git", "status", "--porcelain"], cwd, timeout=10)
+        porcelain = [ln for ln in (r.stdout or "").splitlines() if ln.strip()]
+        if porcelain:
+            return True, (
+                f"phantom override: {len(porcelain)} uncommitted change(s) in worktree"
+            )
+        # 3) Main advanced (agent's work may have merged already)
+        r = _run(
+            ["git", "log", "main", "--name-only", "--since=30 minutes ago",
+             "--pretty=format:"],
+            cwd, timeout=10,
+        )
+        recent = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+        if recent:
+            return True, (
+                f"phantom override: main advanced {len(set(recent))} file(s) "
+                "in last 30 min (likely merged)"
+            )
+    except Exception as exc:
+        return False, f"phantom remediation error: {exc}"
+    return False, "phantom verdict confirmed: no git-side changes detected"
 
 
 def remediate_stale_baseline(cwd: str, task_id: str) -> Tuple[bool, str]:
@@ -303,6 +359,8 @@ def attempt_remediation(
         ok, msg = remediate_ruff_issues(cwd, modified_py)
     elif failure_type == FAILURE_MISSING_MANIFEST:
         ok, msg = remediate_missing_manifest(cwd, reason, modified_py)
+    elif failure_type == FAILURE_PHANTOM_PATHS:
+        ok, msg = remediate_phantom_paths(cwd, task_id)
     elif failure_type == FAILURE_COHERENCE_BROKEN:
         # Most common case: stale baseline — worktree branched from older
         # main and is missing files added to main since (e.g., new docs,
