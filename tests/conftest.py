@@ -1168,6 +1168,43 @@ CREATE TABLE IF NOT EXISTS ad_news_catalysts (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ad_news_catalysts_ticker_date ON ad_news_catalysts (ticker, created_at DESC);
+
+-- SharePoint integration tables (migration 023)
+CREATE TABLE IF NOT EXISTS sharepoint_sites (
+    id            TEXT PRIMARY KEY,
+    url           TEXT NOT NULL,
+    title         TEXT NOT NULL DEFAULT '',
+    last_modified TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sharepoint_lists (
+    id         TEXT PRIMARY KEY,
+    site_id    TEXT NOT NULL,
+    name       TEXT NOT NULL DEFAULT '',
+    item_count INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sp_lists_site_id ON sharepoint_lists (site_id);
+
+CREATE TABLE IF NOT EXISTS sharepoint_items (
+    id          TEXT PRIMARY KEY,
+    list_id     TEXT NOT NULL,
+    title       TEXT NOT NULL DEFAULT '',
+    payload     TEXT,
+    modified_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sp_items_list_id ON sharepoint_items (list_id);
+CREATE INDEX IF NOT EXISTS idx_sp_items_modified ON sharepoint_items (modified_at DESC);
+
+CREATE TABLE IF NOT EXISTS sharepoint_documents (
+    id           TEXT PRIMARY KEY,
+    site_id      TEXT NOT NULL,
+    path         TEXT NOT NULL DEFAULT '',
+    size         INTEGER DEFAULT 0,
+    mime_type    TEXT DEFAULT '',
+    content_hash TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_sp_docs_site_id ON sharepoint_documents (site_id);
+CREATE INDEX IF NOT EXISTS idx_sp_docs_path ON sharepoint_documents (path);
 """
 
 # ---------------------------------------------------------------------------
@@ -1584,7 +1621,7 @@ def _seed_icdev_db(conn):
     conn.execute(
         "INSERT OR IGNORE INTO projects (id, name, type, classification, status, directory_path, impact_level) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (SEED_PROJECT_ID, "Test Project", "webapp", "CUI", "active", "/tmp/test", "IL5"),
+        (SEED_PROJECT_ID, "Test Project", "webapp", "CUI", "active", "/tmp/test", "IL5"),  # nosec B108 -- seed-row string literal stored as project.directory_path in the test fixture DB; not a real temp-file write
     )
     conn.execute(
         "INSERT OR IGNORE INTO agents (id, name, url, status) VALUES (?, ?, ?, ?)",
