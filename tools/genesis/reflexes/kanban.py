@@ -2082,21 +2082,24 @@ def _git_worktree_has_real_changes(task_id: str) -> Tuple[bool, str]:
         except Exception:
             pass
 
-    # 2. uncommitted changes in the worktree
-    try:
-        r = _sp.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            cwd=work_dir, timeout=10,
-        )
-        porcelain = [
-            ln for ln in (r.stdout or "").splitlines() if ln.strip()
-        ]
-        if porcelain:
-            return True, f"{len(porcelain)} uncommitted change(s) in worktree"
-    except Exception:
-        pass
+    # 2. uncommitted changes in the worktree — only valid when the task has
+    # an actual registered worktree; checking BASE_DIR's dirty state would
+    # produce false positives from unrelated in-progress work.
+    if task_id in _worktrees:
+        try:
+            r = _sp.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                cwd=work_dir, timeout=10,
+            )
+            porcelain = [
+                ln for ln in (r.stdout or "").splitlines() if ln.strip()
+            ]
+            if porcelain:
+                return True, f"{len(porcelain)} uncommitted change(s) in worktree"
+        except Exception:
+            pass
 
     # 3. main advanced since dispatch AND worktree is clean → likely merged
     if dispatch_baseline:

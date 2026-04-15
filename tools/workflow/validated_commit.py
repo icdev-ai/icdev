@@ -141,8 +141,6 @@ def _bandit_delta(
             (f.get("issue_text") or "").strip(),
         )
 
-    branch_keys: Set[tuple] = {_branch_key(f) for f in branch_results}
-
     # --- baseline findings (main) ---
     baseline_keys: Set[tuple] = set()
     try:
