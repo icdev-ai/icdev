@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.security.ai_telemetry_logger import AITelemetryLogger
+from tools.security.ai_telemetry_logger import AITelemetryLogger
 
 
 @pytest.fixture

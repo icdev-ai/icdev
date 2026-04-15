@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.observability.trace_context import (
+from tools.observability.trace_context import (
     TraceContext,
     clear_current_context,
     context_from_correlation_id,

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.mosa.icd_generator import (
+from tools.mosa.icd_generator import (
     CUI_BANNER,
     _build_icd_content,
     _discover_interfaces,
@@ -255,14 +255,14 @@ class TestCLI:
 
     def test_requires_project_id(self):
         with pytest.raises(SystemExit):
-            from icdev.tools.mosa.icd_generator import main
+            from tools.mosa.icd_generator import main
 
             with patch("sys.argv", ["icd_generator.py", "--all"]):
                 main()
 
     def test_requires_interface_id_or_all(self):
         with pytest.raises(SystemExit):
-            from icdev.tools.mosa.icd_generator import main
+            from tools.mosa.icd_generator import main
 
             with patch("sys.argv", ["icd_generator.py", "--project-id", "proj-1"]):
                 main()

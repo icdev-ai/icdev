@@ -12,7 +12,7 @@ import sqlite3
 
 import pytest
 
-from icdev.tools.supply_chain.dependency_graph import (
+from tools.supply_chain.dependency_graph import (
     add_dependency,
     add_vendor,
     build_graph,

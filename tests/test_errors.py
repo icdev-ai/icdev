@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from icdev.tools.resilience.errors import (
+from tools.resilience.errors import (
     ConfigurationError,
     ICDevError,
     ICDevPermanentError,

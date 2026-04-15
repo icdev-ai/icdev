@@ -8,7 +8,7 @@ import sqlite3
 
 import pytest
 
-from icdev.tools.requirements.spec_organizer import (
+from tools.requirements.spec_organizer import (
     _slugify,
     _parse_spec_metadata,
     _parse_spec_sections,

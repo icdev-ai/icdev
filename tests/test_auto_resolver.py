@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 
-from icdev.tools.monitor.auto_resolver import (
+from tools.monitor.auto_resolver import (
     _check_rate_limit,
     _ensure_table,
     analyze_alert,

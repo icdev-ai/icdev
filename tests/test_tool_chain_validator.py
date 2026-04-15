@@ -10,7 +10,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.security.tool_chain_validator import ToolChainValidator
+from tools.security.tool_chain_validator import ToolChainValidator
 
 
 @pytest.fixture

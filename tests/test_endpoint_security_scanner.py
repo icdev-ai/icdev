@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from icdev.tools.security.endpoint_security_scanner import EndpointSecurityScanner
+from tools.security.endpoint_security_scanner import EndpointSecurityScanner
 
 
 @pytest.fixture

@@ -13,7 +13,7 @@ import threading
 import pytest
 from flask import Flask, g
 
-from icdev.tools.resilience.correlation import (
+from tools.resilience.correlation import (
     CORRELATION_HEADER,
     CorrelationLogFilter,
     clear_correlation_id,

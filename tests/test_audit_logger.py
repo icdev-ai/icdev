@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.audit.audit_logger import VALID_EVENT_TYPES, log_event
+from tools.audit.audit_logger import VALID_EVENT_TYPES, log_event
 
 
 def _create_audit_table(db_path: Path):

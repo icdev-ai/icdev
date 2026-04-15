@@ -21,7 +21,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 try:
-    from icdev.tools.security.ai_bom_generator import AIBOMGenerator, AI_FRAMEWORK_PACKAGES
+    from tools.security.ai_bom_generator import AIBOMGenerator, AI_FRAMEWORK_PACKAGES
 
     _HAS_AI_BOM = True
 except ImportError:

@@ -16,7 +16,7 @@ import time
 import pytest
 
 try:
-    from icdev.tools.saas.rate_limiter import (
+    from tools.saas.rate_limiter import (
         TIER_RATE_LIMITS,
         InMemoryBackend,
         check_rate_limit,
@@ -39,7 +39,7 @@ pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tools.saas.rate_limiter 
 @pytest.fixture(autouse=True)
 def fresh_backend(monkeypatch):
     """Reset the global backend before each test to ensure isolation."""
-    import icdev.tools.saas.rate_limiter as rl
+    import tools.saas.rate_limiter as rl
 
     monkeypatch.setattr(rl, "_backend", None)
     # Force InMemoryBackend (bypass scaling config)

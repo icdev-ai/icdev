@@ -150,14 +150,14 @@ def dashboard_app(tmp_path):
     conn2.close()
 
     # Pre-import modules so patch() can resolve them (avoids
-    # "module 'icdev.tools.dashboard' has no attribute 'app'" errors
+    # "module 'tools.dashboard' has no attribute 'app'" errors
     # when the module hasn't been imported yet).
-    import icdev.tools.dashboard.config as _cfg_mod
-    import icdev.tools.dashboard.app as _app_mod
-    import icdev.tools.dashboard.auth as _auth_mod
+    import tools.dashboard.config as _cfg_mod
+    import tools.dashboard.app as _app_mod
+    import tools.dashboard.auth as _auth_mod
 
     try:
-        import icdev.tools.dashboard.api.projects as _proj_mod
+        import tools.dashboard.api.projects as _proj_mod
     except (ImportError, AttributeError):
         _proj_mod = None
 
@@ -167,7 +167,7 @@ def dashboard_app(tmp_path):
         patch.object(_auth_mod, "DB_PATH", db_path),
         patch.object(_proj_mod, "DB_PATH", db_path) if _proj_mod else contextlib.nullcontext(),
     ):
-        from icdev.tools.dashboard.app import create_app
+        from tools.dashboard.app import create_app
 
         app = create_app()
         app.config["TESTING"] = True
@@ -309,12 +309,12 @@ class TestIndexEmptyState:
         conn.close()
 
         with (
-            patch("icdev.tools.dashboard.config.DB_PATH", db_path),
-            patch("icdev.tools.dashboard.app.DB_PATH", db_path),
-            patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path),
-            patch("icdev.tools.dashboard.auth.DB_PATH", db_path),
+            patch("tools.dashboard.config.DB_PATH", db_path),
+            patch("tools.dashboard.app.DB_PATH", db_path),
+            patch("tools.dashboard.api.projects.DB_PATH", db_path),
+            patch("tools.dashboard.auth.DB_PATH", db_path),
         ):
-            from icdev.tools.dashboard.app import create_app
+            from tools.dashboard.app import create_app
 
             app = create_app()
             app.config["TESTING"] = True

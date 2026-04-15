@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from icdev.tools.dashboard.state_tracker import StateTracker, ClientState
+from tools.dashboard.state_tracker import StateTracker, ClientState
 
 
 @pytest.fixture

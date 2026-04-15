@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.cloud.region_validator import RegionValidator
+from tools.cloud.region_validator import RegionValidator
 
 
 @pytest.fixture

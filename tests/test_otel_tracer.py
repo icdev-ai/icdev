@@ -16,17 +16,17 @@ class TestOTelTracerImportFallback(unittest.TestCase):
     """Test graceful fallback when opentelemetry is not installed."""
 
     def test_has_otel_flag_exists(self):
-        from icdev.tools.observability import otel_tracer
+        from tools.observability import otel_tracer
 
         self.assertIsInstance(otel_tracer.HAS_OTEL, bool)
 
     def test_otel_tracer_class_exists(self):
-        from icdev.tools.observability.otel_tracer import OTelTracer
+        from tools.observability.otel_tracer import OTelTracer
 
         self.assertTrue(callable(OTelTracer))
 
     def test_otel_span_class_exists(self):
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         self.assertTrue(callable(OTelSpan))
 
@@ -60,7 +60,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_tracer_requires_otel_sdk(self):
         """OTelTracer should check for opentelemetry availability."""
-        from icdev.tools.observability.otel_tracer import HAS_OTEL, OTelTracer
+        from tools.observability.otel_tracer import HAS_OTEL, OTelTracer
 
         # If HAS_OTEL is False, creating tracer should still not crash
         if not HAS_OTEL:
@@ -70,21 +70,21 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_abc_compliance(self):
         """OTelSpan should implement Span ABC methods."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
-        from icdev.tools.observability.tracer import Span
+        from tools.observability.otel_tracer import OTelSpan
+        from tools.observability.tracer import Span
 
         self.assertTrue(issubclass(OTelSpan, Span))
 
     def test_otel_tracer_abc_compliance(self):
         """OTelTracer should implement Tracer ABC methods."""
-        from icdev.tools.observability.otel_tracer import OTelTracer
-        from icdev.tools.observability.tracer import Tracer
+        from tools.observability.otel_tracer import OTelTracer
+        from tools.observability.tracer import Tracer
 
         self.assertTrue(issubclass(OTelTracer, Tracer))
 
     def test_otel_span_set_attribute(self):
         """OTelSpan.set_attribute delegates to underlying span."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         span = OTelSpan(mock_span)
@@ -93,7 +93,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_set_status_ok(self):
         """OTelSpan.set_status('OK') delegates correctly."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         span = OTelSpan(mock_span)
@@ -102,7 +102,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_set_status_error(self):
         """OTelSpan.set_status('ERROR') delegates correctly."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         span = OTelSpan(mock_span)
@@ -111,7 +111,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_add_event(self):
         """OTelSpan.add_event delegates to underlying span."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         span = OTelSpan(mock_span)
@@ -120,7 +120,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_end(self):
         """OTelSpan.end delegates to underlying span."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         span = OTelSpan(mock_span)
@@ -129,7 +129,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_context_manager(self):
         """OTelSpan works as context manager."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         span = OTelSpan(mock_span)
@@ -139,7 +139,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_context_manager_on_error(self):
         """OTelSpan sets ERROR status when exception occurs in context."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         span = OTelSpan(mock_span)
@@ -151,7 +151,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_trace_id_property(self):
         """OTelSpan.trace_id returns hex trace ID."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         mock_ctx = MagicMock()
@@ -164,7 +164,7 @@ class TestOTelTracerWithMocks(unittest.TestCase):
 
     def test_otel_span_span_id_property(self):
         """OTelSpan.span_id returns hex span ID."""
-        from icdev.tools.observability.otel_tracer import OTelSpan
+        from tools.observability.otel_tracer import OTelSpan
 
         mock_span = MagicMock()
         mock_ctx = MagicMock()
@@ -180,7 +180,7 @@ class TestOTelTracerCreation(unittest.TestCase):
 
     def test_create_without_otel(self):
         """Creating OTelTracer without opentelemetry should not raise."""
-        from icdev.tools.observability.otel_tracer import OTelTracer, HAS_OTEL
+        from tools.observability.otel_tracer import OTelTracer, HAS_OTEL
 
         try:
             OTelTracer()
@@ -195,7 +195,7 @@ class TestOTelTracerCreation(unittest.TestCase):
 
     def test_service_name_parameter(self):
         """OTelTracer accepts service_name parameter."""
-        from icdev.tools.observability.otel_tracer import OTelTracer, HAS_OTEL
+        from tools.observability.otel_tracer import OTelTracer, HAS_OTEL
 
         if not HAS_OTEL:
             self.skipTest("opentelemetry not installed")

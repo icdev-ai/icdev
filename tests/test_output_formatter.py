@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 
 try:
-    from icdev.tools.cli.output_formatter import (
+    from tools.cli.output_formatter import (
         _Ansi,
         _auto_color_value,
         _cui_wrap,

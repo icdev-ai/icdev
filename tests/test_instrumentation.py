@@ -33,7 +33,7 @@ def mock_tracer():
     mock_t = MagicMock()
     mock_t.start_span.return_value = mock_span
 
-    with patch("icdev.tools.observability.get_tracer", return_value=mock_t) as _:
+    with patch("tools.observability.get_tracer", return_value=mock_t) as _:
         yield mock_t, mock_span
 
 
@@ -44,7 +44,7 @@ def mock_tracer():
 
 class TestTraced:
     def test_basic_decoration(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, mock_span = mock_tracer
 
@@ -57,7 +57,7 @@ class TestTraced:
         mock_t.start_span.assert_called_once()
 
     def test_auto_name(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, _ = mock_tracer
 
@@ -71,7 +71,7 @@ class TestTraced:
         assert "auto_named" in name
 
     def test_custom_name(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, _ = mock_tracer
 
@@ -84,7 +84,7 @@ class TestTraced:
         assert call_args[0][0] == "custom.operation"
 
     def test_custom_kind(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, _ = mock_tracer
 
@@ -97,7 +97,7 @@ class TestTraced:
         assert call_args[1]["kind"] == "CLIENT"
 
     def test_static_attributes(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, _ = mock_tracer
 
@@ -111,7 +111,7 @@ class TestTraced:
         assert attrs["mcp.server.name"] == "builder"
 
     def test_code_function_attribute(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, _ = mock_tracer
 
@@ -126,7 +126,7 @@ class TestTraced:
         assert "my_specific_func" in attrs["code.function"]
 
     def test_record_args(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, mock_span = mock_tracer
 
@@ -142,7 +142,7 @@ class TestTraced:
         assert "code.args_hash" in attrs
 
     def test_record_result(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, mock_span = mock_tracer
 
@@ -155,7 +155,7 @@ class TestTraced:
         mock_span.set_attribute.assert_called()
 
     def test_error_propagation(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, mock_span = mock_tracer
 
@@ -172,7 +172,7 @@ class TestTraced:
         mock_span.add_event.assert_called_once()
 
     def test_preserves_function_name(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         @traced()
         def original_name():
@@ -183,7 +183,7 @@ class TestTraced:
         assert original_name.__doc__ == "Docstring."
 
     def test_none_result_no_hash(self, mock_tracer):
-        from icdev.tools.observability.instrumentation import traced
+        from tools.observability.instrumentation import traced
 
         mock_t, mock_span = mock_tracer
 
@@ -207,13 +207,13 @@ class TestTraced:
 
 class TestTracedGenerator:
     def test_generator_decoration(self):
-        from icdev.tools.observability.instrumentation import traced_generator
+        from tools.observability.instrumentation import traced_generator
 
         mock_span = MagicMock()
         mock_t = MagicMock()
         mock_t.start_span.return_value = mock_span
 
-        with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+        with patch("tools.observability.get_tracer", return_value=mock_t):
 
             @traced_generator()
             def gen_func():
@@ -228,13 +228,13 @@ class TestTracedGenerator:
             mock_span.end.assert_called_once()
 
     def test_generator_error(self):
-        from icdev.tools.observability.instrumentation import traced_generator
+        from tools.observability.instrumentation import traced_generator
 
         mock_span = MagicMock()
         mock_t = MagicMock()
         mock_t.start_span.return_value = mock_span
 
-        with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+        with patch("tools.observability.get_tracer", return_value=mock_t):
 
             @traced_generator()
             def bad_gen():
@@ -250,13 +250,13 @@ class TestTracedGenerator:
             mock_span.end.assert_called_once()
 
     def test_generator_empty(self):
-        from icdev.tools.observability.instrumentation import traced_generator
+        from tools.observability.instrumentation import traced_generator
 
         mock_span = MagicMock()
         mock_t = MagicMock()
         mock_t.start_span.return_value = mock_span
 
-        with patch("icdev.tools.observability.get_tracer", return_value=mock_t):
+        with patch("tools.observability.get_tracer", return_value=mock_t):
 
             @traced_generator()
             def empty_gen():

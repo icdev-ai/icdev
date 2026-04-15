@@ -9,7 +9,7 @@ from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from icdev.tools.ci.pipeline_config_generator import (
+from tools.ci.pipeline_config_generator import (
     CHECK_REGISTRY,
     generate_pipeline,
     _build_gate_evaluation_script,
@@ -109,7 +109,7 @@ class TestGeneratePipeline:
 
     def test_platform_auto_detection(self, tmp_path):
         _write_yaml(str(tmp_path), MINIMAL_MANIFEST)
-        with mock.patch("icdev.tools.ci.pipeline_config_generator.detect_vcs_platform", return_value="github"):
+        with mock.patch("tools.ci.pipeline_config_generator.detect_vcs_platform", return_value="github"):
             result = generate_pipeline(directory=str(tmp_path), platform="auto")
         assert result["platform"] == "github"
 

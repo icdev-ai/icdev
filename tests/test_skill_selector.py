@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-from icdev.tools.agent.skill_selector import (
+from tools.agent.skill_selector import (
     load_config,
     match_keywords,
     detect_from_files,

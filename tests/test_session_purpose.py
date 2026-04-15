@@ -15,12 +15,12 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 # Mock audit_log_event before importing modules to avoid writing to real DB
-_audit_mock_sp = patch("icdev.tools.agent.session_purpose.audit_log_event", lambda **kw: None)
+_audit_mock_sp = patch("tools.agent.session_purpose.audit_log_event", lambda **kw: None)
 _audit_mock_sp.start()
-_audit_mock_mb = patch("icdev.tools.agent.mailbox.audit_log_event", lambda **kw: None)
+_audit_mock_mb = patch("tools.agent.mailbox.audit_log_event", lambda **kw: None)
 _audit_mock_mb.start()
 
-from icdev.tools.agent.session_purpose import (
+from tools.agent.session_purpose import (
     abandon,
     complete,
     declare,
@@ -94,9 +94,9 @@ class TestSessionPurpose(unittest.TestCase):
     def test_get_active_latest(self):
         """Test that most recent active purpose is returned."""
         # Use explicit timestamps to avoid flaky timing under load
-        with patch("icdev.tools.agent.session_purpose._now", return_value="2026-01-01T00:00:00.000000Z"):
+        with patch("tools.agent.session_purpose._now", return_value="2026-01-01T00:00:00.000000Z"):
             declare(purpose="First", db_path=self.db_path)
-        with patch("icdev.tools.agent.session_purpose._now", return_value="2026-01-01T00:00:01.000000Z"):
+        with patch("tools.agent.session_purpose._now", return_value="2026-01-01T00:00:01.000000Z"):
             declare(purpose="Second", db_path=self.db_path)
         active = get_active(db_path=self.db_path)
         self.assertEqual(active["purpose"], "Second")
@@ -234,7 +234,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_send_async_result(self):
         """Test sending an async result."""
-        from icdev.tools.agent.mailbox import send_async_result
+        from tools.agent.mailbox import send_async_result
 
         msg_id = send_async_result(
             from_agent_id="builder-agent",
@@ -247,7 +247,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_async_result_high_priority(self):
         """Test async result gets priority 9 for injection."""
-        from icdev.tools.agent.mailbox import send_async_result, receive, PRIORITY_INJECT_NEXT_TURN
+        from tools.agent.mailbox import send_async_result, receive, PRIORITY_INJECT_NEXT_TURN
 
         send_async_result(
             from_agent_id="security-agent",
@@ -263,7 +263,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_collect_pending_injections(self):
         """Test collecting pending injections."""
-        from icdev.tools.agent.mailbox import send_async_result, collect_pending_injections
+        from tools.agent.mailbox import send_async_result, collect_pending_injections
 
         send_async_result(
             from_agent_id="builder-agent",
@@ -285,7 +285,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_collect_marks_read(self):
         """Test that collection marks messages as read."""
-        from icdev.tools.agent.mailbox import send_async_result, collect_pending_injections
+        from tools.agent.mailbox import send_async_result, collect_pending_injections
 
         send_async_result(
             from_agent_id="builder-agent",
@@ -303,14 +303,14 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_collect_empty(self):
         """Test collection with no pending messages."""
-        from icdev.tools.agent.mailbox import collect_pending_injections
+        from tools.agent.mailbox import collect_pending_injections
 
         results = collect_pending_injections("orchestrator-agent", db_path=self.db_path)
         self.assertEqual(len(results), 0)
 
     def test_no_inject_normal_messages(self):
         """Test that normal messages are not collected as injections."""
-        from icdev.tools.agent.mailbox import send, collect_pending_injections
+        from tools.agent.mailbox import send, collect_pending_injections
 
         send(
             from_agent_id="builder-agent",

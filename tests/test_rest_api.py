@@ -154,8 +154,8 @@ def rest_app(platform_db_path):
     app.config["TESTING"] = True
 
     # Patch the platform DB path used by rest_api module
-    with patch("icdev.tools.saas.rest_api.PLATFORM_DB_PATH", platform_db_path):
-        from icdev.tools.saas.rest_api import api_bp
+    with patch("tools.saas.rest_api.PLATFORM_DB_PATH", platform_db_path):
+        from tools.saas.rest_api import api_bp
 
         # Register blueprint (handles re-registration gracefully)
         try:
@@ -226,7 +226,7 @@ class TestTenantEndpoints:
             "tier": "professional",
             "status": "active",
         }
-        with patch("icdev.tools.saas.rest_api._import_tenant_manager") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_manager") as mock_import:
             mock_get = MagicMock(return_value=mock_tenant)
             mock_import.return_value = (mock_get, None, None, None, None)
             resp = client.get("/api/v1/tenants/me")
@@ -242,7 +242,7 @@ class TestTenantEndpoints:
             "name": "Updated Org",
             "settings": {"theme": "dark"},
         }
-        with patch("icdev.tools.saas.rest_api._import_tenant_manager") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_manager") as mock_import:
             mock_update = MagicMock(return_value=updated_tenant)
             mock_import.return_value = (None, mock_update, None, None, None)
             resp = client.patch(
@@ -265,7 +265,7 @@ class TestUserEndpoints:
 
     def test_get_users_returns_list(self, client):
         """GET /api/v1/users must return a list of users."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_manager") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_manager") as mock_import:
             mock_list = MagicMock(
                 return_value=[
                     {"id": SEED_USER_ID, "email": "admin@test.gov", "role": "admin"},
@@ -285,7 +285,7 @@ class TestUserEndpoints:
             "email": "dev@test.gov",
             "role": "developer",
         }
-        with patch("icdev.tools.saas.rest_api._import_tenant_manager") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_manager") as mock_import:
             mock_add = MagicMock(return_value=new_user)
             mock_import.return_value = (None, None, None, mock_add, None)
             resp = client.post(
@@ -299,7 +299,7 @@ class TestUserEndpoints:
 
     def test_delete_users_removes_user(self, client):
         """DELETE /api/v1/users/<user_id> must remove a user."""
-        with patch("icdev.tools.saas.rest_api._import_tenant_manager") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_manager") as mock_import:
             mock_remove = MagicMock(return_value={"deleted": True})
             mock_import.return_value = (None, None, None, None, mock_remove)
             resp = client.delete(f"/api/v1/users/{SEED_USER_ID}")
@@ -352,13 +352,13 @@ class TestProjectEndpoints:
     def test_post_projects_creates_project(self, client):
         """POST /api/v1/projects must create a project (delegates to tool)."""
         mock_result = {"id": "proj-new-001", "name": "my-app", "type": "microservice"}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_import:
             mock_call = MagicMock(return_value=mock_result)
             mock_import.return_value = (mock_call, MagicMock(), MagicMock())
 
-            with patch("icdev.tools.saas.rest_api.create_project") as _:
+            with patch("tools.saas.rest_api.create_project") as _:
                 # Patch the lazy import inside the function
-                with patch.dict("sys.modules", {"icdev.tools.project.project_create": MagicMock()}):
+                with patch.dict("sys.modules", {"tools.project.project_create": MagicMock()}):
                     resp = client.post(
                         "/api/v1/projects",
                         data=json.dumps({"name": "my-app", "type": "microservice"}),
@@ -371,21 +371,21 @@ class TestProjectEndpoints:
     def test_get_projects_lists_projects(self, client):
         """GET /api/v1/projects must return project list."""
         mock_result = {"projects": [], "total": 0}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_import:
             mock_call = MagicMock(return_value=mock_result)
             mock_import.return_value = (mock_call, MagicMock(), MagicMock())
-            with patch.dict("sys.modules", {"icdev.tools.project.project_list": MagicMock()}):
+            with patch.dict("sys.modules", {"tools.project.project_list": MagicMock()}):
                 resp = client.get("/api/v1/projects")
                 assert resp.status_code in (200, 500)
 
     def test_get_project_detail(self, client):
         """GET /api/v1/projects/<id> must return project details."""
         mock_result = {"id": "proj-001", "name": "test", "status": "active"}
-        with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_db") as mock_import:
             mock_call = MagicMock(return_value=mock_result)
             mock_verify = MagicMock(return_value=True)
             mock_import.return_value = (mock_call, MagicMock(), mock_verify)
-            with patch.dict("sys.modules", {"icdev.tools.project.project_status": MagicMock()}):
+            with patch.dict("sys.modules", {"tools.project.project_status": MagicMock()}):
                 resp = client.get("/api/v1/projects/proj-001")
                 assert resp.status_code in (200, 500)
 
@@ -425,7 +425,7 @@ class TestResponseFormats:
         POST /api/v1/users without email should return a 400 error with
         the standard error format.
         """
-        with patch("icdev.tools.saas.rest_api._import_tenant_manager") as mock_import:
+        with patch("tools.saas.rest_api._import_tenant_manager") as mock_import:
             mock_add = MagicMock()
             mock_import.return_value = (None, None, None, mock_add, None)
             resp = client.post(

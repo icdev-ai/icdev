@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from icdev.tools.testing.claude_dir_validator import (
+from tools.testing.claude_dir_validator import (
     CHECK_REGISTRY,
     ClaudeConfigCheck,
     ClaudeConfigReport,
@@ -605,7 +605,7 @@ class TestCheckHookReferences:
 class TestRunAllChecks:
     def test_run_all_returns_report(self, tmp_path, monkeypatch):
         # Patch PROJECT_ROOT to use temp dir to avoid depending on real files
-        import icdev.tools.testing.claude_dir_validator as mod
+        import tools.testing.claude_dir_validator as mod
 
         monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
 
@@ -625,7 +625,7 @@ class TestRunAllChecks:
         assert report.total_checks == len(CHECK_REGISTRY)
 
     def test_run_selected_check(self, tmp_path, monkeypatch):
-        import icdev.tools.testing.claude_dir_validator as mod
+        import tools.testing.claude_dir_validator as mod
 
         monkeypatch.setattr(mod, "PROJECT_ROOT", tmp_path)
         (tmp_path / ".claude" / "hooks").mkdir(parents=True)

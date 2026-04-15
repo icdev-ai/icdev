@@ -18,7 +18,7 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 
 def main():
     # ---- Setup ----
-    from icdev.tools.saas.platform_db import init_platform_db, SQLITE_PATH
+    from tools.saas.platform_db import init_platform_db, SQLITE_PATH
 
     data_dir = BASE_DIR / "data"
     data_dir.mkdir(exist_ok=True)
@@ -32,7 +32,7 @@ def main():
     print("1. Platform DB initialized")
 
     # Create tenant
-    from icdev.tools.saas.tenant_manager import create_tenant, provision_tenant
+    from tools.saas.tenant_manager import create_tenant, provision_tenant
 
     result = create_tenant("ACME Defense", "IL4", "professional", admin_email="admin@acme.gov")
     tenant_id = result["tenant"]["id"]
@@ -61,7 +61,7 @@ def main():
     print("3. API key created")
 
     # Create Flask test client
-    from icdev.tools.saas.api_gateway import create_app
+    from tools.saas.api_gateway import create_app
 
     app = create_app({"TESTING": True})
     client = app.test_client()

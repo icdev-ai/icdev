@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.db.init_icdev_db import (
+from tools.db.init_icdev_db import (
     AGENTIC_ALTER_SQL,
     COMPLIANCE_PLATFORM_ALTER_SQL,
     FIPS_ALTER_SQL,
@@ -115,7 +115,7 @@ class TestMainFunction:
             "sys.argv",
             ["init_icdev_db.py", "--db-path", str(db_path), "--reset"],
         ):
-            from icdev.tools.db.init_icdev_db import main
+            from tools.db.init_icdev_db import main
 
             main()
 

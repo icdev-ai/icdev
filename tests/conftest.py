@@ -1625,7 +1625,7 @@ def api_gateway_app(platform_db, icdev_db):
     """Flask test app for the SaaS API gateway with mocked auth."""
     os.environ["PLATFORM_DB_PATH"] = str(platform_db)
 
-    from icdev.tools.saas.api_gateway import create_app
+    from tools.saas.api_gateway import create_app
 
     app = create_app(config={"TESTING": True})
 
@@ -1643,8 +1643,8 @@ def api_client(api_gateway_app):
 @pytest.fixture
 def dashboard_app(icdev_db):
     """Dashboard Flask test app with patched DB path."""
-    with patch("icdev.tools.dashboard.app.DB_PATH", str(icdev_db)):
-        from icdev.tools.dashboard.app import create_app
+    with patch("tools.dashboard.app.DB_PATH", str(icdev_db)):
+        from tools.dashboard.app import create_app
 
         app = create_app()
         app.config["TESTING"] = True
@@ -1788,7 +1788,7 @@ def llm_config(tmp_path):
 def rate_limiter_backend():
     """Fresh in-memory rate limiter backend for testing."""
     try:
-        from icdev.tools.saas.rate_limiter import InMemoryBackend
+        from tools.saas.rate_limiter import InMemoryBackend
 
         return InMemoryBackend()
     except ImportError:

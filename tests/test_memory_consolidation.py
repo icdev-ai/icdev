@@ -14,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from icdev.tools.memory.memory_consolidation import (
+from tools.memory.memory_consolidation import (
     MemoryConsolidator,
     ACTIONS,
     JACCARD_SKIP_THRESHOLD,
@@ -186,7 +186,7 @@ class TestConstants:
 
 
 class TestStats:
-    @patch("icdev.tools.memory.memory_consolidation.sqlite3")
+    @patch("tools.memory.memory_consolidation.sqlite3")
     def test_get_stats_handles_db_error(self, mock_sqlite):
         import sqlite3
 

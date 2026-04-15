@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from icdev.tools.dx.mcp_config_generator import generate_mcp_config
+from tools.dx.mcp_config_generator import generate_mcp_config
 
 
 def _write_mcp_json(tmp_dir):

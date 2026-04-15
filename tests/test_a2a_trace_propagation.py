@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from icdev.tools.observability.trace_context import (
+from tools.observability.trace_context import (
     clear_current_context,
     generate_traceparent,
     get_current_context,
@@ -38,7 +38,7 @@ class TestA2AClientTraceparent:
         meta = {}
         # Simulate the client's traceparent injection
         try:
-            from icdev.tools.observability.trace_context import get_current_context
+            from tools.observability.trace_context import get_current_context
 
             retrieved = get_current_context()
             if retrieved:
@@ -158,7 +158,7 @@ class TestCorrelationTraceparentIntegration:
         except ImportError:
             pytest.skip("Flask not installed")
 
-        from icdev.tools.resilience.correlation import register_correlation_middleware
+        from tools.resilience.correlation import register_correlation_middleware
 
         app = Flask(__name__)
 
@@ -190,7 +190,7 @@ class TestCorrelationTraceparentIntegration:
         except ImportError:
             pytest.skip("Flask not installed")
 
-        from icdev.tools.resilience.correlation import register_correlation_middleware
+        from tools.resilience.correlation import register_correlation_middleware
 
         app = Flask(__name__)
 
@@ -217,7 +217,7 @@ class TestCorrelationTraceparentIntegration:
         except ImportError:
             pytest.skip("Flask not installed")
 
-        from icdev.tools.resilience.correlation import register_correlation_middleware
+        from tools.resilience.correlation import register_correlation_middleware
 
         app = Flask(__name__)
 

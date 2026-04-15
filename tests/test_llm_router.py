@@ -16,8 +16,8 @@ import time
 import pytest
 
 try:
-    from icdev.tools.llm.router import LLMRouter, _expand_env
-    from icdev.tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
+    from tools.llm.router import LLMRouter, _expand_env
+    from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
 
     _IMPORT_OK = True
 except ImportError:

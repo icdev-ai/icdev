@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.devsecops.zta_maturity_scorer import (
+from tools.devsecops.zta_maturity_scorer import (
     PILLARS,
     _generate_recommendation,
     _score_to_maturity,
@@ -109,7 +109,7 @@ FALLBACK_CONFIG = {
 def _patch_config():
     """Patch _load_config to return the deterministic fallback config."""
     return patch(
-        "icdev.tools.devsecops.zta_maturity_scorer._load_config",
+        "tools.devsecops.zta_maturity_scorer._load_config",
         return_value=FALLBACK_CONFIG,
     )
 
@@ -160,13 +160,13 @@ class TestScorePillar:
     """score_pillar: score a single ZTA pillar and persist to DB."""
 
     def test_invalid_pillar_returns_error(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_pillar(PROJECT_ID, "nonexistent_pillar")
         assert "error" in result
         assert "valid_pillars" in result
 
     def test_valid_pillar_returns_score(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_pillar(PROJECT_ID, "network")
         assert "error" not in result
         assert "score" in result
@@ -175,12 +175,12 @@ class TestScorePillar:
         assert result["pillar"] == "network"
 
     def test_score_is_between_0_and_1(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_pillar(PROJECT_ID, "user_identity")
         assert 0.0 <= result["score"] <= 1.0
 
     def test_score_persisted_to_db(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             score_pillar(PROJECT_ID, "data")
         conn = sqlite3.connect(str(zta_db))
         conn.row_factory = sqlite3.Row
@@ -203,7 +203,7 @@ class TestScoreAllPillars:
     """score_all_pillars: score all 7 pillars and compute weighted aggregate."""
 
     def test_returns_all_seven_pillars(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_all_pillars(PROJECT_ID)
         assert "pillar_scores" in result
         assert len(result["pillar_scores"]) == 7
@@ -211,24 +211,24 @@ class TestScoreAllPillars:
             assert p in result["pillar_scores"]
 
     def test_overall_score_present(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_all_pillars(PROJECT_ID)
         assert "overall_score" in result
         assert 0.0 <= result["overall_score"] <= 1.0
 
     def test_overall_maturity_present(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_all_pillars(PROJECT_ID)
         assert result["overall_maturity"] in ("traditional", "advanced", "optimal")
 
     def test_weakest_pillars_identified(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_all_pillars(PROJECT_ID)
         assert "weakest_pillars" in result
         assert len(result["weakest_pillars"]) <= 2
 
     def test_recommendation_included(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             result = score_all_pillars(PROJECT_ID)
         assert "recommendation" in result
         assert isinstance(result["recommendation"], str)
@@ -244,17 +244,17 @@ class TestGetTrend:
     """get_trend: retrieve historical ZTA maturity scores."""
 
     def test_empty_trend(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db):
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db):
             result = get_trend(PROJECT_ID, days=90)
         assert result["project_id"] == PROJECT_ID
         assert result["data_points"] == 0
         assert result["trends"] == {}
 
     def test_trend_after_scoring(self, zta_db):
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db), _patch_config():
             score_pillar(PROJECT_ID, "network")
             score_pillar(PROJECT_ID, "data")
-        with patch("icdev.tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db):
+        with patch("tools.devsecops.zta_maturity_scorer.DB_PATH", zta_db):
             result = get_trend(PROJECT_ID, days=90)
         assert result["data_points"] >= 2
         assert "network" in result["trends"]

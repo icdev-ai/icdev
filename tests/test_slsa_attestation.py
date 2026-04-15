@@ -96,7 +96,7 @@ class TestSLSAProvenance:
     """Tests for SLSA provenance generation."""
 
     def test_generate_provenance_empty_db(self, tmp_db):
-        from icdev.tools.compliance.slsa_attestation_generator import generate_slsa_provenance
+        from tools.compliance.slsa_attestation_generator import generate_slsa_provenance
 
         result = generate_slsa_provenance("proj-test", db_path=tmp_db)
         assert result["project_id"] == "proj-test"
@@ -106,7 +106,7 @@ class TestSLSAProvenance:
         assert result["provenance"]["predicateType"] == "https://slsa.dev/provenance/v1"
 
     def test_generate_provenance_with_evidence(self, populated_db):
-        from icdev.tools.compliance.slsa_attestation_generator import generate_slsa_provenance
+        from tools.compliance.slsa_attestation_generator import generate_slsa_provenance
 
         result = generate_slsa_provenance("proj-test", db_path=populated_db)
         assert result["slsa_level"] >= 2
@@ -115,7 +115,7 @@ class TestSLSAProvenance:
         assert result["evidence"]["version_controlled_source"] is True
 
     def test_provenance_has_subjects(self, populated_db):
-        from icdev.tools.compliance.slsa_attestation_generator import generate_slsa_provenance
+        from tools.compliance.slsa_attestation_generator import generate_slsa_provenance
 
         result = generate_slsa_provenance("proj-test", db_path=populated_db)
         subjects = result["provenance"]["subject"]
@@ -124,7 +124,7 @@ class TestSLSAProvenance:
         assert "sha256" in subjects[0]["digest"]
 
     def test_provenance_build_info(self, populated_db):
-        from icdev.tools.compliance.slsa_attestation_generator import generate_slsa_provenance
+        from tools.compliance.slsa_attestation_generator import generate_slsa_provenance
 
         build_info = {
             "repository": "https://gitlab.mil/test-project",
@@ -142,21 +142,21 @@ class TestSLSALevel:
     """Tests for SLSA level determination."""
 
     def test_level_0_no_evidence(self, tmp_db):
-        from icdev.tools.compliance.slsa_attestation_generator import verify_slsa_level
+        from tools.compliance.slsa_attestation_generator import verify_slsa_level
 
         result = verify_slsa_level("proj-empty", db_path=tmp_db)
         assert result["current_level"] == 0
         assert result["meets_target"] is False
 
     def test_level_verification_gaps(self, tmp_db):
-        from icdev.tools.compliance.slsa_attestation_generator import verify_slsa_level
+        from tools.compliance.slsa_attestation_generator import verify_slsa_level
 
         result = verify_slsa_level("proj-empty", target_level=3, db_path=tmp_db)
         assert len(result["gaps"]) > 0
         assert len(result["recommendations"]) > 0
 
     def test_level_requirements_structure(self):
-        from icdev.tools.compliance.slsa_attestation_generator import SLSA_LEVEL_REQUIREMENTS
+        from tools.compliance.slsa_attestation_generator import SLSA_LEVEL_REQUIREMENTS
 
         assert 0 in SLSA_LEVEL_REQUIREMENTS
         assert 4 in SLSA_LEVEL_REQUIREMENTS
@@ -171,7 +171,7 @@ class TestVEXDocument:
     """Tests for VEX document generation."""
 
     def test_generate_vex_empty(self, tmp_db):
-        from icdev.tools.compliance.slsa_attestation_generator import generate_vex_document
+        from tools.compliance.slsa_attestation_generator import generate_vex_document
 
         result = generate_vex_document("proj-test", db_path=tmp_db)
         assert result["project_id"] == "proj-test"
@@ -180,7 +180,7 @@ class TestVEXDocument:
         assert result["vulnerability_summary"]["total"] == 0
 
     def test_vex_with_vulnerabilities(self, tmp_db):
-        from icdev.tools.compliance.slsa_attestation_generator import generate_vex_document
+        from tools.compliance.slsa_attestation_generator import generate_vex_document
 
         conn = sqlite3.connect(str(tmp_db))
         conn.execute(
@@ -204,7 +204,7 @@ class TestSWFTBundle:
     """Tests for SWFT evidence bundling."""
 
     def test_bundle_empty_db(self, tmp_db):
-        from icdev.tools.compliance.swft_evidence_bundler import bundle_swft_evidence
+        from tools.compliance.swft_evidence_bundler import bundle_swft_evidence
 
         result = bundle_swft_evidence("proj-test", db_path=tmp_db)
         assert result["project_id"] == "proj-test"
@@ -214,21 +214,21 @@ class TestSWFTBundle:
         assert result["summary"]["readiness_pct"] == 0.0
 
     def test_bundle_with_evidence(self, populated_db):
-        from icdev.tools.compliance.swft_evidence_bundler import bundle_swft_evidence
+        from tools.compliance.swft_evidence_bundler import bundle_swft_evidence
 
         result = bundle_swft_evidence("proj-test", db_path=populated_db)
         assert result["summary"]["available"] > 0
         assert result["summary"]["readiness_pct"] > 0
 
     def test_bundle_artifact_categories(self, tmp_db):
-        from icdev.tools.compliance.swft_evidence_bundler import bundle_swft_evidence, SWFT_ARTIFACT_CATEGORIES
+        from tools.compliance.swft_evidence_bundler import bundle_swft_evidence, SWFT_ARTIFACT_CATEGORIES
 
         result = bundle_swft_evidence("proj-test", db_path=tmp_db)
         for category in SWFT_ARTIFACT_CATEGORIES:
             assert category in result["artifacts"]
 
     def test_bundle_integrity_hash(self, tmp_db):
-        from icdev.tools.compliance.swft_evidence_bundler import bundle_swft_evidence
+        from tools.compliance.swft_evidence_bundler import bundle_swft_evidence
 
         result = bundle_swft_evidence("proj-test", db_path=tmp_db)
         assert "integrity" in result
@@ -236,7 +236,7 @@ class TestSWFTBundle:
         assert len(result["integrity"]["bundle_hash"]) == 64
 
     def test_bundle_output_dir(self, populated_db, tmp_path):
-        from icdev.tools.compliance.swft_evidence_bundler import bundle_swft_evidence
+        from tools.compliance.swft_evidence_bundler import bundle_swft_evidence
 
         out_dir = tmp_path / "swft_output"
         result = bundle_swft_evidence("proj-test", output_dir=str(out_dir), db_path=populated_db)
@@ -248,7 +248,7 @@ class TestSWFTValidation:
     """Tests for SWFT evidence validation."""
 
     def test_validate_empty_db(self, tmp_db):
-        from icdev.tools.compliance.swft_evidence_bundler import validate_swft_bundle
+        from tools.compliance.swft_evidence_bundler import validate_swft_bundle
 
         result = validate_swft_bundle("proj-test", db_path=tmp_db)
         assert result["valid"] is False
@@ -256,7 +256,7 @@ class TestSWFTValidation:
         assert len(result["recommendations"]) > 0
 
     def test_validate_with_evidence(self, populated_db):
-        from icdev.tools.compliance.swft_evidence_bundler import validate_swft_bundle
+        from tools.compliance.swft_evidence_bundler import validate_swft_bundle
 
         result = validate_swft_bundle("proj-test", db_path=populated_db)
         # Some evidence should reduce blocking gaps

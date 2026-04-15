@@ -16,7 +16,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 try:
-    from icdev.tools.security.container_scanner import (
+    from tools.security.container_scanner import (
         DOCKERFILE_CHECKS,  # noqa: F401
         _extract_cvss,
         _parse_trivy_output,

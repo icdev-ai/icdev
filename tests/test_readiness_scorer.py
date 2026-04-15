@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from icdev.tools.requirements.readiness_scorer import (
+from tools.requirements.readiness_scorer import (
     _load_weights,
     score_readiness,
     get_score_trend,

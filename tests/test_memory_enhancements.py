@@ -86,7 +86,7 @@ def memory_db(tmp_path):
 
 class TestContentHashDedup:
     def test_compute_content_hash_deterministic(self):
-        from icdev.tools.memory.memory_write import compute_content_hash
+        from tools.memory.memory_write import compute_content_hash
 
         h1 = compute_content_hash("hello world")
         h2 = compute_content_hash("hello world")
@@ -94,14 +94,14 @@ class TestContentHashDedup:
         assert len(h1) == 64  # SHA-256 hex length
 
     def test_compute_content_hash_different_inputs(self):
-        from icdev.tools.memory.memory_write import compute_content_hash
+        from tools.memory.memory_write import compute_content_hash
 
         h1 = compute_content_hash("hello")
         h2 = compute_content_hash("world")
         assert h1 != h2
 
     def test_write_with_dedup_first_write_succeeds(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_write
+        from tools.memory import memory_write
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
@@ -110,7 +110,7 @@ class TestContentHashDedup:
         assert is_dup is False
 
     def test_write_with_dedup_duplicate_returns_existing(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_write
+        from tools.memory import memory_write
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
@@ -121,7 +121,7 @@ class TestContentHashDedup:
         assert id1 == id2
 
     def test_different_users_same_content_no_dedup(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_write
+        from tools.memory import memory_write
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
@@ -132,7 +132,7 @@ class TestContentHashDedup:
         assert id1 != id2
 
     def test_null_user_dedup(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_write
+        from tools.memory import memory_write
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
@@ -168,7 +168,7 @@ class TestUserScopedMemory:
         conn.close()
 
     def test_search_filters_by_user(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_db as mdb
+        from tools.memory import memory_db as mdb
 
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
@@ -180,7 +180,7 @@ class TestUserScopedMemory:
         assert "user2 fact" not in contents
 
     def test_search_without_user_returns_all(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_db as mdb
+        from tools.memory import memory_db as mdb
 
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
@@ -189,7 +189,7 @@ class TestUserScopedMemory:
         assert len(results) >= 3  # All fact entries
 
     def test_list_all_user_scoped(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_db as mdb
+        from tools.memory import memory_db as mdb
 
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
@@ -201,7 +201,7 @@ class TestUserScopedMemory:
         assert "user1 fact" not in contents
 
     def test_hybrid_search_user_scoped(self, memory_db, monkeypatch):
-        from icdev.tools.memory import hybrid_search
+        from tools.memory import hybrid_search
 
         monkeypatch.setattr(hybrid_search, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
@@ -212,7 +212,7 @@ class TestUserScopedMemory:
         assert "user2 fact" not in contents
 
     def test_memory_read_user_scoped(self, memory_db, monkeypatch):
-        from icdev.tools.memory import memory_read
+        from tools.memory import memory_read
 
         monkeypatch.setattr(memory_read, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
@@ -230,7 +230,7 @@ class TestUserScopedMemory:
 
 class TestAutoCapture:
     def test_capture_writes_to_buffer(self, memory_db):
-        from icdev.tools.memory.auto_capture import capture
+        from tools.memory.auto_capture import capture
 
         result = capture("test capture", source="hook", db_path=memory_db)
         assert result["status"] == "captured"
@@ -238,7 +238,7 @@ class TestAutoCapture:
         assert result["buffer_size"] == 1
 
     def test_capture_dedup_in_buffer(self, memory_db):
-        from icdev.tools.memory.auto_capture import capture
+        from tools.memory.auto_capture import capture
 
         r1 = capture("duplicate content", source="hook", db_path=memory_db)
         r2 = capture("duplicate content", source="hook", db_path=memory_db)
@@ -246,7 +246,7 @@ class TestAutoCapture:
         assert r2["status"] == "duplicate"
 
     def test_flush_buffer_to_entries(self, memory_db):
-        from icdev.tools.memory.auto_capture import capture, flush_buffer
+        from tools.memory.auto_capture import capture, flush_buffer
 
         capture("flush me", source="hook", db_path=memory_db)
         capture("flush me too", source="auto", db_path=memory_db)
@@ -268,9 +268,9 @@ class TestAutoCapture:
         assert buf_count == 0
 
     def test_flush_dedup_against_entries(self, memory_db):
-        from icdev.tools.memory.auto_capture import capture, flush_buffer
-        from icdev.tools.memory.memory_write import write_to_db
-        import icdev.tools.memory.memory_write as mw
+        from tools.memory.auto_capture import capture, flush_buffer
+        from tools.memory.memory_write import write_to_db
+        import tools.memory.memory_write as mw
 
         # Monkeypatch DB_PATH for write_to_db
         original = mw.DB_PATH
@@ -290,7 +290,7 @@ class TestAutoCapture:
         mw.DB_PATH = original
 
     def test_buffer_status(self, memory_db):
-        from icdev.tools.memory.auto_capture import capture, buffer_status
+        from tools.memory.auto_capture import capture, buffer_status
 
         capture("entry 1", source="hook", db_path=memory_db)
         capture("entry 2", source="thinking", db_path=memory_db)
@@ -301,7 +301,7 @@ class TestAutoCapture:
         assert status["by_source"]["thinking"] == 1
 
     def test_thinking_source_type(self, memory_db):
-        from icdev.tools.memory.auto_capture import capture
+        from tools.memory.auto_capture import capture
 
         result = capture(
             "chain of thought reasoning",
@@ -328,18 +328,18 @@ class TestAutoCapture:
 
 class TestThinkingType:
     def test_thinking_type_in_valid_types(self):
-        from icdev.tools.memory.memory_write import VALID_TYPES
+        from tools.memory.memory_write import VALID_TYPES
 
         assert "thinking" in VALID_TYPES
 
     def test_thinking_half_life_in_config(self):
-        from icdev.tools.memory.time_decay import DEFAULT_CONFIG
+        from tools.memory.time_decay import DEFAULT_CONFIG
 
         assert "thinking" in DEFAULT_CONFIG["half_lives"]
         assert DEFAULT_CONFIG["half_lives"]["thinking"] == 3
 
     def test_thinking_decays_fast(self):
-        from icdev.tools.memory.time_decay import compute_decay_factor
+        from tools.memory.time_decay import compute_decay_factor
         from datetime import datetime, timezone, timedelta
 
         ref = datetime.now(timezone.utc)
@@ -364,15 +364,15 @@ class TestEmbedMemoryD72:
     def test_get_embedding_client_tries_provider_first(self):
         """Verify embed_memory tries LLM provider before OpenAI."""
         from unittest.mock import patch, MagicMock
-        from icdev.tools.memory import embed_memory
+        from tools.memory import embed_memory
 
         mock_provider = MagicMock()
         mock_provider.embed.return_value = [0.1] * 10
 
-        # The icdev package imports from icdev.tools.llm, so patch BOTH paths
+        # The icdev package imports from tools.llm, so patch BOTH paths
         with (
             patch("tools.llm.get_embedding_provider", return_value=mock_provider),
-            patch("icdev.tools.llm.get_embedding_provider", return_value=mock_provider),
+            patch("tools.llm.get_embedding_provider", return_value=mock_provider),
         ):
             client, name = embed_memory.get_embedding_client()
         assert name == "llm_provider"

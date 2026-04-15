@@ -60,7 +60,7 @@ def db_path(tmp_path):
 
 @pytest.fixture
 def tracer(db_path):
-    from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+    from tools.observability.sqlite_tracer import SQLiteTracer
 
     t = SQLiteTracer(db_path=db_path, agent_id="test-agent", project_id="proj-test")
     t._buffer_size = 1  # Immediate flush for testing
@@ -207,7 +207,7 @@ class TestSQLiteTracer:
         tracer.flush()  # Should not raise
 
     def test_flush_missing_db(self, tmp_path):
-        from icdev.tools.observability.sqlite_tracer import SQLiteTracer
+        from tools.observability.sqlite_tracer import SQLiteTracer
 
         t = SQLiteTracer(db_path=tmp_path / "nonexistent.db")
         t._buffer_size = 1

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from icdev.tools.resilience.circuit_breaker import (
+from tools.resilience.circuit_breaker import (
     CircuitState,
     InMemoryCircuitBreaker,
     circuit_breaker,
@@ -22,7 +22,7 @@ from icdev.tools.resilience.circuit_breaker import (
     _registry,
     _registry_lock,
 )
-from icdev.tools.resilience.errors import ServiceUnavailableError
+from tools.resilience.errors import ServiceUnavailableError
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +267,7 @@ class TestConfigLoading:
         with open(str(config_file), "w") as f:
             yaml.dump(yaml_content, f)
 
-        with patch("icdev.tools.resilience.circuit_breaker.BASE_DIR", tmp_path.parent):
+        with patch("tools.resilience.circuit_breaker.BASE_DIR", tmp_path.parent):
             # Make config_path resolve to our tmp file
             args_dir = tmp_path / "args"
             args_dir.mkdir(exist_ok=True)
@@ -275,8 +275,8 @@ class TestConfigLoading:
             with open(str(real_config), "w") as f:
                 yaml.dump(yaml_content, f)
 
-            with patch("icdev.tools.resilience.circuit_breaker.BASE_DIR", tmp_path):
-                from icdev.tools.resilience.circuit_breaker import _get_service_config
+            with patch("tools.resilience.circuit_breaker.BASE_DIR", tmp_path):
+                from tools.resilience.circuit_breaker import _get_service_config
 
                 cfg = _get_service_config("bedrock")
                 assert cfg["failure_threshold"] == 7

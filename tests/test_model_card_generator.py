@@ -22,7 +22,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 try:
-    from icdev.tools.compliance.model_card_generator import (
+    from tools.compliance.model_card_generator import (
         generate_model_card,
         list_model_cards,
     )
@@ -397,7 +397,7 @@ class TestCLI:
     def test_main_callable(self, card_db):
         """Module main() can be called without crashing."""
         try:
-            from icdev.tools.compliance.model_card_generator import main
+            from tools.compliance.model_card_generator import main
         except ImportError:
             pytest.skip("main() not exposed in module")
 
