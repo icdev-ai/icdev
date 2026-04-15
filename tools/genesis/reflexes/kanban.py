@@ -2892,6 +2892,23 @@ def _verify_task_completed(task_id, claude_output):
         except Exception as exc:
             logger.warning("guard-21: remediation error for %s: %s", task_id, exc)
 
+        # self-debug reflex: if the same failure signature recurs, stop
+        # looping, capture state, ask an LLM to diagnose, create an Oracle
+        # RCA card, and quarantine this task.
+        if not verified:
+            try:
+                from tools.workflow.self_debug import check_and_diagnose
+                diag = check_and_diagnose(task_id, reason, work_dir)
+                if diag:
+                    logger.warning(
+                        "self_debug: quarantined %s — %s (card %s)",
+                        task_id, diag.get("root_cause", "?"),
+                        diag.get("diagnosis_card_id"),
+                    )
+                    reason = f"{reason} | SELF_DEBUG: {diag.get('root_cause', '?')} (card {diag.get('diagnosis_card_id')})"
+            except Exception as exc:
+                logger.warning("self_debug reflex error for %s: %s", task_id, exc)
+
     _write_verification_log(task_id, verified, reason)
     if metrics:
         _update_verification_metrics(task_id, metrics)
