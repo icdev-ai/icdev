@@ -20,8 +20,10 @@ Checks:
  10. sandbox_coverage — docs/security/sandbox-coverage.md references all ingress gap files
  11. direct_anthropic_import — no direct `import anthropic` outside tools/llm/anthropic_provider.py (OPT-44)
  12. karpathy_sync  — 5 canonical Karpathy headings present in all 10 AI platform configs
+ 13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
+(openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
 Follows claude_dir_validator.py pattern (dataclass results, check registry).
 
 Usage:
@@ -2286,6 +2288,136 @@ def check_direct_anthropic_import() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# OpenAPI ↔ Route Parity (B6 coherence gate)
+# ---------------------------------------------------------------------------
+
+
+def check_openapi_parity() -> CoherenceCheck:
+    """Verify the generated OpenAPI spec paths match app.url_map (/api/v1/*).
+
+    Calls generate_openapi_spec(app) from tools.dashboard.api.openapi_generator
+    and diffs the resulting paths dict against the live /api/v1/* rules in
+    app.url_map.
+
+    Drift categories:
+      • missing_from_spec — url_map routes not present in the spec (undocumented)
+      • phantom_in_spec   — spec paths with no matching url_map rule (stale docs)
+
+    Gate: status="fail" (error-severity, api-contract-drift gate) on any drift.
+    Gracefully skips (status="pass") when Flask or the dashboard module cannot
+    be imported (e.g. air-gap environments without Flask installed).
+    """
+    # --- 1. Import guard (air-gap / no-Flask environments) ---
+    try:
+        from tools.dashboard.app import create_app  # type: ignore[import]
+        from tools.dashboard.api.openapi_generator import (  # type: ignore[import]
+            generate_openapi_spec,
+            walk_api_v1_routes,
+        )
+    except ImportError as exc:
+        return CoherenceCheck(
+            check_id="openapi_parity",
+            check_name="OpenAPI \u2194 Route Parity",
+            status="pass",
+            expected=["Flask + dashboard importable"],
+            actual=[f"Skipped: {exc}"],
+            missing=[],
+            extra=[],
+            message="Skipped \u2014 dashboard not importable in this environment (Flask/deps missing)",
+        )
+
+    # --- 2. Instantiate the app ---
+    try:
+        app = create_app()
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="openapi_parity",
+            check_name="OpenAPI \u2194 Route Parity",
+            status="warn",
+            expected=["create_app() succeeds"],
+            actual=[str(exc)[:300]],
+            missing=[],
+            extra=[],
+            message=f"Skipped \u2014 create_app() raised: {type(exc).__name__}: {exc}",
+        )
+
+    # --- 3. Generate the OpenAPI spec ---
+    try:
+        spec = generate_openapi_spec(app)
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="openapi_parity",
+            check_name="OpenAPI \u2194 Route Parity",
+            status="warn",
+            expected=["generate_openapi_spec(app) succeeds"],
+            actual=[str(exc)[:300]],
+            missing=[],
+            extra=[],
+            message=f"Skipped \u2014 generate_openapi_spec() raised: {type(exc).__name__}: {exc}",
+        )
+
+    # --- 4. Collect paths from the spec ---
+    spec_paths: Set[str] = set(spec.get("paths", {}).keys())
+
+    # --- 5. Collect /api/v1/* paths from app.url_map ---
+    url_map_paths: Set[str] = set()
+    try:
+        for _method, openapi_path, _path_params, _endpoint in walk_api_v1_routes(app):
+            url_map_paths.add(openapi_path)
+    except Exception as exc:
+        return CoherenceCheck(
+            check_id="openapi_parity",
+            check_name="OpenAPI \u2194 Route Parity",
+            status="warn",
+            expected=["walk_api_v1_routes(app) succeeds"],
+            actual=[str(exc)[:300]],
+            missing=[],
+            extra=[],
+            message=f"Skipped \u2014 walk_api_v1_routes() raised: {type(exc).__name__}: {exc}",
+        )
+
+    # --- 6. Diff ---
+    missing_from_spec: List[str] = sorted(url_map_paths - spec_paths)
+    phantom_in_spec: List[str] = sorted(spec_paths - url_map_paths)
+
+    if not missing_from_spec and not phantom_in_spec:
+        return CoherenceCheck(
+            check_id="openapi_parity",
+            check_name="OpenAPI \u2194 Route Parity",
+            status="pass",
+            expected=[f"{len(url_map_paths)} /api/v1/* route(s) in url_map"],
+            actual=[f"{len(spec_paths)} spec path(s) \u2014 all match"],
+            missing=[],
+            extra=[],
+            message=(
+                f"All {len(url_map_paths)} /api/v1/* routes present in OpenAPI spec "
+                f"\u2014 no api-contract-drift"
+            ),
+        )
+
+    # Drift detected \u2014 api-contract-drift gate fires (error severity)
+    return CoherenceCheck(
+        check_id="openapi_parity",
+        check_name="OpenAPI \u2194 Route Parity",
+        status="fail",
+        expected=[
+            f"{len(url_map_paths)} url_map route(s) == {len(spec_paths)} spec path(s)"
+        ],
+        actual=(
+            [f"missing_from_spec: {p}" for p in missing_from_spec]
+            + [f"phantom_in_spec: {p}" for p in phantom_in_spec]
+        ),
+        missing=missing_from_spec,
+        extra=phantom_in_spec,
+        message=(
+            f"api-contract-drift: {len(missing_from_spec)} route(s) missing from spec, "
+            f"{len(phantom_in_spec)} phantom path(s) in spec \u2014 "
+            "update generate_openapi_spec() or remove stale path overrides"
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -2306,6 +2438,7 @@ CHECK_REGISTRY = {
     "sandbox_coverage": check_sandbox_coverage,
     "direct_anthropic_import": check_direct_anthropic_import,
     "karpathy_sync": check_karpathy_sync,
+    "openapi_parity": check_openapi_parity,
 }
 
 
@@ -2331,6 +2464,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "sandbox_coverage": "skip",  # doc/decision — requires human judgment
     "direct_anthropic_import": "skip",  # violations require code routing fix
     "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
+    "openapi_parity": "skip",  # route drift requires human fix (add/remove route or update spec)
 }
 
 
