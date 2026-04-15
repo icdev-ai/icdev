@@ -155,3 +155,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Schedule Enterprise Frontend Plan | tools\scripts\schedule_enterprise_frontend_plan.py | Auto-registered: scripts/schedule_enterprise_frontend_plan.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Schedule Alphadesk News Plan | tools\scripts\schedule_alphadesk_news_plan.py | Auto-registered: scripts/schedule_alphadesk_news_plan.py | --json | JSON |

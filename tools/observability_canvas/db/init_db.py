@@ -10,6 +10,7 @@ Set OC_STORAGE_BACKEND=postgresql + OC_PG_* env vars to use PostgreSQL.
 
 import json
 import os
+import sqlite3
 import sys
 import uuid
 from pathlib import Path
@@ -40,8 +41,11 @@ def get_connection():
             return conn
         except ImportError:
             pass
-    # SQLite (default)
-    conn = get_connection(str(DB_PATH))
+    # SQLite (default) — per-canvas DB, distinct from icdev.db
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
