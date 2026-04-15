@@ -1,8 +1,8 @@
 # CUI // SP-CTI
 """tools/dashboard/api/auth \u2014 JWT issuance + validation for /api/v1/*.
 
-**Status:** C1 (design) + C2 (decorator + issuance endpoints) landed.
-C3 adds double-submit CSRF, C4 sweeps decorators onto every blueprint handler.
+**Status:** C1 (design) + C2 (decorator + issuance) + C3 (CSRF double-submit)
+landed. C4 sweeps decorators onto every blueprint handler.
 
 Reference: tools/saas/auth (inspected in C1)
 ============================================
@@ -95,6 +95,7 @@ from typing import Any, Callable
 
 import jwt  # PyJWT
 from flask import Blueprint, g, jsonify, request
+from urllib.parse import urlsplit
 
 logger = logging.getLogger("icdev.dashboard.api.auth")
 
@@ -355,13 +356,125 @@ def refresh_token():
     return jsonify({"access": access})
 
 
+# ---------------------------------------------------------------------------
+# CSRF double-submit (C3)
+# ---------------------------------------------------------------------------
+# Pattern:
+#   - On any GET response, set a ``csrftoken`` cookie (httponly=False,
+#     SameSite=Strict) with a random 32-byte urlsafe token.
+#   - On state-changing methods (POST/PUT/PATCH/DELETE), require the client
+#     to echo the cookie value in the ``X-CSRF-Token`` header.
+#   - Cookie + header match \u2192 request originated from JS running on this
+#     origin (attacker can't read the cookie cross-origin, so can't echo it).
+#
+# Scope of enforcement:
+#   - Only same-origin browser requests (Origin or Referer matches request
+#     Host). Non-browser clients (curl, CI, mobile) have no Origin/Referer
+#     and are skipped.
+#   - GET/HEAD/OPTIONS are always skipped (they shouldn't cause side effects).
+#
+# Why this matters for a JWT-in-Bearer design:
+#   - Bearer-in-header is already CSRF-immune (browsers don't auto-attach
+#     Authorization headers cross-origin). So today this is belt+suspenders.
+#   - But if we ever move the access token to an httpOnly cookie for XSS
+#     resistance (a sensible Phase-H upgrade), CSRF becomes load-bearing.
+#     C3 ships the machinery now so that switch is purely server-side.
+
+CSRF_COOKIE_NAME = "csrftoken"
+CSRF_HEADER_NAME = "X-CSRF-Token"
+_CSRF_STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _is_same_origin_browser(req) -> bool:
+    """True if ``Origin`` (or ``Referer`` as fallback) matches the request host.
+
+    Browser sends ``Origin`` on cross-origin state-changing requests and on
+    same-origin POST (per fetch spec). Some older browsers send only
+    ``Referer``. No header at all \u2192 non-browser client (curl, etc.).
+    """
+    origin = req.headers.get("Origin") or req.headers.get("Referer") or ""
+    if not origin:
+        return False
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    origin_host = parsed.netloc
+    return bool(origin_host) and origin_host == req.host
+
+
+def _should_enforce_csrf(req) -> bool:
+    if req.method not in _CSRF_STATE_CHANGING_METHODS:
+        return False
+    return _is_same_origin_browser(req)
+
+
+def csrf_protect(fn: Callable) -> Callable:
+    """Decorator: enforce double-submit CSRF on same-origin browser writes.
+
+    Non-browser clients (no Origin/Referer) bypass this check \u2014 their
+    legitimacy is already established by the JWT bearer token. Browser
+    clients MUST supply both cookie and matching header.
+    """
+    @wraps(fn)
+    def _wrapped(*args, **kwargs):
+        if _should_enforce_csrf(request):
+            cookie_val = request.cookies.get(CSRF_COOKIE_NAME, "")
+            header_val = request.headers.get(CSRF_HEADER_NAME, "")
+            if (
+                not cookie_val
+                or not header_val
+                or not secrets.compare_digest(cookie_val, header_val)
+            ):
+                return jsonify({
+                    "error": "CSRF token missing or invalid",
+                    "code": "CSRF_INVALID",
+                }), 403
+        return fn(*args, **kwargs)
+    return _wrapped
+
+
+def install_csrf_cookie_middleware(app) -> None:
+    """Register a Flask after_request hook that seeds the CSRF cookie.
+
+    On any safe GET response, set ``csrftoken`` if the request didn't carry
+    one. Cookie attributes:
+      - ``httponly=False``   \u2014 JS must read it to echo in header
+      - ``samesite='Strict'`` \u2014 never sent cross-origin
+      - ``secure=True``       \u2014 HTTPS-only; auto-disabled in dev when
+        ICDEV_DEV_ALLOW_INSECURE_COOKIES=true is set
+    """
+    allow_insecure = os.environ.get(
+        "ICDEV_DEV_ALLOW_INSECURE_COOKIES", ""
+    ).strip().lower() in ("1", "true", "yes")
+
+    @app.after_request
+    def _seed_csrf_cookie(resp):
+        if request.method == "GET" and CSRF_COOKIE_NAME not in request.cookies:
+            token = secrets.token_urlsafe(24)
+            resp.set_cookie(
+                CSRF_COOKIE_NAME,
+                token,
+                httponly=False,
+                samesite="Strict",
+                secure=not allow_insecure,
+                max_age=int(ACCESS_TTL.total_seconds()),
+                path="/",
+            )
+        return resp
+
+
 __all__ = [
     "ACCESS_TTL",
+    "CSRF_COOKIE_NAME",
+    "CSRF_HEADER_NAME",
     "JWT_ALGORITHM",
     "PUBLIC_ENDPOINTS",
     "REFRESH_TTL",
     "auth_api",
+    "csrf_protect",
     "decode_token",
+    "install_csrf_cookie_middleware",
     "is_public_endpoint",
     "issue_access_token",
     "issue_refresh_token",

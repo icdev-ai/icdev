@@ -81,9 +81,10 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     #  @require_jwt lives here; C4 sweeps it onto other blueprints.       #
     # ------------------------------------------------------------------ #
     try:
-        from tools.dashboard.api.auth import auth_api
+        from tools.dashboard.api.auth import auth_api, install_csrf_cookie_middleware
         app.register_blueprint(auth_api, url_prefix="/api/v1")
-        logger.info("auth_api registered at /api/v1/auth/token + /api/v1/auth/refresh")
+        install_csrf_cookie_middleware(app)
+        logger.info("auth_api registered at /api/v1/auth/token + /api/v1/auth/refresh; csrf cookie middleware installed")
     except Exception as exc:
         logger.warning("Failed to mount auth_api: %s", exc)
 
