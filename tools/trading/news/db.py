@@ -135,7 +135,7 @@ def insert_news_item(
     ph = sql_placeholder(conn)
     try:
         existing = conn.execute(
-            f"SELECT id FROM ad_news_items WHERE id = {ph}", (item["id"],)
+            f"SELECT id FROM ad_news_items WHERE id = {ph}", (item["id"],)  # nosec B608 -- ph is placeholder
         ).fetchone()
         if existing:
             return False
@@ -146,7 +146,7 @@ def insert_news_item(
                  summary, category, impact_level, net_direction,
                  mentioned_tickers, classifier_version)
                 VALUES
-                ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",  # nosec B608 -- ph is placeholder
             (
                 item["id"],
                 item.get("source", ""),
@@ -180,13 +180,13 @@ def list_news(
     try:
         if category:
             rows = conn.execute(
-                f"SELECT * FROM ad_news_items WHERE category = {ph}"
+                f"SELECT * FROM ad_news_items WHERE category = {ph}"  # nosec B608 -- ph is placeholder
                 f" ORDER BY published_at DESC LIMIT {ph}",
                 (category, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                f"SELECT * FROM ad_news_items ORDER BY published_at DESC LIMIT {ph}",
+                f"SELECT * FROM ad_news_items ORDER BY published_at DESC LIMIT {ph}",  # nosec B608 -- ph is placeholder
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -203,7 +203,7 @@ def get_news_by_id(
     ph = sql_placeholder(conn)
     try:
         row = conn.execute(
-            f"SELECT * FROM ad_news_items WHERE id = {ph}", (item_id,)
+            f"SELECT * FROM ad_news_items WHERE id = {ph}", (item_id,)  # nosec B608 -- ph is placeholder
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -227,7 +227,7 @@ def insert_scenario_link(
             f"""INSERT INTO ad_news_scenario_links
                 (news_id, scenario_run_id, scenario_key,
                  match_confidence, match_reason, created_at)
-                VALUES ({ph},{ph},{ph},{ph},{ph},{now})""",
+                VALUES ({ph},{ph},{ph},{ph},{ph},{now})""",  # nosec B608 -- ph is placeholder
             (news_id, scenario_run_id, scenario_key, match_confidence, match_reason),
         )
         conn.commit()
@@ -256,7 +256,7 @@ def insert_cluster(
             f"""INSERT INTO ad_news_clusters
                 (scenario_key, category, window_hours, item_ids,
                  cumulative_score, first_seen, last_seen, status)
-                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",  # nosec B608 -- ph is placeholder
             (
                 scenario_key,
                 category,
@@ -285,7 +285,7 @@ def list_active_clusters(
     try:
         if status:
             rows = conn.execute(
-                f"SELECT * FROM ad_news_clusters WHERE status = {ph}"
+                f"SELECT * FROM ad_news_clusters WHERE status = {ph}"  # nosec B608 -- ph is placeholder
                 " ORDER BY last_seen DESC",
                 (status,),
             ).fetchall()
