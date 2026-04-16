@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS ad_news_clusters (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     scenario_key     TEXT,
     category         TEXT,
-    window_hours     INTEGER,
+    time_window      TEXT,
     item_ids         TEXT NOT NULL DEFAULT '[]',
     cumulative_score REAL,
     first_seen       TEXT,

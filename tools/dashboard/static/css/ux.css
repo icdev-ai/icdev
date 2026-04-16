@@ -785,9 +785,51 @@
     color: white;
     font-size: 0.65rem;
     font-weight: 700;
-    cursor: help;
+    cursor: pointer;
     margin-left: 6px;
     vertical-align: middle;
+    position: relative;
+    user-select: none;
+    transition: background 0.15s, transform 0.1s;
+}
+.help-icon:hover {
+    background: #5da0e9;
+    transform: scale(1.1);
+}
+.help-icon:active {
+    transform: scale(0.95);
+}
+
+/* Help popover — shown on click */
+.help-popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1c2333;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.8rem;
+    font-weight: 400;
+    line-height: 1.45;
+    width: max-content;
+    max-width: 320px;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    pointer-events: auto;
+    white-space: normal;
+    text-align: left;
+}
+.help-popover::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #30363d;
 }
 
 
