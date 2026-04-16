@@ -2474,6 +2474,53 @@ def _run_verify_checks(task_id, claude_output):
             except Exception:
                 pass
 
+        # Fallback D: scan-only tasks (codelens, coherence check, etc.) write
+        # results to .tmp/ (gitignored) and are NOT expected to produce git
+        # commits — they verify code quality without modifying files. Trust the
+        # task if its description names a known scan command AND the output
+        # contains a clear PASS signal (or a result artifact exists on disk).
+        # Root cause fixed: efa-E-gate-1-codelens stuck in loop because the
+        # verification demanded git commits from a scan-only task (self_debug
+        # card diag-970d8445f8).
+        _SCAN_CMDS = [
+            "codelens.py", "coherence_checker.py", "health_check.py",
+            "e2e_full_dashboard.py",
+        ]
+        _scan_desc = ""
+        try:
+            _c_sd = get_connection()
+            _r_sd = _c_sd.execute(
+                "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            _c_sd.close()
+            _scan_desc = ((_r_sd["description"] or "").lower() if _r_sd else "")
+        except Exception:
+            pass
+        if any(cmd in _scan_desc for cmd in _SCAN_CMDS):
+            # Strongest signal: result artifact file in .tmp/
+            _tmp_dir = BASE_DIR / ".tmp"
+            _id_prefix = re.sub(r"-(codelens|coherence|e2e|scan)$", "", task_id)
+            _artifacts = (
+                list(_tmp_dir.glob(f"codelens-{task_id}*.json"))
+                + list(_tmp_dir.glob(f"codelens-{_id_prefix}*.json"))
+            )
+            if _artifacts:
+                return True, f"Verified: scan artifact exists ({_artifacts[0].name})"
+            # Artifact may be gone (ephemeral) — fall back to output PASS signal.
+            # These strings are emitted by codelens.py / coherence_checker.py on
+            # success and are specific enough to avoid false positives.
+            _pass_signals = [
+                '"status": "pass"', "gate: pass", "gate: **pass**",
+                "scan complete \u2014 pass", "codelens scan complete",
+                "| status | **pass**", "codelens gate: pass",
+                "coherence gate: pass", "health check: pass",
+            ]
+            if any(sig in output_lower for sig in _pass_signals):
+                return True, (
+                    "Verified: scan task output contains PASS signal "
+                    "(no git commits expected for scan-only tasks)"
+                )
+
         # No commits on the task branch — uncommitted changes are NOT
         # sufficient evidence of completion (dirty-tree fallback removed).
         return False, (
