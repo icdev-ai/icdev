@@ -178,15 +178,19 @@ def list_news(
     conn = get_db(db_path)
     ph = sql_placeholder(conn)
     try:
+        # Sort: HIGH impact first, then by most recent
+        order = ("ORDER BY CASE impact_level "
+                 "WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, "
+                 "published_at DESC")
         if category:
             rows = conn.execute(
                 f"SELECT * FROM ad_news_items WHERE category = {ph}"  # nosec B608 -- ph is placeholder
-                f" ORDER BY published_at DESC LIMIT {ph}",
+                f" {order} LIMIT {ph}",
                 (category, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                f"SELECT * FROM ad_news_items ORDER BY published_at DESC LIMIT {ph}",  # nosec B608 -- ph is placeholder
+                f"SELECT * FROM ad_news_items {order} LIMIT {ph}",  # nosec B608 -- ph is placeholder
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
