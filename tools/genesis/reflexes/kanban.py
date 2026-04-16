@@ -2301,22 +2301,32 @@ def _run_verify_checks(task_id, claude_output):
     # EXCEPTION: if the agent signaled a legitimate no-change outcome
     # (false-positive gap), skip this check and defer to task-specific
     # verification downstream which will confirm the expected state.
+    # EXCEPTION 2 (self-debug lesson): research/test/chore tasks may
+    # legitimately produce zero file output (e.g. "verify dependency
+    # available", "run a check"). Per V&V policy these are fail-open.
+    # Only apply zero-path guard to task types that imply file creation.
+    _FILE_CREATION_TASK_TYPES = {"feature", "fix", "build", "refactor"}
     if not claimed_paths and not has_nochange_signal:
         try:
             _c = get_connection()
             _row = _c.execute(
-                "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
+                "SELECT description, task_type FROM kanban_tasks WHERE id = ?", (task_id,)
             ).fetchone()
             _c.close()
             task_desc = (_row["description"] or "").lower() if _row else ""
+            task_type = (_row["task_type"] or "").lower() if _row else ""
         except Exception:
             task_desc = ""
-        _creation_kws = ["creat", "generat", "add ", "implement", "write ", "build "]
-        if any(kw in task_desc for kw in _creation_kws):
-            return False, (
-                "Task description indicates file creation but agent claimed "
-                "0 file paths in output — likely phantom completion"
-            )
+            task_type = ""
+        if task_type not in _FILE_CREATION_TASK_TYPES:
+            pass  # research/test/chore/etc — skip zero-path guard
+        else:
+            _creation_kws = ["creat", "generat", "add ", "implement", "write ", "build "]
+            if any(kw in task_desc for kw in _creation_kws):
+                return False, (
+                    "Task description indicates file creation but agent claimed "
+                    "0 file paths in output — likely phantom completion"
+                )
 
     if claimed_paths:
         existing, claimed, missing = _verify_claimed_files_exist(
