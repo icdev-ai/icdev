@@ -11,4 +11,5 @@
 | Code Quality Page | tools/dashboard/templates/code_quality.html | Dashboard: stat grid (7 metrics), SVG trend chart, smell bar chart, complex functions table, runtime feedback table | (template) | HTML page |
 | Code Quality Config | args/code_quality_config.yaml | Smell thresholds, maintainability weights (D337), audit thresholds, scan exclusion dirs | (config) | YAML config |
 | Architecture Audit | tools/analysis/architecture_audit.py | OPT-54 — Ousterhout deep-module analysis + import-coupling cluster detection. Computes depth_ratio (public_symbols / impl_lines) across all .py files, classifies deep/balanced/shallow, finds tightly-coupled package pairs | --path, --format markdown\|json, --top, --min-edges, --out, --json | RFC-style markdown or JSON report |
+| CodeLens | tools/code_intelligence/codelens.py | Phase D exit validation gate (Phase 52 / D331-D337). Thin aggregator that delegates to code_analyzer.py for AST self-analysis; returns combined JSON report with pass/fail gate status | --all, --project-dir, --file, --json | Gate JSON {gate, status, reason, target, analysis} |
 
