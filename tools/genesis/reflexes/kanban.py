@@ -2268,6 +2268,10 @@ def _run_verify_checks(task_id, claude_output):
         m in output_lower[:2000] for m in soft_nochange_markers
     )
 
+    # Task types that are expected to produce file-level output. Others
+    # (research, test, chore) may legitimately produce only pass/fail.
+    _FILE_CREATION_TASK_TYPES = {"feature", "fix", "build", "refactor"}
+
     # Check 3: Evidence of file changes in output
     file_change_markers = [
         "created",
@@ -2287,9 +2291,21 @@ def _run_verify_checks(task_id, claude_output):
     ]
     has_file_evidence = any(m in output_lower for m in file_change_markers)
     if not has_file_evidence and not has_nochange_signal:
-        # Only hard-fail for "no evidence" when the agent ALSO didn't claim
-        # a legitimate no-change resolution.
-        return False, "No evidence of file changes in output"
+        # Only hard-fail for task types that SHOULD produce file changes.
+        # research/test/chore tasks may legitimately produce only pass/fail
+        # output (e.g. codelens scan, pytest run, dependency check) with
+        # no file mutations. Per V&V policy these are fail-open.
+        try:
+            _c3 = get_connection()
+            _r3 = _c3.execute(
+                "SELECT task_type FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            _c3.close()
+            _tt = (_r3["task_type"] or "").lower() if _r3 else ""
+        except Exception:
+            _tt = ""
+        if _tt in _FILE_CREATION_TASK_TYPES:
+            return False, "No evidence of file changes in output"
 
     # Check 4 — OPT-76 phantom guard: extract every path the agent
     # claims to have touched and verify at least SOME of them exist.
@@ -2305,7 +2321,6 @@ def _run_verify_checks(task_id, claude_output):
     # legitimately produce zero file output (e.g. "verify dependency
     # available", "run a check"). Per V&V policy these are fail-open.
     # Only apply zero-path guard to task types that imply file creation.
-    _FILE_CREATION_TASK_TYPES = {"feature", "fix", "build", "refactor"}
     if not claimed_paths and not has_nochange_signal:
         try:
             _c = get_connection()
