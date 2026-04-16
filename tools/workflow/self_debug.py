@@ -309,13 +309,17 @@ def _create_diagnostic_card(source_task_id: str, reason: str,
     now = datetime.now(timezone.utc).isoformat()
     try:
         with get_connection() as conn:
+            # status='suggested' — visible on the kanban board for human /
+            # Oracle review, but NOT auto-dispatched. Prevents the scheduler
+            # from trying to "run" an RCA card as a code task (which would
+            # fail with "no commits" since there's no implementation to do).
             conn.execute(
                 "INSERT INTO kanban_tasks "
                 "(id, title, description, task_type, priority, status, "
                 " executor_type, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (new_id, title, body, "chore", "critical",
-                 "backlog", "claude_cli", now, now),
+                 "suggested", "claude_cli", now, now),
             )
             conn.commit()
     except Exception as exc:
@@ -328,12 +332,16 @@ QUARANTINE_PREFIX = "QUARANTINED by self_debug"
 
 
 def _quarantine_task(task_id: str, diag_id: Optional[str], diag: Dict[str, Any]) -> None:
-    """Annotate the looping task so the scheduler stops re-dispatching it.
+    """Move the looping task to status='suggested' so the scheduler stops
+    dispatching it. Also annotates last_failure_reason so operators can see
+    why.
 
-    ICDEV's kanban_tasks.status CHECK constraint doesn't allow 'blocked',
-    so we mark quarantine via last_failure_reason (the scheduler's
-    get_ready_tasks query filters on this prefix) and bump failure_count
-    past MAX_FAILURES_BEFORE_DECOMPOSITION so existing gates also notice.
+    'suggested' is chosen because: (a) it's in the existing status CHECK
+    constraint — no schema change; (b) the scheduler's get_due_tasks
+    query only picks up 'backlog' + 'scheduled', so 'suggested' tasks
+    stay visible on the board but aren't auto-dispatched; (c) unlike
+    annotation-only quarantines, it survives the state-machine paths
+    that reset failure_count / last_failure_reason.
     """
     try:
         from tools.db.storage import get_connection
@@ -348,9 +356,9 @@ def _quarantine_task(task_id: str, diag_id: Optional[str], diag: Dict[str, Any])
     try:
         with get_connection() as conn:
             conn.execute(
-                "UPDATE kanban_tasks SET last_failure_reason = ?, "
-                "failure_count = 999, updated_at = ? WHERE id = ?",
-                (annotation, now, task_id),
+                "UPDATE kanban_tasks SET status = ?, "
+                "last_failure_reason = ?, updated_at = ? WHERE id = ?",
+                ("suggested", annotation, now, task_id),
             )
             conn.commit()
     except Exception as exc:

@@ -325,16 +325,40 @@ def _create_worktree(task_id: str) -> Optional[str]:
 
     try:
         # Create a new branch from HEAD for this task
-        _sp.run(
+        result = _sp.run(
             ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
             timeout=30,
         )
-        if worktree_path.exists():
-            logger.info("Created worktree for %s at %s", task_id, worktree_path)
-            return str(worktree_path)
+        if result.returncode != 0:
+            logger.warning(
+                "git worktree add failed for %s (rc=%d): %s",
+                task_id, result.returncode, result.stderr.strip(),
+            )
+            # Directory may have been created as an empty shell — prune it so
+            # the next dispatch starts clean rather than hitting the orphan path.
+            import shutil as _shutil
+            _shutil.rmtree(worktree_path, ignore_errors=True)
+            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
+            return None
+        # Verify the worktree was actually registered: git populates a .git
+        # *file* (not a directory) in the worktree root on success.
+        if not (worktree_path / ".git").exists():
+            logger.warning(
+                "Worktree dir created for %s but .git file is missing — "
+                "treating as failed registration and cleaning up",
+                task_id,
+            )
+            import shutil as _shutil
+            _shutil.rmtree(worktree_path, ignore_errors=True)
+            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
+            return None
+        logger.info("Created worktree for %s at %s", task_id, worktree_path)
+        return str(worktree_path)
     except Exception as exc:
         logger.warning("Worktree creation failed for %s: %s", task_id, exc)
 
