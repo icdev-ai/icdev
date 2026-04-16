@@ -14,5 +14,12 @@ Config lives at args/sharepoint.yaml (E1).
 from __future__ import annotations
 
 from tools.sharepoint.client import SharePointClient, SharePointAuthError, SharePointError
+from tools.sharepoint.browser_fallback import fetch_classic_page, FallbackDisabledError
 
-__all__ = ["SharePointClient", "SharePointAuthError", "SharePointError"]
+__all__ = [
+    "SharePointClient",
+    "SharePointAuthError",
+    "SharePointError",
+    "fetch_classic_page",
+    "FallbackDisabledError",
+]
