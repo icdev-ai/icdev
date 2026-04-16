@@ -99,6 +99,7 @@ MAX_EXECUTION_SECONDS = 900  # 15 minutes — guard-6: lowered from 1800
 VERIFICATION_MIN_BUDGET_SECONDS = 30   # verification pipeline can take ~10-25s
 REMEDIATION_MIN_BUDGET_SECONDS = 60    # remediation + re-verify can take ~30-50s
 SELF_DEBUG_MIN_BUDGET_SECONDS = 15     # self-debug dispatch is lightweight but still costs time
+MAX_TIMEOUT_RETRIES = 3               # hard-quarantine a task after this many identical timeouts
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
 
@@ -283,6 +284,39 @@ def _clear_retry_count(task_id: str):
     retry_file = PROMPT_DIR / f"{task_id}.retries"
     if retry_file.exists():
         retry_file.unlink(missing_ok=True)
+
+
+def _get_timeout_count(task_id: str) -> int:
+    """Return the number of times this task has been killed for timeout."""
+    timeout_file = PROMPT_DIR / f"{task_id}.timeouts"
+    if timeout_file.exists():
+        try:
+            return int(timeout_file.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            return 0
+    return 0
+
+
+def _increment_timeout_count(task_id: str) -> int:
+    """Increment and return the per-task timeout counter."""
+    _ensure_prompt_dir()
+    timeout_file = PROMPT_DIR / f"{task_id}.timeouts"
+    count = 0
+    if timeout_file.exists():
+        try:
+            count = int(timeout_file.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            count = 0
+    count += 1
+    timeout_file.write_text(str(count), encoding="utf-8")
+    return count
+
+
+def _clear_timeout_count(task_id: str):
+    """Remove timeout counter on task success or quarantine."""
+    timeout_file = PROMPT_DIR / f"{task_id}.timeouts"
+    if timeout_file.exists():
+        timeout_file.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -3221,7 +3255,39 @@ def _check_completed():
                     proc.wait(timeout=10)
                 except Exception:
                     pass
-                _move_task(task_id, "backlog")
+                # guard-timeout-retry: track how many times this exact task has
+                # been killed for timeout. After MAX_TIMEOUT_RETRIES identical
+                # timeouts, hard-quarantine to 'suggested' so the scheduler
+                # stops burning 900s slots on a structurally broken task.
+                # This fires BEFORE self_debug's recurrence check (threshold=3)
+                # so both mechanisms are belt-and-suspenders.
+                _tout_count = _increment_timeout_count(task_id)
+                _timeout_reason = (
+                    f"TIMEOUT after {int(elapsed)}s "
+                    f"(max {MAX_EXECUTION_SECONDS}s) — task exceeded dispatch budget"
+                )
+                if _tout_count >= MAX_TIMEOUT_RETRIES:
+                    _move_task(
+                        task_id, "suggested",
+                        actor="scheduler",
+                        reason=(
+                            f"hard-quarantine: timed out {_tout_count}× "
+                            f"(max {MAX_TIMEOUT_RETRIES}) — "
+                            + _timeout_reason
+                        ),
+                    )
+                    _clear_timeout_count(task_id)
+                    print(
+                        f"  Kanban: {task_id} HARD-QUARANTINE — "
+                        f"timed out {_tout_count}× ({MAX_TIMEOUT_RETRIES} max); "
+                        f"moved to suggested"
+                    )
+                else:
+                    _move_task(task_id, "backlog")
+                    print(
+                        f"  Kanban: {task_id} timeout {_tout_count}/"
+                        f"{MAX_TIMEOUT_RETRIES} — returned to backlog"
+                    )
                 # Build task dict for notification
                 task_dict = {"id": task_id, "title": task_id}
                 try:
@@ -3240,10 +3306,11 @@ def _check_completed():
                     from tools.notifications.adapters.telegram import (
                         send as tg_send,
                     )
-
+                    _tg_dest = "quarantined" if _tout_count >= MAX_TIMEOUT_RETRIES else "backlog"
                     tg_send(
                         f"TIMEOUT: {task_dict.get('title', task_id)[:60]}",
-                        f"Task killed after {int(elapsed)}s — returned to backlog",
+                        f"Task killed after {int(elapsed)}s — {_tg_dest} "
+                        f"(timeout {_tout_count}/{MAX_TIMEOUT_RETRIES})",
                         severity="warning",
                     )
                 except Exception:
@@ -3251,12 +3318,8 @@ def _check_completed():
                 # self-debug reflex: timeouts are their own recurrence class
                 try:
                     from tools.workflow.self_debug import check_and_diagnose
-                    timeout_reason = (
-                        f"TIMEOUT after {int(elapsed)}s "
-                        f"(max {MAX_EXECUTION_SECONDS}s) — task exceeded dispatch budget"
-                    )
                     work_dir = _worktrees.get(task_id) or str(BASE_DIR)
-                    check_and_diagnose(task_id, timeout_reason, work_dir)
+                    check_and_diagnose(task_id, _timeout_reason, work_dir)
                 except Exception as exc:
                     logger.warning("self_debug reflex error on timeout for %s: %s", task_id, exc)
                 del _running[task_id]
@@ -3413,6 +3476,7 @@ def _check_completed():
                         )
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
+                    _clear_timeout_count(task_id)
                 else:
                     print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
                     # guard-18: track failure count; flag for decomposition
@@ -3469,6 +3533,7 @@ def _check_completed():
                     prompt_path.unlink()
                 _clear_retry_count(task_id)
                 _clear_resume_at(task_id)
+                _clear_timeout_count(task_id)
                 print(f"  Kanban: {task_id} completed (exit {ret}, verified={verified})")
 
                 # ── WORKTREE CLEANUP (only on verified done) ─────────
