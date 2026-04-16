@@ -842,6 +842,8 @@ def _get_due_tasks() -> list:
             "WHERE kt.status = 'backlog' "
             "  AND (kt.updated_at IS NULL "
             "       OR kt.updated_at <= datetime('now', '-10 minutes')) "
+            "  AND (kt.last_failure_reason IS NULL "
+            "       OR kt.last_failure_reason NOT LIKE ?) "
             f"  AND {dep_clause} "  # nosec B608 -- internal constant
             "ORDER BY "
             "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
@@ -852,7 +854,7 @@ def _get_due_tasks() -> list:
             "  ELSE 3 END, "
             "kt.created_at ASC "
             "LIMIT ?",
-            (slots,),
+            ("QUARANTINED by self_debug%", slots),
         ).fetchall()
         result.extend(dict(r) for r in backlog)
 
@@ -2995,6 +2997,17 @@ def _check_completed():
                     )
                 except Exception:
                     pass
+                # self-debug reflex: timeouts are their own recurrence class
+                try:
+                    from tools.workflow.self_debug import check_and_diagnose
+                    timeout_reason = (
+                        f"TIMEOUT after {int(elapsed)}s "
+                        f"(max {MAX_EXECUTION_SECONDS}s) — task exceeded dispatch budget"
+                    )
+                    work_dir = _worktrees.get(task_id) or str(BASE_DIR)
+                    check_and_diagnose(task_id, timeout_reason, work_dir)
+                except Exception as exc:
+                    logger.warning("self_debug reflex error on timeout for %s: %s", task_id, exc)
                 del _running[task_id]
                 _dispatch_times.pop(task_id, None)
                 _dispatch_times.pop(task_id, None)

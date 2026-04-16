@@ -168,3 +168,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Wheel Vendor | tools\airgap\wheel_vendor.py | Auto-registered: airgap/wheel_vendor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Self Debug | tools\workflow\self_debug.py | Auto-registered: workflow/self_debug.py | --json | JSON |
