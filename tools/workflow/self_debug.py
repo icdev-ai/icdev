@@ -365,6 +365,46 @@ def _quarantine_task(task_id: str, diag_id: Optional[str], diag: Dict[str, Any])
         logger.warning("self_debug: failed to quarantine %s: %s", task_id, exc)
 
 
+def _persist_lesson(task_id: str, reason: str, diag: Dict[str, Any]) -> Optional[int]:
+    """Write a one-paragraph lesson to the memory DB so future sessions know
+    about this recurrence pattern without re-discovering it.
+
+    Stored as type='insight'. Dedup is automatic (SHA-256 on content) — if
+    the same lesson has already been recorded, this is a no-op.
+    """
+    try:
+        from tools.memory.memory_write import write_to_db
+    except Exception as exc:
+        logger.warning("self_debug: memory_write import failed: %s", exc)
+        return None
+    sig = failure_signature(reason)
+    suspects = ", ".join(diag.get("suspect_files") or []) or "(none identified)"
+    lesson = (
+        f"[self_debug lesson, sig={sig}] Task {task_id} hit a recurring "
+        f"failure. Root cause: {diag.get('root_cause', '?')} "
+        f"Recommendation: {diag.get('recommendation', '?')}. "
+        f"Suspect code: {suspects}. "
+        f"Patch hint: {diag.get('patch_hint', '')}. "
+        f"Normalized signature above can be matched against future failures "
+        f"to recognize the same structural pattern."
+    )
+    try:
+        entry_id, dup = write_to_db(
+            content=lesson,
+            entry_type="insight",
+            importance=8,
+            source="auto",
+        )
+        if dup:
+            logger.info("self_debug: lesson already recorded (entry %s)", entry_id)
+        else:
+            logger.info("self_debug: persisted lesson as memory entry %s", entry_id)
+        return entry_id
+    except Exception as exc:
+        logger.warning("self_debug: failed to persist lesson: %s", exc)
+        return None
+
+
 def _notify(task_id: str, diag_id: Optional[str], diag: Dict[str, Any]) -> None:
     try:
         from tools.notifications.adapters.telegram import send
@@ -399,7 +439,9 @@ def check_and_diagnose(task_id: str, reason: str, cwd: str,
     diag = diagnose(snap)
     diag_id = _create_diagnostic_card(task_id, reason, snap, diag)
     _quarantine_task(task_id, diag_id, diag)
+    lesson_id = _persist_lesson(task_id, reason, diag)
     _notify(task_id, diag_id, diag)
+    diag["lesson_entry_id"] = lesson_id
     # Clear history so a future re-queue starts fresh (after human/Oracle acts)
     try:
         _history_path(task_id).unlink(missing_ok=True)
