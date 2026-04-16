@@ -662,6 +662,36 @@ def build_strategy(
     else:
         regime = "neutral"
 
+    # SROR regime overlay: tier weights and quality gates tighten in
+    # CAUTION/DANGER/CRISIS regardless of macro classification.
+    try:
+        from tools.trading.market_intel.regime_lens import get_regime_context
+        sror_ctx = get_regime_context(conn)
+    except Exception:
+        sror_ctx = None
+
+    # Compute effective tier weights for this run. Default = baseline
+    # TIER_WEIGHTS midpoints; SROR overlays push toward hedge in danger and
+    # toward opportunistic in opportunity.
+    effective_tier_weights = dict(TIER_WEIGHTS)
+    if sror_ctx is not None and (sror_ctx.is_dangerous() or sror_ctx.is_opportunity()):
+        hedge_floor = sror_ctx.hedge_tier_floor()
+        opp_cap = sror_ctx.opportunistic_tier_cap()
+        # Re-target hedge midpoint up, opportunistic midpoint to its cap
+        effective_tier_weights["hedge"] = (hedge_floor, hedge_floor + 0.05)
+        effective_tier_weights["opportunistic"] = (max(0.0, opp_cap - 0.05), opp_cap)
+        # Adjust core/tactical to keep total = 1.0
+        used = (
+            effective_tier_weights["hedge"][0] + effective_tier_weights["hedge"][1] +
+            effective_tier_weights["opportunistic"][0] + effective_tier_weights["opportunistic"][1]
+        ) / 2
+        # Remaining budget split 70/30 core/tactical (keeps relative shape)
+        remaining = max(0.0, 1.0 - used)
+        core_target = remaining * 0.72
+        tac_target = remaining * 0.28
+        effective_tier_weights["core"] = (core_target * 0.92, core_target * 1.08)
+        effective_tier_weights["tactical"] = (tac_target * 0.85, tac_target * 1.15)
+
     # --- Score every ticker ---
     all_scores: list[dict] = []
     for ticker, sector in universe.items():
@@ -713,11 +743,11 @@ def build_strategy(
     holdings = []
     strategy_signals = []
 
-    for tier_name, tier_range in TIER_WEIGHTS.items():
+    for tier_name, tier_range in effective_tier_weights.items():
         members = tiers.get(tier_name, [])
         if not members:
             continue
-        # Target total weight for this tier: midpoint of range
+        # Target total weight for this tier: midpoint of range (regime-overlaid)
         tier_total = (tier_range[0] + tier_range[1]) / 2 * 100  # as %
 
         # Distribute by composite rank within tier
