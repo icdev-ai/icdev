@@ -186,3 +186,4 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Scenario Matcher | tools\trading\news\scenario_matcher.py | Auto-registered: news/scenario_matcher.py | --json | JSON |
+- [Unclassified (auto-added)](manifest/unclassified.md)
