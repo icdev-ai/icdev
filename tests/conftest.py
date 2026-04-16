@@ -1169,6 +1169,52 @@ CREATE TABLE IF NOT EXISTS ad_news_catalysts (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_news_catalysts_ticker_date ON ad_news_catalysts (ticker, created_at DESC);
 
+-- AlphaDesk: news pipeline tables (plan adn-)
+CREATE TABLE IF NOT EXISTS ad_news_items (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    feed_url TEXT,
+    title TEXT NOT NULL,
+    link TEXT,
+    published_at TEXT,
+    ingested_at TEXT NOT NULL DEFAULT (datetime('now')),
+    summary TEXT,
+    category TEXT,
+    impact_level TEXT,
+    net_direction TEXT,
+    mentioned_tickers TEXT DEFAULT '[]',
+    classifier_version TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_news_published ON ad_news_items(published_at);
+CREATE INDEX IF NOT EXISTS idx_news_category ON ad_news_items(category);
+CREATE INDEX IF NOT EXISTS idx_news_impact ON ad_news_items(impact_level);
+
+CREATE TABLE IF NOT EXISTS ad_news_scenario_links (
+    id TEXT PRIMARY KEY,
+    news_id TEXT NOT NULL,
+    scenario_run_id TEXT,
+    scenario_key TEXT NOT NULL,
+    match_confidence REAL,
+    match_reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_news_scenario_news ON ad_news_scenario_links(news_id);
+CREATE INDEX IF NOT EXISTS idx_news_scenario_key ON ad_news_scenario_links(scenario_key);
+
+CREATE TABLE IF NOT EXISTS ad_news_clusters (
+    id TEXT PRIMARY KEY,
+    scenario_key TEXT,
+    category TEXT,
+    time_window TEXT,
+    item_ids TEXT DEFAULT '[]',
+    cumulative_score REAL DEFAULT 0.0,
+    first_seen TEXT,
+    last_seen TEXT,
+    status TEXT NOT NULL DEFAULT 'emerging',
+    meta_scenario_key TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_news_cluster_status ON ad_news_clusters(status);
+
 -- SharePoint integration tables (migration 023)
 CREATE TABLE IF NOT EXISTS sharepoint_sites (
     id            TEXT PRIMARY KEY,

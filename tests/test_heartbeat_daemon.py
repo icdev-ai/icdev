@@ -161,8 +161,8 @@ class TestLoadConfig:
 # TestCheckRegistry
 # ===================================================================
 class TestCheckRegistry:
-    def test_all_seven_checks_registered(self) -> None:
-        assert len(CHECK_REGISTRY) == 7
+    def test_all_nine_checks_registered(self) -> None:
+        assert len(CHECK_REGISTRY) == 9
 
     def test_all_callables(self) -> None:
         for name, fn in CHECK_REGISTRY.items():

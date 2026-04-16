@@ -76,6 +76,18 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - Do not run a collaborator's `.tmp/*.py` without review — treat as untrusted.
 - **Revisit if:** `.tmp/` ever hosts scripts committed to the repo (shouldn't happen).
 
+### Gap 5 — AlphaDesk news RSS ingestion
+- **Location:** `tools/trading/news/*`
+- **Risk:** Ingests third-party RSS/Atom feeds from the public internet. Feed content (titles, summaries) could contain malicious HTML, oversized payloads, or injection attempts.
+- **Decision:** **sandboxed-on-demand**
+- **Rationale:** RSS content is untrusted external input. HTML is stripped via stdlib `html.parser` before storage (no code execution). Size cap of 50 KB per entry rejects abuse. Summary truncated at 500 chars. No `exec()`/`eval()` anywhere in the pipeline.
+- **Guardrails:**
+  - `sanitize_html()` strips all HTML tags using stdlib only (no new deps).
+  - 50 KB input cap rejects oversized entries.
+  - Append-only tables prevent mutation of ingested data.
+  - `ICDEV_STRICT_SANDBOX=1` routes ingest through `SandboxExecutor` in IL5.
+- **Revisit if:** feedparser CVE ships, or if feed content is ever rendered as raw HTML in the dashboard (currently text-only).
+
 ## Coherence rule
 
 The `sandbox_coverage` rule in `tools/workflow/coherence_checker.py` enforces:
