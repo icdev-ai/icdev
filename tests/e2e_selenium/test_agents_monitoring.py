@@ -14,7 +14,6 @@ Prerequisites:
 from __future__ import annotations
 
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -101,8 +100,8 @@ class TestAgentsPage:
 
         # Step 9: Check for extended agents (informational only — may be absent)
         extended_agents = ["MBSE", "Modernization", "Requirements", "Supply Chain", "Simulation"]
-        extended_found = sum(1 for a in extended_agents if a.lower() in body_text)
-        # Not a hard assertion — extended agents are optional
+        # Not a hard assertion — extended agents are optional (informational only)
+        _ = sum(1 for a in extended_agents if a.lower() in body_text)
 
     def test_agent_status_indicators_are_displayed(self, page: BasePage):
         """Steps 7-8: Verify status indicators and port numbers."""
@@ -124,7 +123,6 @@ class TestAgentsPage:
             assert agent_cards[0].is_displayed(), "First agent card is not visible"
 
         # Step 8: Port numbers in 8443-8458 range
-        port_pattern = re.compile(r"84[4-5]\d")
         # Not a hard assertion — ports may not render in all dashboard states
 
         page.screenshot("agents_monitoring_03_agent_status")
@@ -194,10 +192,6 @@ class TestMonitoringPage:
         if status_icons:
             assert status_icons[0].is_displayed(), "Status icon not visible"
 
-        # Step 22: Health indicator terms
-        health_terms = ["healthy", "degraded", "offline", "up", "down", "ok", "warning", "critical"]
-        health_found = any(term in body_text.lower() for term in health_terms)
-
         page.screenshot("agents_monitoring_06_monitoring_status")
         assert monitor_found, "Monitoring page lacks health/status content"
 
@@ -218,10 +212,6 @@ class TestMonitoringPage:
         # Step 24: Metric-related terms
         metric_terms = ["metric", "count", "rate", "latency", "response", "uptime", "error"]
         metric_found = any(term in body_text.lower() for term in metric_terms)
-
-        # Step 25: Alert-related elements
-        alert_terms = ["alert", "notification", "warning", "active alerts"]
-        alert_found = any(term in body_text.lower() for term in alert_terms)
 
         page.screenshot("agents_monitoring_07_monitoring_metrics")
         assert metric_found or cards, "No metric terms or metric card elements found on monitoring page"
