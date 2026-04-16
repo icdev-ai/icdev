@@ -308,8 +308,13 @@ def promote_all_suggested() -> Dict[str, Any]:
     conn = get_connection()
     now = _now_iso()
     try:
+        # Exclude self_debug-quarantined rows: they live in 'suggested' as a
+        # durable park, not as awaiting-approval suggestions. Bulk-promoting
+        # them re-loops the scheduler on a known-broken task.
         rows = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE status = 'suggested'"
+            "SELECT id FROM kanban_tasks WHERE status = 'suggested' "
+            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
+            ("QUARANTINED by self_debug%",),
         ).fetchall()
         count = len(rows)
         if count == 0:
@@ -317,8 +322,9 @@ def promote_all_suggested() -> Dict[str, Any]:
 
         conn.execute(
             "UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "
-            "WHERE status = 'suggested'",
-            (now,),
+            "WHERE status = 'suggested' "
+            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
+            (now, "QUARANTINED by self_debug%"),
         )
         conn.commit()
         return {"promoted": count, "new_status": "backlog"}

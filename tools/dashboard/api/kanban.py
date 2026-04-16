@@ -625,8 +625,13 @@ def promote_all_suggested():
     now = _utcnow()
     conn = get_connection()
     try:
+        # Exclude self_debug-quarantined rows from bulk-promote: they live in
+        # 'suggested' as a durable quarantine, not as awaiting-approval
+        # suggestions. Promoting them re-loops the scheduler.
         rows = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE status = 'suggested'"
+            "SELECT id FROM kanban_tasks WHERE status = 'suggested' "
+            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
+            ("QUARANTINED by self_debug%",),
         ).fetchall()
         count = len(rows)
         if count == 0:
@@ -634,8 +639,9 @@ def promote_all_suggested():
 
         conn.execute(
             "UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "
-            "WHERE status = 'suggested'",
-            (now,),
+            "WHERE status = 'suggested' "
+            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
+            (now, "QUARANTINED by self_debug%"),
         )
         conn.commit()
 
