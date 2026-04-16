@@ -200,3 +200,12 @@
 |------|------|-------------|-------|--------|
 | Crisis Fingerprints | tools\trading\market_intel\crisis_fingerprints.py | Auto-registered: market_intel/crisis_fingerprints.py | --json | JSON |
 | Cross Asset Divergence | tools\trading\market_intel\cross_asset_divergence.py | Auto-registered: market_intel/cross_asset_divergence.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Lens News Intelligence | tools\trading\oracle\lens_news_intelligence.py | Auto-registered: oracle/lens_news_intelligence.py | --json | JSON |
+| Lens Portfolio Stress | tools\trading\oracle\lens_portfolio_stress.py | Auto-registered: oracle/lens_portfolio_stress.py | --json | JSON |
+| Lens Regime Trajectory | tools\trading\oracle\lens_regime_trajectory.py | Auto-registered: oracle/lens_regime_trajectory.py | --json | JSON |
+| Lens Signal Convergence | tools\trading\oracle\lens_signal_convergence.py | Auto-registered: oracle/lens_signal_convergence.py | --json | JSON |
