@@ -252,6 +252,15 @@ def _heuristic_diagnosis(snap: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": 0.70,
             "_source": "heuristic",
         }
+    if "timeout" in reason and "exceeded dispatch budget" in reason:
+        return {
+            "root_cause": "Task scope exceeds MAX_EXECUTION_SECONDS (900s). Either contains too many sequential heavyweight commands or is genuinely long-running.",
+            "suspect_files": ["tools/genesis/reflexes/kanban.py:MAX_EXECUTION_SECONDS"],
+            "recommendation": "quarantine",
+            "patch_hint": "Decompose into per-command sub-tasks, raise the budget for this task_type, or run checks in parallel.",
+            "confidence": 0.75,
+            "_source": "heuristic",
+        }
     if "phantom" in reason:
         return {
             "root_cause": "Agent claimed output but produced no real file changes.",
@@ -315,14 +324,23 @@ def _create_diagnostic_card(source_task_id: str, reason: str,
     return new_id
 
 
+QUARANTINE_PREFIX = "QUARANTINED by self_debug"
+
+
 def _quarantine_task(task_id: str, diag_id: Optional[str], diag: Dict[str, Any]) -> None:
-    """Move the looping task to status=blocked with a pointer to the diagnosis."""
+    """Annotate the looping task so the scheduler stops re-dispatching it.
+
+    ICDEV's kanban_tasks.status CHECK constraint doesn't allow 'blocked',
+    so we mark quarantine via last_failure_reason (the scheduler's
+    get_ready_tasks query filters on this prefix) and bump failure_count
+    past MAX_FAILURES_BEFORE_DECOMPOSITION so existing gates also notice.
+    """
     try:
         from tools.db.storage import get_connection
     except Exception:
         return
     annotation = (
-        f"QUARANTINED by self_debug — recurring failure. "
+        f"{QUARANTINE_PREFIX} — recurring failure. "
         f"Root cause: {diag.get('root_cause', '?')} "
         f"See diagnosis card {diag_id or '(none)'}"
     )
@@ -330,9 +348,9 @@ def _quarantine_task(task_id: str, diag_id: Optional[str], diag: Dict[str, Any])
     try:
         with get_connection() as conn:
             conn.execute(
-                "UPDATE kanban_tasks SET status = ?, is_blocked = ?, "
-                "last_failure_reason = ?, updated_at = ? WHERE id = ?",
-                ("blocked", 1, annotation, now, task_id),
+                "UPDATE kanban_tasks SET last_failure_reason = ?, "
+                "failure_count = 999, updated_at = ? WHERE id = ?",
+                (annotation, now, task_id),
             )
             conn.commit()
     except Exception as exc:
