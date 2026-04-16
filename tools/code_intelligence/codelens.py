@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,12 +23,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _ANALYZER = BASE_DIR / "tools" / "analysis" / "code_analyzer.py"
 
 
+def _subprocess_env() -> dict:
+    """Build env with BASE_DIR prepended to PYTHONPATH so child imports work."""
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(BASE_DIR) + (os.pathsep + existing if existing else "")
+    return env
+
+
 def _run_analyzer(project_dir: Path, *, json_out: bool = True) -> dict:
     """Invoke code_analyzer.py and return parsed result."""
     cmd = [sys.executable, str(_ANALYZER), "--project-dir", str(project_dir)]
     if json_out:
         cmd.append("--json")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                            cwd=str(BASE_DIR), env=_subprocess_env())
     if result.returncode != 0:
         return {
             "status": "error",
@@ -63,7 +73,8 @@ def main() -> int:
         cmd = [sys.executable, str(_ANALYZER), "--file", args.file]
         if args.json:
             cmd.append("--json")
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                           cwd=str(BASE_DIR), env=_subprocess_env())
         if args.json:
             try:
                 data = json.loads(r.stdout)

@@ -275,17 +275,25 @@ class TestListenerDependencyGating:
         conn.executescript(
             """
             CREATE TABLE kanban_tasks (
-                id                 TEXT PRIMARY KEY,
-                title              TEXT NOT NULL,
-                description        TEXT,
-                task_type          TEXT DEFAULT 'build',
-                priority           TEXT DEFAULT 'medium',
-                status             TEXT DEFAULT 'backlog',
-                scheduled_at       TEXT,
-                created_at         TEXT,
-                updated_at         TEXT,
-                completed_at       TEXT,
-                depends_on_task_id TEXT
+                id                   TEXT PRIMARY KEY,
+                title                TEXT NOT NULL,
+                description          TEXT,
+                task_type            TEXT DEFAULT 'build',
+                priority             TEXT DEFAULT 'medium',
+                status               TEXT DEFAULT 'backlog',
+                scheduled_at         TEXT,
+                created_at           TEXT,
+                updated_at           TEXT,
+                completed_at         TEXT,
+                executor_type        TEXT,
+                execution_id         TEXT,
+                executor_url         TEXT,
+                source_prediction_id TEXT,
+                depends_on_task_id   TEXT,
+                failure_count        INTEGER DEFAULT 0,
+                last_failure_reason  TEXT,
+                last_failure_at      TEXT,
+                dispatch_source      TEXT DEFAULT 'unknown'
             );
             """
         )

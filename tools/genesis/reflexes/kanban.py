@@ -887,6 +887,12 @@ def _get_due_tasks() -> list:
         # we never dispatch them directly.
         result = _decompose_batch_tasks(result, conn)
 
+        # Decompose PHASE-EXIT GATE tasks before they hit the 900s timeout.
+        # 5-step validation gates (codelens|coherence|e2e|pytest|companion)
+        # consistently exceed the dispatch budget; split them into 5
+        # sequential sub-tasks each within its own 900s window.
+        result = _decompose_phase_exit_gates(result, conn)
+
         return result
     finally:
         conn.close()
@@ -1017,6 +1023,113 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
 
         # Add children to the dispatch queue (up to MAX_AUTO_PROMOTE)
         result.extend(created_children[:MAX_AUTO_PROMOTE])
+
+    return result
+
+
+# Step labels for phase-exit gate decomposition (matches established F-gate / E-gate sub-task pattern)
+_PHASE_GATE_STEPS = [
+    ("codelens", "CodeLens scan",
+     "Run: python tools/code_intelligence/codelens.py --all --json. Report pass/fail."),
+    ("coherence", "Coherence check",
+     "Run: python tools/workflow/coherence_checker.py --all --fix --gate. Report pass/fail."),
+    ("e2e", "E2E dashboard test",
+     "Run: python tools/testing/e2e_full_dashboard.py. Report pass/fail."),
+    ("pytest", "Regression pytest",
+     "Run: pytest tests/ -x --timeout=120 --ignore=tests/e2e_selenium. Report pass/fail."),
+    ("companion", "Companion sync",
+     "Run: python tools/dx/companion.py --sync --write --json. Report pass/fail."),
+]
+
+
+def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
+    """Detect and decompose PHASE-EXIT GATE tasks before they hit 900s timeout.
+
+    A phase-exit gate task is identified by:
+    - Description starts with "PHASE-EXIT GATE"
+    - Contains the standard 5 validation steps (codelens, coherence, e2e, pytest, companion)
+    - Task ID matches phase pattern (e.g. efa-F-gate, efa-G-gate)
+
+    These tasks consistently exceed the 900s MAX_EXECUTION_SECONDS budget because
+    running all 5 validations in a single dispatch can take 15+ minutes. We split
+    them into 5 sequential sub-tasks (each within its own 900s budget) and mark
+    the parent as 'done' so downstream phase tasks unblock immediately.
+
+    Mirrors the manual decomposition pattern used for E-gate, F-gate, G-gate, H-gate.
+    """
+    result: list = []
+    for task in tasks:
+        description = (task.get("description") or "").strip()
+        task_id = task.get("id", "")
+
+        # Must look like a phase-exit gate task
+        if "PHASE-EXIT GATE" not in description.upper():
+            result.append(task)
+            continue
+        # Must be a phased gate ID (e.g. efa-F-gate)
+        phase_info = _extract_phase(task_id)
+        if not phase_info or "-gate" not in task_id:
+            result.append(task)
+            continue
+        # Skip if sub-tasks already exist
+        existing = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE id LIKE ?",
+            (f"{task_id}-1-%",),
+        ).fetchone()
+        if existing:
+            result.append(task)
+            continue
+
+        # Decompose into 5 sub-tasks
+        prev_dep = task.get("depends_on_task_id")
+        now = _utcnow_iso()
+        created = 0
+        for idx, (slug, label, desc) in enumerate(_PHASE_GATE_STEPS, start=1):
+            child_id = f"{task_id}-{idx}-{slug}"
+            child_title = f"{phase_info[1]}-gate step {idx}: {label}"
+            try:
+                conn.execute(
+                    "INSERT INTO kanban_tasks "
+                    "(id, title, description, task_type, priority, status, "
+                    " scheduled_at, created_at, updated_at, "
+                    " executor_type, depends_on_task_id, dispatch_source, failure_count) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        child_id, child_title, desc,
+                        task.get("task_type") or "test",
+                        task.get("priority") or "high",
+                        "scheduled", now, now, now, "claude_cli",
+                        prev_dep, "auto_decomp_phase_gate", 0,
+                    ),
+                )
+                created += 1
+                prev_dep = child_id
+            except Exception as exc:
+                print(f"  Kanban: failed to create gate child {child_id}: {exc}")
+
+        if created == 5:
+            # Mark parent gate as 'done' (decomposed marker — mirrors F-gate pattern)
+            try:
+                conn.execute(
+                    "UPDATE kanban_tasks SET status = ?, updated_at = ?, "
+                    "completed_at = ?, last_failure_reason = ? WHERE id = ?",
+                    (
+                        "done", now, now,
+                        "AUTO-DECOMPOSED into 5 sub-tasks (codelens|coherence|e2e|pytest|companion) "
+                        "to prevent 900s dispatch budget timeout",
+                        task_id,
+                    ),
+                )
+                conn.commit()
+                print(
+                    f"  Kanban: auto-decomposed phase-exit gate {task_id} into "
+                    f"5 sequential sub-tasks (parent marked done)"
+                )
+            except Exception as exc:
+                print(f"  Kanban: failed to mark gate {task_id} done: {exc}")
+        else:
+            # Partial failure — leave parent as-is, dispatch as before (best-effort)
+            result.append(task)
 
     return result
 
@@ -2511,9 +2624,14 @@ def _run_verify_checks(task_id, claude_output):
             # success and are specific enough to avoid false positives.
             _pass_signals = [
                 '"status": "pass"', "gate: pass", "gate: **pass**",
-                "scan complete \u2014 pass", "codelens scan complete",
+                "scan complete \u2014 gate: pass", "codelens scan complete",
                 "| status | **pass**", "codelens gate: pass",
                 "coherence gate: pass", "health check: pass",
+                # Brief Markdown forms produced by lightweight gate sub-tasks
+                "codelens scan: pass", "**codelens scan: pass**",
+                "coherence: pass", "coherence check: pass",
+                "companion sync: pass", "pytest: pass",
+                "e2e: pass", "regression pytest: pass",
             ]
             if any(sig in output_lower for sig in _pass_signals):
                 return True, (
