@@ -9,11 +9,21 @@ and thinking memory type (D182).
 import argparse
 import hashlib
 import json
+import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path
 from datetime import datetime
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Overridable in tests to redirect to a temp SQLite DB.
+DB_PATH = None
+
+
+def _get_conn():
+    if DB_PATH is not None:
+        return sqlite3.connect(str(DB_PATH))
+    return get_connection()
 MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
 VALID_TYPES = ("fact", "preference", "event", "insight", "task", "relationship", "thinking")
@@ -40,7 +50,7 @@ def write_to_db(content, entry_type, importance, user_id=None, tenant_id=None, s
         tuple: (entry_id, is_duplicate)
     """
     content_hash = compute_content_hash(content)
-    conn = get_connection()
+    conn = _get_conn()
     c = conn.cursor()
 
     # Check for duplicate (D179)

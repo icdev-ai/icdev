@@ -94,12 +94,58 @@ MAX_AUTO_PROMOTE = 2
 # Max in-progress tasks at any time (prevents pile-up)
 MAX_IN_PROGRESS = 3
 # Max seconds a Claude CLI subprocess can run before being killed
-MAX_EXECUTION_SECONDS = 900  # 15 minutes — guard-6: lowered from 1800
+MAX_EXECUTION_SECONDS = 900           # 15 min — default for normal tasks
+MAX_EXECUTION_SECONDS_SCAN = 1200     # 20 min — codelens, coherence, E2E (tool ~10s but Claude overhead + fix cycles ~15 min)
+MAX_EXECUTION_SECONDS_PYTEST = 2400   # 40 min — full test suite (7,519 tests @ ~0.3s each + Claude overhead)
 # Minimum remaining budget required to start post-process operations (guard-budget)
 VERIFICATION_MIN_BUDGET_SECONDS = 30   # verification pipeline can take ~10-25s
 REMEDIATION_MIN_BUDGET_SECONDS = 60    # remediation + re-verify can take ~30-50s
 SELF_DEBUG_MIN_BUDGET_SECONDS = 15     # self-debug dispatch is lightweight but still costs time
 MAX_TIMEOUT_RETRIES = 3               # hard-quarantine a task after this many identical timeouts
+
+# Task ID patterns that get extended timeouts (regex, case-insensitive).
+# Order matters: first match wins.
+_EXTENDED_TIMEOUT_PATTERNS = [
+    (r"pytest|regression|test-suite|full-test", MAX_EXECUTION_SECONDS_PYTEST),
+    (r"codelens|coherence|companion|e2e", MAX_EXECUTION_SECONDS_SCAN),
+]
+
+
+def _get_task_timeout(task_id: str) -> int:
+    """Return per-task timeout budget in seconds.
+
+    pytest / E2E / regression tasks get MAX_EXECUTION_SECONDS_PYTEST (30 min);
+    everything else gets MAX_EXECUTION_SECONDS (15 min).
+    Also checks the task description for a TIMEOUT_HINT:NNNs directive.
+    """
+    task_id_lower = task_id.lower()
+    for pattern, timeout in _EXTENDED_TIMEOUT_PATTERNS:
+        if re.search(pattern, task_id_lower):
+            return timeout
+
+    # Check task description for TIMEOUT_HINT:NNNs
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT description FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        conn.close()
+        desc = ((row["description"] or "") if row else "").lower()
+        # Match "TIMEOUT_HINT:1800s" or "TIMEOUT_HINT: 1800"
+        m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
+        if m:
+            return min(3600, int(m.group(1)))  # cap at 1 hour
+        # Heuristic: descriptions mentioning heavy tools get extended budget
+        if "pytest" in desc or "regression" in desc or "full test" in desc:
+            return MAX_EXECUTION_SECONDS_PYTEST
+        if any(kw in desc for kw in ("codelens", "coherence_checker", "e2e_full", "companion")):
+            return MAX_EXECUTION_SECONDS_SCAN
+    except Exception:
+        pass
+
+    return MAX_EXECUTION_SECONDS
+
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
 
@@ -3120,7 +3166,7 @@ def _verify_task_completed(task_id, claude_output):
         (datetime.now(timezone.utc) - _budget_dispatch_time).total_seconds()
         if _budget_dispatch_time is not None else 0.0
     )
-    _budget_remaining = MAX_EXECUTION_SECONDS - _budget_elapsed
+    _budget_remaining = _get_task_timeout(task_id) - _budget_elapsed
 
     work_dir = _worktrees.get(task_id) or str(BASE_DIR)
 
@@ -3244,10 +3290,12 @@ def _check_completed():
         dispatch_time = _dispatch_times.get(task_id)
         if dispatch_time:
             elapsed = (now - dispatch_time).total_seconds()
-            if elapsed > MAX_EXECUTION_SECONDS:
+            # Per-task timeout: pytest tasks get 30 min; everything else 15 min.
+            task_budget = _get_task_timeout(task_id)
+            if elapsed > task_budget:
                 print(
                     f"  Kanban: {task_id} TIMEOUT after "
-                    f"{int(elapsed)}s (max {MAX_EXECUTION_SECONDS}s) "
+                    f"{int(elapsed)}s (max {task_budget}s) "
                     f"— killing process"
                 )
                 try:
@@ -3264,7 +3312,7 @@ def _check_completed():
                 _tout_count = _increment_timeout_count(task_id)
                 _timeout_reason = (
                     f"TIMEOUT after {int(elapsed)}s "
-                    f"(max {MAX_EXECUTION_SECONDS}s) — task exceeded dispatch budget"
+                    f"(max {task_budget}s) — task exceeded dispatch budget"
                 )
                 if _tout_count >= MAX_TIMEOUT_RETRIES:
                     _move_task(
@@ -3432,7 +3480,7 @@ def _check_completed():
                 _vb_dispatch_time = _dispatch_times.get(task_id)
                 if _vb_dispatch_time is not None:
                     _vb_elapsed = (datetime.now(timezone.utc) - _vb_dispatch_time).total_seconds()
-                    _vb_remaining = MAX_EXECUTION_SECONDS - _vb_elapsed
+                    _vb_remaining = _get_task_timeout(task_id) - _vb_elapsed
                     if _vb_remaining < VERIFICATION_MIN_BUDGET_SECONDS:
                         print(
                             f"  Kanban: {task_id} BUDGET EXHAUSTED before verification "
