@@ -186,12 +186,11 @@ class TestConstants:
 
 
 class TestStats:
-    @patch("tools.memory.memory_consolidation.sqlite3")
-    def test_get_stats_handles_db_error(self, mock_sqlite):
+    @patch("tools.memory.memory_consolidation.get_connection")
+    def test_get_stats_handles_db_error(self, mock_get_conn):
         import sqlite3
 
-        mock_sqlite.connect.side_effect = sqlite3.OperationalError("no table")
-        mock_sqlite.OperationalError = sqlite3.OperationalError
+        mock_get_conn.side_effect = sqlite3.OperationalError("no table")
         c = MemoryConsolidator()
         result = c.get_stats()
         assert result == {"stats": []}
