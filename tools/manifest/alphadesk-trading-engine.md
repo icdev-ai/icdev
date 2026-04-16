@@ -21,5 +21,6 @@
 | Trading Runner | tools/trading/runner.py | Main orchestrator for AlphaDesk trading engine analysis cycles — full lifecycle: analyze → persist → queue signal → trigger Pulse article. Runs 5-layer DAG (macro, analysts, debate, signal, risk/approval) for a ticker. | --ticker SYM, --json | Full analysis result with run_id, signal, confidence, signal_id, article_id |
 | Trading DB | tools/trading/db.py | AlphaDesk database layer — persistent storage for portfolios, positions, orders, signals, and analysis runs (ad_ prefix tables) | N/A (library) | DB connection/helpers |
 | Workflow Builder | tools/trading/workflow.py | DAG workflow builder for AlphaDesk — constructs 5-layer analysis DAG (analysts → debate → signal → risk → approval) for a given ticker | ticker | Workflow dict |
+| RSS Ingestor | tools/trading/news/rss_ingestor.py | Polls RSS/Atom news feeds (args/news_feeds.yaml), deduplicates by content hash, sanitizes HTML summaries via `_sanitize_html()` (stdlib html.parser, 50 KB guard, 500-char truncation), stores for downstream classification. OPT-58: sandboxed-on-demand. | --once --json | Ingested entry count + JSON |
 
 
