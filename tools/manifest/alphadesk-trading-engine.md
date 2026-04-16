@@ -23,5 +23,7 @@
 | Workflow Builder | tools/trading/workflow.py | DAG workflow builder for AlphaDesk — constructs 5-layer analysis DAG (analysts → debate → signal → risk → approval) for a given ticker | ticker | Workflow dict |
 | News DB | tools/trading/news/db.py | DDL + CRUD helpers for ad_news_items, ad_news_scenario_links, ad_news_clusters tables (all append-only). CLI: --migrate, --json | --migrate --json | Table list / item count |
 | RSS Ingestor | tools/trading/news/rss_ingestor.py | Polls RSS/Atom feeds from args/news_feeds.yaml, deduplicates by sha256(source\|\|link)[:16], stores in ad_news_items. Per-feed exception isolation. HTML-strips summaries (OPT-58). | --once \| --start [--interval N] [--json] | Ingest summary JSON |
-
+| News Classifier | tools/trading/news/classifier.py | Rule-based news classifier: category, impact_level, net_direction, mentioned_tickers from keyword maps in analysts/news.py | --backfill-all \| --id ID [--json] | Classification stats |
+| Scenario Matcher | tools/trading/news/scenario_matcher.py | Maps news items to scenario_engine SCENARIO_TEMPLATES via keyword matching. Wires match_and_run() to scenario_engine.run_scenario() | --batch \| --id ID [--run] [--json] | Match results |
+| News Aggregator | tools/trading/news/aggregator.py | Clusters news by (category, scenario_key), computes cumulative scores with time decay and source reliability, promotes through emerging/cluster/regime tiers | --cluster --promote [--window N] [--json] | Cluster stats |
 

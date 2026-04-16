@@ -223,16 +223,17 @@ def insert_scenario_link(
     ph = sql_placeholder(conn)
     now = sql_now(conn)
     try:
+        import uuid
+        link_id = uuid.uuid4().hex[:16]
         conn.execute(
             f"""INSERT INTO ad_news_scenario_links
-                (news_id, scenario_run_id, scenario_key,
+                (id, news_id, scenario_run_id, scenario_key,
                  match_confidence, match_reason, created_at)
-                VALUES ({ph},{ph},{ph},{ph},{ph},{now})""",  # nosec B608 -- ph is placeholder
-            (news_id, scenario_run_id, scenario_key, match_confidence, match_reason),
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{now})""",  # nosec B608 -- ph is placeholder
+            (link_id, news_id, scenario_run_id, scenario_key, match_confidence, match_reason),
         )
         conn.commit()
-        row = conn.execute("SELECT last_insert_rowid()").fetchone()
-        return row[0] if row else -1
+        return link_id
     finally:
         conn.close()
 
@@ -240,7 +241,7 @@ def insert_scenario_link(
 def insert_cluster(
     scenario_key: str | None,
     category: str | None,
-    window_hours: int,
+    time_window,
     item_ids: list[str],
     cumulative_score: float,
     first_seen: str,
@@ -252,15 +253,18 @@ def insert_cluster(
     conn = get_db(db_path)
     ph = sql_placeholder(conn)
     try:
+        import uuid
+        cluster_id = uuid.uuid4().hex[:16]
         conn.execute(
             f"""INSERT INTO ad_news_clusters
-                (scenario_key, category, window_hours, item_ids,
+                (id, scenario_key, category, time_window, item_ids,
                  cumulative_score, first_seen, last_seen, status)
-                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",  # nosec B608 -- ph is placeholder
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",  # nosec B608 -- ph is placeholder
             (
+                cluster_id,
                 scenario_key,
                 category,
-                window_hours,
+                str(time_window),
                 json.dumps(item_ids),
                 cumulative_score,
                 first_seen,
@@ -269,8 +273,7 @@ def insert_cluster(
             ),
         )
         conn.commit()
-        row = conn.execute("SELECT last_insert_rowid()").fetchone()
-        return row[0] if row else -1
+        return cluster_id
     finally:
         conn.close()
 
