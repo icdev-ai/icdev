@@ -431,6 +431,94 @@
     };
 
     // ========================================================================
+    // 1b. HELP ICON CLICK-TO-SHOW POPOVERS
+    // ========================================================================
+
+    /**
+     * Make all .help-icon elements clickable.
+     *
+     * Reads the `title` attribute (or `data-glossary` + glossary lookup) as
+     * the help text, then shows/hides a popover on click. Clicking anywhere
+     * outside the popover dismisses it.
+     */
+    ICDEV.initHelpIcons = function initHelpIcons() {
+        var icons = document.querySelectorAll(".help-icon");
+        if (!icons.length) return;
+
+        // Track which popover is currently open (only one at a time)
+        var activePopover = null;
+        var activeIcon = null;
+
+        function closeActive() {
+            if (activePopover) {
+                activePopover.remove();
+                activePopover = null;
+                activeIcon = null;
+            }
+        }
+
+        // Click outside closes the popover
+        document.addEventListener("click", function (e) {
+            if (activePopover && !activePopover.contains(e.target) &&
+                activeIcon !== e.target) {
+                closeActive();
+            }
+        });
+
+        icons.forEach(function (icon) {
+            // Get help text: prefer title, fall back to data-glossary lookup
+            var helpText = (icon.getAttribute("title") || "").trim();
+            if (!helpText) {
+                var term = icon.getAttribute("data-glossary");
+                if (term && ICDEV.glossary && ICDEV.glossary[term]) {
+                    helpText = ICDEV.glossary[term];
+                }
+            }
+            if (!helpText) {
+                helpText = "No help text available.";
+            }
+
+            // Remove native title so it doesn't double-show
+            icon.removeAttribute("title");
+
+            // Accessibility
+            icon.setAttribute("role", "button");
+            icon.setAttribute("tabindex", "0");
+            icon.setAttribute("aria-label", "Help: " + helpText.slice(0, 60));
+
+            icon.addEventListener("click", function (e) {
+                e.stopPropagation();
+
+                // Toggle off if same icon clicked
+                if (activeIcon === icon) {
+                    closeActive();
+                    return;
+                }
+
+                closeActive();
+
+                // Create popover
+                var pop = document.createElement("div");
+                pop.className = "help-popover";
+                pop.textContent = helpText;
+                icon.style.position = "relative";
+                icon.appendChild(pop);
+
+                activePopover = pop;
+                activeIcon = icon;
+            });
+
+            // Keyboard: Enter/Space to toggle
+            icon.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    icon.click();
+                }
+            });
+        });
+    };
+
+    // ========================================================================
     // 2. TIMESTAMP FORMATTING
     // ========================================================================
 
@@ -927,6 +1015,7 @@
      */
     function initAll() {
         ICDEV.initGlossary();
+        ICDEV.initHelpIcons();
         ICDEV.initTimestamps();
         ICDEV.initAccessibility();
     }
