@@ -90,6 +90,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_trade_audit",
         "ad_kill_switch",
         "ad_decision_snapshots",
+        # AlphaDesk news (plan adn-)
+        "ad_news_items",
+        "ad_news_scenario_links",
+        "ad_news_clusters",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",

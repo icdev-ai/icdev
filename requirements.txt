@@ -72,3 +72,5 @@ filelock>=3.20.3         # CVE-2025-68146, CVE-2026-22701: TOCTOU race
 Pillow>=12.1.1           # CVE-2026-25990: OOB write in PSD loader
 pyOpenSSL>=26.0.0        # CVE-2026-27448, CVE-2026-27459: callback bypass
 setuptools>=78.1.1       # CVE-2025-47273: path traversal
+
+feedparser>=6.0          # air-gap compat verified 2026-04-15

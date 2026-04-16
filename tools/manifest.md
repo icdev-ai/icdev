@@ -174,3 +174,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Self Debug | tools\workflow\self_debug.py | Auto-registered: workflow/self_debug.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Rss Ingestor | tools\trading\news\rss_ingestor.py | Auto-registered: news/rss_ingestor.py | --json | JSON |
