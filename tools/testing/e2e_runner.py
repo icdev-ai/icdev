@@ -45,11 +45,16 @@ _NATIVE_TIMEOUT_SECONDS: int = 300
 _MCP_TIMEOUT_SECONDS: int = 120
 _PLAYWRIGHT_PROBE_TIMEOUT: int = 15
 _CLAUDE_PROBE_TIMEOUT: int = 5
+_SELENIUM_TIMEOUT_SECONDS: int = 300
 
 
 # ────────────────────────────────────────────────────────────────────────────
 # Discovery
 # ────────────────────────────────────────────────────────────────────────────
+
+
+def _selenium_glob() -> str:
+    return str(PROJECT_ROOT / "tests" / "e2e_selenium" / "test_*.py")
 
 
 def _native_glob() -> str:
@@ -66,6 +71,10 @@ def discover_native_tests() -> List[str]:
 
 def discover_mcp_tests() -> List[str]:
     return sorted(glob.glob(_mcp_glob()))
+
+
+def discover_selenium_tests() -> List[str]:
+    return sorted(glob.glob(_selenium_glob()))
 
 
 def discover_e2e_tests(mode: str = "auto") -> List[str]:
@@ -620,6 +629,113 @@ def _run_vision_validation(
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# Selenium execution
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def check_selenium_driver() -> bool:
+    """Return True when a vendored ChromeDriver or msedgedriver binary exists."""
+    try:
+        from tools.airgap.detector import has_vendored_driver
+        return has_vendored_driver()
+    except Exception:
+        return False
+
+
+def _parse_pytest_output(
+    stdout: str,
+    stderr: str,
+    returncode: int,
+    logger: logging.Logger,
+) -> List[E2ETestResult]:
+    """Parse ``pytest -v`` stdout into a list of E2ETestResult objects."""
+    results: List[E2ETestResult] = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if " PASSED" in line or " FAILED" in line or " ERROR" in line:
+            status = "passed" if " PASSED" in line else "failed"
+            test_id = line.split(" ")[0]
+            test_path = ""
+            test_name = test_id
+            if "::" in test_id:
+                parts = test_id.split("::")
+                test_path = parts[0]
+                test_name = "::".join(parts[1:])
+            results.append(E2ETestResult(
+                test_name=test_name,
+                status=status,
+                test_path=test_path,
+                error=(
+                    f"pytest reported ERROR/FAILED for {test_name}"
+                    if status == "failed" else None
+                ),
+            ))
+
+    if not results:
+        overall = "passed" if returncode == 0 else "failed"
+        error_excerpt = ((stderr or stdout) or "")[:500] if returncode != 0 else None
+        results.append(E2ETestResult(
+            test_name="e2e_selenium",
+            status=overall,
+            test_path=str(PROJECT_ROOT / "tests" / "e2e_selenium"),
+            error=(
+                f"pytest exited {returncode}: {error_excerpt}"
+                if error_excerpt else None
+            ),
+        ))
+
+    return results
+
+
+def run_selenium(
+    run_id: str,
+    logger: logging.Logger,
+    test_file: Optional[str] = None,
+) -> List[E2ETestResult]:
+    """Run Selenium tests under tests/e2e_selenium/ via pytest.
+
+    Caller must check ``check_selenium_driver()`` first and handle the
+    absent-driver case; this function assumes the driver is present.
+    """
+    logger.info("e2e_runner: running tests via Selenium (pytest)")
+    target = test_file or str(PROJECT_ROOT / "tests" / "e2e_selenium")
+    cmd = [sys.executable, "-m", "pytest", target, "-v", "--tb=short", "-q"]
+    logger.info("e2e_runner: command: %s", " ".join(cmd))
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_SELENIUM_TIMEOUT_SECONDS,
+            cwd=str(PROJECT_ROOT),
+        )
+    except subprocess.TimeoutExpired:
+        msg = f"pytest timed out after {_SELENIUM_TIMEOUT_SECONDS} seconds"
+        logger.error("e2e_runner: %s", msg)
+        return [E2ETestResult(
+            test_name="e2e_selenium",
+            status="failed",
+            test_path=target,
+            error=msg,
+        )]
+    except FileNotFoundError:
+        msg = f"Python interpreter not found: {sys.executable}"
+        logger.error("e2e_runner: %s", msg)
+        return [E2ETestResult(
+            test_name="e2e_selenium",
+            status="failed",
+            test_path=target,
+            error=msg,
+        )]
+
+    logger.info("e2e_runner: pytest exit code %s", proc.returncode)
+    return _parse_pytest_output(proc.stdout, proc.stderr, proc.returncode, logger)
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # CLI
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -638,6 +754,12 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["native", "mcp", "auto"],
         default="auto",
         help="Execution mode",
+    )
+    parser.add_argument(
+        "--driver",
+        choices=["native", "mcp", "selenium"],
+        default=None,
+        help="Test driver override (selenium runs tests/e2e_selenium/ via pytest)",
     )
     parser.add_argument(
         "--project",
@@ -664,6 +786,58 @@ def _resolve_mode(requested: str) -> str:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # --driver selenium takes precedence over --mode
+    if args.driver == "selenium":
+        run_id = args.run_id or make_run_id()
+        logger = setup_logger(run_id, "e2e_runner")
+        logger.info("e2e_runner: driver=selenium")
+
+        if args.discover:
+            tests = discover_selenium_tests()
+            if args.json:
+                items = [
+                    {"file": t, "name": os.path.basename(t).replace(".py", ""), "driver": "selenium"}
+                    for t in tests
+                ]
+                print(json.dumps(items, indent=2))
+            else:
+                print(f"Found {len(tests)} Selenium tests:")
+                for t in tests:
+                    print(f"  {os.path.basename(t)}")
+            return 0
+
+        if not check_selenium_driver():
+            reason = (
+                "No vendored ChromeDriver or msedgedriver found in vendor/drivers/. "
+                "Add a driver binary to run selenium tests."
+            )
+            logger.warning("e2e_runner: skipping selenium — %s", reason)
+            if args.json:
+                print(json.dumps([{"driver": "selenium", "status": "skipped", "reason": reason}], indent=2))
+            else:
+                print(f"[SKIP] selenium — {reason}")
+            return 0
+
+        if args.run_all or args.test_file:
+            target = args.test_file if args.test_file else None
+            results = run_selenium(run_id, logger, test_file=target)
+        else:
+            parser.print_help()
+            return 1
+
+        passed_n = sum(1 for r in results if r.passed)
+        failed_n = len(results) - passed_n
+        logger.info("e2e_runner: %d passed, %d failed", passed_n, failed_n)
+        if args.json:
+            print(json.dumps(
+                [r.model_dump() for r in results], indent=2, default=str,
+            ))
+        return 0 if failed_n == 0 else 1
+
+    # --driver native/mcp maps to --mode for backward compatibility
+    if args.driver in ("native", "mcp"):
+        args.mode = args.driver
 
     mode = _resolve_mode(args.mode)
 
