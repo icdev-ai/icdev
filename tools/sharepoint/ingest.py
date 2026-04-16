@@ -166,19 +166,64 @@ def _upsert_document(
 # ---------------------------------------------------------------------------
 
 
+def _ingest_via_browser_fallback(
+    site_url: str,
+    stats: dict[str, int],
+    *,
+    dry_run: bool,
+) -> dict[str, int]:
+    """Delegate a site to browser_fallback.fetch_classic_page when REST returns empty/404.
+
+    Counts extracted rows as items.  DB writes are skipped in dry-run mode
+    because the fallback rows lack the stable IDs needed for upsert.
+    """
+    from tools.sharepoint.browser_fallback import fetch_classic_page, FallbackDisabledError
+    from tools.sharepoint.selectors import DOCUMENT_LINK_ANCHOR, LIST_ITEM_ROW
+
+    selectors = {
+        "Title": DOCUMENT_LINK_ANCHOR,
+        "Row": LIST_ITEM_ROW,
+    }
+    try:
+        rows = fetch_classic_page(site_url, selectors)
+        logger.info(
+            "browser_fallback extracted %d row(s) from %s",
+            len(rows), site_url,
+        )
+        stats["items"] += len(rows)
+    except FallbackDisabledError as exc:
+        # Config gate changed between the flag check and here — treat as warning.
+        logger.warning("browser_fallback gate closed unexpectedly for %s: %s", site_url, exc)
+        stats["errors"] += 1
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("browser_fallback error on %s: %s", site_url, exc)
+        stats["errors"] += 1
+    return stats
+
+
 def _ingest_site(
     client: Any,
     site_url: str,
     conn: Any | None,
     *,
     dry_run: bool,
+    fallback_enabled: bool = False,
 ) -> dict[str, int]:
     """Walk one site: enumerate lists → items (and document records for libraries).
 
     Returns per-site counts: ``{lists, items, documents, errors}``.
     When ``dry_run`` is True, ``conn`` is None and no DB writes occur.
+
+    If the REST endpoint returns a 404 or an empty list for a site that is known
+    to have content (i.e. it is in ``site_scope``), the behaviour depends on
+    ``fallback_enabled`` (from ``args/sharepoint.yaml``):
+
+    - ``fallback_enabled=False`` (default): log a warning and skip the site.
+    - ``fallback_enabled=True``: delegate to
+      :func:`tools.sharepoint.browser_fallback.fetch_classic_page` and log the
+      delegation decision.
     """
-    from tools.sharepoint.client import SharePointTransientError
+    from tools.sharepoint.client import SharePointTransientError, SharePointError
 
     stats: dict[str, int] = {"lists": 0, "items": 0, "documents": 0, "errors": 0}
     site_id = _stable_id(site_url)
@@ -193,6 +238,29 @@ def _ingest_site(
         logger.warning("Transient error listing %s: %s", site_url, exc)
         stats["errors"] += 1
         return stats
+    except SharePointError as exc:
+        # 404 or other non-transient REST failure — site may be classic-only.
+        logger.warning(
+            "REST error listing %s (%s); site may be classic-only",
+            site_url, exc,
+        )
+        lists = []  # fall through to the empty-list fallback check below
+
+    # Empty REST response: the site is in scope but REST returned nothing.
+    # Consult fallback_enabled to decide whether to skip or delegate.
+    if not lists:
+        if not fallback_enabled:
+            logger.warning(
+                "REST returned empty/404 for site %s; fallback_enabled=False — skipping with warning",
+                site_url,
+            )
+            return stats
+        logger.info(
+            "REST returned empty/404 for site %s; fallback_enabled=True — delegating to "
+            "browser_fallback.fetch_classic_page",
+            site_url,
+        )
+        return _ingest_via_browser_fallback(site_url, stats, dry_run=dry_run)
 
     for lst in lists:
         # SharePoint list GUIDs may appear as "Id" or "id"
@@ -306,6 +374,7 @@ def ingest_all(
     auth_mode = config.get("auth_mode", "ntlm")
     verify = config.get("verify_tls", True)
     timeout = float(config.get("request_timeout_sec", 30))
+    fallback_enabled: bool = bool(config.get("fallback_enabled", False))
     site_scope: list[str] = (
         [site_override] if site_override else list(config.get("site_scope") or [])
     )
@@ -361,7 +430,7 @@ def ingest_all(
         for site_url in site_scope:
             logger.info("Ingesting site: %s", site_url)
             try:
-                stats = _ingest_site(client, site_url, conn, dry_run=dry_run)
+                stats = _ingest_site(client, site_url, conn, dry_run=dry_run, fallback_enabled=fallback_enabled)
                 for key in total:
                     total[key] += stats[key]
                 sites_processed += 1
