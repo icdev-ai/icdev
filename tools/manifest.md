@@ -180,3 +180,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Rss Ingestor | tools\trading\news\rss_ingestor.py | Auto-registered: news/rss_ingestor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Scenario Matcher | tools\trading\news\scenario_matcher.py | Auto-registered: news/scenario_matcher.py | --json | JSON |
