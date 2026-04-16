@@ -187,3 +187,9 @@
 |------|------|-------------|-------|--------|
 | Scenario Matcher | tools\trading\news\scenario_matcher.py | Auto-registered: news/scenario_matcher.py | --json | JSON |
 - [Unclassified (auto-added)](manifest/unclassified.md)
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| News Reasoner | tools\trading\news\news_reasoner.py | Auto-registered: news/news_reasoner.py | --json | JSON |
