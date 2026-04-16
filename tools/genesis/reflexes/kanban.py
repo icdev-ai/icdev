@@ -95,6 +95,10 @@ MAX_AUTO_PROMOTE = 2
 MAX_IN_PROGRESS = 3
 # Max seconds a Claude CLI subprocess can run before being killed
 MAX_EXECUTION_SECONDS = 900  # 15 minutes — guard-6: lowered from 1800
+# Minimum remaining budget required to start post-process operations (guard-budget)
+VERIFICATION_MIN_BUDGET_SECONDS = 30   # verification pipeline can take ~10-25s
+REMEDIATION_MIN_BUDGET_SECONDS = 60    # remediation + re-verify can take ~30-50s
+SELF_DEBUG_MIN_BUDGET_SECONDS = 15     # self-debug dispatch is lightweight but still costs time
 
 # ── Token exhaustion detection ────────────────────────────────────────────────
 
@@ -3076,54 +3080,87 @@ def _verify_task_completed(task_id, claude_output):
     # Skip remediation for PHANTOM COMPLETION — hallucinated output has nothing
     # on disk to fix; running git commands would be pointless noise.
     _is_phantom = "PHANTOM COMPLETION" in reason
+    # guard-budget: compute remaining budget once for all post-process gates
+    _budget_dispatch_time = _dispatch_times.get(task_id)
+    _budget_elapsed = (
+        (datetime.now(timezone.utc) - _budget_dispatch_time).total_seconds()
+        if _budget_dispatch_time is not None else 0.0
+    )
+    _budget_remaining = MAX_EXECUTION_SECONDS - _budget_elapsed
+
+    work_dir = _worktrees.get(task_id) or str(BASE_DIR)
+
     if not verified and not _is_phantom:
-        try:
-            from tools.workflow.auto_remediate import attempt_remediation
-            work_dir = _worktrees.get(task_id) or str(BASE_DIR)
-            # Get the list of files the agent touched (for targeted ruff/manifest)
-            import subprocess as _sp
-            diff = _sp.run(
-                ["git", "diff", "--name-only", f"main...kanban/{task_id}"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                cwd=str(BASE_DIR), timeout=15,
+        # guard-budget: skip remediation (and re-verification) if total elapsed
+        # time is within REMEDIATION_MIN_BUDGET_SECONDS of the hard cap.
+        # Remediation + re-verify can add another 30-50s; aborting prevents
+        # the task from overshooting MAX_EXECUTION_SECONDS.
+        if _budget_remaining < REMEDIATION_MIN_BUDGET_SECONDS:
+            logger.warning(
+                "guard-budget: %s skipping remediation — only %.0fs remaining "
+                "(need %ds); proceeding to self-debug gate",
+                task_id, _budget_remaining, REMEDIATION_MIN_BUDGET_SECONDS,
             )
-            modified_files = [ln.strip() for ln in diff.stdout.splitlines() if ln.strip()]
-
-            remediated, rem_msg, rem_info = attempt_remediation(
-                cwd=work_dir, task_id=task_id,
-                reason=reason, metrics=metrics,
-                modified_files=modified_files,
-            )
-
-            if remediated:
-                # Re-run full verification after fix was applied
-                logger.info(
-                    "guard-21: remediation succeeded for %s (%s) — re-verifying",
-                    task_id, rem_info.get("failure_type", "?"),
+            reason = f"{reason} | BUDGET_SKIP_REMEDIATION ({_budget_remaining:.0f}s remaining)"
+        else:
+            try:
+                from tools.workflow.auto_remediate import attempt_remediation
+                # Get the list of files the agent touched (for targeted ruff/manifest)
+                import subprocess as _sp
+                diff = _sp.run(
+                    ["git", "diff", "--name-only", f"main...kanban/{task_id}"],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    cwd=str(BASE_DIR), timeout=15,
                 )
-                verified, reason, metrics = _run_full_verification(task_id, claude_output)
-                reason = f"AUTO-REMEDIATED ({rem_info.get('failure_type', '?')}): {rem_msg} | {reason}"
-            else:
-                reason = f"{reason} | REMEDIATION={rem_info.get('failure_type', '?')}: {rem_msg}"
-        except Exception as exc:
-            logger.warning("guard-21: remediation error for %s: %s", task_id, exc)
+                modified_files = [ln.strip() for ln in diff.stdout.splitlines() if ln.strip()]
+
+                remediated, rem_msg, rem_info = attempt_remediation(
+                    cwd=work_dir, task_id=task_id,
+                    reason=reason, metrics=metrics,
+                    modified_files=modified_files,
+                )
+
+                if remediated:
+                    # Re-run full verification after fix was applied
+                    logger.info(
+                        "guard-21: remediation succeeded for %s (%s) — re-verifying",
+                        task_id, rem_info.get("failure_type", "?"),
+                    )
+                    verified, reason, metrics = _run_full_verification(task_id, claude_output)
+                    reason = f"AUTO-REMEDIATED ({rem_info.get('failure_type', '?')}): {rem_msg} | {reason}"
+                else:
+                    reason = f"{reason} | REMEDIATION={rem_info.get('failure_type', '?')}: {rem_msg}"
+            except Exception as exc:
+                logger.warning("guard-21: remediation error for %s: %s", task_id, exc)
 
         # self-debug reflex: if the same failure signature recurs, stop
         # looping, capture state, ask an LLM to diagnose, create an Oracle
         # RCA card, and quarantine this task.
         if not verified:
-            try:
-                from tools.workflow.self_debug import check_and_diagnose
-                diag = check_and_diagnose(task_id, reason, work_dir)
-                if diag:
-                    logger.warning(
-                        "self_debug: quarantined %s — %s (card %s)",
-                        task_id, diag.get("root_cause", "?"),
-                        diag.get("diagnosis_card_id"),
-                    )
-                    reason = f"{reason} | SELF_DEBUG: {diag.get('root_cause', '?')} (card {diag.get('diagnosis_card_id')})"
-            except Exception as exc:
-                logger.warning("self_debug reflex error for %s: %s", task_id, exc)
+            # guard-budget: self-debug dispatch is lightweight but still
+            # consumes time; skip if we're within SELF_DEBUG_MIN_BUDGET_SECONDS
+            # of the hard cap to avoid overshooting MAX_EXECUTION_SECONDS.
+            # Re-use _budget_remaining computed above (same task, same clock).
+            if _budget_remaining < SELF_DEBUG_MIN_BUDGET_SECONDS:
+                logger.warning(
+                    "guard-budget: %s skipping self-debug — only %.0fs remaining "
+                    "(need %ds)",
+                    task_id, _budget_remaining, SELF_DEBUG_MIN_BUDGET_SECONDS,
+                )
+                reason = f"{reason} | BUDGET_SKIP_SELF_DEBUG ({_budget_remaining:.0f}s remaining)"
+            else:
+                try:
+                    from tools.workflow.self_debug import check_and_diagnose
+                    diag = check_and_diagnose(task_id, reason, work_dir)
+                    if diag:
+                        logger.warning(
+                            "self_debug: quarantined %s — %s (card %s)",
+                            task_id, diag.get("root_cause", "?"),
+                            diag.get("diagnosis_card_id"),
+                        )
+                        reason = f"{reason} | SELF_DEBUG: {diag.get('root_cause', '?')} (card {diag.get('diagnosis_card_id')})"
+                except Exception as exc:
+                    logger.warning("self_debug reflex error for %s: %s", task_id, exc)
 
     _write_verification_log(task_id, verified, reason)
     if metrics:
@@ -3323,6 +3360,37 @@ def _check_completed():
 
             # ── NORMAL SUCCESS PATH ───────────────────────────────────
             if ret == 0:
+                # guard-budget: pre-flight check before entering verification
+                # pipeline. Verification (including potential remediation and
+                # self-debug) can take 30-60s. If the total elapsed time since
+                # dispatch is already within VERIFICATION_MIN_BUDGET_SECONDS of
+                # MAX_EXECUTION_SECONDS we'd overshoot the budget — return to
+                # backlog instead so the task gets a fresh 900s slot next time.
+                _vb_dispatch_time = _dispatch_times.get(task_id)
+                if _vb_dispatch_time is not None:
+                    _vb_elapsed = (datetime.now(timezone.utc) - _vb_dispatch_time).total_seconds()
+                    _vb_remaining = MAX_EXECUTION_SECONDS - _vb_elapsed
+                    if _vb_remaining < VERIFICATION_MIN_BUDGET_SECONDS:
+                        print(
+                            f"  Kanban: {task_id} BUDGET EXHAUSTED before verification "
+                            f"({_vb_remaining:.0f}s remaining, need {VERIFICATION_MIN_BUDGET_SECONDS}s) "
+                            f"— returning to backlog"
+                        )
+                        logger.warning(
+                            "guard-budget: %s skipping verification — only %.0fs remaining "
+                            "(need %ds); returning to backlog",
+                            task_id, _vb_remaining, VERIFICATION_MIN_BUDGET_SECONDS,
+                        )
+                        _move_task(task_id, "backlog",
+                                   actor="scheduler",
+                                   reason=f"budget exhausted before verification ({_vb_remaining:.0f}s remaining)")
+                        del _running[task_id]
+                        _dispatch_times.pop(task_id, None)
+                        if task_id in _worktrees:
+                            _cleanup_worktree(task_id)
+                            del _worktrees[task_id]
+                        continue
+
                 # VERIFICATION GATE — prevent false positives.
                 # Batch 4 atomic-ish wrap (2026-04-15): verify first, then
                 # state-change. If _move_task raises, we DO NOT swallow the

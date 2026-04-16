@@ -6,3 +6,4 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Auto-added codelens.py | tools/codelens.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added kanban.py | tools/kanban.py | (auto-added by remediation; update description) | --json | stdout |
