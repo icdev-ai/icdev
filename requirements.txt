@@ -10,6 +10,7 @@ flask>=3.0
 pytest>=8.0
 pytest-cov>=5.0
 behave>=1.2
+schemathesis>=3.0             # Property-based API contract tests (tests/api/test_contract.py)
 
 # === Code Quality ===
 ruff>=0.12               # Ultra-fast Python linter (replaces flake8+isort+black)
