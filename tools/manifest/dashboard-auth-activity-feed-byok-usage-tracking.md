@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Dashboard Auth | tools/dashboard/auth.py | API key auth, session mgmt, RBAC (5 roles), CLI bootstrap, auth logging | API key / session | User context |
+| JWT Auth API | tools/dashboard/api/auth.py | Flask Blueprint + before_request middleware for /api/v1/*: HS256 JWT issuance (15-min access + 7-day refresh), @require_jwt decorator, CSRF double-submit cookie/header enforcement, PUBLIC_ENDPOINTS allow-list; dev credential check via ICDEV_DEV_USERS env var | POST /api/v1/auth/token (username+password), POST /api/v1/auth/refresh (refresh_token) | JWT access+refresh pair JSON; 401/403 on auth/CSRF failure |
 | Dashboard BYOK | tools/dashboard/byok.py | BYOK key management: Fernet AES-256 encrypt/decrypt, key resolution (user→dept→env→config) | user_id, provider, key | Encrypted storage |
 | WebSocket Manager | tools/dashboard/websocket.py | Flask-SocketIO init, room-based broadcast, graceful fallback to HTTP polling | app | SocketIO instance |
 | Activity Feed API | tools/dashboard/api/activity.py | Merged audit_trail + hook_events UNION ALL, filters, polling, stats | source, event_type, actor | Merged events JSON |
