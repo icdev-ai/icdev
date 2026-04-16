@@ -46,6 +46,53 @@ def main():
     )
     args = parser.parse_args()
 
+    # Single-instance guard via PID lockfile. Handles two cases:
+    #  (1) startup race — if another scheduler's PID is in the lockfile and
+    #      that process is alive, exit immediately.
+    #  (2) concurrent starts — re-check the lockfile each cycle; if another
+    #      instance took ownership, exit.
+    # --once bypasses this so one-shot/test runs always work.
+    LOCK_PATH = BASE_DIR / ".tmp" / "kanban_scheduler.pid"
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    def _lock_owner_alive() -> int:
+        """Return the PID of a live owner, or 0 if lockfile is stale/missing/us."""
+        import os
+        try:
+            owner_pid = int(LOCK_PATH.read_text(encoding="utf-8").strip())
+        except Exception:
+            return 0
+        if owner_pid == os.getpid():
+            return 0
+        try:
+            import psutil as _ps
+            if _ps.pid_exists(owner_pid):
+                p = _ps.Process(owner_pid)
+                if "kanban_scheduler" in " ".join(p.cmdline()):
+                    return owner_pid
+        except Exception:
+            pass
+        return 0
+
+    def _take_lock() -> bool:
+        import os
+        try:
+            LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+            return True
+        except Exception:
+            return False
+
+    if not args.once:
+        owner = _lock_owner_alive()
+        if owner:
+            logger.info(
+                "Another kanban scheduler is alive (pid=%d). Exiting to avoid "
+                "duplicate dispatch.", owner,
+            )
+            return
+        if not _take_lock():
+            logger.warning("Failed to take lockfile — starting anyway")
+
     # Load .env for Telegram bot token, API keys, etc.
     try:
         from dotenv import load_dotenv
@@ -110,6 +157,18 @@ def main():
     cycle = 0
     while True:
         cycle += 1
+        # In-loop lock recheck: if a different live scheduler now owns the
+        # lockfile (simultaneous start race where we all passed the initial
+        # check), surrender. Rewrite our PID if the file is stale/missing.
+        owner = _lock_owner_alive()
+        if owner:
+            logger.info(
+                "Cycle %d: another scheduler took ownership (pid=%d). Exiting.",
+                cycle, owner,
+            )
+            return
+        _take_lock()  # refresh our ownership (idempotent)
+
         # guard-6: Write heartbeat BEFORE work so a hung cycle is still detectable
         try:
             heartbeat_path.write_text(
