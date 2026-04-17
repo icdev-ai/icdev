@@ -287,6 +287,32 @@ news.counts:
     macro, geopolitical, earnings, regulatory, sector. Click a stat card
     to filter the feed below.
 
+news.trace_impact:
+  title: 🔗 Trace Impact
+  body: |
+    Walks the Knowledge Graph to cascade this news item into every affected
+    ticker across the AlphaDesk universe.
+
+    **Pipeline:**
+    1. **Extract entities** — countries, commodities, tickers, event hints
+       (war, sanctions, supply disruption, price up, etc.)
+    2. **Propagate each subject** — country → producing commodities → exposed
+       tickers; commodity → direct exposures; ticker → supply-chain neighbours
+    3. **Aggregate per ticker** — sum signed impact scores across all
+       subjects and events
+    4. **Persist to `ad_news_impact_traces`** — consumed by the Oracle
+       news_impact lens, expert agents, SROR danger, and /market alerts
+
+    Example: "US-Iran war" → detects {US, Iran, oil, war} → US war boosts
+    defense primes (LMT, RTX, NOC); Iran war cascades into oil supply
+    disruption hurting producers and consumers while lifting direct oil
+    holders (USO). You'll see winners, losers, and per-subject breakdown.
+
+    The same pipeline runs automatically every 30 minutes via the
+    `news_impact_tracer` daemon reflex, so the system's entire ecosystem
+    — signals, expert opinions, Oracle predictions, Radar danger — stays
+    aligned with the news flow without manual clicks.
+
 # ───────────────────────────────────────────────────────────────────
 # /evolution
 # ───────────────────────────────────────────────────────────────────

@@ -74,6 +74,11 @@
     {% endfor %}
 </div>
 
+{# Projects in Flight — reusable partial (config at args/projects.yaml).
+   Auto-hides each project when done; Task Board auto-hides when all active
+   columns are empty. Init hooks wired below in the DOMContentLoaded block. #}
+{% include "_projects_in_flight.html" %}
+
 <!-- Add/Edit Task Modal -->
 <div id="task-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:none; align-items:center; justify-content:center;">
     <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:500px; border:1px solid var(--border);">
@@ -247,6 +252,7 @@ function refreshKanbanTasks() {
         .then(function(data) {
             _allTasks = data.tasks || [];
             renderTaskKanban(_allTasks);
+            if (window.checkBoardEmptyAndToggle) window.checkBoardEmptyAndToggle();
         });
 }
 
@@ -572,6 +578,8 @@ var _countdownTimer = null;
 function refreshDashboard() {
     // Refresh kanban tasks
     refreshKanbanTasks();
+    // Refresh in-flight projects (reusable partial in _projects_in_flight.html)
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
     // Refresh charts (re-trigger the chart loader in the scripts block)
     if (window._loadCharts) window._loadCharts();
     // Visual feedback on button
@@ -607,6 +615,7 @@ function _startAutoRefresh() {
 
 document.addEventListener('DOMContentLoaded', function() {
     refreshKanbanTasks();
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
     _startAutoRefresh();
 });
 </script>
