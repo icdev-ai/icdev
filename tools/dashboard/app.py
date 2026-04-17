@@ -7749,6 +7749,10 @@ def create_app() -> Flask:
 
         _logging.getLogger(__name__).warning("Platform health module unavailable: %s", _ph_err)
 
+    # H5: strangler-fig proxy — /next/* → Next.js; all else pass-through to Flask
+    from tools.dashboard.proxy import mount_proxy  # noqa: E402
+    mount_proxy(app)
+
     return app
 
 
