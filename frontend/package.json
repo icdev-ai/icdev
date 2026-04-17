@@ -1,0 +1,13 @@
+{
+  "name": "icdev-frontend",
+  "version": "1.0.0",
+  "description": "ICDEV™ frontend — generated API types and client utilities",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "codegen": "openapi-typescript http://localhost:5050/api/v1/openapi.json -o lib/api-types.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.8.0"
+  }
+}
