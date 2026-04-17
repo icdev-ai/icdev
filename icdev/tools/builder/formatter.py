@@ -219,7 +219,7 @@ def format_javascript(project_path: str, check_only: bool = False) -> Dict:
 
     if not prettier_cmd:
         result["success"] = False
-        result["raw_output"] = "prettier not found. Install with: npm install -g prettier"
+        result["raw_output"] = "prettier not found. Install globally (npm install -g prettier) on connected machines. Air-gap: skip JS formatting or vendor prettier binary."
         result["tools_run"].append(
             {
                 "tool": "prettier",

@@ -241,8 +241,19 @@ def main() -> int:
                 driver.quit()
 
         # --- Step 5: mark parent done, re-check is_blocked -------------
+        # guard-22 (tools/dashboard/api/kanban.py) blocks move→done for any
+        # task without a passing kanban_verifications row. This E2E seeds
+        # tasks purely via the API so no verification row exists; bypass
+        # with an audit reason to exercise the dependency-unblock path.
         try:
-            _post(f"/api/kanban/tasks/{parent_id}/move", {"status": "done"})
+            _post(
+                f"/api/kanban/tasks/{parent_id}/move",
+                {
+                    "status": "done",
+                    "bypass_verification": True,
+                    "bypass_reason": "E2E test — depends-on unblock check",
+                },
+            )
             data = _get("/api/kanban/tasks")
             by_id = {t["id"]: t for t in data["tasks"]}
             child_row = by_id[child_id]
