@@ -242,6 +242,83 @@ def insert_scenario_link(
         conn.close()
 
 
+def upsert_cluster(
+    scenario_key: str | None,
+    category: str | None,
+    time_window,
+    item_ids: list[str],
+    cumulative_score: float,
+    first_seen: str,
+    last_seen: str,
+    status: str,
+    db_path: str | Path | None = None,
+) -> str:
+    """Insert a cluster row or update an existing one matching (category, scenario_key).
+
+    Prevents duplicate accumulation when the aggregator runs on a cadence without
+    a successful purge. Returns the cluster id (existing or new).
+    """
+    conn = get_db(db_path)
+    ph = sql_placeholder(conn)
+    try:
+        if scenario_key is None:
+            existing = conn.execute(
+                f"SELECT id FROM ad_news_clusters "
+                f"WHERE category = {ph} AND scenario_key IS NULL LIMIT 1",  # nosec B608
+                (category,),
+            ).fetchone()
+        else:
+            existing = conn.execute(
+                f"SELECT id FROM ad_news_clusters "
+                f"WHERE category = {ph} AND scenario_key = {ph} LIMIT 1",  # nosec B608
+                (category, scenario_key),
+            ).fetchone()
+
+        if existing:
+            cluster_id = existing[0] if not hasattr(existing, "keys") else existing["id"]
+            conn.execute(
+                f"UPDATE ad_news_clusters SET "
+                f"time_window = {ph}, item_ids = {ph}, cumulative_score = {ph}, "
+                f"first_seen = {ph}, last_seen = {ph}, status = {ph} "
+                f"WHERE id = {ph}",  # nosec B608
+                (
+                    str(time_window),
+                    json.dumps(item_ids),
+                    cumulative_score,
+                    first_seen,
+                    last_seen,
+                    status,
+                    cluster_id,
+                ),
+            )
+            conn.commit()
+            return cluster_id
+
+        import uuid
+        cluster_id = uuid.uuid4().hex[:16]
+        conn.execute(
+            f"""INSERT INTO ad_news_clusters
+                (id, scenario_key, category, time_window, item_ids,
+                 cumulative_score, first_seen, last_seen, status)
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",  # nosec B608
+            (
+                cluster_id,
+                scenario_key,
+                category,
+                str(time_window),
+                json.dumps(item_ids),
+                cumulative_score,
+                first_seen,
+                last_seen,
+                status,
+            ),
+        )
+        conn.commit()
+        return cluster_id
+    finally:
+        conn.close()
+
+
 def insert_cluster(
     scenario_key: str | None,
     category: str | None,
