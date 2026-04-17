@@ -1,0 +1,453 @@
+# AlphaDesk help tooltips — single source of truth for all dashboard (?) tooltips.
+#
+# Each entry: key -> { title, body (markdown-ish plain text), see (optional list) }
+# Add `data-help="<key>"` to any dashboard element to auto-decorate it with a (?)
+# icon that opens this content on hover/click.
+#
+# Keep `body` concise (2-5 short paragraphs) and action-oriented: what is it,
+# how is it computed, what does it tell the user.
+
+# ───────────────────────────────────────────────────────────────────
+# Global / cross-page
+# ───────────────────────────────────────────────────────────────────
+
+regime_banner:
+  title: Regime Banner
+  body: |
+    Page-wide macro regime indicator, refreshed every 60 seconds from /api/regime.
+    Colour bar + label show the current Systemic Risk & Opportunity Radar (SROR)
+    state — NEUTRAL, OPPORTUNITY, CAUTION, DANGER, CRISIS — plus composite danger
+    vs opportunity scores, active news regime clusters, cross-market divergences,
+    and alert count.
+
+    Click the banner to open the full Radar page with indicator breakdown.
+    If "[SAMPLE DATA]" appears, live FRED/yfinance feeds are unavailable and the
+    numbers are synthetic — trading decisions should pause until live data returns.
+
+# ───────────────────────────────────────────────────────────────────
+# /market — Market Intelligence page
+# ───────────────────────────────────────────────────────────────────
+
+market.universe:
+  title: Universe
+  body: |
+    Total number of tickers AlphaDesk tracks — NASDAQ-100, S&P 500 ex-NASDAQ,
+    international ADRs, sector & asset-class ETFs, index funds, forex, crypto.
+    Defined in `tools/trading/market_intel/universe.py`. Re-seeded by the
+    `kg_enricher` daemon reflex every 6 hours.
+
+market.analyzed:
+  title: Analyzed
+  body: |
+    How many universe tickers have a current signal from the `market_scanner`
+    reflex. Gap between Universe and Analyzed = tickers the scanner hasn't
+    touched this cycle (usually because the reflex errored or the ticker is new).
+
+market.bullish:
+  title: Bullish
+  body: |
+    Count of analyzed tickers with direction = BUY. Derived from the composite
+    signal (technical + fundamental + macro + sentiment + KG propagation).
+    A signal becomes BUY when composite_score ≥ 60 AND confidence ≥ 0.60.
+
+market.bearish:
+  title: Bearish
+  body: |
+    Count of tickers with direction = SELL or SHORT. SHORT specifically means
+    the system sees an asymmetric downside — elevated short interest signal
+    plus negative technicals plus macro headwind in the ticker's sector.
+
+market.avg_score:
+  title: Avg Score
+  body: |
+    Mean composite_score across all analyzed tickers. 50 is neutral, above 60
+    is broadly bullish breadth, below 40 is broadly bearish. Useful as a
+    market-wide sentiment read that pairs with the Regime label.
+
+market.regime:
+  title: Regime
+  body: |
+    The current macro regime. Two layers:
+
+    • If the trained HMM is available, returns GREEN / YELLOW / RED.
+    • Otherwise, the Van Metre monetary framework + composite risks return a
+      richer label: EXPANSION, INFLATION, STAGFLATION, DEFLATION, LIQUIDITY_TRAP.
+
+    Regime drives signal weighting, position sizing (via vix_sizing +
+    confluence_scorer), and which sectors/ETFs are favored on the Oracle page.
+
+market.stagflation:
+  title: Stagflation Composite (0–4 flags)
+  body: |
+    A 4-flag score for stagflation risk — stagnant growth with persistent
+    inflation — sourced from FRED:
+
+    • GDP growth < 1.5% quarterly annualized (A191RL1Q225SBEA)
+    • CPI YoY > 3.0% (CPIAUCSL)
+    • Unemployment rising 3+ consecutive months (UNRATE)
+    • Energy prices +5% month-over-month (CUSR0000SEHF01)
+
+    Each active flag adds 25 points. 3+ flags flips the regime to STAGFLATION;
+    the Regime Trajectory lens then issues a critical prediction recommending
+    energy, commodities, and TIPS overweight.
+
+market.deflation:
+  title: Deflation Composite (0–4 flags)
+  body: |
+    A 4-flag score for deflation / balance-sheet recession risk — symmetric
+    to the stagflation composite:
+
+    • Credit contraction — loan growth YoY < 0% (TOTLL)
+    • M2 money supply shrinking — M2 YoY < 0% (M2SL)
+    • Velocity collapse — velocity of money < 1.1 (M2V)
+    • Breakeven compression — 5y5y forward breakeven < 2.0% (T5YIFR)
+
+    Each active flag adds 25 points. 2+ flags flips the regime to DEFLATION;
+    the Regime Trajectory lens recommends long-duration Treasuries (TLT),
+    cash (SHY), consumer staples (XLP), and dividend aristocrats.
+
+market.breakeven_5y5y:
+  title: 5y5y Forward Breakeven
+  body: |
+    The market's five-year, five-year-forward inflation expectation — the
+    annualized CPI the bond market is pricing in for the period starting 5
+    years from now through year 10. Source: FRED series **T5YIFR**.
+
+    This is the Fed's preferred long-horizon gauge for whether inflation
+    expectations are "anchored" near the 2% target. It strips out near-term
+    noise (energy shocks, tariff surprises) and focuses on structural views.
+
+    Colour bands on this card:
+    • **Red < 1.5%** — deflation expectations (emergency tier)
+    • **Amber 1.5–2.0%** — below target (disinflation pressure)
+    • **Green 2.0–2.5%** — anchored near target (healthy)
+    • **Amber 2.5–3.0%** — elevated (reflation narrative)
+    • **Red > 3.0%** — expectations un-anchoring (fire-drill inflation tier)
+
+    Also used as the fourth flag in the Deflation Composite.
+
+market.kg_nodes:
+  title: KG Nodes
+  body: |
+    Total entities in the Alphadesk knowledge graph — tickers, sectors, ETFs,
+    macro indicators, commodities, cascade triggers. Re-seeded by the
+    `kg_enricher` reflex every 6 hours via `kg_seeder.py`.
+
+market.kg_edges:
+  title: KG Edges
+  body: |
+    Total relationships in the KG — SUPPLIES_TO, COMPETES_WITH,
+    MEMBER_OF_SECTOR, EXPOSED_TO_COMMODITY, MACRO_SENSITIVE_TO, ENABLES,
+    REQUIRES_RESOURCE, CONSTRAINED_BY, DISPLACES.
+    Used by the cascade engine and supply-chain propagation.
+
+market.composite_detail:
+  title: Macro Regime Detail
+  body: |
+    Appears when either composite (Stagflation or Deflation) has at least one
+    active flag. Shows each flag's threshold, current value, and whether it
+    is active (● red) or quiet (○ gray) — so you can see *which* specific
+    condition is driving the regime call.
+
+market.daemon:
+  title: Trading Daemon
+  body: |
+    The always-on trading reflex scheduler. 22 reflexes run on independent
+    cadences: market_scanner (1h), macro_watcher (30m), alert_detector (10m),
+    kg_enricher (6h), expert_advisor (2h), exit_executor (2m), news_poller,
+    news_aggregator, systemic_radar, gap_detector, scenario_analyzer, and more.
+
+    The daemon auto-starts on Windows login via Task Scheduler. Each reflex
+    has an independent circuit breaker: 3 consecutive failures opens the
+    breaker and quarantines that reflex until manual reset.
+
+market.breadth:
+  title: Market Breadth
+  body: |
+    Visual band showing the bullish/neutral/bearish split of analyzed tickers.
+    Classic breadth indicator — when the S&P is rising but breadth narrows
+    (fewer bullish names), that's a divergence the system flags.
+
+market.sector_strength:
+  title: Sector Strength
+  body: |
+    Bar chart of per-sector average composite_score. Reveals sector rotation
+    — capital flowing from cyclicals to defensives signals risk-off regime
+    change. Computed by `batch_scanner.compute_sector_summary`.
+
+market.alerts:
+  title: Alerts
+  body: |
+    Real-time events from the `alert_engine` reflex: direction flips
+    (BUY→SELL within 24h), KG-propagated shocks (one ticker's news rippling
+    through supply chains), macro regime changes, and stagflation/deflation
+    flag transitions.
+
+market.heatmap:
+  title: Signal Heatmap
+  body: |
+    Universe-wide grid coloured by composite_score — green = bullish,
+    red = bearish, gray = unanalyzed. Filter by direction, sector, KG
+    centrality, or minimum confidence. Hover a cell for ticker detail;
+    click to jump to /analysis for that ticker.
+
+    The small corner numbers are 1-day, 5-day, 30-day price performance
+    (top-left/top-right/bottom-left) plus 1-year (bottom-right).
+
+market.supply_chain:
+  title: Supply Chain Propagation
+  body: |
+    KG-powered "what if" — enter a ticker and an event type, the system
+    walks SUPPLIES_TO, COMPETES_WITH, EXPOSED_TO_COMMODITY edges up to
+    10 levels deep, scoring each downstream impact by edge weight × event
+    severity. Used by `cascade_engine.py`.
+
+# ───────────────────────────────────────────────────────────────────
+# Overview page — /
+# ───────────────────────────────────────────────────────────────────
+
+overview.portfolio:
+  title: Portfolio
+  body: |
+    Current paper portfolio: cash balance, position count, unrealized P&L,
+    and day-over-day change. Refreshed from `ad_portfolios` + `ad_positions`
+    tables. See the /portfolio page for position-level detail.
+
+overview.market:
+  title: Market Snapshot
+  body: |
+    At-a-glance breadth, regime, and top movers from the materialized
+    `ad_market_snapshot` table (refreshed by the snapshot_refresher reflex).
+
+overview.news:
+  title: News Intelligence
+  body: |
+    Summary of active news clusters (regime-level + emerging), detected
+    divergences between news and market action, and the dominant news
+    category (macro / geopolitical / earnings / regulatory / sector).
+
+overview.oracle:
+  title: Oracle Predictions
+  body: |
+    Latest high-confidence predictions from the 4-lens Trading Oracle:
+    Regime Trajectory, News Intelligence, Portfolio Stress, Signal
+    Convergence. Each prediction includes a horizon, confidence, direction,
+    and recommended action. The full list lives at /oracle.
+
+overview.expert:
+  title: Expert Consensus
+  body: |
+    Latest recommendations from the 6-agent expert pipeline (Fundamental,
+    Technical, Sentiment, Macro, Quant, Risk) synthesized by the CIS
+    (Committee of Investment Specialists). Each row shows final direction
+    and conviction 1–10.
+
+# ───────────────────────────────────────────────────────────────────
+# /news
+# ───────────────────────────────────────────────────────────────────
+
+news.regime_watch:
+  title: Regime Watch
+  body: |
+    News clusters promoted to regime tier — cumulative_score above the
+    `regime` threshold (default 10). These represent durable news flow
+    that's shaping the broader macro narrative. One cluster per
+    (category, scenario_key) after the upsert fix (2026-04-17).
+
+news.emerging_watch:
+  title: Emerging Clusters
+  body: |
+    News clusters at the `emerging` or `cluster` tier — strong but not yet
+    regime-grade. Watch these for promotion into regime watch within 24–48
+    hours; they're the leading edge of narrative shifts.
+
+news.counts:
+  title: News Counts by Category
+  body: |
+    Category buckets from the news classifier (`tools/trading/news/classifier.py`):
+    macro, geopolitical, earnings, regulatory, sector. Click a stat card
+    to filter the feed below.
+
+# ───────────────────────────────────────────────────────────────────
+# /evolution
+# ───────────────────────────────────────────────────────────────────
+
+evolution.signals:
+  title: Signal Evolution
+  body: |
+    Time-series chart of composite_score, direction, and confidence per
+    ticker — shows how the AI changed its mind over time. Useful for
+    post-mortems and calibration analysis.
+
+evolution.analysts:
+  title: Analyst Contribution
+  body: |
+    Per-analyst component scores (fundamental, technical, sentiment, macro,
+    quant, risk) over time. Lets you see which analyst is driving a thesis
+    and whether their view has been stable.
+
+evolution.macro:
+  title: Macro Regime History
+  body: |
+    Regime label + macro score over time. When the regime changes from
+    EXPANSION → INFLATION → DEFLATION, positions should rotate accordingly.
+
+# ───────────────────────────────────────────────────────────────────
+# /signals
+# ───────────────────────────────────────────────────────────────────
+
+signals.queue:
+  title: Signal Queue
+  body: |
+    All generated signals, sortable by ticker, direction, composite_score,
+    confidence, created_at. Status = pending / approved / rejected / executed.
+    Signals need both signal direction = BUY AND advisor confirmation = BUY
+    before the auto-trader routes them as orders (via the expert_advisor
+    reflex every 2 hours).
+
+signals.auto_approve:
+  title: Auto-Approval Threshold
+  body: |
+    Signals with composite_score ≥ 67% and direction = BUY auto-approve
+    (status flips from `pending` to `approved`). Below that, human review
+    is required. Rejection criteria: earnings blackout, retired strategy,
+    confluence tier D, predicted slippage > alpha budget.
+
+# ───────────────────────────────────────────────────────────────────
+# /scenarios
+# ───────────────────────────────────────────────────────────────────
+
+scenarios.economic:
+  title: Economic Calendar
+  body: |
+    Upcoming economic data releases (CPI, PPI, NFP, GDP, FOMC, retail sales,
+    etc.) with historical average market move in basis points and the
+    one-click "what if" scenario the release would trigger on a surprise.
+
+scenarios.whatif:
+  title: What-If Templates
+  body: |
+    Hypothetical shocks — rate hike/cut +25/50 bps, war/terrorism/natural
+    disaster, pandemic, trade war, CBDC launch. Each runs a 10-level-deep
+    cascade through the KG and shows per-sector 1m/1q/1y impacts.
+
+scenarios.historical:
+  title: Historical Replays
+  body: |
+    Nine canonical crises (2008 GFC, COVID, dot-com, Ukraine, Black Monday,
+    Nixon shock, Gulf War, Iraq, Fed hike cycle) — replay the impact matrix
+    against your current portfolio.
+
+# ───────────────────────────────────────────────────────────────────
+# /oracle  (Trading Oracle)
+# ───────────────────────────────────────────────────────────────────
+
+oracle.predictions:
+  title: Lens Predictions
+  body: |
+    Four specialized lenses scan for actionable patterns:
+
+    • **Regime Trajectory** — forecasts regime shifts from indicator drift
+    • **News Intelligence** — finds clusters/divergences the market missed
+    • **Portfolio Stress** — simulates your positions against scenarios
+    • **Signal Convergence** — detects multi-lens agreement across tickers
+
+    Each prediction has horizon (days), confidence (0–1), direction
+    (bullish/bearish/neutral), severity (info → critical), and a concrete
+    recommended action.
+
+# ───────────────────────────────────────────────────────────────────
+# /portfolio
+# ───────────────────────────────────────────────────────────────────
+
+portfolio.positions:
+  title: Positions
+  body: |
+    All open paper positions from `ad_positions`: ticker, quantity, average
+    cost, current market value, unrealized P&L, asset class (equity/crypto).
+    Exit orders are managed by the `exit_executor` reflex (runs every 2
+    minutes) via per-tier stop and target adjustments.
+
+portfolio.pnl:
+  title: P&L
+  body: |
+    Unrealized + realized P&L. Realized rolls up closed trades from
+    `ad_orders`; unrealized marks live positions at the latest Alpaca
+    paper quote (or sim fallback when broker is unavailable).
+
+# ───────────────────────────────────────────────────────────────────
+# /risk
+# ───────────────────────────────────────────────────────────────────
+
+risk.drawdown:
+  title: Drawdown Monitor
+  body: |
+    Tracks daily P&L vs peak. When drawdown exceeds the `halt_drawdown_pct`
+    threshold in trading_config.yaml, the kill-switch auto-trips and the
+    auto-trader stops placing new orders until manual reset.
+
+risk.kill_switch:
+  title: Kill Switch
+  body: |
+    Three-way guard: environment variable, lock file, or database flag can
+    trip it. Checked on every auto-trader run. When active, no new orders
+    are placed — existing positions and exit logic still run.
+
+risk.pdt:
+  title: PDT Tracker
+  body: |
+    Pattern Day Trader rule compliance. Blocks new day-trades if the account
+    has <$25k equity and already used 3 day-trades in a rolling 5-day window.
+    Sourced from Alpaca broker state when creds are present.
+
+risk.vix_sizing:
+  title: VIX Position Sizing
+  body: |
+    Position size scaling factor based on current VIX. Linear: VIX 15→1.0x,
+    VIX 25→0.6x, VIX 35→0.3x. Reduces exposure as volatility rises.
+
+# ───────────────────────────────────────────────────────────────────
+# /graph
+# ───────────────────────────────────────────────────────────────────
+
+graph.viz:
+  title: Knowledge Graph Visualization
+  body: |
+    D3 force-directed rendering of the AlphaDesk KG. Node colour = entity
+    type (ticker / sector / ETF / macro indicator / commodity). Node size =
+    betweenness centrality. Edge thickness = relationship weight.
+
+graph.gaps:
+  title: Structural Gaps (InfraNodus-inspired)
+  body: |
+    Pairs of KG communities that are NOT directly connected but SHOULD be
+    given their topic overlap. Each gap is turned into a research question
+    by the `gap_detector` reflex — surfaces "what are we not thinking about
+    yet" opportunities.
+
+# ───────────────────────────────────────────────────────────────────
+# /analysis
+# ───────────────────────────────────────────────────────────────────
+
+analysis.macro_context:
+  title: Macro Context (per ticker)
+  body: |
+    Full macro overlay for the selected ticker: sector sensitivity to
+    rates/oil/DXY, supply chain risk, geopolitical risk, stagflation +
+    deflation composites, and the ticker's KG neighbors with propagated
+    score adjustments.
+
+analysis.analyst_breakdown:
+  title: Analyst Breakdown
+  body: |
+    Per-analyst findings for the current run: fundamental, technical,
+    sentiment, macro, quant, risk. Each shows score (0-100), direction,
+    key evidence. The CIS then weights and synthesizes them into the
+    final BUY/SELL/HOLD + conviction 1-10.
+
+analysis.debate:
+  title: Socratic Debate
+  body: |
+    LLM-generated debate between bull and bear analysts on the current
+    thesis. Surfaces the strongest counter-argument — a forcing function
+    against confirmation bias.
