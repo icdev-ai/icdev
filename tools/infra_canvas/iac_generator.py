@@ -762,11 +762,11 @@ def _cf_resource_block(node: dict) -> str:
         return result
 
     lines.extend(_emit_props(props, 6))
-    lines.append(f"      Tags:")
-    lines.append(f"        - Key: Name")
+    lines.append("      Tags:")
+    lines.append("        - Key: Name")
     lines.append(f"          Value: {label}")
-    lines.append(f"        - Key: Classification")
-    lines.append(f"          Value: CUI")
+    lines.append("        - Key: Classification")
+    lines.append("          Value: CUI")
     lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -1191,14 +1191,9 @@ def generate_ansible(graph: dict) -> str:
     parts = [_ANSIBLE_HEADER.format(ts=_ts())]
 
     # Inventory group detection
-    server_nodes = [n for n in nodes if n.get("type", "") in (
-        "aws-ec2", "aws-ec2-spot", "az-vm", "az-spot", "gcp-gce",
-        "oci-compute", "ibm-vsi", "op-server", "op-vm")]
     k8s_nodes = [n for n in nodes if "eks" in n.get("type", "") or "aks" in n.get("type", "")
                  or "gke" in n.get("type", "") or "oke" in n.get("type", "")
                  or "iks" in n.get("type", "") or "k8s" in n.get("type", "")]
-    other_nodes = [n for n in nodes if n not in server_nodes and n not in k8s_nodes]
-
     # Play 1: Common hardening for all managed hosts
     parts.append(
         "- name: ICDEV IDC — Common Security Baseline\n"
