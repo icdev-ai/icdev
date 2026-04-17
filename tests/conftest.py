@@ -1251,6 +1251,63 @@ CREATE TABLE IF NOT EXISTS sharepoint_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_sp_docs_site_id ON sharepoint_documents (site_id);
 CREATE INDEX IF NOT EXISTS idx_sp_docs_path ON sharepoint_documents (path);
+
+-- AlphaDesk: expert advisor tables (expert_agents.py _ADVISOR_TABLES)
+CREATE TABLE IF NOT EXISTS ad_expert_opinions (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    expert_key TEXT NOT NULL,
+    expert_name TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    conviction INTEGER NOT NULL,
+    reasoning TEXT,
+    risk_profile TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ad_cis_recommendations (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    final_direction TEXT NOT NULL,
+    final_conviction INTEGER NOT NULL,
+    expert_votes TEXT,
+    synthesis TEXT,
+    narrative TEXT,
+    auto_trade INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ad_daily_briefs (
+    id TEXT PRIMARY KEY,
+    brief_date TEXT NOT NULL,
+    market_summary TEXT,
+    top_ideas TEXT,
+    watchlist TEXT,
+    risk_alerts TEXT,
+    expert_highlights TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ad_risk_profiles (
+    id TEXT PRIMARY KEY,
+    profile_name TEXT NOT NULL UNIQUE,
+    max_position_pct REAL DEFAULT 0.15,
+    max_daily_budget REAL DEFAULT 10000,
+    min_confidence_to_trade REAL DEFAULT 0.60,
+    preferred_directions TEXT DEFAULT '["BUY","HOLD"]',
+    max_portfolio_beta REAL DEFAULT 1.2,
+    is_active INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS ad_expert_recommendations (
+    id TEXT PRIMARY KEY,
+    ticker TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    conviction INTEGER NOT NULL,
+    source TEXT DEFAULT 'cis',
+    narrative TEXT,
+    risk_profile TEXT,
+    expert_votes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------

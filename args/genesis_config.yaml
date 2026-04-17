@@ -306,6 +306,21 @@ reflexes:
     max_auto_heals_per_hour: 5
     cooldown_minutes: 10
 
+  failure_triage:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 30m"
+    interval_seconds: 1800
+    description: "LLM-assisted review of kanban failures — diagnose via Claude, patch via Ollama, apply in isolated .tmp/autofix/ worktree. Auto-apply gated on ICDEV_AUTOFIX_ENABLED env; automerge gated on ICDEV_AUTOFIX_AUTOMERGE. Confidence ≥ 0.85, task-type whitelist, deny-list, rolling 5/hr rate cap all enforced. See tools/workflow/failure_triage.py"
+    success_metric:
+      name: failures_triaged
+      threshold: 0
+      operator: gte  # informational — 0 failures in window is the healthy state
+    window_hours: 1          # look back 1h per cycle (dedup marker prevents repeats)
+    apply: true              # ask for patch generation; actual apply still needs env flag
+    cooldown_minutes: 10     # min gap between consecutive cycles
+    max_applies_per_hour: 5  # matches CLAUDE.md self-healing cap
+
   kanban:
     enabled: true
     risk_tier: green
