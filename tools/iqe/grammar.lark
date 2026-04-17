@@ -1,0 +1,83 @@
+// IQE — ICDEV Query Engine grammar
+// Forward NQE-compatible DSL:
+//   foreach <var> [in <collection>] [where <expr>]* select <projection_list>
+// Supports: arithmetic, comparison, boolean (and/or/not), dotted-attr access, function calls.
+
+start: query
+
+query: FOREACH NAME [IN collection] where_clause* SELECT projection_list
+
+where_clause: WHERE expr
+
+projection_list: projection ("," projection)*
+projection: func_call
+           | dotted_name
+
+// Collection: function call optionally chained with .attr, or plain dotted name.
+collection: func_call ("." NAME)* -> func_coll
+          | dotted_name            -> name_coll
+
+// ── Expression hierarchy (low precedence → high) ─────────────────────────────
+
+?expr: or_expr
+
+?or_expr : and_expr
+          | or_expr OR and_expr    -> or_expr
+
+?and_expr: not_expr
+          | and_expr AND not_expr  -> and_expr
+
+?not_expr: NOT not_expr -> not_expr
+          | cmp_expr
+
+?cmp_expr: add_expr
+          | add_expr COMP_OP add_expr -> comparison
+
+?add_expr: mul_expr
+          | add_expr "+" mul_expr  -> add
+          | add_expr "-" mul_expr  -> sub
+
+?mul_expr: unary_expr
+          | mul_expr "*" unary_expr -> mul
+          | mul_expr "/" unary_expr -> div
+
+?unary_expr: "-" unary_expr -> neg
+            | atom
+
+atom: func_call    -> func_atom
+    | dotted_name  -> name_atom
+    | literal
+
+// ── Terminals ────────────────────────────────────────────────────────────────
+
+func_call: NAME "(" arg_list? ")"
+arg_list : expr ("," expr)*
+
+dotted_name: NAME ("." NAME)*
+
+literal: ESCAPED_STRING -> dquote_str
+       | SQ_STRING      -> squote_str
+       | NUMBER         -> number
+       | "true"         -> true_lit
+       | "false"        -> false_lit
+
+COMP_OP : "==" | "!=" | "<=" | ">=" | "<" | ">"
+
+// Keywords — defined as terminals so they take priority over NAME.
+FOREACH : "foreach"
+IN      : "in"
+WHERE   : "where"
+SELECT  : "select"
+AND     : "and"
+OR      : "or"
+NOT     : "not"
+
+// Single-quoted string (e.g. 'FedRAMP Moderate', 'satisfied', 'US').
+SQ_STRING: "'" /[^'\\]*/ "'"
+
+%import common.CNAME   -> NAME
+%import common.NUMBER
+%import common.ESCAPED_STRING
+%import common.WS
+%ignore WS
+%ignore /\/\/.*/
