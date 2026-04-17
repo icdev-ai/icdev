@@ -852,9 +852,36 @@ portfolio.unrealized_pnl:
 portfolio.holdings:
   title: Holdings
   body: |
-    Per-ticker detail: quantity, avg cost, market value, unrealized P&L,
-    asset class. Rows are refreshed every 30s from the positions table
-    while the dashboard is open.
+    Per-ticker detail: quantity, avg cost, **current last price** (marked
+    live via yfinance), market value, weight in book, unrealized P&L and
+    P&L %. Re-marked every 60 seconds.
+
+portfolio.risk_metrics:
+  title: Risk & Performance Metrics
+  body: |
+    Computed from a backward-looking simulation: your **current** holdings
+    walked over `period` of historical closes (1M–2Y selectable). Accurate
+    for understanding the risk profile of the book as it stands today;
+    a true time-series of realized P&L will land once the daily
+    portfolio-snapshot reflex has been running for a week or more.
+
+    **Metrics shown:**
+
+    • **Total Return / SPY / Outperformance** — period performance vs the
+      S&P 500 benchmark (`SPY`)
+    • **Annualized** — period return extrapolated to CAGR
+    • **Sharpe ratio** — (μ − rf) / σ × √252, rf = 4% assumed. > 1 is
+      considered solid, > 2 exceptional, < 0 you're underperforming cash
+    • **Sortino ratio** — Sharpe but denominator is downside-only deviation
+      (punishes only losing volatility). Typically higher than Sharpe
+    • **Calmar ratio** — annualized return ÷ |max drawdown|. > 0.5 decent,
+      > 1 excellent
+    • **Max Drawdown** — worst peak-to-trough fall over the window, %
+    • **Volatility** — annualized standard deviation of daily returns
+    • **Beta vs SPY** — sensitivity to SPY moves. > 1 = amplifies, < 1 =
+      dampens, negative = inverse correlation
+    • **Alpha (annual)** — excess return over CAPM prediction based on
+      beta. Positive = you're beating the risk-adjusted benchmark
 
 # ───────────────────────────────────────────────────────────────────
 # /risk
