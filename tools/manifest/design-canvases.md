@@ -15,6 +15,12 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | **ODC** Observability | tools\observability_canvas\blueprint.py | tools\observability_canvas\observability_engine.py | args\observability_canvas_config.yaml | observability_canvas.db | /observability | ICDEV_OBSERVABILITY_ENABLED | SIEM/SOAR/log stack design, MITRE ATT&CK detection coverage, source type weighting, NIST AU/SI control assessment, log retention policy |
 | **DDC** Data | tools\data_canvas\blueprint.py | tools\data_canvas\data_engine.py | args\data_canvas_config.yaml | data_canvas.db | /data | ICDEV_DATA_CANVAS_ENABLED | Data model design with PII/PHI/CUI/SECRET classification, retention policy enforcement, Privacy Act/HIPAA/GDPR assessment, ER diagram export |
 
+## DDC Sub-Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| DDC ← Collibra Import | tools/data_canvas/sync/collibra_import.py | Import table/column-level lineage from Collibra Data Intelligence Cloud (REST API v2) into DDC as dd_lineage records. Applies a CUI classification overlay to every edge; runs generate_contract_assertions() after import to enforce 'SECRET data may not flow into IL4-accessible datasets'. External Collibra assets become DDC graph nodes with IDs `ext:collibra:<assetId>`. Supports live API pull and offline JSON file import. | `--design-id <id>` or `--create-design <name>`, `--file <json>` (offline), `--classification CUI\|SECRET`, `--dry-run`, `--gate`, `--json` | JSON: `{status, nodes_imported, lineage_edges_imported, cat1_violations, violation_details[]}` |
+| DDC ← OpenMetadata Import | tools/data_canvas/sync/openmetadata_import.py | Import table/column-level lineage FROM OpenMetadata into DDC (reverse of openmetadata_sync.py). Fetches `GET /api/v1/lineage/{type}/name/{fqn}` with configurable upstream/downstream depth. Maps OM column lineage details to DDC lineage_type (col-passthrough, col-aggregate, col-derive, etc.). Applies CUI classification overlay and runs contract assertions after import. | `--design-id <id>` or `--create-design <name>`, `--entity <fqn>` or `--all`, `--entity-type table`, `--upstream-depth 3`, `--downstream-depth 3`, `--dry-run`, `--gate`, `--json` | JSON: `{status, tables_processed, nodes_imported, lineage_edges_imported, cat1_violations, violation_details[]}` |
+
 ## IDC Sub-Tools
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
