@@ -1,0 +1,52 @@
+# CUI // SP-CTI
+#
+# Project registry — rendered as a "Projects in Flight" section below the
+# Task Board at /kanban. Every project gets its own collapsible card with:
+#   * progress bars per epic (computed from kanban_tasks with id LIKE <prefix>*)
+#   * brief links
+#   * in-flight + recent-failure summaries
+#   * failure_triage activity stats (shared across all projects — global)
+#
+# Adding a new project = appending an entry here. No code change required.
+
+projects:
+
+  - key: digital-twin
+    name: "Digital Twin Roadmap"
+    description: >
+      Per-canvas digital-twin implementation across 8 epics,
+      86 dependency-chained kanban tasks.
+    task_prefix: "dt-"
+    # Default-expanded on the board (first render). Set to false for
+    # projects you want collapsed by default once the list grows.
+    default_open: true
+    briefs:
+      - label: "Inspiration brief — pattern + ICDEV mapping"
+        path: "/docs/briefs/digital-twin-inspiration-brief.md"
+      - label: "Full market scan + per-canvas plan"
+        path: "/docs/briefs/digital-twin-market-canvas-implementation-plan.md"
+    epics:
+      - key: iqe
+        title: "IQE v0.1 — ICDEV Query Engine"
+        priority: critical
+      - key: bdc
+        title: "BDC cATO Twin (Phase 1)"
+        priority: critical
+      - key: idc-iac
+        title: "IDC IaC Generation"
+        priority: high
+      - key: idc-twin
+        title: "IDC IaC Twin (Phase 1)"
+        priority: high
+      - key: pdc
+        title: "PDC Pipeline Twin"
+        priority: medium
+      - key: sdc
+        title: "SDC Attack Path Twin"
+        priority: medium
+      - key: odc
+        title: "ODC MITRE Coverage Twin"
+        priority: medium
+      - key: ddc
+        title: "DDC Lineage Adapter"
+        priority: low
