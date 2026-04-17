@@ -197,10 +197,29 @@ market.heatmap:
 market.supply_chain:
   title: Supply Chain Propagation
   body: |
-    KG-powered "what if" — enter a ticker and an event type, the system
-    walks SUPPLIES_TO, COMPETES_WITH, EXPOSED_TO_COMMODITY edges up to
-    10 levels deep, scoring each downstream impact by edge weight × event
-    severity. Used by `cascade_engine.py`.
+    KG-powered "what if" analysis. Pick a subject and an event — the
+    system walks the knowledge graph outward and scores every connected
+    ticker by role-adjusted impact.
+
+    **Two subject modes:**
+
+    • **Ticker** — a company or ETF. Events: earnings beat/miss,
+    guidance raise, supply disruption. Walks SUPPLIES_TO and CUSTOMER_OF
+    edges to upstream suppliers and downstream customers.
+
+    • **Commodity** — a raw material or input (gold, copper, oil, wheat,
+    coffee, lithium, uranium, cocoa, rare earth…). Events: price up,
+    price down, supply disruption, demand spike. Walks the
+    EXPOSED_TO_COMMODITY edges inward to every ticker with exposure.
+
+    **Role-based polarity** for commodity events: each exposure carries
+    a role (miner / producer / direct / consumer / both). Price up is
+    positive for miners/producers/direct holders and negative for
+    consumers; supply disruption hurts consumers most.
+
+    Impact score = edge weight × role polarity. Results are sorted by
+    absolute impact; colour indicates direction (green positive, red
+    negative, amber mixed).
 
 # ───────────────────────────────────────────────────────────────────
 # Overview page — /
