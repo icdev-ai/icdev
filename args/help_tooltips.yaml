@@ -544,6 +544,75 @@ signals.stats:
     execution but not yet routed; rejected = failed a gate; executed =
     routed to broker (Alpaca paper or sim).
 
+signals.col.ticker:
+  title: Ticker
+  body: |
+    Symbol this signal is for. Click to open the /analysis page for the
+    full per-analyst breakdown behind the signal.
+
+signals.col.direction:
+  title: Direction
+  body: |
+    **BUY** — system recommends long exposure.
+    **SELL** — close existing long.
+    **SHORT** — open short position (enabled only if risk profile allows).
+    **HOLD** — no action; signal still logged for post-mortem calibration.
+
+signals.col.score:
+  title: Composite Score
+  body: |
+    0–100 score synthesized from 6 analysts (fundamental, technical,
+    sentiment, macro, quant, risk) + KG propagation adjustment.
+    ≥ 60 is the auto-approve threshold for BUY signals.
+
+signals.col.confidence:
+  title: Confidence
+  body: |
+    CIS-assigned 0–100% confidence. High when 5+ of 6 analysts align AND
+    the Socratic debate couldn't find a strong counter-argument.
+    Auto-trader requires ≥ 60% to execute.
+
+signals.col.advisor:
+  title: Advisor Agreement
+  body: |
+    Latest Committee of Investment Specialists (CIS) recommendation for
+    this ticker. Shows direction + conviction 1–10. Signal + advisor must
+    BOTH be BUY for auto-trader to route an order.
+
+signals.col.status:
+  title: Status
+  body: |
+    **pending** — just generated, waiting for auto-approval gate
+    **approved** — cleared auto-approval, waiting for advisor + execution
+    **rejected** — failed a gate (earnings blackout, retired strategy,
+    slippage too high, confluence tier D, etc.)
+    **executed** — auto-trader routed to broker
+
+signals.col.added_price:
+  title: Added Price
+  body: |
+    Ticker's last price at the moment this signal was generated (for
+    attribution). Lets you compare signal-entry vs current price and
+    compute after-the-fact hit rate.
+
+signals.col.current_price:
+  title: Current Price
+  body: |
+    Live quote (or most recent close). Pulled from Alpaca paper feed when
+    available, yfinance otherwise.
+
+signals.col.perf:
+  title: Performance %
+  body: |
+    Price change since the signal was generated. For BUY signals, positive
+    = thesis correct so far. Computed per (current − added) / added.
+
+signals.col.generated:
+  title: Generated At
+  body: |
+    Timestamp when the signal was created by the `market_scanner` reflex
+    or a manual /analysis run.
+
 # ───────────────────────────────────────────────────────────────────
 # /scenarios
 # ───────────────────────────────────────────────────────────────────
@@ -883,6 +952,61 @@ orders.history:
     Full `ad_orders` table — ticker, side, qty, order type, status, fill
     price, signal_id, created_at, filled_at. Broker is source of truth;
     local row is mirror for dashboard/PnL.
+
+orders.col.order_id:
+  title: Order ID
+  body: |
+    Internal order identifier (format `ord-<uuid12>`). Mirrors the broker
+    `client_order_id`. Used to reconcile local state with Alpaca fills
+    via the trade-audit poller.
+
+orders.col.side:
+  title: Side
+  body: |
+    **buy** — entering a long position.
+    **sell** — closing a long (or closing a short to cover).
+    **sell_short** — opening a short.
+
+orders.col.qty:
+  title: Quantity
+  body: |
+    Shares/contracts. Sized by: base = 20% of daily budget ÷ price,
+    scaled by confidence × VIX scaling × confluence tier factor.
+    Clamped to minimum 1.
+
+orders.col.order_type:
+  title: Order Type
+  body: |
+    **market** — immediate execution at best available price (default).
+    **limit** — execute only at specified price or better.
+    **stop** — triggers when price crosses the stop level.
+
+orders.col.fill_price:
+  title: Fill Price
+  body: |
+    Price the order actually executed at (from broker response). Compare
+    to `estimated_price` at signal time to compute slippage in bps —
+    feeds the fill_quality_model retraining.
+
+analysis.col.run_id:
+  title: Run ID
+  body: |
+    Unique identifier for this analysis run (format `run-<uuid12>`).
+    Ties together: analyst reports, Socratic debate, CIS synthesis,
+    macro snapshot, optional Pulse article.
+
+analysis.col.signal:
+  title: Signal (from Run)
+  body: |
+    The final BUY / SELL / SHORT / HOLD verdict from this run. Stored in
+    `ad_analysis_runs.result_json.final_signal`.
+
+analysis.col.duration:
+  title: Duration (ms)
+  body: |
+    How long the run took — typically 20–90 seconds depending on LLM
+    latency + number of analysts + macro fetch time. Long durations
+    usually signal a slow LLM tier or FRED timeout.
 
 # ───────────────────────────────────────────────────────────────────
 # /radar  (Systemic Risk & Opportunity Radar — SROR)
