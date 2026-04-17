@@ -856,6 +856,36 @@ portfolio.holdings:
     live via yfinance), market value, weight in book, unrealized P&L and
     P&L %. Re-marked every 60 seconds.
 
+portfolio.reading:
+  title: 📖 Portfolio Reading
+  body: |
+    Plain-English narrative of what the risk & return numbers are saying —
+    generated deterministically from a rule engine (no LLM, auditable,
+    repeatable) combining the portfolio's metrics, holdings, cash posture,
+    and the current macro regime.
+
+    **Three sections:**
+
+    • **Profile** — one-line characterization, e.g. "Defensive low-beta
+      book missing the rally" or "Growth-tilted book riding the rally"
+
+    • **Observations** — bulleted claims tagged bullish / bearish / caution /
+      neutral, each with the actual metric value that triggered it.
+      Pulled from: Sharpe, Sortino, alpha, beta, outperformance vs SPY,
+      max drawdown, single-name concentration, cash posture.
+
+    • **Considerations** — what a disciplined PM would actually do about it.
+      Triggers: poor risk-adjusted performance → review holdings; regime
+      mismatch → adjust beta; concentration > 30% → trim; negative alpha →
+      review losers; heavy cash in risk-on → deploy; zero cash in risk-off →
+      build dry powder.
+
+    • **Regime alignment** — does the book's posture (defensive / growth /
+      high-beta) match today's macro regime? Mismatch is flagged in red.
+
+    Changes with the selected period — 1M reading differs from 1Y reading
+    because the underlying metrics do.
+
 portfolio.risk_metrics:
   title: Risk & Performance Metrics
   body: |
