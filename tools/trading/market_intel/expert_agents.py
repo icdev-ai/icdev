@@ -247,6 +247,24 @@ def _fetch_macro() -> dict:
         return {}
 
 
+def _fetch_news_impact(ticker: str) -> dict:
+    """Recent aggregated news impact for this ticker (last 24h). Safe to
+    call before the traces table exists — returns zeros."""
+    try:
+        from tools.trading.news.impact_store import get_recent_impact
+        return get_recent_impact(ticker, hours=24)
+    except Exception:
+        return {"total_score": 0.0, "trace_count": 0}
+
+
+def _fetch_geopolitical_danger() -> dict:
+    try:
+        from tools.trading.news.impact_store import geopolitical_danger_score
+        return geopolitical_danger_score(hours=24)
+    except Exception:
+        return {"danger_score": 0, "country_events": 0}
+
+
 # =========================================================================
 # Per-agent scoring
 # =========================================================================
@@ -313,12 +331,34 @@ def _score_sentiment(ticker: str, sig: dict | None, run: dict | None, macro: dic
     # Howard's contrarian twist: extreme consensus direction gets inverted
     if score > 80: score = 40 + (score - 80) * 0.5  # froth → fade
     elif score < 20: score = 60 - (20 - score) * 0.5  # despair → bid
+
+    # News-driven supply-chain impact nudge. Howard's contrarian streak still
+    # applies: if news impact is strongly positive but sentiment is already
+    # frothy, fade. If news impact is strongly negative while sentiment is
+    # already despair, lean in. Net nudge is capped at ±10 points.
+    news = _fetch_news_impact(ticker)
+    ni = float(news.get("total_score", 0) or 0)
+    news_nudge = 0.0
+    news_note = ""
+    if abs(ni) >= 1.0:
+        base_nudge = max(-10.0, min(10.0, ni * 3.0))
+        # Contrarian inversion when at extremes
+        if score > 70 and base_nudge > 0: base_nudge *= -0.5
+        elif score < 30 and base_nudge < 0: base_nudge *= -0.5
+        news_nudge = base_nudge
+        news_note = (f" News nudge {base_nudge:+.1f} "
+                     f"(Σ={ni:+.2f} across {news.get('trace_count', 0)} traces).")
+    score = max(0, min(100, score + news_nudge))
+
     return {
         "direction": _dir_from_score(score),
         "conviction": _conviction(score, (sig or {}).get("confidence", 0.5)),
-        "reasoning": s.get("summary") or f"Contrarian-adjusted sentiment {score:.0f}. Howard fades extremes.",
+        "reasoning": (
+            (s.get("summary") or f"Contrarian-adjusted sentiment {score:.0f}. Howard fades extremes.")
+            + news_note
+        ),
         "time_horizon": EXPERT_AGENTS["sentiment"]["time_horizon"],
-        "debug": {"score": round(score, 1)},
+        "debug": {"score": round(score, 1), "news_nudge": round(news_nudge, 2)},
     }
 
 
@@ -338,18 +378,42 @@ def _score_macro(ticker: str, sig: dict | None, run: dict | None, macro: dict) -
     sf_flags = (macro.get("stagflation_risk", {}) or {}).get("active_flags", 0)
     df_flags = (macro.get("deflation_risk", {}) or {}).get("active_flags", 0)
     score -= sf_flags * 4 + df_flags * 3
+
+    # Geopolitical news overlay — recent country-subject news events raise
+    # Ray's risk aversion globally. Scales up to a 10-point score haircut.
+    geo = _fetch_geopolitical_danger()
+    geo_danger = int(geo.get("danger_score", 0) or 0)
+    geo_penalty = min(10, geo_danger * 0.1)
+    score -= geo_penalty
+
+    # Ticker-specific news impact — direct nudge from KG-propagated
+    # impact. A ticker pulled by news from both country and commodity
+    # subjects gets the strongest weighting.
+    news = _fetch_news_impact(ticker)
+    ni = float(news.get("total_score", 0) or 0)
+    news_bump = max(-8.0, min(8.0, ni * 2.0))
+    score += news_bump
+
     score = max(0, min(100, score))
+    notes = []
+    if sf_flags: notes.append(f"Stagflation {sf_flags}/4")
+    if df_flags: notes.append(f"Deflation {df_flags}/4")
+    if geo_danger >= 30: notes.append(f"Geo-news danger {geo_danger}/100")
+    if abs(ni) >= 1.0: notes.append(f"news impact {ni:+.2f}")
     return {
         "direction": _dir_from_score(score),
         "conviction": _conviction(score),
         "reasoning": (
             f"Regime: {regime}. Macro score {score:.0f}. "
-            + (f"Stagflation {sf_flags}/4, " if sf_flags else "")
-            + (f"Deflation {df_flags}/4. " if df_flags else "")
+            + ("; ".join(notes) + ". " if notes else "")
             + "Ray positions for the regime, not the narrative."
         ),
         "time_horizon": EXPERT_AGENTS["macro"]["time_horizon"],
-        "debug": {"regime": regime, "score": round(score, 1), "sf_flags": sf_flags, "df_flags": df_flags},
+        "debug": {
+            "regime": regime, "score": round(score, 1),
+            "sf_flags": sf_flags, "df_flags": df_flags,
+            "geo_penalty": round(geo_penalty, 2), "news_bump": round(news_bump, 2),
+        },
     }
 
 
