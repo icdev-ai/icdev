@@ -7767,6 +7767,137 @@ def create_app() -> Flask:
 
         _logging.getLogger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
 
+    # ── Digital Twin Roadmap ────────────────────────────────────────────────
+    # Aggregates the dt-* kanban tasks (8 epics, 86 tasks) plus failure_triage
+    # autofix audit history into one read-only roadmap view. Backed by the
+    # canonical brief at docs/briefs/digital-twin-market-canvas-implementation-plan.md.
+    _DT_EPICS = [
+        ("iqe",      "IQE v0.1 — ICDEV Query Engine",          "critical"),
+        ("bdc",      "BDC cATO Twin (Phase 1)",                "critical"),
+        ("idc-iac",  "IDC IaC Generation",                     "high"),
+        ("idc-twin", "IDC IaC Twin (Phase 1)",                 "high"),
+        ("pdc",      "PDC Pipeline Twin",                      "medium"),
+        ("sdc",      "SDC Attack Path Twin",                   "medium"),
+        ("odc",      "ODC MITRE Coverage Twin",                "medium"),
+        ("ddc",      "DDC Lineage Adapter",                    "low"),
+    ]
+    _DT_BRIEFS = [
+        ("Forward Networks inspiration",
+         "/docs/briefs/digital-twin-forwardnetworks-inspiration.md"),
+        ("Full market scan + per-canvas plan",
+         "/docs/briefs/digital-twin-market-canvas-implementation-plan.md"),
+    ]
+
+    @app.route("/digital-twin")
+    def digital_twin_roadmap():
+        """Digital twin roadmap — per-epic progress + autofix audit summary."""
+        from tools.db.storage import get_connection as _gc
+
+        epics: list = []
+        in_flight: list = []
+        recent_failures: list = []
+
+        try:
+            with _gc() as conn:
+                for key, title, default_pri in _DT_EPICS:
+                    pattern = f"dt-{key}-%"
+                    rows = conn.execute(
+                        "SELECT status, COUNT(*) AS n FROM kanban_tasks "
+                        "WHERE id LIKE ? GROUP BY status",
+                        (pattern,),
+                    ).fetchall()
+                    counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
+                    total = sum(counts.values())
+                    done = counts.get("done", 0)
+                    pct = int(round(100 * done / total)) if total else 0
+                    epics.append({
+                        "key": key,
+                        "title": title,
+                        "priority": default_pri,
+                        "total": total,
+                        "done": done,
+                        "in_progress": counts.get("in_progress", 0),
+                        "scheduled": counts.get("scheduled", 0),
+                        "backlog": counts.get("backlog", 0),
+                        "failed": counts.get("failed", 0),
+                        "pct": pct,
+                    })
+
+                in_flight_rows = conn.execute(
+                    "SELECT id, title, status, priority, updated_at "
+                    "FROM kanban_tasks WHERE id LIKE 'dt-%' "
+                    "  AND status IN ('in_progress','scheduled') "
+                    "ORDER BY updated_at DESC LIMIT 15"
+                ).fetchall()
+                in_flight = [dict(r) for r in in_flight_rows]
+
+                fail_rows = conn.execute(
+                    "SELECT id, title, status, failure_count, "
+                    "       last_failure_reason, updated_at "
+                    "FROM kanban_tasks WHERE id LIKE 'dt-%' "
+                    "  AND last_failure_reason IS NOT NULL "
+                    "ORDER BY updated_at DESC LIMIT 10"
+                ).fetchall()
+                recent_failures = [dict(r) for r in fail_rows]
+        except Exception:  # pragma: no cover — page degrades gracefully
+            pass
+
+        # failure_triage audit summary — read .tmp/kanban/autofix-audit/*.json
+        triage_summary = {"total": 0, "applied": 0, "rejected": 0, "verification_failed": 0}
+        triage_recent: list = []
+        try:
+            audit_dir = Path(__file__).resolve().parent.parent.parent / ".tmp" / "kanban" / "autofix-audit"
+            if audit_dir.exists():
+                files = sorted(audit_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+                triage_summary["total"] = len(files)
+                for f in files:
+                    try:
+                        data = json.loads(f.read_text(encoding="utf-8"))
+                        outcome = data.get("outcome") or ""
+                        if outcome.startswith("applied_"):
+                            triage_summary["applied"] += 1
+                        elif outcome.startswith("rejected_"):
+                            triage_summary["rejected"] += 1
+                        elif outcome == "verification_failed":
+                            triage_summary["verification_failed"] += 1
+                        if len(triage_recent) < 5:
+                            triage_recent.append({
+                                "task_id": data.get("task_id"),
+                                "outcome": outcome,
+                                "branch": data.get("branch"),
+                                "started_at": data.get("started_at"),
+                            })
+                    except Exception:
+                        continue
+        except Exception:  # pragma: no cover
+            pass
+
+        # Forward Networks competitive_intel signal — confirms the inspiration
+        # source is registered and being scanned weekly.
+        ci_signal = None
+        try:
+            with _gc() as conn:
+                row = conn.execute(
+                    "SELECT scan_id, scan_date FROM competitor_scans "
+                    "WHERE competitor = 'forward_networks' "
+                    "ORDER BY scan_date DESC LIMIT 1"
+                ).fetchone()
+                if row:
+                    ci_signal = dict(row)
+        except Exception:
+            pass
+
+        return render_template(
+            "digital_twin.html",
+            epics=epics,
+            in_flight=in_flight,
+            recent_failures=recent_failures,
+            triage_summary=triage_summary,
+            triage_recent=triage_recent,
+            ci_signal=ci_signal,
+            briefs=_DT_BRIEFS,
+        )
+
     return app
 
 
