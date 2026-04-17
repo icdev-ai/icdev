@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 # Allow running without ICDEV on sys.path by resolving project root
 _PROJECT_ROOT = Path(__file__).resolve().parents[4]
