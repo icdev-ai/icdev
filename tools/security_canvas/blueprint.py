@@ -55,6 +55,11 @@ from tools.security_canvas.security_engine import (  # noqa: E402
     compute_compliance_crosswalk,
     diff_graph_versions,
 )
+from tools.security_canvas.attack_path_twin import (  # noqa: E402
+    build_attack_graph,
+    replay_attack_paths,
+    query_attack_paths,
+)
 from tools.security_canvas.remediation import (  # noqa: E402
     generate_remediation_plan,
 )
@@ -700,6 +705,86 @@ def create_security_blueprint():
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
         result = find_attack_paths(graph)
+        return jsonify(result)
+
+    @bp.route("/api/designs/<design_id>/attack-graph", methods=["POST"])
+    @sc_login_required
+    def sc_api_attack_graph(design_id):
+        """Build formal attack graph: nodes with classification levels, edges with TTP annotations."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM security_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        except Exception:
+            return jsonify({"error": "Bad graph data"}), 500
+        result = build_attack_graph(graph)
+        return jsonify(result)
+
+    @bp.route("/api/designs/<design_id>/replay", methods=["POST"])
+    @sc_login_required
+    def sc_api_replay(design_id):
+        """BAS-style replay: enumerate min-cost attack paths via Dijkstra.
+
+        Each hop is annotated with a MITRE ATT&CK TTP. Paths crossing
+        classification boundaries (IL2→IL4, CUI→IL5, etc.) are flagged.
+
+        Optional body params:
+          max_paths_per_target (int, default 5)
+          max_hops (int, default 10)
+        """
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM security_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        except Exception:
+            return jsonify({"error": "Bad graph data"}), 500
+        body = request.get_json(silent=True) or {}
+        max_paths = int(body.get("max_paths_per_target", 5))
+        max_hops = int(body.get("max_hops", 10))
+        result = replay_attack_paths(graph, max_paths_per_target=max_paths, max_hops=max_hops)
+        _audit("ATTACK_REPLAY", "design", design_id, f"paths={result['total_paths']} critical={result['critical_paths']}")
+        return jsonify(result)
+
+    @bp.route("/api/designs/<design_id>/attack-paths/iqe", methods=["GET", "POST"])
+    @sc_login_required
+    def sc_api_attack_paths_iqe(design_id):
+        """IQE query interface for attack paths.
+
+        Query param or body: q=<iqe_query>
+
+        Examples:
+          ?q=foreach path in attack_paths where risk_level == 'critical' select all
+          ?q=foreach path in attack_paths where total_cost < 1.5 select id, ttp_sequence
+          ?q=foreach path in attack_paths where has_classification_violation select id, classification_violations
+          ?q=foreach path in attack_paths where 'T1190' in ttp_sequence select id, hop_count
+        """
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM security_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        except Exception:
+            return jsonify({"error": "Bad graph data"}), 500
+        body = request.get_json(silent=True) or {}
+        iqe_query = request.args.get("q") or body.get("q") or ""
+        if not iqe_query:
+            # Default: return all paths
+            iqe_query = "foreach path in attack_paths select all"
+        result = query_attack_paths(graph, iqe_query)
         return jsonify(result)
 
     @bp.route("/api/designs/<design_id>/fedramp-boundary", methods=["POST"])
