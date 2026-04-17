@@ -1,0 +1,37 @@
+// ICDEV Query Engine (IQE) Grammar
+// Syntax: foreach <var> in <collection> [where <predicate>]* select <projection>
+// Compatible with Forward Networks NQE style.
+
+query: "foreach" NAME "in" collection where_clause* "select" select_list
+
+collection: NAME ("." NAME)*
+
+where_clause: "where" predicate
+
+select_list: select_expr ("," select_expr)*
+
+select_expr: NAME ("." NAME)*
+
+// Operator precedence: "and" binds tighter than "or" (left-associative).
+?predicate: pred_or
+
+?pred_or: pred_or "or" pred_and -> or_op
+        | pred_and
+
+?pred_and: pred_and "and" atom_pred -> and_op
+         | atom_pred
+
+atom_pred: attr_ref COMP literal
+
+attr_ref: NAME ("." NAME)*
+
+literal: ESCAPED_STRING -> string_lit
+       | NUMBER         -> number_lit
+
+COMP: "==" | "!=" | "<=" | ">=" | "<" | ">"
+
+%import common.CNAME -> NAME
+%import common.ESCAPED_STRING
+%import common.NUMBER
+%import common.WS
+%ignore WS
