@@ -194,6 +194,57 @@ market.heatmap:
     The small corner numbers are 1-day, 5-day, 30-day price performance
     (top-left/top-right/bottom-left) plus 1-year (bottom-right).
 
+market.reading:
+  title: 📖 Market Reading
+  body: |
+    PM-style narrative of today's tape: breadth + regime + sector rotation
+    + stagflation/deflation composites + 5y5y breakeven + daemon health.
+    Same deterministic rule engine as the Portfolio Reading — every
+    observation links to a specific metric.
+
+    **Triggers a bearish observation** when breadth narrows (< 35% bullish),
+    when defensive sectors are leading cyclicals (risk-off rotation), when
+    composite danger is high, when breakevens are un-anchoring, or when
+    circuit breakers are open on critical reflexes.
+
+    **Triggers a bullish observation** for strong breadth (≥ 65% bullish)
+    + cyclical leadership + supportive regime + anchored inflation.
+
+signals.reading:
+  title: 📖 Signals Queue Reading
+  body: |
+    Reads the signal-generation pipeline: queue mix (pending / approved /
+    rejected), direction skew (BUY vs SELL+SHORT), average confidence,
+    and advisor-agreement rate. Flags mismatches like "bullish queue in a
+    risk-off regime" or "advisor pipeline lagging signal pipeline".
+
+    Biggest use: catching when the advisor reflex has fallen behind the
+    signal reflex — auto-trader can only route orders when both agree.
+
+news.reading:
+  title: 📖 News Reading
+  body: |
+    Reads the current news narrative: regime-tier clusters, emerging
+    clusters, dominant category (macro / geopolitical / earnings /
+    regulatory / sector), geopolitical danger score (0–100), and the
+    tickers getting the strongest KG-propagated impact over the last 24h.
+
+    Tells you *what the narrative is trying to make you believe* and
+    which tickers are most in the crosshairs — before you act on any
+    single headline.
+
+radar.reading:
+  title: 📖 Radar Reading
+  body: |
+    Reads the Systemic Risk & Opportunity Radar snapshot: current regime
+    (CRISIS / DANGER / CAUTION / NEUTRAL / OPPORTUNITY / STRONG_OPP),
+    composite danger vs opportunity, horizon trajectory (is acute risk
+    immediate, near-term, or medium-term?), and recession-precursor count
+    (5+ has preceded every US recession since 1970).
+
+    Also flags when SROR is running on sample data — pause trading until
+    live feeds return.
+
 market.supply_chain:
   title: Supply Chain Propagation
   body: |
