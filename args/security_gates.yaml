@@ -1291,3 +1291,14 @@ api_contract_drift:
     # When flipped to true (post-Phase I), `route_missing_from_spec` and
     # `spec_path_missing_route` promote from warning -> blocking.
     enforce_as_blocking: false
+
+alphadesk_news_pipeline:
+  description: "Gates for AlphaDeskNews (ADN) RSS ingest, classification, scenario-matching, and aggregation pipeline"
+  blocking:
+    - news_db_schema_mismatch
+  warning:
+    - ingestor_feed_parse_failure
+    - classifier_backlog_overflow
+  thresholds:
+    max_feed_parse_failures: 3
+    max_classifier_backlog: 500
