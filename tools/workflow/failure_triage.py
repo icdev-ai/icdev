@@ -407,6 +407,330 @@ def _sig(reason: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Worktree-apply stage — isolated patch application + verification
+# ---------------------------------------------------------------------------
+
+# Second opt-in: even when autofix is enabled and verification passes,
+# the autofix branch is NOT merged into main unless this is also true.
+AUTOMERGE_ENV = "ICDEV_AUTOFIX_AUTOMERGE"
+
+AUTOFIX_WORKTREE_BASE = BASE_DIR / ".tmp" / "autofix"
+AUDIT_DIR = BASE_DIR / ".tmp" / "kanban" / "autofix-audit"
+
+# Only these prefixes are allowed in patch.verification_command. LLM output
+# is untrusted — anything else is rejected and we fall through to the
+# suggested-card path.
+_VERIFICATION_CMD_ALLOWLIST = (
+    "python -m pytest",
+    "python -m py_compile",
+    "python -m ruff",
+    "python -m bandit",
+    "python tools/",
+    "python -m tools",
+)
+
+
+def automerge_enabled() -> bool:
+    return os.environ.get(AUTOMERGE_ENV, "false").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _validate_verification_command(cmd: str) -> Tuple[bool, str]:
+    c = (cmd or "").strip()
+    if not c:
+        return (False, "empty verification_command")
+    # Reject shell metacharacters that would enable chained commands
+    for bad in (";", "&&", "||", "|", ">", "<", "`", "$(", "--no-verify"):
+        if bad in c:
+            return (False, f"disallowed token {bad!r}")
+    for prefix in _VERIFICATION_CMD_ALLOWLIST:
+        if c.startswith(prefix):
+            return (True, "ok")
+    return (False, f"command prefix not allowlisted: {c.split()[0:3]!r}")
+
+
+def _validate_patch_files(patch: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool, str]:
+    """Each patch file must: (a) live under BASE_DIR, (b) match a path
+    appearing in diag.suspect_files, (c) pass deny-list, (d) exist on disk,
+    (e) have a non-empty, unique old_string distinct from new_string."""
+    files = patch.get("files") or []
+    if not files:
+        return (False, "patch has no files")
+
+    suspect_norm = {
+        str(s).split(":")[0].replace("\\", "/").strip()
+        for s in (diag.get("suspect_files") or [])
+    }
+
+    for f in files:
+        path = (f.get("path") or "").replace("\\", "/").strip()
+        if not path:
+            return (False, "patch file missing path")
+        # Reject path traversal / absolute paths
+        if path.startswith("/") or ".." in Path(path).parts or Path(path).is_absolute():
+            return (False, f"unsafe path: {path!r}")
+        # Must be an existing regular file inside BASE_DIR
+        full = (BASE_DIR / path).resolve()
+        try:
+            full.relative_to(BASE_DIR.resolve())
+        except ValueError:
+            return (False, f"path escapes repo root: {path!r}")
+        if not full.is_file():
+            return (False, f"path does not exist: {path!r}")
+        # Must have been named in the diagnosis — refuse to edit files the
+        # thinking-tier LLM didn't flag
+        if suspect_norm and path not in suspect_norm:
+            return (False, f"path {path!r} not in diag.suspect_files {sorted(suspect_norm)}")
+        # Deny-list on the apply side too (belt-and-suspenders vs should_auto_apply)
+        for prefix in DENY_FILE_PREFIXES:
+            if path.startswith(prefix):
+                return (False, f"deny-path (apply-side) matched: {prefix!r}")
+
+        old = f.get("old_string")
+        new = f.get("new_string")
+        if not isinstance(old, str) or not isinstance(new, str):
+            return (False, "old_string/new_string must be strings")
+        if not old:
+            return (False, "old_string is empty")
+        if old == new:
+            return (False, "old_string == new_string (no-op)")
+        # Uniqueness check — Edit-style replace requires exactly one match
+        try:
+            content = full.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            return (False, f"unreadable file {path!r}: {exc}")
+        hits = content.count(old)
+        if hits == 0:
+            return (False, f"old_string not found in {path!r}")
+        if hits > 1:
+            return (False, f"old_string not unique in {path!r} ({hits} matches)")
+    return (True, "ok")
+
+
+def _run(cmd: List[str], cwd: Path, timeout: int = 60) -> Tuple[int, str]:
+    import subprocess as _sp
+    try:
+        r = _sp.run(
+            cmd, cwd=str(cwd), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout,
+        )
+        return (r.returncode, (r.stdout or "") + (r.stderr or ""))
+    except Exception as exc:
+        return (-1, f"<exception: {exc}>")
+
+
+def _create_autofix_worktree(task_id: str, sig_short: str) -> Optional[Tuple[Path, str]]:
+    """Create .tmp/autofix/<task_id>__<sig>/ on branch autofix/<task_id>-<sig>.
+
+    Distinct from kanban's .tmp/worktrees/ — never collides with an
+    in-flight kanban task, never touches main directly.
+    """
+    AUTOFIX_WORKTREE_BASE.mkdir(parents=True, exist_ok=True)
+    wt = AUTOFIX_WORKTREE_BASE / f"{task_id}__{sig_short}"
+    branch = f"autofix/{task_id}-{sig_short}"
+
+    # Clean prior leftovers
+    if wt.exists():
+        _run(["git", "worktree", "remove", "--force", str(wt)], cwd=BASE_DIR, timeout=30)
+        import shutil
+        shutil.rmtree(wt, ignore_errors=True)
+        _run(["git", "worktree", "prune"], cwd=BASE_DIR, timeout=10)
+        _run(["git", "branch", "-D", branch], cwd=BASE_DIR, timeout=10)
+
+    rc, out = _run(
+        ["git", "worktree", "add", "-b", branch, str(wt)],
+        cwd=BASE_DIR, timeout=60,
+    )
+    if rc != 0 or not (wt / ".git").exists():
+        logger.warning("autofix worktree add failed: rc=%s out=%s", rc, out[:400])
+        return None
+    return (wt, branch)
+
+
+def _cleanup_autofix_worktree(wt: Path, branch: str, *, keep_branch: bool) -> None:
+    _run(["git", "worktree", "remove", "--force", str(wt)], cwd=BASE_DIR, timeout=30)
+    _run(["git", "worktree", "prune"], cwd=BASE_DIR, timeout=10)
+    import shutil
+    shutil.rmtree(wt, ignore_errors=True)
+    if not keep_branch:
+        _run(["git", "branch", "-D", branch], cwd=BASE_DIR, timeout=10)
+
+
+def _write_audit(task_id: str, sig: str, record: Dict[str, Any]) -> None:
+    try:
+        AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+        (AUDIT_DIR / f"{task_id}__{sig}.json").write_text(
+            json.dumps(record, indent=2, default=str), encoding="utf-8",
+        )
+    except Exception as exc:
+        logger.warning("failure_triage: audit write failed: %s", exc)
+
+
+def apply_patch_in_worktree(
+    task: Dict[str, Any],
+    diag: Dict[str, Any],
+    patch: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Apply an LLM-generated patch in an isolated worktree, verify, and
+    conditionally merge.
+
+    Contract:
+      * Creates a fresh branch ``autofix/<task_id>-<sig>`` — never touches
+        main directly.
+      * Runs the LLM-supplied ``verification_command`` (allowlisted prefix
+        only). Any non-zero exit → roll back the whole worktree + branch.
+      * On success: commits to the autofix branch. If
+        ``ICDEV_AUTOFIX_AUTOMERGE=true`` also fast-forward merges the
+        branch into main via ``tools/genesis/reflexes/kanban._merge_worktree_to_main``.
+      * Returns a dict that is safe to JSON-serialize and store on the
+        triage entry. Increments the global rate counter only when an
+        apply is actually attempted (after all pre-apply gates pass).
+    """
+    sig = _sig(task.get("last_failure_reason") or "")
+    sig_short = sig[:8]
+    now = _utcnow().isoformat()
+    record: Dict[str, Any] = {
+        "task_id": task.get("id"),
+        "signature": sig,
+        "started_at": now,
+        "outcome": None,
+    }
+
+    # Pre-apply validation — gates the LLM output, not just the diagnosis.
+    ok, why = _validate_verification_command(patch.get("verification_command") or "")
+    if not ok:
+        record["outcome"] = "rejected_bad_verification_command"
+        record["reason"] = why
+        _write_audit(task["id"], sig, record)
+        return {"applied": False, "outcome": record["outcome"], "reason": why}
+
+    ok, why = _validate_patch_files(patch, diag)
+    if not ok:
+        record["outcome"] = "rejected_bad_patch_files"
+        record["reason"] = why
+        _write_audit(task["id"], sig, record)
+        return {"applied": False, "outcome": record["outcome"], "reason": why}
+
+    # Count this attempt against the rolling hour cap even if verification
+    # ultimately fails — it's the *attempt* that consumes budget.
+    record_apply()
+
+    created = _create_autofix_worktree(task["id"], sig_short)
+    if not created:
+        record["outcome"] = "worktree_create_failed"
+        _write_audit(task["id"], sig, record)
+        return {"applied": False, "outcome": record["outcome"]}
+    wt, branch = created
+    record["worktree"] = str(wt)
+    record["branch"] = branch
+
+    # 1) apply file edits (Edit-style unique replace, already validated unique)
+    applied_files: List[str] = []
+    try:
+        for f in patch.get("files", []):
+            path = f["path"].replace("\\", "/")
+            full = wt / path
+            text = full.read_text(encoding="utf-8", errors="replace")
+            new_text = text.replace(f["old_string"], f["new_string"], 1)
+            full.write_text(new_text, encoding="utf-8")
+            applied_files.append(path)
+    except Exception as exc:
+        record["outcome"] = "edit_failed"
+        record["reason"] = str(exc)
+        _cleanup_autofix_worktree(wt, branch, keep_branch=False)
+        _write_audit(task["id"], sig, record)
+        return {"applied": False, "outcome": record["outcome"], "reason": str(exc)}
+
+    record["applied_files"] = applied_files
+
+    # 2) verification_command — run in the worktree cwd
+    cmd_parts = (patch["verification_command"] or "").split()
+    rc, out = _run(cmd_parts, cwd=wt, timeout=600)
+    record["verification_rc"] = rc
+    record["verification_tail"] = out[-1500:]
+
+    if rc != 0:
+        record["outcome"] = "verification_failed"
+        _cleanup_autofix_worktree(wt, branch, keep_branch=False)
+        _write_audit(task["id"], sig, record)
+        return {"applied": False, "outcome": record["outcome"], "verification_rc": rc}
+
+    # 3) commit on the autofix branch (never amend, new commit per apply)
+    commit_msg = (
+        f"autofix: {task.get('title','')[:60]}\n\n"
+        f"Auto-fix-source: failure_triage\n"
+        f"Source-task: {task.get('id')}\n"
+        f"Signature: {sig}\n"
+        f"Diagnosis: {(diag.get('root_cause') or '')[:200]}\n"
+        f"Confidence: {diag.get('confidence')}\n"
+        f"Verification: {patch['verification_command']}\n"
+    )
+    _run(["git", "add", "--"] + applied_files, cwd=wt, timeout=30)
+    rc_c, out_c = _run(["git", "commit", "-m", commit_msg], cwd=wt, timeout=60)
+    if rc_c != 0:
+        record["outcome"] = "commit_failed"
+        record["reason"] = out_c[-500:]
+        _cleanup_autofix_worktree(wt, branch, keep_branch=False)
+        _write_audit(task["id"], sig, record)
+        return {"applied": False, "outcome": record["outcome"]}
+
+    # Capture the new commit sha for the audit
+    rc_sha, sha_out = _run(["git", "rev-parse", "HEAD"], cwd=wt, timeout=10)
+    record["autofix_commit"] = (sha_out or "").strip() if rc_sha == 0 else None
+
+    # 4) conditional merge into main
+    merged = False
+    if automerge_enabled():
+        try:
+            # _merge_worktree_to_main takes task_id and assumes branch
+            # kanban/<task_id>. Our branch is autofix/<task_id>-<sig> so
+            # perform the merge directly here instead.
+            merged = _ff_merge_autofix_branch(branch)
+        except Exception as exc:
+            logger.warning("failure_triage: automerge failed: %s", exc)
+            merged = False
+    record["merged_to_main"] = merged
+
+    # 5) cleanup — remove worktree directory, but KEEP the autofix branch
+    # so humans (or automerge later) can still see what was applied.
+    _cleanup_autofix_worktree(wt, branch, keep_branch=True)
+
+    record["outcome"] = "applied_verified_committed" + ("_merged" if merged else "")
+    _write_audit(task["id"], sig, record)
+
+    return {
+        "applied": True,
+        "outcome": record["outcome"],
+        "branch": branch,
+        "commit": record.get("autofix_commit"),
+        "merged_to_main": merged,
+        "applied_files": applied_files,
+    }
+
+
+def _ff_merge_autofix_branch(branch: str) -> bool:
+    """Attempt a fast-forward merge of ``branch`` into main in the main
+    worktree. Refuses to merge if main has diverged (no 3-way merge).
+    """
+    # 1. Are we on main? If not, abort — automerge is only for the
+    # straightforward case.
+    rc, head = _run(["git", "symbolic-ref", "--short", "HEAD"], cwd=BASE_DIR, timeout=10)
+    if rc != 0 or head.strip() != "main":
+        logger.info("automerge skipped — current branch is not main (%s)", head.strip())
+        return False
+    # 2. Refuse to merge with a dirty tree
+    rc, out = _run(["git", "status", "--porcelain"], cwd=BASE_DIR, timeout=10)
+    if rc != 0 or out.strip():
+        logger.info("automerge skipped — main worktree dirty")
+        return False
+    # 3. ff-only merge. If main has moved, we do NOT force — leave the
+    # branch for human resolution.
+    rc, out = _run(["git", "merge", "--ff-only", branch], cwd=BASE_DIR, timeout=60)
+    if rc != 0:
+        logger.info("automerge ff failed: %s", out[:200])
+    return rc == 0
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator — one pass over recent failures
 # ---------------------------------------------------------------------------
 
@@ -451,17 +775,23 @@ def triage_once(
         if allow and apply:
             patch = generate_patch(task, diag)
             if patch and patch.get("files"):
-                # Defer the actual application to a separate, review-gated
-                # PR (see module docstring / README). We stop here in the
-                # current build: the patch is recorded on the diagnostic
-                # card so a human can apply it with one click, and the
-                # rate counter is NOT incremented (no real apply happened).
                 entry["patch_preview"] = {
                     "files": [f.get("path") for f in patch.get("files", [])],
                     "verification_command": patch.get("verification_command"),
                 }
-                entry["outcome"] = "patch_generated_awaiting_review"
-                _create_diagnostic_card_with_patch(task, diag, patch)
+                apply_result = apply_patch_in_worktree(task, diag, patch)
+                entry["apply_result"] = apply_result
+                if apply_result.get("applied"):
+                    entry["outcome"] = apply_result["outcome"]
+                    # Post a card so the human sees the autofix even when it
+                    # merged cleanly — keeps an auditable trail on the board.
+                    _create_diagnostic_card_with_patch(task, diag, patch)
+                else:
+                    # Verification failed, validation rejected the patch, or
+                    # the worktree failed to build. Fall through to a
+                    # suggested card so a human can pick it up.
+                    entry["outcome"] = "apply_failed_fell_through_to_card"
+                    _create_diagnostic_card_with_patch(task, diag, patch)
             else:
                 entry["outcome"] = "patch_gen_failed_fell_through_to_card"
                 _create_diagnostic_card(task, diag)

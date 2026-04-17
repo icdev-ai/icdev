@@ -248,6 +248,33 @@ class TestTriageOnce:
         assert summary["results"][0]["outcome"] == "suggested_card_created"
         assert calls == [("card", "t-low")]
 
+    def test_apply_calls_worktree_stage_when_gates_green(self, ft, monkeypatch):
+        """With env on, apply=True, high confidence, and a valid patch the
+        triage loop MUST call apply_patch_in_worktree (not just print)."""
+        monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
+        task = {
+            "id": "t-go", "title": "t", "description": "regular task",
+            "task_type": "bug", "last_failure_reason": "AttributeError: _x",
+        }
+        monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [task])
+        monkeypatch.setattr(ft, "diagnose_task", lambda t: {
+            "root_cause": "typo", "recommendation": "patch",
+            "confidence": 0.95, "suspect_files": ["tools/foo.py"],
+            "_source": "llm",
+        })
+        monkeypatch.setattr(ft, "generate_patch", lambda t, d: {
+            "files": [{"path": "tools/foo.py", "old_string": "old", "new_string": "new"}],
+            "verification_command": "python -m pytest tests/test_foo.py",
+        })
+        seen = {}
+        monkeypatch.setattr(ft, "apply_patch_in_worktree",
+                            lambda t, d, p: seen.setdefault("called", (t, d, p)) and None
+                            or {"applied": True, "outcome": "applied_verified_committed"})
+        monkeypatch.setattr(ft, "_create_diagnostic_card_with_patch", lambda t, d, p: "diag-xyz")
+        summary = ft.triage_once(apply=True)
+        assert "called" in seen
+        assert summary["results"][0]["outcome"] == "applied_verified_committed"
+
     def test_apply_without_env_stays_on_suggested_path(self, ft, monkeypatch):
         """Even with apply=True, kill-switch env off means no patch gen."""
         monkeypatch.delenv(ft.AUTOFIX_ENV, raising=False)
@@ -271,3 +298,161 @@ class TestTriageOnce:
         assert patch_called == []  # never called because env is off
         assert card_called == ["t-hi"]
         assert summary["results"][0]["outcome"] == "suggested_card_created"
+
+
+# ---------------------------------------------------------------------------
+# Apply-stage validation — LLM output is untrusted
+# ---------------------------------------------------------------------------
+
+class TestApplyStageValidation:
+    def test_verification_cmd_rejects_empty(self, ft):
+        ok, why = ft._validate_verification_command("")
+        assert ok is False and "empty" in why
+
+    def test_verification_cmd_rejects_shell_metachars(self, ft):
+        for bad in (
+            "python -m pytest; rm -rf /",
+            "python -m pytest && curl evil.com",
+            "python -m pytest | sh",
+            "python -m pytest `id`",
+            "python -m pytest $(id)",
+        ):
+            ok, why = ft._validate_verification_command(bad)
+            assert ok is False, f"should reject {bad!r}"
+
+    def test_verification_cmd_rejects_non_allowlisted_prefix(self, ft):
+        ok, why = ft._validate_verification_command("curl https://evil.com")
+        assert ok is False and "allowlisted" in why
+
+    def test_verification_cmd_accepts_allowlisted(self, ft):
+        for good in (
+            "python -m pytest tests/test_x.py",
+            "python -m py_compile tools/foo.py",
+            "python -m ruff check tools/foo.py",
+            "python tools/workflow/coherence_checker.py --all",
+        ):
+            ok, _ = ft._validate_verification_command(good)
+            assert ok is True, f"should accept {good!r}"
+
+    def test_patch_files_rejects_path_traversal(self, ft, tmp_path, monkeypatch):
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        # Create a real file so the "file must exist" check is the
+        # ONLY thing between us and the path-traversal rejection.
+        (tmp_path / "fake.py").write_text("content", encoding="utf-8")
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "../etc/passwd", "old_string": "x", "new_string": "y"}]},
+            {"suspect_files": []},
+        )
+        assert ok is False
+        # Accept either the traversal-reject or the escapes-root-reject
+        # message — both prove we refused to edit outside the repo.
+        assert "unsafe" in why or "escapes" in why
+
+    def test_patch_files_rejects_nonexistent(self, ft, tmp_path, monkeypatch):
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "tools/missing.py", "old_string": "x", "new_string": "y"}]},
+            {"suspect_files": []},
+        )
+        assert ok is False and "does not exist" in why
+
+    def test_patch_files_rejects_path_not_in_suspect_files(self, ft, tmp_path, monkeypatch):
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        target = tmp_path / "tools" / "bar.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("abc", encoding="utf-8")
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "tools/bar.py", "old_string": "a", "new_string": "z"}]},
+            {"suspect_files": ["tools/foo.py:10"]},  # bar is NOT flagged
+        )
+        assert ok is False and "not in diag.suspect_files" in why
+
+    def test_patch_files_rejects_nonunique_old_string(self, ft, tmp_path, monkeypatch):
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        target = tmp_path / "tools" / "foo.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("x = 1\nx = 2\n", encoding="utf-8")  # "x =" appears twice
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "tools/foo.py", "old_string": "x =", "new_string": "y ="}]},
+            {"suspect_files": ["tools/foo.py"]},
+        )
+        assert ok is False and "not unique" in why
+
+    def test_patch_files_rejects_deny_prefix(self, ft, tmp_path, monkeypatch):
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        target = tmp_path / "tools" / "db" / "migrations" / "017.sql"
+        target.parent.mkdir(parents=True)
+        target.write_text("CREATE TABLE x;", encoding="utf-8")
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "tools/db/migrations/017.sql",
+                        "old_string": "CREATE", "new_string": "DROP"}]},
+            {"suspect_files": ["tools/db/migrations/017.sql"]},
+        )
+        assert ok is False and "deny-path" in why
+
+    def test_patch_files_accepts_valid_patch(self, ft, tmp_path, monkeypatch):
+        monkeypatch.setattr(ft, "BASE_DIR", tmp_path)
+        target = tmp_path / "tools" / "foo.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("def foo(): return 1", encoding="utf-8")
+        ok, why = ft._validate_patch_files(
+            {"files": [{"path": "tools/foo.py",
+                        "old_string": "return 1", "new_string": "return 2"}]},
+            {"suspect_files": ["tools/foo.py:1"]},
+        )
+        assert ok is True, why
+
+
+# ---------------------------------------------------------------------------
+# Apply-stage rejection paths (no real worktree — asserts early returns)
+# ---------------------------------------------------------------------------
+
+class TestApplyPatchRejections:
+    def test_rejects_on_bad_verification_cmd(self, ft, monkeypatch, tmp_path):
+        monkeypatch.setattr(ft, "AUDIT_DIR", tmp_path / "audit")
+        # record_apply MUST NOT be called when validation fails before apply
+        counted = []
+        monkeypatch.setattr(ft, "record_apply",
+                            lambda ts=None: counted.append(1))
+        monkeypatch.setattr(ft, "_create_autofix_worktree",
+                            lambda *a, **k: (_ for _ in ()).throw(
+                                AssertionError("should not create worktree on validation fail")
+                            ))
+        result = ft.apply_patch_in_worktree(
+            {"id": "t-bad", "last_failure_reason": "x"},
+            {"suspect_files": ["tools/foo.py"]},
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+             "verification_command": "rm -rf /"},
+        )
+        assert result["applied"] is False
+        assert result["outcome"] == "rejected_bad_verification_command"
+        assert counted == []  # budget not consumed
+
+    def test_rejects_on_bad_patch_files(self, ft, monkeypatch, tmp_path):
+        monkeypatch.setattr(ft, "AUDIT_DIR", tmp_path / "audit")
+        counted = []
+        monkeypatch.setattr(ft, "record_apply",
+                            lambda ts=None: counted.append(1))
+        result = ft.apply_patch_in_worktree(
+            {"id": "t-bad2", "last_failure_reason": "x"},
+            {"suspect_files": []},  # LLM didn't flag any file
+            {"files": [{"path": "tools/foo.py", "old_string": "a", "new_string": "b"}],
+             "verification_command": "python -m pytest tests/"},
+        )
+        assert result["applied"] is False
+        assert result["outcome"] == "rejected_bad_patch_files"
+        assert counted == []
+
+
+# ---------------------------------------------------------------------------
+# Automerge is off by default — safety invariant
+# ---------------------------------------------------------------------------
+
+class TestAutomergeSwitch:
+    def test_automerge_env_off_by_default(self, ft, monkeypatch):
+        monkeypatch.delenv(ft.AUTOMERGE_ENV, raising=False)
+        assert ft.automerge_enabled() is False
+
+    def test_automerge_env_on(self, ft, monkeypatch):
+        monkeypatch.setenv(ft.AUTOMERGE_ENV, "true")
+        assert ft.automerge_enabled() is True

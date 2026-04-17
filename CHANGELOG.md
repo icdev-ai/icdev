@@ -6,6 +6,15 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.18] - 2026-04-17
+
+### Added
+- **Failure Triage — Worktree-Apply Stage** (`tools/workflow/failure_triage.py`) — `apply_patch_in_worktree()` completes the auto-fix loop. Creates an isolated worktree at `.tmp/autofix/<task>__<sig>/` on branch `autofix/<task>-<sig>`, applies the LLM patch, runs the verification command, commits on success, rolls back the whole worktree + branch on failure. Pre-apply validation rejects: shell metacharacters / non-allowlisted prefixes in `verification_command`; path traversal, nonexistent files, files not in `diag.suspect_files`, non-unique `old_string`, deny-list prefix matches. Rate budget is only consumed after validation passes. Audit trail at `.tmp/kanban/autofix-audit/<task>__<sig>.json`.
+- **Second opt-in: `ICDEV_AUTOFIX_AUTOMERGE`** — even when a patch applies cleanly and verifies green, the `autofix/*` branch is NOT fast-forward merged into main unless this env is also set. Default off. Refuses to merge from a non-main checkout or a dirty working tree.
+
+### Tests
+- 35 unit tests (up from 20) — full coverage of the apply stage validation (allowlist, traversal, uniqueness, deny-list) and rejection paths (validation failures must not consume rate budget or create worktrees).
+
 ## [1.2.17] - 2026-04-17
 
 ### Added
