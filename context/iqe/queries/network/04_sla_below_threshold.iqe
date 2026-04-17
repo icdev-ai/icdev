@@ -1,0 +1,7 @@
+# IQE-NDC-004: Circuits with SLA below 99.9% uptime
+# Sub-standard SLA circuits are risk vectors for mission-critical workloads.
+# Use: ITIL availability management, IL5 connectivity review, vendor negotiations.
+
+foreach c in network.circuits
+where c.sla_uptime_pct < 99.9
+select c.circuit_id, c.carrier, c.circuit_type, c.sla_uptime_pct, c.bandwidth

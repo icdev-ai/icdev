@@ -1,0 +1,7 @@
+# IQE-NDC-006: IPAM blocks with utilization > 80%
+# Blocks approaching saturation risk address exhaustion and routing instability.
+# Use: capacity planning, IPv6 migration readiness, IPAM hygiene.
+
+foreach block in network.ipam
+where block.utilization_pct > 80
+select block.network, block.vrf, block.address_family, block.utilization_pct, block.site_id

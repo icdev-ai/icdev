@@ -1,0 +1,7 @@
+# IQE-NDC-005: Sites outside the United States
+# Non-US sites may require ITAR/EAR review for CUI data residency.
+# Use: ITAR compliance, data sovereignty review, FOCI screening.
+
+foreach s in network.sites
+where s.country != "US"
+select s.name, s.city, s.state, s.country, s.classification, s.site_type

@@ -1,0 +1,7 @@
+# IQE-NDC-010: Topologies carrying CUI classification
+# CUI topologies require IL4+ controls, FIPS 140-2 encryption, and access controls.
+# Use: CUI scoping, boundary documentation, annual review per 32 CFR Part 2002.
+
+foreach t in network.topologies
+where t.classification == "CUI"
+select t.id, t.name, t.classification, t.created_at, t.updated_at
