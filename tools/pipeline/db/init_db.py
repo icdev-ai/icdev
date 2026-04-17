@@ -225,6 +225,36 @@ CREATE TABLE IF NOT EXISTS pdc_sops (
 );
 CREATE INDEX IF NOT EXISTS idx_pdc_sops_type ON pdc_sops(sop_type);
 CREATE INDEX IF NOT EXISTS idx_pdc_sops_status ON pdc_sops(approval_status);
+
+CREATE TABLE IF NOT EXISTS pdc_snapshots (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES pipelines(id),
+    label           TEXT,
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    node_count      INTEGER DEFAULT 0,
+    edge_count      INTEGER DEFAULT 0,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_snapshots_pipeline ON pdc_snapshots(pipeline_id);
+
+CREATE TABLE IF NOT EXISTS pdc_simulations (
+    id              TEXT PRIMARY KEY,
+    pipeline_id     TEXT REFERENCES pipelines(id),
+    baseline_snap_id TEXT REFERENCES pdc_snapshots(id),
+    delta_graph_json TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    verdict         TEXT NOT NULL DEFAULT 'unknown',
+    antipatterns_json   TEXT DEFAULT '[]',
+    slsa_json           TEXT DEFAULT '{}',
+    compliance_json     TEXT DEFAULT '{}',
+    diff_json           TEXT DEFAULT '{}',
+    critical_count  INTEGER DEFAULT 0,
+    high_count      INTEGER DEFAULT 0,
+    medium_count    INTEGER DEFAULT 0,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdc_simulations_pipeline ON pdc_simulations(pipeline_id);
 """
 
 
