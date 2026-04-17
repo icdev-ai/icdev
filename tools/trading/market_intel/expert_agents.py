@@ -100,6 +100,15 @@ def _ensure_tables() -> None:
     try:
         for ddl in _ADVISOR_TABLES:
             conn.execute(ddl)
+        # Backfill columns that didn't exist in earlier schema versions.
+        # CREATE TABLE IF NOT EXISTS is a no-op when the table already has
+        # the older shape, so we explicitly add any missing columns here.
+        try:
+            conn.execute("ALTER TABLE ad_risk_profiles ADD COLUMN IF NOT EXISTS max_daily_orders INTEGER DEFAULT 10")
+            conn.commit()
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
         # Seed default profiles if the table is empty
         existing = conn.execute("SELECT COUNT(*) FROM ad_risk_profiles").fetchone()
         if (existing[0] if existing else 0) == 0:
