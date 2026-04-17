@@ -63,9 +63,12 @@ SUGGEST_CONFIDENCE = 0.50          # min confidence to bother creating a card
 MAX_APPLIES_PER_HOUR = 5           # matches CLAUDE.md self-healing cap
 DEFAULT_WINDOW_HOURS = 1           # how far back to scan
 
-# Task-type whitelist for auto-apply (match feedback_kanban_vv_policy.md
-# "fail-open for build/research/test/chore" — plus 'bug').
-AUTO_APPLY_TASK_TYPES = {"build", "bug", "chore", "test", "research"}
+# Task-type whitelist for auto-apply — matches feedback_kanban_vv_policy.md
+# "fail-open for build/research/test/chore" plus 'fix'. Counts from the
+# live kanban_tasks table (2026-04-17): chore=742, build=307, fix=200,
+# test=89, research=49. 'deploy' (12) is intentionally excluded — higher
+# blast radius, stays on the suggested-card path.
+AUTO_APPLY_TASK_TYPES = {"build", "chore", "fix", "research", "test"}
 
 # Signatures and suspect-file substrings that force human review.
 # Anything matching stays on the suggested-card path regardless of

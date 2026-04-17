@@ -78,7 +78,7 @@ class TestAutoApplyGates:
             "id": "t-auto",
             "title": "fix a bug",
             "description": "regular build task",
-            "task_type": "bug",
+            "task_type": "fix",
             "last_failure_reason": "AttributeError: typo",
         }
         base.update(overrides)
@@ -198,7 +198,7 @@ class TestDiagnoseFallback:
 
         diag = ft.diagnose_task(
             {"id": "t1", "title": "x", "description": "",
-             "task_type": "bug", "last_failure_reason": "boom"},
+             "task_type": "fix", "last_failure_reason": "boom"},
         )
         assert called.get("yes") is True
         assert diag["_source"] == "heuristic"
@@ -219,7 +219,7 @@ class TestTriageOnce:
     def test_already_triaged_is_skipped(self, ft, monkeypatch):
         task = {
             "id": "t-skip", "title": "t", "description": "",
-            "task_type": "bug", "last_failure_reason": "x",
+            "task_type": "fix", "last_failure_reason": "x",
         }
         monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [task])
         sig = ft._sig("x")
@@ -234,7 +234,7 @@ class TestTriageOnce:
     def test_low_confidence_creates_suggested_card(self, ft, monkeypatch):
         task = {
             "id": "t-low", "title": "t", "description": "",
-            "task_type": "bug", "last_failure_reason": "y",
+            "task_type": "fix", "last_failure_reason": "y",
         }
         monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [task])
         monkeypatch.setattr(ft, "diagnose_task", lambda t: {
@@ -254,7 +254,7 @@ class TestTriageOnce:
         monkeypatch.setenv(ft.AUTOFIX_ENV, "true")
         task = {
             "id": "t-go", "title": "t", "description": "regular task",
-            "task_type": "bug", "last_failure_reason": "AttributeError: _x",
+            "task_type": "fix", "last_failure_reason": "AttributeError: _x",
         }
         monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [task])
         monkeypatch.setattr(ft, "diagnose_task", lambda t: {
@@ -280,7 +280,7 @@ class TestTriageOnce:
         monkeypatch.delenv(ft.AUTOFIX_ENV, raising=False)
         task = {
             "id": "t-hi", "title": "t", "description": "",
-            "task_type": "bug", "last_failure_reason": "z",
+            "task_type": "fix", "last_failure_reason": "z",
         }
         monkeypatch.setattr(ft, "find_recent_failures", lambda **k: [task])
         monkeypatch.setattr(ft, "diagnose_task", lambda t: {
