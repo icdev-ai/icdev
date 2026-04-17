@@ -184,7 +184,14 @@ test:agent-bdd-templates:
 
 
 def generate_pipeline(project_path: str, project_config: dict = None) -> list:
-    """Generate .gitlab-ci.yml with all 7 stages and supporting jobs."""
+    """Generate .gitlab-ci.yml with all 7 stages and supporting jobs.
+
+    NOTE: Node.js pipelines (app_type='node') include ``npm ci`` and
+    ``npm run test`` steps that require npm registry access. Air-gapped
+    environments do NOT have an npm mirror — only PyPI. If ICDEV_AIRGAP
+    is set and app_type is 'node', this function raises an error.
+    """
+    import os
     config = project_config or {}
     project_name = config.get("project_name", "icdev-app")
     registry = config.get("registry", "$CI_REGISTRY")
@@ -194,6 +201,14 @@ def generate_pipeline(project_path: str, project_config: dict = None) -> list:
     app_type = config.get("app_type", "python")  # python or node
     k8s_namespace = config.get("k8s_namespace", project_name)
     stages_filter = config.get("stages", None)  # None = all stages
+
+    if app_type != "python" and os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1"):
+        raise RuntimeError(
+            f"Pipeline generation for app_type='{app_type}' requires npm registry "
+            f"access (npm ci, npx eslint, npm run test). Air-gapped environments "
+            f"have PyPI mirrors only — no npm. Use app_type='python' or pre-build "
+            f"on a connected machine."
+        )
 
     all_stages = [
         "lint",
