@@ -120,3 +120,8 @@ data/alphadesk.db-shm
 data/alphadesk.db-wal
 data/network_canvas.db-shm
 data/network_canvas.db-wal
+
+# Frontend build artifacts
+frontend/.next/
+frontend/out/
+frontend/node_modules/
