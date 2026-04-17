@@ -222,7 +222,7 @@ def lint_javascript(project_path: str, fix: bool = False) -> Dict:
 
     if not eslint_cmd:
         result["success"] = False
-        result["raw_output"] = "eslint not found. Install with: npm install -g eslint"
+        result["raw_output"] = "eslint not found. Install globally (npm install -g eslint) on connected machines. Air-gap: skip JS linting or use ruff for Python."
         return result
 
     # Build eslint command
