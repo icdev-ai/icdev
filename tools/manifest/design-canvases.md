@@ -15,6 +15,11 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | **ODC** Observability | tools\observability_canvas\blueprint.py | tools\observability_canvas\observability_engine.py | args\observability_canvas_config.yaml | observability_canvas.db | /observability | ICDEV_OBSERVABILITY_ENABLED | SIEM/SOAR/log stack design, MITRE ATT&CK detection coverage, source type weighting, NIST AU/SI control assessment, log retention policy |
 | **DDC** Data | tools\data_canvas\blueprint.py | tools\data_canvas\data_engine.py | args\data_canvas_config.yaml | data_canvas.db | /data | ICDEV_DATA_CANVAS_ENABLED | Data model design with PII/PHI/CUI/SECRET classification, retention policy enforcement, Privacy Act/HIPAA/GDPR assessment, ER diagram export |
 
+## PDC Sub-Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| PDC Pipeline Twin | tools/pipeline/twin.py | Phase-1 pre-merge what-if simulation. Snapshot any pipeline DAG as `pdc_snapshots`, then run a delta graph through antipattern detector + SLSA assessor + compliance engine to produce a PASS/WARN/FAIL verdict. Tables: `pdc_snapshots`, `pdc_simulations`. Routes: `GET /devops/twin/<pipe_id>`, `POST /api/pipelines/<id>/twin/snapshot`, `GET /api/pipelines/<id>/twin/snapshots`, `POST /api/pipelines/<id>/twin/simulate`, `GET /api/twin/simulations/<sim_id>`. | `take_snapshot(pipeline_id)`, `simulate_delta(pipeline_id, delta_graph)`, `list_snapshots(pipeline_id)`, `get_simulation(sim_id)` | Snapshot dict / Simulation result dict (verdict, antipatterns, slsa, compliance, diff) |
+
 ## IDC Sub-Tools
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

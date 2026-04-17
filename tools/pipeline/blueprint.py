@@ -100,6 +100,165 @@ def _audit(action, entity_type, entity_id, details="", user_id=None):
         logger.warning("Audit write failed: %s", exc)
 
 
+# ── Module-level analysis helpers (also used by twin.py) ─────────────────────
+
+
+def assess_slsa(nodes, edges):
+    """Assess SLSA level from pipeline graph nodes/edges."""
+    node_types = set(n.get("type", "") for n in nodes)
+    evidence = {
+        "build_process_documented": any(t.startswith("cicd-") or t.startswith("build-") for t in node_types),
+        "version_controlled_source": any(t.startswith("scm-") for t in node_types),
+        "build_service_authenticated": any(
+            t in ("cicd-tekton", "gcp-cloudbuild", "cicd-gitlab") for t in node_types
+        ),
+        "build_as_code": any(t in ("cicd-tekton", "cicd-gitlab", "cicd-github-actions") for t in node_types),
+        "ephemeral_environment": any(t in ("cicd-tekton", "gcp-cloudbuild") for t in node_types),
+        "isolated_builds": any(t in ("build-kaniko", "build-buildah", "cicd-tekton") for t in node_types),
+        "hermetic_builds": any(t == "build-bazel" for t in node_types),
+        "reproducible_builds": any(t == "build-bazel" for t in node_types),
+    }
+    has_provenance = any(t in ("attest-slsa-gen", "attest-in-toto") for t in node_types)
+    has_signing = any(t.startswith("sign-") for t in node_types)
+
+    achieved = 0
+    for level in range(4, -1, -1):
+        reqs = SLSA_LEVEL_REQUIREMENTS.get(level, {}).get("requirements", [])
+        if all(evidence.get(r, False) for r in reqs):
+            achieved = level
+            break
+
+    if achieved >= 2 and not has_signing:
+        achieved = min(achieved, 1)
+    if achieved >= 1 and not has_provenance:
+        achieved = min(achieved, 0)
+
+    return {
+        "achieved_level": achieved,
+        "evidence": evidence,
+        "has_provenance": has_provenance,
+        "has_signing": has_signing,
+    }
+
+
+def run_compliance_check(nodes, edges):
+    """Run pipeline compliance rules against graph nodes/edges."""
+    node_types = set(n.get("type", "") for n in nodes)
+    findings = []
+    passed = 0
+    failed = 0
+
+    has_category = {}
+    for cat, items in PIPELINE_OBJECTS.items():
+        for item in items:
+            if item["type"] in node_types:
+                has_category.setdefault(cat, set()).add(item["type"])
+
+    checks = {
+        "branch_protection": any(t in ("branch-policy", "commit-signing") for t in node_types),
+        "code_review_required": "branch-policy" in node_types,
+        "hermetic_build": any(t in ("build-bazel", "build-kaniko") for t in node_types),
+        "sbom_generated": any(t.startswith("sbom-") for t in node_types),
+        "provenance_attestation": any(t in ("attest-slsa-gen", "attest-in-toto") for t in node_types),
+        "sast_present": any(
+            "sast" in t
+            or t
+            in ("scan-sonarqube", "scan-semgrep", "scan-codeql", "scan-bandit", "scan-spotbugs", "aws-codeguru")
+            for t in node_types
+        ),
+        "sca_present": any(
+            t in ("scan-sca", "scan-trivy", "scan-grype", "scan-snyk", "scan-dep-check") for t in node_types
+        ),
+        "container_scan_before_push": any(
+            t
+            in (
+                "scan-container",
+                "scan-trivy",
+                "scan-anchore",
+                "scan-neuvector",
+                "aws-inspector",
+                "az-defender",
+                "gcp-artifact-analysis",
+                "ibm-vuln-advisor",
+            )
+            for t in node_types
+        ),
+        "secret_detection_present": any(
+            t in ("scan-secret", "scan-gitleaks", "scan-trufflehog", "scan-detect-secrets") for t in node_types
+        ),
+        "iac_scan_present": any(t in ("scan-iac", "scan-checkov", "scan-tfsec", "scan-kics") for t in node_types),
+        "dast_present": any(t in ("scan-dast", "scan-zap", "scan-nuclei", "scan-burp") for t in node_types),
+        "image_signing": any(t.startswith("sign-") for t in node_types),
+        "vuln_threshold_gate": any(t in ("gate-vuln-threshold", "gate-automated") for t in node_types),
+        "admission_controller": any(
+            t
+            in (
+                "policy-opa",
+                "policy-kyverno",
+                "policy-gatekeeper",
+                "policy-kubewarden",
+                "gcp-binary-auth",
+                "ibm-portieris",
+            )
+            for t in node_types
+        ),
+        "prod_approval_gate": any(t in ("gate-manual", "gate-deploy-window") for t in node_types),
+        "progressive_delivery": any(
+            t in ("deploy-canary", "deploy-bluegreen", "deploy-feature-flag") for t in node_types
+        ),
+        "cds_for_cross_domain": not any(t.startswith("boundary-") for t in node_types)
+        or any(t.startswith("cds-") for t in node_types),
+        "runtime_monitoring": any(
+            t.startswith("mon-")
+            or t in ("aws-cloudwatch", "az-monitor", "gcp-monitoring", "aws-guardduty", "gcp-scc")
+            for t in node_types
+        ),
+        "evidence_collection": any(t in ("comp-evidence", "comp-oscal") for t in node_types),
+        "audit_logging": True,
+        "airgap_vuln_mirror": not any(
+            t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types
+        )
+        or "vuln-db-mirror" in node_types,
+        "airgap_package_mirror": not any(
+            t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types
+        )
+        or "package-mirror" in node_types,
+        "slo_defined": any(
+            t.startswith("sre-slo")
+            or t in ("sre-openslo", "sre-sloth", "sre-pyrra", "aws-cw-slo", "gcp-service-mon")
+            for t in node_types
+        ),
+        "incident_mgmt_present": any(
+            t.startswith("sre-incident")
+            or t in ("sre-pagerduty", "sre-grafana-oncall", "sre-opsgenie", "aws-incident-mgr")
+            for t in node_types
+        ),
+        "runbooks_present": any(t in ("sre-runbook", "sre-self-heal") for t in node_types),
+        "chaos_present": any(
+            t in ("sre-chaos", "sre-chaos-litmus", "aws-fis", "az-chaos-studio") for t in node_types
+        ),
+        "dora_tracked": any(t.startswith("sre-dora") for t in node_types),
+    }
+
+    for rule in PIPELINE_COMPLIANCE_RULES:
+        check_key = rule["check"]
+        if checks.get(check_key, False):
+            passed += 1
+        else:
+            failed += 1
+            findings.append(
+                {
+                    "rule_id": rule["id"],
+                    "title": rule["title"],
+                    "severity": rule["severity"],
+                    "category": rule["category"],
+                    "frameworks": rule["frameworks"],
+                }
+            )
+
+    return {"passed": passed, "failed": failed, "findings": findings, "total": passed + failed}
+
+
 # ── Blueprint Factory ─────────────────────────────────────────────────────────
 
 
@@ -989,165 +1148,14 @@ def create_pipeline_blueprint():
         return jsonify(scorecard)
 
     # ══════════════════════════════════════════════════════════════════════
-    # INTERNAL HELPERS
+    # INTERNAL HELPERS — delegate to module-level functions (importable by twin.py)
     # ══════════════════════════════════════════════════════════════════════
 
     def _assess_slsa(nodes, edges):
-        """Assess SLSA level from pipeline graph."""
-        node_types = set(n.get("type", "") for n in nodes)
-        evidence = {
-            "build_process_documented": any(t.startswith("cicd-") or t.startswith("build-") for t in node_types),
-            "version_controlled_source": any(t.startswith("scm-") for t in node_types),
-            "build_service_authenticated": any(
-                t in ("cicd-tekton", "gcp-cloudbuild", "cicd-gitlab") for t in node_types
-            ),
-            "build_as_code": any(t in ("cicd-tekton", "cicd-gitlab", "cicd-github-actions") for t in node_types),
-            "ephemeral_environment": any(t in ("cicd-tekton", "gcp-cloudbuild") for t in node_types),
-            "isolated_builds": any(t in ("build-kaniko", "build-buildah", "cicd-tekton") for t in node_types),
-            "hermetic_builds": any(t == "build-bazel" for t in node_types),
-            "reproducible_builds": any(t == "build-bazel" for t in node_types),
-        }
-        has_provenance = any(t in ("attest-slsa-gen", "attest-in-toto") for t in node_types)
-        has_signing = any(t.startswith("sign-") for t in node_types)
-
-        achieved = 0
-        for level in range(4, -1, -1):
-            reqs = SLSA_LEVEL_REQUIREMENTS.get(level, {}).get("requirements", [])
-            if all(evidence.get(r, False) for r in reqs):
-                achieved = level
-                break
-
-        # Signing and provenance can cap the level
-        if achieved >= 2 and not has_signing:
-            achieved = min(achieved, 1)
-        if achieved >= 1 and not has_provenance:
-            achieved = min(achieved, 0)
-
-        return {
-            "achieved_level": achieved,
-            "evidence": evidence,
-            "has_provenance": has_provenance,
-            "has_signing": has_signing,
-        }
+        return assess_slsa(nodes, edges)
 
     def _run_compliance_check(nodes, edges):
-        """Run pipeline compliance rules against graph."""
-        node_types = set(n.get("type", "") for n in nodes)
-        findings = []
-        passed = 0
-        failed = 0
-
-        # Type-category index for quick lookups
-        has_category = {}
-        for cat, items in PIPELINE_OBJECTS.items():
-            for item in items:
-                if item["type"] in node_types:
-                    has_category.setdefault(cat, set()).add(item["type"])
-
-        checks = {
-            "branch_protection": any(t in ("branch-policy", "commit-signing") for t in node_types),
-            "code_review_required": "branch-policy" in node_types,
-            "hermetic_build": any(t in ("build-bazel", "build-kaniko") for t in node_types),
-            "sbom_generated": any(t.startswith("sbom-") for t in node_types),
-            "provenance_attestation": any(t in ("attest-slsa-gen", "attest-in-toto") for t in node_types),
-            "sast_present": any(
-                "sast" in t
-                or t
-                in ("scan-sonarqube", "scan-semgrep", "scan-codeql", "scan-bandit", "scan-spotbugs", "aws-codeguru")
-                for t in node_types
-            ),
-            "sca_present": any(
-                t in ("scan-sca", "scan-trivy", "scan-grype", "scan-snyk", "scan-dep-check") for t in node_types
-            ),
-            "container_scan_before_push": any(
-                t
-                in (
-                    "scan-container",
-                    "scan-trivy",
-                    "scan-anchore",
-                    "scan-neuvector",
-                    "aws-inspector",
-                    "az-defender",
-                    "gcp-artifact-analysis",
-                    "ibm-vuln-advisor",
-                )
-                for t in node_types
-            ),
-            "secret_detection_present": any(
-                t in ("scan-secret", "scan-gitleaks", "scan-trufflehog", "scan-detect-secrets") for t in node_types
-            ),
-            "iac_scan_present": any(t in ("scan-iac", "scan-checkov", "scan-tfsec", "scan-kics") for t in node_types),
-            "dast_present": any(t in ("scan-dast", "scan-zap", "scan-nuclei", "scan-burp") for t in node_types),
-            "image_signing": any(t.startswith("sign-") for t in node_types),
-            "vuln_threshold_gate": any(t in ("gate-vuln-threshold", "gate-automated") for t in node_types),
-            "admission_controller": any(
-                t
-                in (
-                    "policy-opa",
-                    "policy-kyverno",
-                    "policy-gatekeeper",
-                    "policy-kubewarden",
-                    "gcp-binary-auth",
-                    "ibm-portieris",
-                )
-                for t in node_types
-            ),
-            "prod_approval_gate": any(t in ("gate-manual", "gate-deploy-window") for t in node_types),
-            "progressive_delivery": any(
-                t in ("deploy-canary", "deploy-bluegreen", "deploy-feature-flag") for t in node_types
-            ),
-            "cds_for_cross_domain": not any(t.startswith("boundary-") for t in node_types)
-            or any(t.startswith("cds-") for t in node_types),
-            "runtime_monitoring": any(
-                t.startswith("mon-")
-                or t in ("aws-cloudwatch", "az-monitor", "gcp-monitoring", "aws-guardduty", "gcp-scc")
-                for t in node_types
-            ),
-            "evidence_collection": any(t in ("comp-evidence", "comp-oscal") for t in node_types),
-            "audit_logging": True,  # Pipeline canvas itself provides audit
-            "airgap_vuln_mirror": not any(
-                t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types
-            )
-            or "vuln-db-mirror" in node_types,
-            "airgap_package_mirror": not any(
-                t.startswith("pipeline-sipr") or t.startswith("pipeline-jwics") for t in node_types
-            )
-            or "package-mirror" in node_types,
-            # SRE checks
-            "slo_defined": any(
-                t.startswith("sre-slo")
-                or t in ("sre-openslo", "sre-sloth", "sre-pyrra", "aws-cw-slo", "gcp-service-mon")
-                for t in node_types
-            ),
-            "incident_mgmt_present": any(
-                t.startswith("sre-incident")
-                or t in ("sre-pagerduty", "sre-grafana-oncall", "sre-opsgenie", "aws-incident-mgr")
-                for t in node_types
-            ),
-            "runbooks_present": any(t in ("sre-runbook", "sre-self-heal") for t in node_types),
-            "chaos_present": any(
-                t in ("sre-chaos", "sre-chaos-litmus", "aws-fis", "az-chaos-studio") for t in node_types
-            ),
-            "dora_tracked": any(t.startswith("sre-dora") for t in node_types),
-        }
-
-        for rule in PIPELINE_COMPLIANCE_RULES:
-            check_key = rule["check"]
-            if checks.get(check_key, False):
-                passed += 1
-            else:
-                failed += 1
-                findings.append(
-                    {
-                        "rule_id": rule["id"],
-                        "title": rule["title"],
-                        "severity": rule["severity"],
-                        "category": rule["category"],
-                        "frameworks": rule["frameworks"],
-                    }
-                )
-
-        return {"passed": passed, "failed": failed, "findings": findings, "total": passed + failed}
+        return run_compliance_check(nodes, edges)
 
     # Heatmap color helpers
     def _time_color(minutes):
@@ -1409,5 +1417,84 @@ def create_pipeline_blueprint():
         if err:
             return jsonify({"error": err}), 400
         return jsonify(sop)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PIPELINE TWIN — pre-merge what-if simulation
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/twin/<pipe_id>")
+    @pc_login_required
+    def pc_twin_page(pipe_id):
+        """Pipeline Twin simulation UI for a specific pipeline."""
+        conn = get_connection()
+        row = conn.execute("SELECT id, name, description FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        conn.close()
+        if not row:
+            return redirect("/devops/")
+        from tools.pipeline.twin import list_snapshots
+        snapshots = list_snapshots(pipe_id)
+        return render_template(
+            "pipeline/twin.html",
+            pipeline=row_to_dict(row),
+            snapshots=snapshots,
+        )
+
+    @bp.route("/api/pipelines/<pipe_id>/twin/snapshot", methods=["POST"])
+    @pc_login_required
+    def pc_api_twin_snapshot(pipe_id):
+        """Take a DAG snapshot of the current pipeline state."""
+        from tools.pipeline.twin import take_snapshot
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            snap = take_snapshot(pipe_id, label=data.get("label"), user_id=session.get("user_id", "system"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        _audit("twin_snapshot", "pipeline", pipe_id, f"snap={snap['id']}", session.get("user_id"))
+        return jsonify(snap), 201
+
+    @bp.route("/api/pipelines/<pipe_id>/twin/snapshots", methods=["GET"])
+    @pc_login_required
+    def pc_api_twin_list_snapshots(pipe_id):
+        """List all snapshots for a pipeline."""
+        from tools.pipeline.twin import list_snapshots
+        return jsonify(list_snapshots(pipe_id))
+
+    @bp.route("/api/pipelines/<pipe_id>/twin/simulate", methods=["POST"])
+    @pc_login_required
+    def pc_api_twin_simulate(pipe_id):
+        """Run a pre-merge simulation on a delta graph.
+
+        Request body:
+            delta_graph: {"nodes": [...], "edges": [...]}
+            baseline_snap_id: (optional) snapshot ID to diff against
+        """
+        from tools.pipeline.twin import simulate_delta
+        data = request.get_json(force=True, silent=True) or {}
+        if len(json.dumps(data)) > 5_000_000:
+            return jsonify({"error": "Payload too large"}), 413
+        delta_graph = data.get("delta_graph")
+        if not delta_graph or not isinstance(delta_graph.get("nodes"), list):
+            return jsonify({"error": "delta_graph with nodes[] required"}), 400
+        baseline_snap_id = data.get("baseline_snap_id")
+        try:
+            result = simulate_delta(
+                pipe_id, delta_graph,
+                baseline_snap_id=baseline_snap_id,
+                user_id=session.get("user_id", "system"),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        _audit("twin_simulate", "pipeline", pipe_id, f"sim={result['id']} verdict={result['verdict']}", session.get("user_id"))
+        return jsonify(result), 201
+
+    @bp.route("/api/twin/simulations/<sim_id>", methods=["GET"])
+    @pc_login_required
+    def pc_api_twin_get_simulation(sim_id):
+        """Retrieve a stored simulation result."""
+        from tools.pipeline.twin import get_simulation
+        result = get_simulation(sim_id)
+        if not result:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(result)
 
     return bp
