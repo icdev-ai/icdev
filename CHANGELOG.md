@@ -6,6 +6,14 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.19] - 2026-04-17
+
+### Added
+- **Failure Triage Reflex** (`tools/genesis/reflexes/failure_triage.py`) — wires `failure_triage.triage_once` into the Genesis daemon on a 30-min cadence (`args/genesis_config.yaml`). YELLOW tier. With `ICDEV_AUTOFIX_ENABLED=true` in `.env`, auto-review of failed kanban tasks now runs without manual invocation.
+
+### Changed
+- **Task-type whitelist** corrected from `{build, bug, chore, test, research}` → `{build, chore, fix, research, test}`. Counts from the live table (2026-04-17): `chore=742, build=307, fix=200, test=89, research=49, deploy=12`. `bug` had zero instances; `fix` was the third-most-common type but incorrectly excluded. `deploy` stays excluded — higher blast radius.
+
 ## [1.2.18] - 2026-04-17
 
 ### Added
