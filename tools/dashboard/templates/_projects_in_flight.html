@@ -102,8 +102,14 @@
 <script>
 // All identifiers under window.ICDEV_PIF to avoid colliding with host-page
 // globals. Thin wrappers preserve the short names for host-page init code.
+// Double-include guard — if this partial is rendered twice on the same
+// page (e.g. by a layout that includes it both in a header and footer),
+// skip the IIFE on the second pass so we don't redefine the globals or
+// re-register listeners.
 (function () {
+  if (window.ICDEV_PIF && window.ICDEV_PIF._loaded) return;
   if (!window.ICDEV_PIF) window.ICDEV_PIF = {};
+  window.ICDEV_PIF._loaded = true;
 
   function escapeHTML(s) {
     return String(s || '').replace(/[&<>"']/g, function (c) {
