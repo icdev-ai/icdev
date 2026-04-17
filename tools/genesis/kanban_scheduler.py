@@ -9,8 +9,14 @@ systemd, or nohup). Calls the kanban reflex every INTERVAL seconds to:
 4. Check for completed tasks and notify
 
 Usage:
-    python tools/genesis/kanban_scheduler.py [--interval 60]
-    nohup python tools/genesis/kanban_scheduler.py > .tmp/kanban_scheduler.log 2>&1 &
+    python -B tools/genesis/kanban_scheduler.py [--interval 60]
+    PYTHONDONTWRITEBYTECODE=1 nohup python -B tools/genesis/kanban_scheduler.py >> .tmp/kanban_scheduler.log 2>&1 &
+
+NOTE: Always use ``python -B`` (or set PYTHONDONTWRITEBYTECODE=1) to prevent
+stale .pyc bytecache from shadowing code changes. The scheduler is a
+long-running process that loads modules once at startup — without -B, edits
+to kanban.py (e.g. timeout adjustments) require both a restart AND manual
+__pycache__ clearing.
 """
 
 import argparse
