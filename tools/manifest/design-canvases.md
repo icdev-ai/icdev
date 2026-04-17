@@ -21,3 +21,10 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | IDC SOPs | tools/infra_canvas/sops.py | Infrastructure Design Canvas — Standard Operating Procedures CRUD + draft→pending_review→approved approval workflow. Seeds change management, capacity planning, and cloud account onboarding SOPs into `idc_sops` table. No LLM dependency. | (library) `get_all_sops`, `get_sop_by_id`, `create_sop`, `update_sop`, `transition_status`, `delete_sop`, `seed_sops` | SOP dict / list |
 | IDC Runbooks | tools/infra_canvas/runbooks.py | Infrastructure Design Canvas — operational runbooks for common infrastructure incidents (provisioning failure, capacity breach, cloud drift, patch rollback). CRUD + seed for `idc_runbooks` table; no LLM dependency. | (library) | Runbook dict / list |
 
+## IDC IaC Twin Phase 1 Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Terraform Show Importer | tools/infra_canvas/terraform_show_importer.py | Parse `terraform show -json` or `terraform plan -json` output into an IDC graph (nodes+edges). Maps 80+ Terraform resource types to IDC node types across 6 CSPs. Used as input to `infra_engine.assess_infra_design()`. NIST: CM-8. | `import_terraform_show(data)` / `import_terraform_plan(data)` — both accept parsed JSON dict | `{"nodes": [...], "edges": []}` IDC graph dict |
+| Pre-Apply Gate | tools/infra_canvas/pre_apply_gate.py | Compliance gate for `terraform plan -json` — converts plan to IDC graph, runs all 13 IDC compliance rules, returns pass/fail + violations list. Blocks on CAT1 violations. NIST: CM-3, SA-11. | `check_plan(plan_data)` — parsed JSON dict | `{"snapshot_id", "assessed_at", "graph", "passed", "violations", "score"}` |
+| Snapshot Writer | tools/infra_canvas/snapshot_writer.py | Persist IDC twin graph snapshots (`idc_twin_snapshots` table) and compliance violations (`idc_twin_violations` table). Append-only; supports both SQLite (tests) and PostgreSQL (prod). NIST: AU-9, CM-8. | `write_snapshot(graph, db_path, source, classification)` / `write_violations(snapshot_id, violations, db_path)` | snapshot_id str / row count int |
+
