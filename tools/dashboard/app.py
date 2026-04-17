@@ -7767,120 +7767,146 @@ def create_app() -> Flask:
 
         _logging.getLogger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
 
-    # ── Digital Twin Roadmap ────────────────────────────────────────────────
-    # Aggregates the dt-* kanban tasks (8 epics, 86 tasks) plus failure_triage
-    # autofix audit history into one read-only roadmap view. Backed by the
-    # canonical brief at docs/briefs/digital-twin-market-canvas-implementation-plan.md.
-    _DT_EPICS = [
-        ("iqe",      "IQE v0.1 — ICDEV Query Engine",          "critical"),
-        ("bdc",      "BDC cATO Twin (Phase 1)",                "critical"),
-        ("idc-iac",  "IDC IaC Generation",                     "high"),
-        ("idc-twin", "IDC IaC Twin (Phase 1)",                 "high"),
-        ("pdc",      "PDC Pipeline Twin",                      "medium"),
-        ("sdc",      "SDC Attack Path Twin",                   "medium"),
-        ("odc",      "ODC MITRE Coverage Twin",                "medium"),
-        ("ddc",      "DDC Lineage Adapter",                    "low"),
-    ]
-    _DT_BRIEFS = [
-        ("Inspiration brief — pattern + ICDEV mapping",
-         "/docs/briefs/digital-twin-inspiration-brief.md"),
-        ("Full market scan + per-canvas plan",
-         "/docs/briefs/digital-twin-market-canvas-implementation-plan.md"),
-    ]
-
-    @app.route("/digital-twin")
-    def digital_twin_roadmap():
-        """Digital twin roadmap — per-epic progress + autofix audit summary."""
-        from tools.db.storage import get_connection as _gc
-
-        epics: list = []
-        in_flight: list = []
-        recent_failures: list = []
-
+    # ── Projects-in-Flight registry ─────────────────────────────────────────
+    # Config-driven: args/projects.yaml. Each project renders as a collapsible
+    # card below the Task Board at /kanban. A project auto-hides when every
+    # task in its prefix is done (total > 0 and done == total), or when no
+    # tasks match the prefix yet (total == 0). Adding a project is a YAML
+    # edit — no code change required.
+    def _load_projects_yaml() -> list:
         try:
-            with _gc() as conn:
-                for key, title, default_pri in _DT_EPICS:
-                    pattern = f"dt-{key}-%"
-                    rows = conn.execute(
-                        "SELECT status, COUNT(*) AS n FROM kanban_tasks "
-                        "WHERE id LIKE ? GROUP BY status",
-                        (pattern,),
-                    ).fetchall()
-                    counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
-                    total = sum(counts.values())
-                    done = counts.get("done", 0)
-                    pct = int(round(100 * done / total)) if total else 0
-                    epics.append({
-                        "key": key,
-                        "title": title,
-                        "priority": default_pri,
-                        "total": total,
-                        "done": done,
-                        "in_progress": counts.get("in_progress", 0),
-                        "scheduled": counts.get("scheduled", 0),
-                        "backlog": counts.get("backlog", 0),
-                        "failed": counts.get("failed", 0),
-                        "pct": pct,
-                    })
-
-                in_flight_rows = conn.execute(
-                    "SELECT id, title, status, priority, updated_at "
-                    "FROM kanban_tasks WHERE id LIKE 'dt-%' "
-                    "  AND status IN ('in_progress','scheduled') "
-                    "ORDER BY updated_at DESC LIMIT 15"
-                ).fetchall()
-                in_flight = [dict(r) for r in in_flight_rows]
-
-                fail_rows = conn.execute(
-                    "SELECT id, title, status, failure_count, "
-                    "       last_failure_reason, updated_at "
-                    "FROM kanban_tasks WHERE id LIKE 'dt-%' "
-                    "  AND last_failure_reason IS NOT NULL "
-                    "ORDER BY updated_at DESC LIMIT 10"
-                ).fetchall()
-                recent_failures = [dict(r) for r in fail_rows]
-        except Exception:  # pragma: no cover — page degrades gracefully
-            pass
-
-        # failure_triage audit summary — read .tmp/kanban/autofix-audit/*.json
-        triage_summary = {"total": 0, "applied": 0, "rejected": 0, "verification_failed": 0}
-        triage_recent: list = []
+            import yaml as _yaml  # PyYAML — declared dep
+        except Exception:
+            return []
+        cfg_path = Path(__file__).resolve().parent.parent.parent / "args" / "projects.yaml"
+        if not cfg_path.exists():
+            return []
         try:
-            audit_dir = Path(__file__).resolve().parent.parent.parent / ".tmp" / "kanban" / "autofix-audit"
-            if audit_dir.exists():
-                files = sorted(audit_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-                triage_summary["total"] = len(files)
-                for f in files:
-                    try:
-                        data = json.loads(f.read_text(encoding="utf-8"))
-                        outcome = data.get("outcome") or ""
-                        if outcome.startswith("applied_"):
-                            triage_summary["applied"] += 1
-                        elif outcome.startswith("rejected_"):
-                            triage_summary["rejected"] += 1
-                        elif outcome == "verification_failed":
-                            triage_summary["verification_failed"] += 1
-                        if len(triage_recent) < 5:
-                            triage_recent.append({
-                                "task_id": data.get("task_id"),
-                                "outcome": outcome,
-                                "branch": data.get("branch"),
-                                "started_at": data.get("started_at"),
-                            })
-                    except Exception:
-                        continue
+            data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            return list(data.get("projects", []))
+        except Exception:
+            return []
+
+    def _compute_project_progress(project: dict, conn) -> dict:
+        """Query kanban_tasks for one project's epics + in-flight + failures."""
+        prefix = project.get("task_prefix", "")
+        epics_out: list = []
+        total_all = 0
+        done_all = 0
+        for ep in project.get("epics", []):
+            pattern = f"{prefix}{ep['key']}-%"
+            rows = conn.execute(
+                "SELECT status, COUNT(*) AS n FROM kanban_tasks "
+                "WHERE id LIKE ? GROUP BY status",
+                (pattern,),
+            ).fetchall()
+            counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
+            total = sum(counts.values())
+            done = counts.get("done", 0)
+            pct = int(round(100 * done / total)) if total else 0
+            total_all += total
+            done_all += done
+            epics_out.append({
+                "key": ep["key"],
+                "title": ep["title"],
+                "priority": ep.get("priority", "medium"),
+                "total": total,
+                "done": done,
+                "in_progress": counts.get("in_progress", 0),
+                "scheduled": counts.get("scheduled", 0),
+                "backlog": counts.get("backlog", 0),
+                "failed": counts.get("failed", 0),
+                "pct": pct,
+            })
+        in_flight_rows = conn.execute(
+            "SELECT id, title, status, priority, updated_at "
+            "FROM kanban_tasks WHERE id LIKE ? "
+            "  AND status IN ('in_progress','scheduled') "
+            "ORDER BY updated_at DESC LIMIT 15",
+            (f"{prefix}%",),
+        ).fetchall()
+        fail_rows = conn.execute(
+            "SELECT id, title, status, failure_count, "
+            "       last_failure_reason, updated_at "
+            "FROM kanban_tasks WHERE id LIKE ? "
+            "  AND last_failure_reason IS NOT NULL "
+            "ORDER BY updated_at DESC LIMIT 10",
+            (f"{prefix}%",),
+        ).fetchall()
+        return {
+            "key": project.get("key"),
+            "name": project.get("name"),
+            "description": project.get("description", "").strip(),
+            "default_open": bool(project.get("default_open", True)),
+            "briefs": project.get("briefs", []),
+            "epics": epics_out,
+            "in_flight": [dict(r) for r in in_flight_rows],
+            "recent_failures": [dict(r) for r in fail_rows],
+            "total_tasks": total_all,
+            "done_tasks": done_all,
+            "overall_pct": int(round(100 * done_all / total_all)) if total_all else 0,
+            "visible": total_all > 0 and done_all < total_all,
+        }
+
+    def _compute_triage_summary() -> dict:
+        """Global failure_triage audit summary — applies to all projects."""
+        summary = {"total": 0, "applied": 0, "rejected": 0, "verification_failed": 0}
+        recent: list = []
+        audit_dir = (Path(__file__).resolve().parent.parent.parent
+                     / ".tmp" / "kanban" / "autofix-audit")
+        if not audit_dir.exists():
+            return {"summary": summary, "recent": recent}
+        try:
+            files = sorted(audit_dir.glob("*.json"),
+                           key=lambda p: p.stat().st_mtime, reverse=True)
+            summary["total"] = len(files)
+            for f in files:
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    outcome = data.get("outcome") or ""
+                    if outcome.startswith("applied_"):
+                        summary["applied"] += 1
+                    elif outcome.startswith("rejected_"):
+                        summary["rejected"] += 1
+                    elif outcome == "verification_failed":
+                        summary["verification_failed"] += 1
+                    if len(recent) < 5:
+                        recent.append({
+                            "task_id": data.get("task_id"),
+                            "outcome": outcome,
+                            "branch": data.get("branch"),
+                            "started_at": data.get("started_at"),
+                        })
+                except Exception:
+                    continue
         except Exception:  # pragma: no cover
             pass
+        return {"summary": summary, "recent": recent}
 
-        return render_template(
-            "digital_twin.html",
-            epics=epics,
-            in_flight=in_flight,
-            recent_failures=recent_failures,
-            triage_summary=triage_summary,
-            triage_recent=triage_recent,
-            briefs=_DT_BRIEFS,
-        )
+    @app.route("/api/projects/progress")
+    def api_projects_progress():
+        """GET /api/projects/progress — JSON snapshot of every in-flight
+        project. Auto-filters out projects with 0 tasks or 100% done."""
+        from tools.db.storage import get_connection as _gc
+
+        projects_cfg = _load_projects_yaml()
+        out: list = []
+        try:
+            with _gc() as conn:
+                for p in projects_cfg:
+                    snap = _compute_project_progress(p, conn)
+                    if snap["visible"]:
+                        out.append(snap)
+        except Exception as exc:
+            return jsonify({"error": str(exc), "projects": []}), 500
+        triage = _compute_triage_summary()
+        return jsonify({"projects": out, "triage": triage})
+
+    @app.route("/digital-twin")
+    def digital_twin_roadmap_legacy():
+        """Legacy route — project moved inline under /kanban. Redirect to
+        the anchor so old links still work."""
+        return redirect("/kanban#project-digital-twin", code=302)
 
     return app
 
