@@ -39,6 +39,7 @@ from flask import (
     session as flask_session,
     redirect,
     url_for,
+    send_from_directory,
 )  # noqa: E402
 
 from tools.dashboard.config import (  # noqa: E402
@@ -7748,6 +7749,23 @@ def create_app() -> Flask:
         import logging as _logging
 
         _logging.getLogger(__name__).warning("Platform health module unavailable: %s", _ph_err)
+
+    # ---- Air-gap Next.js static export ----
+    try:
+        from tools.airgap.detector import is_airgap as _is_airgap
+
+        if _is_airgap():
+            _next_out = str(Path(__file__).resolve().parent.parent.parent / "frontend" / "out")
+
+            @app.route("/next/<path:path>")
+            def next_static(path):
+                return send_from_directory(_next_out, path)
+
+            app.logger.info("Air-gap Next.js static route registered at /next/")
+    except Exception as _ag_err:
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
 
     return app
 
