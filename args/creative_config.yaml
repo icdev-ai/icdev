@@ -55,6 +55,32 @@ ai_agent_frameworks:
     - claude code
     - openai codex
 
+# Digital Twin domain — normalized snapshot + queryable engine + continuous
+# violation checks. Forward Networks, Intentionet, NetBrain, Apstra.
+# Applies beyond networking (compliance, codebase, agent mesh, SaaS tenants).
+digital_twin:
+  name: "digital twin platform"
+  g2_category_url: "https://www.g2.com/categories/network-automation"
+  capterra_category_url: "https://www.capterra.com/network-management-software/"
+  trustradius_category_url: "https://www.trustradius.com/network-management"
+  producthunt_topic: "network-automation"
+  keywords:
+    - digital twin
+    - network query engine
+    - network verification
+    - intent-based networking
+    - continuous compliance
+    - path verification
+    - what-if simulation
+    - snapshot-based monitoring
+    - change validation
+    - infrastructure verification
+    - network inventory
+    - multi-vendor network
+    - policy verification
+    - outage prevention
+    - configuration drift
+
 # Network Canvas domain — network design, diagramming, simulation for architects
 network_canvas:
   name: "network design"
