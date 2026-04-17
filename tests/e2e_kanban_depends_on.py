@@ -242,7 +242,11 @@ def main() -> int:
 
         # --- Step 5: mark parent done, re-check is_blocked -------------
         try:
-            _post(f"/api/kanban/tasks/{parent_id}/move", {"status": "done"})
+            _post(f"/api/kanban/tasks/{parent_id}/move", {
+                "status": "done",
+                "bypass_verification": True,
+                "bypass_reason": "E2E test: verify unblock-on-parent-done behaviour",
+            })
             data = _get("/api/kanban/tasks")
             by_id = {t["id"]: t for t in data["tasks"]}
             child_row = by_id[child_id]
