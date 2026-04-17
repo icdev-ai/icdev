@@ -223,7 +223,7 @@ class CollibraClient:
             headers["Authorization"] = auth
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310 — URL built from admin-configured base_url (https only in production); not user-controlled at runtime
                 raw = resp.read()
                 return json.loads(raw.decode("utf-8")) if raw else None
         except urllib.error.HTTPError as exc:
