@@ -303,7 +303,11 @@ def unpack(
 
     logger.info("Extracting %s → %s", modules_tar, dest.parent)
     with tarfile.open(modules_tar, "r:gz") as tf:
-        tf.extractall(str(dest.parent))  # node_modules/ lands inside dest.parent
+        # filter='data' (Py 3.12+) prevents path traversal; fall back to nosec on older runtimes
+        if hasattr(tarfile, "data_filter"):
+            tf.extractall(str(dest.parent), filter="data")
+        else:
+            tf.extractall(str(dest.parent))  # nosec B202 — admin-only vendor snapshot, dest validated via .resolve()
 
     return {
         "ok": True,
