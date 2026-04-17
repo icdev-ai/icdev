@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-001
+-- Title: FedRAMP High — All Unsatisfied Controls
+-- Framework: FedRAMP High
+-- Category: gap-analysis
+-- Severity: critical
+-- Description: FedRAMP High represents the baseline for systems processing
+--   highly sensitive government data. Any unsatisfied control is a critical
+--   risk to the authorisation boundary and must appear in the POA&M immediately.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score

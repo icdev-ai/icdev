@@ -1,0 +1,14 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-005
+-- Title: FedRAMP Moderate — Access Control (AC) Family Gaps
+-- Framework: FedRAMP Moderate
+-- Category: control-family
+-- Severity: high
+-- Description: The AC (Access Control) family is the most frequently cited
+--   deficiency in FedRAMP assessments. This query surfaces all AC-family
+--   controls that are not fully satisfied. Results drive the AC remediation
+--   sprint backlog.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.control_id starts_with 'AC' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

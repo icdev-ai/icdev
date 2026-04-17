@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-003
+-- Title: FedRAMP High — Access Control (AC) Family Gap Analysis
+-- Framework: FedRAMP High
+-- Category: control-family
+-- Severity: critical
+-- Description: FedRAMP High adds significant additional AC controls beyond
+--   Moderate (AC-2(7), AC-17(9), AC-20(3), etc.). Surface all unsatisfied
+--   AC controls to drive the targeted access-control remediation sprint.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.control_id starts_with 'AC' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id
