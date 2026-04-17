@@ -469,6 +469,17 @@ routing:
     chain: [qwen3-local, llama-local]
     effort: medium
 
+  # Failure triage — Claude for diagnose (thinking/reasoning),
+  # Ollama for patch (building/code-gen). Explicit two-tier split per
+  # the "Claude thinks, Ollama builds" convention.
+  failure_triage_diagnose:
+    chain: [claude-sonnet, claude-opus, gpt-4o, gemini-2.5-pro, qwen3-local]
+    effort: high
+
+  failure_triage_patch:
+    chain: [qwen3-local, codestral-local, llama-local, claude-sonnet]
+    effort: medium
+
   default:
     chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
