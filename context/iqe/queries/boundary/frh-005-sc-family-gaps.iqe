@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-005
+-- Title: FedRAMP High — System & Communications Protection (SC) Family Gaps
+-- Framework: FedRAMP High
+-- Category: control-family
+-- Severity: critical
+-- Description: SC controls at FedRAMP High require FIPS 140-2/3 validated
+--   cryptography, strict session management, and network isolation controls
+--   not present in Moderate. SC failures block IL5 authorization.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.control_id starts_with 'SC' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-008
+-- Title: FedRAMP High — Audit & Accountability (AU) Family Gaps
+-- Framework: FedRAMP High
+-- Category: control-family
+-- Severity: high
+-- Description: AU controls at FedRAMP High require centralised log aggregation,
+--   automated alerting on audit failures, and audit log protection. AU failures
+--   expose the system to tampered evidence risk during incident response.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.control_id starts_with 'AU' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id
