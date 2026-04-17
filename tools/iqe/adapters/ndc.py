@@ -91,38 +91,40 @@ class NDCAdapter(IQEAdapter):
         if collection == "network.topologies":
             rows = _fetch(conn, "SELECT * FROM topologies")
         elif collection in ("network.devices",):
+            # type_list built from _DEVICE_TYPES — a module-level frozen set of literals, never user input
             type_list = ", ".join(f"'{t}'" for t in _DEVICE_TYPES)
-            sql = f"SELECT * FROM nc_objects WHERE object_type IN ({type_list})"
+            sql = f"SELECT * FROM nc_objects WHERE object_type IN ({type_list})"  # nosec B608
             if topology_id:
                 sql += " AND topology_id = ?"
             rows = _fetch(conn, sql, tid_params)
         elif collection == "network.objects":
-            sql = f"SELECT * FROM nc_objects {tid_filter}"
+            # tid_filter is either "" or "WHERE topology_id = ?" — a literal constant, never user input
+            sql = f"SELECT * FROM nc_objects {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         elif collection == "network.circuits":
-            sql = f"SELECT * FROM nc_circuits {tid_filter}"
+            sql = f"SELECT * FROM nc_circuits {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         elif collection == "network.sites":
             rows = _fetch(conn, "SELECT * FROM nc_sites")
         elif collection == "network.ipam":
-            sql = f"SELECT * FROM nc_ipam_blocks {tid_filter}"
+            sql = f"SELECT * FROM nc_ipam_blocks {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         elif collection in ("network.findings", "network.compliance_findings"):
-            sql = f"SELECT * FROM nc_compliance_findings {tid_filter}"
+            sql = f"SELECT * FROM nc_compliance_findings {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         elif collection == "network.projects":
             rows = _fetch(conn, "SELECT * FROM nc_projects")
         elif collection == "network.versions":
-            sql = f"SELECT * FROM nc_versions {tid_filter}"
+            sql = f"SELECT * FROM nc_versions {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         elif collection == "network.groups":
-            sql = f"SELECT * FROM nc_groups {tid_filter}"
+            sql = f"SELECT * FROM nc_groups {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         elif collection == "network.cables":
-            sql = f"SELECT * FROM nc_cables {tid_filter}"
+            sql = f"SELECT * FROM nc_cables {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         elif collection == "network.cross_connects":
-            sql = f"SELECT * FROM nc_cross_connects {tid_filter}"
+            sql = f"SELECT * FROM nc_cross_connects {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
         else:
             raise ValueError(
