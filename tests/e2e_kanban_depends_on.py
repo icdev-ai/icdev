@@ -91,8 +91,6 @@ def create_driver():
     opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-    caps = opts.to_capabilities()
-    # browser log capture
     opts.set_capability("goog:loggingPrefs", {"browser": "ALL"})
     return webdriver.Chrome(options=opts)
 
