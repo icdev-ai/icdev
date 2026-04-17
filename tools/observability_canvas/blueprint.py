@@ -1176,4 +1176,140 @@ def create_observability_blueprint():
         _audit("runbook_execute", details=runbook_id)
         return jsonify(rb)
 
+    # ====================================================================
+    # API — ODC MITRE COVERAGE TWIN
+    # ====================================================================
+
+    @bp.route("/api/designs/<design_id>/mitre-coverage", methods=["GET"])
+    @oc_login_required
+    def oc_api_mitre_coverage(design_id):
+        """Return per-technique MITRE ATT&CK coverage map for a design.
+
+        Computes coverage_state (covered|partial|gap) for each of the 20
+        cataloged techniques by intersecting the design's signal source
+        nodes with the technique's required sources.
+
+        Returns:
+            coverage_by_technique, gap_score, covered_count, partial_count,
+            gap_count, total_techniques, technique_gaps, by_tactic.
+        """
+        from tools.observability_canvas.mitre_coverage_twin import compute_gap_score
+
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Design not found"}), 404
+
+        graph_raw = _row_to_dict(row)["graph_json"]
+        try:
+            graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+        except (json.JSONDecodeError, TypeError):
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        result = compute_gap_score(design_id, graph_data)
+        _audit("mitre_coverage", design_id, f"gap_score={result['gap_score']}")
+        return jsonify(result)
+
+    @bp.route("/api/designs/<design_id>/gap-report", methods=["POST"])
+    @oc_login_required
+    def oc_api_gap_report(design_id):
+        """Generate a full MITRE coverage gap report with remediation steps.
+
+        Returns coverage_by_technique, gap_score, remediation_steps (sorted
+        critical-first), and quick_wins (signal sources that close the most
+        gaps if added to the design).
+        """
+        from tools.observability_canvas.mitre_coverage_twin import generate_gap_report
+
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM observability_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Design not found"}), 404
+
+        graph_raw = _row_to_dict(row)["graph_json"]
+        try:
+            graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+        except (json.JSONDecodeError, TypeError):
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        report = generate_gap_report(design_id, graph_data)
+        _audit("gap_report", design_id, f"gaps={report['gap_count']} score={report['gap_score']}")
+        return jsonify(report)
+
+    @bp.route("/api/designs/<design_id>/otel-ingest", methods=["POST"])
+    @oc_login_required
+    def oc_api_otel_ingest(design_id):
+        """Ingest OTel-format detection events for this ODC design.
+
+        Accepts either:
+          - List of span dicts: [{name, trace_id, span_id, attributes}, ...]
+          - OTLP-over-HTTP JSON envelope: {"resourceSpans": [...]}
+
+        Each event may carry 'mitre_technique' and 'signal_source' in its
+        attributes to drive closed-loop gap verification.
+
+        Body:
+          events: list or OTLP envelope (see above)
+
+        Returns:
+          ingested, total_submitted, technique_counts.
+        """
+        from tools.observability_canvas.mitre_coverage_twin import ingest_otel_batch
+
+        with get_connection() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM observability_designs WHERE id=?",
+                (design_id,),
+            ).fetchone()
+        if not exists:
+            return jsonify({"error": "Design not found"}), 404
+
+        body = request.get_json(force=True, silent=True) or {}
+        events = body.get("events", body)
+
+        if not isinstance(events, (list, dict)):
+            return jsonify({"error": "Body must be a list of events or an OTLP envelope"}), 400
+
+        result = ingest_otel_batch(design_id, events)
+        _audit("otel_ingest", design_id, f"ingested={result['ingested']}")
+        return jsonify(result)
+
+    @bp.route("/api/designs/<design_id>/sdc-verify", methods=["POST"])
+    @oc_login_required
+    def oc_api_sdc_verify(design_id):
+        """Closed-loop SDC→ODC verification for an attack path.
+
+        Called by the SDC twin after replaying an attack path to verify
+        that the ODC design has detection coverage for each TTP in the path.
+
+        Body:
+          ttps: list of MITRE technique IDs (e.g. ["T1059", "T1078"])
+
+        Returns:
+          per_ttp_result, covered_ttps, partial_ttps, gap_ttps, coverage_pct.
+        """
+        from tools.observability_canvas.mitre_coverage_twin import verify_sdc_attack_path
+
+        body = request.get_json(force=True, silent=True) or {}
+        ttp_list = body.get("ttps", [])
+        if not isinstance(ttp_list, list) or not ttp_list:
+            return jsonify({"error": "ttps must be a non-empty list of technique IDs"}), 400
+
+        result = verify_sdc_attack_path(design_id, ttp_list)
+        if result.get("status") == "error":
+            return jsonify(result), 404 if "not found" in result.get("error", "").lower() else 500
+
+        _audit(
+            "sdc_verify",
+            design_id,
+            f"ttps={len(ttp_list)} covered={len(result['covered_ttps'])} gaps={len(result['gap_ttps'])}",
+        )
+        return jsonify(result)
+
     return bp
