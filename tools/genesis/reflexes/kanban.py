@@ -2682,6 +2682,9 @@ def _run_verify_checks(task_id, claude_output):
         _SCAN_CMDS = [
             "codelens.py", "coherence_checker.py", "health_check.py",
             "e2e_full_dashboard.py",
+            # Read-only validation commands (no git commits expected)
+            "pytest", "pytest tests/", "regression pytest",
+            "companion.py --sync", "companion sync",
         ]
         _scan_desc = ""
         try:
@@ -2716,6 +2719,11 @@ def _run_verify_checks(task_id, claude_output):
                 "coherence: pass", "coherence check: pass",
                 "companion sync: pass", "pytest: pass",
                 "e2e: pass", "regression pytest: pass",
+                # pytest stdout patterns (e.g. "7519 passed", "== X passed ==")
+                " passed", "tests passed", "passed,", "passed in ",
+                "0 failed", "no failures", "all tests pass",
+                # companion sync patterns
+                "platforms_targeted", "files_written", "sync complete",
             ]
             if any(sig in output_lower for sig in _pass_signals):
                 return True, (
