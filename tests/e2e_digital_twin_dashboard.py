@@ -92,7 +92,7 @@ def main() -> int:
             fail("progress bars", e)
 
         # 4. Briefs section
-        for label in ("digital-twin-forwardnetworks-inspiration.md",
+        for label in ("digital-twin-inspiration-brief.md",
                       "digital-twin-market-canvas-implementation-plan.md"):
             try:
                 assert label in body

@@ -4,7 +4,7 @@
 **Author:** Sovanna Chuon (with Claude)
 **Scope:** Full market scan of digital-twin-category products, mapped 1:1 against ICDEV's 7 design canvases, with an explicit build/integrate/defer decision and implementation plan for each.
 
-**Brief precedent:** [`digital-twin-forwardnetworks-inspiration.md`](./digital-twin-forwardnetworks-inspiration.md) — establishes the reusable pattern (normalized snapshot → queryable engine → continuous violation checks) applied here.
+**Brief precedent:** [`digital-twin-inspiration-brief.md`](./digital-twin-inspiration-brief.md) — establishes the reusable pattern (normalized snapshot → queryable engine → continuous violation checks) applied here.
 
 ---
 
