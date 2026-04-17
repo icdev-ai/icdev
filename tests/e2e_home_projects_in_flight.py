@@ -1,17 +1,17 @@
-"""E2E Selenium test — /kanban page with Projects in Flight section.
+"""E2E Selenium test — Home (/) with Projects in Flight partial.
 
 Asserts:
-  1. page loads and renders the Task Board
-  2. Projects in Flight section renders
+  1. Home page loads + renders the Task Board
+  2. Projects in Flight section renders below the Task Board
   3. Digital Twin project card is visible (until 100% done)
   4. project card contains expected epics rendered as progress bars
   5. brief links present
   6. /api/projects/progress returns valid JSON
-  7. legacy /digital-twin redirects to /kanban
+  7. legacy /digital-twin redirects
   8. screenshot captured
   9. no SEVERE JS errors (favicon/404 excluded)
 
-Run: python tests/e2e_kanban_projects_in_flight.py
+Run: python tests/e2e_home_projects_in_flight.py
 """
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ def main() -> int:
     # -- Browser test ---------------------------------------------------
     driver = make_driver()
     try:
-        driver.get(f"{BASE_URL}/kanban")
+        driver.get(f"{BASE_URL}/")
         time.sleep(2.5)  # give the projects fetch time to complete
 
         body = driver.page_source
@@ -137,7 +137,7 @@ def main() -> int:
 
         # 4. Screenshot
         try:
-            shot = SCREENSHOT_DIR / "kanban-with-projects.png"
+            shot = SCREENSHOT_DIR / "home-with-projects.png"
             driver.save_screenshot(str(shot))
             ok("screenshot", str(shot))
         except Exception as e:
