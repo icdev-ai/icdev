@@ -1,0 +1,7 @@
+# IQE-NDC-008: Sites with SECRET or above classification
+# SECRET sites require additional physical security, cleared personnel, NSA Type 1.
+# Use: IL6 scoping, SCIF review, accreditation boundary delineation.
+
+foreach s in network.sites
+where s.classification == "SECRET"
+select s.name, s.address, s.city, s.state, s.country, s.classification, s.site_type
