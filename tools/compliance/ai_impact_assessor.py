@@ -173,8 +173,15 @@ def _auto_assess_dimension(
     dim_id: str,
 ) -> str:
     """Infer dimension response from existing DB data."""
+    _db_errors = (sqlite3.OperationalError,)
     try:
-        if dim_id == "IMP-RIGHTS":
+        import psycopg2
+        _db_errors = (sqlite3.OperationalError, psycopg2.Error)
+    except ImportError:
+        pass
+
+    if dim_id == "IMP-RIGHTS":
+        try:
             row = conn.execute(
                 """SELECT risk_level FROM ai_use_case_inventory
                    WHERE project_id = ? AND name = ?""",
@@ -182,25 +189,31 @@ def _auto_assess_dimension(
             ).fetchone()
             if row:
                 return {"high_impact": "high", "safety_impacting": "high"}.get(row["risk_level"], "low")
+        except _db_errors:
+            return ""
 
-        elif dim_id == "IMP-HUMAN":
+    elif dim_id == "IMP-HUMAN":
+        try:
             row = conn.execute(
                 """SELECT COUNT(*) as cnt FROM ai_oversight_plans
                    WHERE project_id = ?""",
                 (project_id,),
             ).fetchone()
             return "low" if row and row["cnt"] > 0 else "medium"
+        except _db_errors:
+            return ""
 
-        elif dim_id == "IMP-BIAS":
+    elif dim_id == "IMP-BIAS":
+        try:
             row = conn.execute(
                 """SELECT COUNT(*) as cnt FROM fairness_assessments
                    WHERE project_id = ?""",
                 (project_id,),
             ).fetchone()
             return "low" if row and row["cnt"] > 0 else "medium"
+        except _db_errors:
+            return ""
 
-    except Exception:
-        pass
     return ""
 
 
