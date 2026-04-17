@@ -5,7 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "codegen": "openapi-typescript http://localhost:5050/api/v1/openapi.json -o lib/api-types.ts"
+    "codegen": "openapi-typescript http://localhost:5050/api/v1/openapi.json -o lib/api-types.ts",
+    "build:airgap": "next build && next export -o out/"
   },
   "devDependencies": {
     "openapi-typescript": "^7.8.0"
