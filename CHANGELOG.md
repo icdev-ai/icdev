@@ -6,6 +6,15 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.17] - 2026-04-17
+
+### Added
+- **Failure Triage** (`tools/workflow/failure_triage.py`) — LLM-assisted review of kanban failures bridging the gap between `self_debug.py` (recurrence-only) and manual intervention. Two-tier LLM routing: Claude for diagnose (`failure_triage_diagnose`), Ollama for patch generation (`failure_triage_patch`). Conservative defaults — `ICDEV_AUTOFIX_ENABLED=false` by default, `--dry-run` default, confidence threshold 0.85, task-type whitelist, file deny-list, rolling 5-apply/hour rate cap. Generated patches are attached to `status='suggested'` Oracle cards for human review — auto-apply dispatcher is a separate follow-up.
+
+### Fixed
+- **NIST AI 600-1 Assessor** (`tools/compliance/nist_ai_600_1_assessor.py`) — typo `self._db_path` → `self.db_path`. Was being swallowed by broad `except Exception: pass`; every GAI-* check silently returned empty. Surfaced via regression pytest `-x` hitting `test_confabulation_check_satisfied_with_data`.
+- **Kanban depends-on E2E** (`tests/e2e_kanban_depends_on.py`) — step 5 (unblock-on-parent-done) now passes `bypass_verification: true` + audit reason to satisfy guard-22 (the move→done verification gate added 2026-04-14).
+
 ## [1.2.8] - 2026-03-31
 
 ### Added
