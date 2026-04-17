@@ -614,7 +614,6 @@ class DDCCollibraImporter:
         table_type_ids = [
             v for k, v in type_id_cache.items() if k in ("Table", "View", "Data Asset")
         ]
-        col_type_ids = [v for k, v in type_id_cache.items() if k == "Column"]
 
         # Step 2: Fetch all table-like assets
         logger.info("Fetching Collibra table assets (community=%s)…", community_id or "all")
@@ -622,9 +621,6 @@ class DDCCollibraImporter:
             type_ids=table_type_ids or None, community_id=community_id
         )
         logger.info("Found %d table assets", len(table_assets))
-
-        # Build asset ID → (name, type_name) map
-        asset_map: dict[str, dict] = {a["id"]: a for a in table_assets}
 
         # Step 3: Enumerate outgoing relations for each table asset
         imported_nodes = 0
@@ -668,10 +664,6 @@ class DDCCollibraImporter:
 
                 if not src_id or not tgt_id or src_id == tgt_id:
                     continue
-
-                # Only import relations where at least one side is a known table asset
-                src_is_table = src_id in asset_map
-                tgt_is_table = tgt_id in asset_map
 
                 # For column-level relations: extract column name from asset name
                 src_type_name = (source.get("type") or {}).get("name", "")
