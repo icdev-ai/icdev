@@ -216,6 +216,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 - **NEVER DELETE YOUTUBE VIDEOS** — Irreversible.
 - When adding an append-only/immutable DB table, ALWAYS add it to `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`
 - When adding a new dashboard page route, ALWAYS add it to the `Pages:` line in `.claude/commands/start.md`
+- **Project roadmaps** — when starting a multi-epic initiative (anything that decomposes into ≥2 epics with chained tasks), register it in `args/projects.yaml`: define `key`, `name`, `task_prefix`, `briefs[]`, and `epics[]`. Its progress card appears on Home (`/`) below the Task Board automatically via the reusable partial `tools/dashboard/templates/_projects_in_flight.html`. Task IDs MUST use the form `<task_prefix><epic_key>-<N>` (e.g. `dt-iqe-01`). Rules enforced at render time: no two projects may have `task_prefix` values where one is a prefix of the other; within a project, no epic `key` may be a prefix of another under the `-` separator. Cards auto-hide at 100% done or 0 tasks.
 - Screenshots: ALWAYS use `playwright/screenshots/<name>.png` as the filename
 - In Jinja2 templates, NEVER use `'%%.0f'|format(value)` — use `value|round(0)|int`
 - In Behave step definitions, match step text to tool return signatures

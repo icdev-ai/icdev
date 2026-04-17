@@ -7769,35 +7769,145 @@ def create_app() -> Flask:
 
     # ── Projects-in-Flight registry ─────────────────────────────────────────
     # Config-driven: args/projects.yaml. Each project renders as a collapsible
-    # card below the Task Board at /kanban. A project auto-hides when every
-    # task in its prefix is done (total > 0 and done == total), or when no
-    # tasks match the prefix yet (total == 0). Adding a project is a YAML
-    # edit — no code change required.
+    # card on Home below the Task Board via tools/dashboard/templates/
+    # _projects_in_flight.html. A project auto-hides when every task in its
+    # prefix is done (total > 0 and done == total) or when no tasks match
+    # the prefix yet (total == 0). Adding a project is a YAML edit.
+    #
+    # Invariants enforced here:
+    #   * task_prefix and every epic.key MUST be present — silently dropped
+    #     entries would produce empty cards that confuse operators.
+    #   * LIKE wildcards (% and _) in prefix / keys are escaped with \ —
+    #     prevents cross-project row leakage and SQL-wildcard surprises.
+    #   * Within a project, no epic.key may be a prefix of another when both
+    #     use the '-' separator (e.g. 'idc' + 'idc-iac' would double-count).
+    #   * Across projects, no task_prefix may be a prefix of another — that
+    #     would mean project A's query silently captures project B's tasks.
+    #
+    # Violations are logged via the app logger and cause the offending entry
+    # (or epic) to be dropped from the rendered output so the rest still
+    # works.
+    import logging as _proj_logging
+    _proj_log = _proj_logging.getLogger(__name__ + ".projects")
+
+    _LIKE_ESCAPE = "\\"
+
+    def _escape_like(s: str) -> str:
+        """Escape LIKE metacharacters (% _ \) for use with `LIKE ? ESCAPE '\\'`."""
+        if not isinstance(s, str):
+            return ""
+        return (s.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
+                 .replace("%", _LIKE_ESCAPE + "%")
+                 .replace("_", _LIKE_ESCAPE + "_"))
+
+    def _validate_projects(raw: list) -> list:
+        """Validate + normalize project entries. Drops invalid ones with a
+        logged warning so the page keeps rendering the rest."""
+        out: list = []
+        seen_prefixes: list = []
+        seen_keys: set = set()
+        for i, p in enumerate(raw):
+            if not isinstance(p, dict):
+                _proj_log.warning("projects.yaml entry #%d is not a dict — skipping", i)
+                continue
+            key = (p.get("key") or "").strip()
+            prefix = (p.get("task_prefix") or "").strip()
+            if not key:
+                _proj_log.warning("projects.yaml entry #%d missing 'key' — skipping", i)
+                continue
+            if not prefix:
+                _proj_log.warning("projects.yaml '%s' missing 'task_prefix' — skipping", key)
+                continue
+            if key in seen_keys:
+                _proj_log.warning("projects.yaml duplicate key '%s' — skipping", key)
+                continue
+            # Cross-project prefix-of collision
+            for seen in seen_prefixes:
+                if prefix.startswith(seen) or seen.startswith(prefix):
+                    _proj_log.warning(
+                        "projects.yaml '%s' prefix %r collides with earlier "
+                        "prefix %r — tasks would double-count. Skipping.",
+                        key, prefix, seen,
+                    )
+                    prefix = ""  # mark collision
+                    break
+            if not prefix:
+                continue
+            # Within-project epic key prefix-of collision
+            raw_epics = p.get("epics", []) or []
+            clean_epics: list = []
+            ekeys_sorted = sorted(
+                [(e.get("key") or "").strip() for e in raw_epics if isinstance(e, dict)],
+                key=len,
+            )
+            bad_ekeys: set = set()
+            for a in range(len(ekeys_sorted)):
+                for b in range(a + 1, len(ekeys_sorted)):
+                    short, long = ekeys_sorted[a], ekeys_sorted[b]
+                    if short and long and long.startswith(short + "-"):
+                        _proj_log.warning(
+                            "projects.yaml '%s' epic keys '%s' and '%s' overlap "
+                            "(one is a prefix of the other under '-' separator). "
+                            "Keeping '%s' only.",
+                            key, short, long, long,
+                        )
+                        bad_ekeys.add(short)
+            for ep in raw_epics:
+                if not isinstance(ep, dict):
+                    continue
+                ek = (ep.get("key") or "").strip()
+                if not ek or ek in bad_ekeys:
+                    continue
+                if not ep.get("title"):
+                    _proj_log.warning(
+                        "projects.yaml '%s' epic '%s' missing title — skipping epic",
+                        key, ek,
+                    )
+                    continue
+                clean_epics.append(ep)
+            p2 = dict(p)
+            p2["task_prefix"] = prefix
+            p2["epics"] = clean_epics
+            out.append(p2)
+            seen_keys.add(key)
+            seen_prefixes.append(prefix)
+        return out
+
     def _load_projects_yaml() -> list:
         try:
             import yaml as _yaml  # PyYAML — declared dep
-        except Exception:
+        except Exception as exc:
+            _proj_log.warning("PyYAML import failed (%s); projects panel disabled", exc)
             return []
         cfg_path = Path(__file__).resolve().parent.parent.parent / "args" / "projects.yaml"
         if not cfg_path.exists():
             return []
         try:
             data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-            return list(data.get("projects", []))
-        except Exception:
+            raw = list(data.get("projects", []))
+        except Exception as exc:
+            _proj_log.warning("projects.yaml parse failed: %s", exc)
             return []
+        return _validate_projects(raw)
 
     def _compute_project_progress(project: dict, conn) -> dict:
-        """Query kanban_tasks for one project's epics + in-flight + failures."""
+        """Query kanban_tasks for one project's epics + in-flight + failures.
+
+        All LIKE patterns derived from YAML are escaped with `ESCAPE '\\'`
+        so a malformed prefix or epic key can't leak across projects or
+        match wildcards unintentionally.
+        """
         prefix = project.get("task_prefix", "")
+        prefix_esc = _escape_like(prefix)
         epics_out: list = []
         total_all = 0
         done_all = 0
         for ep in project.get("epics", []):
-            pattern = f"{prefix}{ep['key']}-%"
+            ek_esc = _escape_like(ep["key"])
+            pattern = f"{prefix_esc}{ek_esc}-%"
             rows = conn.execute(
                 "SELECT status, COUNT(*) AS n FROM kanban_tasks "
-                "WHERE id LIKE ? GROUP BY status",
+                "WHERE id LIKE ? ESCAPE '\\' GROUP BY status",
                 (pattern,),
             ).fetchall()
             counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
@@ -7820,18 +7930,18 @@ def create_app() -> Flask:
             })
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
-            "FROM kanban_tasks WHERE id LIKE ? "
+            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
             "  AND status IN ('in_progress','scheduled') "
             "ORDER BY updated_at DESC LIMIT 15",
-            (f"{prefix}%",),
+            (f"{prefix_esc}%",),
         ).fetchall()
         fail_rows = conn.execute(
             "SELECT id, title, status, failure_count, "
             "       last_failure_reason, updated_at "
-            "FROM kanban_tasks WHERE id LIKE ? "
+            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
             "  AND last_failure_reason IS NOT NULL "
             "ORDER BY updated_at DESC LIMIT 10",
-            (f"{prefix}%",),
+            (f"{prefix_esc}%",),
         ).fetchall()
         return {
             "key": project.get("key"),
