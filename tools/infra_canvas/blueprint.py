@@ -703,6 +703,47 @@ def idc_export_cloudformation(design_id):
     return jsonify({"format": "cloudformation", "filename": f"{name.replace(' ', '_')}.yaml", "data": data})
 
 
+@infra_bp.route("/api/export/<design_id>/pulumi", methods=["POST"])
+def idc_export_pulumi(design_id):
+    """Export infrastructure design as a Pulumi Python program."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.infra_canvas.iac_generator import generate_pulumi
+
+    py_src = generate_pulumi(graph)
+    data = base64.b64encode(py_src.encode("utf-8")).decode("ascii")
+    slug = name.replace(" ", "_")
+    return jsonify({"format": "pulumi", "filename": f"{slug}__main__.py", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/ansible", methods=["POST"])
+def idc_export_ansible(design_id):
+    """Export infrastructure design as an Ansible site.yml playbook."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.infra_canvas.iac_generator import generate_ansible
+
+    playbook = generate_ansible(graph)
+    data = base64.b64encode(playbook.encode("utf-8")).decode("ascii")
+    return jsonify({"format": "ansible", "filename": f"{name.replace(' ', '_')}_site.yml", "data": data})
+
+
+@infra_bp.route("/api/export/<design_id>/helm", methods=["POST"])
+def idc_export_helm(design_id):
+    """Export infrastructure design as a Helm chart ZIP archive."""
+    name, graph = _idc_fetch_design(design_id)
+    if name is None:
+        return jsonify({"error": "Not found"}), 404
+    from tools.infra_canvas.iac_generator import generate_helm
+
+    zip_bytes = generate_helm(graph)
+    data = base64.b64encode(zip_bytes).decode("ascii")
+    slug = name.replace(" ", "_")
+    return jsonify({"format": "helm", "filename": f"{slug}-helm.zip", "data": data})
+
+
 # ── Collaboration (Task 18) ───────────────────────────────────────────────────
 
 from tools.canvas.collaboration import CanvasCollabManager as _IDCCollabMgr

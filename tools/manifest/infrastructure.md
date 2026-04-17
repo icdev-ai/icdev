@@ -12,4 +12,5 @@
 | Pipeline Generator | tools/infra/pipeline_generator.py | Generate .gitlab-ci.yml | --project | Pipeline file |
 | Rollback Manager | tools/infra/rollback.py | Deployment rollback | --project, --environment | Rollback result |
 | Infra Status | tools/infra/infra_status.py | Infrastructure status report | --project | Status |
+| IDC IaC Generator | tools/infra_canvas/iac_generator.py | Multi-CSP IaC emitters (Terraform, CloudFormation, Pulumi, Ansible, Helm) from IDC graph. All 6 CSPs: AWS GovCloud, Azure Gov, GCP, OCI, IBM, On-Prem. CUI headers. | generate_terraform(graph), generate_cloudformation(graph), generate_pulumi(graph), generate_ansible(graph), generate_helm(graph) | HCL str, CF YAML str, Pulumi Python str, Ansible YAML str, Helm ZIP bytes |
 
