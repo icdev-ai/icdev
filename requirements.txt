@@ -75,3 +75,6 @@ pyOpenSSL>=26.0.0        # CVE-2026-27448, CVE-2026-27459: callback bypass
 setuptools>=78.1.1       # CVE-2025-47273: path traversal
 
 feedparser>=6.0          # air-gap compat verified 2026-04-15
+
+# === IQE (ICDEV Query Engine) ===
+lark>=1.2                # LALR/Earley parser for IQE DSL (foreach/where/select)
