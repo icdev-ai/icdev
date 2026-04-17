@@ -7782,8 +7782,8 @@ def create_app() -> Flask:
         ("ddc",      "DDC Lineage Adapter",                    "low"),
     ]
     _DT_BRIEFS = [
-        ("Forward Networks inspiration",
-         "/docs/briefs/digital-twin-forwardnetworks-inspiration.md"),
+        ("Inspiration brief — pattern + ICDEV mapping",
+         "/docs/briefs/digital-twin-inspiration-brief.md"),
         ("Full market scan + per-canvas plan",
          "/docs/briefs/digital-twin-market-canvas-implementation-plan.md"),
     ]
@@ -7872,21 +7872,6 @@ def create_app() -> Flask:
         except Exception:  # pragma: no cover
             pass
 
-        # Forward Networks competitive_intel signal — confirms the inspiration
-        # source is registered and being scanned weekly.
-        ci_signal = None
-        try:
-            with _gc() as conn:
-                row = conn.execute(
-                    "SELECT scan_id, scan_date FROM competitor_scans "
-                    "WHERE competitor = 'forward_networks' "
-                    "ORDER BY scan_date DESC LIMIT 1"
-                ).fetchone()
-                if row:
-                    ci_signal = dict(row)
-        except Exception:
-            pass
-
         return render_template(
             "digital_twin.html",
             epics=epics,
@@ -7894,7 +7879,6 @@ def create_app() -> Flask:
             recent_failures=recent_failures,
             triage_summary=triage_summary,
             triage_recent=triage_recent,
-            ci_signal=ci_signal,
             briefs=_DT_BRIEFS,
         )
 

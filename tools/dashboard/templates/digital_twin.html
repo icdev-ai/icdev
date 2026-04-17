@@ -53,20 +53,13 @@
 
   <h1>Digital Twin Roadmap</h1>
   <p class="dt-meta">
-    Per-canvas digital-twin implementation derived from the
-    <a href="https://www.forwardnetworks.com/" target="_blank" rel="noopener">Forward Networks</a>
-    inspiration brief. 8 epics, 86 dependency-chained kanban tasks. Auto-refreshes on page reload.
+    Per-canvas digital-twin implementation across 8 epics, 86 dependency-chained
+    kanban tasks. Auto-refreshes on page reload.
   </p>
 
   <div class="dt-briefs">
     <strong>📄 Briefs:</strong>
     {% for label, path in briefs %}<a href="{{ path }}">{{ label }}</a>{% endfor %}
-    {% if ci_signal %}
-    &nbsp;&nbsp;<span style="color:#666; font-size:0.8rem;">
-      Forward Networks competitive scan:
-      <code>{{ ci_signal.scan_id }}</code> · {{ ci_signal.scan_date }}
-    </span>
-    {% endif %}
   </div>
 
   <h2>Epic progress</h2>
