@@ -1465,6 +1465,26 @@ strategist.history:
 # /settings
 # ───────────────────────────────────────────────────────────────────
 
+watchlist.reading:
+  title: 📖 Watchlist Reading
+  body: |
+    Rollup analysis of your starred tickers: direction skew (bullish vs
+    bearish), average composite score, notable news-driven movers (last 24h
+    Σ impact), and regime alignment. Flags when the watchlist is
+    mis-aligned with the current macro regime (e.g. bullish watchlist in a
+    risk-off regime).
+
+watchlist.table:
+  title: Starred Tickers Table
+  body: |
+    Live enrichment of every starred ticker: last price via yfinance, 1-day
+    %, current signal direction from `ad_market_snapshot`, composite score,
+    confidence, and news impact Σ over the last 24h. Sorted by absolute
+    news impact so stories driving your book surface first.
+
+    Click ★ to un-star. Click the ticker to jump into /analysis with the
+    full chart / fundamentals / run history modal.
+
 settings.alpaca:
   title: Alpaca Connection
   body: |
