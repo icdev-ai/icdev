@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Digital Twin Roadmap — ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<style>
+  .dt-wrap { max-width: 1200px; margin: 0 auto; padding: 1rem; font-size: 0.92rem; }
+  .dt-wrap h1 { margin: 0 0 0.5rem; font-size: 1.5rem; color: #222; }
+  .dt-wrap h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; color: #2c3e50; border-bottom: 2px solid #e8e8e8; padding-bottom: 0.25rem; }
+  .dt-meta { color: #666; margin: 0 0 1rem; }
+  .dt-briefs { background: #f0f7ff; border: 1px solid #b8d8ff; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; }
+  .dt-briefs a { display: inline-block; margin-right: 1rem; color: #1976d2; text-decoration: none; font-weight: 500; }
+  .dt-briefs a:hover { text-decoration: underline; }
+
+  .dt-epic { display: grid; grid-template-columns: 30% 1fr 25%; gap: 0.75rem;
+             padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px;
+             margin-bottom: 0.5rem; background: #fff; align-items: center; }
+  .dt-epic-key { font-weight: 600; color: #333; }
+  .dt-epic-key .pri { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.4rem;
+                      border-radius: 3px; margin-left: 0.4rem; vertical-align: middle; }
+  .pri-critical { background: #ffebee; color: #c62828; }
+  .pri-high     { background: #fff8e1; color: #f57f17; }
+  .pri-medium   { background: #e3f2fd; color: #1565c0; }
+  .pri-low      { background: #f5f5f5; color: #616161; }
+
+  .dt-bar { background: #eee; border-radius: 4px; height: 14px; overflow: hidden; position: relative; }
+  .dt-bar-fill { background: linear-gradient(90deg, #4caf50, #2e7d32); height: 100%; transition: width 0.3s; }
+  .dt-bar-text { position: absolute; top: 0; left: 0; right: 0; text-align: center;
+                 line-height: 14px; font-size: 0.72rem; color: #222; font-weight: 500; }
+
+  .dt-counts { font-family: monospace; font-size: 0.78rem; color: #555; text-align: right; }
+  .dt-counts .badge { display: inline-block; padding: 0.1rem 0.35rem; border-radius: 3px; margin-left: 0.25rem; }
+  .badge-done       { background: #e8f5e9; color: #2e7d32; }
+  .badge-progress   { background: #fff3e0; color: #ef6c00; }
+  .badge-backlog    { background: #f5f5f5; color: #757575; }
+  .badge-failed     { background: #ffebee; color: #c62828; }
+
+  .dt-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  .dt-table th, .dt-table td { text-align: left; padding: 0.4rem 0.5rem;
+                                border-bottom: 1px solid #eee; font-size: 0.85rem; }
+  .dt-table th { background: #fafafa; font-weight: 600; }
+  .dt-table .id-col { font-family: monospace; color: #555; }
+  .dt-table .reason-col { color: #c62828; max-width: 380px; word-break: break-word; }
+
+  .dt-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+  .dt-stat { padding: 0.6rem; border: 1px solid #ddd; border-radius: 6px;
+             background: #fff; text-align: center; }
+  .dt-stat-num { font-size: 1.4rem; font-weight: 600; color: #1976d2; }
+  .dt-stat-label { font-size: 0.75rem; color: #666; text-transform: uppercase; }
+
+  .dt-empty { color: #999; font-style: italic; padding: 0.5rem; }
+</style>
+
+<div class="dt-wrap">
+
+  <h1>Digital Twin Roadmap</h1>
+  <p class="dt-meta">
+    Per-canvas digital-twin implementation derived from the
+    <a href="https://www.forwardnetworks.com/" target="_blank" rel="noopener">Forward Networks</a>
+    inspiration brief. 8 epics, 86 dependency-chained kanban tasks. Auto-refreshes on page reload.
+  </p>
+
+  <div class="dt-briefs">
+    <strong>📄 Briefs:</strong>
+    {% for label, path in briefs %}<a href="{{ path }}">{{ label }}</a>{% endfor %}
+    {% if ci_signal %}
+    &nbsp;&nbsp;<span style="color:#666; font-size:0.8rem;">
+      Forward Networks competitive scan:
+      <code>{{ ci_signal.scan_id }}</code> · {{ ci_signal.scan_date }}
+    </span>
+    {% endif %}
+  </div>
+
+  <h2>Epic progress</h2>
+  {% for epic in epics %}
+  <div class="dt-epic">
+    <div class="dt-epic-key">
+      {{ epic.title }}
+      <span class="pri pri-{{ epic.priority }}">{{ epic.priority }}</span>
+    </div>
+    <div class="dt-bar">
+      <div class="dt-bar-fill" style="width: {{ epic.pct }}%"></div>
+      <div class="dt-bar-text">{{ epic.done }} / {{ epic.total }} done · {{ epic.pct }}%</div>
+    </div>
+    <div class="dt-counts">
+      {% if epic.in_progress %}<span class="badge badge-progress">{{ epic.in_progress }} in flight</span>{% endif %}
+      {% if epic.scheduled %}<span class="badge badge-progress">{{ epic.scheduled }} scheduled</span>{% endif %}
+      {% if epic.backlog %}<span class="badge badge-backlog">{{ epic.backlog }} queued</span>{% endif %}
+      {% if epic.failed %}<span class="badge badge-failed">{{ epic.failed }} failed</span>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="dt-empty">No dt-* tasks found in kanban — has the seed script run?</div>
+  {% endfor %}
+
+  <h2>In flight</h2>
+  {% if in_flight %}
+  <table class="dt-table">
+    <tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Updated</th></tr>
+    {% for t in in_flight %}
+    <tr>
+      <td class="id-col">{{ t.id }}</td>
+      <td>{{ t.title }}</td>
+      <td>{{ t.status }}</td>
+      <td>{{ t.priority }}</td>
+      <td>{{ t.updated_at }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="dt-empty">Nothing in flight right now.</div>
+  {% endif %}
+
+  <h2>Failure triage activity</h2>
+  <div class="dt-stats">
+    <div class="dt-stat"><div class="dt-stat-num">{{ triage_summary.total }}</div><div class="dt-stat-label">Audited</div></div>
+    <div class="dt-stat"><div class="dt-stat-num" style="color:#2e7d32;">{{ triage_summary.applied }}</div><div class="dt-stat-label">Auto-applied</div></div>
+    <div class="dt-stat"><div class="dt-stat-num" style="color:#ef6c00;">{{ triage_summary.verification_failed }}</div><div class="dt-stat-label">Verify failed</div></div>
+    <div class="dt-stat"><div class="dt-stat-num" style="color:#c62828;">{{ triage_summary.rejected }}</div><div class="dt-stat-label">Rejected</div></div>
+  </div>
+  {% if triage_recent %}
+  <table class="dt-table">
+    <tr><th>Task</th><th>Outcome</th><th>Branch</th><th>Started</th></tr>
+    {% for t in triage_recent %}
+    <tr>
+      <td class="id-col">{{ t.task_id }}</td>
+      <td>{{ t.outcome }}</td>
+      <td class="id-col">{{ t.branch or '—' }}</td>
+      <td>{{ t.started_at }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="dt-empty">No autofix audit records yet — failure_triage will populate as failures occur.</div>
+  {% endif %}
+
+  <h2>Recent failures</h2>
+  {% if recent_failures %}
+  <table class="dt-table">
+    <tr><th>ID</th><th>Title</th><th>Status</th><th>Fail count</th><th>Reason</th></tr>
+    {% for t in recent_failures %}
+    <tr>
+      <td class="id-col">{{ t.id }}</td>
+      <td>{{ t.title }}</td>
+      <td>{{ t.status }}</td>
+      <td>{{ t.failure_count or 0 }}</td>
+      <td class="reason-col">{{ t.last_failure_reason or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="dt-empty">No failures recorded — clean slate.</div>
+  {% endif %}
+
+</div>
+
+<script>
+  // Light auto-refresh every 60s so the page stays current as the scheduler
+  // marches through the chain. No JS dependency required.
+  setTimeout(function () { window.location.reload(); }, 60000);
+</script>
+{% endblock %}
