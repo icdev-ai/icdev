@@ -503,10 +503,7 @@ def _safe_eval_predicate(predicate: str, path: dict) -> bool:
 
         # "value in field" pattern
         if op.strip() == "in":
-            # Check if left is a quoted string literal and right is a field
-            lit = right.strip('"').strip("'") if right.startswith(("'", '"')) else None
-            # Or if right is a field path and left is a literal
-            # Pattern: 'T1190' in ttp_sequence
+            # Pattern: 'T1190' in ttp_sequence — left is literal, right is field
             try:
                 lit_val = left.strip('"').strip("'")
                 field_val = _resolve_field(right, path)
