@@ -174,6 +174,65 @@ CREATE TABLE IF NOT EXISTS odc_runbooks (
 
 CREATE INDEX IF NOT EXISTS idx_odc_runbooks_category ON odc_runbooks(category);
 CREATE INDEX IF NOT EXISTS idx_odc_runbooks_severity ON odc_runbooks(severity);
+
+-- ── ODC MITRE Coverage Twin Tables ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS odc_technique_coverage (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES observability_designs(id) ON DELETE CASCADE,
+    technique_id    TEXT NOT NULL,
+    coverage_state  TEXT NOT NULL DEFAULT 'gap'
+                        CHECK (coverage_state IN ('covered','partial','gap')),
+    signal_sources_present  TEXT DEFAULT '[]',
+    signal_sources_missing  TEXT DEFAULT '[]',
+    gap_score       REAL DEFAULT 1.0,
+    assessed_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_tech_cov_design ON odc_technique_coverage(design_id);
+CREATE INDEX IF NOT EXISTS idx_odc_tech_cov_state  ON odc_technique_coverage(coverage_state);
+
+CREATE TABLE IF NOT EXISTS odc_gap_scores (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES observability_designs(id) ON DELETE CASCADE,
+    total_techniques    INTEGER DEFAULT 0,
+    covered_count       INTEGER DEFAULT 0,
+    partial_count       INTEGER DEFAULT 0,
+    gap_count           INTEGER DEFAULT 0,
+    overall_gap_score   REAL DEFAULT 1.0,
+    by_tactic           TEXT DEFAULT '{}',
+    assessed_at         TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_gap_scores_design ON odc_gap_scores(design_id);
+
+CREATE TABLE IF NOT EXISTS odc_otel_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id       TEXT,
+    trace_id        TEXT DEFAULT '',
+    span_id         TEXT DEFAULT '',
+    event_name      TEXT NOT NULL,
+    technique_id    TEXT DEFAULT '',
+    signal_source   TEXT DEFAULT '',
+    attributes      TEXT DEFAULT '{}',
+    received_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_otel_design     ON odc_otel_events(design_id);
+CREATE INDEX IF NOT EXISTS idx_odc_otel_technique  ON odc_otel_events(technique_id);
+
+CREATE TABLE IF NOT EXISTS odc_sdc_verifications (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES observability_designs(id) ON DELETE CASCADE,
+    ttp_list        TEXT DEFAULT '[]',
+    covered_ttps    TEXT DEFAULT '[]',
+    partial_ttps    TEXT DEFAULT '[]',
+    gap_ttps        TEXT DEFAULT '[]',
+    coverage_pct    REAL DEFAULT 0.0,
+    verified_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_sdc_verify_design ON odc_sdc_verifications(design_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
