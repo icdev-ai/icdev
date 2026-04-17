@@ -451,3 +451,761 @@ analysis.debate:
     LLM-generated debate between bull and bear analysts on the current
     thesis. Surfaces the strongest counter-argument — a forcing function
     against confirmation bias.
+
+analysis.run_new:
+  title: Run New Analysis
+  body: |
+    Kick off a fresh 6-analyst + Socratic debate + CIS synthesis run on a
+    ticker. Takes 20–60 seconds depending on LLM latency. Output lands in
+    `ad_analysis_runs` and all downstream tables (reports, debates, CIS).
+
+analysis.run_history:
+  title: Run History
+  body: |
+    Past analysis runs with final signal, confidence, and timestamp.
+    Click any row to open the full detail modal with per-analyst breakdowns,
+    macro context, sector impact, Socratic debate transcript, and a
+    generated Pulse article draft.
+
+analysis.final_signal:
+  title: Final Signal
+  body: |
+    The CIS-synthesized direction — BUY / SELL / SHORT / HOLD. This is the
+    output the auto-trader consumes (subject to advisor confirmation +
+    confluence tier + earnings blackout + PDT + VIX scaling).
+
+analysis.confidence:
+  title: Confidence
+  body: |
+    0–100% confidence the CIS places on the final signal. Derived from
+    analyst agreement (higher when 5+ of 6 analysts align) minus Socratic
+    debate penalty (bear arguments weaken confidence). Confidence < 60%
+    means auto-trader will not execute even if signal = BUY.
+
+analysis.intaas_debate:
+  title: INTaaS Debate Result
+  body: |
+    The verdict from the Intelligence-as-a-Service multiperspectivity
+    module. Weighs 4+ perspectives (bull, bear, contrarian, base case)
+    against each other and returns a signal strength label.
+
+analysis.approved:
+  title: Approved for Auto-Trade
+  body: |
+    YES means all per-ticker gates passed: advisor agreement, no earnings
+    blackout, strategy not retired, confluence tier ≠ D, slippage ≤ alpha
+    budget. Auto-trader will route an order on the next pass.
+
+analysis.macro_indicators:
+  title: Macro Indicators
+  body: |
+    The 18-indicator macro panel scored for this run: VIX, yield spread,
+    fed funds, DXY, oil, gold, S&P trend, NASDAQ trend, Van Metre monetary
+    6, stagflation composite, deflation composite, 5y5y + 10y breakevens.
+
+analysis.sector_impact:
+  title: Sector Impact
+  body: |
+    Per-sector headwind/tailwind scoring — how this ticker's sector is
+    positioned given the current macro. Shows rate sensitivity, oil
+    sensitivity, DXY sensitivity, and combined impact.
+
+analysis.intaas_multiperspectivity:
+  title: INTaaS Multiperspectivity
+  body: |
+    Full multi-perspective analysis: bull thesis, bear thesis, contrarian
+    view, consensus, and the strongest omissions. Based on the ICDEV
+    INTaaS v2 framework.
+
+analysis.signal_breakdown:
+  title: Signal Confidence Breakdown
+  body: |
+    Per-component contribution to the final confidence: fundamental
+    quality, technical strength, sentiment polarity, macro tailwind,
+    quant score, risk adjustments. Useful for calibration debugging.
+
+analysis.pulse_article:
+  title: Generated Pulse Article
+  body: |
+    Draft AI-generated blog post for this ticker thesis — suitable for
+    publication to Pulse. Uses WriteGuard quality gating (non-technical
+    tone, no backend-path leaks). Can be edited or force-published
+    manually via the Pulse engine.
+
+# ───────────────────────────────────────────────────────────────────
+# /signals
+# ───────────────────────────────────────────────────────────────────
+
+signals.stats:
+  title: Signal Stats
+  body: |
+    Row of quick counters: pending, approved, rejected, executed signal
+    counts. Pending = awaiting auto-approval; approved = cleared for
+    execution but not yet routed; rejected = failed a gate; executed =
+    routed to broker (Alpaca paper or sim).
+
+# ───────────────────────────────────────────────────────────────────
+# /scenarios
+# ───────────────────────────────────────────────────────────────────
+
+scenarios.catalog:
+  title: Scenarios Available
+  body: |
+    Count of scenario templates currently loaded — 29 total: 9 economic
+    events, 9 historical replays, 7 what-if templates, 4 monetary policy.
+
+scenarios.runs_logged:
+  title: Runs Logged
+  body: |
+    How many scenario runs are stored in `ad_scenario_runs`. Each run
+    captures the scenario key, sector impacts, narrative summary, and
+    portfolio P&L delta at 1m/1q/1y horizons.
+
+scenarios.last_run:
+  title: Last Run
+  body: |
+    Timestamp of the most recent scenario evaluation. The
+    `scenario_analyzer` daemon reflex re-runs active scenarios every 4
+    hours so output stays fresh as macro drifts.
+
+scenarios.election:
+  title: US Election Cycle Phase
+  body: |
+    Current phase of the 4-year presidential cycle (pre-primary / primary /
+    convention / general / post-election / mid-term). Historical average
+    market return by phase informs the `election_cycle` scenario family.
+
+scenarios.run_ui:
+  title: Run Scenario
+  body: |
+    Pick a scenario template, optionally override parameters, and fire.
+    The engine walks the KG cascade (up to 10 levels deep), applies sector
+    impact weights, and produces a narrative + portfolio impact report.
+
+scenarios.narrative:
+  title: Narrative Summary
+  body: |
+    Plain-English prose description of the scenario — what happened, what
+    the mechanism is, why certain sectors win/lose. Generated from the
+    scenario template plus live macro context (so wording reflects today's
+    regime, not a generic case).
+
+scenarios.portfolio_impact:
+  title: Portfolio Impact
+  body: |
+    Dollar P&L impact on your current paper portfolio under this scenario
+    at 1-month, 1-quarter, and 1-year horizons. Multiplies each position's
+    sector by the scenario's sector impact weight.
+
+scenarios.adjustments:
+  title: Signal Confidence Adjustments
+  body: |
+    Live signals that would have their confidence bumped up or down by
+    this scenario. Used to stress-test the current BUY book against a
+    hypothetical shock.
+
+scenarios.impacted_tickers:
+  title: Most Impacted Tickers
+  body: |
+    Ranked list of universe tickers with the largest upside/downside under
+    this scenario, by sector impact × ticker-specific weight.
+
+scenarios.cascade_results:
+  title: Cascade Results
+  body: |
+    Summary of the BFS walk through the KG — levels deep, nodes touched,
+    split into positive-impact (BUY watchlist) and negative-impact (AVOID)
+    buckets.
+
+scenarios.cascade_flow:
+  title: Cascade Flow Diagram
+  body: |
+    Mermaid diagram visualizing the cascade tree — trigger at the root,
+    each subsequent level showing propagation through SUPPLIES_TO,
+    COMPETES_WITH, EXPOSED_TO_COMMODITY, and MACRO_SENSITIVE_TO edges.
+
+scenarios.cascade_buy:
+  title: BUY Watchlist (Positive Impact)
+  body: |
+    Tickers that benefit under this scenario — candidates for long
+    exposure if the scenario plays out. Ranked by cumulative positive
+    weight across all cascade paths to the ticker.
+
+scenarios.cascade_avoid:
+  title: AVOID List (Negative Impact)
+  body: |
+    Tickers that get hurt under this scenario — candidates to trim or
+    short. Ranked by cumulative negative weight from the trigger.
+
+scenarios.cascade_chain:
+  title: Full Cascade Chain
+  body: |
+    Table of every (source → target, relationship, weight, level,
+    cumulative impact) tuple in the BFS walk. For audit / explainability
+    of why a ticker made the BUY or AVOID list.
+
+scenarios.history:
+  title: Scenario Run History
+  body: |
+    All past scenario runs with run_id, scenario key, executed_at, and
+    quick impact summary. Click a row to re-open the full result set.
+
+# ───────────────────────────────────────────────────────────────────
+# /oracle
+# ───────────────────────────────────────────────────────────────────
+
+oracle.convergence:
+  title: Convergence Events
+  body: |
+    When 2+ lenses agree on a direction for the same subject
+    (ticker / sector / macro), the Oracle flags a convergence event —
+    high-conviction signal since multiple independent reasoning paths
+    landed on the same call.
+
+oracle.total_preds:
+  title: Total Active Predictions
+  body: |
+    Count of predictions currently in the `ad_lens_predictions` table that
+    haven't expired. Expiry = `horizon_days` past the prediction's
+    created_at.
+
+oracle.critical:
+  title: Critical Predictions
+  body: |
+    Predictions with `severity = critical`. Usually regime-level calls:
+    CRISIS imminent, stagflation escalation, deflation escalation, 5+
+    recession precursors. These drive dashboard regime-banner state.
+
+oracle.high:
+  title: High-Severity Predictions
+  body: |
+    `severity = high` — strong but not regime-defining. Examples: deep
+    yield inversion, elevated VIX, sector divergence, 3-flag stagflation.
+
+oracle.convergences_count:
+  title: Active Convergences
+  body: |
+    Live convergence count — how many subjects have 2+ lenses agreeing
+    right now. The higher this is, the more conviction is clustering.
+
+oracle.lenses:
+  title: Lenses
+  body: |
+    AlphaDesk Oracle has 4 specialized lenses, each analyzing a different
+    angle: Regime Trajectory (macro drift), News Intelligence (cluster
+    signals), Portfolio Stress (scenario impact on holdings), Signal
+    Convergence (multi-lens agreement).
+
+oracle.active:
+  title: Active Predictions
+  body: |
+    Full list of current predictions with lens origin, subject, title,
+    description, confidence 0–1, severity, horizon in days, direction,
+    evidence blob, and recommended action. Sortable by confidence,
+    severity, or horizon.
+
+# ───────────────────────────────────────────────────────────────────
+# /portfolio
+# ───────────────────────────────────────────────────────────────────
+
+portfolio.cash:
+  title: Cash Balance
+  body: |
+    Available paper cash from `ad_portfolios.cash_balance`. Starts at
+    $100,000 per default portfolio. Decreases on BUY fills, increases on
+    SELL proceeds + dividends.
+
+portfolio.total_value:
+  title: Total Portfolio Value
+  body: |
+    Cash + sum of all position market values. Benchmark: your all-time
+    high is the watermark for the drawdown monitor.
+
+portfolio.positions_count:
+  title: Open Positions
+  body: |
+    Number of distinct tickers held (from `ad_positions`). Concentration
+    risk rises as this approaches the portfolio size cap in
+    trading_config.yaml (typically 20 open positions max).
+
+portfolio.unrealized_pnl:
+  title: Unrealized P&L
+  body: |
+    Mark-to-market profit or loss on open positions — (current price −
+    avg cost) × quantity, summed. Live-quoted from Alpaca paper when
+    available, fallback to sample pricing otherwise.
+
+portfolio.holdings:
+  title: Holdings
+  body: |
+    Per-ticker detail: quantity, avg cost, market value, unrealized P&L,
+    asset class. Rows are refreshed every 30s from the positions table
+    while the dashboard is open.
+
+# ───────────────────────────────────────────────────────────────────
+# /risk
+# ───────────────────────────────────────────────────────────────────
+
+risk.var:
+  title: Portfolio VaR (1D)
+  body: |
+    Value-at-Risk — the estimated 1-day loss at 95% confidence. Derived
+    from the portfolio's volatility and beta exposure. A $5,000 VaR means
+    there's a 5% chance the portfolio loses $5k or more tomorrow.
+
+risk.max_drawdown:
+  title: Max Drawdown
+  body: |
+    Peak-to-trough decline since inception (or since last reset).
+    The drawdown monitor auto-trips the kill-switch when this exceeds
+    `halt_drawdown_pct` in trading_config.yaml (default 10%).
+
+risk.concentration:
+  title: Concentration Risk
+  body: |
+    Low / Medium / High based on the largest single position as % of
+    total portfolio value. > 20% = High; 10–20% = Medium; < 10% = Low.
+    High concentration is flagged by the auto-trader before adding more.
+
+risk.open_positions:
+  title: Open Risk
+  body: |
+    Number of positions that have no exit rule set (no stop, no target).
+    Ideally zero — every position should have a stop and target from
+    `exit_manager.register()` on entry.
+
+risk.limits:
+  title: Risk Limits
+  body: |
+    The active risk profile (conservative / moderate / aggressive) with
+    its per-trade max, daily budget, max concurrent positions, and max
+    drawdown halt. Sourced from `trading_config.yaml` risk_tier config.
+
+# ───────────────────────────────────────────────────────────────────
+# /graph
+# ───────────────────────────────────────────────────────────────────
+
+graph.nodes:
+  title: KG Nodes
+  body: |
+    Total entities in the knowledge graph — same as market.kg_nodes.
+    Distribution: ~325 tickers + 28 sectors + 19 macro indicators + a few
+    commodities + cascade triggers = ~499 typical.
+
+graph.edges:
+  title: KG Edges
+  body: |
+    Total relationships — SUPPLIES_TO, COMPETES_WITH, MEMBER_OF_SECTOR,
+    EXPOSED_TO_COMMODITY, MACRO_SENSITIVE_TO, ENABLES, REQUIRES_RESOURCE,
+    CONSTRAINED_BY, DISPLACES, TRACKS_INDEX.
+
+graph.communities:
+  title: Communities
+  body: |
+    Louvain-detected clusters — groups of tightly interconnected nodes.
+    Each community represents a cohesive narrative (semiconductor supply
+    chain, oil ecosystem, AI demand cascade). Used for gap detection.
+
+graph.gaps_count:
+  title: Structural Gaps
+  body: |
+    Pairs of communities that share topic vocabulary but lack direct
+    connection. Each gap becomes a "what are we missing?" research
+    question — InfraNodus-inspired pattern.
+
+graph.network_viz:
+  title: Network Visualization
+  body: |
+    D3 force-directed graph. Drag nodes, zoom with scroll, click for
+    details. Node colour = entity type; size = betweenness centrality
+    (how often the node lies on shortest paths between others).
+
+graph.node_details:
+  title: Node Details
+  body: |
+    Click any node to see its metadata, direct neighbors, centrality
+    score, community membership, and any macro-sensitivity weights
+    attached as properties.
+
+graph.legend:
+  title: Legend
+  body: |
+    Colour/shape key for the graph — ticker / sector / ETF / macro
+    indicator / commodity / future / scenario trigger. Edge styles
+    distinguish relationship types.
+
+graph.research_questions:
+  title: Research Questions
+  body: |
+    Auto-generated questions produced by the `gap_detector` reflex from
+    structural gaps. Each question highlights a missing link the KG
+    doesn't yet capture — useful for prioritizing research or new node
+    additions.
+
+# ───────────────────────────────────────────────────────────────────
+# /orders
+# ───────────────────────────────────────────────────────────────────
+
+orders.auto_trading:
+  title: Auto-Trading Control
+  body: |
+    Kill-switch + risk-profile controls. Hit "Halt" to stop the
+    auto-trader without killing the daemon; "Resume" to re-enable. The
+    broken-expert_advisor incident this morning tripped the circuit
+    breaker here — check the reflex status panel before re-enabling.
+
+orders.ml_model_health:
+  title: ML Model Health
+  body: |
+    Training status for the 3 ML models: confluence pillar weights
+    (weekly retrain), fill quality predictor (nightly), regime HMM
+    (weekly). "Stale" means the model hasn't retrained inside its
+    scheduled window.
+
+orders.confluence_scoring:
+  title: Confluence Scoring
+  body: |
+    Live confluence evaluation — 6 pillars (multi-timeframe, price
+    levels, TA stack, events, VIX structure, earnings LLM) scored per
+    signal and bucketed into tiers A/B/C/D. Tier A gets 1.0× position
+    sizing, D is refused.
+
+orders.execution_quality:
+  title: Execution Quality
+  body: |
+    Slippage tracking — predicted vs realized fill price, VWAP benchmark,
+    fill time distribution. Feeds back into the fill_quality model so
+    trades that predict > alpha-budget bps slippage are skipped.
+
+orders.history:
+  title: Order History
+  body: |
+    Full `ad_orders` table — ticker, side, qty, order type, status, fill
+    price, signal_id, created_at, filled_at. Broker is source of truth;
+    local row is mirror for dashboard/PnL.
+
+# ───────────────────────────────────────────────────────────────────
+# /radar  (Systemic Risk & Opportunity Radar — SROR)
+# ───────────────────────────────────────────────────────────────────
+
+radar.regime:
+  title: SROR Regime
+  body: |
+    NEUTRAL / OPPORTUNITY / CAUTION / DANGER / CRISIS. Distinct from the
+    market-data regime (GREEN/YELLOW/RED/INFLATION/STAGFLATION/DEFLATION)
+    — the SROR regime is about *systemic* risk from composite danger vs
+    opportunity scores, not point-indicator macro.
+
+radar.composite_danger:
+  title: Composite Danger
+  body: |
+    0–100 score aggregating immediate (0–2 weeks), near-term (2–12 weeks),
+    and medium-term (3–12 months) danger signals across 8 indicator
+    families. > 65 warns; > 75 = CRISIS regime.
+
+radar.composite_opportunity:
+  title: Composite Opportunity
+  body: |
+    0–100 score for constructive setups — washout-bounce patterns,
+    contrarian sentiment extremes, valuation mean-reversion, positive
+    breadth divergences. > 65 = OPPORTUNITY regime if danger is low.
+
+radar.recession_precursors:
+  title: Recession Precursors
+  body: |
+    Count of the 7 recession precursor conditions currently active
+    (yield inversion, LEI declining, Sahm Rule triggered, payrolls
+    contracting, etc.). 5+ has preceded every US recession since 1970.
+
+radar.divergences:
+  title: Active Divergences
+  body: |
+    Cross-market patterns where two normally-correlated series diverge —
+    bonds rallying while stocks rally, oil falling while energy stocks
+    rise, VIX up while SPX up. Each divergence is a "silence IS the
+    signal" moment.
+
+radar.alerts:
+  title: Active Alerts
+  body: |
+    Count of active SROR-triggered alerts. These flow to the regime
+    banner at the top of every page.
+
+radar.data_source:
+  title: Data Source
+  body: |
+    "live" = FRED + yfinance responding; "sample" = deterministic fallback
+    data. Always verify LIVE before acting on any signal.
+
+radar.updated:
+  title: Last Updated
+  body: |
+    Timestamp of the most recent SROR snapshot write to
+    `ad_systemic_radar_snapshots`. Refreshed by the `systemic_radar`
+    reflex — default cadence 10 minutes.
+
+radar.immediate:
+  title: Immediate (0–2 weeks)
+  body: |
+    Danger score for the next 2 weeks — weighted sum of fast-moving
+    indicators: credit spreads, VIX term structure, fail-to-deliver,
+    liquidity flags, earnings calendar density.
+
+radar.near_term:
+  title: Near-term (2–12 weeks)
+  body: |
+    Danger score for the 2–12 week horizon — slower-moving signals:
+    macro momentum, sector rotation, earnings revision trend, DXY trend.
+
+radar.medium_term:
+  title: Medium-term (3–12 months)
+  body: |
+    Danger score for the 3–12 month horizon — structural measures:
+    recession precursors, yield curve depth, Sahm Rule, LEI trajectory,
+    stagflation + deflation composites, business cycle phase.
+
+radar.family_breakdown:
+  title: Family Breakdown
+  body: |
+    8 indicator families: Credit, Liquidity, Volatility, Yield Curve,
+    Macro Momentum, Sentiment, Breadth, Leading Indicators. Each shows a
+    score and the top 2–3 driving indicators.
+
+radar.historical_trend:
+  title: Historical Trend (30d)
+  body: |
+    Time series of composite_danger + composite_opportunity over the last
+    30 days. Rising trajectory of danger → CRISIS regime imminent.
+
+radar.divergences_omissions:
+  title: Divergences & Omissions
+  body: |
+    Specific cross-signal patterns the system has flagged — with
+    explanation of what's unusual and why it matters.
+
+# ───────────────────────────────────────────────────────────────────
+# /advisor (Expert Agents)
+# ───────────────────────────────────────────────────────────────────
+
+advisor.agents_count:
+  title: Expert Agents
+  body: |
+    6 specialized LLM agents: Fundamental, Technical, Sentiment, Macro,
+    Quant, Risk. Each runs an independent analysis pass on a ticker. The
+    CIS (Committee of Investment Specialists) then synthesizes a final
+    recommendation.
+
+advisor.recommendations_count:
+  title: Recommendations
+  body: |
+    Count of CIS recommendations in `ad_cis_recommendations`. Each is the
+    post-synthesis output: final direction, final conviction 1–10,
+    strategy id. This is what the auto-trader requires for agreement gate.
+
+advisor.risk_profile:
+  title: Active Risk Profile
+  body: |
+    conservative / moderate / aggressive — controls daily budget, max
+    position size, stop/target width, confluence tier gating. Swap via
+    trading_config.yaml.
+
+advisor.last_brief:
+  title: Last Daily Brief
+  body: |
+    Timestamp of the most recent daily brief generation. The
+    `daily_brief` reflex produces a morning market summary at 01:00 UTC
+    (≈ 9 PM ET prior day) with overnight macro moves, top signals, and
+    scenario outlook.
+
+advisor.get_opinions:
+  title: Get Expert Opinions
+  body: |
+    Trigger a fresh 6-agent expert analysis pass on a ticker. Output =
+    per-agent finding + Socratic review + final CIS verdict. Takes 30–90
+    seconds.
+
+advisor.market_context:
+  title: Market Context (Judge's View)
+  body: |
+    High-level macro + regime summary the CIS uses as prior context
+    before weighing individual agent findings. Sets the tone: "expect
+    rate cuts" vs "inflation re-accelerating".
+
+advisor.expert_opinions:
+  title: Expert Opinions (Socratic-reviewed)
+  body: |
+    Each of the 6 agents' findings after the Socratic critique step —
+    weaker opinions get flagged "confidence adjusted" with the reason.
+
+advisor.forecast:
+  title: Price Forecast (Auto-ARIMA)
+  body: |
+    Statistical price forecast from Auto-ARIMA — 1-day, 5-day, 30-day
+    expected prices with confidence bands. Serves as a sanity check
+    against LLM-driven opinions.
+
+advisor.cis_recommendation:
+  title: CIS Recommendation
+  body: |
+    Final synthesized verdict: direction, conviction 1–10, strategy_id,
+    rationale. This is the row that lands in `ad_cis_recommendations`
+    and powers the auto-trader's advisor-agreement gate.
+
+advisor.recent:
+  title: Recent Recommendations
+  body: |
+    Last N CIS recommendations across all tickers — useful for
+    cross-ticker trend spotting. Shows direction + conviction at a
+    glance.
+
+advisor.roster:
+  title: Expert Agent Roster
+  body: |
+    The 6 agents with their prompt templates, LLM model assignment
+    (Tier-1 / Tier-2), and recent performance (hit rate, avg
+    conviction-to-outcome correlation).
+
+# ───────────────────────────────────────────────────────────────────
+# /strategist
+# ───────────────────────────────────────────────────────────────────
+
+strategist.regime:
+  title: Strategy Regime
+  body: |
+    The strategist's view of the current regime (may differ from the
+    market regime when leading indicators suggest change). Drives tier
+    allocation and sector tilt bias.
+
+strategist.tickers_scored:
+  title: Tickers Scored
+  body: |
+    Universe tickers evaluated in the latest strategy run. Each gets a
+    composite strategist score and is placed in Core / Tactical /
+    Opportunistic / Hedge buckets.
+
+strategist.core:
+  title: Core Holdings
+  body: |
+    Long-duration, high-quality positions — typically 40–60% of target
+    portfolio weight. Lowest turnover. Chosen for stable fundamentals +
+    durable competitive advantage.
+
+strategist.tactical:
+  title: Tactical Tilts
+  body: |
+    Medium-duration positions sized to current regime — 20–30% weight.
+    Rotate with the quarterly strategy re-run.
+
+strategist.opportunistic:
+  title: Opportunistic Picks
+  body: |
+    Short-duration high-conviction calls — 5–15% weight each, < 20%
+    total. Event-driven or deep-value plays. Higher turnover.
+
+strategist.hedge:
+  title: Hedges
+  body: |
+    Defensive positions — gold, TLT, VXX, short-SPY — sized to offset
+    the gross long exposure of the rest of the book. Scales up with
+    composite_danger.
+
+strategist.last_run:
+  title: Last Strategy Run
+  body: |
+    Timestamp of the most recent full strategist pass. The
+    `portfolio_strategist` reflex runs every 6 hours; manual re-run
+    supported via the strategist page.
+
+strategist.narrative:
+  title: Strategy Narrative
+  body: |
+    Prose summary of the current strategic stance — what regime we're
+    in, which tilts are active, what would trigger a shift. Auto-generated
+    from the strategist's structured output.
+
+strategist.tier_allocation:
+  title: Tier Allocation
+  body: |
+    Pie chart: what % of the target portfolio goes to Core / Tactical /
+    Opportunistic / Hedges. Varies with regime — hedges expand in
+    DANGER/CRISIS regimes.
+
+strategist.sector_allocation:
+  title: Sector Allocation
+  body: |
+    Target weight per sector — overweight, underweight, or market-weight
+    vs benchmark. Reflects the strategist's view on sector rotation.
+
+strategist.value_opportunities:
+  title: Value Investing Opportunities
+  body: |
+    Tickers flagged as trading below estimated fair value with asymmetric
+    upside. Tom Nash-inspired heuristic: quality × discount × catalyst.
+
+strategist.core_holdings:
+  title: Core Holdings List
+  body: |
+    Detailed Core bucket: ticker, target weight, rationale, exit
+    triggers, conviction score.
+
+strategist.tactical_tilts:
+  title: Tactical Tilts List
+  body: |
+    Detailed Tactical bucket with entry/exit logic and regime
+    dependencies.
+
+strategist.opportunistic_picks:
+  title: Opportunistic Picks List
+  body: |
+    Short-duration plays with entry window and catalyst.
+
+strategist.hedges_list:
+  title: Hedges List
+  body: |
+    Active hedge positions with sizing rationale and trigger conditions
+    for expansion/contraction.
+
+strategist.sector_tilts:
+  title: Sector Tilt Recommendations
+  body: |
+    Specific overweight/underweight calls per sector with reasoning and
+    expected duration.
+
+strategist.signals:
+  title: Strategy Signals
+  body: |
+    Cross-asset strategy signals — bond/stock ratio, gold/copper ratio,
+    dollar trend, breadth — that drive tilt adjustments.
+
+strategist.history:
+  title: Strategy Run History
+  body: |
+    All past strategist runs with executed_at, regime at the time,
+    and tier-bucket contents. Useful for auditing how the book has
+    shifted over time.
+
+# ───────────────────────────────────────────────────────────────────
+# /settings
+# ───────────────────────────────────────────────────────────────────
+
+settings.alpaca:
+  title: Alpaca Connection
+  body: |
+    Paper broker connection status. `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`,
+    `ALPACA_BASE_URL` in `.env`. When unreachable, the auto-trader falls
+    back to a simulated fill path and flags orders accordingly.
+
+settings.llm:
+  title: LLM Configuration
+  body: |
+    Two-tier LLM routing: Tier-1 (reasoning-heavy — analyst, debate,
+    CIS) and Tier-2 (fast — classification, summarization). Uses
+    `args/llm_config.yaml` and the router in `tools/llm/router.py`. Set
+    provider via `ICDEV_LLM_PROVIDER` in `.env`.
+
+settings.watchlist:
+  title: Watchlist
+  body: |
+    Per-user favorite tickers for quick access. Separate from the
+    universe — these don't trade automatically unless also in the
+    universe and meeting signal thresholds.
