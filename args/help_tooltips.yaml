@@ -1646,6 +1646,18 @@ alerts.rules:
     deleting it. The **✕** button removes the rule permanently (alert
     log entries from that rule remain for audit).
 
+alerts.suggested:
+  title: 💡 Suggested for your persona
+  body: |
+    Pre-configured alert rules tailored to your active persona (set in
+    Settings → Profile). Pick the ones you want and click "+ Add selected"
+    to copy them into your active rules.
+
+    Some rules use placeholder subjects (`WATCHLIST_ANY`, `PORTFOLIO_DRAWDOWN`,
+    etc.) the alert evaluator can't resolve yet — Phase 4 work. Those rows
+    are flagged with a ⚠ marker; if you add them they're inert until
+    that lands. Default checkbox state reflects current evaluator support.
+
 alerts.recent:
   title: Recent alerts
   body: |
