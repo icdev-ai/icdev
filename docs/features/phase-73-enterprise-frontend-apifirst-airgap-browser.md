@@ -379,4 +379,61 @@ Screenshots are written to `playwright/screenshots/<name>.png` per CLAUDE.md pol
 - **Next.js version** is not pinned in `package.json` because the `build:airgap` script
   requires Next.js ≥ 13 (App Router + static export). Pin when container base image is locked.
 
+---
+
+## I3 Validation — CodeLens + Coherence Scan (2026-04-17)
+
+### CodeLens Output (`tools/code_intelligence/codelens.py --all --json`)
+
+```json
+{
+  "gate": "codelens",
+  "status": "pass",
+  "reason": "code intelligence scan completed",
+  "target": "tools/",
+  "analysis": {
+    "scan_id": "scan-c328753a5936",
+    "timestamp": "2026-04-17T06:25:44.544690+00:00",
+    "files_analyzed": 1413,
+    "total_functions": 13410,
+    "avg_cyclomatic_complexity": 5.72,
+    "total_smells": 13722,
+    "avg_maintainability_score": 0.9278,
+    "metric_count": 14823
+  }
+}
+```
+
+### Coherence Checker Output (`tools/workflow/coherence_checker.py --all --fix --gate`)
+
+```json
+{
+  "overall_pass": true,
+  "timestamp": "2026-04-17T06:26:08Z",
+  "total_checks": 17,
+  "passed_checks": 17,
+  "failed_checks": 0,
+  "warned_checks": 0,
+  "total_fixes": 0,
+  "checks_summary": [
+    {"check_id": "schema_code", "status": "pass", "message": "All INSERT columns match schema definitions"},
+    {"check_id": "config_code", "status": "pass", "message": "Checked 20 configs"},
+    {"check_id": "signature_call", "status": "pass", "message": "No positional-arg risks detected"},
+    {"check_id": "fixture_schema", "status": "pass", "message": "All 346 fixture tables match schema"},
+    {"check_id": "manifest", "status": "pass", "message": "Manifest coverage adequate (974 tools checked)"},
+    {"check_id": "append_only", "status": "pass", "message": "All append-only tables are protected"},
+    {"check_id": "ruff_lint", "status": "pass", "message": "No blocking ruff lint issues"},
+    {"check_id": "api_wiring", "status": "pass", "message": "All API handlers have DB/storage calls"},
+    {"check_id": "route_uniqueness", "status": "pass", "message": "No duplicate Flask view functions"},
+    {"check_id": "attribution_claims", "status": "pass", "message": "All 11 attribution claims match the registry"},
+    {"check_id": "llm_injection_patterns", "status": "pass", "message": "No untrusted input reaching LLMRequest in 68 scanned tools"},
+    {"check_id": "skill_standard", "status": "pass", "message": "All 21 SKILL.md files conform to the standard"},
+    {"check_id": "sandbox_coverage", "status": "pass", "message": "All 4 gap references present in sandbox-coverage.md"},
+    {"check_id": "direct_anthropic_import", "status": "pass", "message": "No disallowed direct anthropic imports detected"},
+    {"check_id": "karpathy_sync", "status": "pass", "message": "All 10 AI platform configs contain all 5 canonical Karpathy principle headings"},
+    {"check_id": "openapi_parity", "status": "pass", "message": "All 435 /api/v1/* routes present in OpenAPI spec — no api-contract-drift"}
+  ]
+}
+```
+
 # CUI // SP-CTI
