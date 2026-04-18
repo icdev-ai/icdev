@@ -201,6 +201,23 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
     live logo preview. **Logo upload deferred** (URL-only for now —
     operator uploads to their own CDN/S3).
 
+### ✅ Per-tenant query-site sweep — DONE 2026-04-18 (high-leakage tables)
+- New helper `_active_tenant_id()` + `_scope_clause()` in `tools/trading/dashboard/app.py`
+- Web endpoints now filter by `user_id + tenant_id`:
+  - `/api/portfolio` — portfolio + positions reads
+  - `/api/portfolio/state` — analytics view
+  - `/api/portfolio/snapshot/now` (insert + update + read of `ad_pf_daily_snapshots`)
+  - `/api/portfolio/history` — snapshot series read
+  - `/api/orders` — orders list
+  - `/api/risk` — positions read
+  - `/` overview helper (`_current_portfolio`)
+- INSERT paths also include user_id + tenant_id for new portfolios + snapshots
+- DB-level isolation verified: a fake other-user query returns 0 portfolios
+
+### Still deferred (lower-leakage paths — sweep when needed)
+- **Daemon code paths** (`auto_trader.py`, `exit_executor.py`, `position_reconciler.py`, etc.) — still iterate globally. Operator-controlled, no leak in single-tenant deployment. When real multi-tenant lands, these need to either iterate by tenant OR explicitly run as a "service" with all-tenant scope.
+- **Strategy / advisor / analysis read tables** (`ad_strategy_runs`, `ad_strategy_holdings`, `ad_cis_recommendations`, `ad_analysis_runs`) — these have `user_id`/`tenant_id` columns populated but the read endpoints don't filter yet. Less sensitive than portfolio data; lands when 2nd tenant is real.
+
 ### Notes from 3.1 (worth recording)
 - `ad_tenants.is_default = 1` on the bootstrap tenant to distinguish it
   from later user-created tenants
