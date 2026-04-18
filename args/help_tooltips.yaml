@@ -1584,6 +1584,22 @@ settings.watchlist:
     universe — these don't trade automatically unless also in the
     universe and meeting signal thresholds.
 
+settings.profile:
+  title: Profile
+  body: |
+    Pick a persona preset (Casual Investor / Active Trader / Quant /
+    Advisor / Student / etc.) and AlphaDesk reshapes itself: which
+    sidebar pages appear, which cards on each page, the Reading tone
+    (plain English vs PM-style vs technical), and a few other defaults.
+
+    Personas are defined in `args/persona_presets.yaml` and hot-reload
+    on file change. Applying a preset is destructive of your manual
+    layout settings; any field you tweak afterward sticks until you
+    re-apply.
+
+    Phase 1 (single-user mode): one profile shared by anyone using this
+    dashboard. Phase 2 will add per-user profiles tied to login.
+
 # ── /alerts ─────────────────────────────────────────────────────────────
 alerts.rule_count:
   title: Rules
