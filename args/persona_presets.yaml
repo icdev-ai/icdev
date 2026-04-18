@@ -173,7 +173,8 @@ personas:
     time_horizon: swing
     risk_tolerance: aggressive
     voice: pm
-    hidden_pages: []
+    hidden_pages:
+    - /progression
     hidden_cards: []
     featured_pages:
     - /signals
@@ -218,6 +219,7 @@ personas:
     - /rebalance
     - /clients
     - /lessons
+    - /progression
     hidden_cards:
     - pf-reading
     - market-reading
@@ -268,7 +270,8 @@ personas:
     time_horizon: long_term
     risk_tolerance: moderate
     voice: pm
-    hidden_pages: []
+    hidden_pages:
+    - /progression
     hidden_cards: []
     featured_pages:
     - /clients
@@ -314,6 +317,7 @@ personas:
     - /clients
     - /api-keys
     - /lessons
+    - /progression
     hidden_cards:
     - pf-reading
     - strat-narrative
@@ -353,6 +357,7 @@ personas:
     hidden_pages:
     - /scenarios
     - /api-keys
+    - /progression
     hidden_cards: []
     featured_pages:
     - /portfolio
