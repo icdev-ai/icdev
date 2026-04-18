@@ -1355,6 +1355,17 @@ CREATE TABLE IF NOT EXISTS sdc_attack_snapshots (
     edges_json   TEXT DEFAULT '[]',
     created_at   TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS pulse_capability_graph (
+    id TEXT PRIMARY KEY,
+    capability_slug TEXT NOT NULL,
+    capability_name TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    relationship TEXT NOT NULL,
+    confidence REAL DEFAULT 1.0,
+    metadata TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------
