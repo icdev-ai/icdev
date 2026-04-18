@@ -1411,13 +1411,26 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         conn.execute(sql, tuple(vals))
         conn.commit()
 
-        # Cascade rollback: done \u2192 not-done demotes active descendants
+        # Cascade rollback: done \u2192 not-done demotes active descendants.
+        #
+        # Descendants go back to 'backlog' (not 'scheduled') because:
+        #   1. Moving to 'scheduled' without setting scheduled_at produced an
+        #      invisible row — the scheduler's due-task query (see
+        #      _get_due_tasks) requires scheduled_at IS NOT NULL, so the task
+        #      became permanently un-dispatchable. Silent outage on 2026-04-17
+        #      where dt-iqe-04 blocked an 82-task chain for ~2 hours.
+        #   2. 'backlog' is the natural "waiting to be re-evaluated" state.
+        #      The existing dep_clause in _get_due_tasks keeps descendants
+        #      blocked until the parent reaches 'done' again, so there's no
+        #      risk of premature dispatch.
+        #   3. The 10-minute backlog cooldown (kt.updated_at) prevents
+        #      rapid-fire retries of cascaded tasks.
         rolled_back: list[str] = []
         if prior_status == "done" and new_status != "done":
             desc_rows = conn.execute(
                 "SELECT id FROM kanban_tasks "
                 "WHERE depends_on_task_id = ? "
-                "  AND status IN ('in_progress', 'backlog')",
+                "  AND status IN ('in_progress', 'backlog', 'scheduled')",
                 (task_id,),
             ).fetchall()
             for r in desc_rows:
@@ -1425,7 +1438,8 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             if rolled_back:
                 placeholders = ",".join("?" * len(rolled_back))
                 conn.execute(
-                    f"UPDATE kanban_tasks SET status='scheduled', "  # nosec B608
+                    f"UPDATE kanban_tasks SET status='backlog', "  # nosec B608
+                    f"scheduled_at=NULL, "
                     f"updated_at=?, failure_count=0, "
                     f"last_failure_reason=?, last_failure_at=NULL "
                     f"WHERE id IN ({placeholders})",
@@ -1433,7 +1447,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                 )
                 conn.commit()
                 logger.info(
-                    "_move_task: cascade rolled back %d descendant(s) of %s: %s",
+                    "_move_task: cascade rolled back %d descendant(s) of %s to backlog: %s",
                     len(rolled_back), task_id, rolled_back,
                 )
     finally:
@@ -1443,7 +1457,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
     if prior_status == "done" and new_status != "done" and rolled_back:
         for dep_id in rolled_back:
             _record_status_transition(
-                dep_id, None, "scheduled", actor="cascade",
+                dep_id, None, "backlog", actor="cascade",
                 reason=f"parent {task_id} demoted {prior_status}\u2192{new_status}",
             )
 
