@@ -1308,6 +1308,24 @@ CREATE TABLE IF NOT EXISTS ad_expert_recommendations (
     expert_votes TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS compliance_snapshots (
+    snapshot_id  TEXT NOT NULL,
+    project_id   TEXT NOT NULL,
+    framework_id TEXT NOT NULL,
+    control_id   TEXT NOT NULL,
+    status       TEXT NOT NULL CHECK (status IN (
+                     'satisfied', 'not_satisfied', 'partially_satisfied',
+                     'not_applicable', 'planned')),
+    evidence_ref TEXT,
+    taken_at     TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cs_project_framework
+    ON compliance_snapshots(project_id, framework_id);
+CREATE INDEX IF NOT EXISTS idx_cs_control_status
+    ON compliance_snapshots(control_id, status);
+CREATE INDEX IF NOT EXISTS idx_cs_taken_at
+    ON compliance_snapshots(taken_at);
 """
 
 # ---------------------------------------------------------------------------
