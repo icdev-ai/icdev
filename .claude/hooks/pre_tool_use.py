@@ -106,6 +106,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_mfa_attempts",
         # AlphaDesk BYOK — credential audit (NIST AU; tracks every set/delete/test/used)
         "ad_credential_audit",
+        # AlphaDesk tenancy — invitations are append-only (revoked_at + accepted_at flips, never DELETE)
+        "ad_tenant_invitations",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
