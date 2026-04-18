@@ -15,6 +15,16 @@ class AttrRef:
 
 
 @dataclass
+class CollectionCall:
+    """Parameterised collection call: ``attack.paths("src_id", "goal_id")``."""
+    name: AttrRef
+    args: list["Literal"]
+
+    def __str__(self) -> str:
+        return str(self.name)
+
+
+@dataclass
 class Literal:
     """Scalar literal value: str, int, float, bool, or None."""
     value: Union[str, int, float, bool, None]
@@ -45,6 +55,6 @@ class WhereNode:
 class ForeachNode:
     """Top-level foreach query node."""
     var: str
-    collection: AttrRef
+    collection: Union[AttrRef, CollectionCall]
     where_clauses: list[WhereNode] = field(default_factory=list)
     select: Optional[SelectNode] = None

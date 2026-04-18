@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Optional
 
-from tools.iqe.ast_nodes import AttrRef, BinOp, ForeachNode, Literal, SelectNode, WhereNode
+from tools.iqe.ast_nodes import AttrRef, BinOp, CollectionCall, ForeachNode, Literal, SelectNode, WhereNode
 
 _SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -21,13 +21,25 @@ class Executor:
 
     def run(self, ast: ForeachNode, conn: Any) -> list[dict]:
         """Execute *ast*, returning matching rows projected per SELECT."""
-        rows = self._fetch(str(ast.collection), conn)
+        coll = ast.collection
+        if isinstance(coll, CollectionCall):
+            name = str(coll.name)
+            call_args = [a.value for a in coll.args]
+        else:
+            name = str(coll)
+            call_args = []
+        rows = self._fetch(name, conn, call_args)
         rows = self._filter(rows, ast.var, ast.where_clauses)
         return self._project(rows, ast.var, ast.select)
 
-    def _fetch(self, name: str, conn: Any) -> list[dict]:
+    def _fetch(self, name: str, conn: Any, call_args: list | None = None) -> list[dict]:
+        if call_args is None:
+            call_args = []
         if name in self._registry:
-            return list(self._registry[name](conn))
+            fn = self._registry[name]
+            if call_args:
+                return list(fn(conn, *call_args))
+            return list(fn(conn))
         # SQLite fallback: validate table name is a safe identifier before interpolating.
         table = name.split(".")[-1]
         if not _SAFE_IDENT.match(table):
