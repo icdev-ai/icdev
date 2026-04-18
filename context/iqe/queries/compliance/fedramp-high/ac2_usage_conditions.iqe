@@ -1,0 +1,10 @@
+# Intent: Find HIGH-impact controls that remain not_implemented, targeting
+#         the FedRAMP High AC-2(11) usage conditions requirement ensuring
+#         account management controls enforce operating conditions across the boundary.
+# Expected violation shape: rows where impact_level == "HIGH" and implementation_status == "not_implemented";
+#   each row is a HIGH-baseline control gap requiring corrective action before ATO.
+
+foreach c in compliance.controls
+  where c.impact_level == "HIGH"
+  where c.implementation_status == "not_implemented"
+  select c.project_id, c.control_id, c.family, c.title, c.responsible_role

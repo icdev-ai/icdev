@@ -1,0 +1,10 @@
+# Intent: Surface SC (System and Communications Protection) controls with
+#         not_implemented status, exposing boundary protection gaps that must
+#         be closed under FedRAMP High SC-7(15) route and connection verification.
+# Expected violation shape: rows where family == "SC" and implementation_status == "not_implemented";
+#   each row identifies a boundary protection control requiring immediate implementation.
+
+foreach c in compliance.controls
+  where c.family == "SC"
+  where c.implementation_status == "not_implemented"
+  select c.project_id, c.control_id, c.title, c.implementation_status, c.responsible_role

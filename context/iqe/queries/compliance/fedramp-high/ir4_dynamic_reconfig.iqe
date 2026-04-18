@@ -1,0 +1,10 @@
+# Intent: Identify critical-severity open violations requiring dynamic reconfiguration
+#         per FedRAMP High IR-4(2), where systems must respond to incidents through
+#         real-time boundary and configuration adjustments without manual intervention.
+# Expected violation shape: rows where severity == "critical" and status == "open";
+#   each row is an unresolved critical finding demanding immediate dynamic response.
+
+foreach v in compliance.violations
+  where v.severity == "critical"
+  where v.status == "open"
+  select v.project_id, v.weakness_id, v.weakness_description, v.severity, v.milestone_date

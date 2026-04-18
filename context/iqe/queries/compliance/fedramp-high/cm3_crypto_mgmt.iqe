@@ -1,0 +1,9 @@
+# Intent: Detect PI snapshots where the end-of-interval compliance score fell
+#         below the FedRAMP High threshold of 0.85, flagging systems with
+#         cryptography and configuration management drift under CM-3(6).
+# Expected violation shape: rows where compliance_score_end < 0.85;
+#   each row represents a program increment that fell below the High-baseline compliance bar.
+
+foreach s in compliance.snapshots
+  where s.compliance_score_end < 0.85
+  select s.project_id, s.pi_number, s.compliance_score_start, s.compliance_score_end

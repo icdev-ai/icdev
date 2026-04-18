@@ -1,0 +1,10 @@
+# Intent: Surface CP (Contingency Planning) controls not fully implemented across
+#         FedRAMP High boundary projects, flagging alternate processing site gaps
+#         that must be closed before ATO authorization under CP-7.
+# Expected violation shape: rows where family == "CP" and implementation_status != "implemented";
+#   each row identifies a contingency planning gap requiring remediation for High ATO.
+
+foreach c in compliance.controls
+  where c.family == "CP"
+  where c.implementation_status != "implemented"
+  select c.project_id, c.control_id, c.title, c.implementation_status, c.responsible_role
