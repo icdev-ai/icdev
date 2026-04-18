@@ -1,0 +1,8 @@
+# Intent: Surface layer-3 interface pairs where the local MTU differs from the peer
+#         MTU, causing fragmentation or black-holing of jumbo frames in the NDC.
+# Expected violation shape: rows where mtu != peer_mtu — each row is a candidate for
+#   TCP MSS clamping or MTU re-alignment to prevent silent packet drops.
+
+foreach i in network.interfaces
+  where i.mtu != i.peer_mtu
+  select i.device, i.name, i.mtu, i.peer_device, i.peer_mtu
