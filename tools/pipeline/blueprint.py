@@ -458,6 +458,16 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("UPDATE", "pipeline", pipe_id, data.get("name", ""))
+        # Hook: auto-snapshot on every pipeline save (PDC twin)
+        try:
+            from tools.pipeline.twin import take_snapshot as _twin_snapshot
+            _twin_snapshot(
+                pipe_id,
+                label=f"auto-save-{now_isoformat()[:10]}",
+                user_id=session.get("user_id", "system"),
+            )
+        except Exception:
+            pass  # snapshot failure must never block saves
         # Hook: notify Security Design Canvas of pipeline change
         sdc_assessment = None
         try:
