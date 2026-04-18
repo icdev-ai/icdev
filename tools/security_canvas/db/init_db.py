@@ -215,6 +215,17 @@ CREATE TABLE IF NOT EXISTS sc_audit (
     ts              TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS sdc_attack_snapshots (
+    id              TEXT PRIMARY KEY,
+    component_id    TEXT NOT NULL,
+    nodes_json      TEXT NOT NULL DEFAULT '[]',
+    edges_json      TEXT NOT NULL DEFAULT '[]',
+    caldera_op_id   TEXT,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sdc_attack_component ON sdc_attack_snapshots(component_id);
+CREATE INDEX IF NOT EXISTS idx_sdc_attack_created ON sdc_attack_snapshots(created_at);
+
 CREATE TABLE IF NOT EXISTS sdc_sops (
     id                  TEXT PRIMARY KEY,
     title               TEXT NOT NULL,
