@@ -9,7 +9,7 @@ gap detector. These tables are written by tool code (INSERT INTO / SELECT)
 but had no CREATE TABLE statement in any migration, so fresh sqlite
 deployments would 500 on first use.
 
-This migration covers 55 distinct orphan tables.
+This migration covers 56 distinct orphan tables.
 All CREATE TABLE statements are idempotent (IF NOT EXISTS).
 
 REVIEW GATE: Human review required before applying. Run:
@@ -22,7 +22,7 @@ import sqlite3
 MIGRATION_ID = "017"
 MIGRATION_NAME = "orphan_tables"
 DESCRIPTION = (
-    "Create 55 orphan tables identified by the Internal Awareness Engine "
+    "Create 56 orphan tables identified by the Internal Awareness Engine "
     "gap detector. Resolves schema drift — tables referenced by tool code but missing "
     "from any migration, causing fresh sqlite deploys to 500 on first use."
 )
@@ -67,6 +67,7 @@ _ORPHAN_TABLES = [
     "pg_proposal_knowledge_base",
     "pg_stat_user_indexes",
     "pg_stat_user_tables",
+    "pg_training_pair_sources",
     "posts",
     "project_team_members",
     "proposal_compliance_items",
@@ -164,6 +165,8 @@ _CREATE_STMTS = [
     "CREATE TABLE IF NOT EXISTS pg_stat_user_indexes (\n    indexrelid INTEGER PRIMARY KEY,\n    schemaname TEXT DEFAULT '',\n    relname TEXT DEFAULT '',\n    indexrelname TEXT DEFAULT '',\n    idx_scan INTEGER DEFAULT 0,\n    idx_tup_read INTEGER DEFAULT 0,\n    idx_tup_fetch INTEGER DEFAULT 0\n);",
     # pg_stat_user_tables — first referenced in tools/db/pg_optimize_all.py [known_schema]
     "CREATE TABLE IF NOT EXISTS pg_stat_user_tables (\n    relid INTEGER PRIMARY KEY,\n    schemaname TEXT DEFAULT '',\n    relname TEXT DEFAULT '',\n    seq_scan INTEGER DEFAULT 0,\n    seq_tup_read INTEGER DEFAULT 0,\n    n_live_tup INTEGER DEFAULT 0,\n    n_dead_tup INTEGER DEFAULT 0,\n    last_vacuum TEXT,\n    last_analyze TEXT\n);",
+    # pg_training_pair_sources — first referenced in tools/proposal_genesis/reflexes/train.py [known_schema]
+    "CREATE TABLE IF NOT EXISTS pg_training_pair_sources (\n    id TEXT PRIMARY KEY,\n    source_type TEXT NOT NULL,\n    source_id TEXT NOT NULL,\n    pair_count INTEGER NOT NULL DEFAULT 0,\n    content_hash TEXT NOT NULL,\n    created_at TEXT\n);",
     # posts — first referenced in tools/pulse/cli.py [known_schema]
     "CREATE TABLE IF NOT EXISTS posts (\n    id TEXT PRIMARY KEY,\n    title TEXT DEFAULT '',\n    slug TEXT DEFAULT '',\n    body TEXT DEFAULT '',\n    status TEXT DEFAULT 'draft',\n    published_at TEXT,\n    created_at TEXT,\n    updated_at TEXT\n);",
     # project_team_members — first referenced in tools/simulation/risk_monitor.py [known_schema]
