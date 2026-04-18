@@ -15,6 +15,11 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | **ODC** Observability | tools\observability_canvas\blueprint.py | tools\observability_canvas\observability_engine.py | args\observability_canvas_config.yaml | observability_canvas.db | /observability | ICDEV_OBSERVABILITY_ENABLED | SIEM/SOAR/log stack design, MITRE ATT&CK detection coverage, source type weighting, NIST AU/SI control assessment, log retention policy |
 | **DDC** Data | tools\data_canvas\blueprint.py | tools\data_canvas\data_engine.py | args\data_canvas_config.yaml | data_canvas.db | /data | ICDEV_DATA_CANVAS_ENABLED | Data model design with PII/PHI/CUI/SECRET classification, retention policy enforcement, Privacy Act/HIPAA/GDPR assessment, ER diagram export |
 
+## SDC Sub-Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| SDC Attack Path Twin | tools/security_canvas/security_engine.py (`find_attack_paths`), tools/iqe/adapters/security.py, tools/security_canvas/caldera_adapter.py | BAS-style attack path digital twin for the Security Design Canvas. Snapshots the STRIDE/attack graph as `sdc_attack_snapshots` rows, enumerates all simple BFS paths from entry points to high-value targets with risk scoring, and registers three IQE collections (`attack.nodes`, `attack.edges`, `attack.paths`) plus 5 seed queries (data exfil, lateral-to-IL5, priv escalation, cross-boundary, MTTR critical). Caldera adapter maps ability-IDs→ATT&CK technique-IDs for replay enrichment. Routes: `POST /api/designs/<design_id>/attack-paths`. Tables: `sdc_attack_snapshots`. | `find_attack_paths(graph_data)` → attack path list; `CalderaAdapter(url, api_key)` → `.fetch_scenarios()`, `.ability_technique_map`; IQE: `attack.nodes`, `attack.edges`, `attack.paths(src, goal)` | Dict `{attack_paths, total_paths, critical_paths, …}` / IQE row list |
+
 ## PDC Sub-Tools
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
