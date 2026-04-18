@@ -76,10 +76,10 @@ personas:
       - radar-horizons
       - adv-experts        # 6 expert agents intimidate
       - strat-narrative    # strategist content hidden anyway via hidden_pages
-    featured_pages: [/portfolio, /watchlist, /analysis, /news]
+    featured_pages: [/today, /portfolio, /watchlist, /analysis, /news]
     onboarding:
-      welcome: "Welcome! Let's start by picking a few stocks you're curious about. Add them to your watchlist with the ⭐ button."
-      first_task: "Try /analysis on a stock you already own."
+      welcome: "Welcome! Start with /today — it reads your portfolio and gives you a plain-English list of what to do this morning."
+      first_task: "Open /today — your morning coffee companion."
     alert_defaults:
       - name: "SPY drops 5% in a day"
         rule_type: price_pct_change
@@ -119,10 +119,10 @@ personas:
       - market-composite-detail
       - oracle-convergence # multi-lens consensus is advanced
       - adv-experts        # 6 expert agents (need walkthrough first)
-    featured_pages: [/analysis, /evolution, /portfolio, /news]
+    featured_pages: [/today, /analysis, /evolution, /portfolio, /news]
     onboarding:
-      welcome: "Welcome! You're in safe paper-trading mode — no real money, no risk. Start with /analysis on a familiar stock and watch the signal explain itself."
-      first_task: "Run /analysis on AAPL and read the explanations."
+      welcome: "Welcome! You're in safe paper-trading mode — no real money, no risk. Start with /today to see what AlphaDesk thinks you should focus on, then try /analysis on a familiar stock."
+      first_task: "Open /today, then pick a rule that fired and follow the 'Go there' link."
     flags:
       sandbox_mode: true              # explicit "PAPER ONLY" badges everywhere
       explain_mode: true              # "?" buttons on every signal pillar
@@ -228,6 +228,7 @@ personas:
     hidden_pages:
       - /advisor                       # 6-expert qualitative voting irrelevant
       - /scenarios                     # qualitative what-ifs irrelevant
+      - /today                         # plain-English daily prompt not quant's jam
     hidden_cards:
       - pf-reading                     # narrative cards demoted for quant
       - market-reading
@@ -386,6 +387,10 @@ personas:
 # ─────────────────────────────────────────────────────────────────────────
 
 card_id_reference:
+  # /today (Phase 4 R1)
+  - today-header
+  - today-how-it-works
+
   # /portfolio
   - pf-stat-grid
   - pf-reading
