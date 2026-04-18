@@ -230,6 +230,9 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.ndc_sops import ndc_sops_api
     _mount(ndc_sops_api, v1_prefix="/api/v1/ndc/sops")
 
+    from tools.dashboard.api.iqe import iqe_api
+    _mount_inline(iqe_api)   # inline routes: /iqe, /iqe/run
+
     from tools.dashboard.api.canvas_projects import canvas_projects_api
     _mount_inline(canvas_projects_api)   # inline routes: /api/canvas-projects/*
 
