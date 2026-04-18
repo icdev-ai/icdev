@@ -63,7 +63,18 @@ playwright/
 .playwright-mcp/
 
 # Vendored binaries (downloaded via setup, not committed)
-vendor/
+# Use layered rules so vendor/drivers README + .gitkeep files can be tracked
+# while actual binary executables are excluded.
+vendor/*
+!vendor/drivers/
+vendor/drivers/*
+!vendor/drivers/README.md
+!vendor/drivers/msedgedriver/
+vendor/drivers/msedgedriver/*
+!vendor/drivers/msedgedriver/.gitkeep
+!vendor/drivers/chromedriver/
+vendor/drivers/chromedriver/*
+!vendor/drivers/chromedriver/.gitkeep
 # But keep dashboard static vendor (JS/CSS libs for air-gap)
 !tools/dashboard/static/vendor/
 
