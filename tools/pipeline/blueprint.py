@@ -1507,4 +1507,76 @@ def create_pipeline_blueprint():
             return jsonify({"error": "Not found"}), 404
         return jsonify(result)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # PAGE ROUTES — PDC TWIN DASHBOARD
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/twin")
+    @pc_login_required
+    def pc_twin_list():
+        """PDC Twin dashboard — all pipelines with last snapshot."""
+        from tools.pipeline.twin import list_snapshots as _ls
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, name, description, classification, updated_at "
+            "FROM pipelines ORDER BY updated_at DESC"
+        ).fetchall()
+        conn.close()
+        pipelines = []
+        for row in rows:
+            p = row_to_dict(row)
+            snaps = _ls(p["id"])
+            p["last_snapshot"] = snaps[0] if snaps else None
+            p["prev_snapshot"] = snaps[1] if len(snaps) > 1 else None
+            pipelines.append(p)
+        return render_template("pipeline/twin_list.html", pipelines=pipelines)
+
+    @bp.route("/twin/<pipe_id>/delta")
+    @pc_login_required
+    def pc_twin_delta(pipe_id):
+        """PDC Twin diff view — structural delta between two snapshots."""
+        snap_from = request.args.get("from")
+        snap_to = request.args.get("to")
+        if not snap_from or not snap_to:
+            return redirect(f"/devops/twin/{pipe_id}")
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT id, name FROM pipelines WHERE id=?", (pipe_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return redirect("/devops/twin")
+        try:
+            from tools.pipeline.delta import compute_delta
+            delta = compute_delta(snap_from, snap_to)
+        except ValueError as exc:
+            return render_template(
+                "pipeline/twin_delta.html",
+                pipeline=row_to_dict(row),
+                delta=None,
+                error=str(exc),
+                snap_from=snap_from,
+                snap_to=snap_to,
+                gate=None,
+                removed_count=0,
+                added_count=0,
+                modified_count=0,
+            ), 404
+        removed = len(delta["nodes"]["removed"]) + len(delta["edges"]["removed"])
+        added = len(delta["nodes"]["added"]) + len(delta["edges"]["added"])
+        modified = len(delta["nodes"]["modified"]) + len(delta["edges"]["modified"])
+        gate = "fail" if removed > 3 else ("warn" if removed > 0 else "pass")
+        return render_template(
+            "pipeline/twin_delta.html",
+            pipeline=row_to_dict(row),
+            delta=delta,
+            error=None,
+            snap_from=snap_from,
+            snap_to=snap_to,
+            gate=gate,
+            removed_count=removed,
+            added_count=added,
+            modified_count=modified,
+        )
+
     return bp
