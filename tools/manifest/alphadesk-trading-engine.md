@@ -83,3 +83,9 @@
 | Stripe Client | tools/trading/billing/stripe_client.py | Thin wrapper around Stripe SDK (Phase 5B). Lazy-imports `stripe` so /api/billing/* fails soft on air-gap. `ensure_customer()`, `create_checkout_session()`, `create_portal_session()`, `construct_webhook_event()`, `tier_from_price_id()`. Raises `StripeNotInstalled`/`StripeNotConfigured`. | N/A (library) | Stripe session dict / verified event |
 | Stripe Webhook Dispatcher | tools/trading/billing/webhooks.py | Event router for Stripe webhooks (Phase 5B). Handles `customer.subscription.{created,updated,deleted}` and `invoice.payment_{succeeded,failed,finalized}`. Syncs tenant `plan_tier`, records every event in `ad_stripe_events` (audit), sends dunning email on payment failure. Idempotent. | `handle_event(event_dict)` | Result dict |
 
+## AlphaDesk Progression / Gamification (Phase 6.1)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Progression DB | tools/trading/progression/db.py | DDL + CRUD for `ad_user_progression` (level + XP + opt-in flag + paper-trading counters) and `ad_xp_events` (append-only NIST AU, idempotent via UNIQUE(user_id, dedup_key)). | N/A (library; `get_progression`, `append_event`, `apply_xp_delta`, `list_events`, `count_events_today`) | Progression / events dicts |
+| XP Engine | tools/trading/progression/engine.py | Level + XP engine. Hot-reloads `args/xp_rules.yaml` + `args/progression_config.yaml`. `grant_xp()` enforces opt-in policy, daily caps, dedup; promotes level when thresholds cross. `progression_summary()` packs everything for the /progression page. `grant_xp_safe()` never raises — use at hook sites. | `grant_xp(user_id, reason, dedup_key, context, persona, amount_override)` | GrantResult dict |
+

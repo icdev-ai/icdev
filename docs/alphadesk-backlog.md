@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1 shipped)
 
 ---
 
@@ -366,14 +366,17 @@ e.g., a DoD educational tenant might require everyone to graduate).
 engine (could explain *why* a trade was a level-up moment), persona-aware
 UI (each persona could have its own progression curve).
 
-### Phase 6.1 — Level system + progression metrics
-- New schema: `ad_user_progression` (user_id, level, xp, paper_trades_count,
-  paper_pnl_total, paper_max_drawdown, paper_sharpe_window,
-  regime_aware_decisions_count, ...)
-- 4 levels: **Beginner → Intermediate → Advanced → Pro**
-- "XP" earned per: completed analysis, signal acted on, regime-aware
-  decision, alert acknowledged, etc.
-- `/progression` page: current level, XP bar, next-level criteria, history
+### ✅ Phase 6.1 — Level system + progression metrics (DONE 2026-04-18)
+- Schema: `ad_user_progression` (level/xp/opt_in/paper_trades/drawdown/regime_aware_count/level_unlocked_at/live_trading_unlocked_at) + `ad_xp_events` (append-only NIST AU, idempotent via UNIQUE(user_id, dedup_key)).
+- 4 levels in `args/progression_config.yaml`: **Beginner (0) → Intermediate (100) → Advanced (500) → Pro (2000)** — operator-tunable.
+- 11 XP rules in `args/xp_rules.yaml` with daily caps: signal_approved (+15), signal_rejected (+3), order_filled (+10), order_profitable_close (+25), regime_aware_decision (+25), first_profitable_week (+100), survived_drawdown (+50), diversified_portfolio (+30), lesson_completed (+20), scenario_run (+5), alert_acknowledged (+2).
+- `tools/trading/progression/engine.py` — `grant_xp()` idempotent + daily-cap + opt-in aware; `progression_summary()` packs level/XP/next/rules/events for UI; `grant_xp_safe()` never raises so hook sites can't break trading flow.
+- Hooks wired: signal approve/reject, scenario run, lesson complete — all use dedup keys tied to the underlying action ID so replays don't double-award.
+- `/progression` page: level badge + XP counter + 4-level track + XP rules catalog + recent events table + opt-in toggle. Sidebar link under Research group.
+- Persona gating via `args/persona_presets.yaml`: `opt_in_personas` = student/retail/passive (auto-tracked); `opt_out_personas` = quant/pro_trader/advisor/day_trader/family_office (page hidden; user can re-opt-in via Settings card).
+- API: `GET /api/progression`, `GET /api/progression/events`, `POST /api/progression/opt-in`.
+- `ad_xp_events` added to `APPEND_ONLY_TABLES`; registered in `tools/manifest/alphadesk-trading-engine.md`. Coherence passes 14/17 (3 pre-existing warns unrelated to 6.1).
+- **Not in 6.1:** order-fill hook — auto_trader daemon runs without user_id in scope; the `order_filled` rule is defined but awaits a per-user order path (would hook into `/api/orders POST` when that lands, or a reconcile poller).
 
 ### Phase 6.2 — Achievements + badges
 - New schema: `ad_achievements_catalog` (operator-curated) +

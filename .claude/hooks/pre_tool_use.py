@@ -110,6 +110,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_tenant_invitations",
         # AlphaDesk billing (Phase 5B) — Stripe webhook audit (NIST AU; idempotency + forensics)
         "ad_stripe_events",
+        # AlphaDesk progression (Phase 6.1) — XP events audit (NIST AU; idempotency + anti-farming audit)
+        "ad_xp_events",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
