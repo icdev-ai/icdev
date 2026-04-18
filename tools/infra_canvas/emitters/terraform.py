@@ -3,8 +3,9 @@
 
 emit_resource(node, target_csp) -> str
 
-Supported resource types (AWS GovCloud starting set):
-  aws-vpc, aws-subnet, aws-ec2, aws-sg, aws-iam-role
+Supported resource types:
+  AWS GovCloud: aws-vpc, aws-subnet, aws-ec2, aws-sg, aws-iam-role
+  Azure Gov:    azure-vnet, azure-subnet, azure-vm, azure-nsg, azure-key-vault
 """
 
 import re
@@ -15,6 +16,7 @@ Node = dict[str, Any]
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _GOVCLOUD_REGION = "us-gov-west-1"
+_AZURE_GOV_LOCATION = "usgovvirginia"
 _MANAGED_BY = "icdev-terraform-emitter"
 
 # classification values that trigger CUI tag injection
@@ -138,6 +140,110 @@ def _emit_iam_role(node: Node) -> str:
     )
 
 
+# ── Azure Government emitters ─────────────────────────────────────────────────
+
+def _emit_azure_vnet(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "vnet"))
+    label = node.get("label", "vnet")
+    rg = meta.get("resource_group", "rg-default")
+    address_space = meta.get("address_space", "10.0.0.0/8")
+    tags = _tag_block(label, node)
+    return (
+        f'resource "azurerm_virtual_network" "{rid}" {{\n'
+        f'  name                = "{label}"\n'
+        f'  resource_group_name = "{rg}"\n'
+        f'  location            = "{_AZURE_GOV_LOCATION}"\n'
+        f'  address_space       = ["{address_space}"]\n'
+        f'\n{tags}\n}}'
+    )
+
+
+def _emit_azure_subnet(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "subnet"))
+    label = node.get("label", "subnet")
+    rg = meta.get("resource_group", "rg-default")
+    vnet_name = meta.get("virtual_network_name", "main-vnet")
+    address_prefix = meta.get("address_prefix", "10.0.1.0/24")
+    return (
+        f'resource "azurerm_subnet" "{rid}" {{\n'
+        f'  name                 = "{label}"\n'
+        f'  resource_group_name  = "{rg}"\n'
+        f'  virtual_network_name = "{vnet_name}"\n'
+        f'  address_prefixes     = ["{address_prefix}"]\n'
+        f'}}'
+    )
+
+
+def _emit_azure_vm(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "vm"))
+    label = node.get("label", "vm")
+    rg = meta.get("resource_group", "rg-default")
+    size = meta.get("size", "Standard_D2s_v3")
+    admin_user = meta.get("admin_username", "azureuser")
+    nic_id = meta.get("network_interface_id", "nic-placeholder")
+    tags = _tag_block(label, node)
+    return (
+        f'resource "azurerm_linux_virtual_machine" "{rid}" {{\n'
+        f'  name                  = "{label}"\n'
+        f'  resource_group_name   = "{rg}"\n'
+        f'  location              = "{_AZURE_GOV_LOCATION}"\n'
+        f'  size                  = "{size}"\n'
+        f'  admin_username        = "{admin_user}"\n'
+        f'  network_interface_ids = ["{nic_id}"]\n'
+        f'\n'
+        f'  os_disk {{\n'
+        f'    caching              = "ReadWrite"\n'
+        f'    storage_account_type = "Premium_LRS"\n'
+        f'  }}\n'
+        f'\n'
+        f'  source_image_reference {{\n'
+        f'    publisher = "Canonical"\n'
+        f'    offer     = "UbuntuServer"\n'
+        f'    sku       = "18.04-LTS"\n'
+        f'    version   = "latest"\n'
+        f'  }}\n'
+        f'\n{tags}\n}}'
+    )
+
+
+def _emit_azure_nsg(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "nsg"))
+    label = node.get("label", "nsg")
+    rg = meta.get("resource_group", "rg-default")
+    tags = _tag_block(label, node)
+    return (
+        f'resource "azurerm_network_security_group" "{rid}" {{\n'
+        f'  name                = "{label}"\n'
+        f'  resource_group_name = "{rg}"\n'
+        f'  location            = "{_AZURE_GOV_LOCATION}"\n'
+        f'\n{tags}\n}}'
+    )
+
+
+def _emit_azure_key_vault(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "kv"))
+    label = node.get("label", "kv")
+    rg = meta.get("resource_group", "rg-default")
+    tenant_id = meta.get("tenant_id", "00000000-0000-0000-0000-000000000000")
+    sku = meta.get("sku_name", "premium")
+    tags = _tag_block(label, node)
+    return (
+        f'resource "azurerm_key_vault" "{rid}" {{\n'
+        f'  name                      = "{label}"\n'
+        f'  resource_group_name       = "{rg}"\n'
+        f'  location                  = "{_AZURE_GOV_LOCATION}"\n'
+        f'  tenant_id                 = "{tenant_id}"\n'
+        f'  sku_name                  = "{sku}"\n'
+        f'  enable_rbac_authorization = true\n'
+        f'\n{tags}\n}}'
+    )
+
+
 # ── Dispatch tables ───────────────────────────────────────────────────────────
 
 _AWS_TYPE_MAP: dict[str, str] = {
@@ -148,17 +254,32 @@ _AWS_TYPE_MAP: dict[str, str] = {
     "aws-iam-role": "iam_role",
 }
 
+_AZURE_GOV_TYPE_MAP: dict[str, str] = {
+    "azure-vnet": "azure_vnet",
+    "azure-subnet": "azure_subnet",
+    "azure-vm": "azure_vm",
+    "azure-nsg": "azure_nsg",
+    "azure-key-vault": "azure_key_vault",
+}
+
 _EMITTERS: dict[str, Any] = {
     "vpc": _emit_vpc,
     "subnet": _emit_subnet,
     "instance": _emit_instance,
     "security_group": _emit_security_group,
     "iam_role": _emit_iam_role,
+    "azure_vnet": _emit_azure_vnet,
+    "azure_subnet": _emit_azure_subnet,
+    "azure_vm": _emit_azure_vm,
+    "azure_nsg": _emit_azure_nsg,
+    "azure_key_vault": _emit_azure_key_vault,
 }
 
 _CSP_TYPE_MAPS: dict[str, dict[str, str]] = {
     "aws": _AWS_TYPE_MAP,
     "aws-govcloud": _AWS_TYPE_MAP,
+    "azure": _AZURE_GOV_TYPE_MAP,
+    "azure-govcloud": _AZURE_GOV_TYPE_MAP,
 }
 
 
@@ -172,7 +293,8 @@ def emit_resource(node: Node, target_csp: str = "aws-govcloud") -> str:
               ``metadata``.  ``metadata`` may include ``classification``
               (e.g. ``"CUI"``) to inject compliance tag blocks.
         target_csp: Target cloud provider.  Supported: ``"aws"``,
-                    ``"aws-govcloud"`` (both map to AWS GovCloud HCL).
+                    ``"aws-govcloud"`` (AWS GovCloud HCL); ``"azure"``,
+                    ``"azure-govcloud"`` (Azure Government HCL).
 
     Returns:
         HCL string for the resource block.

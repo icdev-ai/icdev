@@ -1,13 +1,19 @@
 # CUI // SP-CTI
 """Tests for tools/infra_canvas/emitters/terraform.py.
 
-6 cases:
-  1. emit_resource produces valid HCL for aws-vpc
-  2. emit_resource produces valid HCL for aws-subnet
-  3. emit_resource produces valid HCL for aws-ec2
-  4. emit_resource produces valid HCL for aws-sg
-  5. emit_resource produces valid HCL for aws-iam-role + CUI tag injection
-  6. terraform validate smoke (skipped when terraform is not in PATH)
+12 cases:
+  1.  emit_resource produces valid HCL for aws-vpc
+  2.  emit_resource produces valid HCL for aws-subnet
+  3.  emit_resource produces valid HCL for aws-ec2
+  4.  emit_resource produces valid HCL for aws-sg
+  5.  emit_resource produces valid HCL for aws-iam-role + CUI tag injection
+  6.  terraform validate smoke — AWS GovCloud (skipped when terraform is not in PATH)
+  7.  emit_resource produces valid HCL for azure-vnet
+  8.  emit_resource produces valid HCL for azure-subnet
+  9.  emit_resource produces valid HCL for azure-vm
+  10. emit_resource produces valid HCL for azure-nsg
+  11. emit_resource produces valid HCL for azure-key-vault + CUI tag injection
+  12. terraform validate smoke — Azure Gov (skipped when terraform is not in PATH)
 """
 
 import shutil
@@ -138,6 +144,153 @@ def test_terraform_validate_smoke(tmp_path: Path):
     (tmp_path / "provider.tf").write_text(provider_tf, encoding="utf-8")
 
     hcl_blocks = [emit_resource(n, "aws-govcloud") for n in nodes]
+    (tmp_path / "main.tf").write_text("\n\n".join(hcl_blocks) + "\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [TERRAFORM_BIN, "validate"],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, (
+        f"terraform validate failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+
+
+# ── Case 7: Azure VNet ────────────────────────────────────────────────────────
+
+def test_emit_azure_vnet():
+    node = _node(
+        "n-vnet-01",
+        "azure-vnet",
+        "main-vnet",
+        resource_group="rg-govcloud",
+        address_space="10.10.0.0/8",
+    )
+    hcl = emit_resource(node, "azure-govcloud")
+
+    assert 'resource "azurerm_virtual_network" "n_vnet_01"' in hcl
+    assert 'name                = "main-vnet"' in hcl
+    assert 'location            = "usgovvirginia"' in hcl
+    assert 'address_space       = ["10.10.0.0/8"]' in hcl
+    assert 'resource_group_name = "rg-govcloud"' in hcl
+
+
+# ── Case 8: Azure Subnet ──────────────────────────────────────────────────────
+
+def test_emit_azure_subnet():
+    node = _node(
+        "n-asub-01",
+        "azure-subnet",
+        "private-subnet",
+        resource_group="rg-govcloud",
+        virtual_network_name="main-vnet",
+        address_prefix="10.10.1.0/24",
+    )
+    hcl = emit_resource(node, "azure-govcloud")
+
+    assert 'resource "azurerm_subnet" "n_asub_01"' in hcl
+    assert 'name                 = "private-subnet"' in hcl
+    assert 'virtual_network_name = "main-vnet"' in hcl
+    assert 'address_prefixes     = ["10.10.1.0/24"]' in hcl
+
+
+# ── Case 9: Azure VM ──────────────────────────────────────────────────────────
+
+def test_emit_azure_vm():
+    node = _node(
+        "n-vm-01",
+        "azure-vm",
+        "web-server",
+        resource_group="rg-govcloud",
+        size="Standard_D4s_v3",
+        admin_username="govadmin",
+    )
+    hcl = emit_resource(node, "azure-govcloud")
+
+    assert 'resource "azurerm_linux_virtual_machine" "n_vm_01"' in hcl
+    assert 'name                  = "web-server"' in hcl
+    assert 'location              = "usgovvirginia"' in hcl
+    assert 'size                  = "Standard_D4s_v3"' in hcl
+    assert 'admin_username        = "govadmin"' in hcl
+    assert 'os_disk' in hcl
+    assert 'source_image_reference' in hcl
+
+
+# ── Case 10: Azure NSG ────────────────────────────────────────────────────────
+
+def test_emit_azure_nsg():
+    node = _node(
+        "n-nsg-01",
+        "azure-nsg",
+        "web-nsg",
+        resource_group="rg-govcloud",
+    )
+    hcl = emit_resource(node, "azure-govcloud")
+
+    assert 'resource "azurerm_network_security_group" "n_nsg_01"' in hcl
+    assert 'name                = "web-nsg"' in hcl
+    assert 'location            = "usgovvirginia"' in hcl
+    assert 'resource_group_name = "rg-govcloud"' in hcl
+
+
+# ── Case 11: Azure Key Vault + CUI tag injection ──────────────────────────────
+
+def test_emit_azure_key_vault_with_cui_tags():
+    node = _node(
+        "n-kv-01",
+        "azure-key-vault",
+        "gov-key-vault",
+        resource_group="rg-govcloud",
+        tenant_id="aaaabbbb-cccc-dddd-eeee-ffffgggghhhh",
+        sku_name="premium",
+        classification="CUI//SP-CTI",
+    )
+    hcl = emit_resource(node, "azure-govcloud")
+
+    assert 'resource "azurerm_key_vault" "n_kv_01"' in hcl
+    assert 'name                      = "gov-key-vault"' in hcl
+    assert 'location                  = "usgovvirginia"' in hcl
+    assert 'sku_name                  = "premium"' in hcl
+    assert 'enable_rbac_authorization = true' in hcl
+    assert 'Classification = "CUI//SP-CTI"' in hcl
+    assert 'DataHandling   = "CUI//SP-CTI"' in hcl
+
+
+# ── Case 12: terraform validate smoke — Azure Gov ─────────────────────────────
+
+@pytest.mark.skipif(TERRAFORM_BIN is None, reason="terraform binary not in PATH")
+def test_terraform_validate_azure_smoke(tmp_path: Path):
+    """All 5 Azure Gov resource types combined into a smoke project pass terraform validate."""
+    nodes = [
+        _node("n-vnet-s", "azure-vnet", "smoke-vnet"),
+        _node("n-asub-s", "azure-subnet", "smoke-subnet"),
+        _node("n-vm-s", "azure-vm", "smoke-vm"),
+        _node("n-nsg-s", "azure-nsg", "smoke-nsg"),
+        _node("n-kv-s", "azure-key-vault", "smoke-kv"),
+    ]
+
+    provider_tf = textwrap.dedent("""\
+        terraform {
+          required_providers {
+            azurerm = {
+              source  = "hashicorp/azurerm"
+              version = "~> 3.0"
+            }
+          }
+        }
+
+        provider "azurerm" {
+          features {}
+          environment                = "usgovernment"
+          skip_provider_registration = true
+        }
+    """)
+
+    (tmp_path / "provider.tf").write_text(provider_tf, encoding="utf-8")
+
+    hcl_blocks = [emit_resource(n, "azure-govcloud") for n in nodes]
     (tmp_path / "main.tf").write_text("\n\n".join(hcl_blocks) + "\n", encoding="utf-8")
 
     result = subprocess.run(
