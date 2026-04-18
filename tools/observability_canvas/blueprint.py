@@ -1176,4 +1176,129 @@ def create_observability_blueprint():
         _audit("runbook_execute", details=runbook_id)
         return jsonify(rb)
 
+    # ====================================================================
+    # MITRE ATT&CK MATRIX ROUTES
+    # ====================================================================
+
+    @bp.route("/mitre")
+    @oc_login_required
+    def oc_mitre_matrix():
+        """MITRE ATT&CK matrix with coverage colors. Optional ?design_id= for scoped coverage."""
+        from tools.observability_canvas.mitre_loader import load_techniques
+
+        techniques = load_techniques()
+
+        _catalog_path = _ICDEV_ROOT / "context" / "mitre" / "enterprise.json"
+        tactic_name_map: dict = {}
+        try:
+            with open(_catalog_path, encoding="utf-8") as _fh:
+                _cat = json.load(_fh)
+            tactic_name_map = {t["id"]: t["name"] for t in _cat.get("tactics", [])}
+        except Exception:
+            pass
+
+        tactics_order = list(tactic_name_map.keys())
+        tactics_dict: dict = {}
+        for tech in techniques:
+            for tactic_id in tech.tactic_ids:
+                if tactic_id not in tactics_dict:
+                    tactics_dict[tactic_id] = {
+                        "id": tactic_id,
+                        "name": tactic_name_map.get(tactic_id, tactic_id),
+                        "techniques": [],
+                    }
+                tactics_dict[tactic_id]["techniques"].append(
+                    {
+                        "id": tech.id,
+                        "name": tech.name,
+                        "is_sub": tech.is_sub_technique,
+                        "parent_id": tech.parent_id,
+                    }
+                )
+
+        tactics = [tactics_dict[tid] for tid in tactics_order if tid in tactics_dict]
+        for tid, tactic in tactics_dict.items():
+            if tid not in tactics_order:
+                tactics.append(tactic)
+
+        design_id = request.args.get("design_id", "")
+        coverage: dict = {}
+        if design_id:
+            try:
+                with get_connection() as conn:
+                    row = conn.execute(
+                        "SELECT graph_json FROM observability_designs WHERE id=?",
+                        (design_id,),
+                    ).fetchone()
+                if row:
+                    graph_raw = row["graph_json"]
+                    graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+                    mitre = compute_mitre_detection_coverage(graph_data)
+                    for gap_tid in mitre.get("technique_gaps", []):
+                        coverage[gap_tid] = "gap"
+            except Exception:
+                pass
+
+        return render_template(
+            "observability_canvas/mitre.html",
+            tactics=tactics,
+            coverage=coverage,
+            design_id=design_id,
+        )
+
+    @bp.route("/mitre/sigma", methods=["POST"])
+    @oc_login_required
+    def oc_mitre_sigma():
+        """Generate Sigma rule(s) for a MITRE technique + signal source list."""
+        from tools.observability_canvas.sigma_generator import generate_rules
+
+        data = request.get_json(force=True, silent=True) or {}
+        tid = (data.get("tid") or "").strip()
+        sources = data.get("sources") or []
+
+        if not tid:
+            return jsonify({"error": "tid is required"}), 400
+        if not isinstance(sources, list) or not sources:
+            return jsonify({"error": "sources must be a non-empty list"}), 400
+
+        pairs = [(tid, src) for src in sources if isinstance(src, str) and src.strip()]
+        if not pairs:
+            return jsonify({"error": "No valid (tid, source) pairs"}), 400
+
+        rules = generate_rules(pairs)
+        combined = "\n---\n".join(rules)
+
+        return jsonify(
+            {
+                "tid": tid,
+                "rule_count": len(rules),
+                "rules": rules,
+                "sigma_yaml": combined,
+            }
+        )
+
+    @bp.route("/mitre/<tid>")
+    @oc_login_required
+    def oc_mitre_detail(tid):
+        """Technique detail: description, sub-techniques, Sigma generator form."""
+        from tools.observability_canvas.mitre_loader import load_techniques
+        from tools.observability_canvas.sigma_generator import _SRC_LOGSOURCE
+
+        techniques = load_techniques()
+        technique = next((t for t in techniques if t.id == tid), None)
+        if not technique:
+            from flask import abort
+
+            abort(404)
+
+        subs = [t for t in techniques if t.parent_id == tid]
+        sigma_sources = sorted(_SRC_LOGSOURCE.keys())
+
+        return render_template(
+            "observability_canvas/mitre_detail.html",
+            technique=technique,
+            subs=subs,
+            sigma_sources=sigma_sources,
+        )
+
     return bp
