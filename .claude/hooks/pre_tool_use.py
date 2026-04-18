@@ -356,6 +356,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_audit",
         # Passive CVE Watcher — ATO continuous monitoring (NIST SI-4, CA-7)
         "cve_passive_watch_log",
+        # SDC Attack Path Twin — append-only attack graph (NIST AU; migration 028)
+        "attack_graph_nodes",
+        "attack_graph_edges",
     ]
 
     if tool_name == "Bash":
