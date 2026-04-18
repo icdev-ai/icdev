@@ -108,6 +108,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_credential_audit",
         # AlphaDesk tenancy — invitations are append-only (revoked_at + accepted_at flips, never DELETE)
         "ad_tenant_invitations",
+        # AlphaDesk billing (Phase 5B) — Stripe webhook audit (NIST AU; idempotency + forensics)
+        "ad_stripe_events",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",

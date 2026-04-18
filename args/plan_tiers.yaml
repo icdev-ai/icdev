@@ -1,9 +1,12 @@
 # CUI // SP-CTI
-# AlphaDesk plan tier definitions — Phase 5A.
+# AlphaDesk plan tier definitions — Phase 5A/5B.
 #
 # Hot-reloaded via file-mtime cache (tools/trading/billing/tiers.py).
 # Operators change tier assignments via admin CLI or /billing page.
 # Stripe wiring (Phase 5B) reads `stripe_price_id` to map paid upgrades.
+# Resolution order for Checkout: tiers.<slug>.stripe_price_id (here) →
+#   env STRIPE_PRICE_ID_<SLUG>. Leave YAML as null to let ops swap keys
+#   without editing this file. Free tier has no price (direct set).
 #
 # Quota semantics:
 #   - `null` means "unlimited"
