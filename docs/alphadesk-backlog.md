@@ -21,22 +21,17 @@ voice config (rookie/pm/technical/standard). Wired into all 11 Reading
 endpoints. Rookie voice strips ratio jargon (sharpe/sortino/etc) and
 rephrases technical terms.
 
-### Phase 1C — Persona alert-default seeding + flags consumers (NEXT)
-- Seed persona's `alert_defaults` into `ad_alert_rules` on first persona pick
-  (skip duplicates; pre-suggest via "+ Add suggested rules" button so we don't
-  silently spam alerts that don't exist yet — many use `WATCHLIST_ANY`,
-  `PORTFOLIO_DRAWDOWN` placeholder subjects that the evaluator can't resolve).
-- Flag consumers (read `window.AD_PROFILE.flags` in JS):
-  - `sandbox_mode` (student) → "PAPER ONLY" badge in nav + page headers
-  - `requires_realtime` (day_trader) → banner warning "real-time tick infra
-    ships in Phase 6"
-  - `requires_multi_asset` (family_office) → banner "alts/multi-asset ships
-    in Phase 6"
-  - `compact_layout` (quant) → tighter padding in CSS
-  - `api_first` (quant) → surface `/api/.../export.csv` links on every card
-  - `keyboard_shortcuts_visible` (day_trader) → hot-key cheat sheet card
-  - `explain_mode`, `glossary_auto_tooltips` (student) → already partly handled
-    by Reading-voice add_glossary; finish wiring to data-help tooltips
+### ✅ Phase 1C — Persona alert-default seeding + flags consumers (DONE — shipped in a prior session; backlog was stale)
+- **Suggested rules card** on `/alerts` (persona pill + "+ Add selected" button). Uses `GET /api/alerts/suggested` which tags each rule with `evaluator_supports: bool` — placeholder-subject rules (WATCHLIST_ANY, PORTFOLIO_DRAWDOWN, etc.) are rendered unchecked-by-default with a ⚠ "inert until Phase 4" warning so users know not to expect them to fire. `POST /api/alerts/suggested/seed` inserts selected rules into `ad_alert_rules`; duplicate names are skipped.
+- **Flag consumer framework** in `base.html` — `window.AD_PROFILE.flags` populated from profile; `applyPersonaFlags()` sets `body[data-persona-flag-X="1"]` attributes that `trading.css` consumes:
+  - `sandbox_mode` (student) → PAPER ONLY badge on every page-header h1 via `::after`
+  - `compact_layout` (quant) → tighter padding on cards, stat blocks, data tables
+  - `api_first` (quant) → `.btn-export` elements get a highlight border
+  - `requires_realtime` (day_trader) → dismissible banner pointing at Phase 7+ specialized infra
+  - `requires_multi_asset` (family_office) → dismissible banner pointing at Phase 7+ alts / tax-aware reporting
+- **Deferred inside 1C (intentionally):**
+  - `keyboard_shortcuts_visible` hot-key card — blocked on the hot-key engine itself (Phase 7+ day-trader specialized infra)
+  - Virtual-subject evaluator (WATCHLIST_ANY, PORTFOLIO_DRAWDOWN resolution) — substantive alerts/evaluator work; the suggestion UI warns rather than fires for these
 
 ---
 
