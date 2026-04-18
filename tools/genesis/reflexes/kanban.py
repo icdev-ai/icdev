@@ -3861,23 +3861,40 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     # 3. Don't promote new tasks if claude is already running
     #    BUT first clean up stale entries — if the task was marked done/backlog
-    #    externally (e.g., Claude CLI self-reported via HTTP POST), the
-    #    _running dict may hold an orphaned Popen reference that blocks
-    #    all future promotions forever.
+    #    externally (e.g., Claude CLI self-reported via HTTP POST, or the
+    #    subprocess died before completing), the _running dict may hold an
+    #    orphaned Popen reference that blocks all future promotions forever.
+    #
+    # 2026-04-17 silent-cleanup fix: previously this path cleaned up the
+    # in-memory dict + worktree silently — no failure_count bump, no
+    # last_failure_reason, no Telegram alert. dt-iqe-11 became invisible
+    # because the agent subprocess died (or moved the task externally) and
+    # neither the user nor failure_triage could tell anything had gone
+    # wrong. We now treat every stale cleanup as a first-class unverified
+    # failure so the normal observability pipeline fires.
     if _running:
-        stale_ids = []
+        stale_info: list[tuple[str, str]] = []
         for tid, proc in list(_running.items()):
             try:
                 task_conn = get_connection()
-                row = task_conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (tid,)).fetchone()
+                row = task_conn.execute(
+                    "SELECT status FROM kanban_tasks WHERE id = ?", (tid,),
+                ).fetchone()
                 task_conn.close()
                 if row and dict(row)["status"] not in ("in_progress", "scheduled"):
-                    # Task was completed/moved externally — clean up
-                    stale_ids.append(tid)
+                    # Task was completed/moved externally — clean up. The
+                    # cause is most often: agent subprocess died before
+                    # completion (network/API hiccup, OS kill), or agent
+                    # self-reported via the dashboard API. We can't tell
+                    # which without the subprocess's own log, so the reason
+                    # string names both possibilities.
+                    cur_status = dict(row)["status"]
+                    stale_info.append((tid, cur_status))
             except Exception:
                 pass
-        for tid in stale_ids:
-            print(f"  Kanban: cleaning up stale _running entry for {tid}")
+        for tid, cur_status in stale_info:
+            print(f"  Kanban: cleaning up stale _running entry for {tid} "
+                  f"(DB status={cur_status})")
             proc = _running.pop(tid, None)
             _dispatch_times.pop(tid, None)
             if proc:
@@ -3888,6 +3905,94 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if tid in _worktrees:
                 _cleanup_worktree(tid)
                 del _worktrees[tid]
+
+            # Record the failure in the DB so it's visible to operators +
+            # failure_triage. If the task is already in 'done' we leave it
+            # alone (it legitimately completed and self-reported).
+            if cur_status != "done":
+                reason = (
+                    f"silent-cleanup: claude CLI subprocess went stale mid-run "
+                    f"(DB moved to {cur_status!r} without going through the "
+                    f"verification gate). Agent likely died before completion "
+                    f"or self-reported via an external path."
+                )
+                _record_failure_and_maybe_flag(tid, reason)
+                # Bump failure count + persist reason explicitly so
+                # failure_triage's recency window picks it up.
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    _fc_conn = get_connection()
+                    _fc_conn.execute(
+                        "UPDATE kanban_tasks SET "
+                        "  last_failure_reason = ?, "
+                        "  last_failure_at = ?, "
+                        "  updated_at = ? "
+                        "WHERE id = ?",
+                        (reason, now_iso, now_iso, tid),
+                    )
+                    _fc_conn.commit()
+                    _fc_conn.close()
+                except Exception as _fc_exc:
+                    logger.warning(
+                        "silent-cleanup failure-write failed for %s: %s",
+                        tid, _fc_exc,
+                    )
+
+                # Build a task dict for the notification channel.
+                task_dict = {"id": tid, "title": tid}
+                try:
+                    _tc = get_connection()
+                    _tr = _tc.execute(
+                        "SELECT title, task_type, priority FROM kanban_tasks "
+                        "WHERE id = ?", (tid,),
+                    ).fetchone()
+                    _tc.close()
+                    if _tr:
+                        _tr_d = dict(_tr)
+                        task_dict = {
+                            "id": tid,
+                            "title": _tr_d.get("title") or tid,
+                            "task_type": _tr_d.get("task_type"),
+                            "priority": _tr_d.get("priority"),
+                        }
+                except Exception:
+                    pass
+
+                # Fire the normal failed-task notification so Telegram
+                # surfaces it just like any other failure.
+                try:
+                    _send_notification(task_dict, event="failed")
+                except Exception as _sn_exc:
+                    logger.warning(
+                        "silent-cleanup notification failed for %s: %s",
+                        tid, _sn_exc,
+                    )
+                # And emit a clear Telegram line with the reason — this is
+                # the user's visible signal that the subprocess died
+                # without completing.
+                try:
+                    from tools.notifications.adapters.telegram import (
+                        send as tg_send,
+                    )
+                    tg_send(
+                        f"SILENT-CLEANUP: {task_dict.get('title', tid)[:60]}",
+                        f"Task returned to backlog. Reason: {reason}",
+                        severity="warning",
+                    )
+                except Exception:
+                    pass
+
+                # Hand off to the self_debug reflex — it tracks recurrences
+                # across runs and will quarantine if the signature repeats.
+                try:
+                    from tools.workflow.self_debug import check_and_diagnose
+                    work_dir = str(BASE_DIR)
+                    check_and_diagnose(tid, reason, work_dir)
+                except Exception as _sd_exc:
+                    logger.warning(
+                        "silent-cleanup self_debug call failed for %s: %s",
+                        tid, _sd_exc,
+                    )
 
     if _running:
         print(f"  Kanban: {len(_running)} task(s) executing in claude, waiting...")
