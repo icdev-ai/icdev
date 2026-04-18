@@ -197,6 +197,102 @@ def idc_remediation_page(design_id):
         conn.close()
 
 
+# ── IDC Twin Dashboard ───────────────────────────────────────────────────────
+
+_CSP_PREFIX_MAP = {
+    "aws-": "AWS",
+    "az-": "Azure",
+    "gcp-": "GCP",
+    "oci-": "OCI",
+    "ibm-": "IBM",
+    "op-": "On-Prem",
+    "iac-": "IaC",
+}
+
+
+def _csp_from_node_type(ntype: str) -> str:
+    for prefix, csp in _CSP_PREFIX_MAP.items():
+        if ntype.startswith(prefix):
+            return csp
+    return "Other"
+
+
+def _parse_csp_counts(graph_json: str) -> dict:
+    counts: dict[str, int] = {}
+    try:
+        graph = json.loads(graph_json)
+        for node in graph.get("nodes", []):
+            csp = _csp_from_node_type(node.get("type", ""))
+            counts[csp] = counts.get(csp, 0) + 1
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return counts
+
+
+@infra_bp.route("/twin")
+def twin_dashboard():
+    """IDC Twin dashboard — latest snapshot per project with CSP resource counts and violations."""
+    conn = _get_conn()
+    try:
+        designs = conn.execute(
+            "SELECT id, name, description, classification, updated_at "
+            "FROM infra_designs ORDER BY updated_at DESC"
+        ).fetchall()
+
+        projects = []
+        for row in designs:
+            d = dict(row)
+            design_id = d["id"]
+
+            snap_row = conn.execute(
+                "SELECT id, version_number, change_summary, created_at, graph_json "
+                "FROM idc_versions WHERE design_id = ? ORDER BY version_number DESC LIMIT 1",
+                (design_id,),
+            ).fetchone()
+
+            if snap_row:
+                snap = dict(snap_row)
+                graph_json = snap.pop("graph_json", "{}")
+            else:
+                snap = None
+                base = conn.execute(
+                    "SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)
+                ).fetchone()
+                graph_json = dict(base)["graph_json"] if base else "{}"
+
+            csp_counts = _parse_csp_counts(graph_json)
+
+            assessment_row = conn.execute(
+                "SELECT findings_json, score, created_at FROM idc_assessments "
+                "WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",
+                (design_id,),
+            ).fetchone()
+
+            violations: list = []
+            score = None
+            if assessment_row:
+                ar = dict(assessment_row)
+                score = ar.get("score")
+                try:
+                    findings = json.loads(ar.get("findings_json", "[]"))
+                    violations = [f for f in findings if isinstance(f, dict)]
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            projects.append({
+                "design": d,
+                "snapshot": snap,
+                "csp_counts": csp_counts,
+                "violations": violations,
+                "violation_count": len(violations),
+                "score": score,
+            })
+
+        return render_template("infra_canvas/twin.html", projects=projects)
+    finally:
+        conn.close()
+
+
 # ── IaC Emit Page ─────────────────────────────────────────────────────────────
 
 # Valid combinations copied from emit.py constants
