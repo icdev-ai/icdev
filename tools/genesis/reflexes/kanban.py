@@ -3104,6 +3104,40 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                 except Exception:
                     pass
             if not found:
+                # Python-based fallback: search worktree directory directly.
+                # git grep may fail when the branch is checked out in a
+                # worktree (stale process state, PATH issues, POSIX ERE
+                # engine differences). Reading files with Python is robust.
+                import re as _re
+                _py_pat = _re.compile(
+                    rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{re.escape(table_name)}\b",
+                    _re.IGNORECASE,
+                )
+                for _root in [
+                    BASE_DIR / ".tmp" / "worktrees" / task_id,
+                    BASE_DIR,
+                ]:
+                    if found:
+                        break
+                    for _sub in ("tools/db", "tools"):
+                        _d = _root / _sub
+                        if not _d.is_dir():
+                            continue
+                        for _ext in ("*.py", "*.sql"):
+                            for _fp in _d.rglob(_ext):
+                                try:
+                                    if _py_pat.search(
+                                        _fp.read_text(encoding="utf-8", errors="replace")
+                                    ):
+                                        found = True
+                                        break
+                                except OSError:
+                                    continue
+                            if found:
+                                break
+                        if found:
+                            break
+            if not found:
                 return False, (
                     f"SPECIFIC CHECK FAILED: orphan_db_table task for "
                     f"'{table_name}' but no CREATE TABLE statement found "
