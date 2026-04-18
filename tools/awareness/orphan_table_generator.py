@@ -703,6 +703,14 @@ _KNOWN_SCHEMAS: Dict[str, List[Tuple[str, str]]] = {
         ("last_vacuum", "TEXT"),
         ("last_analyze", "TEXT"),
     ],
+    "pg_training_pair_sources": [
+        ("id", "TEXT PRIMARY KEY"),
+        ("source_type", "TEXT NOT NULL"),
+        ("source_id", "TEXT NOT NULL"),
+        ("pair_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("content_hash", "TEXT NOT NULL"),
+        ("created_at", "TEXT"),
+    ],
     "posts": [
         ("id", "TEXT PRIMARY KEY"),
         ("title", "TEXT DEFAULT ''"),

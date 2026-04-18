@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+# AlphaDesk challenge sandbox config — Phase 6.3.5.
+#
+# Each active attempt gets its own isolated "sandbox" paper portfolio.
+# Real paper portfolio (/portfolio) is never touched — the user can
+# experiment freely without risk to their main paper track record.
+#
+# Hot-reloaded via file-mtime cache (tools/trading/challenges/sandbox_engine.py).
+#
+# Per-challenge starting_cash override lives in args/challenges_catalog.yaml
+# under `starting_cash_usd:` (optional; falls back to `default_starting_cash_usd`).
+
+_schema_version: 1
+
+# Default seed cash when a sandbox is created. $100k is the standard
+# paper-trading convention and matches the live paper portfolio default.
+default_starting_cash_usd: 100000
+
+# Market-order fill behavior. MVP is pure market-at-quote with no
+# slippage or commissions. Tuning these later lets operators add realism.
+fill_policy:
+  order_type: market   # only "market" is implemented; limit/stop deferred
+  slippage_bps: 0      # basis points against the trade direction (deferred)
+  commission_usd: 0    # flat commission (deferred)
+
+# Safety rails — prevent user footguns.
+limits:
+  max_position_pct: 100  # max % of portfolio a single position can be
+                          # (100 = no cap; lower this if operators want
+                          # to enforce diversification via code)
+  allow_short_sell: false # 6.3.5 is long-only
+  min_order_usd: 0        # minimum order size (0 = no floor)

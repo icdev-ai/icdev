@@ -114,6 +114,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_xp_events",
         # AlphaDesk progression (Phase 6.2) — earned badges (NIST AU; badges never un-award)
         "ad_user_achievements",
+        # AlphaDesk challenges (Phase 6.3.5) — sandbox order fills (NIST AU; full trade audit)
+        "ad_sandbox_orders",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",

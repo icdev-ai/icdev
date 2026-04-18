@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 shipped)
 
 ---
 
@@ -401,6 +401,17 @@ UI (each persona could have its own progression curve).
 - API: `GET /api/challenges`, `POST /api/challenges/<id>/start`, `POST /api/challenges/attempts/<id>/abandon`.
 - Registered in `tools/manifest/alphadesk-trading-engine.md`. Coherence gate passes 14/17 (3 pre-existing warns unrelated). Verified end-to-end — start → deadline + snapshot captured → duplicate-start blocked → evaluate → abandon → summary reflects state.
 - **Deferred from 6.3 (documented):** sandboxed paper portfolio per attempt (backlog called for this; 6.3 MVP uses start-snapshot deltas on the live paper portfolio — simpler, works for all 5 predicate types without duplicating the positions/orders stack). "Continuously held" precision for hold_for_days uses current-state check (not day-by-day sweep); if operator asks for true continuity, layer a daily snapshot sweep in 6.3.5.
+
+### ✅ Phase 6.3.5 — Sandboxed paper portfolios per attempt (DONE 2026-04-18)
+- 3 new tables — `ad_sandbox_portfolios` (1:1 with attempt, mutable cash+status+starting_spy_price), `ad_sandbox_positions` (mutable qty/avg_cost/market_value per (attempt, ticker)), `ad_sandbox_orders` (append-only NIST AU — every fill).
+- `tools/trading/challenges/sandbox_db.py` — CRUD for all three tables. Positions use UNIQUE(attempt_id, ticker); orders append-only.
+- `tools/trading/challenges/sandbox_engine.py` — `ensure_sandbox()` seeds $100k cash (operator-tunable via `args/challenges_sandbox_config.yaml` + per-challenge override) + freezes starting SPY price. `place_order()` fills market orders at live `fetch_latest_quote()` (zero slippage, zero fees, long-only MVP); validates cash + holdings; uses weighted-avg cost basis on buys. `sandbox_snapshot()` mark-to-markets positions on read + returns cash/total_value/return_pct/unrealized_pnl/benchmark_edge.
+- `challenges/engine.py` refactored: `_current_state()` resolves sandbox first, falls back to live-paper snapshot for pre-6.3.5 attempts (backwards compat). `_start_reference()` resolves starting-value + starting-SPY from sandbox (preferred) or legacy JSON snapshot. `start_attempt()` provisions the sandbox; `abandon_attempt()` + `close_attempt()` archive it.
+- Predicates now evaluate against sandbox (except scenario_completion, which stays action-based). `holdings_whitelist` now correctly fails only when the user buys outside the whitelist *inside* the sandbox — their live account can hold anything.
+- UI: /challenges active-attempt cards gain a **sandbox summary strip** (Sandbox total / Cash / Positions / Return %) and a collapsible **Trade panel** — mark-to-market position table, buy/sell form (market orders, auto-uppercased ticker), recent orders log. Uses `/api/challenges/attempts/<id>/sandbox` + `/api/challenges/attempts/<id>/orders`.
+- Config: `args/challenges_sandbox_config.yaml` — default_starting_cash_usd, fill_policy (market/slippage/commission — slippage+commission deferred), limits (max_position_pct, allow_short_sell=false).
+- `ad_sandbox_orders` added to `APPEND_ONLY_TABLES`; manifest shard updated. Coherence 14/17. Smoke test verified buy/sell/validation/archive flow end-to-end.
+- **Out of scope for 6.3.5:** limit/stop orders, short selling, slippage + commission model, daily-reconcile poller (mark-to-market happens on every snapshot read — fresh enough for the UI refresh cadence). Extension points are left in the fill_policy config for a follow-up.
 
 ### Phase 6.4 — Multi-team competitions + leaderboards
 - New schema: `ad_leagues`, `ad_league_members`, `ad_league_standings`
