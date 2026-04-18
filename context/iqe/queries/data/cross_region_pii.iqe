@@ -1,0 +1,11 @@
+# Intent: Identify CUI lineage edges tagged as cross-region data flows, representing
+#         PII or sensitive data moving outside its authorized geographic boundary.
+#         Cross-region CUI transfers require explicit data-residency approval and
+#         FIPS 199 data-flow documentation before the data may transit.
+# Expected violation shape: rows where lineage_type == "cross-region" and classification == "CUI";
+#   each row is an unapproved CUI cross-region transfer requiring residency authorization.
+
+foreach e in data.lineage.edges
+  where e.lineage_type == "cross-region"
+  where e.classification == "CUI"
+  select e.id, e.source_node_id, e.target_node_id, e.classification, e.lineage_type
