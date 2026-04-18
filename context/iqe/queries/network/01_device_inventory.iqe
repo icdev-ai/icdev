@@ -1,0 +1,6 @@
+# IQE-NDC-001: Full device inventory
+# Returns all known devices with their type and topology scope.
+# Use: baseline audit, vendor inventory, asset discovery.
+
+foreach device in network.devices
+select device.label, device.object_type, device.topology_id
