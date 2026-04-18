@@ -746,10 +746,11 @@ def _cleanup_worktree(task_id: str):
     branch_name = f"kanban/{task_id}"
     worktree_path = WORKTREE_BASE / task_id
 
-    # Attempt merge first — if this fails, the branch stays around so
-    # the user can merge manually (their commits are NOT lost).
-    merged_ok = _merge_worktree_to_main(task_id)
-
+    # Detach the worktree FIRST so the branch ref isn't held while we
+    # rebase. Commits remain safe on refs/heads/kanban/<task_id> after
+    # the worktree is gone. Prior ordering ran merge before detach, so
+    # rebase consistently failed with "already used by worktree" and
+    # every post-dispatch-divergence task got preserved unnecessarily.
     try:
         if worktree_path.exists():
             _sp.run(
@@ -759,6 +760,12 @@ def _cleanup_worktree(task_id: str):
                 text=True,
                 timeout=30,
             )
+    except Exception as exc:
+        logger.warning("Worktree remove failed for %s: %s", task_id, exc)
+
+    merged_ok = _merge_worktree_to_main(task_id)
+
+    try:
         # Only delete the branch if merge succeeded; otherwise PRESERVE
         # it so the user doesn't lose commits.
         if merged_ok:
@@ -776,7 +783,7 @@ def _cleanup_worktree(task_id: str):
                 task_id,
             )
     except Exception as exc:
-        logger.warning("Worktree cleanup failed for %s: %s", task_id, exc)
+        logger.warning("Branch cleanup failed for %s: %s", task_id, exc)
 
 
 def _check_worktree_commits(task_id: str) -> bool:
