@@ -356,6 +356,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_audit",
         # Passive CVE Watcher — ATO continuous monitoring (NIST SI-4, CA-7)
         "cve_passive_watch_log",
+        # BDC cATO Twin — canonical compliance snapshot grain (dt-bdc-08)
+        # Rows are append-only (cATO audit trail); never UPDATE or DELETE.
+        "compliance_snapshots",
     ]
 
     if tool_name == "Bash":
