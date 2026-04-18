@@ -304,8 +304,31 @@ portfolio metrics, etc.).
 
 ## Phase 5 (monetization)
 
-### Plan tiers + Stripe
-Per the multi-session plan. ~3-5 sessions.
+### ✅ Phase 5A — Plan tiers + quota enforcement framework (DONE 2026-04-17)
+- `args/plan_tiers.yaml` — 3 tiers (free / pro / enterprise) with feature
+  matrix + quotas per tier. Hot-reloaded.
+- `tools/trading/billing/tiers.py` — loader, `tier_for_tenant()`,
+  `quota()`, `feature()`, `check_quota()` (raises `QuotaExceeded`),
+  `usage_summary()`.
+- Quota enforcement wired at 4 creation sites:
+  - `api_alerts_create_rule` → tenant `alert_rules` quota
+  - `api_api_tokens_create` → per-user `api_tokens_per_user` quota
+  - `api_share_portfolio_brief_create` → monthly `share_links_per_month`
+  - `api_tenant_invitations_create` → tenant `members` + monthly
+    `invitations_per_month`
+- `/billing` page shows current tier, feature matrix, usage bars,
+  upgrade buttons. Owner-only tier switch via `/api/billing/tier`
+  (direct set — Phase 5B will route through Stripe checkout).
+- Admin CLI: `python -m tools.trading.billing.admin_cli`
+  (`list-tiers`, `list-tenants`, `set-tier`, `usage`).
+- Tier column already present on `ad_tenants.plan_tier` from Phase 3.1.
+
+### 🔜 Phase 5B — Stripe checkout + webhook + invoicing
+- Stripe Checkout Session for upgrades (map tier → `stripe_price_id`)
+- Webhook handler for `customer.subscription.{created,updated,deleted}`
+- Self-service portal link for payment-method updates
+- Invoice emails + dunning
+- Proration on upgrade / downgrade
 
 ---
 
