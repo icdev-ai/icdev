@@ -56,11 +56,21 @@ Flask-Login + pyotp + flask-mailman.
     SMTP swappable via `ICDEV_MAIL_BACKEND=smtp`). Google OAuth via
     Authlib (auto-appears when `GOOGLE_CLIENT_ID/SECRET` set in `.env`).
     Account-linking (Google email → existing local account = link).
-  - 🔜 **2A.2.5** — Microsoft + GitHub OAuth (~30 min — add 2 more
-    Authlib `register()` blocks + `configured_providers()` entries +
-    update `is_any_provider_configured()`. Same shape as Google).
-  - 🔜 **2A.3** — TOTP + backup codes + step-up MFA decorator + forced
-    enrollment after `mfa_required_at` grace period.
+  - ✅ **2A.2.5 (DONE 2026-04-18)** — Microsoft (OIDC, common tenant)
+    + GitHub (OAuth 2.0, /user + /user/emails fallback for private
+    primaries) wired. Buttons auto-render when env creds set:
+    `MICROSOFT_CLIENT_ID/SECRET` (+ optional `MICROSOFT_TENANT_ID`)
+    and `GITHUB_CLIENT_ID/SECRET`.
+  - ✅ **2A.3 (DONE 2026-04-18)** — pyotp TOTP + backup codes (10×10char,
+    sha256-hashed, single-use). AES-GCM secret-at-rest via
+    `ICDEV_KEYSTORE_KEY` env (`python -m tools.trading.auth.crypto --gen`
+    to generate). MFA-aware login flow + `/mfa/verify` page + middleware
+    gate (sessions track `mfa_satisfied_at`). Step-up auth on disable +
+    backup-code regen. 5/15min lockout via append-only `ad_mfa_attempts`
+    audit table. **Forced enrollment after grace period** (`mfa_required_at`
+    column on `ad_users`) is plumbed but no enforcement timer yet —
+    operator can set it manually; auto-prompt at login lands in 2A.3.5
+    if needed.
 
 ### Legacy single-user data migration *(deferred subtask)*
 Phase 2A.1 added `user_id` to the new auth + profile tables, but legacy
