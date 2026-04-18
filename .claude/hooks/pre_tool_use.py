@@ -360,6 +360,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "mitre_coverage",
         # Passive CVE Watcher — ATO continuous monitoring (NIST SI-4, CA-7)
         "cve_passive_watch_log",
+        # BDC cATO Twin — compliance control snapshots (migration 027, NIST AU)
+        "compliance_snapshots",
     ]
 
     if tool_name == "Bash":
