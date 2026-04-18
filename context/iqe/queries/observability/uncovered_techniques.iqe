@@ -1,0 +1,8 @@
+# Intent: Identify MITRE ATT&CK techniques with no signal coverage (coverage_state == "none"),
+#         representing detection blind spots where adversary activity goes undetected.
+# Expected violation shape: rows where coverage_state == "none"; each row is a technique
+#   with zero detection capability — highest-priority gap candidates for rule authoring.
+
+foreach t in odc_coverage
+  where t.coverage_state == "none"
+  select t.technique_id, t.tactic_id, t.signal_source, t.coverage_state, t.severity
