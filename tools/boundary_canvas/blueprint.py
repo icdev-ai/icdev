@@ -1445,6 +1445,51 @@ def create_boundary_blueprint():
             runbooks.append(rb)
         return jsonify({"design_id": design_id, "runbooks": runbooks, "count": len(runbooks)})
 
+    # ── cATO ─────────────────────────────────────────────────────────────────
+
+    @bp.route("/cato")
+    @bdc_login_required
+    def bdc_cato_page():
+        """cATO Dashboard — all boundary designs with ATO health status."""
+        with get_connection() as conn:
+            designs = []
+            for r in conn.execute(
+                "SELECT id, name, classification, updated_at FROM boundary_designs ORDER BY updated_at DESC"
+            ).fetchall():
+                d = _row_to_dict(r)
+                assess = conn.execute(
+                    "SELECT score, grade, cat1_findings FROM bd_assessments "
+                    "WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+                    (d["id"],),
+                ).fetchone()
+                if assess:
+                    d["score"] = assess["score"]
+                    d["grade"] = assess["grade"]
+                    d["cat1_findings"] = assess["cat1_findings"]
+                else:
+                    d["score"] = None
+                    d["grade"] = None
+                    d["cat1_findings"] = 0
+                designs.append(d)
+        return render_template("boundary_canvas/cato.html", designs=designs)
+
+    @bp.route("/api/designs/<design_id>/findings", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_findings(design_id):
+        """Latest assessment findings (control rows) for a boundary design."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT findings_json FROM bd_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+                (design_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"findings": []})
+        try:
+            findings = json.loads(row["findings_json"] or "[]")
+        except (json.JSONDecodeError, TypeError):
+            findings = []
+        return jsonify({"findings": findings})
+
     # ── SOPs ──────────────────────────────────────────────────────────────────
 
     @bp.route("/sops")

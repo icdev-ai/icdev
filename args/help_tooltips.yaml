@@ -1614,6 +1614,37 @@ settings.byok_broker:
     "Test connection" hits Alpaca's `/account` endpoint — no orders
     placed, no positions changed, just verifies auth works.
 
+today.overview:
+  title: ☕ Today
+  body: |
+    Plain-English morning digest — what AlphaDesk thinks you should
+    consider today. Scans 10 rules across your portfolio, positions,
+    watchlist, news flow, alerts, and macro regime; surfaces up to 5
+    prioritized actions.
+
+    Rules cover: single-name concentration risk, regime mismatch
+    (cash-heavy in risk-on / fully-invested in risk-off), SROR danger
+    snapshots, high-conviction BUY signals on your watchlist, severe
+    news impact on holdings, stale daily snapshots, cash deployment,
+    unread alert backlog, big winners worth profit-taking, big losers
+    worth a stop-loss review.
+
+    Every action lists the specific evidence that triggered it, so you
+    can trace the reasoning. Featured for casual + student personas.
+    Quants hide it (they want raw data, not narrative).
+
+today.how_it_works:
+  title: How this works
+  body: |
+    Deterministic rule engine — same inputs always produce the same
+    digest. No LLM, no black box, no "AI magic." Rule definitions live
+    in `tools/trading/analytics/today_digest.py` so you can audit the
+    thresholds + logic.
+
+    Refreshes every 5 minutes automatically. An empty digest means the
+    system genuinely doesn't see anything urgent — that's the goal, not
+    a bug.
+
 settings.tenant:
   title: Workspace
   body: |

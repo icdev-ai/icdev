@@ -239,7 +239,13 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
   "the portfolio is X" framing)
 
 ### Per-persona dedicated pages
-- Retail: "What should I do today?" daily prompt page
+- ✅ **Retail: `/today` "What should I do today?" page — DONE 2026-04-18**
+  `tools/trading/analytics/today_digest.py` — deterministic 10-rule engine.
+  Rules: concentration risk, regime mismatch, SROR danger, watchlist BUY,
+  news impact on holdings, stale snapshot, cash deployment, unack alerts,
+  big-winner profit take, big-loser stop review. Prioritized by urgency,
+  capped at top 5. Plain-English with transparent evidence. Featured for
+  retail+student personas; hidden for quant. Auto-refreshes 5 min.
 - Advisor: client roster, share-link generator
 - Quant: API tokens page, factor decomposition page
 - Student: lesson mode with guided tours
