@@ -1804,4 +1804,50 @@ def create_security_blueprint():
         result = llm_identify_threats(graph)
         return jsonify(result)
 
+    # ====================================================================
+    # ATTACK PATH TWIN — /security/attackpath (dt-sdc-twin-07)
+    # ====================================================================
+
+    @bp.route("/attackpath")
+    @sc_login_required
+    def sc_attackpath_page():
+        """SDC Attack Path Twin dashboard — /security/attackpath."""
+        return render_template("security_canvas/attackpath.html")
+
+    @bp.route("/api/attackpath", methods=["GET"])
+    @sc_login_required
+    def sc_api_attackpath():
+        """Return attack path snapshot summary for the dashboard.
+
+        JSON::
+
+            {
+                "summary": {
+                    "total_snapshots": int,
+                    "total_nodes": int,
+                    "total_edges": int,
+                    "max_risk_score": float
+                },
+                "snapshots": [...]
+            }
+        """
+        from tools.security_canvas.attackpath import get_attackpath_summary, enumerate_paths
+
+        with get_connection() as conn:
+            data = get_attackpath_summary(conn)
+
+        paths = enumerate_paths(data["snapshots"])
+        return jsonify(
+            {
+                "summary": {
+                    "total_snapshots": data["total_snapshots"],
+                    "total_nodes": data["total_nodes"],
+                    "total_edges": data["total_edges"],
+                    "max_risk_score": data["max_risk_score"],
+                },
+                "snapshots": data["snapshots"],
+                "paths": paths,
+            }
+        )
+
     return bp
