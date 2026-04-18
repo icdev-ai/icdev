@@ -1,0 +1,8 @@
+# Intent: Identify routes with an anomalously high hop-count that are indicative of
+#         routing loops or misconfigured redistribution in the NDC topology.
+# Expected violation shape: rows where hop_count > 15 — each row represents a prefix
+#   whose path length exceeds the expected network diameter, warranting BGP/OSPF review.
+
+foreach r in network.routes
+  where r.hop_count > 15
+  select r.device, r.prefix, r.next_hop, r.hop_count, r.protocol
