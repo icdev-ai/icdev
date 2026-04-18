@@ -1,7 +1,8 @@
 # CUI // SP-CTI
-"""Tests for context/iqe/queries/compliance/fedramp-moderate/*.iqe
+"""Tests for context/iqe/queries/compliance/fedramp-moderate/*.iqe (5 queries)
+and context/iqe/queries/compliance/fedramp-high/*.iqe (5 queries).
 
-5 seed queries — each must:
+Each query must:
   • parse without error and match expected AST shape
   • return a deterministic violation count against a seeded fixture DB
 """
@@ -24,9 +25,18 @@ _QUERY_DIR = (
     / "context" / "iqe" / "queries" / "compliance" / "fedramp-moderate"
 )
 
+_QUERY_DIR_HIGH = (
+    pathlib.Path(__file__).parent.parent
+    / "context" / "iqe" / "queries" / "compliance" / "fedramp-high"
+)
+
 
 def _read(name: str) -> str:
     return (_QUERY_DIR / name).read_text(encoding="utf-8")
+
+
+def _read_high(name: str) -> str:
+    return (_QUERY_DIR_HIGH / name).read_text(encoding="utf-8")
 
 
 # ---- Schemas ----------------------------------------------------------------
@@ -175,6 +185,110 @@ def _ex(collection: str, adapter_fn) -> tuple[Executor, sqlite3.Connection]:
         "compliance.controls":   _controls_db,
         "compliance.violations": _violations_db,
         "compliance.snapshots":  _snapshots_db,
+    }
+    conn = db_builders[collection]()
+    ex = Executor()
+    ex.register_collection(collection, adapter_fn)
+    return ex, conn
+
+
+# ---- FedRAMP High fixture builders -----------------------------------------
+
+def _high_controls_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(_CONTROLS_SCHEMA)
+    # Impact levels chosen so:
+    #   CP-7 (HIGH) + CP-2 (MODERATE) → cp7 catches both (neither implemented)
+    #   SC-7 (HIGH) + SC-12 (MODERATE) → sc7 catches both (both not_implemented)
+    #   CP-7 (HIGH, not_impl) + SC-7 (HIGH, not_impl) → ac2 returns exactly 2 HIGH gaps
+    for cid, family, title, impact in [
+        ("CP-7",  "CP", "Alternate Processing Site",   "HIGH"),
+        ("CP-2",  "CP", "Contingency Plan",             "MODERATE"),
+        ("CP-9",  "CP", "System Backup",                "MODERATE"),
+        ("SC-7",  "SC", "Boundary Protection",          "HIGH"),
+        ("SC-12", "SC", "Cryptographic Key Establish",  "MODERATE"),
+        ("SC-8",  "SC", "Transmission Confidentiality", "MODERATE"),
+        ("SC-28", "SC", "Protection of Data at Rest",   "MODERATE"),
+        ("AC-2",  "AC", "Account Management",           "MODERATE"),
+        ("AC-3",  "AC", "Access Enforcement",           "MODERATE"),
+    ]:
+        conn.execute(
+            "INSERT INTO compliance_controls (id, family, title, impact_level)"
+            " VALUES (?,?,?,?)",
+            (cid, family, title, impact),
+        )
+    for project_id, control_id, status, desc, role in [
+        ("p2", "CP-7",  "not_implemented",       "",                    "ISSO"),
+        ("p2", "CP-2",  "partially_implemented", "Draft plan exists",   "ISSO"),
+        ("p2", "CP-9",  "implemented",           "Backup policy active","DevOps"),
+        ("p2", "SC-7",  "not_implemented",       "",                    "NetEng"),
+        ("p2", "SC-12", "not_implemented",       "",                    "ISSO"),
+        ("p2", "SC-8",  "implemented",           "TLS 1.3 enforced",   "NetEng"),
+        ("p2", "SC-28", "implemented",           "AES-256 at rest",    "DevOps"),
+        ("p2", "AC-2",  "implemented",           "IAM policy active",  "ISSO"),
+        ("p2", "AC-3",  "implemented",           "RBAC enforced",      "ISSO"),
+    ]:
+        conn.execute(
+            "INSERT INTO project_controls"
+            " (project_id, control_id, implementation_status, implementation_description, responsible_role)"
+            " VALUES (?,?,?,?,?)",
+            (project_id, control_id, status, desc, role),
+        )
+    conn.commit()
+    return conn
+
+
+def _high_violations_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(_POAM_SCHEMA)
+    # IR-001, IR-002: critical + open  → violates ir4_dynamic_reconfig (2)
+    # IR-003: high (not critical) + open → no violation
+    # IR-004: critical + closed        → no violation
+    rows = [
+        ("p2", "IR-001", "Perimeter firewall misconfiguration", "critical", "PENTEST", "SC-7",  "open",        "Patch firewall ruleset",          "2025-08-01", None),
+        ("p2", "IR-002", "Privileged account without MFA",      "critical", "AUDIT",   "IA-2",  "open",        "Enforce MFA on priv accounts",    "2025-07-15", None),
+        ("p2", "IR-003", "Stale service account active",        "high",     "SAST",    "AC-2",  "open",        "Deactivate dormant svc account",  "2025-09-01", None),
+        ("p2", "IR-004", "Unencrypted backup media",            "critical", "AUDIT",   "CP-9",  "closed",      "Backup encryption enabled",       "2025-06-01", "2025-05-20"),
+    ]
+    conn.executemany(
+        "INSERT INTO poam_items"
+        " (project_id, weakness_id, weakness_description, severity, source, control_id,"
+        "  status, corrective_action, milestone_date, completion_date)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    return conn
+
+
+def _high_snapshots_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(_SNAPSHOTS_SCHEMA)
+    # p2/PI-3: end=0.82 → below 0.85 High threshold → violation
+    # p2/PI-4: end=0.75 → below 0.85 High threshold → violation
+    # p2/PI-5: end=0.90 → above threshold → no violation
+    # p3/PI-1: end=0.87 → above threshold → no violation
+    rows = [
+        ("p2", "PI-3", 0.80, 0.82),
+        ("p2", "PI-4", 0.90, 0.75),
+        ("p2", "PI-5", 0.88, 0.90),
+        ("p3", "PI-1", 0.85, 0.87),
+    ]
+    conn.executemany(
+        "INSERT INTO pi_compliance_tracking"
+        " (project_id, pi_number, compliance_score_start, compliance_score_end)"
+        " VALUES (?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    return conn
+
+
+def _ex_high(collection: str, adapter_fn) -> tuple[Executor, sqlite3.Connection]:
+    db_builders = {
+        "compliance.controls":   _high_controls_db,
+        "compliance.violations": _high_violations_db,
+        "compliance.snapshots":  _high_snapshots_db,
     }
     conn = db_builders[collection]()
     ex = Executor()
@@ -331,3 +445,159 @@ def test_drift_since_last_audit_violation_count() -> None:
     assert result[0]["pi_number"] == "PI-1"
     assert result[0]["project_id"] == "p1"
     assert result[0]["compliance_score_end"] < result[0]["compliance_score_start"]
+
+
+# ============================================================================
+# Test 6 — cp7_alternate_site.iqe  (FedRAMP High)
+# ============================================================================
+
+def test_cp7_alternate_site_parses() -> None:
+    q = parse(_read_high("cp7_alternate_site.iqe"))
+    assert q.var == "c"
+    assert q.collection == AttrRef(["compliance", "controls"])
+    assert len(q.where_clauses) == 2
+    assert q.where_clauses[0].predicate.op == "=="
+    assert q.where_clauses[0].predicate.right == Literal("CP")
+    assert q.where_clauses[1].predicate.op == "!="
+    assert q.where_clauses[1].predicate.right == Literal("implemented")
+    fields = [f.parts[-1] for f in q.select.fields]
+    assert "project_id" in fields
+    assert "control_id" in fields
+    assert "implementation_status" in fields
+
+
+def test_cp7_alternate_site_violation_count() -> None:
+    ex, conn = _ex_high("compliance.controls", controls_adapter)
+    ast = parse(_read_high("cp7_alternate_site.iqe"))
+    result = ex.run(ast, conn=conn)
+    conn.close()
+    # CP-7 (not_implemented) + CP-2 (partially_implemented) → 2 CP gaps
+    assert len(result) == 2
+    cids = {r["control_id"] for r in result}
+    assert "CP-7" in cids
+    assert "CP-2" in cids
+
+
+# ============================================================================
+# Test 7 — ir4_dynamic_reconfig.iqe  (FedRAMP High)
+# ============================================================================
+
+def test_ir4_dynamic_reconfig_parses() -> None:
+    q = parse(_read_high("ir4_dynamic_reconfig.iqe"))
+    assert q.var == "v"
+    assert q.collection == AttrRef(["compliance", "violations"])
+    assert len(q.where_clauses) == 2
+    assert q.where_clauses[0].predicate.op == "=="
+    assert q.where_clauses[0].predicate.right == Literal("critical")
+    assert q.where_clauses[1].predicate.op == "=="
+    assert q.where_clauses[1].predicate.right == Literal("open")
+    fields = [f.parts[-1] for f in q.select.fields]
+    assert "weakness_id" in fields
+    assert "severity" in fields
+    assert "milestone_date" in fields
+
+
+def test_ir4_dynamic_reconfig_violation_count() -> None:
+    ex, conn = _ex_high("compliance.violations", violations_adapter)
+    ast = parse(_read_high("ir4_dynamic_reconfig.iqe"))
+    result = ex.run(ast, conn=conn)
+    conn.close()
+    # IR-001 (critical, open) + IR-002 (critical, open) → 2
+    assert len(result) == 2
+    wids = {r["weakness_id"] for r in result}
+    assert "IR-001" in wids
+    assert "IR-002" in wids
+
+
+# ============================================================================
+# Test 8 — sc7_boundary_gaps.iqe  (FedRAMP High)
+# ============================================================================
+
+def test_sc7_boundary_gaps_parses() -> None:
+    q = parse(_read_high("sc7_boundary_gaps.iqe"))
+    assert q.var == "c"
+    assert q.collection == AttrRef(["compliance", "controls"])
+    assert len(q.where_clauses) == 2
+    assert q.where_clauses[0].predicate.op == "=="
+    assert q.where_clauses[0].predicate.right == Literal("SC")
+    assert q.where_clauses[1].predicate.op == "=="
+    assert q.where_clauses[1].predicate.right == Literal("not_implemented")
+    fields = [f.parts[-1] for f in q.select.fields]
+    assert "control_id" in fields
+    assert "title" in fields
+    assert "implementation_status" in fields
+
+
+def test_sc7_boundary_gaps_violation_count() -> None:
+    ex, conn = _ex_high("compliance.controls", controls_adapter)
+    ast = parse(_read_high("sc7_boundary_gaps.iqe"))
+    result = ex.run(ast, conn=conn)
+    conn.close()
+    # SC-7 (not_implemented) + SC-12 (not_implemented) → 2 boundary gaps
+    assert len(result) == 2
+    cids = {r["control_id"] for r in result}
+    assert "SC-7" in cids
+    assert "SC-12" in cids
+
+
+# ============================================================================
+# Test 9 — ac2_usage_conditions.iqe  (FedRAMP High)
+# ============================================================================
+
+def test_ac2_usage_conditions_parses() -> None:
+    q = parse(_read_high("ac2_usage_conditions.iqe"))
+    assert q.var == "c"
+    assert q.collection == AttrRef(["compliance", "controls"])
+    assert len(q.where_clauses) == 2
+    assert q.where_clauses[0].predicate.op == "=="
+    assert q.where_clauses[0].predicate.right == Literal("HIGH")
+    assert q.where_clauses[1].predicate.op == "=="
+    assert q.where_clauses[1].predicate.right == Literal("not_implemented")
+    fields = [f.parts[-1] for f in q.select.fields]
+    assert "control_id" in fields
+    assert "family" in fields
+    assert "title" in fields
+
+
+def test_ac2_usage_conditions_violation_count() -> None:
+    ex, conn = _ex_high("compliance.controls", controls_adapter)
+    ast = parse(_read_high("ac2_usage_conditions.iqe"))
+    result = ex.run(ast, conn=conn)
+    conn.close()
+    # CP-7 (HIGH, not_implemented) + SC-7 (HIGH, not_implemented) → 2 HIGH-baseline gaps
+    assert len(result) == 2
+    cids = {r["control_id"] for r in result}
+    assert "CP-7" in cids
+    assert "SC-7" in cids
+
+
+# ============================================================================
+# Test 10 — cm3_crypto_mgmt.iqe  (FedRAMP High)
+# ============================================================================
+
+def test_cm3_crypto_mgmt_parses() -> None:
+    q = parse(_read_high("cm3_crypto_mgmt.iqe"))
+    assert q.var == "s"
+    assert q.collection == AttrRef(["compliance", "snapshots"])
+    assert len(q.where_clauses) == 1
+    pred = q.where_clauses[0].predicate
+    assert pred.op == "<"
+    assert isinstance(pred.left, AttrRef)
+    assert pred.left.parts[-1] == "compliance_score_end"
+    assert pred.right == Literal(0.85)
+    fields = [f.parts[-1] for f in q.select.fields]
+    assert "project_id" in fields
+    assert "pi_number" in fields
+    assert "compliance_score_end" in fields
+
+
+def test_cm3_crypto_mgmt_violation_count() -> None:
+    ex, conn = _ex_high("compliance.snapshots", snapshots_adapter)
+    ast = parse(_read_high("cm3_crypto_mgmt.iqe"))
+    result = ex.run(ast, conn=conn)
+    conn.close()
+    # p2/PI-3 (end=0.82 < 0.85) + p2/PI-4 (end=0.75 < 0.85) → 2 High-threshold breaches
+    assert len(result) == 2
+    pis = {(r["project_id"], r["pi_number"]) for r in result}
+    assert ("p2", "PI-3") in pis
+    assert ("p2", "PI-4") in pis
