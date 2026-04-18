@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 + 6.5 + 6.6 shipped — **Phase 6 complete**)
+Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 + 6.5 + 6.6 + 2C shipped)
 
 ---
 
@@ -106,16 +106,16 @@ authenticators. Builds on 2A's `ad_user_mfa.webauthn_credentials` JSON column.
 - **Threat model:** protects against DB dumps; does NOT protect against operator
 - Schema includes `vault_mode INTEGER DEFAULT 0` for forward-compat with Path B opt-in (lands in 2C below)
 
-### 🔜 Phase 2C — BYOK Path B opt-in (envelope encryption with user passphrase)
-**Why deferred:** user explicitly chose to ship Path A as the default and deferred Path B as opt-in. ~1 session of work.
-**Scope:**
-- Per-user "vault mode" toggle in Settings → BYOK
-- When ON: KEK derived from login password (HKDF) at login → cached in encrypted Flask session cookie → used to envelope-encrypt the API key
-- When ON: daemon ops with that user's keys are DISABLED (B1) — daemon falls back to operator env vars (or refuses)
-- Password change re-encrypts all the user's vault-mode credentials
-- Forgotten password = lost keys (no recovery — by design; otherwise operator could backdoor)
-- Optional: vault recovery code at first vault-mode key-add time
-- Schema already in place via `vault_mode` column (no migration needed)
+### ✅ Phase 2C — BYOK Path B opt-in (envelope encryption with user passphrase) (DONE 2026-04-18)
+- New module `tools/trading/credentials/vault.py` — HKDF-SHA256 KEK derivation + AES-GCM envelope. Uses the `cryptography` package (already in requirements for Path A); `is_available()` gates the Settings UI when it's missing.
+- **Opt-in lifecycle:** `provision()` generates fresh random 32-byte master_dek + 16-byte per-user salt. Derives password_kek and recovery_kek via HKDF, wraps the master_dek twice, returns the recovery code. Caller (the Flask opt-in route) persists both wrapped blobs + the salt on the new `ad_user_vault` table + migrates existing Path A credentials through a decrypt-and-reencrypt helper (`_vault_migrate_keys`).
+- **Session binding:** on every successful `/api/auth/login`, if the user has a vault row, the handler derives password_kek from the just-verified plaintext password, decrypts the master_dek, and base64-stashes it into the Flask session cookie. The session cookie is signed by `SECRET_KEY` + httpOnly — master_dek never touches disk. On `/api/auth/logout` the DEK is popped.
+- **Resolver branch:** `get_raw_credential()` now reads `vault_mode` and branches. vault_mode=1 without a session DEK (daemon context) → audited `vault_dek_missing` event + `None` returned → callers fall back to env vars — exactly the B1 "daemon ops disabled" behavior the backlog specified.
+- **4 new routes** — `POST /api/credentials/vault/enable` (migrates + returns recovery code once), `POST .../disable` (migrates back to Path A), `POST .../rotate-recovery` (new code, new wrapping), `POST .../recover` (forgot-password path: takes recovery code + new password, re-wraps DEK, also rotates recovery code + updates argon2 hash + re-unlocks session).
+- **Settings UI** card renders three states: UNAVAILABLE (cryptography package missing), DISABLED (enable form with password prompt), ENABLED (status pill + rotate/recover/disable tiles). Recovery-code reveal modal requires user to tick "I've saved it" before the Done button unlocks — reduces risk of accidental dismiss.
+- **Threat model**: protects against operator reading DB + `ICDEV_KEYSTORE_KEY` simultaneously; doesn't protect against a compromised server process that sees DEK mid-request. Forgot-password WITHOUT recovery code = keys permanently lost — documented in the UI copy. Registered on the manifest shard. Coherence 14/17 (same 3 pre-existing warns).
+
+### 🔜 Phase 2D — Real secrets manager backend (HashiCorp Vault / OpenBao)
 
 ### 🔜 Phase 2D — Real secrets manager backend (HashiCorp Vault / OpenBao)
 **Why:** the user mentioned "we need some sort of secret manager" — Path A + Path B handle the immediate need, but production multi-tenant deployments will want a real KMS/HSM.
