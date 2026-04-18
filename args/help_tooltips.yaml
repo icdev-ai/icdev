@@ -1583,3 +1583,57 @@ settings.watchlist:
     Per-user favorite tickers for quick access. Separate from the
     universe — these don't trade automatically unless also in the
     universe and meeting signal thresholds.
+
+# ── /alerts ─────────────────────────────────────────────────────────────
+alerts.rule_count:
+  title: Rules
+  body: |
+    Total alert rules you've created (enabled + disabled). Disabled rules
+    aren't evaluated by the daemon — toggle the checkbox in the table to
+    re-enable.
+
+alerts.enabled_count:
+  title: Enabled
+  body: |
+    Rules that the `alert_evaluator` reflex will evaluate on its 1-minute
+    cadence. Each rule's own `cooldown_minutes` prevents the same rule
+    from firing repeatedly on the same condition.
+
+alerts.unack_count:
+  title: Unacked Alerts
+  body: |
+    Fired alerts you haven't dismissed. Mirrors the count shown on the
+    🔔 bell badge in the sidebar. Click "Ack all" or per-row "Ack" to
+    clear.
+
+alerts.create:
+  title: Create rule
+  body: |
+    Build a triggering rule from 6 types:
+
+    • **Price % change** — ticker price moved more than X% over lookback
+    • **Composite score** — latest signal score crosses a threshold
+    • **Confidence** — latest signal confidence crosses a threshold
+    • **Signal direction flip** — latest direction differs from prior
+    • **News impact (Σ)** — aggregated news impact over lookback
+    • **Macro regime change** — fires whenever the macro regime label
+      changes; first eval records baseline (no fire)
+
+    `cooldown_minutes` enforces the minimum time between fires of the
+    same rule, regardless of the underlying condition.
+
+alerts.rules:
+  title: Active rules
+  body: |
+    All your rules with their last evaluation timestamp + last computed
+    value. Toggle the **Enabled** checkbox to skip a rule without
+    deleting it. The **✕** button removes the rule permanently (alert
+    log entries from that rule remain for audit).
+
+alerts.recent:
+  title: Recent alerts
+  body: |
+    Append-only log of fired alerts (`ad_alerts_log`). Color-coded by
+    severity (info / warning / critical). Acknowledged entries are
+    grayed out. The bell badge in the sidebar tracks unacked count
+    across all sessions.

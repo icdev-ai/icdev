@@ -98,6 +98,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_trading_predictions",
         "ad_trading_convergence_events",
         "ad_trading_decision_approvals",
+        # AlphaDesk user-defined alerts (append-only fired-alert log)
+        "ad_alerts_log",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
