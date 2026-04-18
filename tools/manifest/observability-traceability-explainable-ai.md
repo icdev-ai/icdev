@@ -30,4 +30,8 @@
 | Provenance Page | tools/dashboard/templates/provenance.html | Provenance viewer: entity/activity tables, lineage query | (template) | HTML page |
 | XAI Page | tools/dashboard/templates/xai.html | XAI dashboard: assessment runner, coverage gauge, SHAP chart | (template) | HTML page |
 | ODC Splunk Exporter | tools/observability_canvas/exporters/splunk.py | Splunk SPL export adapter for ODC Digital Twin Sigma rules — converts a single Sigma rule YAML string to one Splunk SPL search stanza. Field modifiers (contains, gt, lt, cidr) translated deterministically. No LLM. | `sigma_to_spl(sigma_yaml)` | SPL string |
+| MITRE ATT&CK Loader | tools/observability_canvas/mitre_loader.py | Parses MITRE Enterprise ATT&CK catalog (context/mitre/enterprise.json) into sorted MitreTechnique dataclasses; optional tactic filter; deterministic, no LLM | `load_techniques(catalog_path, tactic_filter)` | `list[MitreTechnique]` |
+| ODC MITRE Matrix Page | tools/dashboard/templates/observability_canvas/mitre.html | MITRE ATT&CK Enterprise matrix dashboard: tactic columns, technique cards color-coded by coverage (catalog/gap/covered), drill-through links | (template) | HTML page |
+| ODC MITRE Detail Page | tools/dashboard/templates/observability_canvas/mitre_detail.html | Technique detail view: ID/name/description, sub-techniques list, ATT&CK link, Sigma rule generator form | (template) | HTML page |
+| ODC Blueprint MITRE Routes | tools/observability_canvas/blueprint.py | Flask routes: GET /observability/mitre (matrix), GET /observability/mitre/<tid> (detail), POST /observability/mitre/sigma (Sigma rule generation) | URL params: tid, tactic_filter; POST: technique_id, technique_name | HTML/JSON |
 
