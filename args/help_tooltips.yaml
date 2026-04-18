@@ -245,6 +245,56 @@ radar.reading:
     Also flags when SROR is running on sample data — pause trading until
     live feeds return.
 
+oracle.reading:
+  title: 📖 Oracle Reading
+  body: |
+    PM-style summary of the multi-lens prediction tape: pending count,
+    severity distribution (critical / high / medium), direction skew
+    (long-leaning vs short-leaning by prediction_type vocab), average
+    lens confidence, and convergence detection (≥2 lenses agreeing on
+    the same subject + direction).
+
+    Flags lens concentration (one lens dominating ≥60% of output —
+    other lenses likely circuit-broken) and surfaces top consensus
+    subjects for prioritization.
+
+evolution.reading:
+  title: 📖 Evolution Reading
+  body: |
+    Per-ticker trajectory reading: latest signal, score trend (current
+    vs prior-5 average), confidence trend, direction-flip count across
+    the run history (3+ flips = indecisive thesis), and advisor-vs-
+    signal agreement.
+
+    Useful before sizing: a stable BUY conviction with rising score and
+    rising confidence is the high-quality entry; frequent flips warn
+    against acting on the latest bar alone.
+
+advisor.reading:
+  title: 📖 Advisor Reading
+  body: |
+    Reads the CIS expert pipeline: BUY/SELL/HOLD recommendation skew,
+    average conviction, expert_advisor reflex health (circuit-breaker
+    state + last-run age), the active risk profile, and regime-vs-
+    profile alignment (e.g. AGGRESSIVE during DEFLATION = risk
+    asymmetry).
+
+    Surfaces mismatches between recommendation skew and macro regime
+    (bullish recs in CRISIS, bearish recs in EXPANSION) and guides
+    profile shifts when the regime drifts.
+
+strategist.reading:
+  title: 📖 Strategist Reading
+  body: |
+    Reads the latest strategy run: total holdings, tier distribution
+    (Core / Tactical / Opportunistic / Hedge), hedge-sleeve weight (and
+    whether it's adequate for the regime), Core conviction average,
+    sector overweights/underweights, and run freshness.
+
+    Flags regime drift (run built under one regime, current regime
+    differs) and stale runs (>24h old vs macro cadence) so you can
+    re-run before deploying capital.
+
 market.supply_chain:
   title: Supply Chain Propagation
   body: |
