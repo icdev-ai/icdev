@@ -204,7 +204,100 @@ Per the multi-session plan. ~3-5 sessions.
 
 ---
 
-## Phase 6+ (specialized infra — wait for actual demand)
+## Phase 6 — Gamification & Trade Challenges *(future, requested 2026-04-18)*
+
+**Inspiration:** *Rich Dad Poor Dad* + Robert Kiyosaki's **CashFlow 101 / 102**
+board games. CashFlow 101 teaches basic financial literacy; 102 teaches
+advanced investing — natural mapping to a multi-tier progression system.
+
+**The cornerstone request:** *"Once graduated from Beginner to Intermediate,
+they can trade live."* A mandatory paper-trade graduation gate before live
+trading is unlocked — both an educational win and a regulatory/compliance
+benefit.
+
+**Hard prereqs:**
+- Phase 2 (auth + per-user data) — ✅ DONE
+- Phase 3 (tenants — for league scoping) — pending
+
+**Persona alignment:** the `student` persona becomes the natural default-
+state for new users. `retail` graduates through the system. `pro_trader` /
+`advisor` / `quant` opt out via "I have prior trading experience"
+attestation (operator can disable that opt-out for compliance contexts —
+e.g., a DoD educational tenant might require everyone to graduate).
+
+**Connects to:** existing alert system (achievements fire alerts), Reading
+engine (could explain *why* a trade was a level-up moment), persona-aware
+UI (each persona could have its own progression curve).
+
+### Phase 6.1 — Level system + progression metrics
+- New schema: `ad_user_progression` (user_id, level, xp, paper_trades_count,
+  paper_pnl_total, paper_max_drawdown, paper_sharpe_window,
+  regime_aware_decisions_count, ...)
+- 4 levels: **Beginner → Intermediate → Advanced → Pro**
+- "XP" earned per: completed analysis, signal acted on, regime-aware
+  decision, alert acknowledged, etc.
+- `/progression` page: current level, XP bar, next-level criteria, history
+
+### Phase 6.2 — Achievements + badges
+- New schema: `ad_achievements_catalog` (operator-curated) +
+  `ad_user_achievements` (earned per user)
+- Examples: "First Profitable Week", "Survived Drawdown" (held through a
+  -15% then recovered), "Regime-Aware" (5 trades aligned with macro
+  regime), "Diversified" (5+ sectors), "First 10 Trades", "First Million"
+  (paper)
+- Badge display: Settings → Profile, persona tile, leaderboard avatar
+
+### Phase 6.3 — Single-player trade challenges
+- New schema: `ad_challenges` (operator-curated) + `ad_challenge_attempts`
+- Examples: "Achieve +5% in 30 days using only DJIA stocks", "Build a 60/40
+  portfolio that beats SPY over 6 months", "Survive a STAGFLATION regime
+  simulation"
+- Time-boxed; sandboxed paper portfolio per attempt; final score recorded
+- CashFlow-style narrative scenarios (you have $X, monthly expenses $Y,
+  what do you buy?) — uses existing rule engine
+
+### Phase 6.4 — Multi-team competitions + leaderboards
+- New schema: `ad_leagues`, `ad_league_members`, `ad_league_standings`
+- Tenant-scoped (Phase 3 prereq) — classroom league, firm-internal league,
+  friend group
+- Periodic standings (weekly / monthly / per-challenge)
+- League visibility: public, private (invite-only), or league code
+- Optional: "season" framing with playoffs
+
+### Phase 6.5 — Educational curriculum tied to levels
+- New `tools/trading/lessons/` module
+- Operator-provided markdown lessons (`docs/lessons/{level}/{slug}.md`)
+- Each level unlocks a curriculum slate
+- Lessons can have inline interactive quizzes (multiple-choice, uses
+  existing rule engine for scoring)
+- Maps to CashFlow progression: 101 = Beginner+Intermediate, 102 =
+  Advanced+Pro
+
+### Phase 6.6 — Live-trading graduation gate ⚠ compliance-sensitive
+- Schema: `ad_user_progression.live_trading_unlocked_at`
+- Hard gate enforced at `/orders` route + Alpaca live URL switching path
+- Criteria (operator-tunable, persisted in `args/graduation_criteria.yaml`):
+  - Min N days of paper trading (default 30)
+  - Min N completed analyses (default 25)
+  - Min N achievements earned (default 5)
+  - Sharpe ≥ X in paper account over last 90d (default 0.5)
+  - Acknowledged a "risk disclosure" modal
+- Until graduated: live URL switching disabled; user can BYOK (Phase 2A
+  done) but the broker adapter refuses live-mode requests with a
+  redirect-to-progression message
+
+> ⚠ **Real-money / regulatory implications.** Multi-team challenges with
+> *monetary* prizes touch SEC/FINRA territory in the US (could be
+> regulated as "investment contests"). Recommended v1 approach:
+> bragging-rights-only leaderboards, no cash prizes. Cash prizes need
+> per-tenant legal review (DoD educational tenant won't have this issue,
+> public-facing SaaS will). Phase 5 Stripe integration is NOT a
+> prerequisite — and shouldn't be wired to challenge prizes without
+> explicit legal sign-off.
+
+---
+
+## Phase 7+ (specialized infra — wait for actual demand)
 
 - **Day-trader real-time stack** — WebSocket tick feeds, L2 order book,
   hot-key engine, sub-second exec.
