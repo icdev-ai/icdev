@@ -1,4 +1,4 @@
-"""8 tests for IQE parser and AST node classes (dt-iqe-03)."""
+"""10 tests for IQE parser and AST node classes (dt-iqe-04)."""
 import pytest
 
 from tools.iqe.ast_nodes import AttrRef, BinOp, ForeachNode, Literal, SelectNode, WhereNode
@@ -89,3 +89,32 @@ def test_syntax_error_has_line_col():
     assert hasattr(err, "col")
     assert isinstance(err.line, int)
     assert isinstance(err.col, int)
+
+
+def test_where_and_connective():
+    """Single WHERE clause with 'and' produces a nested BinOp AST."""
+    q = parse(
+        'foreach d in network.devices '
+        'where d.vendor == "cisco" and d.active == true '
+        'select d.hostname'
+    )
+    assert len(q.where_clauses) == 1
+    top = q.where_clauses[0].predicate
+    assert isinstance(top, BinOp)
+    assert top.op == "and"
+    assert isinstance(top.left, BinOp)
+    assert top.left.op == "=="
+    assert top.left.left == AttrRef(["d", "vendor"])
+    assert top.left.right == Literal("cisco")
+    assert isinstance(top.right, BinOp)
+    assert top.right.op == "=="
+    assert top.right.right == Literal(True)
+
+
+def test_select_wildcard():
+    """'select *' produces a SelectNode with wildcard=True and no fields."""
+    q = parse("foreach d in network.devices select *")
+    assert isinstance(q.select, SelectNode)
+    assert q.select.wildcard is True
+    assert q.select.fields == []
+    assert q.where_clauses == []
