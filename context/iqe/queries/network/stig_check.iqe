@@ -1,0 +1,9 @@
+# Intent: Surface all open CAT I STIG findings on network devices to drive
+#         remediation priority for ATO boundary compliance reviews.
+# Expected violation shape: rows where severity == "CAT1" and status == "open";
+#   each row maps to a STIG rule_id and vuln_id that must be closed before ATO.
+
+foreach f in network.findings
+  where f.severity == "CAT1"
+  where f.status == "open"
+  select f.device, f.rule_id, f.vuln_id, f.title, f.remediation

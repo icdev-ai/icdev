@@ -1,0 +1,9 @@
+# Intent: Detect interfaces that are administratively enabled (admin up) but
+#         operationally down — a primary indicator of link or hardware failure.
+# Expected violation shape: rows where admin_status == "up" and oper_status == "down";
+#   each row is a candidate incident ticket for the NOC.
+
+foreach i in network.interfaces
+  where i.admin_status == "up"
+  where i.oper_status == "down"
+  select i.device, i.name, i.description, i.admin_status, i.oper_status
