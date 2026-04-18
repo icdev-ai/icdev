@@ -197,6 +197,206 @@ def idc_remediation_page(design_id):
         conn.close()
 
 
+# ── IaC Emit Page ─────────────────────────────────────────────────────────────
+
+# Valid combinations copied from emit.py constants
+_EMIT_TARGETS = ("terraform", "pulumi", "ansible", "helm")
+_EMIT_CSPS = ("aws", "azure", "gcp", "oci", "on-prem")
+_EMIT_SUPPORTED_CSPS: dict[str, frozenset[str]] = {
+    "terraform": frozenset({"aws", "gcp", "oci"}),
+    "pulumi":    frozenset({"aws", "azure"}),
+    "ansible":   frozenset(_EMIT_CSPS),
+    "helm":      frozenset(_EMIT_CSPS),
+}
+
+
+@infra_bp.route("/emit")
+def emit_page():
+    """IaC Emit page — form to generate IaC from a design or inline graph JSON."""
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, name FROM infra_designs ORDER BY updated_at DESC"
+        ).fetchall()
+        designs = [dict(r) for r in rows]
+    finally:
+        conn.close()
+    return render_template(
+        "infra_canvas/emit.html",
+        designs=designs,
+        targets=list(_EMIT_TARGETS),
+        csps=list(_EMIT_CSPS),
+        supported_csps={t: sorted(v) for t, v in _EMIT_SUPPORTED_CSPS.items()},
+    )
+
+
+@infra_bp.route("/emit/run", methods=["POST"])
+def emit_run():
+    """Execute IaC emission and return generated file contents as JSON.
+
+    Request JSON:
+      project  — design ID (DB lookup) or raw graph JSON string
+      target   — terraform | pulumi | ansible | helm
+      csp      — aws | azure | gcp | oci | on-prem
+
+    Response JSON (200):
+      {
+        "target": "terraform",
+        "csp": "aws",
+        "files": {"main.tf": "<content>"},
+        "skipped_count": 0,
+        "node_count": 1
+      }
+
+    Error responses:
+      400 — missing required field
+      422 — unsupported target/CSP combination
+      500 — emitter error
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    body = request.get_json(force=True) or {}
+
+    project = body.get("project")
+    target = body.get("target")
+    csp = body.get("csp")
+
+    # Validate required fields
+    if not project:
+        return jsonify({"error": "project is required"}), 400
+    if not target:
+        return jsonify({"error": "target is required"}), 400
+    if not csp:
+        return jsonify({"error": "csp is required"}), 400
+
+    # Validate target/CSP combination
+    supported = _EMIT_SUPPORTED_CSPS.get(target, frozenset())
+    if csp not in supported:
+        return jsonify({
+            "error": f"CSP {csp!r} is not supported for target {target!r}. "
+                     f"Supported: {sorted(supported)}",
+        }), 422
+
+    # Parse graph — project may be a raw JSON string or a design ID
+    try:
+        graph = json.loads(project)
+    except (json.JSONDecodeError, TypeError):
+        # Try DB lookup
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT graph_json FROM infra_designs WHERE id = ?", (project,)
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return jsonify({"error": f"Design {project!r} not found"}), 404
+        graph = json.loads(row["graph_json"])
+
+    nodes = graph.get("nodes", [])
+
+    # Emit into a temp directory, then read back file contents
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = _Path(tmp)
+        try:
+            if target == "terraform":
+                from tools.infra_canvas.emitters.terraform import (
+                    UnsupportedResourceError, emit_resource,
+                )
+                csp_key_map = {"aws": "aws-govcloud", "gcp": "gcp", "oci": "oci"}
+                csp_key = csp_key_map[csp]
+                blocks, skipped = [], 0
+                for node in nodes:
+                    try:
+                        blocks.append(emit_resource(node, csp_key))
+                    except UnsupportedResourceError:
+                        skipped += 1
+                if not blocks:
+                    return jsonify({"error": "No terraform-emittable nodes found"}), 422
+                content = "\n\n".join(blocks)
+                (out_dir / "main.tf").write_text(content, encoding="utf-8")
+                file_names = ["main.tf"]
+
+            elif target == "ansible":
+                from tools.infra_canvas.emitters.ansible import (
+                    UnsupportedResourceError, emit_playbook,
+                )
+                ok_types = {"user", "package", "service", "file", "lineinfile"}
+                good = [n for n in nodes if n.get("type") in ok_types]
+                skipped = len(nodes) - len(good)
+                if not good:
+                    return jsonify({"error": "No Ansible-compatible nodes found"}), 422
+                content = emit_playbook(good)
+                (out_dir / "playbook.yaml").write_text(content, encoding="utf-8")
+                file_names = ["playbook.yaml"]
+
+            elif target == "pulumi":
+                from tools.infra_canvas.emitters.pulumi import (
+                    UnsupportedResourceError, emit_resource,
+                )
+                csp_key_map = {"aws": "aws-govcloud", "azure": "azure-government"}
+                csp_key = csp_key_map[csp]
+                blocks, skipped = [], 0
+                for node in nodes:
+                    try:
+                        blocks.append(emit_resource(node, csp_key))
+                    except UnsupportedResourceError:
+                        skipped += 1
+                if not blocks:
+                    return jsonify({"error": "No pulumi-emittable nodes found"}), 422
+                aws_import = 'import * as aws from "@pulumi/aws";' if csp == "aws" else ""
+                az_import = (
+                    'import * as azure_native from "@pulumi/azure-native";'
+                    if csp == "azure" else ""
+                )
+                header = "\n".join(line for line in [aws_import, az_import] if line)
+                body_text = "\n\n".join(blocks)
+                content = f"{header}\n\n{body_text}" if header else body_text
+                (out_dir / "index.ts").write_text(content, encoding="utf-8")
+                file_names = ["index.ts"]
+
+            else:  # helm
+                from tools.infra_canvas.emitters.helm import (
+                    UnsupportedResourceError, emit_chart,
+                )
+                ok_types = {
+                    "k8s-deployment", "k8s-service", "k8s-configmap",
+                    "k8s-secret", "k8s-hpa",
+                }
+                good = [n for n in nodes if n.get("type") in ok_types]
+                skipped = len(nodes) - len(good)
+                if not good:
+                    return jsonify({"error": "No Helm-compatible nodes found"}), 422
+                files_map = emit_chart(good, chart_name="icdev-infra")
+                file_names = []
+                for fname, fcontent in files_map.items():
+                    fpath = out_dir / fname
+                    fpath.parent.mkdir(parents=True, exist_ok=True)
+                    fpath.write_text(fcontent, encoding="utf-8")
+                    file_names.append(fname)
+
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+        # Read file contents to return as JSON tabs
+        files = {}
+        for fname in file_names:
+            try:
+                files[fname] = (out_dir / fname).read_text(encoding="utf-8")
+            except Exception:
+                files[fname] = ""
+
+    return jsonify({
+        "target": target,
+        "csp": csp,
+        "node_count": len(nodes),
+        "emitted_count": len(nodes) - skipped,
+        "skipped_count": skipped,
+        "files": files,
+    })
+
+
 # ── API ──────────────────────────────────────────────────────────────────────
 
 
