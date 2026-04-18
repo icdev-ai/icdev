@@ -1,0 +1,517 @@
+# CUI // SP-CTI
+# AlphaDesk persona presets — the source of truth for how the dashboard
+# reshapes itself per user persona.
+#
+# Each persona below defines:
+#   - identity:        display_name, description, icon (for onboarding wizard)
+#   - defaults:        expertise_level, jargon_level, time_horizon,
+#                      risk_tolerance, currency, locale, theme, beginner_mode
+#   - layout:          hidden_pages (sidebar nav), hidden_cards (data-card-id),
+#                      featured_pages (surfaced in onboarding + home shortcuts)
+#   - voice:           which Reading-voice generator to use (plain|standard|technical|rookie)
+#   - onboarding:      welcome message + first-task suggestion
+#   - alert_defaults:  pre-suggested alert rule templates
+#   - flags:           special behavior toggles (sandbox_mode, requires_realtime, etc.)
+#
+# Phase 1 reads this file and applies the matching preset to ad_user_profiles
+# when the user picks a persona. The user can override any field afterward in
+# Settings → Profile; "Apply preset" re-snaps to defaults (with a warning).
+#
+# Hot-reload pattern (mirrors reading_config.py + help_tooltips):
+# the loader file-mtime caches and reloads transparently.
+
+_schema_version: 1
+_default_persona: retail   # used if onboarding skipped
+
+
+# --- Global defaults — every persona inherits these unless overridden ---
+_global_defaults:
+  expertise_level: intermediate
+  jargon_level: standard
+  time_horizon: long_term
+  risk_tolerance: moderate
+  currency: USD
+  locale: en-US
+  theme: dark
+  beginner_mode_enabled: false
+  hidden_pages: []
+  hidden_cards: []
+  featured_pages: [/portfolio, /signals, /market]
+  voice: pm                 # the Reading tone we shipped — PM-style
+  flags: {}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Personas
+# ─────────────────────────────────────────────────────────────────────────
+
+personas:
+
+  # ─── Retail / casual investor ─────────────────────────────────────────
+  # The biggest "democratize" audience. Doesn't know what Sharpe is and
+  # shouldn't have to. Wants "should I buy NVDA right now?" answers.
+  retail:
+    display_name: "Casual Investor"
+    description: "I invest for myself when I have time. Plain English, please."
+    icon: "🌱"
+    expertise_level: beginner
+    jargon_level: plain
+    beginner_mode_enabled: true
+    time_horizon: long_term
+    risk_tolerance: moderate
+    voice: rookie
+    hidden_pages:
+      - /strategist        # tier allocation is overkill for casual
+      - /oracle            # multi-lens predictions are intimidating
+      - /scenarios         # qualitative what-ifs need expert framing
+      - /graph             # KG visualization needs context
+      - /risk              # risk metrics shown inline on /portfolio instead
+    hidden_cards:
+      - pf-risk-metrics    # 8 ratios → too much; we surface 2 in beginner mode
+      - market-stagflation # macro composites need expertise
+      - market-deflation
+      - market-5y5y
+      - market-composite-detail
+      - radar-families     # SROR detail too granular
+      - radar-horizons
+      - adv-experts        # 6 expert agents intimidate
+      - strat-narrative    # strategist content hidden anyway via hidden_pages
+    featured_pages: [/portfolio, /watchlist, /analysis, /news]
+    onboarding:
+      welcome: "Welcome! Let's start by picking a few stocks you're curious about. Add them to your watchlist with the ⭐ button."
+      first_task: "Try /analysis on a stock you already own."
+    alert_defaults:
+      - name: "SPY drops 5% in a day"
+        rule_type: price_pct_change
+        subject: SPY
+        comparison: lt
+        threshold: -5
+        lookback_minutes: 1440
+        cooldown_minutes: 1440
+        severity: warning
+      - name: "Watchlist average composite drops below 40"
+        rule_type: composite_score
+        subject: WATCHLIST_AVG   # Phase 4 feature; placeholder for now
+        comparison: lt
+        threshold: 40
+        severity: info
+
+  # ─── Student / educator ───────────────────────────────────────────────
+  # Learning markets. Paper-only. Wants explanations, not just answers.
+  # Maps to the "democratize via classrooms" path.
+  student:
+    display_name: "Student / Learning"
+    description: "I'm learning how markets work. Show me the why behind every signal."
+    icon: "🎓"
+    expertise_level: beginner
+    jargon_level: plain
+    beginner_mode_enabled: true
+    time_horizon: long_term
+    risk_tolerance: conservative
+    voice: rookie
+    hidden_pages:
+      - /orders            # no live orders for students
+      - /alerts            # add later, after they understand signals
+      - /strategist        # 4-tier allocation is a graduate topic
+      - /scenarios
+    hidden_cards:
+      - pf-risk-metrics
+      - market-composite-detail
+      - oracle-convergence # multi-lens consensus is advanced
+      - adv-experts        # 6 expert agents (need walkthrough first)
+    featured_pages: [/analysis, /evolution, /portfolio, /news]
+    onboarding:
+      welcome: "Welcome! You're in safe paper-trading mode — no real money, no risk. Start with /analysis on a familiar stock and watch the signal explain itself."
+      first_task: "Run /analysis on AAPL and read the explanations."
+    flags:
+      sandbox_mode: true              # explicit "PAPER ONLY" badges everywhere
+      explain_mode: true              # "?" buttons on every signal pillar
+      glossary_auto_tooltips: true    # tooltips appear on hover/tap automatically
+    alert_defaults:
+      - name: "Weekly digest of biggest moves"
+        rule_type: composite_score
+        subject: WATCHLIST_TOP        # Phase 4
+        comparison: gt
+        threshold: 70
+        cooldown_minutes: 10080       # weekly
+        severity: info
+
+  # ─── Long-term passive (Bogleheads-style) ─────────────────────────────
+  # Doesn't trade. Rebalances quarterly or annually. Cares about drift,
+  # tax-loss harvesting, glide path.
+  passive:
+    display_name: "Long-Term Investor"
+    description: "I buy index funds and rebalance occasionally. Tell me when to act."
+    icon: "📈"
+    expertise_level: intermediate
+    jargon_level: plain
+    beginner_mode_enabled: false
+    time_horizon: long_term
+    risk_tolerance: moderate
+    voice: pm                          # PM-tone but with long-horizon framing
+    hidden_pages:
+      - /signals           # active signal queue irrelevant
+      - /oracle            # short-horizon predictions noisy
+      - /scenarios
+      - /advisor           # 6 experts noisy for buy-and-hold
+    hidden_cards:
+      - signals-queue
+      - market-heatmap     # daily heatmap noisy at long horizon
+      - radar-horizons
+    featured_pages: [/portfolio, /strategist, /watchlist]
+    onboarding:
+      welcome: "Welcome. Set your target allocation and AlphaDesk tracks drift, tax-loss opportunities, and quarterly rebalance suggestions."
+      first_task: "Open /portfolio and set your target allocation."
+    alert_defaults:
+      - name: "Quarterly rebalance reminder"
+        rule_type: composite_score    # placeholder; Phase 4 adds calendar-rule type
+        subject: SPY
+        comparison: any
+        cooldown_minutes: 129600      # 90 days
+        severity: info
+      - name: "Portfolio drift > 5% from target"
+        rule_type: composite_score    # placeholder; Phase 4 adds drift-rule type
+        subject: PORTFOLIO_DRIFT
+        comparison: gt
+        threshold: 5
+        severity: warning
+
+  # ─── Pro trader / swing trader ────────────────────────────────────────
+  # Power user. Comfortable with everything. Trades on confluence + signals.
+  pro_trader:
+    display_name: "Active Trader"
+    description: "I trade weekly to monthly on signals and confluence. Show me everything."
+    icon: "⚡"
+    expertise_level: expert
+    jargon_level: technical
+    beginner_mode_enabled: false
+    time_horizon: swing
+    risk_tolerance: aggressive
+    voice: pm                          # PM-tone but terse; could split later
+    hidden_pages: []                   # show everything
+    hidden_cards: []
+    featured_pages: [/signals, /analysis, /alerts, /orders]
+    onboarding:
+      welcome: "Welcome. All capabilities visible. Start by configuring alert rules in /alerts and reviewing the signal queue."
+      first_task: "Open /alerts and create a rule for one of your top tickers."
+    alert_defaults:
+      - name: "High-conviction BUY confluence (composite > 75)"
+        rule_type: composite_score
+        subject: WATCHLIST_ANY        # Phase 4
+        comparison: gt
+        threshold: 75
+        severity: warning
+      - name: "Signal direction flip on watchlist"
+        rule_type: signal_direction
+        subject: WATCHLIST_ANY        # Phase 4
+        comparison: flip
+        severity: warning
+      - name: "Macro regime change"
+        rule_type: regime_change
+        subject: null
+        comparison: any
+        severity: critical
+
+  # ─── Quant / systematic trader ────────────────────────────────────────
+  # Wants raw data, APIs, factor exposures. Doesn't want narratives.
+  # We demote Reading cards (still visible but minimized).
+  quant:
+    display_name: "Quant / Systematic"
+    description: "I want raw data, APIs, and factor exposures. Skip the narrative."
+    icon: "🧮"
+    expertise_level: expert
+    jargon_level: technical
+    beginner_mode_enabled: false
+    time_horizon: swing
+    risk_tolerance: aggressive
+    voice: technical                   # raw numbers, no prose narrative
+    hidden_pages:
+      - /advisor                       # 6-expert qualitative voting irrelevant
+      - /scenarios                     # qualitative what-ifs irrelevant
+    hidden_cards:
+      - pf-reading                     # narrative cards demoted for quant
+      - market-reading
+      - signals-reading
+      - news-reading
+      - radar-reading
+      - oracle-reading
+      - evo-reading
+      - adv-reading
+      - strat-reading
+      - wl-reading
+      - strat-narrative
+    featured_pages: [/signals, /analysis, /evolution, /oracle, /api-keys]
+    onboarding:
+      welcome: "Welcome. CSV bulk exports at /api/*/export.csv. JSON at /api/* (browser inspector for full schema). API tokens land with Pro tier."
+      first_task: "Download a heatmap snapshot from /api/market/heatmap/export.csv to your notebook."
+    flags:
+      api_first: true                  # surface API/CSV links on every card
+      compact_layout: true             # tighter padding, smaller fonts
+    alert_defaults:
+      - name: "Composite score crosses gate threshold"
+        rule_type: composite_score
+        subject: WATCHLIST_ANY        # Phase 4
+        comparison: gt
+        threshold: 65
+        severity: info
+      - name: "News impact > |3| over 6h on watched ticker"
+        rule_type: news_impact
+        subject: WATCHLIST_ANY        # Phase 4
+        comparison: abs_gt
+        threshold: 3
+        lookback_minutes: 360
+        severity: warning
+
+  # ─── Financial advisor / RIA ──────────────────────────────────────────
+  # Manages multiple client portfolios. Compliance-sensitive (SEC RIA).
+  # Needs white-label outputs, multi-account view, suitability tagging.
+  # Multi-portfolio capability is a Phase 3 concern; Phase 1 lays the
+  # surface (featured pages, alerts, voice) without backing-store changes.
+  advisor:
+    display_name: "Financial Advisor"
+    description: "I manage multiple client portfolios. I need white-label, suitability, and shareable summaries."
+    icon: "👔"
+    expertise_level: expert
+    jargon_level: standard
+    beginner_mode_enabled: false
+    time_horizon: long_term
+    risk_tolerance: moderate
+    voice: pm                          # client-friendly PM-tone
+    hidden_pages: []
+    hidden_cards: []
+    featured_pages: [/portfolio, /strategist, /advisor, /alerts]
+    onboarding:
+      welcome: "Welcome. Set up your first client portfolio in /portfolio. Multi-client switcher and white-label PDF arrive in Phase 3."
+      first_task: "Generate a Portfolio Brief PDF — that's your client-deliverable."
+    flags:
+      white_label_eligible: true       # Phase 3 unlocks the toggle
+      multi_client_eligible: true      # Phase 3 unlocks the switcher
+      compliance_audit_visible: true   # surface audit-trail links
+    alert_defaults:
+      - name: "Macro regime change (notify all clients)"
+        rule_type: regime_change
+        subject: null
+        comparison: any
+        severity: critical
+      - name: "Client portfolio drawdown > 5%"
+        rule_type: composite_score    # placeholder; Phase 4 adds drawdown-rule type
+        subject: PORTFOLIO_DRAWDOWN
+        comparison: lt
+        threshold: -5
+        severity: warning
+
+  # ─── Day trader / scalper ─────────────────────────────────────────────
+  # Sub-minute decisions, tick data, hot keys. Most of what they need is
+  # Phase 6 infrastructure (WebSocket ticks, L2 book). Persona is here so
+  # they can self-identify; capability gating warns about deferred features.
+  day_trader:
+    display_name: "Day Trader"
+    description: "Sub-minute decisions on tick data. Real-time infrastructure required."
+    icon: "🔥"
+    expertise_level: expert
+    jargon_level: technical
+    beginner_mode_enabled: false
+    time_horizon: intraday
+    risk_tolerance: aggressive
+    voice: technical
+    hidden_pages:
+      - /strategist                    # long-horizon allocation irrelevant
+      - /oracle                        # 30m sweep too slow
+      - /scenarios
+    hidden_cards:
+      - pf-reading
+      - strat-narrative
+    featured_pages: [/signals, /analysis, /alerts, /orders]
+    onboarding:
+      welcome: "Welcome. Heads up: real-time tick / L2 / hot-key infrastructure ships in Phase 6. For now you have minute-bar data — useful for research but not execution-grade for scalping."
+      first_task: "Set up a few price-move alerts on /alerts for your most-watched tickers."
+    flags:
+      requires_realtime: true          # banner warns until Phase 6 ships
+      compact_layout: true
+      keyboard_shortcuts_visible: true # surface hot-key cheat sheet
+    alert_defaults:
+      - name: "Price drops > 1% in 5 min"
+        rule_type: price_pct_change
+        subject: WATCHLIST_ANY        # Phase 4
+        comparison: lt
+        threshold: -1
+        lookback_minutes: 5
+        cooldown_minutes: 5
+        severity: warning
+
+  # ─── Family office / multi-asset ──────────────────────────────────────
+  # Multi-asset (equities + alts + fixed income), multi-generation, tax-aware.
+  # Most of what they need is Phase 6 (alts, illiquidity, tax-aware reports).
+  # Persona stub for self-identification + onboarding warning.
+  family_office:
+    display_name: "Family Office"
+    description: "Multi-asset portfolios across generations. Tax-aware, conservative, alt-friendly."
+    icon: "🏛️"
+    expertise_level: expert
+    jargon_level: standard
+    beginner_mode_enabled: false
+    time_horizon: long_term
+    risk_tolerance: conservative
+    voice: pm                          # conservative, multi-generation framing
+    hidden_pages:
+      - /scenarios                     # replaced by family-specific scenarios in Phase 6
+    hidden_cards: []
+    featured_pages: [/portfolio, /strategist, /advisor]
+    onboarding:
+      welcome: "Welcome. Multi-asset, alt-investment tracking, and tax-aware reporting ship in Phase 6. Equities + ETFs work today; fixed income, private credit, real estate, and tax-lot harvesting are deferred."
+      first_task: "Generate a Portfolio Brief PDF to share with stakeholders."
+    flags:
+      requires_multi_asset: true       # banner warns until Phase 6 ships
+      white_label_eligible: true
+      multi_client_eligible: true
+    alert_defaults:
+      - name: "Macro regime change"
+        rule_type: regime_change
+        subject: null
+        comparison: any
+        severity: warning
+      - name: "Portfolio drawdown > 3% (conservative threshold)"
+        rule_type: composite_score    # placeholder; Phase 4 adds drawdown-rule type
+        subject: PORTFOLIO_DRAWDOWN
+        comparison: lt
+        threshold: -3
+        severity: warning
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Card ID reference — vocabulary used in `hidden_cards` lists.
+# Templates progressively get tagged with `data-card-id="<id>"`. Adding a
+# new card to a template should add its ID here as well so personas can
+# choose to hide it.
+# ─────────────────────────────────────────────────────────────────────────
+
+card_id_reference:
+  # /portfolio
+  - pf-stat-grid
+  - pf-reading
+  - pf-chart-vs-spy
+  - pf-risk-metrics
+  - pf-holdings
+
+  # /market
+  - market-stat-grid
+  - market-stagflation
+  - market-deflation
+  - market-5y5y
+  - market-composite-detail
+  - market-reading
+  - market-heatmap
+  - market-supply-chain
+
+  # /signals
+  - signals-stat-grid
+  - signals-reading
+  - signals-queue
+
+  # /news
+  - news-stat-grid
+  - news-reading
+  - news-regime-watch
+  - news-emerging-watch
+  - news-list
+
+  # /radar
+  - radar-stat-grid
+  - radar-reading
+  - radar-composite
+  - radar-families
+  - radar-horizons
+  - radar-precursors
+
+  # /oracle
+  - oracle-stat-grid
+  - oracle-reading
+  - oracle-convergence
+  - oracle-predictions
+
+  # /evolution
+  - evo-stat-grid
+  - evo-reading
+  - evo-signal-chart
+  - evo-analyst-chart
+  - evo-regime-chart
+  - evo-debate-chart
+  - evo-table
+  - evo-portfolio-timeline
+
+  # /advisor
+  - adv-stat-grid
+  - adv-reading
+  - adv-analyze
+  - adv-context
+  - adv-experts
+  - adv-forecast
+  - adv-cis
+  - adv-recommendations
+  - adv-roster
+
+  # /strategist
+  - strat-stat-grid
+  - strat-reading
+  - strat-narrative
+  - strat-tier-donut
+  - strat-sector-bar
+  - strat-value-table
+  - strat-holdings
+
+  # /watchlist
+  - wl-stat-grid
+  - wl-reading
+  - wl-table
+
+  # /alerts
+  - al-stat-grid
+  - al-form
+  - al-rules-table
+  - al-log
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Voice presets — Reading-engine tone configurations.
+# Read by tools/trading/analytics/reading_voice.py (Phase 1 build).
+# ─────────────────────────────────────────────────────────────────────────
+
+voice_presets:
+  pm:
+    description: "PM-style — current Reading tone. Concise, technical-but-narrative, assumes Sharpe/beta literacy."
+    omit_metrics: []
+    rephrase: {}                       # use observation text as-is
+    add_glossary: false
+    show_considerations: true
+    profile_format: full
+
+  rookie:
+    description: "Plain-English. Strips ratio jargon, replaces with comparative phrasing. Adds glossary popovers."
+    omit_metrics: [sharpe, sortino, calmar, alpha_annual_pct, beta, vol_annual_pct]
+    rephrase:
+      "Sharpe": "risk-adjusted return"
+      "Sortino": "downside-adjusted return"
+      "Alpha": "extra return vs the market"
+      "Beta": "how much your book moves with the market"
+      "drawdown": "biggest loss from a recent peak"
+      "composite score": "signal strength"
+      "outperformance": "doing better than SPY"
+    add_glossary: true                 # tooltips appear automatically
+    show_considerations: true
+    profile_format: simplified         # short profile line
+
+  technical:
+    description: "Quant/expert. Raw numbers, minimal prose, omits PM-style narrative profile."
+    omit_metrics: []
+    rephrase: {}
+    add_glossary: false
+    show_considerations: false         # quants want signals not opinions
+    profile_format: compact            # one-line "score=X dir=Y conf=Z" format
+
+  standard:
+    description: "Same as 'pm' currently. Reserved for future divergence (e.g., advisor-tone variant)."
+    omit_metrics: []
+    rephrase: {}
+    add_glossary: false
+    show_considerations: true
+    profile_format: full
