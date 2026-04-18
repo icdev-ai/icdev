@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 shipped)
 
 ---
 
@@ -390,14 +390,17 @@ UI (each persona could have its own progression curve).
 - Registered: `ad_user_achievements` → APPEND_ONLY_TABLES; manifest shard updated. Coherence 14/17 (3 pre-existing warns unrelated). Verified end-to-end — first grant auto-earned `first_signal_approved`; 10 scenarios auto-earned `scenario_explorer`; XP pump auto-earned `intermediate_level`.
 - **Not in 6.2:** Settings → Profile badge tile + persona picker badges — deferred (trivial UI wiring once we need it).
 
-### Phase 6.3 — Single-player trade challenges
-- New schema: `ad_challenges` (operator-curated) + `ad_challenge_attempts`
-- Examples: "Achieve +5% in 30 days using only DJIA stocks", "Build a 60/40
-  portfolio that beats SPY over 6 months", "Survive a STAGFLATION regime
-  simulation"
-- Time-boxed; sandboxed paper portfolio per attempt; final score recorded
-- CashFlow-style narrative scenarios (you have $X, monthly expenses $Y,
-  what do you buy?) — uses existing rule engine
+### ✅ Phase 6.3 — Single-player trade challenges (DONE 2026-04-18)
+- Catalog: `args/challenges_catalog.yaml` (hot-reload, 6 MVP challenges across easy/medium/hard difficulties + 14/30/60/90-day durations). Operator-curated.
+- `ad_challenge_attempts` table — **mutable** (status: active → completed/expired/abandoned). Rows carry start/close snapshots as JSON, final_score, deadline_at. Not append-only — attempts rewrite their state.
+- `tools/trading/challenges/engine.py` — predicate registry covering 5 types: **return_pct_over_period, beats_benchmark (uses SPY), holdings_whitelist (inverse — fails on violation, passes on clean expiry), scenario_completion, hold_for_days**. Each predicate returns (state, progress) where state ∈ {passing, failing, violated}.
+- Lifecycle: `start_attempt()` snapshots portfolio (+ SPY price) at T0. `evaluate_attempt()` re-runs predicate + deadline check lazily on every summary call; closes attempt when predicate passes / deadline hits / violation fires.
+- Completion awards bonus XP via `grant_xp_safe(reason='challenge_completed')` with per-challenge `xp_on_complete` from catalog. `challenge_completed` added to `args/xp_rules.yaml`.
+- UI: `/challenges` page — Active attempts card (progress bars + deadline countdown + abandon), Available grid (6 tiles with difficulty/duration/XP badges), History table (status-colored). Sidebar link under Research.
+- Persona gating: auto-opt-in for student/retail/passive; hidden for quant/pro_trader/advisor/day_trader/family_office (same policy as /progression).
+- API: `GET /api/challenges`, `POST /api/challenges/<id>/start`, `POST /api/challenges/attempts/<id>/abandon`.
+- Registered in `tools/manifest/alphadesk-trading-engine.md`. Coherence gate passes 14/17 (3 pre-existing warns unrelated). Verified end-to-end — start → deadline + snapshot captured → duplicate-start blocked → evaluate → abandon → summary reflects state.
+- **Deferred from 6.3 (documented):** sandboxed paper portfolio per attempt (backlog called for this; 6.3 MVP uses start-snapshot deltas on the live paper portfolio — simpler, works for all 5 predicate types without duplicating the positions/orders stack). "Continuously held" precision for hold_for_days uses current-state check (not day-by-day sweep); if operator asks for true continuity, layer a daily snapshot sweep in 6.3.5.
 
 ### Phase 6.4 — Multi-team competitions + leaderboards
 - New schema: `ad_leagues`, `ad_league_members`, `ad_league_standings`

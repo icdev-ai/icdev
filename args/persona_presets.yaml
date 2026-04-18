@@ -175,6 +175,7 @@ personas:
     voice: pm
     hidden_pages:
     - /progression
+    - /challenges
     hidden_cards: []
     featured_pages:
     - /signals
@@ -220,6 +221,7 @@ personas:
     - /clients
     - /lessons
     - /progression
+    - /challenges
     hidden_cards:
     - pf-reading
     - market-reading
@@ -272,6 +274,7 @@ personas:
     voice: pm
     hidden_pages:
     - /progression
+    - /challenges
     hidden_cards: []
     featured_pages:
     - /clients
@@ -318,6 +321,7 @@ personas:
     - /api-keys
     - /lessons
     - /progression
+    - /challenges
     hidden_cards:
     - pf-reading
     - strat-narrative
@@ -358,6 +362,7 @@ personas:
     - /scenarios
     - /api-keys
     - /progression
+    - /challenges
     hidden_cards: []
     featured_pages:
     - /portfolio

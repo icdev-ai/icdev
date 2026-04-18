@@ -1,0 +1,166 @@
+# CUI // SP-CTI
+# AlphaDesk single-player challenges catalog — Phase 6.3.
+#
+# Each entry defines a time-boxed goal the user can attempt.
+# Catalog is operator-curated and hot-reloaded.
+#
+# Shape:
+#   id:                    # unique slug (also row key in ad_challenge_attempts.challenge_id)
+#     name:                # display title
+#     description:         # one-line flavor
+#     long_description:    # full challenge brief (shown on attempt detail)
+#     icon:                # emoji
+#     difficulty:          # easy | medium | hard
+#     duration_days:       # time-box (from attempt start_at)
+#     xp_on_complete:      # XP awarded on success (via grant_xp reason=challenge_completed)
+#     predicate:
+#       type:              # see tools/trading/challenges/engine.py
+#       params:            # shape depends on type
+#
+# Predicate types available in 6.3 MVP (deterministic only — no LLM):
+#   return_pct_over_period:
+#     params: target_pct          # portfolio return since attempt start >= target
+#   beats_benchmark:
+#     params: benchmark=SPY, edge_pct
+#                                  # (portfolio return - benchmark return) >= edge_pct
+#   holdings_whitelist:
+#     params: allowed_tickers     # every open position must be in this list
+#                                  # (constraint — fails if violated, passes when duration elapses clean)
+#   scenario_completion:
+#     params: scenario_key        # user ran a specific scenario during attempt window
+#   hold_for_days:
+#     params: min_positions, min_days
+#                                  # held >=min_positions continuously for min_days
+#
+# NOTE: `sandboxed paper portfolio per attempt` is deferred — 6.3 evaluates
+# against the user's live paper portfolio using start-snapshot deltas.
+
+_schema_version: 1
+
+challenges:
+  first_5_percent:
+    name: "First 5%"
+    description: "Grow your paper portfolio by 5% in 30 days."
+    long_description: >
+      A beginner-friendly goal — earn a 5% return over any 30-day window.
+      The challenge starts when you click Start; it watches your portfolio's
+      total value change from that moment.
+    icon: "📈"
+    difficulty: easy
+    duration_days: 30
+    xp_on_complete: 75
+    predicate:
+      type: return_pct_over_period
+      params:
+        target_pct: 5
+
+  beat_the_market:
+    name: "Beat the Market"
+    description: "Beat SPY by 2% over 60 days."
+    long_description: >
+      Outperform the S&P 500 ETF (SPY) by at least 2 percentage points over
+      a 60-day window. Harder than it sounds — most active managers fail this.
+    icon: "🏆"
+    difficulty: medium
+    duration_days: 60
+    xp_on_complete: 150
+    predicate:
+      type: beats_benchmark
+      params:
+        benchmark: SPY
+        edge_pct: 2
+
+  blue_chips_only:
+    name: "Blue Chips Only"
+    description: "Hold only DJIA stocks for 30 days."
+    long_description: >
+      A discipline challenge — keep every open position inside the Dow Jones
+      Industrial Average for 30 days. Exiting to cash is fine; buying
+      anything outside the DJIA ends the attempt.
+    icon: "🏛️"
+    difficulty: medium
+    duration_days: 30
+    xp_on_complete: 100
+    predicate:
+      type: holdings_whitelist
+      params:
+        allowed_tickers:
+        - AAPL
+        - AMGN
+        - AXP
+        - BA
+        - CAT
+        - CRM
+        - CSCO
+        - CVX
+        - DIS
+        - DOW
+        - GS
+        - HD
+        - HON
+        - IBM
+        - INTC
+        - JNJ
+        - JPM
+        - KO
+        - MCD
+        - MMM
+        - MRK
+        - MSFT
+        - NKE
+        - PG
+        - TRV
+        - UNH
+        - V
+        - VZ
+        - WBA
+        - WMT
+
+  survive_stagflation:
+    name: "Survive Stagflation"
+    description: "Run the stagflation scenario and study the cascade."
+    long_description: >
+      Run the stagflation historical-replay scenario (/scenarios) while
+      this attempt is active. Exploring how macro regimes move positions
+      is half the battle.
+    icon: "🌪️"
+    difficulty: easy
+    duration_days: 14
+    xp_on_complete: 50
+    predicate:
+      type: scenario_completion
+      params:
+        scenario_key: stagflation_1970s
+
+  patient_investor:
+    name: "Patient Investor"
+    description: "Hold 3+ positions for 21 consecutive days."
+    long_description: >
+      The opposite of over-trading — hold at least 3 open positions
+      continuously for 21 days. Selling any drops your active count;
+      the timer restarts if you fall below 3.
+    icon: "🧘"
+    difficulty: easy
+    duration_days: 30
+    xp_on_complete: 75
+    predicate:
+      type: hold_for_days
+      params:
+        min_positions: 3
+        min_days: 21
+
+  double_down:
+    name: "Double Down"
+    description: "Grow your paper portfolio by 20% in 90 days."
+    long_description: >
+      A high-conviction challenge — 20% over 90 days. Annualizes to 80%
+      if sustained. Few real portfolios hit this; paper trading lets you
+      take the swings.
+    icon: "🚀"
+    difficulty: hard
+    duration_days: 90
+    xp_on_complete: 300
+    predicate:
+      type: return_pct_over_period
+      params:
+        target_pct: 20

@@ -62,3 +62,6 @@ rules:
   achievement_bonus:
     amount: 0
     description: "Bonus XP from earning an achievement (amount set per-badge)"
+  challenge_completed:
+    amount: 0
+    description: "Bonus XP from completing a trade challenge (amount set per-challenge)"
