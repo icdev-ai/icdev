@@ -171,11 +171,18 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
     Settings → Workspace card (name + slug + role + member count + edit for
     owner/admin), `/api/tenant` GET/PATCH endpoints, first-signup flow
     auto-claims default tenant ownership.
-  - 🔜 **3.2** — Invitations + multi-tenant membership. New tables:
-    `ad_tenant_invitations` (token + email + expires) and
-    `ad_tenant_memberships` (many-to-many user↔tenant). Roles enforced
-    (owner/admin/member/viewer). Tenant switcher in nav. Email-based
-    invite flow. ~1 session.
+  - ✅ **3.2 (DONE 2026-04-18)** — `ad_tenant_memberships` (many-to-many
+    user↔tenant) + `ad_tenant_invitations` (sha256-hashed token, 7-day
+    TTL, single-use). 4 roles: owner/admin/member/viewer. Public peek
+    endpoint, public landing page (`/accept-invite`), gated accept
+    endpoint. Step-up MFA enforced on send-invite. Email integration
+    via existing `tools/trading/auth/email.py` (dev console / SMTP
+    swappable). Settings → Workspace gains: invite form, pending
+    invitations list, members list with role-change + remove (owner
+    only). Tenant switcher in sidebar (auto-shown when user has 2+
+    memberships). Backfill helper imports existing `ad_users` rows
+    into `ad_tenant_memberships`. `ad_tenant_invitations` added to
+    APPEND_ONLY_TABLES (NIST AU).
   - 🔜 **3.3** — White-label branding. Per-tenant logo upload, accent
     color CSS override, white-label PDF brief (replace "ICDEV™ AlphaDesk"
     header with tenant brand). ~1 session.
