@@ -3070,7 +3070,14 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
         # of querying the live DB.
         if "orphan_db_table" in desc_lower:
             import subprocess as _sp
-            pattern = rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{re.escape(table_name)}\b"
+            # Use POSIX ERE-safe syntax: [[:space:]] instead of \s, capturing
+            # group (...) instead of non-capturing (?:...), no \b word boundary.
+            # Git's -E uses POSIX ERE which does not support \s or (?:...).
+            _safe = re.escape(table_name).replace(r"\-", r"[-]")
+            pattern = (
+                rf"CREATE[[:space:]]+TABLE[[:space:]]+"
+                rf"(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?{_safe}"
+            )
             found = False
             try:
                 r = _sp.run(
