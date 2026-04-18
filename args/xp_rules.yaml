@@ -59,3 +59,6 @@ rules:
     amount: 2
     max_per_day: 20
     description: "Acknowledged an alert"
+  achievement_bonus:
+    amount: 0
+    description: "Bonus XP from earning an achievement (amount set per-badge)"

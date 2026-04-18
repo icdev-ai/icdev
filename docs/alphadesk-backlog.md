@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 shipped)
 
 ---
 
@@ -378,14 +378,17 @@ UI (each persona could have its own progression curve).
 - `ad_xp_events` added to `APPEND_ONLY_TABLES`; registered in `tools/manifest/alphadesk-trading-engine.md`. Coherence passes 14/17 (3 pre-existing warns unrelated to 6.1).
 - **Not in 6.1:** order-fill hook — auto_trader daemon runs without user_id in scope; the `order_filled` rule is defined but awaits a per-user order path (would hook into `/api/orders POST` when that lands, or a reconcile poller).
 
-### Phase 6.2 — Achievements + badges
-- New schema: `ad_achievements_catalog` (operator-curated) +
-  `ad_user_achievements` (earned per user)
-- Examples: "First Profitable Week", "Survived Drawdown" (held through a
-  -15% then recovered), "Regime-Aware" (5 trades aligned with macro
-  regime), "Diversified" (5+ sectors), "First 10 Trades", "First Million"
-  (paper)
-- Badge display: Settings → Profile, persona tile, leaderboard avatar
+### ✅ Phase 6.2 — Achievements + badges (DONE 2026-04-18)
+- Catalog: `args/achievements_catalog.yaml` (hot-reload, 8 MVP badges — bronze / silver / gold tiers with per-badge xp_bonus + progress_hint). Operator-curated.
+- `ad_user_achievements` table — append-only (NIST AU), idempotent via UNIQUE(user_id, achievement_id).
+- `tools/trading/progression/achievements.py` — predicate registry covering 7 types: xp_event_count, xp_total_threshold, order_count, distinct_sectors, portfolio_value, lesson_track_complete, level_reached. All deterministic — no LLM calls. `achievements_summary()` packs earned badges + locked badges with live progress counters for the UI.
+- Hooked into `grant_xp()` — every successful XP award triggers `evaluate_for_user()` which auto-grants any newly-satisfied badges + appends their xp_bonus as a normal XP event (recursion guarded via `reason == 'achievement_bonus'` skip).
+- Wired: `regime_aware_decision` events now increment `ad_user_progression.regime_aware_decisions_count`; `achievement_bonus` added to `args/xp_rules.yaml` (amount=0, per-badge amount comes from the catalog).
+- UI: `/progression` page adds a Badges card — responsive grid of earned (full color, tier-bordered) + locked (dimmed, with progress hints like "3/5 sectors") badges.
+- API: `GET /api/progression/achievements`.
+- 8 MVP badges: First Step, Getting the Hang of It, Diversified, Scenario Explorer, Regime Aware, Beginner Graduate, Intermediate Unlocked, Paper Millionaire.
+- Registered: `ad_user_achievements` → APPEND_ONLY_TABLES; manifest shard updated. Coherence 14/17 (3 pre-existing warns unrelated). Verified end-to-end — first grant auto-earned `first_signal_approved`; 10 scenarios auto-earned `scenario_explorer`; XP pump auto-earned `intermediate_level`.
+- **Not in 6.2:** Settings → Profile badge tile + persona picker badges — deferred (trivial UI wiring once we need it).
 
 ### Phase 6.3 — Single-player trade challenges
 - New schema: `ad_challenges` (operator-curated) + `ad_challenge_attempts`
