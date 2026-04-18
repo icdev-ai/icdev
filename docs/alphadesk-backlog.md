@@ -71,6 +71,15 @@ Flask-Login + pyotp + flask-mailman.
     column on `ad_users`) is plumbed but no enforcement timer yet —
     operator can set it manually; auto-prompt at login lands in 2A.3.5
     if needed.
+  - ✅ **2B (DONE 2026-04-18)** — WebAuthn / Passkeys via Duo's `webauthn`
+    lib. `ad_user_webauthn_credentials` table (one row per registered
+    credential, supports many per user). Hardware keys (YubiKey, Google
+    Titan), platform authenticators (Touch ID, Windows Hello, Face ID,
+    Android biometrics). Settings panel for register/list/delete (step-up
+    enforced). "🔑 Use passkey" button on /mfa/verify. NIST AAL3 path.
+    Operator config: `ICDEV_WEBAUTHN_RP_ID`, `ICDEV_WEBAUTHN_RP_NAME`,
+    `ICDEV_WEBAUTHN_ORIGIN` (defaults work for localhost dev; production
+    requires HTTPS).
 
 ### Legacy single-user data migration *(deferred subtask)*
 Phase 2A.1 added `user_id` to the new auth + profile tables, but legacy
