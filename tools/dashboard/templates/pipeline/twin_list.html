@@ -1,0 +1,95 @@
+<!-- CUI // SP-CTI — PDC Twin Dashboard: pipeline list with last snapshot -->
+{% extends "base.html" %}
+{% block title %}PDC Twin Dashboard — ICDEV™{% endblock %}
+{% block content %}
+<style>
+  .tl-header { padding: 20px 30px 12px; border-bottom: 1px solid #1e3a6e; }
+  .tl-header h1 { font-size: 20px; margin: 0 0 4px; }
+  .tl-header p  { color: #7a8cb0; font-size: 13px; margin: 0; }
+  .tl-back { color: #3498db; text-decoration: none; font-size: 12px; display: inline-block; margin-bottom: 8px; }
+  .tl-back:hover { color: #5dade2; }
+
+  .tl-body { padding: 20px 30px; }
+
+  .tl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tl-table th { text-align: left; color: #7a8cb0; font-size: 11px; text-transform: uppercase;
+                 letter-spacing: .05em; padding: 8px 12px; border-bottom: 1px solid #1e3a6e; }
+  .tl-table td { padding: 10px 12px; border-bottom: 1px solid #111d3a; vertical-align: middle; }
+  .tl-table tr:hover td { background: #0f3460; }
+
+  .pipe-name { color: #eaeaea; font-weight: 600; }
+  .pipe-desc { color: #5a6e8c; font-size: 11px; margin-top: 2px; }
+  .snap-info  { font-size: 11px; color: #7a8cb0; }
+  .snap-none  { font-size: 11px; color: #3d4f70; font-style: italic; }
+
+  .badge-cls { display: inline-block; padding: 1px 7px; border-radius: 10px;
+               font-size: 10px; font-weight: 700; background: #1e3a6e; color: #7a8cb0; }
+
+  .btn { padding: 5px 12px; border: none; border-radius: 4px; cursor: pointer;
+         font-size: 12px; font-weight: 600; transition: .15s; text-decoration: none;
+         display: inline-block; }
+  .btn-primary { background: #3498db; color: #fff; }
+  .btn-primary:hover { background: #2980b9; }
+  .btn-outline { background: transparent; color: #3498db;
+                 border: 1px solid #1e3a6e; }
+  .btn-outline:hover { border-color: #3498db; }
+  .btn-sm { padding: 3px 9px; font-size: 11px; }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: #5a6e8c; }
+  .empty-state h3 { font-size: 15px; margin-bottom: 8px; }
+</style>
+
+<div class="tl-header">
+  <a href="/devops/" class="tl-back">← Pipeline Canvas</a>
+  <h1>PDC Twin Dashboard</h1>
+  <p>Pipeline list with latest snapshot. Click <strong>Quick Diff</strong> to compare the two most recent snapshots, or <strong>View Twin</strong> for full simulation.</p>
+</div>
+
+<div class="tl-body">
+  {% if pipelines %}
+  <table class="tl-table">
+    <thead>
+      <tr>
+        <th>Pipeline</th>
+        <th>Classification</th>
+        <th>Last Snapshot</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pipelines %}
+      <tr>
+        <td>
+          <div class="pipe-name">{{ p.name }}</div>
+          {% if p.description %}<div class="pipe-desc">{{ p.description[:80] }}</div>{% endif %}
+        </td>
+        <td><span class="badge-cls">{{ p.classification or 'public' }}</span></td>
+        <td>
+          {% if p.last_snapshot %}
+          <div class="snap-info">
+            {{ p.last_snapshot.label }}<br>
+            {{ p.last_snapshot.node_count }}n · {{ p.last_snapshot.created_at[:10] }}
+          </div>
+          {% else %}
+          <span class="snap-none">No snapshots</span>
+          {% endif %}
+        </td>
+        <td style="white-space:nowrap;">
+          <a href="/devops/twin/{{ p.id }}" class="btn btn-outline btn-sm">View Twin</a>
+          {% if p.last_snapshot and p.prev_snapshot %}
+          <a href="/devops/twin/{{ p.id }}/delta?from={{ p.prev_snapshot.id }}&to={{ p.last_snapshot.id }}"
+             class="btn btn-primary btn-sm" style="margin-left:6px;">Quick Diff</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <h3>No pipelines yet</h3>
+    <p>Create your first pipeline in the <a href="/devops/" style="color:#3498db;">Pipeline Canvas</a>.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
