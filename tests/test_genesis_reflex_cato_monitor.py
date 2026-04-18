@@ -103,7 +103,7 @@ class TestCatoMonitorReflex:
         monkeypatch.setattr(
             reflex,
             "_call_poam_generator",
-            lambda pid: {"success": True, "path": "/tmp/p.md"},
+            lambda pid: {"success": True, "path": "/tmp/p.md"},  # nosec B108 — mock return value, no file I/O
         )
 
         result = reflex.run({}, None)
