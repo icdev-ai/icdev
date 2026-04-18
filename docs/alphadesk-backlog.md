@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18
+Last updated: 2026-04-18 (Phase 5B shipped)
 
 ---
 
@@ -323,12 +323,21 @@ portfolio metrics, etc.).
   (`list-tiers`, `list-tenants`, `set-tier`, `usage`).
 - Tier column already present on `ad_tenants.plan_tier` from Phase 3.1.
 
-### 🔜 Phase 5B — Stripe checkout + webhook + invoicing
-- Stripe Checkout Session for upgrades (map tier → `stripe_price_id`)
-- Webhook handler for `customer.subscription.{created,updated,deleted}`
-- Self-service portal link for payment-method updates
-- Invoice emails + dunning
-- Proration on upgrade / downgrade
+### ✅ Phase 5B — Stripe checkout + webhook + invoicing (DONE 2026-04-18)
+- `tools/trading/billing/stripe_client.py` — lazy `import stripe` wrapper; `ensure_customer()`, `create_checkout_session()`, `create_portal_session()`, `construct_webhook_event()`, `tier_from_price_id()`. Raises `StripeNotInstalled` / `StripeNotConfigured` so air-gap deployments degrade gracefully with HTTP 501.
+- `tools/trading/billing/db.py` — `ad_stripe_customers` (tenant → Stripe Customer), `ad_stripe_subscriptions` (status + period + cancel_at_period_end), `ad_stripe_events` (append-only NIST AU, idempotency key = `stripe_event_id`), `ad_stripe_invoices` (full history w/ hosted URL + PDF).
+- `tools/trading/billing/webhooks.py` — dispatcher for `customer.subscription.{created,updated,deleted}` and `invoice.{payment_succeeded,payment_failed,finalized}`. Syncs tenant `plan_tier` on state change (active/trialing → target tier; canceled/unpaid/incomplete_expired → free). Dunning email on `invoice.payment_failed` via `tools/trading/auth/email.py`. Idempotent replay via `event_already_processed()`.
+- Flask routes in `tools/trading/dashboard/app.py`:
+  - `POST /api/billing/checkout` — owner-only, step-up MFA, returns Checkout Session URL
+  - `POST /api/billing/portal` — owner-only, Self-service Portal URL
+  - `POST /api/billing/webhook` — public (allowlisted in middleware); verifies Stripe signature; 500 on handler failure so Stripe retries
+  - `GET /api/billing/subscription` — current-sub snapshot for UI
+  - `GET /api/billing/invoices` — owner/admin, last 24 invoices
+  - `POST /api/billing/tier` retained for operator/dev direct-set + Free downgrade path
+- `/billing` page: Stripe Upgrade buttons for paid tiers, Manage-subscription (Portal) button, invoice history table, `?checkout=success|cancel` banner.
+- Env: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO`, `STRIPE_PRICE_ID_ENTERPRISE` documented in `.env.example`; Price IDs resolve YAML → env; `stripe>=11.0` commented in `requirements.txt` (operator installs on connected deploys).
+- **Proration:** no manual code — Stripe handles it automatically via the Portal when a user upgrades/downgrades mid-period.
+- Registered in `tools/manifest/alphadesk-trading-engine.md`; `ad_stripe_events` added to `.claude/hooks/pre_tool_use.py:APPEND_ONLY_TABLES`. Coherence gate passes 16/17 (1 pre-existing warn unrelated).
 
 ---
 
