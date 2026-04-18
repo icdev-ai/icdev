@@ -100,6 +100,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_trading_decision_approvals",
         # AlphaDesk user-defined alerts (append-only fired-alert log)
         "ad_alerts_log",
+        # AlphaDesk auth — password-reset audit (used_at flips, never DELETE before purge)
+        "ad_password_reset_tokens",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",
