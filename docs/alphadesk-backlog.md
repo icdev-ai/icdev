@@ -46,6 +46,31 @@ rephrases technical terms.
 Per the multi-session plan. ~3 sessions. Schema additions + Authlib +
 Flask-Login + pyotp + flask-mailman.
 
+  - ✅ **2A.1 (DONE 2026-04-18)** — `ad_users` + `ad_user_sessions`,
+    argon2id, login/signup/logout pages, auth middleware, Account section
+    in Settings, bootstrap migration of legacy `'default'` profile rows
+    to first registered user.
+  - ✅ **2A.2 (DONE 2026-04-18)** — Password reset (`ad_password_reset_tokens`,
+    30-min single-use, sha256-hashed, no-enumeration response,
+    rate-limited to 3/hour). Email backend (dev → `.tmp/sent_emails/`,
+    SMTP swappable via `ICDEV_MAIL_BACKEND=smtp`). Google OAuth via
+    Authlib (auto-appears when `GOOGLE_CLIENT_ID/SECRET` set in `.env`).
+    Account-linking (Google email → existing local account = link).
+  - 🔜 **2A.2.5** — Microsoft + GitHub OAuth (~30 min — add 2 more
+    Authlib `register()` blocks + `configured_providers()` entries +
+    update `is_any_provider_configured()`. Same shape as Google).
+  - 🔜 **2A.3** — TOTP + backup codes + step-up MFA decorator + forced
+    enrollment after `mfa_required_at` grace period.
+
+### Legacy single-user data migration *(deferred subtask)*
+Phase 2A.1 added `user_id` to the new auth + profile tables, but legacy
+AlphaDesk tables still implicitly assume one user (`ad_portfolios`,
+`ad_positions`, `ad_orders`, `ad_pf_daily_snapshots`, `ad_strategy_runs`,
+`ad_strategy_holdings`, `ad_cis_recommendations`, `ad_analysis_runs`,
+`ad_alerts_log`). Add `user_id TEXT` columns + backfill all rows to
+the first user's id. Should land in a dedicated migration session before
+multi-user really matters (i.e., before serious BYOK adoption).
+
 ### Phase 2B — WebAuthn / Passkeys
 ~1 session. Adds NIST AAL3 capability via hardware keys + platform
 authenticators. Builds on 2A's `ad_user_mfa.webauthn_credentials` JSON column.
