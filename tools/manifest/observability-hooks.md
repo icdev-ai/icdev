@@ -19,3 +19,28 @@
 States: `full` = Sigma snippet + covered baseline; `partial` = one signal only; `none` = no coverage.
 CLI: `python tools/observability_canvas/replay_verify.py T1059 T1078 --json`
 
+## ODC MITRE Coverage Digital Twin
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Sigma Rule Generator | tools/observability_canvas/sigma_generator.py | Deterministic Sigma YAML + Splunk SPL + Elastic KQL + Sentinel KQL from ODC graph | graph_data, design_name | {rules, rule_count, exports, volume_estimate} |
+| MITRE Coverage Gap Engine | tools/observability_canvas/mitre_coverage_twin.py | Per-technique coverage scoring (covered/partial/gap), gap score, remediation steps | design_id, graph_data | {gap_score, coverage_by_technique, by_tactic, quick_wins} |
+| OTel Event Ingest | tools/observability_canvas/mitre_coverage_twin.py:ingest_otel_batch | OTLP-over-HTTP JSON event ingest mapped to MITRE techniques | design_id, events[] | {ingested, technique_counts} |
+| SDC Closed-Loop Verify | tools/observability_canvas/mitre_coverage_twin.py:verify_sdc_attack_path | Verify ODC detection coverage for SDC attack path TTP list | design_id, ttp_list | {per_ttp_result, covered_ttps, gap_ttps, coverage_pct} |
+
+### API Routes (blueprint: /observability)
+| Route | Method | Description |
+|-------|--------|-------------|
+| /api/designs/\<id\>/mitre-coverage | GET | Per-technique coverage map |
+| /api/designs/\<id\>/gap-report | POST | Full gap analysis + remediation steps |
+| /api/designs/\<id\>/otel-ingest | POST | Ingest OTel detection events |
+| /api/designs/\<id\>/sdc-verify | POST | Closed-loop SDC attack path verification |
+| /api/export/\<id\>/sigma | POST | Export Sigma YAML/SPL/KQL rules |
+| /api/designs/\<id\>/volume-estimate | GET | Log volume + SIEM cost estimate |
+
+### DB Tables Added (observability_canvas.db)
+| Table | Purpose |
+|-------|---------|
+| odc_technique_coverage | Per-design × per-technique coverage state |
+| odc_gap_scores | Aggregate gap score per assessment run |
+| odc_otel_events | OTel-format detection events (append-only) |
+| odc_sdc_verifications | SDC closed-loop attack path verification results |
