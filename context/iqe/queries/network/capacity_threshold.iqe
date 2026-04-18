@@ -1,0 +1,8 @@
+# Intent: Identify network interfaces whose utilization exceeds 80 % to support
+#         capacity planning and proactive bandwidth upgrades in the NDC model.
+# Expected violation shape: rows where utilization_pct > 80; each row signals a
+#   link approaching saturation and is flagged for upgrade or traffic engineering.
+
+foreach i in network.interfaces
+  where i.utilization_pct > 80
+  select i.device, i.name, i.speed_mbps, i.utilization_pct, i.direction

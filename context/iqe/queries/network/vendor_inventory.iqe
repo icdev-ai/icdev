@@ -1,0 +1,7 @@
+# Intent: Enumerate all network devices with vendor, model, and OS version for
+#         hardware/software inventory tracking in the NDC digital twin.
+# Expected violation shape: rows where vendor == null or os_version == null
+#   indicate unregistered or unmanaged devices that need classification.
+
+foreach d in network.devices
+  select d.hostname, d.vendor, d.model, d.os_version
