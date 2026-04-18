@@ -1,0 +1,9 @@
+# Intent: Surface cloud resources with no tag metadata, exposing governance gaps that
+#         prevent cost allocation, ownership attribution, and automated compliance
+#         classification scans from categorizing resources correctly.
+# Expected violation shape: rows where tags == null;
+#   each row is an untracked resource that must be tagged before the next audit cycle.
+
+foreach r in infra.resources
+  where r.tags == null
+  select r.id, r.resource_name, r.csp, r.region, r.resource_type
