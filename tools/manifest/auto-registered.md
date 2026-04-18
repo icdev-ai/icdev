@@ -317,6 +317,9 @@
 | Pii Detector | tools\data_canvas\pii_detector.py | Auto-registered: data_canvas/pii_detector.py | --json | JSON |
 | Cloud Import | tools\infra_canvas\cloud_import.py | Auto-registered: infra_canvas/cloud_import.py | --json | JSON |
 | Sigma Generator | tools\observability_canvas\sigma_generator.py | Auto-registered: observability_canvas/sigma_generator.py | --json | JSON |
+| Splunk SPL Exporter | tools\observability_canvas\exporters\splunk.py | Convert Sigma rules to Splunk SPL search stanzas; field modifiers (contains/gt/lt/cidr) translated deterministically | library — sigma_to_spl(rule_yaml) / batch_to_spl(rules) | SPL string |
+| Elastic Query DSL Exporter | tools\observability_canvas\exporters\elastic.py | Convert Sigma rules to Elasticsearch Query DSL JSON; ECS field mapping, bool/must/should clauses, range/wildcard queries | library — sigma_to_eql(rule_yaml) / batch_to_eql(rules) | JSON string |
+| Sentinel KQL Exporter | tools\observability_canvas\exporters\sentinel.py | Convert Sigma rules to Microsoft Sentinel KQL queries; Sentinel table routing by logsource category, contains/range/cidr operators | library — sigma_to_kql(rule_yaml) / batch_to_kql(rules) | KQL string |
 | Canvas Indexer | tools\rag\canvas_indexer.py | Auto-registered: rag/canvas_indexer.py | --json | JSON |
 | Claude Cli | tools\kanban\executors\claude_cli.py | Auto-registered: executors/claude_cli.py | --json | JSON |
 | Gitlab Pipeline | tools\kanban\executors\gitlab_pipeline.py | Auto-registered: executors/gitlab_pipeline.py | --json | JSON |
