@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-007
+-- Title: FedRAMP Moderate — System & Communications Protection (SC) Family Gaps
+-- Framework: FedRAMP Moderate
+-- Category: control-family
+-- Severity: high
+-- Description: SC-family controls cover encryption, network boundary protection,
+--   and TLS enforcement. Non-satisfaction in the SC family is a blocking
+--   finding for FedRAMP Moderate authorization.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.control_id starts_with 'SC' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

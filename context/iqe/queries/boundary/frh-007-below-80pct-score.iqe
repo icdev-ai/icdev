@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-007
+-- Title: FedRAMP High — Controls Below 80% Compliance Score
+-- Framework: FedRAMP High
+-- Category: scoring
+-- Severity: high
+-- Description: At FedRAMP High, a score below 0.8 is a leading indicator of
+--   an imminent control failure. Proactive identification enables targeted
+--   remediation before the next 3PAO assessment cycle.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.score < 0.8 and ctrl.status != 'not_applicable'
+select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id
