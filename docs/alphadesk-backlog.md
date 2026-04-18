@@ -165,9 +165,31 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
 
 ## Phase 3 (tenants + branding)
 
-### Phase 3 — Multi-tenant data + white-label
-Per the multi-session plan. ~3 sessions. `ad_tenants` table, `tenant_id`
-columns on per-user tables, role-based perms, per-tenant logo + accent color.
+  - ✅ **3.1 (DONE 2026-04-18)** — `ad_tenants` table, `ensure_default_tenant`
+    bootstrap, auth middleware injects `g.current_tenant`, context_processor
+    exposes `tenant` to templates, sidebar shows 🏢 workspace badge,
+    Settings → Workspace card (name + slug + role + member count + edit for
+    owner/admin), `/api/tenant` GET/PATCH endpoints, first-signup flow
+    auto-claims default tenant ownership.
+  - 🔜 **3.2** — Invitations + multi-tenant membership. New tables:
+    `ad_tenant_invitations` (token + email + expires) and
+    `ad_tenant_memberships` (many-to-many user↔tenant). Roles enforced
+    (owner/admin/member/viewer). Tenant switcher in nav. Email-based
+    invite flow. ~1 session.
+  - 🔜 **3.3** — White-label branding. Per-tenant logo upload, accent
+    color CSS override, white-label PDF brief (replace "ICDEV™ AlphaDesk"
+    header with tenant brand). ~1 session.
+
+### Notes from 3.1 (worth recording)
+- `ad_tenants.is_default = 1` on the bootstrap tenant to distinguish it
+  from later user-created tenants
+- Phase 3.2 will need to migrate `ad_users.tenant_id` (single column) into
+  `ad_tenant_memberships` (many-to-many) — keep `tenant_id` on ad_users
+  as the user's "primary/default tenant" for backward compat with
+  Phase 3.1 code paths
+- Query-site sweep: still deferred. `tenant_id` columns are populated on
+  every per-user table (Legacy migration), but reads don't filter by
+  `tenant_id` yet. Lands when 3.2 introduces second tenant.
 
 ---
 

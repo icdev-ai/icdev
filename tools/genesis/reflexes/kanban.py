@@ -1406,6 +1406,17 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         if new_status == "done":
             sql += ", completed_at = ?"
             vals.append(now)
+        elif new_status == "scheduled":
+            # Root-cause fix (2026-04-17): the scheduler's due-task query
+            # (_get_due_tasks) requires `status='scheduled' AND scheduled_at
+            # IS NOT NULL AND scheduled_at <= now()`. Any caller moving a
+            # task to 'scheduled' MUST populate scheduled_at or the row
+            # becomes invisible to the dispatcher. Multiple silent-failure
+            # incidents (cascade rollback, orphan_sweep, manual API moves)
+            # all originated from this gap. Setting scheduled_at here makes
+            # every move-to-scheduled call site safe by default.
+            sql += ", scheduled_at = ?"
+            vals.append(now)
         sql += " WHERE id = ?"
         vals.append(task_id)
         conn.execute(sql, tuple(vals))
