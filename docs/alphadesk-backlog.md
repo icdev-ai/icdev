@@ -81,14 +81,13 @@ Flask-Login + pyotp + flask-mailman.
     `ICDEV_WEBAUTHN_ORIGIN` (defaults work for localhost dev; production
     requires HTTPS).
 
-### Legacy single-user data migration *(deferred subtask)*
-Phase 2A.1 added `user_id` to the new auth + profile tables, but legacy
-AlphaDesk tables still implicitly assume one user (`ad_portfolios`,
-`ad_positions`, `ad_orders`, `ad_pf_daily_snapshots`, `ad_strategy_runs`,
-`ad_strategy_holdings`, `ad_cis_recommendations`, `ad_analysis_runs`,
-`ad_alerts_log`). Add `user_id TEXT` columns + backfill all rows to
-the first user's id. Should land in a dedicated migration session before
-multi-user really matters (i.e., before serious BYOK adoption).
+### ✅ Legacy single-user data migration — DONE 2026-04-18
+- `tools/trading/migrations/add_user_id_to_legacy_tables.py` — idempotent migration script
+- 9 tables gained `user_id TEXT` (ad_portfolios, ad_positions, ad_orders, ad_pf_daily_snapshots, ad_strategy_runs, ad_strategy_holdings, ad_cis_recommendations, ad_analysis_runs, ad_alerts_log)
+- 11 tables gained `tenant_id TEXT` (the 9 above plus ad_alert_rules + ad_watchlists which already had user_id)
+- 31,720 rows backfilled to first registered user
+- DDL files updated (tools/trading/db.py, tools/trading/alerts/db.py, tools/trading/dashboard/app.py) so fresh installs include both columns from the start
+- **What's NOT done (Phase 3 work):** query sites still don't filter by user_id. The schema is ready; per-user filtering lands when Phase 3 makes multi-tenancy real. For now everything functionally still behaves as single-user — but the columns are populated correctly so Phase 3 just needs to add `WHERE user_id = ?` to read paths.
 
 ### Phase 2B — WebAuthn / Passkeys
 ~1 session. Adds NIST AAL3 capability via hardware keys + platform
