@@ -25,7 +25,7 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -140,7 +140,6 @@ def generate_from_violations(
             ).fetchall()
         }
 
-        now = datetime.now(timezone.utc)
         new_count = 0
         skipped_count = 0
 
