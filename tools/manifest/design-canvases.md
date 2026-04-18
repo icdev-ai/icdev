@@ -38,6 +38,12 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 |------|------|-------------|-------|--------|
 | NDC Auto-Layout | tools/network/layout.py | Auto-layout for imported topology graphs (PDF/VSDX/config-derived). Re-flows graph nodes into a clean professional layout using hierarchical, force-directed, or circular algorithms so imported diagrams render correctly in the canvas. | `layout_graph(graph, algorithm)` | Graph dict with updated node coordinates |
 
+## DDC Sub-Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| DDC ← Collibra Import | tools/data_canvas/sync/collibra_import.py | Import table/column-level lineage from Collibra Data Intelligence Cloud (REST API v2) into DDC as dd_lineage records. Applies a CUI classification overlay to every edge; runs generate_contract_assertions() after import to enforce 'SECRET data may not flow into IL4-accessible datasets'. External Collibra assets become DDC graph nodes with IDs `ext:collibra:<assetId>`. Supports live API pull and offline JSON file import. | `--design-id <id>` or `--create-design <name>`, `--file <json>` (offline), `--classification CUI\|SECRET`, `--dry-run`, `--gate`, `--json` | JSON: `{status, nodes_imported, lineage_edges_imported, cat1_violations, violation_details[]}` |
+| DDC ← OpenMetadata Import | tools/data_canvas/sync/openmetadata_import.py | Import table/column-level lineage FROM OpenMetadata into DDC (reverse of openmetadata_sync.py). Fetches `GET /api/v1/lineage/{type}/name/{fqn}` with configurable upstream/downstream depth. Maps OM column lineage details to DDC lineage_type (col-passthrough, col-aggregate, col-derive, etc.). Applies CUI classification overlay and runs contract assertions after import. | `--design-id <id>` or `--create-design <name>`, `--entity <fqn>` or `--all`, `--entity-type table`, `--upstream-depth 3`, `--downstream-depth 3`, `--dry-run`, `--gate`, `--json` | JSON: `{status, tables_processed, nodes_imported, lineage_edges_imported, cat1_violations, violation_details[]}` |
+
 ## IDC Sub-Tools
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
