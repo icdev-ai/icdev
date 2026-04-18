@@ -1,0 +1,10 @@
+# Intent: Surface build-runner nodes operating below SLSA Build Level 3, where
+#         the build is not fully isolated, reproducible, or provenance-verified,
+#         failing the SLSA L3 guarantee required for high-assurance supply chains.
+# Expected violation shape: rows where node_type == "build-runner" and slsa_level < 3;
+#   each row is a build node below SLSA L3 requiring hardened build environment controls.
+
+foreach n in pipeline.nodes
+  where n.node_type == "build-runner"
+  where n.slsa_level < 3
+  select n.pipeline_id, n.snapshot_id, n.id, n.node_type, n.slsa_level
