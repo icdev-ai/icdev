@@ -1,0 +1,8 @@
+# Intent: Surface tactics where coverage is only partial — some signal sources detect
+#         the technique but coverage gaps remain, leaving detection incomplete.
+# Expected violation shape: rows where coverage_state == "partial"; each row is a
+#   technique-tactic pair needing additional signal sources or rule tuning.
+
+foreach t in odc_coverage
+  where t.coverage_state == "partial"
+  select t.technique_id, t.tactic_id, t.signal_source, t.coverage_state, t.severity
