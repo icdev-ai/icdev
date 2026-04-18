@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 + 6.5 shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 + 6.5 + 6.6 shipped — **Phase 6 complete**)
 
 ---
 
@@ -439,18 +439,27 @@ UI (each persona could have its own progression curve).
 - **Coherence 14/17** (same 3 pre-existing warns). End-to-end smoke verified — beginner unlocked, 2nd lesson gated on 1st, quiz grades 0%→fail + 100%→pass, completion propagates to gating.
 - **Out of scope for 6.5 (documented):** certificates, free-text answers, authoring UI (operators edit YAML), new lesson content for intermediate/advanced (slugs remain, content is user work), per-attempt cooldowns/retries limits.
 
-### Phase 6.6 — Live-trading graduation gate ⚠ compliance-sensitive
-- Schema: `ad_user_progression.live_trading_unlocked_at`
-- Hard gate enforced at `/orders` route + Alpaca live URL switching path
-- Criteria (operator-tunable, persisted in `args/graduation_criteria.yaml`):
-  - Min N days of paper trading (default 30)
-  - Min N completed analyses (default 25)
-  - Min N achievements earned (default 5)
-  - Sharpe ≥ X in paper account over last 90d (default 0.5)
-  - Acknowledged a "risk disclosure" modal
-- Until graduated: live URL switching disabled; user can BYOK (Phase 2A
-  done) but the broker adapter refuses live-mode requests with a
-  redirect-to-progression message
+### ✅ Phase 6.6 — Live-trading graduation gate (DONE 2026-04-18) ⚠ compliance-sensitive
+- **Enforcement point:** `alpaca_adapter.submit_order()` — before any non-paper `base_url` is hit, calls `graduation.enforce_live_order(user_id)` which raises `NotGraduatedError` (bubbled up as `AlpacaError`) with a specific "Remaining: X, Y, Z" message. Paper URLs bypass the gate entirely; the sandbox and all Phase 6.3.5 paper flows are unaffected.
+- **Schema migration:** added `risk_disclosure_acknowledged_at` column to `ad_user_progression` via idempotent ALTER TABLE (the `live_trading_unlocked_at` column was already present from 6.1 DDL). New helpers `set_risk_disclosure_acknowledged(user_id)` + `set_live_trading_unlocked(user_id)` — both idempotent via COALESCE.
+- **Criteria** (`args/graduation_criteria.yaml`, hot-reload, operator-tunable):
+  - `paper_days` — 30 days since first XP event
+  - `analyses_completed` — 25 rows in `ad_analysis_runs`
+  - `achievements_earned` — 5 rows in `ad_user_achievements`
+  - `sharpe_floor` — annualized Sharpe ≥ 0.5 over last 90 days of `ad_pf_daily_snapshots` daily returns. Requires ≥ 30 daily snapshots (thin history auto-fails with a specific note).
+  - `risk_disclosure` — acknowledged by clicking through the modal (persists timestamp)
+- **Escape hatch:** `ICDEV_GRADUATION_ENFORCED=false` env var disables the gate globally. Intentionally LOUD — UI surfaces an orange warning banner when override is active. YAML-level `enabled: false` has the same effect. **Operators should NEVER ship production with enforcement off.**
+- **Risk-disclosure modal** renders from YAML `risk_disclosure.{heading, text}` — default copy is a reasonable paper-to-live warning, but the file carries a visible comment warning operators to replace with legal-counsel-reviewed language before production.
+- **UI:** new **Live-trading graduation** card on `/progression` page — per-criterion progress tiles (green ✓ when met, amber ○ when not) + descriptions + actionable notes (e.g. "Need at least 30 daily snapshots to score — currently have 2"). Separate "Read & acknowledge risk disclosure" button + fullscreen modal + "Unlock live trading" button (disabled until all criteria green). Post-unlock: green banner shows the unlock date.
+- **3 new routes:** `GET /api/progression/graduation` (status w/ per-criterion breakdown), `POST /api/progression/graduation/acknowledge` (records timestamp), `POST /api/progression/graduation/unlock` (flips the gate; HTTP 400 + specific missing-criteria list when not eligible).
+- **Verified end-to-end:** fresh user shows all 5 criteria fail, risk-ack flips that one to met, unlock blocked with specific missing list, `enforce_live_order` raises `NotGraduatedError`, env-var escape hatch disables enforcement. Coherence 14/17 (same 3 pre-existing warns). Companion synced.
+- **Out of scope for 6.6:** de-graduation (once unlocked, stays unlocked — backlog doesn't describe reverse path), admin override CLI (could land 6.6.5 if needed), daily Sharpe recalc job (currently computed on each `/api/progression/graduation` hit), per-broker / per-tenant risk profiles.
+
+---
+
+## 🎉 Phase 6 complete (2026-04-18)
+
+All 6 sub-phases shipped: 6.1 (level + XP) · 6.2 (achievements) · 6.3 (challenges) · 6.3.5 (sandbox portfolios) · 6.4 (leagues) · 6.5 (curriculum + quizzes) · 6.6 (graduation gate). New pages: `/progression`, `/challenges`, `/leagues`. 8 new schema tables across 2 modules. XP events → achievements → levels → challenge wins → league standings → graduation — one coherent pipeline.
 
 > ⚠ **Real-money / regulatory implications.** Multi-team challenges with
 > *monetary* prizes touch SEC/FINRA territory in the US (could be
