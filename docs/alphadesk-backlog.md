@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 shipped)
 
 ---
 
@@ -413,13 +413,15 @@ UI (each persona could have its own progression curve).
 - `ad_sandbox_orders` added to `APPEND_ONLY_TABLES`; manifest shard updated. Coherence 14/17. Smoke test verified buy/sell/validation/archive flow end-to-end.
 - **Out of scope for 6.3.5:** limit/stop orders, short selling, slippage + commission model, daily-reconcile poller (mark-to-market happens on every snapshot read — fresh enough for the UI refresh cadence). Extension points are left in the fill_policy config for a follow-up.
 
-### Phase 6.4 — Multi-team competitions + leaderboards
-- New schema: `ad_leagues`, `ad_league_members`, `ad_league_standings`
-- Tenant-scoped (Phase 3 prereq) — classroom league, firm-internal league,
-  friend group
-- Periodic standings (weekly / monthly / per-challenge)
-- League visibility: public, private (invite-only), or league code
-- Optional: "season" framing with playoffs
+### ✅ Phase 6.4 — Multi-team competitions + leaderboards (DONE 2026-04-18)
+- Two tables (no standings cache — compute on-demand): `ad_leagues` (mutable; tenant-scoped with `UNIQUE(tenant_id, slug)`; 3 visibility modes: public / private / code with auto-generated 8-char codes) + `ad_league_members` (mutable role: captain / member; `UNIQUE(league_id, user_id)`).
+- Config: `args/leagues_config.yaml` — 3 ranking windows (weekly=7d / monthly=30d / all_time=since league creation), scoring (xp_weight=1.0 + challenge_bonus=50 per completed challenge), limits (max_league_size=100, max_leagues_per_user=20, max_leagues_per_tenant=50).
+- `tools/trading/leagues/engine.py` — `compute_standings(league_id, window)` aggregates `SUM(ad_xp_events.amount)` + `COUNT(ad_challenge_attempts WHERE status='completed')` per member, ranks by composite `score`. Tenant-boundary enforced — user must be in `ad_tenant_memberships` to create or join. Owner cannot be kicked (must delete league or transfer ownership first).
+- UI: `/leagues` page — **Create a league** form (name + description + visibility dropdown), **Join by code** form, **My leagues** list, **Public leagues** grid (peek or join), and an inline detail panel with **Standings** (window selector ↔ live re-compute), **Members** (captains can kick), and actions (leave / delete).
+- API: `/api/leagues` (GET summary / POST create), `/api/leagues/<id>` (GET detail + standings / DELETE), `/api/leagues/<id>/join`, `/api/leagues/join-by-code`, `/api/leagues/<id>/members` (POST add / DELETE kick).
+- Persona gating: visible for student/retail/passive, hidden for quant/pro_trader/advisor/day_trader/family_office (same policy as /progression + /challenges).
+- Coherence 14/17 (3 pre-existing warns). Companion synced. Smoke test verified: Alice creates public league → Bob joins → Carol joins → XP events per user correctly rank Alice #1 (150 XP) > Bob #2 (120 XP) > Carol #3 (0 XP) in the weekly window.
+- **Out of scope for 6.4 (documented):** invitation tokens (private leagues use captain-add; an invitation-link flow could land in 6.4.5), seasons + playoffs, real-time push, league chat, cross-tenant leagues, cash prizes (SEC/FINRA sensitive — explicitly not exposed).
 
 ### Phase 6.5 — Educational curriculum tied to levels
 - New `tools/trading/lessons/` module
