@@ -1584,6 +1584,18 @@ settings.watchlist:
     universe — these don't trade automatically unless also in the
     universe and meeting signal thresholds.
 
+settings.account:
+  title: Account
+  body: |
+    The signed-in account that owns the data on this dashboard. Phase 2A.1
+    landed: real email/password auth, server-side sessions, password change
+    flow, and per-session revoke.
+
+    Phase 2A.2 (next) adds social login (Google/Microsoft/GitHub) +
+    forgot-password. Phase 2A.3 adds TOTP/passkey MFA. Phase 3 adds
+    multi-tenant team membership; until then everyone shares the
+    `default` tenant.
+
 settings.profile:
   title: Profile
   body: |
