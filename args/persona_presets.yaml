@@ -158,10 +158,10 @@ personas:
       - signals-queue
       - market-heatmap     # daily heatmap noisy at long horizon
       - radar-horizons
-    featured_pages: [/portfolio, /strategist, /watchlist]
+    featured_pages: [/rebalance, /portfolio, /strategist, /watchlist]
     onboarding:
-      welcome: "Welcome. Set your target allocation and AlphaDesk tracks drift, tax-loss opportunities, and quarterly rebalance suggestions."
-      first_task: "Open /portfolio and set your target allocation."
+      welcome: "Welcome. Start with /rebalance — set your target allocation (60/40, three-fund, permanent portfolio, etc.) and AlphaDesk tracks drift, tax-loss opportunities, and rebalance suggestions."
+      first_task: "Open /rebalance and pick a template (60/40 / Three-Fund / Permanent Portfolio) or type your own."
     alert_defaults:
       - name: "Quarterly rebalance reminder"
         rule_type: composite_score    # placeholder; Phase 4 adds calendar-rule type
@@ -229,6 +229,7 @@ personas:
       - /advisor                       # 6-expert qualitative voting irrelevant
       - /scenarios                     # qualitative what-ifs irrelevant
       - /today                         # plain-English daily prompt not quant's jam
+      - /rebalance                     # buy-and-hold rebalancing not quant's workflow
     hidden_cards:
       - pf-reading                     # narrative cards demoted for quant
       - market-reading
@@ -319,6 +320,7 @@ personas:
       - /strategist                    # long-horizon allocation irrelevant
       - /oracle                        # 30m sweep too slow
       - /scenarios
+      - /rebalance                     # intraday trader doesn't rebalance
     hidden_cards:
       - pf-reading
       - strat-narrative
@@ -390,6 +392,11 @@ card_id_reference:
   # /today (Phase 4 R1)
   - today-header
   - today-how-it-works
+
+  # /rebalance (Phase 4 R2)
+  - rebalance-targets
+  - rebalance-plan
+  - rebalance-tax-loss
 
   # /portfolio
   - pf-stat-grid

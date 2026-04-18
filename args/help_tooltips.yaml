@@ -1614,6 +1614,66 @@ settings.byok_broker:
     "Test connection" hits Alpaca's `/account` endpoint — no orders
     placed, no positions changed, just verifies auth works.
 
+rebalance.total_value:
+  title: Total value
+  body: |
+    Current portfolio value = cash + positions marked at their stored
+    market value. For a mark-to-market (live prices), use /portfolio.
+
+rebalance.cash:
+  title: Cash
+  body: |
+    Your unallocated cash balance. Phase 4 rebalance treats anything
+    not in the target table as "target cash" — so if your target adds
+    to 90%, the remaining 10% is cash held on purpose.
+
+rebalance.drift:
+  title: Total drift
+  body: |
+    Sum of |current% − target%| across all positions, measured in
+    percentage points. A 60/40 target with a 70/30 actual has
+    10 + 10 = 20pp drift.
+
+rebalance.flagged:
+  title: Flagged trades
+  body: |
+    Positions where the drift from target is ≥ 5 percentage points —
+    the rule-of-thumb "worth rebalancing" threshold. Lower drift is
+    usually rounding noise; 5pp is when real action helps.
+
+rebalance.targets:
+  title: Target allocation
+  body: |
+    Set your desired mix — one row per ticker, percentage weight.
+    Use a template (60/40, Three-Fund, Permanent Portfolio, 100% Equity)
+    as a starting point or type your own. Anything you don't allocate
+    becomes target cash automatically.
+
+    Sum ≤ 100% is valid (the rest is cash). Sum > 100% is rejected.
+
+rebalance.plan:
+  title: Rebalance plan
+  body: |
+    Given your target + current holdings, the specific buy/sell trades
+    needed to reach target. Positive $ = buy, negative $ = sell.
+    Drift is computed as (current% − target%) in percentage points;
+    positive drift means overweight vs target.
+
+    Rows are sorted by absolute drift (biggest issues first). Rows with
+    |drift| ≥ 5pp are flagged ⚠ — these are the ones most worth acting on.
+    Lower drift is usually within rebalance-noise tolerance.
+
+rebalance.tax_loss:
+  title: Tax-loss harvest candidates
+  body: |
+    Positions with unrealized losses of ≥ 8% AND ≥ $500. Realizing
+    these losses lets you offset capital gains elsewhere (up to
+    $3k/year of ordinary income if capital losses exceed gains).
+
+    **This is not tax advice.** Watch the 30-day wash-sale rule
+    (selling at a loss and buying "substantially identical" within 30
+    days disallows the loss). Consult your tax pro for actual strategy.
+
 today.overview:
   title: ☕ Today
   body: |
