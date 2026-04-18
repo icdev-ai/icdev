@@ -94,7 +94,40 @@ multi-user really matters (i.e., before serious BYOK adoption).
 ~1 session. Adds NIST AAL3 capability via hardware keys + platform
 authenticators. Builds on 2A's `ad_user_mfa.webauthn_credentials` JSON column.
 
-### **🆕 BYOK (Bring Your Own Key) for LLM + Alpaca** *(requested 2026-04-18)*
+### ✅ BYOK (Path A — operator-held AES-GCM) — DONE 2026-04-18
+- `tools/trading/credentials/db.py` — `ad_user_credentials` (provider × user, encrypted at rest) + `ad_credential_audit` (append-only, NIST AU)
+- `resolver.py` — single read path, fallback order: per-user DB → env var → None. Daemon callers pass `user_id=None` → env-only.
+- `tester.py` — server-side no-op probes per provider (Anthropic /v1/messages w/ 1 token, OpenAI /v1/models, Ollama /api/tags, Alpaca /v2/account)
+- API routes: GET/PUT/DELETE `/api/credentials/<provider>`, POST `.../test`, GET `/api/credentials/audit`
+- Settings UI: 2 cards ("Your LLM API Keys" + "Your Broker Connection") — hidden in beginner_mode (retail/student personas)
+- Step-up MFA enforced on PUT/DELETE when user has MFA enabled
+- alpaca_adapter wired to use resolver (request-bound = user keys, daemon = env)
+- Encryption: AES-GCM via `ICDEV_KEYSTORE_KEY` (same key as MFA secret-at-rest)
+- **Threat model:** protects against DB dumps; does NOT protect against operator
+- Schema includes `vault_mode INTEGER DEFAULT 0` for forward-compat with Path B opt-in (lands in 2C below)
+
+### 🔜 Phase 2C — BYOK Path B opt-in (envelope encryption with user passphrase)
+**Why deferred:** user explicitly chose to ship Path A as the default and deferred Path B as opt-in. ~1 session of work.
+**Scope:**
+- Per-user "vault mode" toggle in Settings → BYOK
+- When ON: KEK derived from login password (HKDF) at login → cached in encrypted Flask session cookie → used to envelope-encrypt the API key
+- When ON: daemon ops with that user's keys are DISABLED (B1) — daemon falls back to operator env vars (or refuses)
+- Password change re-encrypts all the user's vault-mode credentials
+- Forgotten password = lost keys (no recovery — by design; otherwise operator could backdoor)
+- Optional: vault recovery code at first vault-mode key-add time
+- Schema already in place via `vault_mode` column (no migration needed)
+
+### 🔜 Phase 2D — Real secrets manager backend (HashiCorp Vault / OpenBao)
+**Why:** the user mentioned "we need some sort of secret manager" — Path A + Path B handle the immediate need, but production multi-tenant deployments will want a real KMS/HSM.
+**Scope:**
+- `SecretStore` ABC with `put/get/delete/metadata` interface
+- `LocalEncryptedStore` (refactor of current code) as Phase 1 default
+- `EnvelopeStore` (Path B from 2C) as opt-in for individual users
+- `VaultStore` for HashiCorp Vault / OpenBao via HTTP API
+- Operator selects backend via `ICDEV_SECRET_BACKEND` env var
+- Per-tenant Vault policies once Phase 3 (tenants) lands
+
+### Original BYOK request (now superseded by above) — kept for history
 **What:** UI in Settings to paste API keys (OpenAI, Anthropic, Ollama base URL,
 Alpaca key + secret). Encrypted at rest in `ad_user_credentials`. Resolution
 order: per-user DB credential → env var → fail closed. "Test connection" button
