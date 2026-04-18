@@ -104,6 +104,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_password_reset_tokens",
         # AlphaDesk auth — MFA attempts audit (NIST AU; required for rate-limit forensics)
         "ad_mfa_attempts",
+        # AlphaDesk BYOK — credential audit (NIST AU; tracks every set/delete/test/used)
+        "ad_credential_audit",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
         "memory_consolidation_log",

@@ -1584,6 +1584,36 @@ settings.watchlist:
     universe — these don't trade automatically unless also in the
     universe and meeting signal thresholds.
 
+settings.byok_llm:
+  title: Your LLM API Keys
+  body: |
+    BYOK (Bring Your Own Key) for LLM providers. Paste your own
+    Anthropic / OpenAI / Ollama keys; the codebase uses yours when set,
+    falls back to operator env vars when not.
+
+    Plaintext keys never leave the server — frontend sees only the
+    masked preview. Encrypted at rest via AES-GCM with a key in the
+    operator's `.env` (`ICDEV_KEYSTORE_KEY`). Step-up MFA enforced on
+    save when MFA is enabled on your account.
+
+    **Threat model (default mode):** protects against DB dumps; does
+    NOT protect against the operator (anyone with .env access can
+    decrypt). User-passphrase-protected mode is on the roadmap as
+    opt-in.
+
+settings.byok_broker:
+  title: Your Broker Connection
+  body: |
+    BYOK for your broker (Alpaca). Paste your own Alpaca API key +
+    secret + base URL — the codebase uses yours instead of the
+    operator's defaults.
+
+    Paper URL: `https://paper-api.alpaca.markets/v2`
+    Live URL: `https://api.alpaca.markets/v2`
+
+    "Test connection" hits Alpaca's `/account` endpoint — no orders
+    placed, no positions changed, just verifies auth works.
+
 settings.account:
   title: Account
   body: |
