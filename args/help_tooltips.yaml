@@ -1617,18 +1617,22 @@ settings.byok_broker:
 settings.tenant:
   title: Workspace
   body: |
-    Phase 3.1 (this milestone) — every user belongs to a **tenant**
-    (a workspace shared with other users). You're currently on the
-    `default` workspace; in Phase 3.2 you'll be able to belong to
-    multiple workspaces (your firm + your family + a classroom) and
-    switch between them.
+    A **workspace** is a shared environment where you and your team
+    operate together. You can belong to multiple workspaces (your
+    firm + your family + a classroom) and switch between them via
+    the 🏢 menu in the sidebar.
 
-    Roles: **owner** (full control), **admin** (workspace settings),
-    **member** (use), **viewer** (read-only). Phase 3.2 unlocks the
-    invite flow + role assignment.
+    **Roles:** owner (full control), admin (workspace settings + invites),
+    member (use), viewer (read-only).
 
-    White-label branding (logo, accent color, custom-branded PDF brief)
-    lands in Phase 3.3.
+    **Invite a teammate:** owners + admins can email an invitation; the
+    recipient signs up (or signs in) at the link and joins automatically.
+    Step-up MFA is required to send.
+
+    **Branding & white-label** (Phase 3.3): set a logo URL + accent color
+    + flip the white-label toggle. The sidebar header, page title, and
+    PDF brief now use your workspace name/logo instead of "AlphaDesk" —
+    perfect for advisors sharing reports with clients.
 
 settings.account:
   title: Account

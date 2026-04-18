@@ -183,9 +183,17 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
     memberships). Backfill helper imports existing `ad_users` rows
     into `ad_tenant_memberships`. `ad_tenant_invitations` added to
     APPEND_ONLY_TABLES (NIST AU).
-  - 🔜 **3.3** — White-label branding. Per-tenant logo upload, accent
-    color CSS override, white-label PDF brief (replace "ICDEV™ AlphaDesk"
-    header with tenant brand). ~1 session.
+  - ✅ **3.3 (DONE 2026-04-18)** — Per-tenant logo URL + accent color hex
+    + `white_label_enabled` toggle. CSS variable `--accent` injected via
+    `<style>` block in base.html when accent set. Sidebar swaps to
+    workspace name (+ logo when URL set, fallback to text + "Powered by
+    AlphaDesk" tagline). PDF brief uses tenant name in classification
+    banner + footer + filename slug, fetches + embeds logo from URL when
+    provided. Server-side validation: 6-digit hex required, only http(s)://
+    or data: URLs accepted. Settings → Workspace gains "Branding &
+    white-label" panel with native color picker + URL input + toggle +
+    live logo preview. **Logo upload deferred** (URL-only for now —
+    operator uploads to their own CDN/S3).
 
 ### Notes from 3.1 (worth recording)
 - `ad_tenants.is_default = 1` on the bootstrap tenant to distinguish it
