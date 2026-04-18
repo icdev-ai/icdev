@@ -26,6 +26,9 @@ python-dotenv>=1.0       # .env file loading
 numpy>=1.26              # Embedding math
 rank_bm25>=0.2           # BM25 keyword search
 
+# === IQE: Intent Query Engine ===
+lark>=1.2                # PEG/EBNF parser for IQE intent grammar (tools/iqe/)
+
 # === Network Design Canvas ===
 defusedxml>=0.7          # Safe XML parsing for STIG import (XXE protection)
 networkx>=3.2            # Graph analysis for topology NL query engine
