@@ -1614,6 +1614,32 @@ settings.byok_broker:
     "Test connection" hits Alpaca's `/account` endpoint — no orders
     placed, no positions changed, just verifies auth works.
 
+api_keys.create:
+  title: Generate a token
+  body: |
+    Create a personal API token for programmatic access. Pass it as
+    `Authorization: Bearer ad_live_...`. Optional TTL ensures tokens
+    auto-expire (recommended for CI/notebooks; leave blank for long-lived
+    integrations).
+
+    Step-up MFA required when MFA is enabled on your account.
+
+api_keys.list:
+  title: Your tokens
+  body: |
+    Every token you've created — showing the last-4 mask (full token is
+    visible ONCE at creation, never again). Status indicates active /
+    revoked / expired. Click Revoke to invalidate a token immediately;
+    subsequent API calls with that token return 401.
+
+api_keys.curl_examples:
+  title: Example curl commands
+  body: |
+    Ready-to-use curl recipes for the most common endpoints. Replace
+    `$TOKEN` with your generated token + `YOUR_HOST` with your
+    deployment URL. Includes a pandas example showing how to pipe a
+    CSV export directly into a DataFrame.
+
 clients.total_count:
   title: Clients
   body: |

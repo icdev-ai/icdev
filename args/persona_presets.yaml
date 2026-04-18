@@ -35,6 +35,7 @@ personas:
     - /graph
     - /risk
     - /clients
+    - /api-keys
     hidden_cards:
     - pf-risk-metrics
     - market-stagflation
@@ -86,6 +87,7 @@ personas:
     - /strategist
     - /scenarios
     - /clients
+    - /api-keys
     hidden_cards:
     - pf-risk-metrics
     - market-composite-detail
@@ -130,6 +132,7 @@ personas:
     - /scenarios
     - /advisor
     - /clients
+    - /api-keys
     hidden_cards:
     - signals-queue
     - market-heatmap
@@ -306,6 +309,7 @@ personas:
     - /scenarios
     - /rebalance
     - /clients
+    - /api-keys
     hidden_cards:
     - pf-reading
     - strat-narrative
@@ -344,6 +348,7 @@ personas:
     voice: pm
     hidden_pages:
     - /scenarios
+    - /api-keys
     hidden_cards: []
     featured_pages:
     - /portfolio
