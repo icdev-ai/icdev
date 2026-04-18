@@ -137,6 +137,7 @@
 - [Design Canvases (7-Canvas Suite)](manifest/design-canvases.md)
 - [Migration Canvas](manifest/migration-canvas.md)
 - [Canvas Auto-Remediation](manifest/canvas-auto-remediation.md)
+- [BDC cATO Twin (Phase BDC-1)](manifest/bdc-cato-twin.md)
 - [Agent Adapters (OPT-71)](manifest/agent-adapters.md)
 - [Skill Invocation (OPT-41, 2026-04-12)](manifest/skill-invocation.md)
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
