@@ -31,7 +31,7 @@ Helpers to REUSE verbatim (lines 623–688; pure combinators, version-agnostic):
     _error_responses(*codes)      → common error response set
     _project_id_param() / _user_id_param() / _key_id_param() — path-param specs
 
-Helpers to RE-IMPLEMENT here (dashboard-specific):
+Helpers implemented here (dashboard-specific):
     walk_api_v1_routes(app)       — Flask app.url_map → (method, path) tuples
     extract_query_params(handler) — ast-walk handler source for request.args
     infer_response_schema(route)  — sample GET against live dev server (B3)
