@@ -1,0 +1,9 @@
+# Intent: Enumerate multi-hop attack paths from the internet perimeter to the primary
+#         database server; paths with hops > 1 represent compound-technique chains
+#         with longer MTTR due to multi-stage remediation requirements.
+# Expected violation shape: rows where hops > 1 from attack.paths("internet", "db_server");
+#   each row is a multi-stage attack chain requiring coordinated remediation.
+
+foreach p in attack.paths("internet", "db_server")
+  where p.hops > 1
+  select p.src, p.goal, p.hops
