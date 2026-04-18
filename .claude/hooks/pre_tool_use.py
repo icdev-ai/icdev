@@ -362,6 +362,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cve_passive_watch_log",
         # BDC cATO Twin — compliance control snapshots (migration 027, NIST AU)
         "compliance_snapshots",
+        # SDC Attack Path Twin — append-only attack graph (NIST AU; migration 028)
+        "attack_graph_nodes",
+        "attack_graph_edges",
     ]
 
     if tool_name == "Bash":

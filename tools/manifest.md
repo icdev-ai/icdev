@@ -234,3 +234,5 @@
 |------|------|-------------|-------|--------|
 | Mitre Loader | tools\observability_canvas\mitre_loader.py | Auto-registered: observability_canvas/mitre_loader.py | --json | JSON |
 | Premerge Runner | tools\pipeline\premerge_runner.py | Auto-registered: pipeline/premerge_runner.py | --json | JSON |
+| Path Enumerator | tools\security_canvas\path_enumerator.py | Auto-registered: security_canvas/path_enumerator.py | --json | JSON |
+| Attackpath | tools\security_canvas\attackpath.py | Auto-registered: security_canvas/attackpath.py | --json | JSON |
