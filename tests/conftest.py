@@ -118,6 +118,22 @@ CREATE TABLE IF NOT EXISTS stig_findings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS compliance_snapshots (
+    snapshot_id  TEXT NOT NULL PRIMARY KEY,
+    project_id   TEXT NOT NULL,
+    framework_id TEXT NOT NULL,
+    control_id   TEXT NOT NULL,
+    status       TEXT NOT NULL CHECK (status IN (
+                     'satisfied',
+                     'not_satisfied',
+                     'partially_satisfied',
+                     'not_applicable',
+                     'planned'
+                 )),
+    evidence_ref TEXT,
+    taken_at     TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS dev_profiles (
     id TEXT PRIMARY KEY,
     scope TEXT NOT NULL CHECK(scope IN ('platform','tenant','program','project','user')),
