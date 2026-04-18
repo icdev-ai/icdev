@@ -1,0 +1,84 @@
+{
+  "version": 3,
+  "deployment": {
+    "manifest": {
+      "time": "2026-01-15T10:30:00.000000000+00:00",
+      "magic": "abc123deadbeef",
+      "version": "3.100.0"
+    },
+    "secrets_providers": {
+      "type": "passphrase",
+      "state": {}
+    },
+    "resources": [
+      {
+        "urn": "urn:pulumi:prod::govcloud-infra::pulumi:pulumi:Stack::govcloud-infra-prod",
+        "custom": false,
+        "type": "pulumi:pulumi:Stack",
+        "inputs": {},
+        "outputs": {}
+      },
+      {
+        "urn": "urn:pulumi:prod::govcloud-infra::pulumi:providers:aws::default_6_0_0::provider-id-1",
+        "custom": true,
+        "id": "provider-id-1",
+        "type": "pulumi:providers:aws",
+        "inputs": {
+          "region": "us-gov-west-1",
+          "version": "6.0.0"
+        },
+        "outputs": {
+          "region": "us-gov-west-1",
+          "version": "6.0.0"
+        }
+      },
+      {
+        "urn": "urn:pulumi:prod::govcloud-infra::aws:ec2/vpc:Vpc::main-vpc",
+        "custom": true,
+        "id": "vpc-0abc123def456789",
+        "type": "aws:ec2/vpc:Vpc",
+        "inputs": {
+          "cidrBlock": "10.0.0.0/16",
+          "enableDnsHostnames": true,
+          "enableDnsSupport": true,
+          "tags": {
+            "Name": "main-vpc",
+            "Environment": "prod",
+            "classification": "CUI"
+          }
+        },
+        "outputs": {
+          "id": "vpc-0abc123def456789",
+          "arn": "arn:aws:ec2:us-gov-west-1:123456789012:vpc/vpc-0abc123def456789",
+          "cidrBlock": "10.0.0.0/16",
+          "region": "us-gov-west-1",
+          "enableDnsHostnames": true,
+          "enableDnsSupport": true
+        },
+        "parent": "urn:pulumi:prod::govcloud-infra::pulumi:pulumi:Stack::govcloud-infra-prod",
+        "provider": "urn:pulumi:prod::govcloud-infra::pulumi:providers:aws::default_6_0_0::provider-id-1"
+      },
+      {
+        "urn": "urn:pulumi:prod::govcloud-infra::aws:s3/bucketV2:BucketV2::log-bucket",
+        "custom": true,
+        "id": "log-bucket-abc123",
+        "type": "aws:s3/bucketV2:BucketV2",
+        "inputs": {
+          "bucket": "log-bucket-abc123",
+          "tags": {
+            "Name": "log-bucket",
+            "Environment": "prod"
+          }
+        },
+        "outputs": {
+          "id": "log-bucket-abc123",
+          "arn": "arn:aws:s3:::log-bucket-abc123",
+          "bucket": "log-bucket-abc123",
+          "region": "us-gov-west-1"
+        },
+        "parent": "urn:pulumi:prod::govcloud-infra::pulumi:pulumi:Stack::govcloud-infra-prod",
+        "provider": "urn:pulumi:prod::govcloud-infra::pulumi:providers:aws::default_6_0_0::provider-id-1"
+      }
+    ]
+  }
+}
