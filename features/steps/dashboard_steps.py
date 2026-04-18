@@ -84,3 +84,28 @@ def step_valid_json(context):
 
 
 # Portal-specific steps moved to saas_platform_steps.py
+
+
+@then('the page should contain "{text}"')
+def step_page_contains_text(context, text):
+    """Verify a string is present in the response body."""
+    body = context.response.data.decode('utf-8')
+    assert text in body, f"Expected {text!r} in page but not found"
+
+
+@when('I POST to "{path}" with JSON \'{body}\'')
+def step_post_with_json(context, path, body):
+    """POST JSON payload to a dashboard endpoint."""
+    context.response = context.client.post(
+        path,
+        data=body,
+        content_type='application/json',
+    )
+
+
+@then('the response JSON should contain key "{key}"')
+def step_response_json_key(context, key):
+    """Verify the response JSON contains the given key."""
+    import json
+    data = json.loads(context.response.data)
+    assert key in data, f"Response JSON missing key {key!r}. Keys: {list(data.keys())}"
