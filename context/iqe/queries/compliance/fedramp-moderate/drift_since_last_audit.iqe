@@ -1,0 +1,9 @@
+# Intent: Detect compliance score regressions between the start and end of a
+#         program increment, revealing projects where controls degraded during
+#         a PI cycle — a leading indicator of cATO revocation risk.
+# Expected violation shape: rows where compliance_score_end < compliance_score_start;
+#   each row identifies a PI where the project lost ground on its authorization posture.
+
+foreach s in compliance.snapshots
+  where s.compliance_score_end < s.compliance_score_start
+  select s.project_id, s.pi_number, s.compliance_score_start, s.compliance_score_end
