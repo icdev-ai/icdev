@@ -43,19 +43,17 @@ def test_app_create_app_exists():
 
 
 def test_app_constants():
-    """Verify module exports expected constants."""
+    """Verify module exports expected constants.
+
+    Note: _HAS_FINETUNE_API, _HAS_PROPOSAL_GENESIS, _HAS_CHAT_API were
+    internalised into register_api_blueprints() (P1.1 refactor) and are
+    no longer module-level constants in app.py.
+    """
     try:
         import tools.dashboard.app as mod
 
-        assert hasattr(mod, "_HAS_FINETUNE_API"), "Missing constant _HAS_FINETUNE_API"
-        assert hasattr(mod, "_HAS_FINETUNE_API"), "Missing constant _HAS_FINETUNE_API"
         assert hasattr(mod, "_HAS_GOVCON"), "Missing constant _HAS_GOVCON"
-        assert hasattr(mod, "_HAS_GOVCON"), "Missing constant _HAS_GOVCON"
-        assert hasattr(mod, "_HAS_GOVCON"), "Missing constant _HAS_GOVCON"
-        assert hasattr(mod, "_HAS_PROPOSAL_GENESIS"), "Missing constant _HAS_PROPOSAL_GENESIS"
-        assert hasattr(mod, "_HAS_PROPOSAL_GENESIS"), "Missing constant _HAS_PROPOSAL_GENESIS"
-        assert hasattr(mod, "_HAS_PROPOSAL_GENESIS"), "Missing constant _HAS_PROPOSAL_GENESIS"
-        assert hasattr(mod, "_HAS_CHAT_API"), "Missing constant _HAS_CHAT_API"
-        assert hasattr(mod, "_HAS_CHAT_API"), "Missing constant _HAS_CHAT_API"
+        assert hasattr(mod, "_AIRGAP_MODE"), "Missing constant _AIRGAP_MODE"
+        assert hasattr(mod, "register_api_blueprints"), "Missing register_api_blueprints import"
     except ImportError:
         pytest.skip("Module not importable")
