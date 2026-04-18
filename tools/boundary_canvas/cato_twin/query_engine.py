@@ -34,9 +34,8 @@ Phase 2 will add a proper Lark grammar; this Phase 1 parser handles the 20 seed 
 
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -143,7 +142,7 @@ def _parse_projection(proj_str: str, var: str) -> str:
 
 def _latest_snapshot_cte(framework: str) -> str:
     """CTE that selects only the latest snapshot per project for a framework."""
-    return f"""
+    return """
         WITH latest_run AS (
             SELECT project_id, MAX(started_at) AS max_started
             FROM compliance_twin_runs
