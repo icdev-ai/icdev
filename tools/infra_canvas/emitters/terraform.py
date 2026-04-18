@@ -3,8 +3,10 @@
 
 emit_resource(node, target_csp) -> str
 
-Supported resource types (AWS GovCloud starting set):
-  aws-vpc, aws-subnet, aws-ec2, aws-sg, aws-iam-role
+Supported resource types:
+  AWS / AWS GovCloud: aws-vpc, aws-subnet, aws-ec2, aws-sg, aws-iam-role
+  GCP:  gcp-vpc, gcp-subnet, gcp-gce, gcp-firewall, gcp-iam
+  OCI:  oci-vcn, oci-subnet, oci-compute, oci-security-list, oci-vault
 """
 
 import re
@@ -138,6 +140,226 @@ def _emit_iam_role(node: Node) -> str:
     )
 
 
+# ── GCP helpers & emitters ────────────────────────────────────────────────────
+
+def _gcp_label_block(label: str, node: Node) -> str:
+    """Build a GCP labels = { … } block (lowercase values required by GCP)."""
+    meta = node.get("metadata") or {}
+    classification = str(meta.get("classification", "")).strip()
+
+    safe_label = re.sub(r"[^a-z0-9_-]", "-", label.lower()).strip("-") or "resource"
+    lines = [
+        f'    name       = "{safe_label}"',
+        f'    managed_by = "{_MANAGED_BY}"',
+    ]
+    if classification:
+        cls_val = re.sub(r"[^a-z0-9_-]", "-", classification.lower()).strip("-")
+        lines.append(f'    classification = "{cls_val}"')
+
+    return "  labels = {{\n{}\n  }}".format("\n".join(lines))
+
+
+def _emit_gcp_vpc(node: Node) -> str:
+    rid = _safe_id(node.get("id", "vpc"))
+    label = node.get("label", "vpc")
+    labels = _gcp_label_block(label, node)
+    return (
+        f'resource "google_compute_network" "{rid}" {{\n'
+        f'  name                    = "{label}"\n'
+        f'  auto_create_subnetworks = false\n'
+        f'\n{labels}\n}}'
+    )
+
+
+def _emit_gcp_subnet(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "subnet"))
+    label = node.get("label", "subnet")
+    cidr = meta.get("ip_cidr_range", "10.1.0.0/24")
+    region = meta.get("region", "us-central1")
+    network = meta.get("network", "default")
+    labels = _gcp_label_block(label, node)
+    return (
+        f'resource "google_compute_subnetwork" "{rid}" {{\n'
+        f'  name          = "{label}"\n'
+        f'  ip_cidr_range = "{cidr}"\n'
+        f'  region        = "{region}"\n'
+        f'  network       = "{network}"\n'
+        f'\n{labels}\n}}'
+    )
+
+
+def _emit_gcp_instance(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "instance"))
+    label = node.get("label", "instance")
+    machine_type = meta.get("machine_type", "n2-standard-2")
+    zone = meta.get("zone", "us-central1-a")
+    image = meta.get("image", "debian-cloud/debian-11")
+    labels = _gcp_label_block(label, node)
+    return (
+        f'resource "google_compute_instance" "{rid}" {{\n'
+        f'  name         = "{label}"\n'
+        f'  machine_type = "{machine_type}"\n'
+        f'  zone         = "{zone}"\n'
+        f'\n'
+        f'  boot_disk {{\n'
+        f'    initialize_params {{\n'
+        f'      image = "{image}"\n'
+        f'    }}\n'
+        f'  }}\n'
+        f'\n'
+        f'  network_interface {{\n'
+        f'    network = "default"\n'
+        f'  }}\n'
+        f'\n{labels}\n}}'
+    )
+
+
+def _emit_gcp_firewall(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "firewall"))
+    label = node.get("label", "firewall")
+    network = meta.get("network", "default")
+    protocol = meta.get("protocol", "tcp")
+    ports = meta.get("ports", ["443"])
+    ports_hcl = "[" + ", ".join(f'"{p}"' for p in ports) + "]"
+    return (
+        f'resource "google_compute_firewall" "{rid}" {{\n'
+        f'  name    = "{label}"\n'
+        f'  network = "{network}"\n'
+        f'\n'
+        f'  allow {{\n'
+        f'    protocol = "{protocol}"\n'
+        f'    ports    = {ports_hcl}\n'
+        f'  }}\n'
+        f'}}'
+    )
+
+
+def _emit_gcp_iam(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "iam"))
+    project = meta.get("project", "my-project")
+    role = meta.get("role", "roles/viewer")
+    member = meta.get("member", "serviceAccount:sa@my-project.iam.gserviceaccount.com")
+    return (
+        f'resource "google_project_iam_member" "{rid}" {{\n'
+        f'  project = "{project}"\n'
+        f'  role    = "{role}"\n'
+        f'  member  = "{member}"\n'
+        f'}}'
+    )
+
+
+# ── OCI helpers & emitters ────────────────────────────────────────────────────
+
+def _oci_freeform_tags(label: str, node: Node) -> str:
+    """Build an OCI freeform_tags = { … } block."""
+    meta = node.get("metadata") or {}
+    classification = str(meta.get("classification", "")).strip()
+
+    lines = [
+        f'    ManagedBy = "{_MANAGED_BY}"',
+        f'    Name      = "{label}"',
+    ]
+    if classification:
+        lines.append(f'    Classification = "{classification}"')
+        lines.append('    DataHandling   = "CUI//SP-CTI"')
+
+    return "  freeform_tags = {{\n{}\n  }}".format("\n".join(lines))
+
+
+def _emit_oci_vcn(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "vcn"))
+    label = node.get("label", "vcn")
+    cidr = meta.get("cidr_block", "10.0.0.0/16")
+    compartment = meta.get("compartment_id", "ocid1.compartment.oc1..placeholder")
+    tags = _oci_freeform_tags(label, node)
+    return (
+        f'resource "oci_core_vcn" "{rid}" {{\n'
+        f'  compartment_id = "{compartment}"\n'
+        f'  cidr_block     = "{cidr}"\n'
+        f'  display_name   = "{label}"\n'
+        f'\n{tags}\n}}'
+    )
+
+
+def _emit_oci_subnet(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "subnet"))
+    label = node.get("label", "subnet")
+    cidr = meta.get("cidr_block", "10.0.1.0/24")
+    compartment = meta.get("compartment_id", "ocid1.compartment.oc1..placeholder")
+    vcn_id = meta.get("vcn_id", "placeholder-vcn-id")
+    tags = _oci_freeform_tags(label, node)
+    return (
+        f'resource "oci_core_subnet" "{rid}" {{\n'
+        f'  compartment_id = "{compartment}"\n'
+        f'  vcn_id         = "{vcn_id}"\n'
+        f'  cidr_block     = "{cidr}"\n'
+        f'  display_name   = "{label}"\n'
+        f'\n{tags}\n}}'
+    )
+
+
+def _emit_oci_instance(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "instance"))
+    label = node.get("label", "instance")
+    shape = meta.get("shape", "VM.Standard.E4.Flex")
+    compartment = meta.get("compartment_id", "ocid1.compartment.oc1..placeholder")
+    ad = meta.get("availability_domain", "ad-1")
+    image_id = meta.get("image_id", "ocid1.image.oc1..placeholder")
+    tags = _oci_freeform_tags(label, node)
+    return (
+        f'resource "oci_core_instance" "{rid}" {{\n'
+        f'  compartment_id      = "{compartment}"\n'
+        f'  availability_domain = "{ad}"\n'
+        f'  shape               = "{shape}"\n'
+        f'  display_name        = "{label}"\n'
+        f'\n'
+        f'  source_details {{\n'
+        f'    source_type = "image"\n'
+        f'    source_id   = "{image_id}"\n'
+        f'  }}\n'
+        f'\n{tags}\n}}'
+    )
+
+
+def _emit_oci_security_list(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "sl"))
+    label = node.get("label", "security-list")
+    compartment = meta.get("compartment_id", "ocid1.compartment.oc1..placeholder")
+    vcn_id = meta.get("vcn_id", "placeholder-vcn-id")
+    tags = _oci_freeform_tags(label, node)
+    return (
+        f'resource "oci_core_security_list" "{rid}" {{\n'
+        f'  compartment_id = "{compartment}"\n'
+        f'  vcn_id         = "{vcn_id}"\n'
+        f'  display_name   = "{label}"\n'
+        f'\n{tags}\n}}'
+    )
+
+
+def _emit_oci_vault(node: Node) -> str:
+    meta = node.get("metadata") or {}
+    rid = _safe_id(node.get("id", "vault"))
+    label = node.get("label", "vault")
+    compartment = meta.get("compartment_id", "ocid1.compartment.oc1..placeholder")
+    vault_type = meta.get("vault_type", "DEFAULT")
+    tags = _oci_freeform_tags(label, node)
+    return (
+        f'resource "oci_kms_vault" "{rid}" {{\n'
+        f'  compartment_id = "{compartment}"\n'
+        f'  display_name   = "{label}"\n'
+        f'  vault_type     = "{vault_type}"\n'
+        f'\n{tags}\n}}'
+    )
+
+
 # ── Dispatch tables ───────────────────────────────────────────────────────────
 
 _AWS_TYPE_MAP: dict[str, str] = {
@@ -148,17 +370,48 @@ _AWS_TYPE_MAP: dict[str, str] = {
     "aws-iam-role": "iam_role",
 }
 
+_GCP_TYPE_MAP: dict[str, str] = {
+    "gcp-vpc": "gcp_vpc",
+    "gcp-subnet": "gcp_subnet",
+    "gcp-gce": "gcp_instance",
+    "gcp-firewall": "gcp_firewall",
+    "gcp-iam": "gcp_iam",
+}
+
+_OCI_TYPE_MAP: dict[str, str] = {
+    "oci-vcn": "oci_vcn",
+    "oci-subnet": "oci_subnet",
+    "oci-compute": "oci_instance",
+    "oci-security-list": "oci_security_list",
+    "oci-vault": "oci_vault",
+}
+
 _EMITTERS: dict[str, Any] = {
+    # AWS
     "vpc": _emit_vpc,
     "subnet": _emit_subnet,
     "instance": _emit_instance,
     "security_group": _emit_security_group,
     "iam_role": _emit_iam_role,
+    # GCP
+    "gcp_vpc": _emit_gcp_vpc,
+    "gcp_subnet": _emit_gcp_subnet,
+    "gcp_instance": _emit_gcp_instance,
+    "gcp_firewall": _emit_gcp_firewall,
+    "gcp_iam": _emit_gcp_iam,
+    # OCI
+    "oci_vcn": _emit_oci_vcn,
+    "oci_subnet": _emit_oci_subnet,
+    "oci_instance": _emit_oci_instance,
+    "oci_security_list": _emit_oci_security_list,
+    "oci_vault": _emit_oci_vault,
 }
 
 _CSP_TYPE_MAPS: dict[str, dict[str, str]] = {
     "aws": _AWS_TYPE_MAP,
     "aws-govcloud": _AWS_TYPE_MAP,
+    "gcp": _GCP_TYPE_MAP,
+    "oci": _OCI_TYPE_MAP,
 }
 
 
