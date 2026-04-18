@@ -1332,6 +1332,13 @@ CREATE TABLE IF NOT EXISTS idc_infra_snapshots (
     notes          TEXT,
     created_at     TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS sdc_attack_snapshots (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    component_id TEXT NOT NULL,
+    nodes_json   TEXT DEFAULT '[]',
+    edges_json   TEXT DEFAULT '[]',
+    created_at   TEXT DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
