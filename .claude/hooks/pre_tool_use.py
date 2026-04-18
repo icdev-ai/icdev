@@ -354,6 +354,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Observability Canvas integration (D-OC audit trail, NIST AU)
         "od_audit",
         "nc_audit",
+        # ODC Twin — MITRE ATT&CK coverage events (migration 028, append-only NIST AU)
+        "mitre_coverage",
         # Passive CVE Watcher — ATO continuous monitoring (NIST SI-4, CA-7)
         "cve_passive_watch_log",
     ]
