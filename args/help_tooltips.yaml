@@ -1614,6 +1614,48 @@ settings.byok_broker:
     "Test connection" hits Alpaca's `/account` endpoint — no orders
     placed, no positions changed, just verifies auth works.
 
+clients.total_count:
+  title: Clients
+  body: |
+    Count of members in the current workspace (tenant). For advisors,
+    this maps to your client book; for family offices, your relatives;
+    for classrooms, your students.
+
+clients.total_orders:
+  title: Total orders
+  body: |
+    Aggregate paper-trading orders placed across all clients in this
+    workspace. Useful to gauge overall engagement.
+
+clients.total_analyses:
+  title: Total analyses
+  body: |
+    Aggregate /analysis runs across all clients. A good proxy for how
+    much clients are learning/researching.
+
+clients.active_alert_rules:
+  title: Active alert rules
+  body: |
+    Count of enabled alert rules across all clients' configurations.
+
+clients.roster:
+  title: Client roster
+  body: |
+    Per-client activity summary: display name, email, role, paper-order
+    count, analysis-run count, active alert-rule count, last-login date,
+    join date. CSV export included.
+
+clients.share_audit:
+  title: Share links — audit
+  body: |
+    Every share-link token issued for this workspace. Each row shows:
+    kind (today: `portfolio_brief` only — more kinds later), token hash
+    prefix, creation + expiry dates, use count, and status (active /
+    expired / revoked).
+
+    Click "Revoke" to invalidate an active link immediately — the URL
+    stops working on the next request.
+
 rebalance.total_value:
   title: Total value
   body: |

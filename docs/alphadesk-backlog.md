@@ -239,6 +239,16 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
   "the portfolio is X" framing)
 
 ### Per-persona dedicated pages
+- ✅ **Advisor: `/clients` + share-link generator — DONE 2026-04-18**
+  `tools/trading/share/tokens.py` — itsdangerous-signed tokens keyed
+  off Flask `secret_key`, 7-day default TTL, audit row per token in
+  `ad_share_tokens` (hash + tenant + use_count + revoked_at). Public
+  route `/share/portfolio-brief?token=...` serves a PDF without auth.
+  `/clients` page shows tenant members with per-client activity summary
+  (orders / analyses / alert rules / last login), plus a token-audit
+  table with Revoke buttons. Admin/owner only. Featured for advisor
+  persona; sidebar link conditional on role being owner/admin.
+
 - ✅ **Passive: `/rebalance` page — DONE 2026-04-18**
   `tools/trading/analytics/rebalance.py` + `ad_target_allocations` table.
   User sets target mix (60/40, Three-Fund, Permanent Portfolio, or custom);
