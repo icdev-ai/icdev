@@ -5,6 +5,7 @@
 
 ## Index
 
+- [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)
 - [Memory System](manifest/memory-system.md)
 - [Database](manifest/database.md)
 - [Resilience (D146-D149)](manifest/resilience.md)

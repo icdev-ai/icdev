@@ -1,0 +1,7 @@
+# IQE-NDC-002: High-cost circuits (> $5,000/month)
+# Flags circuits with monthly cost above threshold for cost optimization review.
+# Use: FinOps review, budget planning, circuit consolidation candidates.
+
+foreach c in network.circuits
+where c.monthly_cost_usd > 5000
+select c.circuit_id, c.carrier, c.circuit_type, c.bandwidth, c.monthly_cost_usd
