@@ -239,6 +239,14 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
   "the portfolio is X" framing)
 
 ### Per-persona dedicated pages
+- ✅ **Passive: `/rebalance` page — DONE 2026-04-18**
+  `tools/trading/analytics/rebalance.py` + `ad_target_allocations` table.
+  User sets target mix (60/40, Three-Fund, Permanent Portfolio, or custom);
+  engine computes drift (|current - target|), trade-plan (buy/sell $ to
+  reach target), and tax-loss candidates (positions down ≥ 8% AND ≥ $500).
+  Sum-validation rejects > 100%. Featured for passive persona; hidden for
+  quant + day_trader. Sidebar link in Book group.
+
 - ✅ **Retail: `/today` "What should I do today?" page — DONE 2026-04-18**
   `tools/trading/analytics/today_digest.py` — deterministic 10-rule engine.
   Rules: concentration risk, regime mismatch, SROR danger, watchlist BUY,
