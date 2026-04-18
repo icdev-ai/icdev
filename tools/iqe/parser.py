@@ -8,6 +8,7 @@ from typing import Any, Optional, Union
 from tools.iqe.ast_nodes import (
     AttrRef,
     BinOp,
+    CollectionCall,
     ForeachNode,
     Literal,
     SelectNode,
@@ -143,7 +144,25 @@ class _Parser:
         self._expect_kw("foreach")
         var_tok = self._expect_type("IDENT")
         self._expect_kw("in")
-        collection = self._parse_attr_ref()
+        collection_ref = self._parse_attr_ref()
+        if self._peek() and self._peek().type == "LPAREN":
+            self._advance()  # consume '('
+            call_args: list[Literal] = []
+            if not (self._peek() and self._peek().type == "RPAREN"):
+                val = self._parse_value()
+                if not isinstance(val, Literal):
+                    raise IQESyntaxError("Collection call args must be literals", 0, 0)
+                call_args.append(val)
+                while self._peek() and self._peek().type == "COMMA":
+                    self._advance()
+                    val = self._parse_value()
+                    if not isinstance(val, Literal):
+                        raise IQESyntaxError("Collection call args must be literals", 0, 0)
+                    call_args.append(val)
+            self._expect_type("RPAREN")
+            collection: AttrRef | CollectionCall = CollectionCall(name=collection_ref, args=call_args)
+        else:
+            collection = collection_ref
         where_clauses: list[WhereNode] = []
         while (
             self._peek()
