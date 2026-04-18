@@ -1002,6 +1002,18 @@ portfolio.reading:
     Changes with the selected period — 1M reading differs from 1Y reading
     because the underlying metrics do.
 
+portfolio.brief_pdf:
+  title: 📄 PDF Brief
+  body: |
+    Downloads today's Portfolio Brief as a single-flowing-page PDF — the
+    same data the dashboard shows: profile, mood, full reading
+    (observations + considerations), risk metrics, holdings table, and
+    macro regime context.
+
+    Honors the currently-selected period. Same inputs always produce the
+    same PDF — auditable + repeatable. Useful for distribution (email a
+    daily brief) or for compliance / record-keeping (file by date).
+
 portfolio.risk_metrics:
   title: Risk & Performance Metrics
   body: |
