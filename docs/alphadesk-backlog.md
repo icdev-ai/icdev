@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 + 6.5 + 6.6 + 2C shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 2C + 2D shipped)
 
 ---
 
@@ -117,15 +117,18 @@ authenticators. Builds on 2A's `ad_user_mfa.webauthn_credentials` JSON column.
 
 ### 🔜 Phase 2D — Real secrets manager backend (HashiCorp Vault / OpenBao)
 
-### 🔜 Phase 2D — Real secrets manager backend (HashiCorp Vault / OpenBao)
-**Why:** the user mentioned "we need some sort of secret manager" — Path A + Path B handle the immediate need, but production multi-tenant deployments will want a real KMS/HSM.
-**Scope:**
-- `SecretStore` ABC with `put/get/delete/metadata` interface
-- `LocalEncryptedStore` (refactor of current code) as Phase 1 default
-- `EnvelopeStore` (Path B from 2C) as opt-in for individual users
-- `VaultStore` for HashiCorp Vault / OpenBao via HTTP API
-- Operator selects backend via `ICDEV_SECRET_BACKEND` env var
-- Per-tenant Vault policies once Phase 3 (tenants) lands
+### ✅ Phase 2D — Real secrets manager backend (HashiCorp Vault / OpenBao) (DONE 2026-04-18)
+- New module `tools/trading/credentials/secret_store.py` — `SecretStore` ABC with `put/get/delete/health`. Two implementations shipped:
+  - `LocalEncryptedStore` — thin wrapper that delegates to existing `credentials.db.get_raw_credential/upsert_credential` — **zero behavior change** when `ICDEV_SECRET_BACKEND=local` (default). Path A + per-user Path B continue as before.
+  - `HashiCorpVaultStore` — KV v2 via `hvac` HTTP client. Lazy client construction + clear `SecretStoreError` on missing `hvac`, missing `VAULT_ADDR/VAULT_TOKEN`, or auth failure. Reads/writes `{mount}/data/alphadesk/credentials/{user_id}/{provider}`. Vault handles its own encryption — we just write plaintext over mTLS to the Vault endpoint.
+- Selection via `ICDEV_SECRET_BACKEND` env (local | vault); optional `VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_MOUNT_PATH`, `VAULT_NAMESPACE`. `get_active_store()` factory + `reset_cache()` for hot-switches.
+- `credentials.db.upsert_credential` + `get_raw_credential` short-circuit to `HashiCorpVaultStore` when `is_vault_backend()`. Local backend (default) path is untouched, so Path A + Path B stay fully functional.
+- When Vault is the active backend: per-user Path B is effectively bypassed (Vault IS the trust root). A stub row in `ad_user_credentials` tracks provider-presence + `last4` so the Settings UI still enumerates configured providers — the actual ciphertext lives in Vault. Audit rows carry `via=hashi_vault` detail.
+- New route `GET /api/credentials/secret-backend` — returns active backend + health probe ({ok, detail, extra: addr/mount_path/namespace/authenticated/sealed}). Informational, visible to any authed user.
+- Settings UI gains a thin top-of-card badge: **LOCAL ENCRYPTED** (blue) / **HASHICORP VAULT** (green when healthy, red when unreachable). Shows the Vault address + mount when healthy, or the error detail when not.
+- `.env.example` documents the full Vault env set. `hvac>=2.0` added as commented optional in `requirements.txt` (matching Stripe's optional-import pattern).
+- Registered in manifest shard. Coherence 14/17 (3 pre-existing warns). Smoke test: factory resolves to `LocalEncryptedStore` by default; flipping env to `vault` returns `HashiCorpVaultStore` whose health reports the `hvac not installed` message cleanly.
+- **Not in 2D (deferred, documented):** per-tenant Vault policies (once Phase 3 per-tenant deployments land), AppRole / K8s / AWS IAM auth methods (currently only raw `VAULT_TOKEN`), Transit engine integration, one-way Local→Vault data migration script (operator concern — note it in runbooks), dynamic-secrets + auto-rotation.
 
 ### Original BYOK request (now superseded by above) — kept for history
 **What:** UI in Settings to paste API keys (OpenAI, Anthropic, Ollama base URL,
