@@ -1308,6 +1308,30 @@ CREATE TABLE IF NOT EXISTS ad_expert_recommendations (
     expert_votes TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS idc_infra_resources (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    csp            TEXT NOT NULL,
+    region         TEXT NOT NULL,
+    resource_type  TEXT NOT NULL,
+    resource_name  TEXT,
+    classification TEXT DEFAULT 'UNCLASSIFIED',
+    tags           TEXT,
+    cost_per_month REAL DEFAULT 0.0,
+    config         TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS idc_infra_snapshots (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id    TEXT NOT NULL UNIQUE,
+    taken_at       TEXT NOT NULL,
+    csp            TEXT NOT NULL,
+    region         TEXT NOT NULL,
+    classification TEXT DEFAULT 'UNCLASSIFIED',
+    resource_count INTEGER DEFAULT 0,
+    baseline_hash  TEXT,
+    notes          TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
