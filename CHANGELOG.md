@@ -51,6 +51,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **IQE v0.1 — ICDEV Query Engine** (`tools/iqe/`) — declarative `foreach / where / select` DSL for running compliance and network-health checks across all seven design-canvas databases. Ships with: hand-rolled recursive-descent parser (`parser.py`), typed AST dataclasses (`ast_nodes.py`), adapter-dispatching executor with SQL-injection-safe fallback (`executor.py`), and a 5-query NDC seed library under `context/iqe/queries/network/` (vendor inventory, BGP peer asymmetry, admin/oper mismatch, CAT I STIG open findings, capacity threshold). See `docs/features/phase-iqe-v0-1.md`.
 - Comprehensive test suite expansion (324+ new tests across 21 test files)
 - CI/CD pipeline for ICDEV™ itself (GitHub Actions + GitLab CI)
 - REST API endpoints for Phases 22-28 capabilities
