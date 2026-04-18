@@ -64,7 +64,9 @@ from tools.data_canvas.data_engine import (  # noqa: E402
     compute_classification_coverage,
     detect_data_gaps,
     compute_nist_coverage,
+    build_column_lineage_dag,
 )
+from tools.data_canvas.lineage import generate_contract_assertions  # noqa: E402
 from tools.data_canvas.db.init_db import get_connection, init_db  # noqa: E402
 from tools.common.helpers import row_to_dict, now_isoformat  # noqa: E402
 
@@ -1730,6 +1732,48 @@ def create_data_canvas_blueprint():
 
         status_code = 200 if result.get("status") == "ok" else 207
         return jsonify(result), status_code
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PAGE ROUTE — Lineage Graph
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/lineage")
+    @dc_login_required
+    def dc_lineage():
+        """Lineage graph page — classification-colored DAG across all designs."""
+        classification_filter = request.args.get("classification", "").strip()
+        conn = get_connection()
+        designs_rows = conn.execute(
+            "SELECT id, name, classification FROM data_designs ORDER BY name"
+        ).fetchall()
+        designs = [row_to_dict(r) for r in designs_rows]
+        if classification_filter:
+            lin_rows = conn.execute(
+                "SELECT id, design_id, source_node_id, target_node_id, lineage_type, "
+                "column_name, transform_desc, classification, created_at "
+                "FROM dd_lineage WHERE classification=? ORDER BY created_at",
+                (classification_filter,),
+            ).fetchall()
+        else:
+            lin_rows = conn.execute(
+                "SELECT id, design_id, source_node_id, target_node_id, lineage_type, "
+                "column_name, transform_desc, classification, created_at "
+                "FROM dd_lineage ORDER BY created_at"
+            ).fetchall()
+        conn.close()
+        lineage_records = [row_to_dict(r) for r in lin_rows]
+        dag = build_column_lineage_dag(lineage_records)
+        gaps = generate_contract_assertions(
+            lineage_records, {"nodes": [], "edges": [], "boundaries": []}
+        )
+        return render_template(
+            "data_canvas/lineage.html",
+            dag_json=json.dumps(dag),
+            gaps=gaps,
+            designs=designs,
+            classification_levels=DATA_CLASSIFICATION_LEVELS,
+            classification_filter=classification_filter,
+        )
 
     @bp.route("/api/sync/openmetadata", methods=["POST"])
     @dc_login_required
