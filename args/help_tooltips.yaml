@@ -548,6 +548,21 @@ analysis.debate:
     thesis. Surfaces the strongest counter-argument — a forcing function
     against confirmation bias.
 
+analysis.chart:
+  title: Per-Ticker Chart
+  body: |
+    Candlestick chart with SMA20 (blue), SMA50 (orange), SMA200 (purple)
+    overlays, volume histogram, RSI(14) panel, and MACD(12,26,9) panel.
+
+    **Period selector** — 1M / 3M / 6M / 1Y / 2Y / 5Y. Server caches each
+    period's OHLCV + indicators for 10 minutes.
+
+    **Crosshair** — hover the price panel to see the full OHLC + volume +
+    RSI + MACD for that bar in the header.
+
+    Auto-loads when you type a ticker and submit, or land on the page via
+    `/analysis?ticker=NVDA` (command palette does this automatically).
+
 analysis.run_new:
   title: Run New Analysis
   body: |
