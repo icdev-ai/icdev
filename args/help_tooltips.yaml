@@ -1637,3 +1637,37 @@ alerts.recent:
     severity (info / warning / critical). Acknowledged entries are
     grayed out. The bell badge in the sidebar tracks unacked count
     across all sessions.
+
+alerts.export_csv:
+  title: ⬇ Rules CSV
+  body: |
+    Server-side CSV of every alert rule with full metadata (rule_type,
+    subject, comparison, threshold, lookback, cooldown, severity,
+    enabled, last triggered/evaluated, last value, created_at). Useful
+    for backing up rules, sharing across environments, or bulk auditing.
+
+alerts.log_csv:
+  title: ⬇ Log CSV
+  body: |
+    Server-side CSV of the append-only fired-alert log
+    (`ad_alerts_log`). Includes raw evidence_json so the trigger
+    conditions can be replayed/audited later. Honors `?unack=1` and
+    `?limit=N` query args.
+
+market.heatmap_csv:
+  title: ⬇ Heatmap CSV
+  body: |
+    Server-side CSV snapshot of the entire heatmap (200+ tickers) joined
+    with multi-timeframe returns (1Y/5Y/10Y/20Y) + 24h aggregated news
+    impact + KG centrality/supply-chain/competitor counts. Includes
+    every ticker, not just the filtered subset shown on screen — use
+    this for bulk analysis in Excel/Pandas.
+
+news.export_csv:
+  title: ⬇ News CSV
+  body: |
+    Server-side CSV of recent news items with classification (category,
+    impact_level, net_direction), cluster join (cluster_id, scenario_key,
+    status), and aggregate impact metrics (total Σ, trace count,
+    impacted-ticker count). Honors `?category=...` and `?limit=N`
+    query args.
