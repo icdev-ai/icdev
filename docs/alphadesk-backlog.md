@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1 + 6.2 + 6.3 + 6.3.5 + 6.4 + 6.5 shipped)
 
 ---
 
@@ -423,14 +423,21 @@ UI (each persona could have its own progression curve).
 - Coherence 14/17 (3 pre-existing warns). Companion synced. Smoke test verified: Alice creates public league → Bob joins → Carol joins → XP events per user correctly rank Alice #1 (150 XP) > Bob #2 (120 XP) > Carol #3 (0 XP) in the weekly window.
 - **Out of scope for 6.4 (documented):** invitation tokens (private leagues use captain-add; an invitation-link flow could land in 6.4.5), seasons + playoffs, real-time push, league chat, cross-tenant leagues, cash prizes (SEC/FINRA sensitive — explicitly not exposed).
 
-### Phase 6.5 — Educational curriculum tied to levels
-- New `tools/trading/lessons/` module
-- Operator-provided markdown lessons (`docs/lessons/{level}/{slug}.md`)
-- Each level unlocks a curriculum slate
-- Lessons can have inline interactive quizzes (multiple-choice, uses
-  existing rule engine for scoring)
-- Maps to CashFlow progression: 101 = Beginner+Intermediate, 102 =
-  Advanced+Pro
+### ✅ Phase 6.5 — Educational curriculum tied to levels (DONE 2026-04-18)
+- Phase 4 already shipped `/lessons` + 5 beginner lesson bodies; 6.5 layered the curriculum, gating, and quiz pieces on top.
+- **Chain-based level gating** — `beginner` always unlocked; `intermediate` unlocks when all beginner lessons completed; `advanced` unlocks when intermediate completed. Decided against XP-based level gating — the `intermediate_level` achievement (Phase 6.2) already rewards XP progression; the curriculum is about pedagogy, so chain-based keeps them orthogonal.
+- **Per-lesson prerequisites** — `prerequisites: [slug, slug]` field forces intra-level linear ordering where the operator specifies; beginner lessons 2–5 now chain.
+- **Inline quizzes** — YAML-declared multi-choice with `pass_percent` (default 70), per-question `explanation:` shown post-submit. 2 sample quizzes on `what-is-a-stock` (3 q) + `reading-a-signal` (2 q); other lessons can add them incrementally by editing YAML.
+- **`ad_user_quiz_attempts`** — append-only NIST AU audit of every attempt (user_id, lesson_slug, score_pct, passed, correct_count, total, answers_json, attempted_at). Unlimited retries; each attempt logged for learning analytics.
+- **Auto-completion on quiz pass** — on pass, lesson is idempotently marked complete + `grant_xp(reason='lesson_completed')` fires via the existing hook (dedup key prevents double-grants on retries). Lessons without a quiz keep the manual "Mark complete" button — zero BC break. Lessons WITH a quiz reject the manual-complete path (HTTP 400 `quiz_required`) so the curriculum gate can't be bypassed.
+- **UI:** `/lessons` page gets lock icons + unlock hints ("Complete first: X") on locked lesson cards; locked lessons are click-dead. Inline Quick Check form at end of lesson content with per-question radio options; submit reveals green/red highlighting on chosen + correct answers + explanation text. Best attempt badge shown in page header.
+- **API changes:**
+  - `/api/lessons/catalog` → returns new shape: `levels: [{key, label, icon, unlocked, lock_hint, total, completed, percent, order}]` list + `lessons: [...with unlocked/lock_hint/has_quiz/quiz_pass_percent]`. Legacy `summary:{beginner:{total,completed,started}}` kept for BC.
+  - `/api/lessons/<slug>` → returns 403 + hint when locked; includes `quiz: {pass_percent, questions[{id,text,options}], best_attempt}` when quiz present (correct answers stripped from payload)
+  - `/api/lessons/<slug>/complete` (existing) → now refuses lessons with quizzes (redirects user to quiz path)
+  - `/api/lessons/<slug>/quiz` (NEW) → `{answers: {qid: idx}}` → returns grade + feedback + auto-completion
+- **Coherence 14/17** (same 3 pre-existing warns). End-to-end smoke verified — beginner unlocked, 2nd lesson gated on 1st, quiz grades 0%→fail + 100%→pass, completion propagates to gating.
+- **Out of scope for 6.5 (documented):** certificates, free-text answers, authoring UI (operators edit YAML), new lesson content for intermediate/advanced (slugs remain, content is user work), per-attempt cooldowns/retries limits.
 
 ### Phase 6.6 — Live-trading graduation gate ⚠ compliance-sensitive
 - Schema: `ad_user_progression.live_trading_unlocked_at`
