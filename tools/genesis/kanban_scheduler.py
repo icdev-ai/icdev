@@ -113,27 +113,87 @@ def main():
     dummy_trust = None
 
     # ── STARTUP RECOVERY: reset orphaned in_progress tasks ──────────
-    # If the scheduler crashed, tasks may be stuck in in_progress with
-    # no running subprocess.  Reset them to backlog so they get re-dispatched.
+    # If the scheduler crashed (or was restarted mid-flight), tasks may be
+    # stuck in in_progress with no running subprocess. Reset them to
+    # backlog so they get re-dispatched.
+    #
+    # 2026-04-17 silent-recovery fix: previously this path reset tasks
+    # silently — no failure_count bump, no last_failure_reason, no
+    # Telegram alert. When the user restarted the daemon while a task
+    # was running (common operational action), the task disappeared
+    # without any signal and failure_triage never saw it. dt-iqe-11 hit
+    # this exact path. We now record a failure reason and fire a
+    # Telegram warning so the user sees the recovery happened and
+    # failure_triage picks it up on its next reflex tick.
     try:
         from tools.db.storage import get_connection
+        from datetime import datetime, timezone
 
         conn = get_connection()
+        stuck_ids: list[tuple[str, str | None]] = []
         try:
-            stuck = conn.execute("SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'").fetchall()
+            stuck = conn.execute(
+                "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+            ).fetchall()
             if stuck:
+                now_iso = datetime.now(timezone.utc).isoformat()
+                reason = (
+                    "startup-recovery: scheduler restarted while task was "
+                    "in_progress. Subprocess was interrupted; task reset to "
+                    "backlog for re-dispatch."
+                )
                 for row in stuck:
+                    rd = dict(row)
+                    tid = rd["id"]
+                    stuck_ids.append((tid, rd.get("title")))
+                    # Reset to backlog + bump failure_count + record reason
+                    # so the full observability pipeline fires.
                     conn.execute(
-                        "UPDATE kanban_tasks SET status = 'backlog', updated_at = datetime('now') WHERE id = ?",
-                        (row["id"],),
+                        "UPDATE kanban_tasks SET "
+                        "  status = 'backlog', "
+                        "  failure_count = COALESCE(failure_count, 0) + 1, "
+                        "  last_failure_reason = ?, "
+                        "  last_failure_at = ?, "
+                        "  updated_at = ? "
+                        "WHERE id = ?",
+                        (reason, now_iso, now_iso, tid),
                     )
                 conn.commit()
                 logger.info(
                     "Startup recovery: reset %d orphaned in_progress tasks to backlog",
-                    len(stuck),
+                    len(stuck_ids),
                 )
         finally:
             conn.close()
+
+        # Fire Telegram + self_debug for each stuck task (outside the DB
+        # connection so a notification failure doesn't roll back the reset).
+        for tid, title in stuck_ids:
+            display = (title or tid)[:60]
+            try:
+                from tools.notifications.adapters.telegram import send as tg_send
+                tg_send(
+                    f"STARTUP-RECOVERY: {display}",
+                    (
+                        "Task was in_progress when the scheduler restarted. "
+                        "Reset to backlog for re-dispatch. "
+                        "If you saw this without restarting the daemon, the "
+                        "scheduler crashed — check .tmp/genesis_launcher.log."
+                    ),
+                    severity="warning",
+                )
+            except Exception as _tg_exc:
+                logger.debug("startup-recovery Telegram send failed: %s", _tg_exc)
+
+            try:
+                from tools.workflow.self_debug import check_and_diagnose
+                check_and_diagnose(
+                    tid,
+                    "startup-recovery: scheduler restarted mid-flight",
+                    str(Path(__file__).resolve().parent.parent.parent),
+                )
+            except Exception as _sd_exc:
+                logger.debug("startup-recovery self_debug failed: %s", _sd_exc)
     except Exception as exc:
         logger.warning("Startup recovery failed: %s", exc)
 
