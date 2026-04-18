@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-009
+-- Title: FedRAMP Moderate — Unassessed Controls
+-- Framework: FedRAMP Moderate
+-- Category: coverage
+-- Severity: moderate
+-- Description: Controls that have never been assessed represent blind spots in
+--   the compliance programme. Continuous monitoring requires 100% assessment
+--   coverage; these controls should be scheduled immediately.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.status == 'not_assessed'
+select ctrl.control_id, ctrl.project_id

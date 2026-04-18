@@ -1,0 +1,14 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-010
+-- Title: FedRAMP High — Zero-Score Controls (Critical Failures)
+-- Framework: FedRAMP High
+-- Category: gap-analysis
+-- Severity: critical
+-- Description: Controls scoring exactly 0.0 represent complete non-implementation
+--   at FedRAMP High. Each such control is a candidate for an immediate
+--   Significant Change Report (SCR) or emergency POA&M with 15-day milestone.
+--   Used by the continuous monitoring Genesis reflex to trigger alerts.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.score < 0.5 and ctrl.status == 'not_satisfied'
+select ctrl.control_id, ctrl.score, ctrl.project_id, ctrl.assessor

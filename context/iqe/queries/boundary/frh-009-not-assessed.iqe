@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-009
+-- Title: FedRAMP High — Unassessed Controls
+-- Framework: FedRAMP High
+-- Category: coverage
+-- Severity: high
+-- Description: Continuous ATO (cATO) requires demonstrated, up-to-date
+--   assessment evidence for all controls. Unassessed controls at FedRAMP High
+--   constitute an immediately exploitable compliance gap. Schedule these now.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.status == 'not_assessed'
+select ctrl.control_id, ctrl.project_id

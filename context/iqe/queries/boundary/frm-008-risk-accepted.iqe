@@ -1,0 +1,14 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-008
+-- Title: FedRAMP Moderate — Risk-Accepted Controls
+-- Framework: FedRAMP Moderate
+-- Category: risk-posture
+-- Severity: moderate
+-- Description: Risk-accepted controls reduce the effective compliance posture.
+--   This query enumerates all controls where the authorising official has
+--   accepted residual risk, enabling periodic review to confirm the risk
+--   acceptance is still valid and within tolerance.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.status == 'risk_accepted'
+select ctrl.control_id, ctrl.project_id, ctrl.evidence_ref, ctrl.notes
