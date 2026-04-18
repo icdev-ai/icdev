@@ -1,0 +1,10 @@
+# Intent: Surface open POA&M findings with no completion date, indicating projects
+#         that have unresolved weaknesses past their milestone date and are overdue
+#         for remediation under FedRAMP Moderate continuous monitoring requirements.
+# Expected violation shape: rows where status == "open" and completion_date == null;
+#   each row identifies an overdue finding that must be escalated to the AO.
+
+foreach v in compliance.violations
+  where v.status == "open"
+  where v.completion_date == null
+  select v.project_id, v.weakness_id, v.weakness_description, v.severity, v.milestone_date
