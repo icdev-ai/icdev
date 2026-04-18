@@ -19,10 +19,26 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | PDC Pipeline Twin | tools/pipeline/twin.py | Phase-1 pre-merge what-if simulation. Snapshot any pipeline DAG as `pdc_snapshots`, then run a delta graph through antipattern detector + SLSA assessor + compliance engine to produce a PASS/WARN/FAIL verdict. Tables: `pdc_snapshots`, `pdc_simulations`. Routes: `GET /devops/twin/<pipe_id>`, `POST /api/pipelines/<id>/twin/snapshot`, `GET /api/pipelines/<id>/twin/snapshots`, `POST /api/pipelines/<id>/twin/simulate`, `GET /api/twin/simulations/<sim_id>`. | `take_snapshot(pipeline_id)`, `simulate_delta(pipeline_id, delta_graph)`, `list_snapshots(pipeline_id)`, `get_simulation(sim_id)` | Snapshot dict / Simulation result dict (verdict, antipatterns, slsa, compliance, diff) |
+| PDC Delta Computer | tools/pipeline/delta.py | Computes structural diff between two pipeline DAG snapshots — added, removed, modified nodes/edges plus severity classification. Public API: `compute_delta(snapshot_id_a, snapshot_id_b)` | `compute_delta(id_a, id_b)` | Delta dict with added, removed, modified lists and severity |
+| PDC Snapshot CLI | tools/pipeline/snapshot.py | CLI for manual PDC pipeline snapshots — captures current pipeline state to `pipeline_snapshots` table. Supports optional label for tagging (e.g. "pre-deploy"). | --pipeline-id, --label, --json | Snapshot record dict |
+| PDC Snapshot DB | tools/pipeline/snapshot_db.py | Append-only DAG snapshot store — thin CRUD layer over `pipeline_snapshots` table (migration 027). Snapshots are immutable once written. | `create_snapshot(pipeline_id, graph, label)`, `get_snapshot(id)`, `list_snapshots(pipeline_id)` | Snapshot dict / list |
+
+## DDC Sub-Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| DDC OpenMetadata Client | tools/data_canvas/clients/openmetadata.py | OpenMetadata REST client — fetches tables and lineage from a running OpenMetadata instance. Configurable via `OPENMETADATA_HOST` env var (default: localhost:8585). `get_tables()`, `get_lineage(table_id)`. | --host, --json | Table list / lineage graph |
+
+## NDC Sub-Tools
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| NDC Auto-Layout | tools/network/layout.py | Auto-layout for imported topology graphs (PDF/VSDX/config-derived). Re-flows graph nodes into a clean professional layout using hierarchical, force-directed, or circular algorithms so imported diagrams render correctly in the canvas. | `layout_graph(graph, algorithm)` | Graph dict with updated node coordinates |
 
 ## IDC Sub-Tools
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| IDC Terraform Emitter | tools/infra_canvas/emitters/terraform.py | Terraform HCL emitter for IDC graph nodes. `emit_resource(node, target_csp)` → HCL resource block string. Supported types: compute, storage, container, serverless, networking. | `emit_resource(node, csp)` | HCL string |
+| IDC Ansible Emitter | tools/infra_canvas/emitters/ansible.py | Ansible playbook emitter for IDC graph nodes (config-mgmt scope). `emit_task(node)` → task dict; `emit_playbook(nodes, ...)` → complete playbook YAML string. | `emit_task(node)`, `emit_playbook(nodes, ...)` | Ansible task dict / playbook YAML |
+| IDC IaC Emitter CLI | tools/infra_canvas/emit.py | CLI entry-point for the IDC IaC emitter — wraps `infra_engine.py` emitters for all targets (terraform/pulumi/ansible/helm) and CSPs (aws/azure/gcp/oci/on-prem). Accepts a design ID or inline graph JSON. | --target, --project, --csp, --json | Emitted IaC files dict {filename: content} |
 | IDC SOPs | tools/infra_canvas/sops.py | Infrastructure Design Canvas — Standard Operating Procedures CRUD + draft→pending_review→approved approval workflow. Seeds change management, capacity planning, and cloud account onboarding SOPs into `idc_sops` table. No LLM dependency. | (library) `get_all_sops`, `get_sop_by_id`, `create_sop`, `update_sop`, `transition_status`, `delete_sop`, `seed_sops` | SOP dict / list |
 | IDC Runbooks | tools/infra_canvas/runbooks.py | Infrastructure Design Canvas — operational runbooks for common infrastructure incidents (provisioning failure, capacity breach, cloud drift, patch rollback). CRUD + seed for `idc_runbooks` table; no LLM dependency. | (library) | Runbook dict / list |
 | IDC Helm Emitter | tools/infra_canvas/emitters/helm.py | Helm chart emitter for IDC graph nodes (K8s scope). Emits STIG-hardened Deployment, Service, ConfigMap, and HPA manifests; auto-injects CUI classification labels/annotations; assembles full chart dict with Chart.yaml. | (library) `emit_manifest(node)` → YAML str; `emit_chart(nodes, chart_name, chart_version, classification)` → `{filename: yaml_str}` | YAML string / Chart dict |

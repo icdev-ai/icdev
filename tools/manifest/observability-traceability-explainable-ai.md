@@ -29,4 +29,5 @@
 | Traces Page | tools/dashboard/templates/traces.html | Trace explorer: stat grid, trace list, span waterfall SVG | (template) | HTML page |
 | Provenance Page | tools/dashboard/templates/provenance.html | Provenance viewer: entity/activity tables, lineage query | (template) | HTML page |
 | XAI Page | tools/dashboard/templates/xai.html | XAI dashboard: assessment runner, coverage gauge, SHAP chart | (template) | HTML page |
+| ODC Splunk Exporter | tools/observability_canvas/exporters/splunk.py | Splunk SPL export adapter for ODC Digital Twin Sigma rules — converts a single Sigma rule YAML string to one Splunk SPL search stanza. Field modifiers (contains, gt, lt, cidr) translated deterministically. No LLM. | `sigma_to_spl(sigma_yaml)` | SPL string |
 
