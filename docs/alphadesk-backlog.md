@@ -239,6 +239,16 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
   "the portfolio is X" framing)
 
 ### Per-persona dedicated pages
+- ✅ **Quant: `/api-keys` + Bearer token auth — DONE 2026-04-18**
+  `tools/trading/auth/api_tokens.py` — `ad_user_api_tokens` (sha256-hashed,
+  last4 preview, optional TTL, scopes column reserved for Phase 5).
+  Token format `ad_live_<32-urlsafe>`. Middleware extended to check
+  `Authorization: Bearer` header before cookie session; Bearer auth
+  skips MFA gate (token issuance required a fresh MFA session already).
+  `/api-keys` page: create/list/revoke + copy-once UI + 6 curl examples
+  incl. a pandas recipe. Step-up MFA on create. Sidebar link shown for
+  quant/pro_trader/advisor personas.
+
 - ✅ **Advisor: `/clients` + share-link generator — DONE 2026-04-18**
   `tools/trading/share/tokens.py` — itsdangerous-signed tokens keyed
   off Flask `secret_key`, 7-day default TTL, audit row per token in
