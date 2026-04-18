@@ -8012,6 +8012,126 @@ def create_app() -> Flask:
         triage = _compute_triage_summary()
         return jsonify({"projects": out, "triage": triage})
 
+    # ── Autonomous Recovery panel ───────────────────────────────────────────
+    # Surfaces failure_triage activity + autofix branches + recent failures
+    # on Home below Projects in Flight. Auto-hides when no activity —
+    # "idle" means no triage markers in the last 24h, no autofix branches,
+    # no unresolved failures in the last hour.
+    @app.route("/api/autonomy/status")
+    def api_autonomy_status():
+        """GET /api/autonomy/status — autonomous-flow snapshot:
+          * recent triage markers (last 24h)
+          * active autofix branches
+          * unresolved failures (last 1h)
+          * failure_triage audit summary (global)
+        All three empty → partial's host page hides the section entirely.
+        """
+        from tools.db.storage import get_connection as _gc
+        import subprocess as _sp
+
+        base_dir = Path(__file__).resolve().parent.parent.parent
+
+        # 1. Recent triage markers (last 24h) — sorted newest-first
+        triage_recent: list = []
+        triaged_dir = base_dir / ".tmp" / "kanban" / "triaged"
+        if triaged_dir.exists():
+            cutoff = time.time() - 86400
+            for f in sorted(
+                triaged_dir.glob("*.marker"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )[:10]:
+                if f.stat().st_mtime < cutoff:
+                    continue
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    outcome = data.get("outcome") or {}
+                    diag = outcome.get("diagnosis") or {}
+                    gate = outcome.get("autofix_gate") or {}
+                    triage_recent.append({
+                        "task_id": data.get("task_id") or outcome.get("task_id"),
+                        "title": outcome.get("title"),
+                        "signature": data.get("sig"),
+                        "recommendation": diag.get("recommendation"),
+                        "confidence": diag.get("confidence"),
+                        "gate_reason": gate.get("reason"),
+                        "outcome": outcome.get("outcome"),
+                        "ts": data.get("ts"),
+                    })
+                except Exception:
+                    continue
+
+        # 2. Autofix branches — each represents a real applied patch
+        autofix_branches: list = []
+        try:
+            r = _sp.run(
+                ["git", "branch", "--list", "autofix/*"],
+                cwd=str(base_dir), capture_output=True, text=True, timeout=5,
+            )
+            for line in r.stdout.splitlines():
+                name = line.replace("*", "").strip()
+                if not name:
+                    continue
+                # Get the commit message for context
+                try:
+                    msg = _sp.run(
+                        ["git", "log", "-1", "--format=%s|%ci", name],
+                        cwd=str(base_dir), capture_output=True, text=True, timeout=5,
+                    ).stdout.strip()
+                except Exception:
+                    msg = ""
+                subject, _, when = msg.partition("|")
+                autofix_branches.append({
+                    "branch": name,
+                    "subject": subject[:80],
+                    "ts": when,
+                })
+        except Exception:
+            pass
+
+        # 3. Unresolved failures in the last hour — kanban tasks with
+        # last_failure_reason set that are back in backlog/scheduled/failed
+        unresolved_failures: list = []
+        try:
+            cutoff_iso = datetime.now(timezone.utc).replace(microsecond=0)
+            from datetime import timedelta as _td
+            cutoff_iso = (cutoff_iso - _td(hours=1)).isoformat()
+            with _gc() as conn:
+                rows = conn.execute(
+                    "SELECT id, title, status, failure_count, "
+                    "       last_failure_reason, updated_at "
+                    "FROM kanban_tasks "
+                    "WHERE last_failure_reason IS NOT NULL "
+                    "  AND updated_at > ? "
+                    "  AND status IN ('backlog','failed','scheduled') "
+                    "ORDER BY updated_at DESC LIMIT 10",
+                    (cutoff_iso,),
+                ).fetchall()
+                for r in rows:
+                    d = dict(r)
+                    unresolved_failures.append({
+                        "id": d.get("id"),
+                        "title": d.get("title"),
+                        "status": d.get("status"),
+                        "failure_count": d.get("failure_count"),
+                        "reason": (d.get("last_failure_reason") or "")[:200],
+                        "updated_at": d.get("updated_at"),
+                    })
+        except Exception:
+            pass
+
+        # 4. Global triage summary
+        triage = _compute_triage_summary()
+
+        visible = bool(triage_recent) or bool(autofix_branches) or bool(unresolved_failures)
+        return jsonify({
+            "visible": visible,
+            "triage_recent": triage_recent,
+            "autofix_branches": autofix_branches,
+            "unresolved_failures": unresolved_failures,
+            "triage_summary": triage.get("summary", {}),
+        })
+
     @app.route("/digital-twin")
     def digital_twin_roadmap_legacy():
         """Legacy route — project moved inline under /kanban. Redirect to
