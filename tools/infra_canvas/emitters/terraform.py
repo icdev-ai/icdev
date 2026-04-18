@@ -17,6 +17,7 @@ Node = dict[str, Any]
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _GOVCLOUD_REGION = "us-gov-west-1"
+_AZURE_GOV_LOCATION = "usgovvirginia"
 _MANAGED_BY = "icdev-terraform-emitter"
 
 # classification values that trigger CUI tag injection
@@ -425,7 +426,8 @@ def emit_resource(node: Node, target_csp: str = "aws-govcloud") -> str:
               ``metadata``.  ``metadata`` may include ``classification``
               (e.g. ``"CUI"``) to inject compliance tag blocks.
         target_csp: Target cloud provider.  Supported: ``"aws"``,
-                    ``"aws-govcloud"`` (both map to AWS GovCloud HCL).
+                    ``"aws-govcloud"`` (AWS GovCloud HCL); ``"azure"``,
+                    ``"azure-govcloud"`` (Azure Government HCL).
 
     Returns:
         HCL string for the resource block.
