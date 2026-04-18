@@ -48,6 +48,7 @@ personas:
     - strat-narrative
     featured_pages:
     - /today
+    - /lessons
     - /portfolio
     - /watchlist
     - /analysis
@@ -95,6 +96,7 @@ personas:
     - adv-experts
     featured_pages:
     - /today
+    - /lessons
     - /analysis
     - /evolution
     - /portfolio
@@ -215,6 +217,7 @@ personas:
     - /today
     - /rebalance
     - /clients
+    - /lessons
     hidden_cards:
     - pf-reading
     - market-reading
@@ -310,6 +313,7 @@ personas:
     - /rebalance
     - /clients
     - /api-keys
+    - /lessons
     hidden_cards:
     - pf-reading
     - strat-narrative

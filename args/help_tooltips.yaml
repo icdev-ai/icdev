@@ -1614,6 +1614,17 @@ settings.byok_broker:
     "Test connection" hits Alpaca's `/account` endpoint — no orders
     placed, no positions changed, just verifies auth works.
 
+lessons.progress:
+  title: Your progress
+  body: |
+    Tracks completion across the 3 curriculum levels: **Beginner**
+    (foundational investing concepts), **Intermediate** (how AlphaDesk
+    specifically works), **Advanced** (reserved for Phase 6.5). Each
+    lesson you finish marks your progress bar.
+
+    Featured for the casual + student personas. No quizzes yet — marking
+    a lesson "complete" is your own honor-system attestation.
+
 api_keys.create:
   title: Generate a token
   body: |
