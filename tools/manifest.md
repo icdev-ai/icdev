@@ -144,6 +144,7 @@
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
 - [Dashboard UX Enhancements (OPT-68, 2026-04-12)](manifest/dashboard-ux-enhancements.md)
 - [Manifest Gap Fill (2026-04-12)](manifest/manifest-gap-fill.md)
+- [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
 
 
 ## Auto-Registered (Coherence Fix)
