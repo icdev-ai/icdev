@@ -174,6 +174,21 @@ CREATE TABLE IF NOT EXISTS odc_runbooks (
 
 CREATE INDEX IF NOT EXISTS idx_odc_runbooks_category ON odc_runbooks(category);
 CREATE INDEX IF NOT EXISTS idx_odc_runbooks_severity ON odc_runbooks(severity);
+
+CREATE TABLE IF NOT EXISTS od_ttp_coverage (
+    id              TEXT PRIMARY KEY,
+    ttp_id          TEXT NOT NULL,
+    design_id       TEXT DEFAULT '',
+    state           TEXT NOT NULL
+                        CHECK (state IN ('full', 'partial', 'none')),
+    sigma_match     INTEGER NOT NULL DEFAULT 0,
+    baseline_match  INTEGER NOT NULL DEFAULT 0,
+    detail          TEXT DEFAULT '{}',
+    verified_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_od_ttp_cov_ttp   ON od_ttp_coverage(ttp_id);
+CREATE INDEX IF NOT EXISTS idx_od_ttp_cov_state ON od_ttp_coverage(state);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
