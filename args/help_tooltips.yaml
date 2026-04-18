@@ -1614,6 +1614,22 @@ settings.byok_broker:
     "Test connection" hits Alpaca's `/account` endpoint — no orders
     placed, no positions changed, just verifies auth works.
 
+settings.tenant:
+  title: Workspace
+  body: |
+    Phase 3.1 (this milestone) — every user belongs to a **tenant**
+    (a workspace shared with other users). You're currently on the
+    `default` workspace; in Phase 3.2 you'll be able to belong to
+    multiple workspaces (your firm + your family + a classroom) and
+    switch between them.
+
+    Roles: **owner** (full control), **admin** (workspace settings),
+    **member** (use), **viewer** (read-only). Phase 3.2 unlocks the
+    invite flow + role assignment.
+
+    White-label branding (logo, accent color, custom-branded PDF brief)
+    lands in Phase 3.3.
+
 settings.account:
   title: Account
   body: |
