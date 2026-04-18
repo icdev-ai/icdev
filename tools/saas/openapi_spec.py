@@ -1299,6 +1299,214 @@ ENDPOINT_DOCS = {
         },
     },
     # ------------------------------------------------------------------
+    # PHASE 11 — AGENTS
+    # ------------------------------------------------------------------
+    ("get", "/agents"): {
+        "summary": "List registered agents",
+        "description": "Returns all active agents in the multi-agent mesh.",
+        "tags": ["Agents"],
+        "responses": {
+            **_json_response(
+                {
+                    "type": "object",
+                    "properties": {
+                        "agents": {"type": "array", "items": {"type": "object"}},
+                        "total": {"type": "integer"},
+                    },
+                },
+                "List of active agents.",
+            ),
+            **_error_responses(401, 500),
+        },
+    },
+    ("get", "/agents/routing"): {
+        "summary": "Skill routing table",
+        "description": (
+            "Returns active agents with their capability maps. "
+            "Optional ?skill=<id> filter narrows to agents that handle the given skill."
+        ),
+        "tags": ["Agents"],
+        "parameters": [
+            {
+                "name": "skill",
+                "in": "query",
+                "required": False,
+                "description": "Filter agents by skill ID.",
+                "schema": {"type": "string"},
+            }
+        ],
+        "responses": {
+            **_json_response(
+                {
+                    "type": "object",
+                    "properties": {
+                        "agents": {"type": "array", "items": {"type": "object"}},
+                        "total": {"type": "integer"},
+                        "skill_filter": {"type": "string", "nullable": True},
+                    },
+                },
+                "Skill routing table.",
+            ),
+            **_error_responses(401, 500),
+        },
+    },
+    ("get", "/agents/{agent_id}"): {
+        "summary": "Get a single agent",
+        "description": "Returns a registered agent by ID.",
+        "tags": ["Agents"],
+        "parameters": [{"name": "agent_id", "in": "path", "required": True, "schema": {"type": "string"}}],
+        "responses": {
+            **_json_response({"type": "object", "properties": {"agent": {"type": "object"}}}, "Agent record."),
+            **_error_responses(401, 404, 500),
+        },
+    },
+    ("post", "/agents/{agent_id}/heartbeat"): {
+        "summary": "Update agent heartbeat",
+        "description": "Records a heartbeat for the given agent, keeping it in the healthy-agent pool.",
+        "tags": ["Agents"],
+        "parameters": [{"name": "agent_id", "in": "path", "required": True, "schema": {"type": "string"}}],
+        "responses": {
+            **_json_response(
+                {
+                    "type": "object",
+                    "properties": {
+                        "acknowledged": {"type": "boolean"},
+                        "agent_id": {"type": "string"},
+                        "timestamp": {"type": "string"},
+                    },
+                },
+                "Heartbeat acknowledged.",
+            ),
+            **_error_responses(401, 404, 500),
+        },
+    },
+    # ------------------------------------------------------------------
+    # PHASE 11 — WORKFLOWS
+    # ------------------------------------------------------------------
+    ("get", "/workflows"): {
+        "summary": "List agent workflows",
+        "description": "Returns DAG-based workflows. Optional ?project_id= filter.",
+        "tags": ["Workflows"],
+        "parameters": [
+            {
+                "name": "project_id",
+                "in": "query",
+                "required": False,
+                "description": "Filter workflows by project ID.",
+                "schema": {"type": "string"},
+            }
+        ],
+        "responses": {
+            **_json_response(
+                {
+                    "type": "object",
+                    "properties": {
+                        "workflows": {"type": "array", "items": {"type": "object"}},
+                        "total": {"type": "integer"},
+                    },
+                },
+                "Workflow list.",
+            ),
+            **_error_responses(401, 500),
+        },
+    },
+    ("post", "/workflows"): {
+        "summary": "Create a workflow",
+        "description": "Creates a new agent workflow record.",
+        "tags": ["Workflows"],
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["name"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "project_id": {"type": "string"},
+                            "created_by": {"type": "string"},
+                        },
+                    }
+                }
+            },
+        },
+        "responses": {
+            "201": {
+                "description": "Workflow created.",
+                "content": {
+                    "application/json": {
+                        "schema": {"type": "object", "properties": {"workflow": {"type": "object"}}}
+                    }
+                },
+            },
+            **_error_responses(400, 401, 500),
+        },
+    },
+    ("get", "/workflows/{workflow_id}"): {
+        "summary": "Get a single workflow",
+        "description": "Returns a workflow with its subtask list.",
+        "tags": ["Workflows"],
+        "parameters": [{"name": "workflow_id", "in": "path", "required": True, "schema": {"type": "string"}}],
+        "responses": {
+            **_json_response({"type": "object", "properties": {"workflow": {"type": "object"}}}, "Workflow record."),
+            **_error_responses(401, 404, 500),
+        },
+    },
+    # ------------------------------------------------------------------
+    # PHASE 11 — AUTHORITY
+    # ------------------------------------------------------------------
+    ("get", "/authority"): {
+        "summary": "Get domain authority matrix",
+        "description": (
+            "Returns the full YAML-defined domain authority matrix. "
+            "Security Agent has hard-veto over code/deps/infra; "
+            "Compliance Agent has hard-veto over artifacts/deploy."
+        ),
+        "tags": ["Authority"],
+        "responses": {
+            **_json_response(
+                {"type": "object", "properties": {"matrix": {"type": "object"}}},
+                "Authority matrix.",
+            ),
+            **_error_responses(401, 500),
+        },
+    },
+    ("post", "/authority/check"): {
+        "summary": "Check agent authority",
+        "description": "Returns whether an agent has authority (hard/soft veto) over a domain topic.",
+        "tags": ["Authority"],
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "required": ["agent_id", "topic"],
+                        "properties": {
+                            "agent_id": {"type": "string", "example": "security-agent"},
+                            "topic": {"type": "string", "example": "code_generation"},
+                        },
+                    }
+                }
+            },
+        },
+        "responses": {
+            **_json_response(
+                {
+                    "type": "object",
+                    "properties": {
+                        "has_authority": {"type": "boolean"},
+                        "veto_type": {"type": "string", "nullable": True},
+                        "topics": {"type": "array", "items": {"type": "string"}},
+                        "description": {"type": "string"},
+                    },
+                },
+                "Authority check result.",
+            ),
+            **_error_responses(400, 401, 500),
+        },
+    },
+    # ------------------------------------------------------------------
     # HEALTH
     # ------------------------------------------------------------------
     ("get", "/health"): {
