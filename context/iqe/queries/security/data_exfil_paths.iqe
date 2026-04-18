@@ -1,0 +1,9 @@
+# Intent: Identify high-risk (risk_score >= 8) unencrypted attack-graph edges that
+#         represent plausible data-exfiltration vectors in the SDC Attack Path Twin.
+# Expected violation shape: rows where risk_score >= 8 and encrypted == false;
+#   each row is an edge traversing an unprotected channel with critical risk weight.
+
+foreach e in attack.edges
+  where e.risk_score >= 8
+  where e.encrypted == false
+  select e.snapshot_id, e.component_id, e.source, e.target, e.risk_score, e.encrypted

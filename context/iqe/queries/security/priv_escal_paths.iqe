@@ -1,0 +1,9 @@
+# Intent: Detect service nodes operating with root/elevated privilege that are
+#         reachable via the attack graph, indicating privilege-escalation exposure.
+# Expected violation shape: rows where node_type == "service" and privilege == "root";
+#   each row is a privileged service node reachable through attack paths.
+
+foreach n in attack.nodes
+  where n.node_type == "service"
+  where n.privilege == "root"
+  select n.snapshot_id, n.component_id, n.id, n.label, n.node_type, n.privilege
