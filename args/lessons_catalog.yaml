@@ -1,0 +1,95 @@
+# CUI // SP-CTI
+# AlphaDesk lesson catalog — the curriculum that powers /lessons.
+#
+# Each lesson is a markdown file in docs/lessons/{level}/{slug}.md.
+# Metadata here controls ordering, title display, read-time, and grouping.
+#
+# Levels map to CashFlow progression + future Phase 6 gamification:
+#   beginner      — "Hello, markets" foundational concepts
+#   intermediate  — "How AlphaDesk works" mechanics
+#   advanced      — reserved for Phase 6.5 (CashFlow-102 style advanced)
+#
+# Hot-reloaded via file-mtime — edit this + the markdown without restarting.
+
+_schema_version: 1
+
+levels:
+  beginner:
+    label: Beginner
+    icon: 🌱
+    description: >-
+      Start here if you're new to investing. Zero jargon. Covers the
+      minimum mental model you need to use AlphaDesk without being
+      overwhelmed.
+  intermediate:
+    label: Intermediate
+    icon: 📚
+    description: >-
+      How AlphaDesk specifically works — its signals, rules, readings,
+      and regime framing. You'll know what the numbers mean and when
+      to trust them.
+  advanced:
+    label: Advanced
+    icon: 🎓
+    description: >-
+      Reserved for Phase 6.5 (CashFlow-102-style advanced investing
+      curriculum). Coming soon.
+
+lessons:
+  # ─── Beginner track ─────────────────────────────────────────────────
+  - slug: what-is-a-stock
+    level: beginner
+    order: 1
+    title: "What is a stock, really?"
+    summary: "Equity, shares, market cap — the absolute basics in plain English."
+    read_minutes: 4
+
+  - slug: reading-a-signal
+    level: beginner
+    order: 2
+    title: "How do I read an AlphaDesk signal?"
+    summary: "Composite score, direction (BUY/SELL/HOLD), confidence. What to trust + what to ignore."
+    read_minutes: 5
+
+  - slug: diversification
+    level: beginner
+    order: 3
+    title: "Don't put all your eggs in one stock"
+    summary: "Position sizing, sector spread, concentration risk. Why 5 names is better than 1 even if you love that 1 name."
+    read_minutes: 4
+
+  - slug: macro-regimes
+    level: beginner
+    order: 4
+    title: "What is a 'regime' and why should I care?"
+    summary: "Risk-on vs risk-off, Fed cycles, GREEN/RED/CRISIS. When the macro wind blows, portfolios blow with it."
+    read_minutes: 5
+
+  - slug: paper-to-live
+    level: beginner
+    order: 5
+    title: "Paper trading vs real money"
+    summary: "Why AlphaDesk is paper-only by default, and what it takes to graduate to live trading."
+    read_minutes: 3
+
+  # ─── Intermediate track ─────────────────────────────────────────────
+  - slug: reading-engines
+    level: intermediate
+    order: 1
+    title: "What AlphaDesk's Reading engines actually do"
+    summary: "Deterministic rule engines → plain-English narrative. No AI magic. Why that matters."
+    read_minutes: 6
+
+  - slug: personas
+    level: intermediate
+    order: 2
+    title: "Personas — why the UI looks different for different people"
+    summary: "The 8 personas that ship with AlphaDesk + how to pick the right one for you."
+    read_minutes: 5
+
+  - slug: alerts-and-rules
+    level: intermediate
+    order: 3
+    title: "Alerts — the 6 rule types + when to use each"
+    summary: "Price moves, score crosses, direction flips, news impact, regime changes — configured right, this is your early-warning system."
+    read_minutes: 7

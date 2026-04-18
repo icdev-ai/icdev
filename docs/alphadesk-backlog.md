@@ -239,6 +239,18 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
   "the portfolio is X" framing)
 
 ### Per-persona dedicated pages
+- ✅ **Student: `/lessons` + starter curriculum — DONE 2026-04-18**
+  `tools/trading/lessons/catalog.py` + `args/lessons_catalog.yaml` +
+  `docs/lessons/{level}/{slug}.md`. 5 beginner lessons shipped
+  (what-is-a-stock, reading-a-signal, diversification, macro-regimes,
+  paper-to-live) + 3 intermediate lesson slugs defined (content TBD:
+  reading-engines, personas, alerts-and-rules). Page has progress bars
+  per level, catalog view with per-lesson status markers, detail view
+  with rendered markdown + prev/next navigation + "Mark complete"
+  button. `ad_user_lesson_progress` table tracks per-user completion.
+  Featured for student + retail. Hidden for quant + day_trader. Quiz
+  support + "explain this signal" buttons deferred.
+
 - ✅ **Quant: `/api-keys` + Bearer token auth — DONE 2026-04-18**
   `tools/trading/auth/api_tokens.py` — `ad_user_api_tokens` (sha256-hashed,
   last4 preview, optional TTL, scopes column reserved for Phase 5).
