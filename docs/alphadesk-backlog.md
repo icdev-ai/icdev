@@ -81,6 +81,12 @@ Flask-Login + pyotp + flask-mailman.
     `ICDEV_WEBAUTHN_ORIGIN` (defaults work for localhost dev; production
     requires HTTPS).
 
+### ✅ Operator admin CLI — DONE 2026-04-18
+`tools/trading/auth/admin_cli.py` — operator-side recovery for when SMTP
+isn't configured or you've lost access entirely. Commands: `list`,
+`reset-password`, `issue-reset-token`, `last-reset-link`,
+`disable`/`enable`. Survives air-gap; no email backend required.
+
 ### ✅ Legacy single-user data migration — DONE 2026-04-18
 - `tools/trading/migrations/add_user_id_to_legacy_tables.py` — idempotent migration script
 - 9 tables gained `user_id TEXT` (ad_portfolios, ad_positions, ad_orders, ad_pf_daily_snapshots, ad_strategy_runs, ad_strategy_holdings, ad_cis_recommendations, ad_analysis_runs, ad_alerts_log)
