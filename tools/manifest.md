@@ -215,3 +215,11 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Pulumi | tools\infra_canvas\emitters\pulumi.py | Auto-registered: emitters/pulumi.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Aws Rgt | tools\infra_canvas\importers\aws_rgt.py | Auto-registered: importers/aws_rgt.py | --json | JSON |
+| Pulumi State | tools\infra_canvas\importers\pulumi_state.py | Auto-registered: importers/pulumi_state.py | --json | JSON |
+| Tf State | tools\infra_canvas\importers\tf_state.py | Auto-registered: importers/tf_state.py | --json | JSON |
