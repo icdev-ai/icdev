@@ -236,3 +236,10 @@
 | Premerge Runner | tools\pipeline\premerge_runner.py | Auto-registered: pipeline/premerge_runner.py | --json | JSON |
 | Path Enumerator | tools\security_canvas\path_enumerator.py | Auto-registered: security_canvas/path_enumerator.py | --json | JSON |
 | Attackpath | tools\security_canvas\attackpath.py | Auto-registered: security_canvas/attackpath.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Schedule Phase 7 6 Ai Options Plan | tools\scripts\schedule_phase_7_6_ai_options_plan.py | Auto-registered: scripts/schedule_phase_7_6_ai_options_plan.py | --json | JSON |
+| Intent Parser | tools\trading\options\intent_parser.py | Auto-registered: options/intent_parser.py | --json | JSON |
