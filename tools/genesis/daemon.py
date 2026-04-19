@@ -72,6 +72,7 @@ REFLEX_NAMES = [
     "goal_learner",
     "remediation_lens",
     "awareness",
+    "canvas_indexer",
 ]
 
 # Backward-compat aliases for module-level access used by other code

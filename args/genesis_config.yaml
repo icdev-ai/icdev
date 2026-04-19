@@ -521,6 +521,21 @@ reflexes:
     promotion_threshold: 0.7  # Oracle confidence threshold for kanban card creation
     config_path: args/awareness_config.yaml  # Full config — probes, gaps, oracle, narrative
 
+  # ── Canvas Indexer (per-canvas /ask GraphRAG freshness) ─────────────────────
+
+  canvas_indexer:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — design content changes slowly
+    cooldown_minutes: 120    # Minimum gap between consecutive cycles
+    description: "Canvas KG indexer — re-index PDC/BDC/DDC/ODC/IDC designs into kg_nodes so /ask stays fresh"
+    success_metric:
+      name: canvas_indexer_errors
+      threshold: 0
+      operator: eq  # 0 canvas-level errors means clean cycle
+    canvases: [pdc, bdc, ddc, odc, idc]  # NDC and SDC use other pipelines
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

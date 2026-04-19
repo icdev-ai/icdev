@@ -120,13 +120,14 @@ def index_canvas(canvas: str) -> Dict[str, int]:
             ))
             edges_seen += 1
 
-    # Write to main kg store. Clear prior rows for this graph first so
-    # re-index is deterministic.
+    # Write to main kg store. Clear prior rows for this graph's nodes
+    # + edges first (no FKs into them). kg_graphs is UPSERTed rather
+    # than deleted because kg_retrieval_log.graph_id references it —
+    # a DELETE would violate the FK mid-cycle.
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM kg_edges WHERE graph_id = %s", (gid,))
     cur.execute("DELETE FROM kg_nodes WHERE graph_id = %s", (gid,))
-    cur.execute("DELETE FROM kg_graphs WHERE id = %s", (gid,))
 
     for row in node_rows:
         cur.execute(
@@ -139,8 +140,16 @@ def index_canvas(canvas: str) -> Dict[str, int]:
             row,
         )
     cur.execute(
-        "INSERT INTO kg_graphs (id, project_id, name, description, entity_count, edge_count, metadata, created_at, updated_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        """INSERT INTO kg_graphs (id, project_id, name, description, entity_count, edge_count, metadata, created_at, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (id) DO UPDATE SET
+             project_id = EXCLUDED.project_id,
+             name = EXCLUDED.name,
+             description = EXCLUDED.description,
+             entity_count = EXCLUDED.entity_count,
+             edge_count = EXCLUDED.edge_count,
+             metadata = EXCLUDED.metadata,
+             updated_at = EXCLUDED.updated_at""",
         (
             gid, gid, human, f"Canvas-indexed {human} designs",
             nodes_seen, edges_seen,
