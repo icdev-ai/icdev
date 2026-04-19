@@ -570,6 +570,16 @@ Single-leg option contracts inside the existing sandbox framework. Paper-only �
 - ✅ **Compliance-officer dashboard — DONE 2026-04-19** — see below.
 - ✅ **Phase 7.6 — AI-Assisted Options — DONE 2026-04-19** — see below.
 - ✅ **Phase 7.7 — Probability & Compare — DONE 2026-04-19** — see below.
+- ✅ **Phase 7.8 — Greeks Deep Dive + Quick Wins — DONE 2026-04-19** — see below.
+
+### ✅ Phase 7.8 — Greeks Deep Dive + Quick Wins (DONE 2026-04-19)
+Three bundled OptionStrat-parity upgrades on top of 7.7. 18 tasks / 4 epics / prefix `ad78-`. No new LLM calls.
+- **Black-Scholes pricer** — `tools/trading/options/pricing.py`. Closed-form BSM via `math.erf` (no numpy). `bs_price` + `bs_greeks` (Δ/Γ/Θ/ν/ρ). Graceful on degenerate inputs. 24 pytest cases green (parity, ATM symmetry, T→0 intrinsic, monotone invariants, textbook reference value, greek ranges, edge cases).
+- **Time-T payoff** — `probability.compute_payoff_at_time(legs, spot_range, dte_remaining_days, iv)` prices each leg with BS at interim time. Same `{x, y, max_profit, max_loss, breakevens}` shape as `compute_payoff` so frontend swaps frames seamlessly. `proposal_builder` returns 5 frames (`+1d`, 25%, 50%, 75%, expiry). Alternates stay expiry-only for payload size.
+- **Time-T slider UI** — drag above the payoff chart to reshape the curve as theta eats extrinsic. Label shows DTE-remaining. Auto-hides when fewer than 2 frames.
+- **Portfolio Net Greeks** — `portfolio_greeks.compute_portfolio_greeks(user_id)` sums Δ/Γ/Θ/ν × 100 × signed qty over `ad_sandbox_option_positions`. Stale (no cached greeks) rows contribute zero and surface in `stale_count`. New route `GET /api/options/portfolio/greeks`. "📊 Portfolio Greeks" card on `/portfolio` with severity coloring; auto-refreshes 30s; auto-hides when position_count=0.
+- **Shareable trade URLs** — `share.encode_proposal` / `decode_proposal` with 2kB size cap, no user_id/secrets/server-state in payload. `POST /api/options/ai-assist/share` returns `{token, url}`. "🔗 Share" button copies to clipboard. `/options?aiproposal=<token>` auto-loads AI Assist tab + pre-fills + submits; **server re-fetches chain + reruns preflight** — URL payload is untrusted.
+- **Registration:** manifest entries + coherence 17/17 at every gate + companion sync 10 platforms. Selenium E2E `test_ad78_greeks_share.py`.
 
 ### ✅ Phase 7.7 — Probability & Compare (DONE 2026-04-19)
 OptionStrat-inspired add-ons on top of the 7.6 proposal pipeline. 15 tasks / 3 epics / prefix `ad77-`, no new LLM calls.

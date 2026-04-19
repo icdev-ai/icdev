@@ -103,3 +103,29 @@ projects:
       - key: wrap
         title: "Registration + docs + E2E"
         priority: high
+
+  - key: alphadesk-7-8
+    name: "AlphaDesk 7.8 — Greeks Deep Dive + Quick Wins"
+    description: >
+      Three OptionStrat-inspired upgrades: (1) Black-Scholes pricer +
+      time-T payoff slider (not just expiry intrinsic); (2) portfolio
+      net Greeks aggregation card; (3) shareable trade URLs. No new
+      LLM calls; all deterministic.
+    task_prefix: "ad78-"
+    default_open: true
+    briefs:
+      - label: "Phase 7.8 brief — BS pricer, portfolio greeks, share"
+        path: "/docs/briefs/phase-7.8-greeks-share.md"
+    epics:
+      - key: pricing
+        title: "Black-Scholes pricer + time-T payoff"
+        priority: critical
+      - key: portfolio
+        title: "Portfolio net Greeks"
+        priority: high
+      - key: share
+        title: "Shareable trade URLs"
+        priority: medium
+      - key: wrap
+        title: "Registration + docs + E2E"
+        priority: high
