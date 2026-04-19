@@ -531,11 +531,35 @@ Single-leg option contracts inside the existing sandbox framework. Paper-only �
   - Payoff chart shows P&L at expiry only (no mid-life Black-Scholes projection).
 
 ### Deferred to follow-ups
-- **Multi-leg spreads** (iron condors, verticals, straddles) — Alpaca supports via `order_class=mleg` up to 4 legs. Needs a leg-editor UI + atomic multi-leg fill math.
-- **Strategy library** (OptionStrat-inspired — 50+ pre-built strategies with payoff charts) — on top of multi-leg.
-- **Live-broker options trading** — would extend the graduation gate with options-specific criteria + risk disclosure + Alpaca approval tier check (Level 1/2/3).
 - **Early exercise simulation** — only matters if we model assignment cascades.
 - **Mid-life payoff projection** — Black-Scholes per-day P&L chart (slider UI).
+
+## ✅ Phase 7.5 follow-ups A + B + C (DONE 2026-04-19)
+
+### A — Multi-leg spreads (atomic sandbox fill)
+- `ad_sandbox_orders.multileg_group_id` column (idempotent ALTER) links legs of one strategy.
+- `sandbox_engine.place_multileg_order(legs=[])` — validates + pre-fetches all quotes, then fills legs sequentially via the existing `place_option_order` path. On any leg failure, auto-reverses already-filled legs (rollback). 1–4 legs (matching Alpaca MLeg cap). Enforces single underlying across legs.
+- Route: `POST /api/challenges/attempts/<id>/multileg-orders`.
+
+### B — Strategy library + payoff visualizer (OptionStrat-inspired)
+- New module `tools/trading/options/strategies.py`. Hot-reloads `args/options_strategies.yaml` — 8 canonical strategies (long/short single-leg, covered call, cash-secured put, bull call / bear put spreads, iron condor, long straddle). Each entry carries leg templates + risk formulas (max_loss, max_profit, breakevens).
+- `build_legs()` expands a template into concrete OCC symbols given user-picked strikes + expiry. `compute_payoff()` samples P&L across a price range at expiry; returns Chart.js-ready `{x, y, breakevens, max_profit, max_loss}`. Pure math — no network.
+- UI: Strategy Builder tab on `/options` with dropdown + per-leg strike + premium inputs + live Chart.js payoff chart (green fill when positive, red when negative, zero-line highlighted). Submit-to-sandbox button routes through the multi-leg fill endpoint.
+- Routes: `GET /api/options/strategies`, `POST /api/options/payoff`.
+- Verified: long call $200 strike + $5 premium payoff correctly shows max_loss=-$500 + breakeven=$205; bull call spread (195/205 strikes, $8/$3) max_profit=$500 + breakeven=$200.
+
+### C — Live-broker options path + graduation extension
+- `alpaca_adapter.submit_option_order(contract_symbol, qty, side, ...)` + `submit_multileg_order(legs=[])` — the latter uses `order_class=mleg` per Alpaca's multi-leg spec. Both route through the graduation gate before hitting the live endpoint (paper URL bypasses, matching equity policy). `position_intent` parameter exposed so callers can pass buy_to_open / sell_to_close semantics.
+- `alpaca_adapter.get_account_configurations()` — fetches `max_options_trading_level` for the approval-tier check.
+- `graduation.enforce_live_option_order(user_id, alpaca_adapter, min_approval_level=2)` — new gate hook. Three checks in order: (1) global enforcement switch, (2) equity gate (user must be equity-graduated first — options inherit all equity criteria), (3) options-specific criteria (default: `paper_option_trades_completed ≥ 10`), (4) Alpaca approval level check (single-leg needs 2, multi-leg needs 3 per Alpaca conventions). Fail-closed when the broker API is unreachable (`OptionsApprovalMismatch` exception).
+- `args/graduation_criteria.yaml` extended with `options_criteria:` + `options_risk_disclosure:` — the latter is an operator-replaceable addendum to the main risk modal (naked-short uncapped loss, 100x multiplier, assignment risk, IV crush warning).
+- `GET /api/progression/graduation/options` — status endpoint for the options-specific UI banner.
+
+### Coherence 17/17 clean. Companion synced.
+
+### Still deferred (documented, non-blocking)
+- **Early exercise simulation** — would need assignment cascades (ITM short call gets assigned → seller must deliver 100 shares → if no shares, borrow at margin). Not pedagogically needed for the paper sandbox.
+- **Mid-life payoff projection** — Black-Scholes re-pricing at intermediate dates. UI would need a date slider. The static at-expiry payoff is accurate for MVP pedagogy.
 
 ## Phase 7+ (specialized infra — wait for actual demand)
 

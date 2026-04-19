@@ -69,6 +69,65 @@ criteria:
     description: "You've acknowledged the risks of live trading."
     required: true
 
+# ─── Phase 7.5 follow-up C — options-specific gate criteria ──────────
+# These additional criteria gate LIVE option orders (paper options are
+# unrestricted). The equity gate above still applies; this is additive.
+# Evaluated only when a live option order is attempted.
+options_criteria:
+  # User must have placed at least this many paper option orders in the
+  # sandbox before being allowed to submit live option orders.
+  paper_option_trades:
+    label: "Paper option trades completed"
+    description: "Practiced enough option trades in the sandbox to understand the mechanics."
+    min_count: 10
+
+  # User's Alpaca account must be approved at (or above) this options
+  # trading level. Alpaca levels:
+  #   1 = covered calls / cash-secured puts
+  #   2 = Level 1 + long calls / long puts
+  #   3 = Levels 1-2 + spreads (multi-leg strategies)
+  # Live single-leg requires Level 2; multi-leg requires Level 3. The
+  # gate queries /v2/account/configurations at runtime.
+  alpaca_approval_level:
+    label: "Alpaca options approval tier"
+    description: "Your broker account is approved for options trading at the appropriate level."
+    min_level_single_leg: 2
+    min_level_multi_leg: 3
+
+# Options risk-disclosure addendum — appended to the main disclosure
+# when the user first attempts a live option order. Operators should
+# replace with legal-counsel-reviewed language before production.
+options_risk_disclosure:
+  heading: "Additional risks of options trading"
+  text: |
+    Options trading carries significantly greater risk than stock trading.
+
+    An option is a contract that may expire worthless — you can lose
+    100% of the premium paid on a single trade in days or hours.
+
+    SHORT options (selling to open) can carry UNCAPPED LOSSES. A naked
+    short call has theoretically unlimited downside if the stock rises;
+    a short put can cost up to strike × 100 × contracts if the stock
+    goes to zero.
+
+    Each standard equity option contract represents 100 shares. A
+    single-contract move can produce outsized P&L swings vs the
+    underlying stock.
+
+    Assignment risk is real: a short option holder may be forced to
+    buy or sell 100 shares at the strike at any time (American-style
+    options). You may not have the cash or shares to deliver.
+
+    Implied volatility crush after earnings can erase long option
+    value even when your directional view is correct.
+
+    Spreads and multi-leg strategies can appear to have defined risk
+    but still carry pin risk, early-assignment risk, and liquidity risk.
+
+    By acknowledging this disclosure, you confirm that you have read
+    and understood the above, and you accept sole responsibility for
+    every live option order you submit.
+
 # Copy shown in the risk-disclosure modal. Replace with legal-reviewed
 # language before production (see top-of-file note). Plain text; newlines
 # render as paragraph breaks in the modal.
