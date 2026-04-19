@@ -1241,6 +1241,21 @@ CREATE TABLE IF NOT EXISTS ad_news_clusters (
 );
 CREATE INDEX IF NOT EXISTS idx_news_cluster_status ON ad_news_clusters(status);
 
+-- FathomDesk: detected news patterns (migration 023)
+CREATE TABLE IF NOT EXISTS ad_news_patterns (
+    id                TEXT PRIMARY KEY,
+    pattern_type      TEXT,
+    category          TEXT,
+    severity          TEXT CHECK(severity IN ('info', 'warn', 'critical')),
+    evidence_item_ids TEXT,
+    window_start      TEXT,
+    window_end        TEXT,
+    recommendation    TEXT,
+    created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ad_news_patterns_cat_date ON ad_news_patterns (category, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ad_news_patterns_sev_date ON ad_news_patterns (severity, created_at DESC);
+
 -- SharePoint integration tables (migration 023)
 CREATE TABLE IF NOT EXISTS sharepoint_sites (
     id            TEXT PRIMARY KEY,
