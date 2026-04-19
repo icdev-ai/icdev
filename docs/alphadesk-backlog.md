@@ -564,15 +564,36 @@ Single-leg option contracts inside the existing sandbox framework. Paper-only �
 ## Phase 7+ (specialized infra — wait for actual demand)
 
 - **Day-trader real-time stack** — WebSocket tick feeds, L2 order book,
-  hot-key engine, sub-second exec.
-- **Crypto universe** — BTC/ETH/SOL on-chain signals + 24/7 reflexes. Wait
-  for Alpaca Crypto API maturity (per `memory/project_alphadesk_futures_deferred.md`).
-- **Family-office multi-asset** — alts, illiquidity tracking, tax-aware
-  reporting.
-- **DoD smart-card auth** — PIV/CAC cert-based auth (replaces password+MFA
-  flow for federal users).
-- **Compliance-officer dashboard** — dedicated audit viewer, NIST control
-  crosswalk, breach-report feed.
+  hot-key engine, sub-second exec. **Infra-gated** — needs SIP market-data subscription + server-side streaming.
+- **Crypto universe** — BTC/ETH/SOL on-chain signals + 24/7 reflexes. **Upstream-blocked** — wait for Alpaca Crypto API maturity (per `memory/project_alphadesk_futures_deferred.md`).
+- **Family-office multi-asset** — alts, illiquidity tracking, tax-aware reporting. Scope: tax-lot tracking (FIFO/LIFO/specific-ID) + wash-sale detection + LTCG/STCG report. ~1.5 sessions.
+- **DoD smart-card auth** — PIV/CAC cert-based auth. **Infra-gated** — needs reverse-proxy cert validation + DoD root CA trust chain at the deployment layer.
+- ✅ **Compliance-officer dashboard — DONE 2026-04-19** — see below.
+
+### ✅ Compliance-officer dashboard (DONE 2026-04-19)
+- **New module** `tools/trading/compliance/audit_aggregator.py` — unified read-only query layer across 12 append-only audit tables. Hot-reloads `args/nist_au_crosswalk.yaml` for per-table column mappings + NIST 800-53 AU control tags.
+- **Sources unified:** `audit_trail`, `ad_credential_audit` (BYOK), `ad_stripe_events` (billing), `ad_mfa_attempts`, `ad_password_reset_tokens`, `ad_tenant_invitations`, `ad_trade_audit` (auto-trading), `ad_xp_events` (gamification), `ad_user_achievements`, `ad_sandbox_orders` (paper fills), `ad_sandbox_daily_snapshots`, `hook_events` (agent observability).
+- **Normalization** — heterogeneous per-table schemas (different column names for timestamp, user, action, detail) collapse into one shape `{source, timestamp, user_id, action, detail, severity, category, raw}`. Category-based default severity, overridable via per-row `severity_hint` column mapping.
+- **NIST 800-53 AU controls documented per table:** AU-2 (event logging), AU-3 (content), AU-4 (storage), AU-6 (review), AU-9 (protection), AU-12 (generation). Plus cross-control references (IA-2, AC-2, SI-4) where relevant.
+- **New `/compliance` page (owner/admin only)** — 4 cards:
+  1. **Activity summary** — 24h / 7d / 30d event totals + severity breakdown (info/warn/crit) + top-5 actions per window
+  2. **Filters** — since/until datetime, category, source table, user_id, free-text search (ILIKE across action + detail)
+  3. **Events table** — normalized rows with severity-colored cells, source + category tags, timestamp + user + action + detail columns
+  4. **NIST AU crosswalk** — which controls each audit source satisfies; ATO evidence at a glance
+- **CSV export** — `/api/compliance/audit.csv` with all filter params honored; timestamped filename; suitable for direct ATO package inclusion
+- **Role gate** — `/compliance` + all `/api/compliance/*` routes require `role_in_tenant ∈ {owner, admin}`. Sidebar link only renders for admins. 403 from API on role mismatch.
+- **Routes:** `/compliance`, `GET /api/compliance/{audit, audit.csv, summary, crosswalk}`
+- **Verified end-to-end:** 12 tables registered, 528 events aggregated in 30d window from real audit data, severity breakdown correct (48 info + 1 warn last 24h), CSV export with normalized column order, role gate blocks non-admins.
+- **Coherence 17/17 clean** (no regression). Companion synced.
+
+### Phase 7+ remaining — honest status
+
+With compliance shipped, the Phase 7+ list now has:
+- 2 items **infra-gated** (day-trader real-time, DoD CAC) — these need deployment-layer infrastructure that doesn't exist yet (SIP subscription, reverse-proxy cert validation). Can't meaningfully ship without that foundation.
+- 1 item **upstream-blocked** (crypto) — Alpaca Crypto API isn't mature enough per the project's own recorded constraint.
+- 1 item **shippable but narrow audience** (family-office multi-asset) — tax-lot + wash-sale work benefits anyone who holds positions long-term; not just family offices. Could be worth ~1.5 sessions if a user asks.
+
+**Net:** the "wait for actual demand" framing is honest. The items left aren't punting on complexity, they're punting on missing prerequisites or narrower use cases.
 
 ---
 
