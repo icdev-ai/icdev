@@ -1366,6 +1366,19 @@ CREATE TABLE IF NOT EXISTS pulse_capability_graph (
     metadata TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS pulse_research_cache (
+    id                  TEXT PRIMARY KEY,
+    query               TEXT NOT NULL,
+    source              TEXT NOT NULL,
+    url                 TEXT,
+    title               TEXT,
+    snippet             TEXT,
+    full_text           TEXT,
+    relevance_score     REAL,
+    sentiment           TEXT,
+    pain_point_category TEXT,
+    fetched_at          TEXT NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------

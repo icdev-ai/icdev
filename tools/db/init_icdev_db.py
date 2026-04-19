@@ -8830,6 +8830,22 @@ CREATE INDEX IF NOT EXISTS idx_pulse_posts_status ON pulse_posts(status);
 CREATE INDEX IF NOT EXISTS idx_pulse_posts_slug ON pulse_posts(slug);
 CREATE INDEX IF NOT EXISTS idx_pulse_posts_created ON pulse_posts(created_at);
 
+-- Pulse research cache (web scraping results: DuckDuckGo, Reddit, SO, etc.)
+CREATE TABLE IF NOT EXISTS pulse_research_cache (
+    id                  TEXT PRIMARY KEY,
+    query               TEXT NOT NULL,
+    source              TEXT NOT NULL,
+    url                 TEXT,
+    title               TEXT,
+    snippet             TEXT,
+    full_text           TEXT,
+    relevance_score     REAL,
+    sentiment           TEXT,
+    pain_point_category TEXT,
+    fetched_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_research_query ON pulse_research_cache(query);
+
 -- =========================================================================
 -- Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
 -- =========================================================================
