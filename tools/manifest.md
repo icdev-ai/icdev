@@ -259,3 +259,9 @@
 |------|------|-------------|-------|--------|
 | Coach Engine | tools\trading\options\coach_engine.py | Auto-registered: options/coach_engine.py | --json | JSON |
 | Coach Llm | tools\trading\options\coach_llm.py | Auto-registered: options/coach_llm.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Schedule Phase 7 7 Prob Compare Plan | tools\scripts\schedule_phase_7_7_prob_compare_plan.py | Auto-registered: scripts/schedule_phase_7_7_prob_compare_plan.py | --json | JSON |

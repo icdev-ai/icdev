@@ -569,6 +569,19 @@ Single-leg option contracts inside the existing sandbox framework. Paper-only �
 - **DoD smart-card auth** — PIV/CAC cert-based auth. **Infra-gated** — needs reverse-proxy cert validation + DoD root CA trust chain at the deployment layer.
 - ✅ **Compliance-officer dashboard — DONE 2026-04-19** — see below.
 - ✅ **Phase 7.6 — AI-Assisted Options — DONE 2026-04-19** — see below.
+- ✅ **Phase 7.7 — Probability & Compare — DONE 2026-04-19** — see below.
+
+### ✅ Phase 7.7 — Probability & Compare (DONE 2026-04-19)
+OptionStrat-inspired add-ons on top of the 7.6 proposal pipeline. 15 tasks / 3 epics / prefix `ad77-`, no new LLM calls.
+- **Probability of Profit + price cone** — new `tools/trading/options/probability.py`. GBM Monte Carlo (default 10 000 paths, deterministic seed keyed on underlying+expiry+strikes). Returns `{pop_pct, expected_pnl, percentile_prices (p5-p95), pnl_distribution, iv_used_pct, model}` or `None` for intraday. Shares `_leg_pnl_at_expiry` with the payoff engine so the overlay is mathematically consistent.
+- **Config:** `args/options_prob_config.yaml` — `n_samples: 10000`, `deterministic_seed: true`, `cone_bands: [5,25,50,75,95]`, `default_iv_fallback_pct: 40`, `min_dte_for_monte_carlo: 1`.
+- **Chart overlay:** payoff canvas gets p5–p95 wide + p25–p75 dense goldenrod bands + dashed p50 line. Badge `POP: XX% (IV-implied)` sits next to the strategy title — the qualifier is load-bearing.
+- **build_proposal upgrade:** alternates now carry full payoffs + POP + preflight (not just summary). `alternates_compact` kept for backward compat.
+- **New helper:** `proposal_builder.build_for_strategy(intent, strategy_id)` — bypasses `rank_strategies` for explicit-strategy compare requests.
+- **New endpoint:** `POST /api/options/ai-assist/compare` — returns N full proposals + preflight for side-by-side rendering. Server-side preflight on every one.
+- **UI:** "Compare alternates" button reveals a 3-column grid (strategy, POP, max P/L, mini payoff chart, collapsible legs, "Use this one" promote button). Promoting swaps the primary card; disabled when that alternate has preflight blocks.
+- **Tests:** 13 pytest cases in `tests/test_options_probability.py` (POP range, percentile ordering, monotone invariants, determinism, guards, short-vs-long premium asymmetry). Selenium E2E in `tests/e2e_selenium/test_ad77_probability_compare.py`.
+- **Coherence 17/17 at every phase gate.** Companion synced 10 platforms.
 
 ### ✅ Phase 7.6 — AI-Assisted Options Strategy Creation (DONE 2026-04-19)
 Hybrid design: LLM only for natural-language intent parsing + post-event coach recommendations; deterministic rules own strategy selection + strike/expiry picking (NIST AU auditable).
