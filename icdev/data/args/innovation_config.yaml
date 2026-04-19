@@ -399,6 +399,15 @@ competitive_intel:
     - name: hermes_agent
       repo: nousresearch/hermes-agent
       category: ai_agent_framework
+    - name: forward_networks
+      website: https://www.forwardnetworks.com
+      category: digital_twin_platform
+    - name: intentionet
+      website: https://www.intentionet.com
+      category: digital_twin_platform
+    - name: netbrain
+      website: https://www.netbraintech.com
+      category: digital_twin_platform
 
 # =========================================================================
 # Standards Body Monitoring

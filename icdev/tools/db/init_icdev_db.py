@@ -4630,12 +4630,16 @@ CREATE INDEX IF NOT EXISTS idx_ai_inventory_project ON ai_use_case_inventory(pro
 CREATE TABLE IF NOT EXISTS fairness_assessments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
-    assessment_data TEXT NOT NULL,
-    overall_score REAL DEFAULT 0.0,
-    created_at TEXT DEFAULT (datetime('now'))
+    dimension TEXT NOT NULL,
+    status TEXT DEFAULT 'not_assessed',
+    evidence TEXT,
+    score REAL DEFAULT 0.0,
+    assessed_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE(project_id, dimension)
 );
 CREATE INDEX IF NOT EXISTS idx_fairness_project ON fairness_assessments(project_id);
-CREATE INDEX IF NOT EXISTS idx_fairness_created ON fairness_assessments(created_at);
+CREATE INDEX IF NOT EXISTS idx_fairness_assessed ON fairness_assessments(assessed_at);
 
 -- ============================================================
 -- AI ACCOUNTABILITY (Phase 49, D316-D321)
@@ -8825,6 +8829,36 @@ CREATE TABLE IF NOT EXISTS pulse_posts (
 CREATE INDEX IF NOT EXISTS idx_pulse_posts_status ON pulse_posts(status);
 CREATE INDEX IF NOT EXISTS idx_pulse_posts_slug ON pulse_posts(slug);
 CREATE INDEX IF NOT EXISTS idx_pulse_posts_created ON pulse_posts(created_at);
+
+-- Pulse research cache (web scraping results: DuckDuckGo, Reddit, SO, etc.)
+CREATE TABLE IF NOT EXISTS pulse_research_cache (
+    id                  TEXT PRIMARY KEY,
+    query               TEXT NOT NULL,
+    source              TEXT NOT NULL,
+    url                 TEXT,
+    title               TEXT,
+    snippet             TEXT,
+    full_text           TEXT,
+    relevance_score     REAL,
+    sentiment           TEXT,
+    pain_point_category TEXT,
+    fetched_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_research_query ON pulse_research_cache(query);
+
+-- Pulse topic clusters (TF-IDF grouped research themes for article generation)
+CREATE TABLE IF NOT EXISTS pulse_topic_clusters (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    pain_points     TEXT,
+    research_ids    TEXT,
+    priority_score  REAL DEFAULT 0.5,
+    used_count      INTEGER DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_topic_clusters_priority ON pulse_topic_clusters(priority_score DESC);
+CREATE INDEX IF NOT EXISTS idx_pulse_topic_clusters_used ON pulse_topic_clusters(used_count);
 
 -- =========================================================================
 -- Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)

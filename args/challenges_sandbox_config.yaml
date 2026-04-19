@@ -46,7 +46,12 @@ fill_policy:
 #   - Operators with stricter educational contexts should set
 #     allow_short_sell to false.
 limits:
-  max_position_pct: 100         # max % of portfolio a single position can be
-  allow_short_sell: true        # follow-up #3 — simplified short-sell enabled
-  short_margin_ratio: 1.5       # cash+positions ≥ ratio × |short proceeds|
-  min_order_usd: 0              # minimum order size (0 = no floor)
+  max_position_pct: 100           # max % of portfolio a single position can be
+  allow_short_sell: true          # follow-up #3 — simplified short-sell enabled
+  short_margin_ratio: 1.5         # cash+positions ≥ ratio × |short proceeds|
+  min_order_usd: 0                # minimum order size (0 = no floor)
+  # Phase 7.5 — options
+  allow_option_trading: true      # can disable sandbox options globally
+  option_commission_usd: 0.65     # per-contract fee, deducted on every fill
+  option_short_margin_ratio: 0.20 # cash cushion required vs strike×100 on short options
+                                   # (simplified; real Reg-T options margin is more complex)

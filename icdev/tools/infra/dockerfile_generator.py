@@ -194,21 +194,7 @@ node_modules
 # Node.js Dockerfile
 # ---------------------------------------------------------------------------
 def generate_node(project_path: str, config: dict = None) -> list:
-    """Generate STIG-hardened multi-stage Node.js Dockerfile.
-
-    WARNING: Requires npm registry access. Air-gapped environments do NOT
-    have an npm mirror — only PyPI is mirrored. If ICDEV_AIRGAP is set,
-    this function raises an error directing the user to Python-only deployment.
-    """
-    import os
-    if os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1"):
-        raise RuntimeError(
-            "Node.js Dockerfile generation is not supported in air-gap mode. "
-            "Air-gapped environments have PyPI mirrors only — no npm registry. "
-            "Use generate_python() for Python-only deployment, or pre-build "
-            "the Node.js image on a connected machine and transfer the image."
-        )
-
+    """Generate STIG-hardened multi-stage Node.js Dockerfile."""
     config = config or {}
     node_version = config.get("node_version", "20")
     app_port = config.get("port", 3000)
@@ -219,10 +205,6 @@ def generate_node(project_path: str, config: dict = None) -> list:
 
     header = _classification_header(classification)
     dockerfile = f"""{header}
-# =============================================================================
-# NOTICE: This Dockerfile requires npm registry access (npm ci).
-# Air-gapped deployments must pre-build on a connected machine or use
-# the Python-only Dockerfile (generate_python).
 # =============================================================================
 # Stage 1: Dependencies — install node_modules
 # =============================================================================

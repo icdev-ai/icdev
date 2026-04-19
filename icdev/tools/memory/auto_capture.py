@@ -53,7 +53,18 @@ def compute_content_hash(content):
 
 
 def _get_connection(db_path=None):
-    """Get a DB connection. db_path is ignored; uses the main DB via get_connection()."""
+    """Get a DB connection. Uses db_path if provided, otherwise falls back to main DB."""
+    if db_path is not None:
+        import sqlite3 as _sqlite3
+
+        path = Path(str(db_path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        conn = _sqlite3.connect(str(path), timeout=30)
+        conn.row_factory = _sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
     return get_connection()
 
 

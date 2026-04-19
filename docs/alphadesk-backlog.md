@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 6.3.5-followup + 6.3.5-followup-#2 limit/stop + 6.3.5-followup-#3 stop-limit/trailing/short/market-hours + 2C + 2D shipped)
+Last updated: 2026-04-19 (Phase 5B + 6.1-6.6 + 6.3.5 follow-ups #1-3 + 2C + 2D + 7.5 paper options shipped)
 
 ---
 
@@ -509,6 +509,33 @@ All 6 sub-phases shipped: 6.1 (level + XP) · 6.2 (achievements) · 6.3 (challen
 > explicit legal sign-off.
 
 ---
+
+## ✅ Phase 7.5 — Paper options (DONE 2026-04-19)
+
+Single-leg option contracts inside the existing sandbox framework. Paper-only — no live-broker path in this iteration.
+
+- **Data layer** `tools/trading/options/chain.py` — Alpaca options snapshot endpoint (`/v1beta1/options/snapshots/{underlying}`) primary, yfinance fallback when Alpaca creds missing (Greeks degrade). 5-minute cache. OCC symbol parse/format helpers.
+- **Schema** — new mutable `ad_sandbox_option_positions` (1 row per (attempt, contract), signed qty, strike, expiry, avg_cost, last_price, greeks_json, settled_at). `ad_sandbox_orders.asset_class` column added (idempotent ALTER) distinguishing equity from option fills.
+- **Engine** (`sandbox_engine.place_option_order`) — 4 action types: `buy_to_open`, `sell_to_close`, `sell_to_open`, `buy_to_close`. Fill at live mid ± 5 bps slippage + $0.65/contract commission (both config-tunable). Short-option margin check: `(cash_after + other_positions_mv) ≥ short_margin_ratio × strike × 100 × qty`, default 0.20× (simplified vs real Reg-T options margin).
+- **Cash + MV math** — 100× share multiplier baked in. `sandbox_snapshot()` folds options into the same `total_value` as stocks; new `options_market_value` field surfaces separately in API response.
+- **Expiry reflex** `challenge_option_expiry` (every 24h) — cash-settles ITM intrinsic × 100 × qty (long receives, short pays), zeroes OTM worthless, marks rows with `settled_at`. Idempotent.
+- **UI** — new `/options` page with sandbox picker + chain viewer (calls/puts side-by-side at each strike, Greeks, IV) + Trade modal (action dropdown + qty). Open-position table per sandbox.
+- **"Options Lab" challenge** — new catalog entry, 365-day duration, predicate never fires (uses scenario_completion with a never-run scenario key). Provides a long-running playground sandbox for pure options practice without a performance gate.
+- **API:** `GET /api/options/chain/<ticker>`, `GET /api/options/contract/<symbol>`, `GET /api/options/active-attempts`, `POST /api/challenges/attempts/<id>/option-orders`, `GET /api/challenges/attempts/<id>/option-positions`.
+- **Verified:** OCC parse/format roundtrip, position upsert + mark-to-market, expiry reflex (OTM path — no underlying quote = treated as OTM, position zeroed cleanly), snapshot shows options MV folded into total_value, 6 options routes registered. Coherence 17/17 clean.
+- **Simplifications documented:**
+  - European-style at expiry (no early exercise); ITM cash-settles intrinsic instead of exercising to shares. Real American options can be exercised any time.
+  - No assignment simulation (short-option holder always receives cash settlement, never has to deliver shares).
+  - Greeks trusted from Alpaca; no Black-Scholes recomputation. yfinance fallback shows `—` for Greeks.
+  - Short-option margin = flat `0.20 × notional`. Real Reg-T options margin is much more nuanced (naked-short covered-short differences, etc.).
+  - Payoff chart shows P&L at expiry only (no mid-life Black-Scholes projection).
+
+### Deferred to follow-ups
+- **Multi-leg spreads** (iron condors, verticals, straddles) — Alpaca supports via `order_class=mleg` up to 4 legs. Needs a leg-editor UI + atomic multi-leg fill math.
+- **Strategy library** (OptionStrat-inspired — 50+ pre-built strategies with payoff charts) — on top of multi-leg.
+- **Live-broker options trading** — would extend the graduation gate with options-specific criteria + risk disclosure + Alpaca approval tier check (Level 1/2/3).
+- **Early exercise simulation** — only matters if we model assignment cascades.
+- **Mid-life payoff projection** — Black-Scholes per-day P&L chart (slider UI).
 
 ## Phase 7+ (specialized infra — wait for actual demand)
 

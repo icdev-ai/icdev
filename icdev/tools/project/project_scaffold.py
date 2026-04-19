@@ -1425,20 +1425,7 @@ ansible-lint:
 
 
 def scaffold_js_frontend(project_dir: Path, project_name: str, classification: str) -> list:
-    """Scaffold a JavaScript/TypeScript frontend project (React).
-
-    WARNING: This template generates a React/Vite project that requires npm
-    registry access for ``npm ci``. Air-gapped environments do NOT have an npm
-    mirror — only PyPI is mirrored. Use scaffold_python_webapp() for air-gap
-    deployments (Flask templates + vanilla JS).
-    """
-    import os
-    if os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1"):
-        raise RuntimeError(
-            "JS/React frontend scaffolding requires npm registry access. "
-            "Air-gapped environments have PyPI mirrors only — no npm. "
-            "Use scaffold_python_webapp() for air-gap (Flask + vanilla JS)."
-        )
+    """Scaffold a JavaScript/TypeScript frontend project (React)."""
     created = scaffold_common(project_dir, project_name, classification)
     slug = project_name.lower().replace(" ", "-")
 

@@ -1469,3 +1469,38 @@ def handle_oracle_kanban_bridge_sync(args: dict) -> dict:
 def handle_oracle_kanban_bridge_gate(args: dict) -> dict:
     """Gate check for the Oracle kanban bridge."""
     return _run_cli("tools/oracle/kanban_bridge.py", ["--gate"])
+
+
+# ---------------------------------------------------------------------------
+# AlphaDeskNews Pipeline (ADN) — phases A–H
+# ---------------------------------------------------------------------------
+
+
+def handle_news_ingest_once(args: dict) -> dict:
+    """Run the RSS ingestor once across all configured feeds."""
+    return _run_cli("tools/trading/news/rss_ingestor.py", ["--run-once"])
+
+
+def handle_news_classify(args: dict) -> dict:
+    """Classify pending news items using the rule-based classifier."""
+    return _run_cli("tools/trading/news/classifier.py", ["--run"])
+
+
+def handle_news_scenario_match(args: dict) -> dict:
+    """Match classified items to macro scenarios."""
+    return _run_cli("tools/trading/news/scenario_matcher.py", ["--run"])
+
+
+def handle_news_aggregate(args: dict) -> dict:
+    """Aggregate and promote news clusters to the dashboard."""
+    return _run_cli("tools/trading/news/aggregator.py", ["--run"])
+
+
+def handle_news_reason(args: dict) -> dict:
+    """Run LLM-backed reasoning over top news clusters."""
+    return _run_cli("tools/trading/news/news_reasoner.py", ["--run"])
+
+
+def handle_news_db_migrate(args: dict) -> dict:
+    """Run ADN database migrations (ad_news_* tables)."""
+    return _run_cli("tools/trading/news/db.py", ["--migrate"])

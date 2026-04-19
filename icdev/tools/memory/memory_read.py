@@ -3,6 +3,7 @@
 """Read all memory: MEMORY.md + recent daily logs + DB entries."""
 
 import argparse
+import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -10,6 +11,15 @@ from datetime import datetime, timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
+
+# Overridable in tests via monkeypatch
+DB_PATH = None
+
+
+def _connect():
+    if DB_PATH is not None:
+        return sqlite3.connect(str(DB_PATH))
+    return get_connection()
 
 
 def read_memory_file():
@@ -30,7 +40,7 @@ def read_recent_logs(days=2):
 
 
 def read_db_recent(limit=10, user_id=None, tenant_id=None):
-    conn = get_connection()
+    conn = _connect()
     c = conn.cursor()
 
     sql = "SELECT content, type, importance, created_at FROM memory_entries WHERE 1=1"

@@ -87,6 +87,19 @@ db_abstraction_lint:
     backup_manager.py, */init_db.py.  Suppress a single line with # sqlite3-ok
     only when a direct connection genuinely cannot be avoided.
 
+# OpenAPI ↔ Route Parity gate — blocks when the generated OpenAPI spec diverges
+# from app.url_map for /api/v1/* routes (undocumented or phantom paths).
+# Run: python tools/workflow/coherence_checker.py --check openapi_parity --json --gate
+api_contract_drift:
+  blocking:
+    - api_contract_drift   # url_map /api/v1/* routes not mirrored in generated OpenAPI spec
+  note: >
+    Violations are detected by tools/workflow/coherence_checker.py::check_openapi_parity.
+    missing_from_spec: routes registered in Flask but absent from the spec — add them to
+    tools/dashboard/api/openapi_generator.py or the ENDPOINT_DOCS override dict.
+    phantom_in_spec: spec paths with no live url_map rule — remove or reroute them.
+    Gracefully skips when Flask/dashboard deps are unavailable (air-gap environments).
+
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:
   blocking:
@@ -1257,3 +1270,35 @@ canvas_compliance:
     assessment_max_age_days: 30
     require_migration_assessment: true
     kg_build_required: false
+
+# API Contract Drift Gate (Phase B / P1.2)
+# Detects divergence between the live Flask /api/v1/* route surface and the
+# published OpenAPI 3.1 spec served at /api/v1/openapi.json. Implemented by
+# tools/workflow/coherence_checker.py::check_openapi_parity (Phase B6).
+# Not yet merge-blocking while the frontend is in build-up; flip
+# warning->blocking when Phase I closes.
+api_contract_drift:
+  description: "Warns on any /api/v1/* route missing from OpenAPI spec or any spec path without a live route"
+  blocking: []
+  warning:
+    - route_missing_from_spec
+    - spec_path_missing_route
+    - operation_missing_response_schema
+    - query_param_declared_but_unused
+  thresholds:
+    max_undocumented_routes: 0
+    max_orphan_spec_paths: 0
+    # When flipped to true (post-Phase I), `route_missing_from_spec` and
+    # `spec_path_missing_route` promote from warning -> blocking.
+    enforce_as_blocking: false
+
+alphadesk_news_pipeline:
+  description: "Gates for AlphaDeskNews (ADN) RSS ingest, classification, scenario-matching, and aggregation pipeline"
+  blocking:
+    - news_db_schema_mismatch
+  warning:
+    - ingestor_feed_parse_failure
+    - classifier_backlog_overflow
+  thresholds:
+    max_feed_parse_failures: 3
+    max_classifier_backlog: 500
