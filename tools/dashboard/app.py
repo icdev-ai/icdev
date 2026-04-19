@@ -8203,6 +8203,12 @@ def create_app() -> Flask:
         the anchor so old links still work."""
         return redirect("/kanban#project-digital-twin", code=302)
 
+    # ── FathomDesk News Intelligence ─────────────────────────────────────────
+    @app.route("/news")
+    def news_page():
+        """FathomDesk News — category-tab layout with sentiment sparklines."""
+        return render_template("news.html")
+
     # ── FathomDesk Trading Engine ─────────────────────────────────────────────
     @app.route("/fathomdesk")
     def fathomdesk_page():
