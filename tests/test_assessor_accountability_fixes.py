@@ -88,9 +88,14 @@ _SCHEMA = """
     );
     CREATE TABLE IF NOT EXISTS fairness_assessments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id TEXT NOT NULL, assessment_data TEXT NOT NULL,
-        overall_score REAL DEFAULT 0.0,
-        created_at TEXT DEFAULT (datetime('now'))
+        project_id TEXT NOT NULL,
+        dimension TEXT NOT NULL,
+        status TEXT DEFAULT 'not_assessed',
+        evidence TEXT,
+        score REAL DEFAULT 0.0,
+        assessed_at TEXT DEFAULT (datetime('now')),
+        classification TEXT DEFAULT 'CUI',
+        UNIQUE(project_id, dimension)
     );
     CREATE TABLE IF NOT EXISTS ai_telemetry (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
