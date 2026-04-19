@@ -114,10 +114,10 @@ class TestGenerateSpec:
         assert "OAuthBearer" in schemes
         assert "CACAuth" in schemes
 
-    def test_spec_has_all_23_endpoint_paths(self):
-        """Generated spec paths must cover all 23 documented endpoints."""
-        # ENDPOINT_DOCS has 23 (method, path) tuples
-        assert len(ENDPOINT_DOCS) == 23
+    def test_spec_has_all_32_endpoint_paths(self):
+        """Generated spec paths must cover all 32 documented endpoints."""
+        # ENDPOINT_DOCS has 32 (method, path) tuples
+        assert len(ENDPOINT_DOCS) == 32
         # All paths should be present in the spec
         for _method, path in ENDPOINT_DOCS:
             assert path in self.spec["paths"], f"Path '{path}' missing from generated spec"
