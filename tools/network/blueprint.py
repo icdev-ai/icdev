@@ -9671,7 +9671,7 @@ Output ONLY the JSON object. No other text."""
             from tools.knowledge_graph.graph_rag import retrieve
             kg = retrieve(
                 query=query,
-                project_id=_NDC_KG_PROJECT_ID,
+                graph_id=_NDC_KG_PROJECT_ID,
                 profile=_NDC_KG_PROFILE,
                 top_k=top_k,
                 compress=False,
