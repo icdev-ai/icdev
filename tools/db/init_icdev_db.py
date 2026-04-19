@@ -8846,6 +8846,20 @@ CREATE TABLE IF NOT EXISTS pulse_research_cache (
 );
 CREATE INDEX IF NOT EXISTS idx_pulse_research_query ON pulse_research_cache(query);
 
+-- Pulse topic clusters (TF-IDF grouped research themes for article generation)
+CREATE TABLE IF NOT EXISTS pulse_topic_clusters (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    pain_points     TEXT,
+    research_ids    TEXT,
+    priority_score  REAL DEFAULT 0.5,
+    used_count      INTEGER DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_topic_clusters_priority ON pulse_topic_clusters(priority_score DESC);
+CREATE INDEX IF NOT EXISTS idx_pulse_topic_clusters_used ON pulse_topic_clusters(used_count);
+
 -- =========================================================================
 -- Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
 -- =========================================================================

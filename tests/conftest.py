@@ -1379,6 +1379,16 @@ CREATE TABLE IF NOT EXISTS pulse_research_cache (
     pain_point_category TEXT,
     fetched_at          TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS pulse_topic_clusters (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    pain_points     TEXT,
+    research_ids    TEXT,
+    priority_score  REAL DEFAULT 0.5,
+    used_count      INTEGER DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------
