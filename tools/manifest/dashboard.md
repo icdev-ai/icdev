@@ -22,4 +22,5 @@
 | Mermaid Integration | tools/dashboard/static/js/mermaid-icdev.js | ICDEV™ Mermaid module: dark theme, click handlers, editor, SVG export, auto-init | ICDEV™.renderMermaid(), ICDEV™.initMermaidEditor(), ICDEV™.exportMermaidSVG() | Rendered diagrams |
 | Diagram Definitions | tools/dashboard/diagram_definitions.py | Centralized Mermaid diagram catalog: 18 diagrams across 4 categories with role filtering | get_catalog_for_role(), get_diagram() | Diagram data |
 | Diagrams API | tools/dashboard/api/diagrams.py | Blueprint: list/get diagram definitions, role-filtered catalog | GET /api/diagrams/, GET /api/diagrams/<id> | JSON diagram data |
+| Proxy Middleware | tools/dashboard/proxy.py | WSGI strangler-fig proxy — routes static assets to Next.js build dir (prod) or live dev server (NEXT_DEV_URL); falls through to Flask for all other requests | WSGI app + env (NEXT_DEV_URL, NEXT_STATIC_ROOT, dev_mode) | WSGI middleware instance |
 
