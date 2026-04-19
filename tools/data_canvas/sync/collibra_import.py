@@ -9,7 +9,7 @@ Every imported lineage edge receives a CUI classification overlay by default.
 The policy 'SECRET data may not flow into IL4-accessible datasets' is
 enforced by generate_contract_assertions() after import.
 
-External nodes imported from Collibra are added to the DDC design graph
+External nodes ingested from Collibra are added to the DDC design graph
 with IDs of the form ``ext:collibra:<assetId>``.
 
 Usage

@@ -9,7 +9,7 @@ This is the reverse direction of openmetadata_sync.py, which pushes DDC → OM.
 Every imported lineage edge receives a CUI classification overlay by default,
 enforcing the policy that classification must be tracked on every data flow.
 
-External nodes imported from OpenMetadata are added to the DDC design graph
+External nodes ingested from OpenMetadata are added to the DDC design graph
 with IDs of the form ``ext:om:<entityId>``.
 
 Usage
