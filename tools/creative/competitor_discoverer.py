@@ -687,12 +687,16 @@ def run_discovery(domain=None, db_path=None):
     # Resolve domain config: check primary 'domain' key, then secondary sections
     domain_config = config.get("domain", {})
     if domain:
-        # If --domain was passed, try to find matching config section
+        # If --domain was passed, try to find matching config section.
+        # Match on either the YAML key (e.g. 'security_canvas') or the
+        # display `name` field (e.g. 'security design canvas') so callers
+        # don't have to guess which one the config uses.
         primary_name = domain_config.get("name", "")
         if primary_name and domain.lower() != primary_name.lower():
-            # Check secondary domain sections (e.g., 'blockchain', 'knowledge_graph')
             for key, val in config.items():
-                if isinstance(val, dict) and val.get("name", "").lower() == domain.lower():
+                if not isinstance(val, dict):
+                    continue
+                if key.lower() == domain.lower() or val.get("name", "").lower() == domain.lower():
                     domain_config = val
                     break
     else:
