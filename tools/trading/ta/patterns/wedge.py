@@ -84,7 +84,9 @@ def detect_wedge(
     return [{
         "type": wedge_type,
         "slope_high": slope_high,
+        "intercept_high": res_fit[1],
         "slope_low": slope_low,
+        "intercept_low": sup_fit[1],
         "start_bar": start_bar,
         "end_bar": end_bar,
     }]

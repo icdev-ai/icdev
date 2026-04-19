@@ -95,6 +95,40 @@
     border-radius: 50%;
     animation: fd-spin .6s linear infinite;
   }
+
+  /* Pattern detail modal */
+  #fd-pattern-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: rgba(0,0,0,.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  #fd-modal-card {
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a2a40);
+    border-radius: 8px;
+    padding: 20px 24px;
+    min-width: 280px;
+    max-width: 400px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.6);
+    position: relative;
+  }
+  #fd-modal-close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: none;
+    border: none;
+    color: var(--text-muted, #6c6c80);
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+  }
+  #fd-modal-close:hover { color: var(--text-primary, #e0e0f0); }
 </style>
 {% endblock %}
 {% block content %}
@@ -122,6 +156,19 @@
   <span><span class="fd-legend-dot" style="background:#4a90d9;opacity:.45;"></span>Value Area</span>
   <span><span class="fd-legend-dot" style="background:#4a90d9;"></span>VP Bucket</span>
   <span><span class="fd-legend-dot" style="background:#e8a838;"></span>HVN lines</span>
+  <span><span class="fd-legend-dot" style="background:#dc3545;opacity:.6;"></span>Resistance S/R</span>
+  <span><span class="fd-legend-dot" style="background:#28a745;opacity:.6;"></span>Support S/R</span>
+  <span><span class="fd-legend-dot" style="background:#f5a623;"></span>Rising Wedge</span>
+  <span><span class="fd-legend-dot" style="background:#7b68ee;"></span>Falling Wedge</span>
+  <span style="cursor:help;" title="Click a pattern badge on the chart for details">▼▲ Patterns (click)</span>
+</div>
+
+<!-- Pattern detail modal -->
+<div id="fd-pattern-modal">
+  <div id="fd-modal-card">
+    <button id="fd-modal-close" onclick="window.fdHideModal()">×</button>
+    <div id="fd-modal-body"></div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -171,13 +218,40 @@
   }
   function hideTip() { tip().style.opacity = '0'; }
 
+  // ── Modal ────────────────────────────────────────────────────────────────────
+  window.fdHideModal = function () {
+    document.getElementById('fd-pattern-modal').style.display = 'none';
+  };
+
+  document.getElementById('fd-pattern-modal').addEventListener('click', function (e) {
+    if (e.target === this) window.fdHideModal();
+  });
+
   // ── Number formatting ────────────────────────────────────────────────────────
   function fmtVol(v) {
     if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
     if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
     return v.toFixed(0);
   }
-  function fmtPx(v) { return v >= 1000 ? v.toFixed(2) : v.toFixed(2); }
+  function fmtPx(v) { return (+v).toFixed(2); }
+
+  // ── Pattern badge text (short) ───────────────────────────────────────────────
+  var BADGE_TEXT = {
+    'double_top':    '▼ DTop',
+    'double_bottom': '▲ DBot',
+    'triple_top':    '▼ TTop',
+    'triple_bottom': '▲ TBot',
+    'rising_wedge':  '⋀ R.Wdg',
+    'falling_wedge': '⋁ F.Wdg',
+  };
+  var PATTERN_COLORS = {
+    'double_top':    '#dc3545',
+    'double_bottom': '#28a745',
+    'triple_top':    '#dc3545',
+    'triple_bottom': '#28a745',
+    'rising_wedge':  '#f5a623',
+    'falling_wedge': '#7b68ee',
+  };
 
   // ── Main render ──────────────────────────────────────────────────────────────
   function render(ticker, tf) {
@@ -187,8 +261,11 @@
     fetch('/api/trading/chart/' + encodeURIComponent(ticker) + '?tf=' + tf + '&limit=120')
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.error) { wrap.innerHTML = '<div class="fd-loading" style="color:var(--status-red,#dc3545);">Error: ' + d.error + '</div>'; return; }
-        drawChart(wrap, d.bars, d.volume_profile, ticker, tf);
+        if (d.error) {
+          wrap.innerHTML = '<div class="fd-loading" style="color:var(--status-red,#dc3545);">Error: ' + d.error + '</div>';
+          return;
+        }
+        drawChart(wrap, d.bars, d.volume_profile, d.patterns || [], d.sr_levels || [], ticker, tf);
         drawStats(d.bars);
       })
       .catch(function (err) {
@@ -212,7 +289,7 @@
     document.getElementById('fd-stats').innerHTML = html;
   }
 
-  function drawChart(wrap, bars, vp, ticker, tf) {
+  function drawChart(wrap, bars, vp, patterns, srLevels, ticker, tf) {
     wrap.innerHTML = '';
     if (!bars || !bars.length) {
       wrap.innerHTML = '<div class="fd-loading">No data</div>';
@@ -221,18 +298,17 @@
 
     var W        = wrap.clientWidth || 900;
     var H        = 420;
-    var padL     = 56;    // y-axis labels
+    var padL     = 56;
     var padR     = 12;
     var padT     = 16;
-    var padB     = 40;    // x-axis labels
+    var padB     = 40;
     var plotW    = W - padL - padR;
     var plotH    = H - padT - padB;
 
-    // Right 15% of plot area is reserved for the VP histogram
     var vpFrac   = 0.15;
     var vpW      = plotW * vpFrac;
-    var candleW  = plotW - vpW;         // candlestick area width
-    var vpLeft   = padL + candleW;      // x start of VP histogram
+    var candleW  = plotW - vpW;
+    var vpLeft   = padL + candleW;
 
     // ── Price range ────────────────────────────────────────────────────────────
     var priceMin = Infinity, priceMax = -Infinity;
@@ -240,7 +316,6 @@
       if (b.l < priceMin) priceMin = b.l;
       if (b.h > priceMax) priceMax = b.h;
     });
-    // 2% padding so extreme wicks don't touch top/bottom
     var pad = (priceMax - priceMin) * 0.02 || 1;
     priceMin -= pad; priceMax += pad;
     var priceRange = priceMax - priceMin;
@@ -248,6 +323,9 @@
     function py(price) {
       return padT + plotH - ((price - priceMin) / priceRange) * plotH;
     }
+
+    var n  = bars.length;
+    var cw = candleW / n;
 
     // ── Build SVG ──────────────────────────────────────────────────────────────
     var svg = svgEl('svg', {
@@ -258,7 +336,7 @@
     svg.style.display = 'block';
     svg.style.background = cssVar('--bg-page', '#0d1526');
 
-    // ── Clipping region for candles (keep wicks inside chart area) ─────────────
+    // ── Clipping region for candles & overlays ─────────────────────────────────
     var defs = svgEl('defs');
     var clip = svgEl('clipPath', { id: 'fd-candle-clip' });
     clip.appendChild(svgEl('rect', { x: padL, y: padT, width: candleW, height: plotH }));
@@ -270,7 +348,6 @@
     for (var t = 0; t <= yTicks; t++) {
       var price = priceMin + (t / yTicks) * priceRange;
       var yy    = py(price);
-      // grid line across full chart (including VP area)
       svg.appendChild(svgEl('line', {
         x1: padL, y1: yy, x2: W - padR, y2: yy,
         stroke: cssVar('--border-color', '#2a2a40'), 'stroke-width': '1', opacity: '0.5'
@@ -285,18 +362,17 @@
     }
 
     // ── X-axis date labels ─────────────────────────────────────────────────────
-    var n = bars.length;
     var labelEvery = Math.max(1, Math.ceil(n / 10));
     bars.forEach(function (b, i) {
       if (i % labelEvery !== 0 && i !== n - 1) return;
-      var cx = padL + (i + 0.5) * (candleW / n);
-      var t2 = String(b.t || '').slice(0, 10);  // YYYY-MM-DD
+      var cx = padL + (i + 0.5) * cw;
+      var t2 = String(b.t || '').slice(0, 10);
       var lbl = svgEl('text', {
         x: cx, y: H - 8,
         fill: cssVar('--text-muted', '#6c6c80'),
         'font-size': '9', 'text-anchor': 'middle'
       });
-      lbl.textContent = t2.slice(5);  // MM-DD
+      lbl.textContent = t2.slice(5);
       svg.appendChild(lbl);
     });
 
@@ -311,20 +387,48 @@
       }));
     }
 
-    // ── HVN horizontal lines across full chart ─────────────────────────────────
-    if (vp && vp.hvns) {
-      vp.hvns.forEach(function (hvn) {
-        var yh = py(hvn.price);
-        var line = svgEl('line', {
-          x1: padL, y1: yh, x2: W - padR, y2: yh,
-          stroke: '#e8a838', 'stroke-width': '1',
-          'stroke-dasharray': '3 4', opacity: '0.15'
+    // ── S/R horizontal lines (before candles — behind them) ───────────────────
+    if (srLevels && srLevels.length) {
+      srLevels.forEach(function (sr) {
+        var ysr = py(sr.price);
+        if (ysr < padT || ysr > padT + plotH) return;
+        var isRes  = sr.type === 'resistance';
+        var color  = isRes ? '#dc3545' : '#28a745';
+        var opacity = (0.15 + sr.strength * 0.55).toFixed(2);
+        var sw      = (0.8 + sr.strength * 1.8).toFixed(1);
+        var dash    = isRes ? '4 3' : '3 4';
+        var srLine = svgEl('line', {
+          x1: padL, y1: ysr, x2: vpLeft, y2: ysr,
+          stroke: color, 'stroke-width': sw,
+          opacity: opacity, 'stroke-dasharray': dash
         });
-        svg.appendChild(line);
+        srLine.addEventListener('mouseenter', function (e) {
+          showTip(
+            '<b>' + (isRes ? 'Resistance' : 'Support') + '</b><br>' +
+            'Price: <b>' + fmtPx(sr.price) + '</b><br>' +
+            'Touches: ' + sr.touches + ' &middot; Strength: ' + Math.round(sr.strength * 100) + '%',
+            e
+          );
+        });
+        srLine.addEventListener('mousemove', moveTip);
+        srLine.addEventListener('mouseleave', hideTip);
+        svg.appendChild(srLine);
       });
     }
 
-    // ── POC horizontal line across full chart ──────────────────────────────────
+    // ── HVN horizontal lines ───────────────────────────────────────────────────
+    if (vp && vp.hvns) {
+      vp.hvns.forEach(function (hvn) {
+        var yh = py(hvn.price);
+        svg.appendChild(svgEl('line', {
+          x1: padL, y1: yh, x2: W - padR, y2: yh,
+          stroke: '#e8a838', 'stroke-width': '1',
+          'stroke-dasharray': '3 4', opacity: '0.15'
+        }));
+      });
+    }
+
+    // ── POC horizontal line ────────────────────────────────────────────────────
     if (vp && vp.poc != null) {
       var pocY = py(vp.poc);
       svg.appendChild(svgEl('line', {
@@ -332,7 +436,6 @@
         stroke: '#f5c518', 'stroke-width': '1.5',
         'stroke-dasharray': '5 3', opacity: '0.85'
       }));
-      // POC price label on left
       var pocLbl = svgEl('text', {
         x: padL - 5, y: pocY - 3,
         fill: '#f5c518', 'font-size': '9', 'text-anchor': 'end'
@@ -341,13 +444,42 @@
       svg.appendChild(pocLbl);
     }
 
+    // ── Wedge trend lines (before candles) ────────────────────────────────────
+    if (patterns && patterns.length) {
+      patterns.forEach(function (pat) {
+        if (pat.type !== 'rising_wedge' && pat.type !== 'falling_wedge') return;
+        var color = PATTERN_COLORS[pat.type] || '#a0a0b8';
+        var sb = pat.start_bar, eb = pat.end_bar;
+        var sh = pat.slope_high || 0, ih = pat.intercept_high || 0;
+        var sl = pat.slope_low  || 0, il = pat.intercept_low  || 0;
+
+        var x1 = padL + (sb + 0.5) * cw;
+        var x2 = padL + (eb + 0.5) * cw;
+
+        // Resistance (upper) line
+        svg.appendChild(svgEl('line', {
+          x1: x1, y1: py(sh * sb + ih),
+          x2: x2, y2: py(sh * eb + ih),
+          stroke: color, 'stroke-width': '1.5', opacity: '0.75',
+          'clip-path': 'url(#fd-candle-clip)'
+        }));
+        // Support (lower) line — dashed
+        svg.appendChild(svgEl('line', {
+          x1: x1, y1: py(sl * sb + il),
+          x2: x2, y2: py(sl * eb + il),
+          stroke: color, 'stroke-width': '1.5', opacity: '0.75',
+          'stroke-dasharray': '5 3',
+          'clip-path': 'url(#fd-candle-clip)'
+        }));
+      });
+    }
+
     // ── VP histogram (right 15%) ───────────────────────────────────────────────
     if (vp && vp.buckets && vp.buckets.length) {
       var maxVol = 0;
       vp.buckets.forEach(function (b) { if (b.volume > maxVol) maxVol = b.volume; });
       if (maxVol <= 0) maxVol = 1;
 
-      // Build HVN set for color distinction
       var hvnPrices = {};
       if (vp.hvns) vp.hvns.forEach(function (h) { hvnPrices[h.price.toFixed(4)] = true; });
 
@@ -366,13 +498,12 @@
         var rect = svgEl('rect', {
           x: vpLeft, y: barTopY,
           width: barWidth, height: barHeight,
-          fill: color, opacity: opacity,
-          rx: '1'
+          fill: color, opacity: opacity, rx: '1'
         });
 
         rect.addEventListener('mouseenter', function (e) {
           showTip(
-            '<b>' + fmtPx(bkt.price_low) + ' – ' + fmtPx(bkt.price_high) + '</b><br>' +
+            '<b>' + fmtPx(bkt.price_low) + ' \u2013 ' + fmtPx(bkt.price_high) + '</b><br>' +
             'Vol: <b>' + fmtVol(bkt.volume) + '</b>' +
             (isPOC ? '<br><b style="color:#f5c518">POC</b>' : '') +
             (isHVN && !isPOC ? '<br><b style="color:#e8a838">HVN</b>' : ''),
@@ -384,15 +515,13 @@
         svg.appendChild(rect);
       });
 
-      // Thin separator line between candles and VP
       svg.appendChild(svgEl('line', {
         x1: vpLeft, y1: padT, x2: vpLeft, y2: padT + plotH,
         stroke: cssVar('--border-color', '#2a2a40'), 'stroke-width': '1', opacity: '0.4'
       }));
     }
 
-    // ── Candlestick candles (drawn last so they sit on top) ────────────────────
-    var cw = candleW / n;
+    // ── Candlestick candles ────────────────────────────────────────────────────
     var bodyW = Math.max(1, cw * 0.6);
     var grp = svgEl('g', { 'clip-path': 'url(#fd-candle-clip)' });
 
@@ -407,12 +536,10 @@
       var bodyTop = Math.min(oY, cY);
       var bodyH   = Math.max(1, Math.abs(cY - oY));
 
-      // Wick
       grp.appendChild(svgEl('line', {
         x1: cx, y1: hY, x2: cx, y2: lY,
         stroke: color, 'stroke-width': '1'
       }));
-      // Body
       var rect = svgEl('rect', {
         x: cx - bodyW / 2, y: bodyTop,
         width: bodyW, height: bodyH,
@@ -433,7 +560,139 @@
     });
     svg.appendChild(grp);
 
+    // ── Pattern markers (on top of candles) ───────────────────────────────────
+    if (patterns && patterns.length) {
+      var markerGrp = svgEl('g', { 'clip-path': 'url(#fd-candle-clip)' });
+
+      patterns.forEach(function (pat) {
+        var bb = pat.breakout_bar;
+        if (bb < 0 || bb >= n) return;
+
+        var cx = padL + (bb + 0.5) * cw;
+        var bar = bars[bb];
+        if (!bar) return;
+
+        var isTop    = pat.type.indexOf('top') >= 0 || pat.type === 'rising_wedge';
+        var color    = PATTERN_COLORS[pat.type] || '#a0a0b8';
+        var badgeTxt = BADGE_TEXT[pat.type] || pat.type;
+
+        // Badge y: above high for tops, below low for bottoms
+        var anchorY  = isTop ? py(bar.h) : py(bar.l);
+        var badgeH   = 14;
+        var badgeW   = Math.max(30, badgeTxt.length * 5.8 + 10);
+        var badgeY   = isTop ? anchorY - badgeH - 4 : anchorY + 4;
+
+        var mg = svgEl('g', { style: 'cursor:pointer' });
+
+        // Connector line
+        mg.appendChild(svgEl('line', {
+          x1: cx, y1: isTop ? anchorY - 2 : anchorY + 2,
+          x2: cx, y2: isTop ? badgeY + badgeH : badgeY,
+          stroke: color, 'stroke-width': '1', opacity: '0.5',
+          'stroke-dasharray': '2 2'
+        }));
+
+        // Badge background
+        mg.appendChild(svgEl('rect', {
+          x: cx - badgeW / 2, y: badgeY,
+          width: badgeW, height: badgeH,
+          fill: color, opacity: '0.88', rx: '3'
+        }));
+
+        // Badge text
+        var txt = svgEl('text', {
+          x: cx, y: badgeY + badgeH - 3,
+          fill: '#fff', 'font-size': '8.5',
+          'font-weight': '600', 'text-anchor': 'middle',
+          style: 'pointer-events:none'
+        });
+        txt.textContent = badgeTxt;
+        mg.appendChild(txt);
+
+        // Click → modal
+        (function (p, b_ref) {
+          mg.addEventListener('click', function () {
+            showPatternModal(p, bars);
+          });
+        }(pat, bar));
+
+        mg.addEventListener('mouseenter', function (e) {
+          showTip('<b>' + (pat.label || pat.type) + '</b><br>Confidence: ' +
+            Math.round((pat.confidence || 0) * 100) + '%<br>Click for details', e);
+        });
+        mg.addEventListener('mousemove', moveTip);
+        mg.addEventListener('mouseleave', hideTip);
+
+        markerGrp.appendChild(mg);
+      });
+
+      svg.appendChild(markerGrp);
+    }
+
     wrap.appendChild(svg);
+
+    // ── Pattern modal ─────────────────────────────────────────────────────────
+    function showPatternModal(pat, barsRef) {
+      var modal = document.getElementById('fd-pattern-modal');
+      var body  = document.getElementById('fd-modal-body');
+
+      var conf     = pat.confidence || 0;
+      var confPct  = Math.round(conf * 100);
+      var confClr  = confPct >= 75 ? '#28a745' : confPct >= 50 ? '#f5c518' : '#dc3545';
+
+      var bbIdx    = Math.min(pat.breakout_bar, barsRef.length - 1);
+      var startBar = barsRef[pat.start_bar] || {};
+      var endBar   = barsRef[bbIdx] || {};
+      var dateStart = String(startBar.t || '').slice(0, 10) || '\u2014';
+      var dateEnd   = String(endBar.t   || '').slice(0, 10) || '\u2014';
+
+      var color = PATTERN_COLORS[pat.type] || '#a0a0b8';
+
+      var html = '<h3 style="margin:0 0 14px;font-size:15px;color:var(--text-primary,#e0e0f0);' +
+        'border-bottom:1px solid var(--border-color,#2a2a40);padding-bottom:8px;">' +
+        '<span style="display:inline-block;width:10px;height:10px;background:' + color +
+        ';border-radius:2px;margin-right:6px;vertical-align:middle;"></span>' +
+        (pat.label || pat.type) + '</h3>';
+
+      // Confidence bar
+      html += '<div style="margin-bottom:12px;">';
+      html += '<div style="font-size:11px;color:var(--text-muted,#6c6c80);margin-bottom:4px;">Confidence</div>';
+      html += '<div style="display:flex;align-items:center;gap:8px;">';
+      html += '<div style="flex:1;height:6px;background:var(--border-color,#2a2a40);border-radius:3px;">';
+      html += '<div style="width:' + confPct + '%;height:100%;background:' + confClr + ';border-radius:3px;"></div>';
+      html += '</div><span style="font-size:12px;font-weight:700;color:' + confClr + ';">' + confPct + '%</span>';
+      html += '</div></div>';
+
+      // Detail table
+      html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+      function row(label, val) {
+        return '<tr><td style="color:var(--text-muted,#6c6c80);padding:3px 0;white-space:nowrap;">' +
+          label + '</td><td style="text-align:right;font-weight:600;color:var(--text-secondary,#a0a0b8);' +
+          'padding-left:12px;">' + val + '</td></tr>';
+      }
+
+      if (pat.price_low != null && pat.price_high != null) {
+        html += row('Price range', fmtPx(pat.price_low) + ' \u2013 ' + fmtPx(pat.price_high));
+      }
+      html += row('Breakout bar', dateEnd + ' (bar ' + pat.breakout_bar + ')');
+      html += row('Pattern span', dateStart + ' \u2192 ' + dateEnd);
+      html += row('Bar width', (pat.end_bar - pat.start_bar) + ' bars');
+
+      if (pat.avg_price) {
+        html += row('Avg price', fmtPx(pat.avg_price));
+      }
+      if (pat.neckline) {
+        html += row('Neckline', fmtPx(pat.neckline.price));
+      }
+      if (pat.slope_high !== undefined) {
+        html += row('Resistance slope', pat.slope_high.toFixed(5));
+        html += row('Support slope',    pat.slope_low.toFixed(5));
+      }
+
+      html += '</table>';
+      body.innerHTML = html;
+      modal.style.display = 'flex';
+    }
   }
 
   // ── Controls ──────────────────────────────────────────────────────────────────
@@ -453,10 +712,8 @@
     render(_currentTicker, _currentTf);
   };
 
-  // Initial load
   render(_currentTicker, _currentTf);
 
-  // Redraw on window resize
   var _resizeTimer;
   window.addEventListener('resize', function () {
     clearTimeout(_resizeTimer);

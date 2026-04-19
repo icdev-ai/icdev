@@ -884,6 +884,71 @@ _CANVAS_COMPLIANCE_CACHE: dict = {}   # {"ts": float, "data": list}
 _CANVAS_TREND_CACHE: dict = {}        # {"ts": float, "data": list}
 _CANVAS_CACHE_TTL = 45.0              # seconds
 
+_PATTERN_LABELS: dict[str, str] = {
+    "double_top": "▼ Double Top",
+    "double_bottom": "▲ Double Bottom",
+    "triple_top": "▼ Triple Top",
+    "triple_bottom": "▲ Triple Bottom",
+    "rising_wedge": "⋀ Rising Wedge",
+    "falling_wedge": "⋁ Falling Wedge",
+}
+
+
+def _enrich_chart_patterns(patterns: list[dict]) -> list[dict]:
+    """Attach label, breakout_bar, confidence, price_low/high to each pattern."""
+    enriched = []
+    for p in patterns:
+        ep = dict(p)
+        ep["label"] = _PATTERN_LABELS.get(p["type"], p["type"])
+        ep["breakout_bar"] = p["end_bar"]
+
+        tol = p.get("tolerance_pct", 3.0) or 3.0
+
+        if p["type"] in ("double_top", "double_bottom"):
+            avg = p.get("avg_price") or 0.0
+            if p["type"] == "double_top":
+                s1, s2 = p["high_1"], p["high_2"]
+                ep["price_high"] = round(avg, 4)
+                ep["price_low"] = round(p["neckline"]["price"], 4)
+            else:
+                s1, s2 = p["low_1"], p["low_2"]
+                ep["price_low"] = round(avg, 4)
+                ep["price_high"] = round(p["neckline"]["price"], 4)
+            max_dev_pct = (max(abs(s1["price"] - avg), abs(s2["price"] - avg)) / avg * 100) if avg else 0
+            ep["confidence"] = round(max(0.10, min(0.99, 1.0 - max_dev_pct / tol)), 2)
+
+        elif p["type"] in ("triple_top", "triple_bottom"):
+            avg = p.get("avg_price") or 0.0
+            prices = [p["swing_1"]["price"], p["swing_2"]["price"], p["swing_3"]["price"]]
+            if p["type"] == "triple_top":
+                ep["price_high"] = round(avg, 4)
+                ep["price_low"] = round(min(prices), 4)
+            else:
+                ep["price_low"] = round(avg, 4)
+                ep["price_high"] = round(max(prices), 4)
+            max_dev_pct = (max(abs(pr - avg) for pr in prices) / avg * 100) if avg else 0
+            ep["confidence"] = round(max(0.10, min(0.99, 1.0 - max_dev_pct / tol)), 2)
+
+        elif p["type"] in ("rising_wedge", "falling_wedge"):
+            sb, eb = p["start_bar"], p["end_bar"]
+            sh = p.get("slope_high", 0)
+            ih = p.get("intercept_high", 0)
+            sl = p.get("slope_low", 0)
+            il = p.get("intercept_low", 0)
+            res_prices = [sh * sb + ih, sh * eb + ih]
+            sup_prices = [sl * sb + il, sl * eb + il]
+            ep["price_high"] = round(max(res_prices), 4)
+            ep["price_low"] = round(min(sup_prices), 4)
+            ep["confidence"] = 0.65
+
+        else:
+            ep["confidence"] = 0.50
+            ep.setdefault("price_low", 0.0)
+            ep.setdefault("price_high", 0.0)
+
+        enriched.append(ep)
+    return enriched
+
 
 def create_app() -> Flask:
     app = Flask(
@@ -8147,16 +8212,30 @@ def create_app() -> Flask:
 
     @app.route("/api/trading/chart/<ticker>")
     def api_trading_chart(ticker: str):
-        """Return OHLCV bars + volume profile for *ticker*."""
+        """Return OHLCV bars, volume profile, patterns, and S/R levels for *ticker*."""
         ticker = ticker.upper()
         timeframe = flask_request.args.get("tf", "1D")
         limit = min(int(flask_request.args.get("limit", 120)), 500)
         try:
             from tools.trading.data.market_data import fetch_bars
             from tools.trading.ta.volume_profile import volume_profile as compute_vp
+            from tools.trading.ta.swings import find_swings
+            from tools.trading.ta.patterns import detect_patterns
+            from tools.trading.ta.support_resistance import compute_sr
+
             bars = fetch_bars(ticker, timeframe, limit)
             vp = compute_vp(bars, bucket_count=40)
-            return jsonify({"ticker": ticker, "bars": bars, "volume_profile": vp})
+            swings = find_swings(bars)
+            raw_patterns = detect_patterns(bars)
+            sr_levels = compute_sr(bars, swings=swings)
+            patterns = _enrich_chart_patterns(raw_patterns)
+            return jsonify({
+                "ticker": ticker,
+                "bars": bars,
+                "volume_profile": vp,
+                "patterns": patterns,
+                "sr_levels": sr_levels,
+            })
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
