@@ -1254,6 +1254,13 @@ function getLinkStyle(protocol) {
 
 /* ── Create a link ───────────────────────────────────────────────────────────── */
 function createLink(srcId, tgtId, label, protocol, linkId) {
+  // Reject orphan endpoints — JointJS otherwise renders an invisible link
+  // at origin, which looks like "links sometimes don't appear" in the UI.
+  if (!srcId || !tgtId || !graph.getCell(srcId) || !graph.getCell(tgtId)) {
+    console.warn('createLink: skipping orphan edge', { srcId: srcId, tgtId: tgtId, linkId: linkId });
+    return null;
+  }
+
   const style = getLinkStyle(protocol);
   const stroke = style ? style.stroke : '#e94560';
   const dash = style ? style.dash : '';
@@ -1792,18 +1799,29 @@ function loadGraphJSON(data) {
   const nodes = data.nodes || [];
   const edges = data.edges || [];
 
+  const createdIds = new Set();
   nodes.forEach(n => {
-    createNode(n.type, n.x, n.y, n.label, n.id, n.config);
+    const node = createNode(n.type, n.x, n.y, n.label, n.id, n.config);
+    if (node) createdIds.add(node.id);
   });
+
+  let dropped = 0;
   edges.forEach(e => {
-    if (e.source && e.target) {
-      const link = createLink(e.source, e.target, e.label, e.protocol, e.id);
-      if (link) {
-        if (e.cableData) link.set('cableData', e.cableData);
-        if (e.config) link.set('linkConfig', e.config);
-      }
+    if (!e.source || !e.target) { dropped++; return; }
+    if (!createdIds.has(e.source) || !createdIds.has(e.target)) {
+      dropped++;
+      console.warn('loadGraphJSON: dropping edge with missing endpoint', e);
+      return;
+    }
+    const link = createLink(e.source, e.target, e.label, e.protocol, e.id);
+    if (link) {
+      if (e.cableData) link.set('cableData', e.cableData);
+      if (e.config) link.set('linkConfig', e.config);
     }
   });
+  if (dropped > 0) {
+    console.warn('loadGraphJSON: dropped ' + dropped + ' edge(s) referencing missing nodes');
+  }
   updateStatusBar();
 }
 
