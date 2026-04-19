@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 2C + 2D shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 6.3.5-followup + 2C + 2D shipped)
 
 ---
 
@@ -410,6 +410,15 @@ UI (each persona could have its own progression curve).
 - Config: `args/challenges_sandbox_config.yaml` — default_starting_cash_usd, fill_policy (market/slippage/commission — slippage+commission deferred), limits (max_position_pct, allow_short_sell=false).
 - `ad_sandbox_orders` added to `APPEND_ONLY_TABLES`; manifest shard updated. Coherence 14/17. Smoke test verified buy/sell/validation/archive flow end-to-end.
 - **Out of scope for 6.3.5:** limit/stop orders, short selling, slippage + commission model, daily-reconcile poller (mark-to-market happens on every snapshot read — fresh enough for the UI refresh cadence). Extension points are left in the fill_policy config for a follow-up.
+
+### ✅ Phase 6.3.5 follow-up — slippage + commission + daily-snapshot reflex (DONE 2026-04-18)
+- **Slippage** now applied on every sandbox fill — `slippage_bps` (default 5 = 0.05%) moves the fill price *against* the trader (buys higher, sells lower) vs the live quote from `fetch_latest_quote()`. Round-trip of 10 AAPL @ $270 now costs ~$2.70 in slippage, which is pedagogically the right order of magnitude and complements the graduation gate's "paper overstates live" warning.
+- **Commission** — flat `commission_usd` (default 0) deducted from `cash_after` per fill. Both values live in `args/challenges_sandbox_config.yaml.fill_policy` (hot-reloaded). `place_order()` return dict now surfaces `quote`, `fill_price`, `slippage_bps`, `slippage_cost`, and `commission` so the UI can show them transparently. Order notes column records the slippage + commission for audit.
+- **Daily snapshot reflex** — new `ad_sandbox_daily_snapshots` append-only table (one row per attempt per day, UNIQUE(attempt_id, snapshot_date)). `sandbox_engine.snapshot_day()` captures the row; `snapshot_day_all_active()` sweeps every active attempt. A new `challenge_snapshot_daily` reflex in `market_intel/daemon.py` runs every 24h (configured in `args/trading_daemon_config.yaml`) calling the sweep. Idempotent — re-running on the same day is a no-op, so daemon restarts don't corrupt history.
+- **`hold_for_days` continuity check** — predicate now prefers the daily series when ≥ `min_days` snapshots exist. Walks the last `min_days` recorded days; requires EVERY day's `position_count ≥ min_positions`. Falls back to the point-in-time check when history is thin (new attempts, daemon downtime). Progress dict carries `source: daily_series|point_in_time`, `passing_days`, `failing_days`, `earliest_failure_date`.
+- Smoke-tested: fresh attempt → buy AAPL → snapshot today → hand-seed 21 backdated snapshots with 5 positions → predicate correctly returns `failing` with the one failing day (today's 1-position state) correctly identified. Sweep across 2 concurrent active attempts inserts idempotently.
+- Coherence 14/17 (same 3 pre-existing warns unrelated to this work). Companion synced.
+- **Still deferred from 6.3.5 (documented):** limit / stop / short orders — these require a dedicated price-watch daemon to fill conditional orders, substantially bigger than what fits this follow-up; leave as its own iteration if user demand appears.
 
 ### ✅ Phase 6.4 — Multi-team competitions + leaderboards (DONE 2026-04-18)
 - Two tables (no standings cache — compute on-demand): `ad_leagues` (mutable; tenant-scoped with `UNIQUE(tenant_id, slug)`; 3 visibility modes: public / private / code with auto-generated 8-char codes) + `ad_league_members` (mutable role: captain / member; `UNIQUE(league_id, user_id)`).

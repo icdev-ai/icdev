@@ -16,12 +16,20 @@ _schema_version: 1
 # paper-trading convention and matches the live paper portfolio default.
 default_starting_cash_usd: 100000
 
-# Market-order fill behavior. MVP is pure market-at-quote with no
-# slippage or commissions. Tuning these later lets operators add realism.
+# Market-order fill behavior. Phase 6.3.5 follow-up: slippage +
+# commission now apply. Tune conservatively — over-modeling friction
+# discourages trading; under-modeling makes paper look easier than live.
+#
+# slippage_bps: basis points moved AGAINST the trade direction from the
+#   live quote. 5 bps = 0.05% — realistic for liquid large-caps; tighten
+#   to 2 for mega-liquid mega-caps, widen to 20+ for thin names.
+# commission_usd: flat USD deducted from cash_after per fill. Most retail
+#   is commission-free in 2026, so 0 is a reasonable default; operators
+#   running stricter educational tenants can raise it.
 fill_policy:
-  order_type: market   # only "market" is implemented; limit/stop deferred
-  slippage_bps: 0      # basis points against the trade direction (deferred)
-  commission_usd: 0    # flat commission (deferred)
+  order_type: market     # only "market" is implemented; limit/stop deferred
+  slippage_bps: 5        # 0.05% vs live quote, always against the trader
+  commission_usd: 0      # flat per-fill fee
 
 # Safety rails — prevent user footguns.
 limits:
