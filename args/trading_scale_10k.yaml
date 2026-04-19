@@ -1,9 +1,9 @@
-# AlphaDesk — SCALE-10K preset (Phase 4 tier 1)
+# FathomDesk — SCALE-10K preset (Phase 4 tier 1)
 #
 # Promotes from micro_live ($5k, 0.5%) after ≥1 week clean execution.
 # Doubles capital, raises position cap to 1%, still BUY-only, still tight halts.
 
-alphadesk:
+fathomdesk:
   version: "4.0.0-scale-10k"
   mode: "live"
   rollout_phase: "scale_10k"

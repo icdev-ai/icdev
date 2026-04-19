@@ -58,7 +58,7 @@ Real sector diversification looks like:
 The pairs that move DIFFERENTLY from each other are your real diversification.
 When Tech tanks, Staples + Utilities often hold up. That's the math of it.
 
-## AlphaDesk helps you see this
+## FathomDesk helps you see this
 
 - `/portfolio` — top-concentration flag fires at > 25% of book
 - `/rebalance` — set a target allocation + see the drift vs your current book

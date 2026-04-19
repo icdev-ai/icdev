@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""Idempotent enqueue for AlphaDesk Phase 7.6 — AI-Assisted Options.
+"""Idempotent enqueue for FathomDesk Phase 7.6 — AI-Assisted Options.
 
 Brief: docs/briefs/phase-7.6-ai-options-assist.md
-Project registry: args/projects.yaml → key=alphadesk-7-6, task_prefix=ad76-
+Project registry: args/projects.yaml → key=fathomdesk-7-6, task_prefix=ad76-
 
 Linear-chained subtasks (depends_on_task_id). Every epic ends with an exit
 gate running the mandatory 5-step validation (phantom-completion mitigation
@@ -235,7 +235,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     # ═══════════════════════════════════════════════════════════
     ("wrap-01", "wrap-01: manifest + 8-point registration checklist",
      "chore", "high",
-     "Update tools/manifest/alphadesk-trading-engine.md with entries for: intent_parser, "
+     "Update tools/manifest/fathomdesk-trading-engine.md with entries for: intent_parser, "
      "strategy_selector, strike_picker, proposal_builder, preflight, coach_engine, coach_llm, "
      "coach_db. Walk CLAUDE.md 8-point new-tool checklist for every module. Verify OpenAPI "
      "has /api/options/ai-assist/propose + /execute routes."),
@@ -256,7 +256,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
 
     ("wrap-04", "wrap-04: Selenium E2E test",
      "test", "high",
-     "Create tests/e2e/alphadesk/test_options_ai_assist.py (Selenium headless — memory "
+     "Create tests/e2e/fathomdesk/test_options_ai_assist.py (Selenium headless — memory "
      "e2e_selenium.md; no Playwright). Flow: log in → /options → click AI Assist tab → "
      "submit 'Bullish AAPL earnings, limited risk' → assert proposal modal renders with "
      "payoff chart, rationale, warnings list → click Execute → assert /portfolio shows a "
@@ -264,8 +264,8 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
 
     ("wrap-05", "wrap-05: backlog + memory update",
      "chore", "medium",
-     "Append a Phase 7.6 entry to docs/alphadesk-backlog.md marking it DONE with ship date. "
-     "Update memory/project_alphadesk_phase7plus.md to include the 7.6 bullet. Update memory "
+     "Append a Phase 7.6 entry to docs/fathomdesk-backlog.md marking it DONE with ship date. "
+     "Update memory/project_fathomdesk_phase7plus.md to include the 7.6 bullet. Update memory "
      "MEMORY.md index line if the memory file grew new sections."),
 ]
 
@@ -300,7 +300,7 @@ def enqueue() -> dict:
     finally:
         conn.close()
     return {
-        "project": "alphadesk-7-6",
+        "project": "fathomdesk-7-6",
         "prefix": PREFIX,
         "inserted": inserted,
         "skipped_already_present": skipped,

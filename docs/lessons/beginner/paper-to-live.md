@@ -1,6 +1,6 @@
 # Paper trading vs real money
 
-AlphaDesk runs in **paper-trading mode** by default. That means every BUY
+FathomDesk runs in **paper-trading mode** by default. That means every BUY
 or SELL you place is tracked against real market prices but doesn't involve
 actual money — it's a simulated account.
 
@@ -21,7 +21,7 @@ This is intentional. Here's why + how to think about graduating.
    position-sizing, your entry-timing, your patience. Better to learn this
    on paper.
 
-4. **Regulatory simplicity.** AlphaDesk doesn't handle real money in paper
+4. **Regulatory simplicity.** FathomDesk doesn't handle real money in paper
    mode, so there are no brokerage licensing issues, no custodial
    concerns, no tax reporting complexity.
 
@@ -51,8 +51,8 @@ discipline looks like:
 Once you check those boxes, a reasonable graduation path:
 
 1. Open a brokerage account that supports paper trading (Alpaca, IBKR, etc.)
-2. Use AlphaDesk's **BYOK** feature (`Settings → Your Broker Connection`)
-   to point at YOUR Alpaca paper account — that mirrors AlphaDesk's logic
+2. Use FathomDesk's **BYOK** feature (`Settings → Your Broker Connection`)
+   to point at YOUR Alpaca paper account — that mirrors FathomDesk's logic
    against your own separate sandbox
 3. Run 1-3 months with YOUR paper account (no real money yet)
 4. Flip Alpaca to live mode — start with 10% of your investable savings
@@ -60,7 +60,7 @@ Once you check those boxes, a reasonable graduation path:
 
 ## Phase 6 — the graduation gate (future)
 
-Future AlphaDesk will include a formal **graduation system** — CashFlow-101
+Future FathomDesk will include a formal **graduation system** — CashFlow-101
 style progression where Beginner users unlock live trading only after hitting
 measurable paper-portfolio criteria (30+ paper days, 25+ analyses, ≥ 5
 achievements, Sharpe ≥ 0.5 over 90d, acknowledged risk disclosure). This
@@ -79,7 +79,7 @@ until you're really ready.
 
 Through this beginner track you now know:
 1. What a stock actually is (claim on future profits + voting right)
-2. How to read an AlphaDesk signal (direction + composite + confidence)
+2. How to read an FathomDesk signal (direction + composite + confidence)
 3. Why concentration kills and how to size positions
 4. What macro regime is + why it matters
 5. Why paper mode first, live mode later (after discipline is proven)
@@ -88,6 +88,6 @@ That's a real foundation. Most retail investors never get this far.
 
 ## Next
 
-The **Intermediate** track covers how AlphaDesk specifically works — its
+The **Intermediate** track covers how FathomDesk specifically works — its
 Reading engines, personas system, and how to use alerts. When you're ready,
 it's on `/lessons`.

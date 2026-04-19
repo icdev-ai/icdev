@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.8 — Greeks Deep Dive + Quick Wins
+# FathomDesk Phase 7.8 — Greeks Deep Dive + Quick Wins
 
-**Project:** `args/projects.yaml → alphadesk-7-8`. Prefix `ad78-`. 18 tasks / 4 epics.
+**Project:** `args/projects.yaml → fathomdesk-7-8`. Prefix `ad78-`. 18 tasks / 4 epics.
 
 ## Why
 

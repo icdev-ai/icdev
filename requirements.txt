@@ -79,13 +79,13 @@ setuptools>=78.1.1       # CVE-2025-47273: path traversal
 
 feedparser>=6.0          # air-gap compat verified 2026-04-15
 
-# === HashiCorp Vault / OpenBao backend (AlphaDesk Phase 2D) — OPTIONAL ===
+# === HashiCorp Vault / OpenBao backend (FathomDesk Phase 2D) — OPTIONAL ===
 # Only needed when ICDEV_SECRET_BACKEND=vault. Delegates per-user credential
 # storage to an external Vault via KV v2 HTTP API. Defaults (ICDEV_SECRET_
-# BACKEND=local) keep credentials encrypted inside the AlphaDesk DB.
+# BACKEND=local) keep credentials encrypted inside the FathomDesk DB.
 # hvac>=2.0
 
-# === Billing (AlphaDesk Phase 5B) — OPTIONAL ===
+# === Billing (FathomDesk Phase 5B) — OPTIONAL ===
 # Stripe Checkout + webhooks + invoices. Lazy-imported; the /api/billing/*
 # endpoints degrade gracefully with a 501 when stripe isn't installed.
 # Operator installs on connected deployments; air-gap skips (/api/billing/tier

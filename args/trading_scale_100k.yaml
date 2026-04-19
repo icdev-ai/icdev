@@ -1,9 +1,9 @@
-# AlphaDesk — SCALE-100K preset (Phase 4 tier 3)
+# FathomDesk — SCALE-100K preset (Phase 4 tier 3)
 #
 # Full deployment tier. Enables SHORTs (gated by locate availability).
 # Promotes from scale_25k after ≥1 month clean execution + favorable Sharpe.
 
-alphadesk:
+fathomdesk:
   version: "4.0.0-scale-100k"
   mode: "live"
   rollout_phase: "scale_100k"

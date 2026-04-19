@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.7 — Probability & Compare
+# FathomDesk Phase 7.7 — Probability & Compare
 
-**Project:** `args/projects.yaml → alphadesk-7-7`. **Prefix:** `ad77-`.
+**Project:** `args/projects.yaml → fathomdesk-7-7`. **Prefix:** `ad77-`.
 15 tasks across 3 epics.
 
 ## Why

@@ -1,4 +1,4 @@
-# AlphaDesk Auto-Trading Runbook
+# FathomDesk Auto-Trading Runbook
 
 Last updated: 2026-04-12
 

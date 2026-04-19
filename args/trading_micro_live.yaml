@@ -1,4 +1,4 @@
-# AlphaDesk — MICRO-LIVE preset (Phase 3 rollout)
+# FathomDesk — MICRO-LIVE preset (Phase 3 rollout)
 #
 # Tightest possible auto-trading configuration. Use ONLY after a successful
 # 30-day paper run (Phase 0). Live trading is gated behind ALPACA_BASE_URL
@@ -17,7 +17,7 @@
 #   3. python tools/trading/risk/pdt_tracker.py --json            # allowed: true
 #   4. tail -F data/genesis/reports/audit-*.md                    # watch for anomalies
 
-alphadesk:
+fathomdesk:
   version: "3.0.0-micro-live"
   mode: "live"
   rollout_phase: "micro_live"

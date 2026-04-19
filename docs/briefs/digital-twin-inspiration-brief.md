@@ -36,7 +36,7 @@ ICDEV already has a partial twin for networks (Network Design Canvas). The bigge
 | **Kanban / workflow** | Task rows, scheduler decisions | **Workflow Twin** — snapshot of task DAG with depends-on, verification, agent assignments. Query: "every path from a backlog task to a blocked-by critical task." Simulate: "what does the scheduler do if task X fails 3 times?" |
 | **Proposals (GovCon / CPMP)** | Per-proposal state rows | **Capture Twin** — snapshot of every in-flight opportunity mapped to capability coverage, team load, bid thresholds. What-if: "if we win SAM.gov N00174-26-R-0042, which existing commitments slip?" |
 | **Supply chain** (SBOM + CVE + ATO boundary) | Per-component scan results | **Supply Chain Twin** (already a graph). Missing: NQE-style query + path search. "Every direct+transitive path from our app to a CVE ≥ 7.0." |
-| **AlphaDesk trading** | 4-lens oracle, 232 tickers, regime detection | **Portfolio Twin** (partial — oracle already anticipatory). Extend: snapshot full book + regime, query "paths by which a VIX > 40 shock propagates to my equity book via sector ETFs." |
+| **FathomDesk trading** | 4-lens oracle, 232 tickers, regime detection | **Portfolio Twin** (partial — oracle already anticipatory). Extend: snapshot full book + regime, query "paths by which a VIX > 40 shock propagates to my equity book via sector ETFs." |
 | **ICDEV Studio / 7 canvases** | Per-canvas editors (NDC, SDC, PDC, BDC, DDC, ODC, IDC) | **Design Twin** — each canvas is already structured data. Unify under a single schema so a query can cross canvases: "which process steps (PDC) touch data classifications (DDC) that aren't backed by a network policy (NDC)?" |
 
 ## What to build first (ranked by ROI × effort)

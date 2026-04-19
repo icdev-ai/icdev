@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""E2E: AlphaDesk Phase 7.7 — POP badge + price cone + compare grid.
+"""E2E: FathomDesk Phase 7.7 — POP badge + price cone + compare grid.
 
 Flow:
   1. /options → AI Assist tab

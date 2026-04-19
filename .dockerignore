@@ -71,8 +71,8 @@ agents/
 specs/
 backups/
 
-# AlphaDesk — Marketplace module, not part of ICDEV core
-apps/alphadesk/
+# FathomDesk — Marketplace module, not part of ICDEV core
+apps/fathomdesk/
 tools/trading/
 args/trading_config.yaml
 args/trading_daemon_config.yaml

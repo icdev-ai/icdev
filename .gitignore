@@ -120,15 +120,15 @@ marketplace-saas/
 intaas-frontend/
 intaas-saas/
 
-# AlphaDesk — Marketplace module, not part of ICDEV core
-apps/alphadesk/
+# FathomDesk — Marketplace module, not part of ICDEV core
+apps/fathomdesk/
 tools/trading/
 args/trading_config.yaml
 args/trading_daemon_config.yaml
 args/llm_config_trading.yaml
-data/alphadesk.db
-data/alphadesk.db-shm
-data/alphadesk.db-wal
+data/fathomdesk.db
+data/fathomdesk.db-shm
+data/fathomdesk.db-wal
 data/network_canvas.db-shm
 data/network_canvas.db-wal
 

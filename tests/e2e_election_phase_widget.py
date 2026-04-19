@@ -1,4 +1,4 @@
-"""Selenium smoke test for AlphaDesk election-phase widget.
+"""Selenium smoke test for FathomDesk election-phase widget.
 
 Spins up the dashboard Flask app on an isolated port via werkzeug server,
 loads /scenarios in headless Chrome, asserts the widget rendered and the

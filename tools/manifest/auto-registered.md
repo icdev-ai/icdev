@@ -51,7 +51,7 @@
 | Exit Outcome Recorder | tools\trading\feedback\exit_outcome_recorder.py | Records realized P&L per triggered exit tagged with tier/regime/vix; feeds exit-tuning analytics. | --run, --stats, --days N, --json | JSON |
 | Counterfactual Tracker | tools\trading\feedback\counterfactual_tracker.py | Scores fill-quality skips against 24h price moves (was the skip correct?); resolved=True records, feeds future model training. | --resolve, --stats, --min-age-hours N, --json | JSON |
 | Strategy Retirement | tools\trading\feedback\strategy_retirement.py | Auto-disables strategies with ≥5 fills and negative realized P&L over window; default/unattributed protected. | --run, --list, --reactivate ID, --dry-run, --json | JSON |
-| ML Model Registry | tools\trading\ml\model_registry.py | Consolidated freshness/metric view for all ML models; feeds /api/alphadesk/ml-health + dashboard tiles. | --health, --json | JSON |
+| ML Model Registry | tools\trading\ml\model_registry.py | Consolidated freshness/metric view for all ML models; feeds /api/fathomdesk/ml-health + dashboard tiles. | --health, --json | JSON |
 | Earnings Batch LLM | tools\trading\llm\earnings_batch.py | One LLM call for N tickers (vs N calls). Results persisted in ad_earnings_analysis. Heuristic fallback. | --jsonl-file PATH, --filing-type, --json | JSON |
 | Per-Cycle Cache | tools\trading\analysis\_per_cycle_cache.py | Process-local TTL cache used by auto_trader to dedupe quote/regime/confluence lookups per cycle. | library module | n/a |
 | Batch Scanner | tools\trading\market_intel\batch_scanner.py | Auto-registered: market_intel/batch_scanner.py | --json | JSON |
@@ -61,9 +61,9 @@
 | Kg Seeder | tools\trading\market_intel\kg_seeder.py | Auto-registered: market_intel/kg_seeder.py | --json | JSON |
 | Scenario Engine | tools\trading\market_intel\scenario_engine.py | Auto-registered: market_intel/scenario_engine.py | --json | JSON |
 | Universe | tools\trading\market_intel\universe.py | Auto-registered: market_intel/universe.py | --json | JSON |
-| Market Intel Daemon | tools/trading/market_intel/daemon.py | AlphaDesk autonomous trading daemon — 11 schedule-driven reflexes (market_scanner, approved_monitor, macro_watcher, alert_detector, kg_enricher, gap_detector, scenario_analyzer, expert_advisor, exit_executor, daily_brief, portfolio_strategist). Circuit breakers, trust kernel, audit trail (trading_daemon_reflex_state, trading_daemon_audit). Config: args/trading_daemon_config.yaml | --start, --once REFLEX, --status, --reset REFLEX, --json | Daemon run results / reflex status JSON |
-| Market Intel Gap Detector | tools/trading/market_intel/gap_detector.py | Structural gap detector for AlphaDesk knowledge graph using modularity-based community detection to identify blind spots in market pricing | --detect, --json | Gap findings |
-| Market Intel Judge | tools/trading/market_intel/judge.py | LLM-as-a-Judge for AlphaDesk with Socratic feedback loop; uses qwen3.5 for expert challenges and Claude for synthesis | --judge, --json | Judgment results |
+| Market Intel Daemon | tools/trading/market_intel/daemon.py | FathomDesk autonomous trading daemon — 11 schedule-driven reflexes (market_scanner, approved_monitor, macro_watcher, alert_detector, kg_enricher, gap_detector, scenario_analyzer, expert_advisor, exit_executor, daily_brief, portfolio_strategist). Circuit breakers, trust kernel, audit trail (trading_daemon_reflex_state, trading_daemon_audit). Config: args/trading_daemon_config.yaml | --start, --once REFLEX, --status, --reset REFLEX, --json | Daemon run results / reflex status JSON |
+| Market Intel Gap Detector | tools/trading/market_intel/gap_detector.py | Structural gap detector for FathomDesk knowledge graph using modularity-based community detection to identify blind spots in market pricing | --detect, --json | Gap findings |
+| Market Intel Judge | tools/trading/market_intel/judge.py | LLM-as-a-Judge for FathomDesk with Socratic feedback loop; uses qwen3.5 for expert challenges and Claude for synthesis | --judge, --json | Judgment results |
 
 
 

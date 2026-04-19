@@ -132,7 +132,7 @@
 - [Review Board (Additional)](manifest/review-board.md)
 - [SaaS (Additional)](manifest/saas.md)
 - [Scout](manifest/scout.md)
-- [AlphaDesk Trading Engine](manifest/alphadesk-trading-engine.md)
+- [FathomDesk Trading Engine](manifest/fathomdesk-trading-engine.md)
 - [Auto-Registered (Coherence Fix)](manifest/auto-registered.md)
 - [Air-Gap Mode (OPT-51/OPT-61)](manifest/air-gap-mode.md)
 - [Design Canvases (7-Canvas Suite)](manifest/design-canvases.md)
@@ -165,7 +165,7 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Schedule Alphadesk News Plan | tools\scripts\schedule_alphadesk_news_plan.py | Auto-registered: scripts/schedule_alphadesk_news_plan.py | --json | JSON |
+| Schedule Fathomdesk News Plan | tools\scripts\schedule_fathomdesk_news_plan.py | Auto-registered: scripts/schedule_fathomdesk_news_plan.py | --json | JSON |
 
 
 ## Auto-Registered (Coherence Fix)

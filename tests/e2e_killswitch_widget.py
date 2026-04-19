@@ -1,6 +1,6 @@
-"""Selenium E2E for AlphaDesk kill-switch widget on /orders.
+"""Selenium E2E for FathomDesk kill-switch widget on /orders.
 
-Verifies the risk card renders, badge populates from /api/alphadesk/risk-status,
+Verifies the risk card renders, badge populates from /api/fathomdesk/risk-status,
 and HALT/RESUME buttons exist + are wired.
 """
 

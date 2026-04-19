@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""AlphaDesk News Ingest package.
+"""FathomDesk News Ingest package.
 
 Phase A2 of plan ~/.claude/plans/recursive-noodling-meteor.md.
 Provides RSS ingestion, HTML sanitization, and DB persistence for

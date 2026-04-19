@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.9 — TA Foundation
+# FathomDesk Phase 7.9 — TA Foundation
 
-**Project:** `args/projects.yaml → alphadesk-7-9`. Prefix `ad79-`.
+**Project:** `args/projects.yaml → fathomdesk-7-9`. Prefix `ad79-`.
 19 tasks / 4 epics. No external deps (ships first).
 
 ## Why

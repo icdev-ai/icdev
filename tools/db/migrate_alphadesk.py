@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Migrate data from data/alphadesk.db (SQLite) into the main ICDEV database.
+"""Migrate data from data/fathomdesk.db (SQLite) into the main ICDEV database.
 
-Copies all ad_*, kg_*, and trading_daemon_* tables from the legacy alphadesk.db
+Copies all ad_*, kg_*, and trading_daemon_* tables from the legacy fathomdesk.db
 SQLite file into the main ICDEV database (SQLite or PostgreSQL).
 
 - SQLite destination: uses ATTACH DATABASE for maximum throughput.
-- PostgreSQL destination: reads rows from alphadesk.db and inserts via
+- PostgreSQL destination: reads rows from fathomdesk.db and inserts via
   get_conn() using INSERT OR IGNORE (ON CONFLICT DO NOTHING).
 
 Idempotent: rows with existing primary keys are skipped.
 
 Usage:
-    python tools/db/migrate_alphadesk.py [--json] [--gate]
-    python tools/db/migrate_alphadesk.py --source data/alphadesk.db [--json] [--gate]
+    python tools/db/migrate_fathomdesk.py [--json] [--gate]
+    python tools/db/migrate_fathomdesk.py --source data/fathomdesk.db [--json] [--gate]
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 from tools.trading.db import get_conn  # noqa: E402 — ensures all tables exist first
 
-DEFAULT_SOURCE = ROOT / "data" / "alphadesk.db"
+DEFAULT_SOURCE = ROOT / "data" / "fathomdesk.db"
 
 # Default destination — matches storage.py logic (SQLite only)
 DEFAULT_DEST = Path(os.environ.get("ICDEV_DB_PATH", str(ROOT / "data" / "icdev.db")))
@@ -242,7 +242,7 @@ def migrate(source_path: Path, dest_path: Path) -> dict:
     if not source_path.exists():
         return {"status": "error", "message": f"Source not found: {source_path}"}
 
-    # Step 1: ensure all AlphaDesk tables exist in destination via get_conn()
+    # Step 1: ensure all FathomDesk tables exist in destination via get_conn()
     init_conn = get_conn()
     init_conn.commit()
     init_conn.close()
@@ -271,8 +271,8 @@ def migrate(source_path: Path, dest_path: Path) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Migrate alphadesk.db into main ICDEV database")
-    parser.add_argument("--source", default=str(DEFAULT_SOURCE), help="Source alphadesk.db path")
+    parser = argparse.ArgumentParser(description="Migrate fathomdesk.db into main ICDEV database")
+    parser.add_argument("--source", default=str(DEFAULT_SOURCE), help="Source fathomdesk.db path")
     parser.add_argument("--dest", default=str(DEFAULT_DEST), help="Destination icdev.db path (SQLite only)")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--gate", action="store_true", help="Exit 1 if any errors")

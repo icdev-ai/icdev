@@ -103,7 +103,7 @@ personas:
     - /news
     onboarding:
       welcome: Welcome! You're in safe paper-trading mode — no real money, no risk. Start with
-        /today to see what AlphaDesk thinks you should focus on, then try /analysis on a familiar
+        /today to see what FathomDesk thinks you should focus on, then try /analysis on a familiar
         stock.
       first_task: Open /today, then pick a rule that fired and follow the 'Go there' link.
     flags:
@@ -146,7 +146,7 @@ personas:
     - /watchlist
     onboarding:
       welcome: Welcome. Start with /rebalance — set your target allocation (60/40, three-fund,
-        permanent portfolio, etc.) and AlphaDesk tracks drift, tax-loss opportunities, and rebalance
+        permanent portfolio, etc.) and FathomDesk tracks drift, tax-loss opportunities, and rebalance
         suggestions.
       first_task: Open /rebalance and pick a template (60/40 / Three-Fund / Permanent Portfolio)
         or type your own.

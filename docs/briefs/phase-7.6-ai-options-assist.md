@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.6 — AI-Assisted Options Strategy Creation
+# FathomDesk Phase 7.6 — AI-Assisted Options Strategy Creation
 
-**Status:** Scoped 2026-04-19. Task registry: `args/projects.yaml` → `alphadesk-7-6`. Prefix: `ad76-`.
+**Status:** Scoped 2026-04-19. Task registry: `args/projects.yaml` → `fathomdesk-7-6`. Prefix: `ad76-`.
 
 ## Why
 
@@ -83,15 +83,15 @@ decision is a rule. This is the only shape that's both magical and auditable.
 
 ### 5. `wrap` — Registration + Docs (5 tasks)
 
-- **ad76-wrap-01** — Update `tools/manifest/alphadesk-trading-engine.md` with all new modules.
+- **ad76-wrap-01** — Update `tools/manifest/fathomdesk-trading-engine.md` with all new modules.
   Walk CLAUDE.md 8-point registration checklist.
 - **ad76-wrap-02** — `docs/features/phase-7.6-ai-options-assist.md` feature doc.
   Screenshots to `playwright/screenshots/options_ai_*.png`.
 - **ad76-wrap-03** — Coherence gate 17/17 + companion sync all 10 platforms.
-- **ad76-wrap-04** — Selenium E2E `tests/e2e/alphadesk/test_options_ai_assist.py`: submit intent,
+- **ad76-wrap-04** — Selenium E2E `tests/e2e/fathomdesk/test_options_ai_assist.py`: submit intent,
   assert proposal modal, assert execute creates a sandbox multileg order.
-- **ad76-wrap-05** — Append to `docs/alphadesk-backlog.md`; update memory index
-  (`project_alphadesk_phase7plus.md`) with the shipped-checkmark.
+- **ad76-wrap-05** — Append to `docs/fathomdesk-backlog.md`; update memory index
+  (`project_fathomdesk_phase7plus.md`) with the shipped-checkmark.
 
 ## Dependency shape
 
@@ -103,6 +103,6 @@ time, even if the epic looks done.
 
 - DoD CAC integration (deferred).
 - Auto-close or auto-adjust positions — coach only notifies.
-- Futures options — broker-blocked (memory `project_alphadesk_futures_deferred.md`).
+- Futures options — broker-blocked (memory `project_fathomdesk_futures_deferred.md`).
 - L2 / WebSocket tick streams — still infra-gated.
 - "Substantially identical" wash-sale detection beyond exact ticker — out of scope.

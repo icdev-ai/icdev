@@ -36,8 +36,8 @@ All call sites should be migrated to `from tools.browser.driver_manager import g
 | 6 | tools/appforge/reflexes/publish.py | 140 | `webdriver.Chrome(options=opts)` |
 | 7 | tools/browser/driver_manager.py | 395 | `wd.Chrome(service=service, options=opts)` |
 | 8 | tools/browser/driver_manager.py | 396 | `wd.Chrome(options=opts)` |
-| 9 | tests/e2e_alphadesk.py | 45 | `webdriver.Chrome(options=opts)` |
-| 10 | tests/e2e_alphadesk_modal.py | 26 | `webdriver.Chrome(options=opts)` |
+| 9 | tests/e2e_fathomdesk.py | 45 | `webdriver.Chrome(options=opts)` |
+| 10 | tests/e2e_fathomdesk_modal.py | 26 | `webdriver.Chrome(options=opts)` |
 | 11 | tests/e2e_cloud_migration_security.py | 189 | `webdriver.Chrome(options=opts)` |
 | 12 | tests/e2e_components_map.py | 68 | `webdriver.Chrome(options=opts)` |
 | 13 | tests/e2e_confluence_widget.py | 46 | `webdriver.Chrome(options=opts)` |
@@ -108,8 +108,8 @@ Direct Chrome instantiation. Each site manually constructs `Options`, adds `--he
 
 | File | Line |
 |------|------|
-| tests/e2e_alphadesk.py | 45 |
-| tests/e2e_alphadesk_modal.py | 26 |
+| tests/e2e_fathomdesk.py | 45 |
+| tests/e2e_fathomdesk_modal.py | 26 |
 | tests/e2e_cloud_migration_security.py | 189 |
 | tests/e2e_components_map.py | 68 |
 | tests/e2e_confluence_widget.py | 46 |

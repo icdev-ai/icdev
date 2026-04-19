@@ -1,10 +1,10 @@
 # CUI // SP-CTI
 
-# AlphaDesk News Intelligence Pipeline
+# FathomDesk News Intelligence Pipeline
 
 ## Why /news
 
-Before this feature, the AlphaDesk scenario engine required manual input to trigger
+Before this feature, the FathomDesk scenario engine required manual input to trigger
 what-if analyses. There was no automated pipeline feeding real-world events into
 scenarios. Traders had to manually decide which scenario to run based on their own
 news monitoring.

@@ -1292,8 +1292,8 @@ api_contract_drift:
     # `spec_path_missing_route` promote from warning -> blocking.
     enforce_as_blocking: false
 
-alphadesk_news_pipeline:
-  description: "Gates for AlphaDeskNews (ADN) RSS ingest, classification, scenario-matching, and aggregation pipeline"
+fathomdesk_news_pipeline:
+  description: "Gates for FathomDeskNews (ADN) RSS ingest, classification, scenario-matching, and aggregation pipeline"
   blocking:
     - news_db_schema_mismatch
   warning:

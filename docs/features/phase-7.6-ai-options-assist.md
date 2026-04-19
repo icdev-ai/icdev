@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.6 — AI-Assisted Options Strategy Creation
+# FathomDesk Phase 7.6 — AI-Assisted Options Strategy Creation
 
-**Shipped:** 2026-04-19. **Project:** `args/projects.yaml → alphadesk-7-6`.
+**Shipped:** 2026-04-19. **Project:** `args/projects.yaml → fathomdesk-7-6`.
 **Task prefix:** `ad76-` (26 tasks across 5 epics, all done).
 
 ## Why
@@ -86,7 +86,7 @@ only shape that's both magical and auditable.
 
 ### wrap (5 tasks)
 
-- Manifest entries in `tools/manifest/alphadesk-trading-engine.md`.
+- Manifest entries in `tools/manifest/fathomdesk-trading-engine.md`.
 - This feature doc.
 - Coherence gate 17/17 at every phase-gate; companion sync 10 platforms.
 - Selenium E2E in `tests/e2e_selenium/test_ad76_ai_options_assist.py`.
@@ -114,7 +114,7 @@ only shape that's both magical and auditable.
 - **DoD CAC integration** (deferred).
 - **Auto-close / auto-adjust** (never shipping — by design).
 - **Futures options** (broker-blocked, memory
-  `project_alphadesk_futures_deferred.md`).
+  `project_fathomdesk_futures_deferred.md`).
 - **L2 book / WebSocket tick streams** (still infra-gated).
 - **IV-crush trigger** (needs `opened_iv` column on
   `ad_sandbox_option_positions` — backlog task).

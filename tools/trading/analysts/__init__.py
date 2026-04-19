@@ -1,2 +1,2 @@
 # CUI // SP-CTI
-"""AlphaDesk analyst modules."""
+"""FathomDesk analyst modules."""

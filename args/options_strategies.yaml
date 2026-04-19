@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AlphaDesk options strategy library — Phase 7.5 follow-up B.
+# FathomDesk options strategy library — Phase 7.5 follow-up B.
 #
 # Each strategy is a leg template. At build-time the user picks an
 # underlying + one or more strikes + expiries, and the builder expands

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selenium E2E test for AlphaDesk analysis modal + ICDEV™'s INTaaS + Pulse."""
+"""Selenium E2E test for FathomDesk analysis modal + ICDEV™'s INTaaS + Pulse."""
 
 import sys
 import time
@@ -46,13 +46,13 @@ def fail(name, error):
 
 
 def screenshot(driver, name):
-    p = SCREENSHOT_DIR / f"alphadesk-{name}-1920x1080.png"
+    p = SCREENSHOT_DIR / f"fathomdesk-{name}-1920x1080.png"
     driver.save_screenshot(str(p))
 
 
 def main():
     print("=" * 60)
-    print("AlphaDesk Modal + ICDEV™'s INTaaS + Pulse E2E Test")
+    print("FathomDesk Modal + ICDEV™'s INTaaS + Pulse E2E Test")
     print("=" * 60)
 
     driver = create_driver()

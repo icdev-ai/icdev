@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""AlphaDesk News DB layer — DDL and CRUD helpers.
+"""FathomDesk News DB layer — DDL and CRUD helpers.
 
 Phase A3 of plan ~/.claude/plans/recursive-noodling-meteor.md.
 
@@ -30,7 +30,7 @@ sys.path.insert(0, str(_ROOT))
 from tools.db.storage import get_connection, is_pg, sql_now, sql_placeholder
 
 # Default DB path — SQLite uses this; PostgreSQL ignores it (uses env vars).
-ALPHADESK_DB = _ROOT / "data" / "alphadesk.db"
+FATHOMDESK_DB = _ROOT / "data" / "fathomdesk.db"
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -106,8 +106,8 @@ _ALL_DDL = [
 
 
 def get_db(db_path: str | Path | None = None):
-    """Return a StorageConnection for the AlphaDesk news DB."""
-    path = str(db_path) if db_path else str(ALPHADESK_DB)
+    """Return a StorageConnection for the FathomDesk news DB."""
+    path = str(db_path) if db_path else str(FATHOMDESK_DB)
     return get_connection(path)
 
 
@@ -388,7 +388,7 @@ def list_active_clusters(
 
 def _main() -> None:
     parser = argparse.ArgumentParser(
-        description="AlphaDesk News DB — DDL and status"
+        description="FathomDesk News DB — DDL and status"
     )
     parser.add_argument("--migrate", action="store_true", help="Apply DDL")
     parser.add_argument("--json", action="store_true", help="Output JSON")
@@ -397,7 +397,7 @@ def _main() -> None:
 
     if args.migrate:
         ensure_tables(args.db)
-        db_path = args.db or str(ALPHADESK_DB)
+        db_path = args.db or str(FATHOMDESK_DB)
         conn = get_db(args.db)
         try:
             if is_pg(conn):
@@ -422,7 +422,7 @@ def _main() -> None:
         return
 
     # Default: print status
-    db_path = args.db or str(ALPHADESK_DB)
+    db_path = args.db or str(FATHOMDESK_DB)
     try:
         conn = get_db(args.db)
         count = conn.execute("SELECT COUNT(*) FROM ad_news_items").fetchone()[0]

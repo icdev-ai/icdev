@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.10 — Trap Detection
+# FathomDesk Phase 7.10 — Trap Detection
 
-**Project:** `args/projects.yaml → alphadesk-7-10`. Prefix `ad710-`.
+**Project:** `args/projects.yaml → fathomdesk-7-10`. Prefix `ad710-`.
 12 tasks / 4 epics. **Blocked on 7.9** — uses S/R + swings + patterns.
 
 ## Why
@@ -60,7 +60,7 @@ this phase becomes mostly glue.
 ### INTEGRATION (2 tasks + gate)
 
 - **ad710-integration-01** — Genesis wiring — new Genesis reflex
-  `alphadesk_trap_scenarios.py` that on a high-severity trap event
+  `fathomdesk_trap_scenarios.py` that on a high-severity trap event
   auto-spawns a matching scenario (e.g. "potential reversal cascade")
   and writes a daily digest to Pulse.
 - **ad710-integration-02** — pytest: handcrafted bar fixtures producing

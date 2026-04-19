@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selenium E2E Lifecycle Test for AlphaDesk Trading Dashboard.
+"""Selenium E2E Lifecycle Test for FathomDesk Trading Dashboard.
 
 Tests the FULL lifecycle:
   1. All 7 pages render correctly
@@ -13,7 +13,7 @@ Tests the FULL lifecycle:
 Uses headless Chrome at 1920x1080.
 
 Usage:
-    python tests/e2e_alphadesk.py
+    python tests/e2e_fathomdesk.py
 """
 
 import json
@@ -70,7 +70,7 @@ class TestResult:
 
 
 def screenshot(driver, name):
-    path = SCREENSHOT_DIR / f"alphadesk-{name}-1920x1080.png"
+    path = SCREENSHOT_DIR / f"fathomdesk-{name}-1920x1080.png"
     driver.save_screenshot(str(path))
     return str(path)
 
@@ -314,7 +314,7 @@ def test_layout(driver, results):
 # ======================================================================
 def main():
     print("=" * 60)
-    print("AlphaDesk E2E Lifecycle Test — Selenium Headless Chrome")
+    print("FathomDesk E2E Lifecycle Test — Selenium Headless Chrome")
     print("=" * 60)
     print(f"Target: {BASE_URL}")
     print(f"Screenshots: {SCREENSHOT_DIR}")

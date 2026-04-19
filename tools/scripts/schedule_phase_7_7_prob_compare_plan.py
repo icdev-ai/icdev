@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""Idempotent enqueue for AlphaDesk Phase 7.7 — Probability & Compare.
+"""Idempotent enqueue for FathomDesk Phase 7.7 — Probability & Compare.
 
 Brief: docs/briefs/phase-7.7-probability-compare.md
-Project: args/projects.yaml → alphadesk-7-7, prefix=ad77-
+Project: args/projects.yaml → fathomdesk-7-7, prefix=ad77-
 """
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     # ═══════════════════════════════════════════════════════════
     ("wrap-01", "wrap-01: manifest + coherence + companion",
      "chore", "high",
-     "Add probability.py entry to tools/manifest/alphadesk-trading-engine.md. "
+     "Add probability.py entry to tools/manifest/fathomdesk-trading-engine.md. "
      "Run coherence_checker --all --fix --gate (target 17/17). Run "
      "companion.py --sync --write --json (10 platforms). Capture both "
      "outputs in the task completion note."),
@@ -158,8 +158,8 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
 
     ("wrap-04", "wrap-04: backlog + memory update",
      "chore", "medium",
-     "Append Phase 7.7 entry to docs/alphadesk-backlog.md (add under the "
-     "7.6 block). Update memory/project_alphadesk_phase7plus.md with the "
+     "Append Phase 7.7 entry to docs/fathomdesk-backlog.md (add under the "
+     "7.6 block). Update memory/project_fathomdesk_phase7plus.md with the "
      "7.7 bullet. Update MEMORY.md index line only if new."),
 ]
 
@@ -194,7 +194,7 @@ def enqueue() -> dict:
     finally:
         conn.close()
     return {
-        "project": "alphadesk-7-7",
+        "project": "fathomdesk-7-7",
         "prefix": PREFIX,
         "inserted": inserted,
         "skipped_already_present": skipped,

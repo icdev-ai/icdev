@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""AlphaDesk Portfolio Strategist — autonomous long-term investment agent.
+"""FathomDesk Portfolio Strategist — autonomous long-term investment agent.
 
-Synthesizes ALL AlphaDesk data (signal heatmap, multi-timeframe performance,
+Synthesizes ALL FathomDesk data (signal heatmap, multi-timeframe performance,
 macro regime, KG centrality, scenario resilience, expert consensus, quality
 score) to produce actionable portfolio strategies with 4-tier allocation:
 
@@ -289,7 +289,7 @@ def compute_ticker_performance(ticker: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Data collectors — pull everything from AlphaDesk DB
+# Data collectors — pull everything from FathomDesk DB
 # ---------------------------------------------------------------------------
 def _collect_signals(conn) -> dict[str, dict]:
     """Latest signal per ticker from ad_signals."""
@@ -1447,7 +1447,7 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(description="AlphaDesk Portfolio Strategist")
+    parser = argparse.ArgumentParser(description="FathomDesk Portfolio Strategist")
     parser.add_argument("--run", action="store_true", help="Execute full strategy run")
     parser.add_argument("--tier", type=str, help="Filter to specific tier (core/tactical/opportunistic/hedge)")
     parser.add_argument("--latest", action="store_true", help="Show latest strategy")

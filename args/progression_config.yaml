@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AlphaDesk user progression — Phase 6.1 config.
+# FathomDesk user progression — Phase 6.1 config.
 #
 # Level thresholds + opt-out policy. Hot-reloaded via file-mtime cache
 # (tools/trading/progression/engine.py). Tune without touching code.

@@ -12,7 +12,7 @@ extraction:
     - person
     - document
     - standard
-    # Financial entity types (AlphaDesk)
+    # Financial entity types (FathomDesk)
     - ticker
     - sector
     - executive
@@ -45,7 +45,7 @@ graph_rag:
       recency: 0.3
       keywords: ["security", "vulnerability", "threat", "attack", "CVE", "SAST", "injection"]
 
-    # Financial profiles (AlphaDesk KG extension)
+    # Financial profiles (FathomDesk KG extension)
     supply_chain:
       edge_weight: 0.5
       centrality: 0.2

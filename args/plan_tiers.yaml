@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AlphaDesk plan tier definitions — Phase 5A/5B.
+# FathomDesk plan tier definitions — Phase 5A/5B.
 #
 # Hot-reloaded via file-mtime cache (tools/trading/billing/tiers.py).
 # Operators change tier assignments via admin CLI or /billing page.

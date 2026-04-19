@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""AlphaDesk News RSS Ingestor — Phase B2/B3.
+"""FathomDesk News RSS Ingestor — Phase B2/B3.
 
 Polls RSS/Atom feeds defined in args/news_feeds.yaml, deduplicates by
 sha256(source||link)[:16], and persists new items to ad_news_items.
@@ -34,7 +34,7 @@ import feedparser
 import yaml
 
 from tools.db.storage import get_connection, sql_placeholder
-from tools.trading.news.db import ALPHADESK_DB, ensure_tables
+from tools.trading.news.db import FATHOMDESK_DB, ensure_tables
 
 # ---------------------------------------------------------------------------
 # Config paths
@@ -253,7 +253,7 @@ def run_once(
     cfg = _load_feeds_config(feeds_path)
     feeds_section = cfg.get("feeds", {})
 
-    conn = get_connection(str(db_path) if db_path else str(ALPHADESK_DB))
+    conn = get_connection(str(db_path) if db_path else str(FATHOMDESK_DB))
     total_new = 0
     total_skipped = 0
     all_errors: list[str] = []

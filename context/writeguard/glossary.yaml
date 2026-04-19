@@ -37,7 +37,7 @@ corporate_terms:
   ANVIL: "Architect, Navigate, Verify, Integrate, Launch"
   ATLAS: "AI Threat Landscape Assessment System"
   WriteGuard: "Content quality analysis engine"
-  AlphaDesk: "Market intelligence trading platform"
+  FathomDesk: "Market intelligence trading platform"
 
 forbidden_terms:
   - "cyber"  # use "cybersecurity" (full word)

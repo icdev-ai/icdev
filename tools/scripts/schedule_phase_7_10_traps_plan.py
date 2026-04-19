@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""Idempotent enqueue for AlphaDesk Phase 7.10 — Trap Detection.
+"""Idempotent enqueue for FathomDesk Phase 7.10 — Trap Detection.
 
 Brief: docs/briefs/phase-7.10-trap-detection.md
-Project: args/projects.yaml → alphadesk-7-10, prefix=ad710-
+Project: args/projects.yaml → fathomdesk-7-10, prefix=ad710-
 
 Blocked on 7.9 — first task depends on the last task of 7.9 (ad79-wrap-04).
 """
@@ -102,7 +102,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     # ═══════════ INTEGRATION ═══════════
     ("integration-01", "integration-01: Genesis trap-scenarios reflex",
      "build", "medium",
-     "Create tools/genesis/reflexes/alphadesk_trap_scenarios.py conforming to "
+     "Create tools/genesis/reflexes/fathomdesk_trap_scenarios.py conforming to "
      "Genesis contract (run(config, trust) -> {success, metric_value, details}). "
      "Hourly cadence. For high-severity trap events (confidence >= 0.8) since "
      "last run: auto-spawn a matching scenario via scenario_engine.run_scenario "
@@ -135,7 +135,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
 
     ("wrap-03", "wrap-03: backlog + memory",
      "chore", "medium",
-     "Append 7.10 to docs/alphadesk-backlog.md. Update memory with trap-regime "
+     "Append 7.10 to docs/fathomdesk-backlog.md. Update memory with trap-regime "
      "notes + the 'liquidity trap blocks short premium' safety rule."),
 ]
 
@@ -170,7 +170,7 @@ def enqueue() -> dict:
     finally:
         conn.close()
     return {
-        "project": "alphadesk-7-10",
+        "project": "fathomdesk-7-10",
         "prefix": PREFIX,
         "predecessor": EXTERNAL_PREDECESSOR,
         "inserted": inserted,

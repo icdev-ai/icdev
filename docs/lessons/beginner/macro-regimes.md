@@ -1,7 +1,7 @@
 # What is a "regime" and why should I care?
 
 A **regime** is the overall economic + market environment you're investing
-in. AlphaDesk labels each week (day, really) with one of a handful of
+in. FathomDesk labels each week (day, really) with one of a handful of
 regimes: `EXPANSION` / `GREEN`, `INFLATION`, `STAGFLATION`, `DEFLATION`,
 `RED`, `CRISIS`, `YELLOW` (mixed).
 
@@ -30,9 +30,9 @@ Long-duration Treasuries (TLT), cash, dividend aristocrats, consumer
 staples. Most equities crash. 2008 and the early weeks of March 2020
 were this.
 
-## How AlphaDesk detects regime
+## How FathomDesk detects regime
 
-AlphaDesk computes a **macro regime** from ~14 indicators (unemployment,
+FathomDesk computes a **macro regime** from ~14 indicators (unemployment,
 rate curves, credit spreads, breakeven inflation, money supply growth,
 PMIs, etc.). The combination signals which regime we're in.
 
@@ -60,7 +60,7 @@ You don't need to rebuild your portfolio when regime shifts — but you
 DO need to tilt 10-30% of your allocation toward the regime-appropriate
 names, and trim the ones that historically get hurt.
 
-## What AlphaDesk does with regime
+## What FathomDesk does with regime
 
 - The **portfolio Reading** flags "regime mismatch" when your book's posture
   (defensive vs aggressive) conflicts with the current regime
@@ -79,5 +79,5 @@ direction and stay diversified.
 
 ## Next
 
-Final lesson: AlphaDesk is paper-only by default. Understanding WHY + how
+Final lesson: FathomDesk is paper-only by default. Understanding WHY + how
 to graduate to live trading.

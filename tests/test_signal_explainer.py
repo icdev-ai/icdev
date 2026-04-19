@@ -62,7 +62,7 @@ def test_narrate_uses_llm_content_when_available():
     with mock.patch("tools.trading.audit.decision_replay.replay", side_effect=_fake_replay):
         with mock.patch("tools.llm.router.LLMRouter") as Rcls:
             r = mock.Mock()
-            resp = mock.Mock(content="AlphaDesk went long AAPL at tier B ...", provider="ollama", model_id="qwen3.5")
+            resp = mock.Mock(content="FathomDesk went long AAPL at tier B ...", provider="ollama", model_id="qwen3.5")
             r.invoke.return_value = resp
             Rcls.return_value = r
             out = signal_explainer.narrate("sig-explain-2", use_cache=False)

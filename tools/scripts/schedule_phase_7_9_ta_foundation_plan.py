@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""Idempotent enqueue for AlphaDesk Phase 7.9 — TA Foundation.
+"""Idempotent enqueue for FathomDesk Phase 7.9 — TA Foundation.
 
 Brief: docs/briefs/phase-7.9-ta-foundation.md
-Project: args/projects.yaml → alphadesk-7-9, prefix=ad79-
+Project: args/projects.yaml → fathomdesk-7-9, prefix=ad79-
 
 No external predecessor — ships first of the 3-phase chain (7.9 → 7.10
 and 7.9 → 7.11 both unblock when this phase's last task completes).
@@ -153,7 +153,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     ("wrap-01", "wrap-01: manifest + coherence + companion",
      "chore", "high",
      "Add ta/swings.py, ta/volume_profile.py, ta/sr.py, ta/patterns/{double,triple,"
-     "wedge}.py to tools/manifest/alphadesk-trading-engine.md. coherence --all --fix "
+     "wedge}.py to tools/manifest/fathomdesk-trading-engine.md. coherence --all --fix "
      "--gate → 17/17. companion.py --sync --write."),
 
     ("wrap-02", "wrap-02: feature doc",
@@ -172,8 +172,8 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
 
     ("wrap-04", "wrap-04: backlog + memory",
      "chore", "medium",
-     "Append Phase 7.9 entry to docs/alphadesk-backlog.md. Update "
-     "memory/project_alphadesk_phase7plus.md with 7.9 bullet."),
+     "Append Phase 7.9 entry to docs/fathomdesk-backlog.md. Update "
+     "memory/project_fathomdesk_phase7plus.md with 7.9 bullet."),
 ]
 
 
@@ -207,7 +207,7 @@ def enqueue() -> dict:
     finally:
         conn.close()
     return {
-        "project": "alphadesk-7-9",
+        "project": "fathomdesk-7-9",
         "prefix": PREFIX,
         "predecessor": EXTERNAL_PREDECESSOR,
         "inserted": inserted,

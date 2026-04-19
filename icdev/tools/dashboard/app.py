@@ -77,7 +77,7 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
         "/proposal-genesis",
         "/leads",
         "/studio/marketplace",
-        "/alphadesk",
+        "/fathomdesk",
     }
 )
 # Legacy canvas feature flags (derived from env — registration handled by _CANVAS_DEFS loop below)

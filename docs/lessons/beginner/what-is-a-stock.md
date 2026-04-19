@@ -58,5 +58,5 @@ shares exist and what the company earns per share.
 ## Next
 
 Now that you know what a stock IS, the next lesson shows you how to read an
-AlphaDesk **signal** on any stock — the BUY/SELL/HOLD direction and the
+FathomDesk **signal** on any stock — the BUY/SELL/HOLD direction and the
 composite score that drives it.

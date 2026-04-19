@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.6 — delta/strike target config for the strike picker.
+# FathomDesk Phase 7.6 — delta/strike target config for the strike picker.
 #
 # Maps each strike_slot (from args/options_strategies.yaml leg templates)
 # to either a target delta (for delta-based selection when chain has

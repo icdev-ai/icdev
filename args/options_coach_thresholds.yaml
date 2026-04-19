@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.6 — coach rule thresholds.
+# FathomDesk Phase 7.6 — coach rule thresholds.
 #
 # Consumed by tools/trading/options/coach_engine.py. All values are
 # operator-tunable. Hot-reloadable via mtime.
