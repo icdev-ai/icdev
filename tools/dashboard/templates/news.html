@@ -394,6 +394,12 @@ function buildNewsRow(item) {
             return t.slice(0, 5).join(', ');
         } catch { return ''; }
     })();
+    const firstTicker = (() => {
+        try {
+            const t = typeof item.mentioned_tickers === 'string' ? JSON.parse(item.mentioned_tickers) : (item.mentioned_tickers || []);
+            return t[0] || '';
+        } catch { return ''; }
+    })();
     const timeAgo = item.published_at ? new Date(item.published_at).toLocaleString() : '';
     return `
     <div style="border-bottom:1px solid #30363d;padding:0.75rem 0">
@@ -408,6 +414,7 @@ function buildNewsRow(item) {
         <div style="margin-top:0.5rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <button onclick="analyzeItem('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#8b5cf6;color:#fff;border:none;border-radius:4px">Analyze</button>
             <button onclick="traceImpact('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#1976d2;color:#fff;border:none;border-radius:4px" title="Walk the Knowledge Graph: extract countries/commodities/tickers from this headline and aggregate supply-chain impact across every exposed ticker.">🔗 Trace Impact</button>
+            ${firstTicker ? `<button onclick="location.href='/fathomdesk?ticker='+encodeURIComponent('${firstTicker}')+'&amp;highlight='+encodeURIComponent('${item.id}')" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#0d7377;color:#fff;border:none;border-radius:4px" title="View this news event on the FathomDesk chart">📈 Show on chart</button>` : ''}
             <span id="msg-${item.id}" style="font-size:0.75rem;display:none"></span>
         </div>
         <div id="intel-${item.id}" class="panel-analyze" style="display:none;margin-top:0.5rem;padding:0.75rem;font-size:0.8rem"></div>

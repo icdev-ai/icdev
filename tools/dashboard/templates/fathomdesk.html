@@ -178,6 +178,8 @@
 
   var _currentTf = '1D';
   var _currentTicker = {{ ticker | tojson }};
+  var _highlightId = new URLSearchParams(window.location.search).get('highlight');
+  var _chartGeom = null;
 
   // ── SVG helpers ─────────────────────────────────────────────────────────────
   function svgEl(tag, attrs) {
@@ -267,6 +269,7 @@
         }
         drawChart(wrap, d.bars, d.volume_profile, d.patterns || [], d.sr_levels || [], ticker, tf);
         drawStats(d.bars);
+        if (_highlightId) maybeAnnotateNews();
       })
       .catch(function (err) {
         wrap.innerHTML = '<div class="fd-loading" style="color:var(--status-red,#dc3545);">Fetch error: ' + err + '</div>';
@@ -629,6 +632,7 @@
       svg.appendChild(markerGrp);
     }
 
+    _chartGeom = { svg: svg, bars: bars, padL: padL, padT: padT, plotH: plotH, candleW: candleW, n: n, cw: cw };
     wrap.appendChild(svg);
 
     // ── Pattern modal ─────────────────────────────────────────────────────────
@@ -693,6 +697,58 @@
       body.innerHTML = html;
       modal.style.display = 'flex';
     }
+  }
+
+  // ── News annotation ───────────────────────────────────────────────────────────
+  function maybeAnnotateNews() {
+    if (!_highlightId || !_chartGeom) return;
+    fetch('/api/news/' + encodeURIComponent(_highlightId))
+      .then(function (r) { return r.json(); })
+      .then(function (item) {
+        if (!item || item.error) return;
+        var geom = _chartGeom;
+        var pubAt = item.published_at;
+        var cx;
+        if (pubAt) {
+          var newsTs = new Date(pubAt).getTime();
+          var bestIdx = 0, bestDiff = Infinity;
+          geom.bars.forEach(function (b, i) {
+            var diff = Math.abs(new Date(String(b.t)).getTime() - newsTs);
+            if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+          });
+          cx = geom.padL + (bestIdx + 0.5) * geom.cw;
+        } else {
+          cx = geom.padL + geom.candleW / 2;
+        }
+        var y1 = geom.padT, y2 = geom.padT + geom.plotH;
+        var headline = item.title || '';
+        var dispTime = pubAt ? new Date(pubAt).toLocaleString() : '';
+        var grp = svgEl('g', { style: 'cursor:crosshair' });
+        grp.appendChild(svgEl('line', {
+          x1: cx, y1: y1, x2: cx, y2: y2,
+          stroke: '#f5c518', 'stroke-width': '1.5',
+          'stroke-dasharray': '4 3', opacity: '0.9'
+        }));
+        grp.appendChild(svgEl('circle', {
+          cx: cx, cy: String(y1 + 8), r: '7',
+          fill: '#f5c518', opacity: '0.95'
+        }));
+        var lbl = svgEl('text', {
+          x: cx, y: String(y1 + 12),
+          fill: '#000', 'font-size': '8', 'font-weight': '800',
+          'text-anchor': 'middle', style: 'pointer-events:none'
+        });
+        lbl.textContent = 'N';
+        grp.appendChild(lbl);
+        grp.addEventListener('mouseenter', function (e) {
+          showTip('<b>News Event</b><br>' + headline +
+            '<br><span style="opacity:0.6;font-size:11px">' + dispTime + '</span>', e);
+        });
+        grp.addEventListener('mousemove', moveTip);
+        grp.addEventListener('mouseleave', hideTip);
+        geom.svg.appendChild(grp);
+      })
+      .catch(function () {});
   }
 
   // ── Controls ──────────────────────────────────────────────────────────────────
