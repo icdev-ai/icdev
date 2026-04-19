@@ -1,0 +1,4 @@
+# Technical Analysis configuration — hot-reloadable (edit without restart)
+swing_threshold_pct: 1.5    # % retracement required to confirm a swing high/low
+vp_bucket_count: 40         # number of price buckets for volume profile
+sr_proximity_pct: 0.5       # % proximity to cluster S/R levels
