@@ -189,6 +189,65 @@ CREATE TABLE IF NOT EXISTS od_ttp_coverage (
 
 CREATE INDEX IF NOT EXISTS idx_od_ttp_cov_ttp   ON od_ttp_coverage(ttp_id);
 CREATE INDEX IF NOT EXISTS idx_od_ttp_cov_state ON od_ttp_coverage(state);
+
+CREATE TABLE IF NOT EXISTS odc_gap_scores (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT NOT NULL,
+    total_techniques    INTEGER NOT NULL DEFAULT 0,
+    covered_count       INTEGER NOT NULL DEFAULT 0,
+    partial_count       INTEGER NOT NULL DEFAULT 0,
+    gap_count           INTEGER NOT NULL DEFAULT 0,
+    overall_gap_score   REAL NOT NULL DEFAULT 0.0,
+    by_tactic           TEXT NOT NULL DEFAULT '{}',
+    assessed_at         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_gap_scores_design ON odc_gap_scores(design_id);
+
+CREATE TABLE IF NOT EXISTS odc_technique_coverage (
+    id                      TEXT PRIMARY KEY,
+    design_id               TEXT NOT NULL,
+    technique_id            TEXT NOT NULL,
+    coverage_state          TEXT NOT NULL
+                                CHECK (coverage_state IN ('covered', 'partial', 'gap')),
+    signal_sources_present  TEXT NOT NULL DEFAULT '[]',
+    signal_sources_missing  TEXT NOT NULL DEFAULT '[]',
+    gap_score               REAL NOT NULL DEFAULT 0.0,
+    assessed_at             TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_tc_design    ON odc_technique_coverage(design_id);
+CREATE INDEX IF NOT EXISTS idx_odc_tc_technique ON odc_technique_coverage(technique_id);
+CREATE INDEX IF NOT EXISTS idx_odc_tc_state     ON odc_technique_coverage(coverage_state);
+
+CREATE TABLE IF NOT EXISTS odc_otel_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id       TEXT NOT NULL,
+    trace_id        TEXT NOT NULL DEFAULT '',
+    span_id         TEXT NOT NULL DEFAULT '',
+    event_name      TEXT NOT NULL,
+    technique_id    TEXT NOT NULL DEFAULT '',
+    signal_source   TEXT NOT NULL DEFAULT '',
+    attributes      TEXT NOT NULL DEFAULT '{}',
+    received_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_otel_design    ON odc_otel_events(design_id);
+CREATE INDEX IF NOT EXISTS idx_odc_otel_technique ON odc_otel_events(technique_id);
+CREATE INDEX IF NOT EXISTS idx_odc_otel_received  ON odc_otel_events(received_at);
+
+CREATE TABLE IF NOT EXISTS odc_sdc_verifications (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL,
+    ttp_list        TEXT NOT NULL DEFAULT '[]',
+    covered_ttps    TEXT NOT NULL DEFAULT '[]',
+    partial_ttps    TEXT NOT NULL DEFAULT '[]',
+    gap_ttps        TEXT NOT NULL DEFAULT '[]',
+    coverage_pct    REAL NOT NULL DEFAULT 0.0,
+    verified_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_sdcv_design ON odc_sdc_verifications(design_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
