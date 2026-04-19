@@ -818,8 +818,13 @@ def retrieve(
             like_clauses = []
             like_params: List[str] = []
             for term in query_terms:
-                like_clauses.append("(LOWER(label) LIKE ? OR LOWER(properties) LIKE ?)")
-                like_params.extend([f"%{term}%", f"%{term}%"])
+                # Match label, properties, AND entity_type so that NL queries
+                # like "firewall" hit nodes whose label is abbreviated
+                # (NYC-FWLL-01) but whose entity_type is 'network_firewall'.
+                like_clauses.append(
+                    "(LOWER(label) LIKE ? OR LOWER(properties) LIKE ? OR LOWER(entity_type) LIKE ?)"
+                )
+                like_params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
 
             where_likes = " OR ".join(like_clauses)
             sql = f"""
