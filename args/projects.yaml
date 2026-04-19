@@ -79,3 +79,27 @@ projects:
       - key: wrap
         title: "Registration + feature doc + E2E"
         priority: high
+
+  - key: alphadesk-7-7
+    name: "AlphaDesk 7.7 — Probability & Compare"
+    description: >
+      OptionStrat-inspired upgrades on top of 7.6's proposal flow:
+      (1) Probability-of-profit + price-cone overlay on the payoff chart
+      (Monte Carlo on IV-implied lognormal), and (2) side-by-side compare
+      so the top-3 alternates from build_proposal get first-class UI.
+      Fully deterministic — no new LLM calls.
+    task_prefix: "ad77-"
+    default_open: true
+    briefs:
+      - label: "Phase 7.7 brief — probability + compare"
+        path: "/docs/briefs/phase-7.7-probability-compare.md"
+    epics:
+      - key: prob
+        title: "POP + price cone overlay"
+        priority: critical
+      - key: compare
+        title: "Side-by-side strategy comparison"
+        priority: high
+      - key: wrap
+        title: "Registration + docs + E2E"
+        priority: high
