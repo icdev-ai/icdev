@@ -8138,6 +8138,28 @@ def create_app() -> Flask:
         the anchor so old links still work."""
         return redirect("/kanban#project-digital-twin", code=302)
 
+    # ── FathomDesk Trading Engine ─────────────────────────────────────────────
+    @app.route("/fathomdesk")
+    def fathomdesk_page():
+        """FathomDesk — trading chart with volume profile overlay."""
+        ticker = flask_request.args.get("ticker", "SPY").upper()
+        return render_template("fathomdesk.html", ticker=ticker)
+
+    @app.route("/api/trading/chart/<ticker>")
+    def api_trading_chart(ticker: str):
+        """Return OHLCV bars + volume profile for *ticker*."""
+        ticker = ticker.upper()
+        timeframe = flask_request.args.get("tf", "1D")
+        limit = min(int(flask_request.args.get("limit", 120)), 500)
+        try:
+            from tools.trading.data.market_data import fetch_bars
+            from tools.trading.ta.volume_profile import volume_profile as compute_vp
+            bars = fetch_bars(ticker, timeframe, limit)
+            vp = compute_vp(bars, bucket_count=40)
+            return jsonify({"ticker": ticker, "bars": bars, "volume_profile": vp})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     return app
 
 

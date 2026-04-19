@@ -1,0 +1,468 @@
+{% extends "base.html" %}
+{% block title %}FathomDesk — {{ ticker }} Volume Profile{% endblock %}
+{% block extra_css %}
+<style>
+  .fd-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-card, #16213e);
+    border-bottom: 1px solid var(--border-color, #2a2a40);
+    flex-wrap: wrap;
+  }
+  .fd-ticker-input {
+    background: var(--bg-input, #0f1829);
+    border: 1px solid var(--border-color, #2a2a40);
+    color: var(--text-primary, #e0e0f0);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    width: 90px;
+  }
+  .fd-ticker-input:focus { outline: 2px solid var(--accent-blue, #4a90d9); }
+  .fd-tf-btn {
+    background: var(--bg-input, #0f1829);
+    border: 1px solid var(--border-color, #2a2a40);
+    color: var(--text-secondary, #a0a0b8);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .fd-tf-btn.active, .fd-tf-btn:hover {
+    background: var(--accent-blue, #4a90d9);
+    color: #fff;
+    border-color: var(--accent-blue, #4a90d9);
+  }
+  .fd-stats {
+    display: flex;
+    gap: 20px;
+    font-size: 12px;
+    color: var(--text-muted, #6c6c80);
+    margin-left: auto;
+    flex-wrap: wrap;
+  }
+  .fd-stat-item { display: flex; flex-direction: column; }
+  .fd-stat-label { font-size: 10px; color: var(--text-dim, #4a4a60); }
+  .fd-stat-val { font-weight: 600; color: var(--text-secondary, #a0a0b8); }
+  .fd-stat-val.up   { color: var(--status-green, #28a745); }
+  .fd-stat-val.down { color: var(--status-red, #dc3545); }
+
+  .fd-chart-wrap {
+    position: relative;
+    width: 100%;
+    overflow-x: auto;
+    background: var(--bg-page, #0d1526);
+    padding: 0;
+  }
+  .fd-chart-wrap svg { display: block; }
+
+  .fd-legend {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 6px 16px;
+    font-size: 11px;
+    color: var(--text-muted, #6c6c80);
+    background: var(--bg-card, #16213e);
+    border-top: 1px solid var(--border-color, #2a2a40);
+    flex-wrap: wrap;
+  }
+  .fd-legend-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .fd-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 420px;
+    color: var(--text-muted, #6c6c80);
+    font-size: 13px;
+    gap: 8px;
+  }
+  @keyframes fd-spin { to { transform: rotate(360deg); } }
+  .fd-spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border-color, #2a2a40);
+    border-top-color: var(--accent-blue, #4a90d9);
+    border-radius: 50%;
+    animation: fd-spin .6s linear infinite;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="fd-toolbar">
+  <form id="fd-form" style="display:flex;gap:8px;align-items:center;" onsubmit="return fdSubmit(event)">
+    <input id="fd-ticker" class="fd-ticker-input" value="{{ ticker }}" placeholder="SPY" autocomplete="off" spellcheck="false">
+    <button type="submit" class="fd-tf-btn active">Load</button>
+  </form>
+  <div style="display:flex;gap:6px;">
+    <button class="fd-tf-btn active" data-tf="1D" onclick="fdSetTf(this,'1D')">1D</button>
+    <button class="fd-tf-btn" data-tf="1H" onclick="fdSetTf(this,'1H')">1H</button>
+    <button class="fd-tf-btn" data-tf="15M" onclick="fdSetTf(this,'15M')">15M</button>
+  </div>
+  <div class="fd-stats" id="fd-stats"></div>
+</div>
+
+<div class="fd-chart-wrap" id="fd-chart-wrap">
+  <div class="fd-loading" id="fd-loading"><div class="fd-spinner"></div> Loading chart…</div>
+</div>
+
+<div class="fd-legend">
+  <span><span class="fd-legend-dot" style="background:#28a745;"></span>Bullish candle</span>
+  <span><span class="fd-legend-dot" style="background:#dc3545;"></span>Bearish candle</span>
+  <span><span class="fd-legend-dot" style="background:#f5c518;height:3px;border-radius:0;"></span>POC</span>
+  <span><span class="fd-legend-dot" style="background:#4a90d9;opacity:.45;"></span>Value Area</span>
+  <span><span class="fd-legend-dot" style="background:#4a90d9;"></span>VP Bucket</span>
+  <span><span class="fd-legend-dot" style="background:#e8a838;"></span>HVN lines</span>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var _currentTf = '1D';
+  var _currentTicker = {{ ticker | tojson }};
+
+  // ── SVG helpers ─────────────────────────────────────────────────────────────
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    return el;
+  }
+
+  function cssVar(name, fb) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name);
+    return (v && v.trim()) ? v.trim() : fb;
+  }
+
+  // ── Tooltip ──────────────────────────────────────────────────────────────────
+  var _tip = null;
+  function tip() {
+    if (_tip) return _tip;
+    _tip = document.createElement('div');
+    _tip.style.cssText =
+      'position:fixed;pointer-events:none;z-index:99999;padding:6px 10px;' +
+      'border-radius:4px;font-size:12px;line-height:1.6;white-space:nowrap;' +
+      'opacity:0;transition:opacity .12s;' +
+      'background:' + cssVar('--bg-card','#16213e') + ';' +
+      'border:1px solid ' + cssVar('--border-color','#2a2a40') + ';' +
+      'color:' + cssVar('--text-secondary','#a0a0b8') + ';box-shadow:0 2px 8px rgba(0,0,0,.5);';
+    document.body.appendChild(_tip);
+    return _tip;
+  }
+  function showTip(html, e) { tip().innerHTML = html; tip().style.opacity='1'; moveTip(e); }
+  function moveTip(e) {
+    var t = tip();
+    var x = e.clientX + 14, y = e.clientY - 8;
+    var r = t.getBoundingClientRect();
+    if (x + r.width  > window.innerWidth  - 8) x = e.clientX - r.width  - 14;
+    if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - 8;
+    if (y < 4) y = 4;
+    t.style.left = x + 'px'; t.style.top = y + 'px';
+  }
+  function hideTip() { tip().style.opacity = '0'; }
+
+  // ── Number formatting ────────────────────────────────────────────────────────
+  function fmtVol(v) {
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toFixed(0);
+  }
+  function fmtPx(v) { return v >= 1000 ? v.toFixed(2) : v.toFixed(2); }
+
+  // ── Main render ──────────────────────────────────────────────────────────────
+  function render(ticker, tf) {
+    var wrap = document.getElementById('fd-chart-wrap');
+    wrap.innerHTML = '<div class="fd-loading"><div class="fd-spinner"></div> Loading ' + ticker + '…</div>';
+
+    fetch('/api/trading/chart/' + encodeURIComponent(ticker) + '?tf=' + tf + '&limit=120')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { wrap.innerHTML = '<div class="fd-loading" style="color:var(--status-red,#dc3545);">Error: ' + d.error + '</div>'; return; }
+        drawChart(wrap, d.bars, d.volume_profile, ticker, tf);
+        drawStats(d.bars);
+      })
+      .catch(function (err) {
+        wrap.innerHTML = '<div class="fd-loading" style="color:var(--status-red,#dc3545);">Fetch error: ' + err + '</div>';
+      });
+  }
+
+  function drawStats(bars) {
+    if (!bars || !bars.length) return;
+    var last  = bars[bars.length - 1];
+    var prev  = bars.length > 1 ? bars[bars.length - 2] : last;
+    var chg   = last.c - prev.c;
+    var chgPct = prev.c ? (chg / prev.c * 100) : 0;
+    var dir   = chg >= 0 ? 'up' : 'down';
+    var html  =
+      '<div class="fd-stat-item"><span class="fd-stat-label">CLOSE</span><span class="fd-stat-val ' + dir + '">' + fmtPx(last.c) + '</span></div>' +
+      '<div class="fd-stat-item"><span class="fd-stat-label">CHG</span><span class="fd-stat-val ' + dir + '">' + (chg >= 0 ? '+' : '') + fmtPx(chg) + ' (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)</span></div>' +
+      '<div class="fd-stat-item"><span class="fd-stat-label">HIGH</span><span class="fd-stat-val">' + fmtPx(last.h) + '</span></div>' +
+      '<div class="fd-stat-item"><span class="fd-stat-label">LOW</span><span class="fd-stat-val">' + fmtPx(last.l) + '</span></div>' +
+      '<div class="fd-stat-item"><span class="fd-stat-label">VOL</span><span class="fd-stat-val">' + fmtVol(last.v) + '</span></div>';
+    document.getElementById('fd-stats').innerHTML = html;
+  }
+
+  function drawChart(wrap, bars, vp, ticker, tf) {
+    wrap.innerHTML = '';
+    if (!bars || !bars.length) {
+      wrap.innerHTML = '<div class="fd-loading">No data</div>';
+      return;
+    }
+
+    var W        = wrap.clientWidth || 900;
+    var H        = 420;
+    var padL     = 56;    // y-axis labels
+    var padR     = 12;
+    var padT     = 16;
+    var padB     = 40;    // x-axis labels
+    var plotW    = W - padL - padR;
+    var plotH    = H - padT - padB;
+
+    // Right 15% of plot area is reserved for the VP histogram
+    var vpFrac   = 0.15;
+    var vpW      = plotW * vpFrac;
+    var candleW  = plotW - vpW;         // candlestick area width
+    var vpLeft   = padL + candleW;      // x start of VP histogram
+
+    // ── Price range ────────────────────────────────────────────────────────────
+    var priceMin = Infinity, priceMax = -Infinity;
+    bars.forEach(function (b) {
+      if (b.l < priceMin) priceMin = b.l;
+      if (b.h > priceMax) priceMax = b.h;
+    });
+    // 2% padding so extreme wicks don't touch top/bottom
+    var pad = (priceMax - priceMin) * 0.02 || 1;
+    priceMin -= pad; priceMax += pad;
+    var priceRange = priceMax - priceMin;
+
+    function py(price) {
+      return padT + plotH - ((price - priceMin) / priceRange) * plotH;
+    }
+
+    // ── Build SVG ──────────────────────────────────────────────────────────────
+    var svg = svgEl('svg', {
+      width: W, height: H,
+      viewBox: '0 0 ' + W + ' ' + H,
+      'aria-label': ticker + ' volume profile chart'
+    });
+    svg.style.display = 'block';
+    svg.style.background = cssVar('--bg-page', '#0d1526');
+
+    // ── Clipping region for candles (keep wicks inside chart area) ─────────────
+    var defs = svgEl('defs');
+    var clip = svgEl('clipPath', { id: 'fd-candle-clip' });
+    clip.appendChild(svgEl('rect', { x: padL, y: padT, width: candleW, height: plotH }));
+    defs.appendChild(clip);
+    svg.appendChild(defs);
+
+    // ── Y-axis grid + price labels ─────────────────────────────────────────────
+    var yTicks = 6;
+    for (var t = 0; t <= yTicks; t++) {
+      var price = priceMin + (t / yTicks) * priceRange;
+      var yy    = py(price);
+      // grid line across full chart (including VP area)
+      svg.appendChild(svgEl('line', {
+        x1: padL, y1: yy, x2: W - padR, y2: yy,
+        stroke: cssVar('--border-color', '#2a2a40'), 'stroke-width': '1', opacity: '0.5'
+      }));
+      var lbl = svgEl('text', {
+        x: padL - 5, y: yy + 4,
+        fill: cssVar('--text-muted', '#6c6c80'),
+        'font-size': '10', 'text-anchor': 'end'
+      });
+      lbl.textContent = fmtPx(price);
+      svg.appendChild(lbl);
+    }
+
+    // ── X-axis date labels ─────────────────────────────────────────────────────
+    var n = bars.length;
+    var labelEvery = Math.max(1, Math.ceil(n / 10));
+    bars.forEach(function (b, i) {
+      if (i % labelEvery !== 0 && i !== n - 1) return;
+      var cx = padL + (i + 0.5) * (candleW / n);
+      var t2 = String(b.t || '').slice(0, 10);  // YYYY-MM-DD
+      var lbl = svgEl('text', {
+        x: cx, y: H - 8,
+        fill: cssVar('--text-muted', '#6c6c80'),
+        'font-size': '9', 'text-anchor': 'middle'
+      });
+      lbl.textContent = t2.slice(5);  // MM-DD
+      svg.appendChild(lbl);
+    });
+
+    // ── Value area band ────────────────────────────────────────────────────────
+    if (vp && vp.value_area) {
+      var vaY1  = py(vp.value_area.high);
+      var vaY2  = py(vp.value_area.low);
+      var vaH   = vaY2 - vaY1;
+      svg.appendChild(svgEl('rect', {
+        x: padL, y: vaY1, width: candleW + vpW, height: vaH,
+        fill: cssVar('--accent-blue', '#4a90d9'), opacity: '0.07'
+      }));
+    }
+
+    // ── HVN horizontal lines across full chart ─────────────────────────────────
+    if (vp && vp.hvns) {
+      vp.hvns.forEach(function (hvn) {
+        var yh = py(hvn.price);
+        var line = svgEl('line', {
+          x1: padL, y1: yh, x2: W - padR, y2: yh,
+          stroke: '#e8a838', 'stroke-width': '1',
+          'stroke-dasharray': '3 4', opacity: '0.15'
+        });
+        svg.appendChild(line);
+      });
+    }
+
+    // ── POC horizontal line across full chart ──────────────────────────────────
+    if (vp && vp.poc != null) {
+      var pocY = py(vp.poc);
+      svg.appendChild(svgEl('line', {
+        x1: padL, y1: pocY, x2: W - padR, y2: pocY,
+        stroke: '#f5c518', 'stroke-width': '1.5',
+        'stroke-dasharray': '5 3', opacity: '0.85'
+      }));
+      // POC price label on left
+      var pocLbl = svgEl('text', {
+        x: padL - 5, y: pocY - 3,
+        fill: '#f5c518', 'font-size': '9', 'text-anchor': 'end'
+      });
+      pocLbl.textContent = 'POC';
+      svg.appendChild(pocLbl);
+    }
+
+    // ── VP histogram (right 15%) ───────────────────────────────────────────────
+    if (vp && vp.buckets && vp.buckets.length) {
+      var maxVol = 0;
+      vp.buckets.forEach(function (b) { if (b.volume > maxVol) maxVol = b.volume; });
+      if (maxVol <= 0) maxVol = 1;
+
+      // Build HVN set for color distinction
+      var hvnPrices = {};
+      if (vp.hvns) vp.hvns.forEach(function (h) { hvnPrices[h.price.toFixed(4)] = true; });
+
+      vp.buckets.forEach(function (bkt) {
+        var bktMid    = (bkt.price_low + bkt.price_high) / 2;
+        var barTopY   = py(bkt.price_high);
+        var barBotY   = py(bkt.price_low);
+        var barHeight = Math.max(1, barBotY - barTopY);
+        var barWidth  = (bkt.volume / maxVol) * vpW;
+
+        var isPOC = vp.poc != null && Math.abs(bktMid - vp.poc) < (bkt.price_high - bkt.price_low) * 0.5;
+        var isHVN = hvnPrices[bktMid.toFixed(4)];
+        var color = isPOC ? '#f5c518' : (isHVN ? '#e8a838' : cssVar('--accent-blue', '#4a90d9'));
+        var opacity = isPOC ? '0.9' : (isHVN ? '0.65' : '0.45');
+
+        var rect = svgEl('rect', {
+          x: vpLeft, y: barTopY,
+          width: barWidth, height: barHeight,
+          fill: color, opacity: opacity,
+          rx: '1'
+        });
+
+        rect.addEventListener('mouseenter', function (e) {
+          showTip(
+            '<b>' + fmtPx(bkt.price_low) + ' – ' + fmtPx(bkt.price_high) + '</b><br>' +
+            'Vol: <b>' + fmtVol(bkt.volume) + '</b>' +
+            (isPOC ? '<br><b style="color:#f5c518">POC</b>' : '') +
+            (isHVN && !isPOC ? '<br><b style="color:#e8a838">HVN</b>' : ''),
+            e
+          );
+        });
+        rect.addEventListener('mousemove', moveTip);
+        rect.addEventListener('mouseleave', hideTip);
+        svg.appendChild(rect);
+      });
+
+      // Thin separator line between candles and VP
+      svg.appendChild(svgEl('line', {
+        x1: vpLeft, y1: padT, x2: vpLeft, y2: padT + plotH,
+        stroke: cssVar('--border-color', '#2a2a40'), 'stroke-width': '1', opacity: '0.4'
+      }));
+    }
+
+    // ── Candlestick candles (drawn last so they sit on top) ────────────────────
+    var cw = candleW / n;
+    var bodyW = Math.max(1, cw * 0.6);
+    var grp = svgEl('g', { 'clip-path': 'url(#fd-candle-clip)' });
+
+    bars.forEach(function (b, i) {
+      var cx   = padL + (i + 0.5) * cw;
+      var oY   = py(b.o);
+      var cY   = py(b.c);
+      var hY   = py(b.h);
+      var lY   = py(b.l);
+      var bull = b.c >= b.o;
+      var color = bull ? cssVar('--status-green', '#28a745') : cssVar('--status-red', '#dc3545');
+      var bodyTop = Math.min(oY, cY);
+      var bodyH   = Math.max(1, Math.abs(cY - oY));
+
+      // Wick
+      grp.appendChild(svgEl('line', {
+        x1: cx, y1: hY, x2: cx, y2: lY,
+        stroke: color, 'stroke-width': '1'
+      }));
+      // Body
+      var rect = svgEl('rect', {
+        x: cx - bodyW / 2, y: bodyTop,
+        width: bodyW, height: bodyH,
+        fill: color, opacity: bull ? '0.85' : '0.9'
+      });
+      rect.addEventListener('mouseenter', function (e) {
+        showTip(
+          '<b>' + String(b.t || '').slice(0, 10) + '</b><br>' +
+          'O: ' + fmtPx(b.o) + '  H: ' + fmtPx(b.h) + '<br>' +
+          'L: ' + fmtPx(b.l) + '  C: <b>' + fmtPx(b.c) + '</b><br>' +
+          'Vol: ' + fmtVol(b.v),
+          e
+        );
+      });
+      rect.addEventListener('mousemove', moveTip);
+      rect.addEventListener('mouseleave', hideTip);
+      grp.appendChild(rect);
+    });
+    svg.appendChild(grp);
+
+    wrap.appendChild(svg);
+  }
+
+  // ── Controls ──────────────────────────────────────────────────────────────────
+  window.fdSubmit = function (e) {
+    e.preventDefault();
+    var t = document.getElementById('fd-ticker').value.trim().toUpperCase();
+    if (!t) return false;
+    _currentTicker = t;
+    render(_currentTicker, _currentTf);
+    return false;
+  };
+
+  window.fdSetTf = function (btn, tf) {
+    _currentTf = tf;
+    document.querySelectorAll('.fd-tf-btn[data-tf]').forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    render(_currentTicker, _currentTf);
+  };
+
+  // Initial load
+  render(_currentTicker, _currentTf);
+
+  // Redraw on window resize
+  var _resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function () { render(_currentTicker, _currentTf); }, 200);
+  });
+
+})();
+</script>
+{% endblock %}
