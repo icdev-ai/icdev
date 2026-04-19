@@ -32,9 +32,21 @@ fill_policy:
   commission_usd: 0      # flat per-fill fee
 
 # Safety rails — prevent user footguns.
+#
+# Phase 6.3.5 follow-up #3: short selling is ENABLED by default as a
+# simplified paper-sim. Key simplifications vs real short markets:
+#   - No locate / borrow availability check (real brokers require this)
+#   - No overnight borrow fee accrual
+#   - No hard-to-borrow interest rate
+#   - No margin call simulation (we check at placement, not continuously)
+#   - Margin ratio uses a cushion of 1.5x on |short proceeds| — similar
+#     in spirit to Reg T's 150% initial requirement but that's the
+#     *coincidence* of the number. Real requirements depend on broker,
+#     ticker, and regulatory tier.
+#   - Operators with stricter educational contexts should set
+#     allow_short_sell to false.
 limits:
-  max_position_pct: 100  # max % of portfolio a single position can be
-                          # (100 = no cap; lower this if operators want
-                          # to enforce diversification via code)
-  allow_short_sell: false # 6.3.5 is long-only
-  min_order_usd: 0        # minimum order size (0 = no floor)
+  max_position_pct: 100         # max % of portfolio a single position can be
+  allow_short_sell: true        # follow-up #3 — simplified short-sell enabled
+  short_margin_ratio: 1.5       # cash+positions ≥ ratio × |short proceeds|
+  min_order_usd: 0              # minimum order size (0 = no floor)

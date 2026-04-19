@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 6.3.5-followup + 6.3.5-followup-#2 limit/stop + 2C + 2D shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 6.3.5-followup + 6.3.5-followup-#2 limit/stop + 6.3.5-followup-#3 stop-limit/trailing/short/market-hours + 2C + 2D shipped)
 
 ---
 
@@ -431,6 +431,17 @@ UI (each persona could have its own progression curve).
 - API: `POST .../orders` return shape is `{ok, fill}` for market / `{ok, pending}` for limit/stop. `GET .../pending-orders` lists pending rows.
 - **Coherence 17/17 clean.** Smoke-tested end-to-end: limit-at-260 stays pending (quote ≈ 270); limit-at-280 fills on first check (slipped 270.14 ≤ 280); stop-loss-at-250 queues; user cancel works; invalid placements rejected; abandon mass-cancels leftover pendings.
 - **Out of scope for this follow-up (documented):** short selling (separate iteration — margin/locate/borrow + compliance), stop-limit combo, trailing stops, GTC vs day (treated as GTC; challenge deadline caps them), market-hours awareness (reflex runs 24/7; after-hours fills documented as sandbox-sim limitation), partial fills.
+
+### ✅ Phase 6.3.5 follow-up #3 — market-hours + stop-limit + trailing stops + simplified short selling (DONE 2026-04-18)
+- **Market-hours awareness** — new `tools/trading/challenges/market_hours.py`. `is_market_open()` checks weekday + 9:30–16:00 ET with rough DST boundary math (air-gap-safe; degrades to fixed offset if `zoneinfo` tz data missing). Env `ICDEV_SANDBOX_MARKET_HOURS_AWARE=false` disables for tests. `check_pending_orders_all_active()` short-circuits when closed — trailing-stop `best_seen_price` updates ONLY happen during market hours, which is correct. Holidays NOT modeled (scope choice).
+- **Stop-limit** — new `order_type='stop_limit'`. Takes BOTH `stop_price` (trigger) and `limit_price` (cap). Two-stage evaluation: stage 1 waits for stop crossover, stage 2 applies the limit via slippage-gated check. Fills at the slipped quote if it satisfies the limit.
+- **Trailing stops** — new `order_type='trailing_stop'`. Added `trailing_pct` + `best_seen_price` columns (idempotent ALTER). `best_seen_price` is seeded at placement from the live quote, then updated on every watcher tick in the favorable direction (highest for sell/long-protect, lowest for buy/short-cover). Fires when quote crosses `best_seen * (1 ∓ pct/100)`. `trailing_pct` capped at 50 (sanity).
+- **Simplified short selling** — flipped `allow_short_sell: true` in `args/challenges_sandbox_config.yaml`. Sell qty > held creates a negative position; cash credited with proceeds (minus slippage + commission). Weighted-avg entry-price logic for short adds. Buy-to-cover handled in the buy path (covers + optionally flips long). Margin check at placement: `(post_cash + other_positions_mv) ≥ short_margin_ratio × |short_notional|`, defaulting to 1.5× (configurable via `short_margin_ratio`). **Documented simplifications:** no locate/borrow availability check, no overnight borrow fees, no continuous margin-call simulation (only placement-time check).
+- **DB** — `list_positions(only_open=True)` changed from `qty > 0` to `qty != 0` so shorts surface in UI + margin calc. `update_best_seen()` helper for trailing-stop state. `create_pending_order()` gains `trailing_pct` + `best_seen_price` params.
+- **UI** — Trade panel: Type dropdown extended to 5 options (Market/Limit/Stop/Stop-Limit/Trailing Stop). Second conditional input appears for stop-limit (limit price on top of stop). Pending Orders table shows trailing% + running best_seen, stop-limit shows both prices.
+- **Verified:** stop-limit triggers + fills when conditions cross; trailing best_seen seeds at placement; short sale of MSFT correctly produced negative qty + credited cash; 10k-share over-short blocked by margin check ($6.3M needed, $4.3M available); market-closed sweep returns `skipped_reason: market closed`; abandon still mass-cancels all pending types.
+- **Coherence 17/17 clean** (no regression from yesterday). Companion synced. Registered in manifest shard.
+- **Remaining deferred (documented, not shipping):** partial fills — the paper-sim quote feed has no volume-at-price data; synthesizing liquidity layers would be arbitrary and adds complexity without fidelity. Real brokers model this; our sandbox explicitly doesn't. With this follow-up #3, **the original Phase 6.3.5 scope is now fully delivered** (all 5 items except partial fills which won't be built).
 
 ### ✅ Phase 6.4 — Multi-team competitions + leaderboards (DONE 2026-04-18)
 - Two tables (no standings cache — compute on-demand): `ad_leagues` (mutable; tenant-scoped with `UNIQUE(tenant_id, slug)`; 3 visibility modes: public / private / code with auto-generated 8-char codes) + `ad_league_members` (mutable role: captain / member; `UNIQUE(league_id, user_id)`).
