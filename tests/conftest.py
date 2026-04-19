@@ -79,6 +79,16 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS audit (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor      TEXT NOT NULL DEFAULT '',
+    action     TEXT NOT NULL DEFAULT '',
+    table_name TEXT NOT NULL DEFAULT '',
+    row_id     TEXT,
+    detail     TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
     id TEXT PRIMARY KEY,
     title TEXT,

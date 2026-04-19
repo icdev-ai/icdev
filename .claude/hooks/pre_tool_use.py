@@ -118,6 +118,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_sandbox_orders",
         # AlphaDesk challenges (Phase 6.3.5 follow-up) — daily snapshots drive continuously-held predicate; rewriting history would corrupt past-day checks
         "ad_sandbox_daily_snapshots",
+        # AlphaDesk tax-lots (Phase 7+) — realizations are tax history; must be append-only
+        "ad_tax_realizations",
+        # AlphaDesk tax-lots (Phase 7+) — wash-sale flags audit; must be append-only
+        "ad_tax_wash_sale_flags",
         # AlphaDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
         # Phase 44 — Innovation Adaptation
