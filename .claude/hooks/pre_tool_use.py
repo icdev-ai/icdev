@@ -86,45 +86,45 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "hook_events",
         # Phase-E V&V hardening (migration 025) — append-only status transition log
         "kanban_status_transitions",
-        # AlphaDesk auto-trading (append-only NIST AU)
+        # FathomDesk auto-trading (append-only NIST AU)
         "ad_trade_audit",
         "ad_kill_switch",
         "ad_decision_snapshots",
-        # AlphaDesk news (plan adn-)
+        # FathomDesk news (plan adn-)
         "ad_news_items",
         "ad_news_scenario_links",
         "ad_news_clusters",
-        # AlphaDesk Trading Oracle (append-only predictions + convergence)
+        # FathomDesk Trading Oracle (append-only predictions + convergence)
         "ad_trading_predictions",
         "ad_trading_convergence_events",
         "ad_trading_decision_approvals",
-        # AlphaDesk user-defined alerts (append-only fired-alert log)
+        # FathomDesk user-defined alerts (append-only fired-alert log)
         "ad_alerts_log",
-        # AlphaDesk auth — password-reset audit (used_at flips, never DELETE before purge)
+        # FathomDesk auth — password-reset audit (used_at flips, never DELETE before purge)
         "ad_password_reset_tokens",
-        # AlphaDesk auth — MFA attempts audit (NIST AU; required for rate-limit forensics)
+        # FathomDesk auth — MFA attempts audit (NIST AU; required for rate-limit forensics)
         "ad_mfa_attempts",
-        # AlphaDesk BYOK — credential audit (NIST AU; tracks every set/delete/test/used)
+        # FathomDesk BYOK — credential audit (NIST AU; tracks every set/delete/test/used)
         "ad_credential_audit",
-        # AlphaDesk tenancy — invitations are append-only (revoked_at + accepted_at flips, never DELETE)
+        # FathomDesk tenancy — invitations are append-only (revoked_at + accepted_at flips, never DELETE)
         "ad_tenant_invitations",
-        # AlphaDesk billing (Phase 5B) — Stripe webhook audit (NIST AU; idempotency + forensics)
+        # FathomDesk billing (Phase 5B) — Stripe webhook audit (NIST AU; idempotency + forensics)
         "ad_stripe_events",
-        # AlphaDesk progression (Phase 6.1) — XP events audit (NIST AU; idempotency + anti-farming audit)
+        # FathomDesk progression (Phase 6.1) — XP events audit (NIST AU; idempotency + anti-farming audit)
         "ad_xp_events",
-        # AlphaDesk progression (Phase 6.2) — earned badges (NIST AU; badges never un-award)
+        # FathomDesk progression (Phase 6.2) — earned badges (NIST AU; badges never un-award)
         "ad_user_achievements",
-        # AlphaDesk challenges (Phase 6.3.5) — sandbox order fills (NIST AU; full trade audit)
+        # FathomDesk challenges (Phase 6.3.5) — sandbox order fills (NIST AU; full trade audit)
         "ad_sandbox_orders",
-        # AlphaDesk challenges (Phase 6.3.5 follow-up) — daily snapshots drive continuously-held predicate; rewriting history would corrupt past-day checks
+        # FathomDesk challenges (Phase 6.3.5 follow-up) — daily snapshots drive continuously-held predicate; rewriting history would corrupt past-day checks
         "ad_sandbox_daily_snapshots",
-        # AlphaDesk tax-lots (Phase 7+) — realizations are tax history; must be append-only
+        # FathomDesk tax-lots (Phase 7+) — realizations are tax history; must be append-only
         "ad_tax_realizations",
-        # AlphaDesk tax-lots (Phase 7+) — wash-sale flags audit; must be append-only
+        # FathomDesk tax-lots (Phase 7+) — wash-sale flags audit; must be append-only
         "ad_tax_wash_sale_flags",
-        # AlphaDesk options coach (Phase 7.6) — event history; recommendation column mutable, rows never deleted
+        # FathomDesk options coach (Phase 7.6) — event history; recommendation column mutable, rows never deleted
         "ad_options_coach_events",
-        # AlphaDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
+        # FathomDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
         # Phase 44 — Innovation Adaptation
         "extension_execution_log",
