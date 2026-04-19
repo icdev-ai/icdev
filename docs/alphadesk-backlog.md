@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 6.3.5-followup + 2C + 2D shipped)
+Last updated: 2026-04-18 (Phase 5B + 6.1-6.6 + 6.3.5-followup + 6.3.5-followup-#2 limit/stop + 2C + 2D shipped)
 
 ---
 
@@ -419,6 +419,18 @@ UI (each persona could have its own progression curve).
 - Smoke-tested: fresh attempt → buy AAPL → snapshot today → hand-seed 21 backdated snapshots with 5 positions → predicate correctly returns `failing` with the one failing day (today's 1-position state) correctly identified. Sweep across 2 concurrent active attempts inserts idempotently.
 - Coherence 14/17 (same 3 pre-existing warns unrelated to this work). Companion synced.
 - **Still deferred from 6.3.5 (documented):** limit / stop / short orders — these require a dedicated price-watch daemon to fill conditional orders, substantially bigger than what fits this follow-up; leave as its own iteration if user demand appears.
+
+### ✅ Phase 6.3.5 follow-up #2 — limit + stop orders with watcher reflex (DONE 2026-04-18)
+- New **`ad_sandbox_pending_orders`** table (mutable — rows flow `pending → filled | canceled`). The immutable fill ledger stays `ad_sandbox_orders` — every triggered pending order appends one fill row there, preserving the NIST-AU audit invariant.
+- `sandbox_engine.place_order()` extended: accepts `order_type` ∈ {`market`, `limit`, `stop`} + optional `limit_price`/`stop_price`. Market path unchanged; limit/stop queue with placement-time validation (price > 0, rough cash-sufficiency for buys, held-qty for sells).
+- **Trigger semantics:** `limit buy` fills when slipped_quote ≤ limit (user pays no worse than limit); `limit sell` fills when slipped_quote ≥ limit; `stop buy` fires at quote ≥ stop; `stop sell` fires at quote ≤ stop. Fills flow through the market path — inherit slippage + commission + cash/holdings validation.
+- **`check_pending_orders(attempt_id)`** + **`check_pending_orders_all_active()`** — the watcher evaluates every active pending row; on trigger, fills via market path; on fill-time validation failure (cash drained since placement), auto-cancels with a note instead of zombie-ing the order.
+- New reflex **`challenge_order_watcher`** wired into `market_intel/daemon.py` + `args/trading_daemon_config.yaml` — runs **every 15 min** (continuous). Matches existing `approved_monitor` cadence.
+- **User cancel** — `cancel_pending_order()` + `DELETE /api/challenges/attempts/<id>/pending-orders/<order_id>`. **Mass-cancel on close** — `abandon_attempt()` + `evaluate_attempt()` close paths call `cancel_all_pending_for_attempt()` so triggers don't fire against archived sandboxes.
+- **UI** — `/challenges` Trade panel: Type dropdown (Market/Limit/Stop) + conditional price input; Pending Orders table with per-row Cancel buttons. Status message distinguishes filled vs queued.
+- API: `POST .../orders` return shape is `{ok, fill}` for market / `{ok, pending}` for limit/stop. `GET .../pending-orders` lists pending rows.
+- **Coherence 17/17 clean.** Smoke-tested end-to-end: limit-at-260 stays pending (quote ≈ 270); limit-at-280 fills on first check (slipped 270.14 ≤ 280); stop-loss-at-250 queues; user cancel works; invalid placements rejected; abandon mass-cancels leftover pendings.
+- **Out of scope for this follow-up (documented):** short selling (separate iteration — margin/locate/borrow + compliance), stop-limit combo, trailing stops, GTC vs day (treated as GTC; challenge deadline caps them), market-hours awareness (reflex runs 24/7; after-hours fills documented as sandbox-sim limitation), partial fills.
 
 ### ✅ Phase 6.4 — Multi-team competitions + leaderboards (DONE 2026-04-18)
 - Two tables (no standings cache — compute on-demand): `ad_leagues` (mutable; tenant-scoped with `UNIQUE(tenant_id, slug)`; 3 visibility modes: public / private / code with auto-generated 8-char codes) + `ad_league_members` (mutable role: captain / member; `UNIQUE(league_id, user_id)`).
