@@ -59,7 +59,7 @@ def ephemeral_parent_and_children():
         cur.execute(
             "INSERT INTO kanban_tasks (id, title, description, task_type, priority, "
             "status, executor_type, source_prediction_id, created_at, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (tid, title, "test fixture", "chore", "low", status, "claude_cli", sp, now, now),
         )
     conn.commit()
@@ -70,9 +70,9 @@ def ephemeral_parent_and_children():
     # Cleanup
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM kanban_verifications WHERE task_id IN (%s, %s, %s)",
+    cur.execute("DELETE FROM kanban_verifications WHERE task_id IN (?, ?, ?)",
                 (parent_id, child_a, child_b))
-    cur.execute("DELETE FROM kanban_tasks WHERE source_prediction_id = %s", (sp,))
+    cur.execute("DELETE FROM kanban_tasks WHERE source_prediction_id = ?", (sp,))
     conn.commit()
     conn.close()
 
@@ -86,7 +86,7 @@ def test_auto_close_waits_while_siblings_open(ephemeral_parent_and_children):
     cur = conn.cursor()
     # Mark only child_a done; child_b still backlog.
     cur.execute(
-        "UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s WHERE id=%s",
+        "UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
         (_now(), _now(), ids["child_a"]),
     )
     conn.commit()
@@ -97,7 +97,7 @@ def test_auto_close_waits_while_siblings_open(ephemeral_parent_and_children):
 
     conn = get_connection()
     row = conn.cursor().execute(
-        "SELECT status FROM kanban_tasks WHERE id=%s", (ids["parent"],)
+        "SELECT status FROM kanban_tasks WHERE id=?", (ids["parent"],)
     ).fetchone()
     conn.close()
     assert dict(row)["status"] == "decomposed"
@@ -110,9 +110,9 @@ def test_auto_close_fires_when_last_child_completes(ephemeral_parent_and_childre
     ids = ephemeral_parent_and_children
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s WHERE id=%s",
+    cur.execute("UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
                 (_now(), _now(), ids["child_a"]))
-    cur.execute("UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s WHERE id=%s",
+    cur.execute("UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=? WHERE id=?",
                 (_now(), _now(), ids["child_b"]))
     conn.commit()
     conn.close()
@@ -122,7 +122,7 @@ def test_auto_close_fires_when_last_child_completes(ephemeral_parent_and_childre
 
     conn = get_connection()
     cur = conn.cursor()
-    row = cur.execute("SELECT status, completed_at FROM kanban_tasks WHERE id=%s",
+    row = cur.execute("SELECT status, completed_at FROM kanban_tasks WHERE id=?",
                       (ids["parent"],)).fetchone()
     d = dict(row)
     assert d["status"] == "done"
@@ -130,7 +130,7 @@ def test_auto_close_fires_when_last_child_completes(ephemeral_parent_and_childre
 
     # Bypass verification row must be present so guard-22 stays consistent.
     vrow = cur.execute(
-        "SELECT result, reason FROM kanban_verifications WHERE task_id=%s "
+        "SELECT result, reason FROM kanban_verifications WHERE task_id=? "
         "ORDER BY verified_at DESC LIMIT 1",
         (ids["parent"],),
     ).fetchone()
@@ -162,7 +162,7 @@ def test_decomposer_skips_placeholder_subjects():
     cur.execute(
         "INSERT INTO kanban_tasks (id, title, description, task_type, priority, "
         "status, executor_type, source_prediction_id, created_at, updated_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (parent_id, "[Batch] test_rule: placeholder-only subjects",
          "Subjects:\n- All subjects share the same rule. A single fix may resolve all.\n- Source prediction IDs: op-x, op-y\n- tools/real/one.py",
          "chore", "low", "backlog", "claude_cli", sp, now, now),
@@ -185,7 +185,7 @@ def test_decomposer_skips_placeholder_subjects():
         # Only the real subject should have been materialized — 2 placeholder lines skipped.
         created = cur.execute(
             "SELECT id, title FROM kanban_tasks "
-            "WHERE source_prediction_id = %s AND id <> %s",
+            "WHERE source_prediction_id = ? AND id <> ?",
             (sp, parent_id),
         ).fetchall()
         created_titles = [dict(r)["title"] for r in created]
@@ -196,7 +196,7 @@ def test_decomposer_skips_placeholder_subjects():
             assert "All subjects share" not in t
             assert "Source prediction IDs" not in t
     finally:
-        cur.execute("DELETE FROM kanban_tasks WHERE source_prediction_id = %s", (sp,))
+        cur.execute("DELETE FROM kanban_tasks WHERE source_prediction_id = ?", (sp,))
         conn.commit()
         conn.close()
 # CUI // SP-CTI
