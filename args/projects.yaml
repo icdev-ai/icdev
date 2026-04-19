@@ -50,3 +50,32 @@ projects:
       - key: ddc
         title: "DDC Lineage Adapter"
         priority: low
+
+  - key: alphadesk-7-6
+    name: "AlphaDesk 7.6 — AI-Assisted Options"
+    description: >
+      LLM-interpretation + deterministic-selection hybrid: intent parser,
+      strategy scorer, strike/expiry picker, pre-flight gates, confirm-to-execute
+      modal, and a position-coach daemon reflex. LLM stays on interpretation +
+      explanation; rules engine owns selection + strike picking (NIST AU auditable).
+    task_prefix: "ad76-"
+    default_open: true
+    briefs:
+      - label: "Phase 7.6 brief — scope + safety boundaries"
+        path: "/docs/briefs/phase-7.6-ai-options-assist.md"
+    epics:
+      - key: intake
+        title: "Intent parser (LLM + rule fallback)"
+        priority: high
+      - key: scorer
+        title: "Deterministic strategy + strike + expiry picker"
+        priority: critical
+      - key: confirm
+        title: "Pre-flight gates + confirm-to-execute modal"
+        priority: critical
+      - key: coach
+        title: "Position coach daemon + LLM recommendations"
+        priority: high
+      - key: wrap
+        title: "Registration + feature doc + E2E"
+        priority: high
