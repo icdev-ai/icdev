@@ -241,7 +241,7 @@ def step_smoke_test() -> dict:
         # Test: icdev init --list in a fresh project dir
         proj_dir = tmpdir / "proj"
         proj_dir.mkdir()
-        r = _run([str(icdev_bin), str(proj_dir), "--list"], timeout=30)
+        r = _run([str(icdev_bin), "init", str(proj_dir), "--list"], timeout=30)
         # Fallback: invoke via python -m if entry-point shim not found
         if r.returncode != 0 and "No such" in (r.stderr or ""):
             r = _run([str(py), "-m", "icdev.tools.cli.init",
