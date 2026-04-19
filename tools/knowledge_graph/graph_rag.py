@@ -728,6 +728,7 @@ def retrieve(
     profile: Optional[str] = None,
     top_k: int = 10,
     compress: bool = True,
+    graph_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Retrieve relevant nodes/edges from the knowledge graph.
 
@@ -769,8 +770,16 @@ def retrieve(
     try:
         _ensure_tables(conn)
 
-        # Determine which graph(s) to search
-        if project_id:
+        # Determine which graph(s) to search. Per-canvas /ask endpoints
+        # pass graph_id directly because their kg_graphs rows often have
+        # project_id=NULL (the project_id fallback is for project-scoped
+        # KGs where multiple graphs live under one project).
+        if graph_id:
+            graphs = conn.execute(
+                "SELECT id FROM kg_graphs WHERE id = ?",
+                (graph_id,),
+            ).fetchall()
+        elif project_id:
             graphs = conn.execute(
                 "SELECT id FROM kg_graphs WHERE project_id = ?",
                 (project_id,),
