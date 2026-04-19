@@ -7,7 +7,7 @@ run_id: `89b9c8ed`
 
 ## Chore Description
 Walk the 8-point new-tool registration checklist from CLAUDE.md for every module
-shipped in the AlphaDeskNews (ADN) pipeline phases A–H:
+shipped in the FathomDeskNews (ADN) pipeline phases A–H:
 
 - **A1** `args/news_feeds.yaml` — RSS feed config
 - **A2** `tools/trading/news/__init__.py` — package marker
@@ -26,9 +26,9 @@ shipped in the AlphaDeskNews (ADN) pipeline phases A–H:
 
 | # | Checklist Item | Status | Action |
 |---|---|---|---|
-| 1 | tools/manifest shard entry | ✅ Done | All 6 news tools in alphadesk-trading-engine.md (lines 24-29) |
-| 2 | docs/reference/commands.md | ❌ Missing | Add AlphaDeskNews Pipeline section |
-| 3 | args/security_gates.yaml | ❌ Missing | Add alphadesk_news_pipeline gate |
+| 1 | tools/manifest shard entry | ✅ Done | All 6 news tools in fathomdesk-trading-engine.md (lines 24-29) |
+| 2 | docs/reference/commands.md | ❌ Missing | Add FathomDeskNews Pipeline section |
+| 3 | args/security_gates.yaml | ❌ Missing | Add fathomdesk_news_pipeline gate |
 | 4 | MCP tool_registry + gap_handlers | ❌ Missing | Add 6 news tool entries + handlers |
 | 5 | pre_tool_use.py APPEND_ONLY_TABLES | ✅ Done | ad_news_items, ad_news_scenario_links, ad_news_clusters present |
 | 6 | tests/conftest.py MINIMAL_ICDEV_SCHEMA | ✅ Done | All 4 ad_news_* tables present (lines 1161-1216) |
@@ -43,18 +43,18 @@ shipped in the AlphaDeskNews (ADN) pipeline phases A–H:
 ## Relevant Files
 
 ### To Modify
-- `docs/reference/commands.md` — add AlphaDeskNews Pipeline section after Industry Research Engine
-- `args/security_gates.yaml` — add `alphadesk_news_pipeline` gate block at end
-- `tools/mcp/tool_registry.py` — add 6 news tool entries under new `alphadesk_news` category
+- `docs/reference/commands.md` — add FathomDeskNews Pipeline section after Industry Research Engine
+- `args/security_gates.yaml` — add `fathomdesk_news_pipeline` gate block at end
+- `tools/mcp/tool_registry.py` — add 6 news tool entries under new `fathomdesk_news` category
 - `tools/mcp/gap_handlers.py` — add 6 handler functions + `_run_cli` helper (if not present)
 
 ## Step by Step Tasks
 
-### Step 1: Add AlphaDeskNews Pipeline section to commands.md
+### Step 1: Add FathomDeskNews Pipeline section to commands.md
 - Insert after the `## Industry Research Engine` section
 - Include CLI commands for: rss_ingestor, classifier, scenario_matcher, aggregator, news_reasoner, news db
 
-### Step 2: Add alphadesk_news_pipeline gate to security_gates.yaml
+### Step 2: Add fathomdesk_news_pipeline gate to security_gates.yaml
 - Add gate block with warning conditions for: ingestor_feed_parse_failure, classifier_backlog_overflow
 - Blocking condition: news_db_schema_mismatch (if migration not run)
 
@@ -63,7 +63,7 @@ shipped in the AlphaDeskNews (ADN) pipeline phases A–H:
 - Use `_run_cli` pattern matching existing oracle handlers
 
 ### Step 4: Register news tools in tool_registry.py
-- Add `alphadesk_news` category header comment (update count in docstring)
+- Add `fathomdesk_news` category header comment (update count in docstring)
 - Add 6 tool entries referencing gap_handlers module + new handlers
 
 ### Step 5: Run companion sync

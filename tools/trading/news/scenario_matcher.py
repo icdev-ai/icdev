@@ -42,7 +42,7 @@
 # =============================================================================
 # fmt: on
 # CUI // SP-CTI
-"""AlphaDesk News — scenario matcher.
+"""FathomDesk News — scenario matcher.
 
 Maps news items to scenario_engine SCENARIO_TEMPLATES via deterministic
 keyword matching. Optionally wires to scenario_engine.run_scenario() for
@@ -335,7 +335,7 @@ def batch_match() -> dict:
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="AlphaDesk News Scenario Matcher")
+    parser = argparse.ArgumentParser(description="FathomDesk News Scenario Matcher")
     parser.add_argument("--batch", action="store_true", help="Match all high/medium items")
     parser.add_argument("--id", help="Match a single news item")
     parser.add_argument("--run", action="store_true", help="Also run matched scenario")

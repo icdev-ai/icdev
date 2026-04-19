@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Idempotent enqueue for the AlphaDesk /news plan.
+"""Idempotent enqueue for the FathomDesk /news plan.
 
 Decomposes the plan at ~/.claude/plans/recursive-noodling-meteor.md into
 atomic subtasks sized for a single agent turn (per memory
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from tools.dashboard.config import DB_PATH
 from tools.db.storage import get_connection
 
-PREFIX = "adn-"  # AlphaDesk News
+PREFIX = "adn-"  # FathomDesk News
 
 GATE = (
     "PHASE-EXIT GATE (all 5 must pass before next phase unblocks): "
@@ -65,7 +65,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
      "build", "high",
      "Open .claude/hooks/pre_tool_use.py. Locate APPEND_ONLY_TABLES. Append 'ad_news_items', "
      "'ad_news_scenario_links', 'ad_news_clusters'. Per CLAUDE.md: any append-only/immutable "
-     "DB table must be in this list. Add a one-line comment grouping them under '# AlphaDesk news (plan adn-)'."),
+     "DB table must be in this list. Add a one-line comment grouping them under '# FathomDesk news (plan adn-)'."),
     ("A5-conftest-schema", "A5: Add 3 new tables to tests/conftest.py MINIMAL_ICDEV_SCHEMA",
      "build", "high",
      "Open tests/conftest.py. Locate MINIMAL_ICDEV_SCHEMA. Add the DDL strings for ad_news_items, "
@@ -74,7 +74,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     ("A6-migrate-run", "A6: Apply migration — python -m tools.trading.news.db --migrate",
      "test", "high",
      "Run: python -m tools.trading.news.db --migrate. Verify all 3 tables exist: "
-     "sqlite3 data/alphadesk.db \".tables\" | grep ad_news. Confirm indexes created "
+     "sqlite3 data/fathomdesk.db \".tables\" | grep ad_news. Confirm indexes created "
      "(idx_news_published, idx_news_category, idx_news_scenario_news). JSON output captured."),
     ("A-gate", "A-gate: Phase A exit validation", "test", "high", GATE),
 
@@ -128,7 +128,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
      "Create tools/trading/news/classifier.py. classify(news_id) reads row from ad_news_items, "
      "applies keyword maps from analysts/news.py, outputs {category, impact_level, "
      "mentioned_tickers, sentiment, net_direction, classifier_version}. Ticker detection: "
-     "regex \\b[A-Z]{1,5}\\b intersected with the AlphaDesk universe "
+     "regex \\b[A-Z]{1,5}\\b intersected with the FathomDesk universe "
      "(tools/trading/market_intel/universe.py). Net direction: bullish if positive keyword "
      "count > negative by 2+, else neutral. Write result back via UPDATE — wait, per A4 "
      "ad_news_items is append-only; instead, store classifier output in a new row in "
@@ -258,7 +258,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
      "/api/news/<id>/run-scenario → on success, navigate to /scenarios?run_id=<id>. [Send to "
      "Signals] → POST /api/scenarios/<run_id>/send-to-signals (existing endpoint, unchanged). "
      "[Dismiss] → local-only hide (no server state). Cluster expand → accordion of member items."),
-    ("F5-e2e-news-selenium", "F5: Selenium E2E test at tests/e2e/alphadesk/test_news_page.py",
+    ("F5-e2e-news-selenium", "F5: Selenium E2E test at tests/e2e/fathomdesk/test_news_page.py",
      "test", "high",
      "Per memory e2e_selenium.md: use Selenium, NOT Playwright. Test: open /news, assert page "
      "title, nav link has .active class, ≥ 1 card renders, click first card's 'Run Scenario', "
@@ -327,7 +327,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     ("H-gate", "H-gate: Phase H exit validation", "test", "high", GATE),
 
     # ───────── Phase I — Post-impl ─────────
-    ("I1-feature-doc", "I1: docs/features/phase-news-alphadesk.md",
+    ("I1-feature-doc", "I1: docs/features/phase-news-fathomdesk.md",
      "chore", "high",
      "Write feature doc per CLAUDE.md guardrail. Cover: (a) why /news (manual gap: nothing "
      "feeds scenarios automatically); (b) RSS-only choice rationale (free, air-gap friendly); "
@@ -337,7 +337,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     ("I2-registration-checklist", "I2: 8-point registration checklist sweep",
      "chore", "high",
      "Walk CLAUDE.md 8-point new-tool checklist for every module shipped in A..H: "
-     "(1) tools/manifest/alphadesk-trading-engine.md — add rss_ingestor, classifier, "
+     "(1) tools/manifest/fathomdesk-trading-engine.md — add rss_ingestor, classifier, "
      "scenario_matcher, aggregator, news/db; (2) docs/reference/commands.md — CLI examples; "
      "(3) args/security_gates.yaml — add gate for regime-level cluster promotion (warning); "
      "(4) MCP registry + gap_handlers if news is queryable via MCP; (5) pre_tool_use.py done "

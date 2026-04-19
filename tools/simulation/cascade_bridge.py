@@ -7,7 +7,7 @@ Traces multi-level impacts through a simulation Knowledge Graph
 built from SysML elements, compliance controls, supply chain vendors,
 and digital thread traces.
 
-Key differences from AlphaDesk cascade_engine.py:
+Key differences from FathomDesk cascade_engine.py:
   - Nodes are program elements (components, controls, vendors), not tickers
   - Timing model uses sprints/PIs, not market months
   - Impact maps to 6 simulation dimensions, not price direction

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""E2E: AlphaDesk Phase 7.8 — time-slider, portfolio greeks, share URL.
+"""E2E: FathomDesk Phase 7.8 — time-slider, portfolio greeks, share URL.
 
 Flow:
   A. /options → AI Assist → submit intent → assert time-slider renders;

@@ -1472,7 +1472,7 @@ def handle_oracle_kanban_bridge_gate(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# AlphaDeskNews Pipeline (ADN) — phases A–H
+# FathomDeskNews Pipeline (ADN) — phases A–H
 # ---------------------------------------------------------------------------
 
 

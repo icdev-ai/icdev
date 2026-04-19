@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.11 — News 2.0
+# FathomDesk Phase 7.11 — News 2.0
 
-**Project:** `args/projects.yaml → alphadesk-7-11`. Prefix `ad711-`.
+**Project:** `args/projects.yaml → fathomdesk-7-11`. Prefix `ad711-`.
 14 tasks / 4 epics. **Blocked on 7.9** — reuses chart layer for
 news-on-price overlays.
 
@@ -56,7 +56,7 @@ for low-risk signals.
 
 ### GENESIS (3 tasks + gate)
 
-- **ad711-genesis-01** — `tools/genesis/reflexes/alphadesk_news_patterns.py`
+- **ad711-genesis-01** — `tools/genesis/reflexes/fathomdesk_news_patterns.py`
   — conforms to Genesis contract (`run(config, trust) → {success,
   metric_value, details}`). Hourly cadence. Calls
   `pattern_analyzer.analyze_all()` + persists; skips duplicates per

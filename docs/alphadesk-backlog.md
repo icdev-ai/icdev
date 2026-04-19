@@ -1,4 +1,4 @@
-# AlphaDesk Backlog
+# FathomDesk Backlog
 
 > Durable log of requests + ideas surfaced during sessions but not yet built.
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
@@ -120,7 +120,7 @@ authenticators. Builds on 2A's `ad_user_mfa.webauthn_credentials` JSON column.
 ### ✅ Phase 2D — Real secrets manager backend (HashiCorp Vault / OpenBao) (DONE 2026-04-18)
 - New module `tools/trading/credentials/secret_store.py` — `SecretStore` ABC with `put/get/delete/health`. Two implementations shipped:
   - `LocalEncryptedStore` — thin wrapper that delegates to existing `credentials.db.get_raw_credential/upsert_credential` — **zero behavior change** when `ICDEV_SECRET_BACKEND=local` (default). Path A + per-user Path B continue as before.
-  - `HashiCorpVaultStore` — KV v2 via `hvac` HTTP client. Lazy client construction + clear `SecretStoreError` on missing `hvac`, missing `VAULT_ADDR/VAULT_TOKEN`, or auth failure. Reads/writes `{mount}/data/alphadesk/credentials/{user_id}/{provider}`. Vault handles its own encryption — we just write plaintext over mTLS to the Vault endpoint.
+  - `HashiCorpVaultStore` — KV v2 via `hvac` HTTP client. Lazy client construction + clear `SecretStoreError` on missing `hvac`, missing `VAULT_ADDR/VAULT_TOKEN`, or auth failure. Reads/writes `{mount}/data/fathomdesk/credentials/{user_id}/{provider}`. Vault handles its own encryption — we just write plaintext over mTLS to the Vault endpoint.
 - Selection via `ICDEV_SECRET_BACKEND` env (local | vault); optional `VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_MOUNT_PATH`, `VAULT_NAMESPACE`. `get_active_store()` factory + `reset_cache()` for hot-switches.
 - `credentials.db.upsert_credential` + `get_raw_credential` short-circuit to `HashiCorpVaultStore` when `is_vault_backend()`. Local backend (default) path is untouched, so Path A + Path B stay fully functional.
 - When Vault is the active backend: per-user Path B is effectively bypassed (Vault IS the trust root). A stub row in `ad_user_credentials` tracks provider-presence + `last4` so the Settings UI still enumerates configured providers — the actual ciphertext lives in Vault. Audit rows carry `via=hashi_vault` detail.
@@ -191,7 +191,7 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
     + `white_label_enabled` toggle. CSS variable `--accent` injected via
     `<style>` block in base.html when accent set. Sidebar swaps to
     workspace name (+ logo when URL set, fallback to text + "Powered by
-    AlphaDesk" tagline). PDF brief uses tenant name in classification
+    FathomDesk" tagline). PDF brief uses tenant name in classification
     banner + footer + filename slug, fetches + embeds logo from URL when
     provided. Server-side validation: 6-digit hex required, only http(s)://
     or data: URLs accepted. Settings → Workspace gains "Branding &
@@ -343,7 +343,7 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
 - `/billing` page: Stripe Upgrade buttons for paid tiers, Manage-subscription (Portal) button, invoice history table, `?checkout=success|cancel` banner.
 - Env: `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PRO`, `STRIPE_PRICE_ID_ENTERPRISE` documented in `.env.example`; Price IDs resolve YAML → env; `stripe>=11.0` commented in `requirements.txt` (operator installs on connected deploys).
 - **Proration:** no manual code — Stripe handles it automatically via the Portal when a user upgrades/downgrades mid-period.
-- Registered in `tools/manifest/alphadesk-trading-engine.md`; `ad_stripe_events` added to `.claude/hooks/pre_tool_use.py:APPEND_ONLY_TABLES`. Coherence gate passes 16/17 (1 pre-existing warn unrelated).
+- Registered in `tools/manifest/fathomdesk-trading-engine.md`; `ad_stripe_events` added to `.claude/hooks/pre_tool_use.py:APPEND_ONLY_TABLES`. Coherence gate passes 16/17 (1 pre-existing warn unrelated).
 
 ---
 
@@ -381,7 +381,7 @@ UI (each persona could have its own progression curve).
 - `/progression` page: level badge + XP counter + 4-level track + XP rules catalog + recent events table + opt-in toggle. Sidebar link under Research group.
 - Persona gating via `args/persona_presets.yaml`: `opt_in_personas` = student/retail/passive (auto-tracked); `opt_out_personas` = quant/pro_trader/advisor/day_trader/family_office (page hidden; user can re-opt-in via Settings card).
 - API: `GET /api/progression`, `GET /api/progression/events`, `POST /api/progression/opt-in`.
-- `ad_xp_events` added to `APPEND_ONLY_TABLES`; registered in `tools/manifest/alphadesk-trading-engine.md`. Coherence passes 14/17 (3 pre-existing warns unrelated to 6.1).
+- `ad_xp_events` added to `APPEND_ONLY_TABLES`; registered in `tools/manifest/fathomdesk-trading-engine.md`. Coherence passes 14/17 (3 pre-existing warns unrelated to 6.1).
 - **Not in 6.1:** order-fill hook — auto_trader daemon runs without user_id in scope; the `order_filled` rule is defined but awaits a per-user order path (would hook into `/api/orders POST` when that lands, or a reconcile poller).
 
 ### ✅ Phase 6.2 — Achievements + badges (DONE 2026-04-18)
@@ -405,7 +405,7 @@ UI (each persona could have its own progression curve).
 - UI: `/challenges` page — Active attempts card (progress bars + deadline countdown + abandon), Available grid (6 tiles with difficulty/duration/XP badges), History table (status-colored). Sidebar link under Research.
 - Persona gating: auto-opt-in for student/retail/passive; hidden for quant/pro_trader/advisor/day_trader/family_office (same policy as /progression).
 - API: `GET /api/challenges`, `POST /api/challenges/<id>/start`, `POST /api/challenges/attempts/<id>/abandon`.
-- Registered in `tools/manifest/alphadesk-trading-engine.md`. Coherence gate passes 14/17 (3 pre-existing warns unrelated). Verified end-to-end — start → deadline + snapshot captured → duplicate-start blocked → evaluate → abandon → summary reflects state.
+- Registered in `tools/manifest/fathomdesk-trading-engine.md`. Coherence gate passes 14/17 (3 pre-existing warns unrelated). Verified end-to-end — start → deadline + snapshot captured → duplicate-start blocked → evaluate → abandon → summary reflects state.
 - **Deferred from 6.3 (documented):** sandboxed paper portfolio per attempt (backlog called for this; 6.3 MVP uses start-snapshot deltas on the live paper portfolio — simpler, works for all 5 predicate types without duplicating the positions/orders stack). "Continuously held" precision for hold_for_days uses current-state check (not day-by-day sweep); if operator asks for true continuity, layer a daily snapshot sweep in 6.3.5.
 
 ### ✅ Phase 6.3.5 — Sandboxed paper portfolios per attempt (DONE 2026-04-18)
@@ -602,7 +602,7 @@ Hybrid design: LLM only for natural-language intent parsing + post-event coach r
 - **New DB:** migration 020 → `ad_options_coach_events` (append-only NIST AU; mutable `recommendation` column only).
 - **New routes:** `POST /api/options/ai-assist/{propose,execute}`, `GET /api/options/coach/events{,/id}`.
 - **UI:** "AI Assist" tab in `/options` (intent → proposal modal with payoff chart + rationale + warnings/blocks + Execute button). "🎯 Options Coach" card on `/portfolio` (auto-hides when no events).
-- **Project registry:** `args/projects.yaml → alphadesk-7-6`, prefix `ad76-`, 26 tasks across 5 epics — all green.
+- **Project registry:** `args/projects.yaml → fathomdesk-7-6`, prefix `ad76-`, 26 tasks across 5 epics — all green.
 - **Coherence 17/17 at every phase gate.** Companion synced 10 platforms. Selenium E2E `tests/e2e_selenium/test_ad76_ai_options_assist.py`.
 
 ### ✅ Compliance-officer dashboard (DONE 2026-04-19)

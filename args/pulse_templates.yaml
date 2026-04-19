@@ -272,7 +272,7 @@ templates:
     description: >
       AI-generated trading analysis combining fundamental, technical,
       sentiment, and news analysis with multi-agent bull/bear debate synthesis.
-      Published by AlphaDesk trading intelligence platform.
+      Published by FathomDesk trading intelligence platform.
     word_count_min: 2000
     word_count_max: 3000
     tone: "analytical-professional"
@@ -325,7 +325,7 @@ templates:
           past performance does not guarantee future results.
         required: true
     seo:
-      title_format: "{ticker} Analysis: {direction} Signal — AlphaDesk"
+      title_format: "{ticker} Analysis: {direction} Signal — FathomDesk"
       meta_description_format: >
         Multi-agent AI analysis of {ticker}: fundamental, technical, sentiment
         analysis with bull/bear debate. Signal: {direction}.

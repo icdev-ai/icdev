@@ -1843,7 +1843,7 @@ python tools/research/research_engine.py --daemon --json
 
 ---
 
-## AlphaDeskNews Pipeline — ADN News Intelligence (Phase ADN)
+## FathomDeskNews Pipeline — ADN News Intelligence (Phase ADN)
 ```bash
 # Ingest RSS feeds once (all configured feeds in args/news_feeds.yaml)
 python tools/trading/news/rss_ingestor.py --run-once --json

@@ -1067,7 +1067,7 @@ CREATE TABLE IF NOT EXISTS memory_consolidation_log (
 CREATE INDEX IF NOT EXISTS idx_mem_consol_action ON memory_consolidation_log(action);
 CREATE INDEX IF NOT EXISTS idx_mem_consol_source ON memory_consolidation_log(source_entry_id);
 
--- AlphaDesk: fundamental metrics (migration 011)
+-- FathomDesk: fundamental metrics (migration 011)
 CREATE TABLE IF NOT EXISTS ad_fundamental_metrics (
     id                      TEXT PRIMARY KEY,
     ticker                  TEXT NOT NULL,
@@ -1097,7 +1097,7 @@ CREATE TABLE IF NOT EXISTS ad_fundamental_metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_fm_ticker_date ON ad_fundamental_metrics(ticker, as_of_date);
 
--- AlphaDesk: quality scores (migration 011)
+-- FathomDesk: quality scores (migration 011)
 CREATE TABLE IF NOT EXISTS ad_quality_scores (
     id                              TEXT PRIMARY KEY,
     ticker                          TEXT NOT NULL,
@@ -1119,7 +1119,7 @@ CREATE TABLE IF NOT EXISTS ad_quality_scores (
 CREATE INDEX IF NOT EXISTS idx_ad_qs_ticker_date ON ad_quality_scores(ticker, as_of_date);
 CREATE INDEX IF NOT EXISTS idx_ad_qs_composite ON ad_quality_scores(composite_quality_score);
 
--- AlphaDesk: perspective scores (confluence_scorer lookups)
+-- FathomDesk: perspective scores (confluence_scorer lookups)
 CREATE TABLE IF NOT EXISTS ad_perspective_scores (
     id TEXT PRIMARY KEY,
     ticker TEXT NOT NULL,
@@ -1133,7 +1133,7 @@ CREATE TABLE IF NOT EXISTS ad_perspective_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_ps_ticker ON ad_perspective_scores(ticker);
 
--- AlphaDesk: event_stack confluence pillar tables (migration 022)
+-- FathomDesk: event_stack confluence pillar tables (migration 022)
 CREATE TABLE IF NOT EXISTS ad_earnings_history (
     id TEXT PRIMARY KEY,
     ticker TEXT NOT NULL,
@@ -1183,7 +1183,7 @@ CREATE TABLE IF NOT EXISTS ad_insider_transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_insider_txn_ticker_date ON ad_insider_transactions (ticker, created_at DESC);
 
--- AlphaDesk: news catalyst table (migration 024)
+-- FathomDesk: news catalyst table (migration 024)
 CREATE TABLE IF NOT EXISTS ad_news_catalysts (
     id TEXT PRIMARY KEY,
     ticker TEXT NOT NULL,
@@ -1195,7 +1195,7 @@ CREATE TABLE IF NOT EXISTS ad_news_catalysts (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_news_catalysts_ticker_date ON ad_news_catalysts (ticker, created_at DESC);
 
--- AlphaDesk: news pipeline tables (plan adn-)
+-- FathomDesk: news pipeline tables (plan adn-)
 CREATE TABLE IF NOT EXISTS ad_news_items (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
@@ -1278,7 +1278,7 @@ CREATE TABLE IF NOT EXISTS sharepoint_documents (
 CREATE INDEX IF NOT EXISTS idx_sp_docs_site_id ON sharepoint_documents (site_id);
 CREATE INDEX IF NOT EXISTS idx_sp_docs_path ON sharepoint_documents (path);
 
--- AlphaDesk: expert advisor tables (expert_agents.py _ADVISOR_TABLES)
+-- FathomDesk: expert advisor tables (expert_agents.py _ADVISOR_TABLES)
 CREATE TABLE IF NOT EXISTS ad_expert_opinions (
     id TEXT PRIMARY KEY,
     ticker TEXT NOT NULL,

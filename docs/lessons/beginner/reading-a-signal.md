@@ -1,6 +1,6 @@
-# How do I read an AlphaDesk signal?
+# How do I read an FathomDesk signal?
 
-When you open `/analysis` and run an analysis on a ticker, AlphaDesk produces
+When you open `/analysis` and run an analysis on a ticker, FathomDesk produces
 a **signal** with three key numbers:
 
 - **Direction** — one of `BUY`, `SELL`, `SHORT`, or `HOLD`

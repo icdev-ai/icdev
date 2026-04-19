@@ -69,7 +69,7 @@ ENTITY_TYPES = (
     "person",
     "document",
     "standard",
-    # Financial entity types (AlphaDesk KG extension)
+    # Financial entity types (FathomDesk KG extension)
     "ticker",
     "sector",
     "executive",
@@ -89,7 +89,7 @@ RELATIONSHIP_TYPES = (
     "REFERENCES",
     "IMPLEMENTS",
     "DEPENDS_ON",
-    # Financial relationship types (AlphaDesk KG extension)
+    # Financial relationship types (FathomDesk KG extension)
     "SUPPLIES_TO",
     "CUSTOMER_OF",
     "COMPETES_WITH",
@@ -136,7 +136,7 @@ VERB_MAP = {
     "deploys to": "DEPLOYED_ON",
     "member of": "MEMBER_OF",
     "belongs to": "MEMBER_OF",
-    # Financial relationship verbs (AlphaDesk KG extension)
+    # Financial relationship verbs (FathomDesk KG extension)
     "supplies": "SUPPLIES_TO",
     "supplies to": "SUPPLIES_TO",
     "supplier of": "SUPPLIES_TO",

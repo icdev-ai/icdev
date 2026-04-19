@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""E2E: AlphaDesk Phase 7.6 — AI Options Assist tab.
+"""E2E: FathomDesk Phase 7.6 — AI Options Assist tab.
 
 Exercises the full hybrid flow:
   1. open /options
@@ -15,7 +15,7 @@ the Execute button, not by clicking it.
 
 Prerequisites:
   - Flask dashboard running at ICDEV_DASHBOARD_URL
-    (default http://localhost:5100 for AlphaDesk)
+    (default http://localhost:5100 for FathomDesk)
   - An authenticated session (cookie) or login flow handled upstream.
   - ICDEV_NO_LLM=true is fine — the rule-fallback path produces a
     valid proposal on its own.

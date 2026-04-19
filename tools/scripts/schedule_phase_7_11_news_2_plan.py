@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""Idempotent enqueue for AlphaDesk Phase 7.11 — News 2.0.
+"""Idempotent enqueue for FathomDesk Phase 7.11 — News 2.0.
 
 Brief: docs/briefs/phase-7.11-news-2.md
-Project: args/projects.yaml → alphadesk-7-11, prefix=ad711-
+Project: args/projects.yaml → fathomdesk-7-11, prefix=ad711-
 
 Blocked on 7.9 (uses chart layer for news-on-chart overlays). Runs in
 PARALLEL with 7.10 — they share 7.9 as predecessor but are independent
@@ -106,7 +106,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
      "test", "high", GATE),
 
     # ═══════════ GENESIS — autonomous actions ═══════════
-    ("genesis-01", "genesis-01: tools/genesis/reflexes/alphadesk_news_patterns.py",
+    ("genesis-01", "genesis-01: tools/genesis/reflexes/fathomdesk_news_patterns.py",
      "build", "high",
      "Create Genesis reflex module. Contract: def run(config, trust) -> "
      "{success, metric_value, details}. Hourly cadence. Calls pattern_analyzer."
@@ -140,7 +140,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     ("wrap-01", "wrap-01: manifest + coherence + companion",
      "chore", "high",
      "Add news/pattern_analyzer.py + pattern_db.py + genesis/reflexes/"
-     "alphadesk_news_patterns.py to manifest. coherence --all --fix --gate "
+     "fathomdesk_news_patterns.py to manifest. coherence --all --fix --gate "
      "→ 17/17. companion.py --sync --write."),
 
     ("wrap-02", "wrap-02: feature doc + Selenium E2E",
@@ -152,7 +152,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
 
     ("wrap-03", "wrap-03: backlog + memory",
      "chore", "medium",
-     "Append 7.11 entry to docs/alphadesk-backlog.md. Update memory with "
+     "Append 7.11 entry to docs/fathomdesk-backlog.md. Update memory with "
      "note on Genesis autospawn safety flag + the pattern-analyzer categories."),
 ]
 
@@ -187,7 +187,7 @@ def enqueue() -> dict:
     finally:
         conn.close()
     return {
-        "project": "alphadesk-7-11",
+        "project": "fathomdesk-7-11",
         "prefix": PREFIX,
         "predecessor": EXTERNAL_PREDECESSOR,
         "inserted": inserted,

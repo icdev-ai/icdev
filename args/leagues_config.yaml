@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AlphaDesk leagues config — Phase 6.4.
+# FathomDesk leagues config — Phase 6.4.
 #
 # Tenant-scoped multi-team competitions + leaderboards. Hot-reloaded via
 # file-mtime cache (tools/trading/leagues/engine.py).

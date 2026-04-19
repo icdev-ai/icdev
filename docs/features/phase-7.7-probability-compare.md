@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.7 — Probability & Compare
+# FathomDesk Phase 7.7 — Probability & Compare
 
-**Shipped:** 2026-04-19. **Project:** `args/projects.yaml → alphadesk-7-7`.
+**Shipped:** 2026-04-19. **Project:** `args/projects.yaml → fathomdesk-7-7`.
 **Task prefix:** `ad77-` (15 tasks / 3 epics, all done).
 
 ## Why

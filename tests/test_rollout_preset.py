@@ -29,32 +29,32 @@ def test_load_refuses_without_env_match(monkeypatch):
 def test_load_succeeds_with_env_match(monkeypatch):
     monkeypatch.setenv("ICDEV_TRADING_TIER", "micro_live")
     cfg = preset_loader.load("micro_live")
-    assert cfg["alphadesk"]["rollout_phase"] == "micro_live"
-    assert cfg["alphadesk"]["risk"]["max_portfolio_usd"] == 5000.0
+    assert cfg["fathomdesk"]["rollout_phase"] == "micro_live"
+    assert cfg["fathomdesk"]["risk"]["max_portfolio_usd"] == 5000.0
 
 
 def test_load_allow_unsafe_bypasses_gate(monkeypatch):
     monkeypatch.delenv("ICDEV_TRADING_TIER", raising=False)
     cfg = preset_loader.load("scale_100k", allow_unsafe=True)
-    assert cfg["alphadesk"]["rollout_phase"] == "scale_100k"
+    assert cfg["fathomdesk"]["rollout_phase"] == "scale_100k"
 
 
 def test_short_blocked_when_preset_disables():
-    preset = {"alphadesk": {"shorting": {"enabled": False}}}
+    preset = {"fathomdesk": {"shorting": {"enabled": False}}}
     out = preset_loader.short_allowed(preset)
     assert out["allowed"] is False
     assert out["reason"] == "preset_disables_shorting"
 
 
 def test_short_blocked_when_locate_missing():
-    preset = {"alphadesk": {"shorting": {"enabled": True, "require_locate": True}}}
+    preset = {"fathomdesk": {"shorting": {"enabled": True, "require_locate": True}}}
     out = preset_loader.short_allowed(preset, locate_ok=None)
     assert out["allowed"] is False
     assert "locate" in out["reason"]
 
 
 def test_short_blocked_when_kill_switch_tripped():
-    preset = {"alphadesk": {"shorting": {"enabled": True, "require_locate": False}}}
+    preset = {"fathomdesk": {"shorting": {"enabled": True, "require_locate": False}}}
     with mock.patch("tools.trading.risk.kill_switch.is_killed", return_value={"killed": True, "sources": [{"source": "test"}], "reason": "test"}):
         out = preset_loader.short_allowed(preset)
     assert out["allowed"] is False
@@ -62,7 +62,7 @@ def test_short_blocked_when_kill_switch_tripped():
 
 
 def test_short_allowed_when_all_clear():
-    preset = {"alphadesk": {"shorting": {"enabled": True, "require_locate": True}}}
+    preset = {"fathomdesk": {"shorting": {"enabled": True, "require_locate": True}}}
     with mock.patch("tools.trading.risk.kill_switch.is_killed", return_value={"killed": False, "sources": [], "reason": None}):
         out = preset_loader.short_allowed(preset, locate_ok=True)
     assert out["allowed"] is True

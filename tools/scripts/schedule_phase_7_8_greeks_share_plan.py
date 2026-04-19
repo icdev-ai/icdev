@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-"""Idempotent enqueue for AlphaDesk Phase 7.8 — Greeks + Share.
+"""Idempotent enqueue for FathomDesk Phase 7.8 — Greeks + Share.
 
 Brief: docs/briefs/phase-7.8-greeks-share.md
-Project: args/projects.yaml → alphadesk-7-8, prefix=ad78-
+Project: args/projects.yaml → fathomdesk-7-8, prefix=ad78-
 """
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
     ("wrap-01", "wrap-01: manifest + coherence + companion",
      "chore", "high",
      "Add pricing.py + portfolio_greeks.py + share.py to tools/manifest/"
-     "alphadesk-trading-engine.md. Run coherence --all --fix --gate (target 17/17). "
+     "fathomdesk-trading-engine.md. Run coherence --all --fix --gate (target 17/17). "
      "Run companion.py --sync --write --json (10 platforms)."),
 
     ("wrap-02", "wrap-02: feature doc",
@@ -159,8 +159,8 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
 
     ("wrap-04", "wrap-04: backlog + memory",
      "chore", "medium",
-     "Append Phase 7.8 entry to docs/alphadesk-backlog.md. Update "
-     "memory/project_alphadesk_phase7plus.md with the 7.8 bullet."),
+     "Append Phase 7.8 entry to docs/fathomdesk-backlog.md. Update "
+     "memory/project_fathomdesk_phase7plus.md with the 7.8 bullet."),
 ]
 
 
@@ -194,7 +194,7 @@ def enqueue() -> dict:
     finally:
         conn.close()
     return {
-        "project": "alphadesk-7-8",
+        "project": "fathomdesk-7-8",
         "prefix": PREFIX,
         "inserted": inserted,
         "skipped_already_present": skipped,

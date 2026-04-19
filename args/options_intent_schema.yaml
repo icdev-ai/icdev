@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.6 — Options intent schema.
+# FathomDesk Phase 7.6 — Options intent schema.
 #
 # Structured representation of a trader's natural-language thesis. The
 # intent parser (tools/trading/options/intent_parser.py) produces a dict

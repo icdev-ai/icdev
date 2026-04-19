@@ -231,7 +231,7 @@ knowledge_graph:
     - entity resolution
     - relationship extraction
 
-# Trading / AlphaDesk domain — market intelligence, algo trading, fintech
+# Trading / FathomDesk domain — market intelligence, algo trading, fintech
 trading:
   name: "trading platforms"
   g2_category_url: "https://www.g2.com/categories/trading-platforms"

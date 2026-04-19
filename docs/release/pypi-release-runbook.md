@@ -104,7 +104,7 @@ Owner's child apps:
   `creative`
 
 Separate products:
-- `trading`, `market_intel` (AlphaDesk)
+- `trading`, `market_intel` (FathomDesk)
 
 Parent-platform services:
 - `saas`, `marketplace`, `gateway`, `playground`

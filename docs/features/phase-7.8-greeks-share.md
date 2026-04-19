@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# AlphaDesk Phase 7.8 — Greeks Deep Dive + Quick Wins
+# FathomDesk Phase 7.8 — Greeks Deep Dive + Quick Wins
 
-**Shipped:** 2026-04-19. **Project:** `args/projects.yaml → alphadesk-7-8`.
+**Shipped:** 2026-04-19. **Project:** `args/projects.yaml → fathomdesk-7-8`.
 Prefix `ad78-` (18 tasks, 4 epics — all done).
 
 ## Why
@@ -97,7 +97,7 @@ theta hasn't yet done its work.
 ```
 Share:
   User 1 clicks 🔗 Share → clipboard gets
-  https://alphadesk.example.com/options?aiproposal=eyJ2IjoxLCJpbn...
+  https://fathomdesk.example.com/options?aiproposal=eyJ2IjoxLCJpbn...
 
   User 2 opens the URL → AI Assist tab auto-opens → intent textarea
   pre-filled with "Bullish AAPL through earnings, limited risk" →

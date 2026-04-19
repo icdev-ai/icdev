@@ -1,12 +1,12 @@
 # CUI // SP-CTI
-# AlphaDesk lesson catalog — the curriculum that powers /lessons.
+# FathomDesk lesson catalog — the curriculum that powers /lessons.
 #
 # Each lesson is a markdown file in docs/lessons/{level}/{slug}.md.
 # Metadata here controls ordering, title display, read-time, and grouping.
 #
 # Levels map to CashFlow progression + future Phase 6 gamification:
 #   beginner      — "Hello, markets" foundational concepts
-#   intermediate  — "How AlphaDesk works" mechanics
+#   intermediate  — "How FathomDesk works" mechanics
 #   advanced      — reserved for Phase 6.5 (CashFlow-102 style advanced)
 #
 # Hot-reloaded via file-mtime — edit this + the markdown without restarting.
@@ -21,7 +21,7 @@ levels:
     unlocks_when: always   # always unlocked — the starting track
     description: >-
       Start here if you're new to investing. Zero jargon. Covers the
-      minimum mental model you need to use AlphaDesk without being
+      minimum mental model you need to use FathomDesk without being
       overwhelmed.
   intermediate:
     label: Intermediate
@@ -30,7 +30,7 @@ levels:
     unlocks_when: prior_level_complete
     prereq_level: beginner
     description: >-
-      How AlphaDesk specifically works — its signals, rules, readings,
+      How FathomDesk specifically works — its signals, rules, readings,
       and regime framing. You'll know what the numbers mean and when
       to trust them.
   advanced:
@@ -86,7 +86,7 @@ lessons:
   - slug: reading-a-signal
     level: beginner
     order: 2
-    title: "How do I read an AlphaDesk signal?"
+    title: "How do I read an FathomDesk signal?"
     summary: "Composite score, direction (BUY/SELL/HOLD), confidence. What to trust + what to ignore."
     read_minutes: 5
     prerequisites:
@@ -102,13 +102,13 @@ lessons:
             - "The company's quarterly earnings"
             - "A random rating"
           correct: 1
-          explanation: "AlphaDesk blends signals from fundamental/sentiment/technical/news analysts into one 0–100 score."
+          explanation: "FathomDesk blends signals from fundamental/sentiment/technical/news analysts into one 0–100 score."
         - id: q2
           text: "A high 'confidence' value on a signal means…"
           options:
             - "The trade is guaranteed to be profitable"
             - "The analyst agents largely agreed on the direction"
-            - "AlphaDesk is willing to risk more money on it"
+            - "FathomDesk is willing to risk more money on it"
             - "The stock will definitely go up"
           correct: 1
           explanation: "Confidence reflects agent agreement — not profit guarantees. Markets can surprise any model."
@@ -135,7 +135,7 @@ lessons:
     level: beginner
     order: 5
     title: "Paper trading vs real money"
-    summary: "Why AlphaDesk is paper-only by default, and what it takes to graduate to live trading."
+    summary: "Why FathomDesk is paper-only by default, and what it takes to graduate to live trading."
     read_minutes: 3
     prerequisites:
       - macro-regimes
@@ -144,7 +144,7 @@ lessons:
   - slug: reading-engines
     level: intermediate
     order: 1
-    title: "What AlphaDesk's Reading engines actually do"
+    title: "What FathomDesk's Reading engines actually do"
     summary: "Deterministic rule engines → plain-English narrative. No AI magic. Why that matters."
     read_minutes: 6
 
@@ -152,7 +152,7 @@ lessons:
     level: intermediate
     order: 2
     title: "Personas — why the UI looks different for different people"
-    summary: "The 8 personas that ship with AlphaDesk + how to pick the right one for you."
+    summary: "The 8 personas that ship with FathomDesk + how to pick the right one for you."
     read_minutes: 5
 
   - slug: alerts-and-rules

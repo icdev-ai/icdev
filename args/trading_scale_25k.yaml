@@ -1,9 +1,9 @@
-# AlphaDesk — SCALE-25K preset (Phase 4 tier 2)
+# FathomDesk — SCALE-25K preset (Phase 4 tier 2)
 #
 # Crosses the PDT threshold ($25k+) — unlocks unlimited day trades.
 # Promotes from scale_10k after ≥2 weeks clean. SHORT remains gated until tier 3.
 
-alphadesk:
+fathomdesk:
   version: "4.0.0-scale-25k"
   mode: "live"
   rollout_phase: "scale_25k"

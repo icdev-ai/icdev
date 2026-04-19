@@ -1,4 +1,4 @@
-# AlphaDesk help tooltips — single source of truth for all dashboard (?) tooltips.
+# FathomDesk help tooltips — single source of truth for all dashboard (?) tooltips.
 #
 # Each entry: key -> { title, body (markdown-ish plain text), see (optional list) }
 # Add `data-help="<key>"` to any dashboard element to auto-decorate it with a (?)
@@ -31,7 +31,7 @@ regime_banner:
 market.universe:
   title: Universe
   body: |
-    Total number of tickers AlphaDesk tracks — NASDAQ-100, S&P 500 ex-NASDAQ,
+    Total number of tickers FathomDesk tracks — NASDAQ-100, S&P 500 ex-NASDAQ,
     international ADRs, sector & asset-class ETFs, index funds, forex, crypto.
     Defined in `tools/trading/market_intel/universe.py`. Re-seeded by the
     `kg_enricher` daemon reflex every 6 hours.
@@ -129,7 +129,7 @@ market.breakeven_5y5y:
 market.kg_nodes:
   title: KG Nodes
   body: |
-    Total entities in the Alphadesk knowledge graph — tickers, sectors, ETFs,
+    Total entities in the Fathomdesk knowledge graph — tickers, sectors, ETFs,
     macro indicators, commodities, cascade triggers. Re-seeded by the
     `kg_enricher` reflex every 6 hours via `kg_seeder.py`.
 
@@ -392,7 +392,7 @@ news.trace_impact:
   title: 🔗 Trace Impact
   body: |
     Walks the Knowledge Graph to cascade this news item into every affected
-    ticker across the AlphaDesk universe.
+    ticker across the FathomDesk universe.
 
     **Pipeline:**
     1. **Extract entities** — countries, commodities, tickers, event hints
@@ -559,7 +559,7 @@ risk.vix_sizing:
 graph.viz:
   title: Knowledge Graph Visualization
   body: |
-    D3 force-directed rendering of the AlphaDesk KG. Node colour = entity
+    D3 force-directed rendering of the FathomDesk KG. Node colour = entity
     type (ticker / sector / ETF / macro indicator / commodity). Node size =
     betweenness centrality. Edge thickness = relationship weight.
 
@@ -921,7 +921,7 @@ oracle.convergences_count:
 oracle.lenses:
   title: Lenses
   body: |
-    AlphaDesk Oracle has 4 specialized lenses, each analyzing a different
+    FathomDesk Oracle has 4 specialized lenses, each analyzing a different
     angle: Regime Trajectory (macro drift), News Intelligence (cluster
     signals), Portfolio Stress (scenario impact on holdings), Signal
     Convergence (multi-lens agreement).
@@ -1618,7 +1618,7 @@ lessons.progress:
   title: Your progress
   body: |
     Tracks completion across the 3 curriculum levels: **Beginner**
-    (foundational investing concepts), **Intermediate** (how AlphaDesk
+    (foundational investing concepts), **Intermediate** (how FathomDesk
     specifically works), **Advanced** (reserved for Phase 6.5). Each
     lesson you finish marks your progress bar.
 
@@ -1756,7 +1756,7 @@ rebalance.tax_loss:
 today.overview:
   title: ☕ Today
   body: |
-    Plain-English morning digest — what AlphaDesk thinks you should
+    Plain-English morning digest — what FathomDesk thinks you should
     consider today. Scans 10 rules across your portfolio, positions,
     watchlist, news flow, alerts, and macro regime; surfaces up to 5
     prioritized actions.
@@ -1801,7 +1801,7 @@ settings.tenant:
 
     **Branding & white-label** (Phase 3.3): set a logo URL + accent color
     + flip the white-label toggle. The sidebar header, page title, and
-    PDF brief now use your workspace name/logo instead of "AlphaDesk" —
+    PDF brief now use your workspace name/logo instead of "FathomDesk" —
     perfect for advisors sharing reports with clients.
 
 settings.account:
@@ -1820,7 +1820,7 @@ settings.profile:
   title: Profile
   body: |
     Pick a persona preset (Casual Investor / Active Trader / Quant /
-    Advisor / Student / etc.) and AlphaDesk reshapes itself: which
+    Advisor / Student / etc.) and FathomDesk reshapes itself: which
     sidebar pages appear, which cards on each page, the Reading tone
     (plain English vs PM-style vs technical), and a few other defaults.
 

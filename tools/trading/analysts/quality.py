@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""AlphaDesk Quality Analyst — 6-dimension fundamental quality scorer.
+"""FathomDesk Quality Analyst — 6-dimension fundamental quality scorer.
 
 Scores stocks on six quality dimensions using fundamental metrics from
 ``ad_fundamental_metrics``, produces a Piotroski F-Score (0-9), and
@@ -700,7 +700,7 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(
-        description="AlphaDesk Quality Analyst — 6-dimension quality scorer",
+        description="FathomDesk Quality Analyst — 6-dimension quality scorer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -762,7 +762,7 @@ def main() -> None:
         dims = result["dimensions"]
         piot = result["piotroski"]
         print(f"\n{'='*60}")
-        print(f"  AlphaDesk Quality Score — {ticker}")
+        print(f"  FathomDesk Quality Score — {ticker}")
         print(f"{'='*60}")
         print(f"  Overall: {result['score']:.1f}/100  [{result['quality_label']}]")
         print(f"  Composite (z-score formula): {result['composite_score']:.1f}/100")

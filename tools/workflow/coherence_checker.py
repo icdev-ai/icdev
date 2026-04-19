@@ -1075,7 +1075,7 @@ def check_api_wiring(
     These are likely hardcoded placeholders that should read from a
     database or connector.
 
-    Detects the pattern that caused the AlphaDesk lifecycle bug:
+    Detects the pattern that caused the FathomDesk lifecycle bug:
     API handlers returning static data instead of querying the DB.
     """
     # Find all dashboard/API Python files

@@ -1,4 +1,4 @@
-"""AlphaDesk Expert Advisory agents — 6-agent CIS recommendation engine.
+"""FathomDesk Expert Advisory agents — 6-agent CIS recommendation engine.
 
 Each agent reads the latest signal + analyst run + macro context and applies
 its own style bias. The Committee of Investment Specialists (CIS) then

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# Phase 5A — AlphaDesk Plan Tiers + Quota Enforcement
+# Phase 5A — FathomDesk Plan Tiers + Quota Enforcement
 
 Landed 2026-04-17. Tracks as Task #80.
 

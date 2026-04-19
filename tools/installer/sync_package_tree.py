@@ -20,7 +20,7 @@ What it syncs:
 
 Parent-only dirs (NOT shipped in child-app wheel):
     saas, govcon, rfx, marketplace, creative, gateway, playground,
-    trading, market_intel (AlphaDesk is a separate product).
+    trading, market_intel (FathomDesk is a separate product).
 
 Usage:
     python tools/installer/sync_package_tree.py           # sync + report
@@ -71,8 +71,8 @@ PARENT_ONLY_DIRS = {
     "autoresearch",      # autonomous research (GovCon-specific)
     "scout",             # Genesis Scout reflex (owner's intel gathering)
     "creative",          # Creative engine (owner's competitor discovery)
-    "trading",           # AlphaDesk (separate product)
-    "market_intel",      # AlphaDesk dependency
+    "trading",           # FathomDesk (separate product)
+    "market_intel",      # FathomDesk dependency
     # Parent-platform services (not for end users)
     "saas",              # SaaS multi-tenancy platform
     "marketplace",       # Federated FORGE asset marketplace

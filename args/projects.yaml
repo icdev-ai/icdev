@@ -51,8 +51,8 @@ projects:
         title: "DDC Lineage Adapter"
         priority: low
 
-  - key: alphadesk-7-6
-    name: "AlphaDesk 7.6 — AI-Assisted Options"
+  - key: fathomdesk-7-6
+    name: "FathomDesk 7.6 — AI-Assisted Options"
     description: >
       LLM-interpretation + deterministic-selection hybrid: intent parser,
       strategy scorer, strike/expiry picker, pre-flight gates, confirm-to-execute
@@ -80,8 +80,8 @@ projects:
         title: "Registration + feature doc + E2E"
         priority: high
 
-  - key: alphadesk-7-7
-    name: "AlphaDesk 7.7 — Probability & Compare"
+  - key: fathomdesk-7-7
+    name: "FathomDesk 7.7 — Probability & Compare"
     description: >
       OptionStrat-inspired upgrades on top of 7.6's proposal flow:
       (1) Probability-of-profit + price-cone overlay on the payoff chart
@@ -104,8 +104,8 @@ projects:
         title: "Registration + docs + E2E"
         priority: high
 
-  - key: alphadesk-7-9
-    name: "AlphaDesk 7.9 — TA Foundation"
+  - key: fathomdesk-7-9
+    name: "FathomDesk 7.9 — TA Foundation"
     description: >
       Candlestick 1D chart + Volume Profile (HVN/LVN/POC/VA) + algorithmic
       S/R clusters + reversal pattern detectors (double top/bottom, triple
@@ -131,8 +131,8 @@ projects:
         title: "Registration + docs + E2E"
         priority: high
 
-  - key: alphadesk-7-10
-    name: "AlphaDesk 7.10 — Trap Detection"
+  - key: fathomdesk-7-10
+    name: "FathomDesk 7.10 — Trap Detection"
     description: >
       Blocked on 7.9. Macro liquidity-trap regime detector feeding Oracle
       + preflight; technical bull/bear trap detector built on 7.9's S/R +
@@ -157,8 +157,8 @@ projects:
         title: "Registration + docs + E2E"
         priority: high
 
-  - key: alphadesk-7-11
-    name: "AlphaDesk 7.11 — News 2.0"
+  - key: fathomdesk-7-11
+    name: "FathomDesk 7.11 — News 2.0"
     description: >
       Blocked on 7.9 (uses the chart layer for news-on-price overlays).
       Categorized /news tabs (not one firehose list); per-category pattern
@@ -184,8 +184,8 @@ projects:
         title: "Registration + docs + E2E"
         priority: high
 
-  - key: alphadesk-7-8
-    name: "AlphaDesk 7.8 — Greeks Deep Dive + Quick Wins"
+  - key: fathomdesk-7-8
+    name: "FathomDesk 7.8 — Greeks Deep Dive + Quick Wins"
     description: >
       Three OptionStrat-inspired upgrades: (1) Black-Scholes pricer +
       time-T payoff slider (not just expiry intrinsic); (2) portfolio

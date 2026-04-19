@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 # NIST 800-53 AU (Audit + Accountability) control crosswalk — Phase 7+.
 #
-# Maps each of AlphaDesk's append-only audit tables to the NIST 800-53
+# Maps each of FathomDesk's append-only audit tables to the NIST 800-53
 # rev5 Audit & Accountability controls it contributes toward.
 #
 # Used by `tools/trading/compliance/audit_aggregator.py` for:
@@ -197,7 +197,7 @@ tables:
     label: "Agent hook events"
     category: governance
     description: >-
-      AlphaDesk daemon-level hook invocations (pre-tool, post-tool,
+      FathomDesk daemon-level hook invocations (pre-tool, post-tool,
       notifications). HMAC-signed per Phase 39 observability.
     columns:
       timestamp: created_at
