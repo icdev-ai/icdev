@@ -308,6 +308,31 @@ def export_csv():
 
 
 # ---------------------------------------------------------------------------
+# GET /api/news/<news_id>
+# ---------------------------------------------------------------------------
+
+@news_api.route("/api/news/<news_id>", methods=["GET"])
+def get_news_item(news_id: str):
+    """Return a single news item by ID."""
+    try:
+        conn = _conn()
+        from tools.db.storage import sql_placeholder
+        ph = sql_placeholder(conn)
+        try:
+            row = conn.execute(
+                f"SELECT * FROM ad_news_items WHERE id = {ph}",  # nosec B608
+                (news_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # POST /api/news/<news_id>/analyze
 # ---------------------------------------------------------------------------
 
