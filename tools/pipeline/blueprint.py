@@ -1579,4 +1579,34 @@ def create_pipeline_blueprint():
             modified_count=modified,
         )
 
+    # ── GraphRAG /ask — shared canvas_ask pattern (DT adaptation #1) ──────
+    @bp.route("/ask")
+    @pc_login_required
+    def pdc_ask_page():
+        return render_template(
+            "canvas_ask.html",
+            canvas_label="Pipeline Design Canvas",
+            graph_id="pdc-designs",
+            profile="provenance",
+            examples=["build", "deploy", "scm-gitlab", "test", "monorepo"],
+            api_url="/devops/api/ask",
+            home_url="/devops/",
+        )
+
+    @bp.route("/api/ask", methods=["POST"])
+    @pc_login_required
+    def pdc_api_ask():
+        from tools.knowledge_graph.canvas_ask import handle_ask_request
+        data = request.get_json(silent=True) or {}
+        payload = handle_ask_request(
+            query=data.get("query", ""),
+            graph_id="pdc-designs",
+            profile="provenance",
+            top_k=int(data.get("top_k", 10)),
+            narrate=bool(data.get("narrate", False)),
+            canvas_label="CI/CD pipeline",
+        )
+        status = payload.pop("_status", 200)
+        return jsonify(payload), status
+
     return bp

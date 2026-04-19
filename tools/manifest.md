@@ -243,3 +243,12 @@
 |------|------|-------------|-------|--------|
 | Schedule Phase 7 6 Ai Options Plan | tools\scripts\schedule_phase_7_6_ai_options_plan.py | Auto-registered: scripts/schedule_phase_7_6_ai_options_plan.py | --json | JSON |
 | Intent Parser | tools\trading\options\intent_parser.py | Auto-registered: options/intent_parser.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Canvas Ask | tools\knowledge_graph\canvas_ask.py | Auto-registered: knowledge_graph/canvas_ask.py | --json | JSON |
+| Proposal Builder | tools\trading\options\proposal_builder.py | Auto-registered: options/proposal_builder.py | --json | JSON |
+| Strategy Selector | tools\trading\options\strategy_selector.py | Auto-registered: options/strategy_selector.py | --json | JSON |
+| Strike Picker | tools\trading\options\strike_picker.py | Auto-registered: options/strike_picker.py | --json | JSON |

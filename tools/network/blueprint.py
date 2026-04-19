@@ -9636,20 +9636,13 @@ Output ONLY the JSON object. No other text."""
         return render_template("network/ingestion.html",
                                classification_banner=NC_CONFIG.get("app", {}).get("classification", ""))
 
-    # ── GraphRAG /ask endpoint (NDC pilot of the per-canvas /ask pattern) ──
-    # Answers natural-language questions over the NDC knowledge graph using
-    # the existing network_infrastructure scoring profile in
-    # tools/knowledge_graph/graph_rag.retrieve(). Optional LLM narration
-    # routes through LLMRouter function=narrative_generation so this stays
-    # air-gap-safe (falls back to raw evidence when the router is offline).
-
+    # ── GraphRAG /ask endpoint (per-canvas Q&A pattern, DT adaptation #1) ──
     _NDC_KG_PROJECT_ID = "ndc-network-intelligence"
     _NDC_KG_PROFILE = "network_infrastructure"
 
     @bp.route("/ask")
     @nc_login_required
     def nc_ask_page():
-        """NDC Q&A page — chat against the network_infrastructure KG."""
         return render_template(
             "network/ask.html",
             classification_banner=NC_CONFIG.get("app", {}).get("classification", ""),
@@ -9658,70 +9651,18 @@ Output ONLY the JSON object. No other text."""
     @bp.route("/api/ask", methods=["POST"])
     @nc_login_required
     def nc_api_ask():
-        """POST {query, narrate?, top_k?} → GraphRAG over the NDC KG."""
+        from tools.knowledge_graph.canvas_ask import handle_ask_request
         data = request.get_json(silent=True) or {}
-        query = (data.get("query") or "").strip()
-        narrate = bool(data.get("narrate", False))
-        top_k = int(data.get("top_k", 10))
-        if not query:
-            return jsonify({"error": "query is required"}), 400
-
-        # Retrieve — graceful degradation if KG is unavailable
-        try:
-            from tools.knowledge_graph.graph_rag import retrieve
-            kg = retrieve(
-                query=query,
-                graph_id=_NDC_KG_PROJECT_ID,
-                profile=_NDC_KG_PROFILE,
-                top_k=top_k,
-                compress=False,
-            )
-        except Exception as exc:
-            logger.warning("NDC ask: graph_rag.retrieve failed: %s", exc)
-            kg = {"nodes": [], "edges": [], "error": str(exc)[:200]}
-
-        nodes = kg.get("nodes", []) if isinstance(kg, dict) else []
-        edges = kg.get("edges", []) if isinstance(kg, dict) else []
-
-        narration = None
-        narrated = False
-        if narrate and nodes:
-            try:
-                from tools.llm.router import LLMRouter
-                prompt = (
-                    "Answer the user's network-topology question in 3-6 sentences "
-                    "using only the KG evidence below. Cite node labels inline.\n\n"
-                    f"QUESTION: {query}\n\n"
-                    f"NODES ({len(nodes)}): {json.dumps(nodes[:top_k], ensure_ascii=False)[:3000]}\n\n"
-                    f"EDGES ({len(edges)}): {json.dumps(edges[:top_k], ensure_ascii=False)[:1500]}\n"
-                )
-                r = LLMRouter().invoke(
-                    function="narrative_generation",
-                    prompt=prompt,
-                    max_tokens=400,
-                )
-                if isinstance(r, dict):
-                    narration = r.get("content") or r.get("text") or str(r)
-                else:
-                    narration = str(r) if r else None
-                narrated = bool(narration)
-            except Exception as exc:
-                logger.info("NDC ask: narration skipped (router unavailable): %s", exc)
-
-        payload = {
-            "query": query,
-            "profile": _NDC_KG_PROFILE,
-            "nodes_matched": kg.get("nodes_matched", len(nodes)) if isinstance(kg, dict) else len(nodes),
-            "nodes_returned": len(nodes),
-            "edges_returned": len(edges),
-            "nodes": nodes,
-            "edges": edges,
-            "narration": narration,
-            "narrated": narrated,
-        }
-        if isinstance(kg, dict) and kg.get("error"):
-            payload["kg_error"] = kg["error"]
-        return jsonify(json.loads(json.dumps(payload, default=str)))
+        payload = handle_ask_request(
+            query=data.get("query", ""),
+            graph_id=_NDC_KG_PROJECT_ID,
+            profile=_NDC_KG_PROFILE,
+            top_k=int(data.get("top_k", 10)),
+            narrate=bool(data.get("narrate", False)),
+            canvas_label="network topology",
+        )
+        status = payload.pop("_status", 200)
+        return jsonify(payload), status
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

@@ -1316,3 +1316,33 @@ def api_sop_transition(sop_id):
     if "error" in result:
         return jsonify(result), 400
     return jsonify(result)
+
+
+# ── GraphRAG /ask — shared canvas_ask pattern (IDC) ────────────────────────
+@infra_bp.route("/ask")
+def idc_ask_page():
+    return render_template(
+        "canvas_ask.html",
+        canvas_label="Infrastructure Design Canvas",
+        graph_id="idc-designs",
+        profile="compliance",
+        examples=["terraform", "compute", "storage", "container", "region"],
+        api_url="/infra/api/ask",
+        home_url="/infra/",
+    )
+
+
+@infra_bp.route("/api/ask", methods=["POST"])
+def idc_api_ask():
+    from tools.knowledge_graph.canvas_ask import handle_ask_request
+    data = request.get_json(silent=True) or {}
+    payload = handle_ask_request(
+        query=data.get("query", ""),
+        graph_id="idc-designs",
+        profile="compliance",
+        top_k=int(data.get("top_k", 10)),
+        narrate=bool(data.get("narrate", False)),
+        canvas_label="infrastructure as code",
+    )
+    status = payload.pop("_status", 200)
+    return jsonify(payload), status
