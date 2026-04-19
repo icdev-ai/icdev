@@ -571,6 +571,22 @@ Single-leg option contracts inside the existing sandbox framework. Paper-only �
 - ✅ **Phase 7.6 — AI-Assisted Options — DONE 2026-04-19** — see below.
 - ✅ **Phase 7.7 — Probability & Compare — DONE 2026-04-19** — see below.
 - ✅ **Phase 7.8 — Greeks Deep Dive + Quick Wins — DONE 2026-04-19** — see below.
+- ✅ **Phase 7.9 — TA Foundation (Swing Pivots, Volume Profile, S/R, Patterns) — DONE 2026-04-19** — see below.
+
+### ✅ Phase 7.9 — TA Foundation: Swing Pivots, Volume Profile, S/R, Patterns (DONE 2026-04-19)
+Pure-Python, deterministic TA primitives layer. Project `args/projects.yaml → fathomdesk-ta`, prefix `ad79-`. No numpy. No external charting libs.
+- **Swing-pivot detector** — `tools/trading/ta/swings.py::find_swings(bars, threshold_pct=1.5)`. Two-phase percentage-retracement algorithm (not N-bar lookback). Guarantees strict alternation `high → low → high …`. Config: `args/ta_config.yaml::swing_threshold_pct`.
+- **Volume profile** — `tools/trading/ta/volume_profile.py::volume_profile(bars, bucket_count=40)`. 40 equal-width price buckets; volume distributed uniformly across spanned buckets. Returns `{buckets, poc, value_area{low,high}, hvns, lvns}`. VA = contiguous 70% of total volume around POC. HVN/LVN = top/bottom 20% by bucket volume.
+- **S/R strength scoring** — `tools/trading/ta/support_resistance.py::compute_sr(bars, swings, cluster_pct=0.5)`. Merges swings within 0.5% by price; strength = `touches / max_touches` → [0, 1]. Sorted by strength descending. Visual encoding: opacity `0.15 + s×0.55`, stroke `0.8 + s×1.8 px`; resistance = dashed red, support = solid green.
+- **Pattern detectors** — orchestrated by `tools/trading/ta/patterns/__init__.py::detect_patterns(bars)`. Deduplicates by type + bar-range overlap (keeps widest span).
+  - `double.py` — double top/bottom: 3-swing geometry, 3% tolerance on matching swings.
+  - `triple.py` — triple top/bottom: 3 same-kind swings within 3% of group mean.
+  - `wedge.py` — rising/falling wedge: independent OLS trendlines through swing-highs and swing-lows; classified by slope signs and convergence direction.
+- **Chart overlay** — `tools/dashboard/templates/fathomdesk.html::drawChart`. Pure-SVG, 9-layer render order (grid → VA rect → S/R lines → HVN lines → POC line → wedge trendlines → candlesticks → pattern badges → VP histogram). VP histogram shares Y axis with candle panel (85%/15% width split). Interactive: S/R hover tooltip, VP hover tooltip, pattern badge click → detail modal (geometry fields, confidence bar).
+- **Route:** `GET /api/trading/chart/{ticker}?tf={tf}&limit=120` — returns `{bars, volume_profile, patterns, sr_levels}`.
+- **Config:** `args/ta_config.yaml` — `swing_threshold_pct: 1.5`, `vp_bucket_count: 40`, `sr_proximity_pct: 0.5`, `pattern_tolerance_pct: 3.0`.
+- **Tests:** `tests/test_ta_primitives.py` (zigzag alternation, V/W-shape counts, VA 65–75%, POC max-bucket, strength in [0,1]) + `tests/test_ta_patterns.py` (double/triple on synthetic swings, wedge OLS slopes, deduplication). Selenium E2E `tests/e2e_selenium/test_ad79_ta_foundation.py`.
+- **Deferred:** Fibonacci retracements (needs user-selected pivots), VWAP (needs intraday ticks), Elliott Wave, pattern confidence ML scoring.
 
 ### ✅ Phase 7.8 — Greeks Deep Dive + Quick Wins (DONE 2026-04-19)
 Three bundled OptionStrat-parity upgrades on top of 7.7. 18 tasks / 4 epics / prefix `ad78-`. No new LLM calls.
