@@ -369,6 +369,13 @@ function _getCanvasBounds() {
 }
 
 function createLink(srcId, tgtId, label, linkId) {
+  // Reject orphan endpoints — JointJS otherwise renders an invisible link
+  // at origin, which looks like "links sometimes don't appear" in the UI.
+  if (!srcId || !tgtId || !graph.getCell(srcId) || !graph.getCell(tgtId)) {
+    console.warn('createLink: skipping orphan edge', { srcId: srcId, tgtId: tgtId, linkId: linkId });
+    return null;
+  }
+
   const link = new joint.shapes.standard.Link({
     id: linkId || joint.util.uuid(),
     source: { id: srcId },
@@ -535,11 +542,19 @@ function loadGraph(graphJson) {
     idMap[n.id] = newId;
     createNode(n.type, n.x, n.y, n.label, newId);
   });
+
+  let dropped = 0;
   (data.edges || []).forEach(e => {
-    const src = idMap[e.source] || e.source;
-    const tgt = idMap[e.target] || e.target;
-    createLink(src, tgt, e.label);
+    if (!e.source || !e.target || !idMap[e.source] || !idMap[e.target]) {
+      dropped++;
+      console.warn('loadGraph: dropping edge with missing endpoint', e);
+      return;
+    }
+    createLink(idMap[e.source], idMap[e.target], e.label);
   });
+  if (dropped > 0) {
+    console.warn('loadGraph: dropped ' + dropped + ' edge(s) referencing missing nodes');
+  }
 }
 
 // ── Zoom ────────────────────────────────────────────────────────────────────
