@@ -1018,6 +1018,18 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
             continue
 
         # Parse "Subjects:" block from description
+        # Skip batch meta-subjects — oracle-generated placeholders ("All
+        # subjects share the same rule. A single fix may resolve all.")
+        # and batch summary lines ("Source prediction IDs: ...") are not
+        # concrete work items and have no actionable subject. Promoting
+        # them spawned orphan needs_decomposition rows (2026-04-18 audit
+        # found 2 such stuck tasks).
+        _META_SUBJECT_MARKERS = (
+            "all subjects share the same rule",
+            "a single fix may resolve all",
+            "source prediction ids:",
+        )
+
         subjects: list[str] = []
         if "Subjects:" in description:
             after = description.split("Subjects:", 1)[1]
@@ -1032,6 +1044,9 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
                 # Stop at next section header
                 if line.endswith(":") and not line.startswith("/"):
                     break
+                # Skip meta/placeholder lines — not real subjects
+                if any(marker in line.lower() for marker in _META_SUBJECT_MARKERS):
+                    continue
                 # Only accept identifier-like subjects
                 if line and len(line) < 200:
                     subjects.append(line)
@@ -1364,6 +1379,85 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
     return False, f"parent {parent_id} status={parent_status!r}"
 
 
+def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") -> Optional[str]:
+    """If the just-completed child had a decomposed parent whose remaining
+    children are now all done, close the parent as well.
+
+    The parent-child linkage is via ``source_prediction_id`` — children
+    inherit it from the batch parent at decomposition time. A parent row
+    has the same ``source_prediction_id`` plus status='decomposed'.
+
+    Returns the closed parent's task_id, or None if nothing was closed.
+    Safe to call on any done transition — no-op when the task isn't a
+    batch child or the parent still has open siblings.
+    """
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT source_prediction_id FROM kanban_tasks WHERE id = ?",
+            (child_task_id,),
+        ).fetchone()
+        if not row:
+            return None
+        sp = dict(row).get("source_prediction_id")
+        if not sp:
+            return None
+
+        parent_row = conn.execute(
+            "SELECT id FROM kanban_tasks "
+            "WHERE source_prediction_id = ? AND status = 'decomposed' "
+            "  AND id <> ? LIMIT 1",
+            (sp, child_task_id),
+        ).fetchone()
+        if not parent_row:
+            return None
+        parent_id = dict(parent_row)["id"]
+
+        # Count siblings (share same sp, are NOT the parent) that are still open.
+        open_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM kanban_tasks "
+            "WHERE source_prediction_id = ? AND id <> ? "
+            "  AND status IN ('backlog', 'scheduled', 'in_progress', "
+            "                 'suggested', 'needs_decomposition', 'dispatched')",
+            (sp, parent_id),
+        ).fetchone()
+        open_n = dict(open_count).get("n", 0)
+        if open_n > 0:
+            return None  # siblings still working
+
+        now = _utcnow_iso()
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'done', completed_at = ?, "
+            "updated_at = ? WHERE id = ? AND status = 'decomposed'",
+            (now, now, parent_id),
+        )
+        # Audit-trail bypass row so guard-22 stays consistent: the parent
+        # closure is bookkeeping, not fresh work that needs verification.
+        conn.execute(
+            "INSERT INTO kanban_verifications "
+            "(task_id, verified_at, result, reason, dispatch_source) "
+            "VALUES (?, ?, 'bypassed', ?, ?)",
+            (parent_id, now,
+             f"Auto-closed by _auto_close_decomposed_parent: last child {child_task_id} completed, all siblings done",
+             "scheduler"),
+        )
+        conn.commit()
+        logger.info(
+            "auto-closed decomposed parent %s after last child %s completed",
+            parent_id, child_task_id,
+        )
+        _record_status_transition(
+            parent_id, "decomposed", "done", actor=actor,
+            reason=f"auto-close: last child {child_task_id} done",
+        )
+        return parent_id
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                reason: str | None = None):
     """Update task status in the database.
@@ -1478,6 +1572,18 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                 dep_id, None, "backlog", actor="cascade",
                 reason=f"parent {task_id} demoted {prior_status}\u2192{new_status}",
             )
+
+    # Auto-close decomposed parents when their last child completes.
+    # Batch-decomposer children inherit source_prediction_id from the parent
+    # (see _decompose_batch_tasks). When all siblings are done, the parent
+    # has no work left — previously it stuck in 'decomposed' forever (2026-04-18
+    # audit found 7 such stuck parents). Guard: only auto-close when the
+    # just-moved task is transitioning TO done, not on demotions.
+    if new_status == "done" and prior_status != "done":
+        try:
+            _auto_close_decomposed_parent(task_id, actor=actor)
+        except Exception as exc:
+            logger.warning("auto-close check failed for %s: %s", task_id, exc)
 
     # Broadcast SSE event for real-time dashboard updates
     try:
