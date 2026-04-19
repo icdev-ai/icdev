@@ -209,7 +209,6 @@ class TestVolumeProfValueArea:
 class TestSRClusterProximity:
     def test_cluster_price_within_proximity(self):
         """Each S/R level price must be within sr_proximity_pct% of the cluster mean."""
-        proximity_pct = 0.5  # matches args/ta_config.yaml default
 
         # Build bars with 2 groups of touches: ~100 zone and ~120 zone
         bars = (
