@@ -94,6 +94,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_news_items",
         "ad_news_scenario_links",
         "ad_news_clusters",
+        "ad_news_patterns",
         # FathomDesk Trading Oracle (append-only predictions + convergence)
         "ad_trading_predictions",
         "ad_trading_convergence_events",
