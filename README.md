@@ -890,7 +890,7 @@ Run `pip-licenses -f markdown` to audit all dependency licenses.
 
 ## Contributing
 
-We welcome contributions. ICDEV™ uses a Contributor License Agreement (CLA) to support dual licensing. The CLA does **not** transfer your copyright — you retain full ownership of your work.
+We welcome contributions. Contributions are accepted under the Apache License 2.0 on the same terms as the rest of the project.
 
 ## Attribution
 
@@ -898,17 +898,10 @@ See [NOTICE](NOTICE) for third-party acknowledgments, standards references, and 
 
 ## License
 
-ICDEV™ is dual-licensed:
-
-- **Open Source** — [Apache License 2.0](LICENSE)
-  Free for use, modification, and distribution with patent protection.
-
-- **Commercial** — [Commercial License](COMMERCIAL.md)
-  Enterprise support, custom SLAs, and dedicated compliance consulting.
+ICDEV™ is licensed under the **[Apache License 2.0](LICENSE)** — free for use, modification, and distribution with patent protection.
 
 ## Contact
 
-- **Commercial licensing:** agi@icdev.ai
 - **Issues:** [github.com/icdev-ai/icdev/issues](https://github.com/icdev-ai/icdev/issues)
 
 ---
