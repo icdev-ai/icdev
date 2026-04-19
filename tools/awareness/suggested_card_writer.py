@@ -555,6 +555,37 @@ def _mark_predictions_promoted_batch(
 # ---------------------------------------------------------------------------
 
 
+def _current_gap_subjects_by_rule(rule_ids: List[str]) -> Dict[str, set]:
+    """Re-run gap rules right now and return {rule_id: set(subjects)}.
+
+    Used to drop stale predictions whose underlying gap has already been
+    fixed (2026-04-18: /digital-twin was flagged at 0.90 confidence after
+    it had been added to start.md). Re-verifying here instead of trusting
+    the cached prediction avoids spawning work for already-resolved gaps.
+    """
+    current: Dict[str, set] = {}
+    try:
+        from tools.awareness import gap_detector as _gd
+        rule_funcs = getattr(_gd, "_RULE_FUNCS", {})
+        for rid in rule_ids:
+            fn = rule_funcs.get(rid)
+            if not fn:
+                continue
+            try:
+                findings = fn() or []
+            except Exception:
+                continue
+            subjects = set()
+            for f in findings:
+                subj = f.get("subject") if isinstance(f, dict) else None
+                if subj:
+                    subjects.add(subj)
+            current[rid] = subjects
+    except Exception:
+        pass
+    return current
+
+
 def write_suggested_cards(
     min_confidence: float = DEFAULT_CONFIDENCE_THRESHOLD,
     dry_run: bool = False,
@@ -564,11 +595,12 @@ def write_suggested_cards(
 
     Pipeline:
       1. Load pending predictions
-      2. Subject-level dedup (skip if same rule+subject already on board)
-      3. Group by rule for consolidation check
-      4. Consolidation: rules with > threshold findings → one batch card
-      5. Individual cards for rules below threshold
-      6. Auto-dismiss stale cards
+      2. Re-verify each gap still exists (drop already-fixed gaps)
+      3. Subject-level dedup (skip if same rule+subject already on board)
+      4. Group by rule for consolidation check
+      5. Consolidation: rules with > threshold findings → one batch card
+      6. Individual cards for rules below threshold
+      7. Auto-dismiss stale cards
     """
     if get_connection is None:
         return {"error": "get_connection unavailable"}
@@ -593,6 +625,39 @@ def write_suggested_cards(
     except Exception as exc:
         conn.close()
         return {"error": f"load predictions failed: {exc}"}
+
+    # Phase 1.5: Re-verify gap-style predictions against a fresh rule run.
+    # Drops predictions whose gap no longer exists (e.g., the missing route
+    # has since been listed, the missing tool has since been added to the
+    # manifest). Only applies to ``<kind>::<rule_id>`` predictions where
+    # rule_id is a known gap rule.
+    gap_rule_ids: set = set()
+    for p in pending:
+        ptype = (p.get("prediction_type") or "")
+        if "::" in ptype:
+            gap_rule_ids.add(ptype.split("::", 1)[1])
+    current_subjects = _current_gap_subjects_by_rule(list(gap_rule_ids)) if gap_rule_ids else {}
+    skipped_gap_fixed = 0
+    still_valid: List[Dict[str, Any]] = []
+    for p in pending:
+        ptype = p.get("prediction_type") or ""
+        rule_id = ptype.split("::", 1)[1] if "::" in ptype else None
+        subj = p.get("subject_id")
+        if rule_id and rule_id in current_subjects and subj and subj not in current_subjects[rule_id]:
+            # Gap is no longer present — prediction is stale.
+            skipped_gap_fixed += 1
+            if not dry_run:
+                try:
+                    conn.execute(
+                        "UPDATE oracle_predictions SET outcome = ?, outcome_at = ? WHERE id = ?",
+                        ("dismissed:gap_fixed", _now_iso(), p["id"]),
+                    )
+                    conn.commit()
+                except Exception as exc:
+                    LOG.warning("mark gap_fixed failed for %s: %s", p["id"], exc)
+            continue
+        still_valid.append(p)
+    pending = still_valid
 
     # Phase 2: Subject-level dedup
     existing_subjects = set()
@@ -828,6 +893,7 @@ def write_suggested_cards(
         "created": len(created),
         "skipped_prediction_dedup": skipped_existing,
         "skipped_subject_dedup": skipped_subject_dedup,
+        "skipped_gap_fixed": skipped_gap_fixed,
         "reset_to_backlog": reset_to_backlog,
         "auto_dismissed": auto_dismissed,
         "consolidated_rules": consolidated_rules,
