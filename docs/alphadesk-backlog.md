@@ -291,12 +291,20 @@ single-user-mode MVP earlier (no `user_id` enforcement) if user wants it sooner
 - Day trader: hot-key cheat sheet, multi-monitor layouts (real exec stays
   Phase 6)
 
-### Subject placeholders for alert rules
-The persona alert_defaults reference `WATCHLIST_ANY`, `WATCHLIST_AVG`,
-`WATCHLIST_TOP`, `PORTFOLIO_DRAWDOWN`, `PORTFOLIO_DRIFT` subjects that the
-current evaluator doesn't understand. Phase 4 work: extend alerts/evaluator.py
-to resolve these as virtual subjects (loop over watchlist tickers, compute
-portfolio metrics, etc.).
+### ✅ Subject placeholders for alert rules — virtual subject evaluator (DONE 2026-04-18)
+- New module `tools/trading/alerts/virtual_subjects.py` — `resolve_for_rule(rule, user_id)` returns one of:
+  - `{kind: "not_virtual"}` — passthrough, existing per-ticker path runs
+  - `{kind: "expand", tickers: [...]}` — for `WATCHLIST_ANY`; evaluator loops concrete tickers, fires once on the first match (no N-fold alert spam), reports the triggering ticker in `evidence.resolved_ticker`
+  - `{kind: "aggregate", value, evidence}` — for AGGs (`WATCHLIST_AVG`, `WATCHLIST_TOP`, `PORTFOLIO_DRAWDOWN`, `PORTFOLIO_DRIFT`); single scalar compared against threshold
+  - `{kind: "skip", reason}` — empty watchlist / no snapshot history / no target allocations set / etc.
+- **Data sources per placeholder:**
+  - `WATCHLIST_ANY` / `AVG` / `TOP` → `ad_watchlists` × latest `ad_signals` (composite_score, confidence) OR per-ticker price_pct_change / news_impact via the existing single-subject resolvers
+  - `PORTFOLIO_DRAWDOWN` → `ad_pf_daily_snapshots` peak vs current, returned as negative %; skips when <2 snapshots
+  - `PORTFOLIO_DRIFT` → delegates to `analytics.rebalance.build_plan().summary.total_abs_drift_pp`; skips when no target allocations set
+- `alerts/evaluator.py::evaluate_all()` now dispatches through the resolver before falling back to the per-ticker path. `signal_direction` rule_type also expands for WATCHLIST_ANY.
+- `_format_message()` gets virtual-subject-aware templates — e.g., `"Watchlist: NVDA composite 82.0 gt 75"` instead of the generic one.
+- `/api/alerts/suggested` — now marks **every** persona-default rule as `evaluator_supports: true`. The UI "⚠ uses placeholder subject — inert until Phase 4" warning is gone; users can seed all persona-default rules directly.
+- Verified end-to-end: WATCHLIST_ANY expands to the user's 2-ticker watchlist; WATCHLIST_AVG computes avg composite = 54.095 across watchlist; PORTFOLIO_DRAWDOWN correctly skips with `insufficient snapshot history` for a fresh account; evaluate_all() runs clean. Coherence 17/17 (no regression).
 
 ---
 
