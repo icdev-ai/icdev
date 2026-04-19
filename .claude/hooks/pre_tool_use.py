@@ -122,6 +122,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_tax_realizations",
         # AlphaDesk tax-lots (Phase 7+) — wash-sale flags audit; must be append-only
         "ad_tax_wash_sale_flags",
+        # AlphaDesk options coach (Phase 7.6) — event history; recommendation column mutable, rows never deleted
+        "ad_options_coach_events",
         # AlphaDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
         # Phase 44 — Innovation Adaptation
