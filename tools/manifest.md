@@ -299,3 +299,15 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Wedge | tools\trading\ta\patterns\wedge.py | Auto-registered: patterns/wedge.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Support Resistance | tools\trading\ta\support_resistance.py | Auto-registered: ta/support_resistance.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Combo Analyzer | tools\trading\options\combo_analyzer.py | Auto-registered: options/combo_analyzer.py | --json | JSON |
