@@ -245,6 +245,12 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.studio import studio_api
     _mount(studio_api, v1_prefix="/api/v1/studio")
 
+    try:
+        from tools.dashboard.api.news import news_api
+        _mount_inline(news_api)   # inline routes: /api/news/*
+    except Exception as exc:
+        logger.warning("news_api skipped: %s", exc)
+
     # ------------------------------------------------------------------ #
     #  Optional blueprints — graceful skip on ImportError                 #
     # ------------------------------------------------------------------ #
