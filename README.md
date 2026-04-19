@@ -5,6 +5,7 @@
   <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
+  <img src="https://img.shields.io/badge/canvases-7-00acc1" alt="Design Canvases">
 </p>
 
 # ICDEV™ — Intelligent Certified Development Platform
@@ -18,6 +19,16 @@ These aren't templates. They're living systems that can build their own features
 One developer built this. Imagine what your team could do with it.
 
 > **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV™ applies to generated artifacts.
+
+---
+
+## What's New in 1.2.21
+
+- **Ask any canvas** — natural-language Q&A over the knowledge graph of each of the 7 design canvases: NDC (Network), SDC (Security), PDC (Pipeline), BDC (Boundary), DDC (Data), ODC (Observability), IDC (Infrastructure). Every canvas has a `/<canvas>/ask` page and `/<canvas>/api/ask` POST endpoint. See [Ask Any Canvas](#ask-any-canvas).
+- **Instant KG freshness** — save-hooks on every canvas design `POST`/`PUT` re-index the KG in <1s, so `/ask` never lags real work. A 6-hour `canvas_indexer` Genesis reflex acts as a safety net.
+- **Backend-aware indexer** — `tools/knowledge_graph/canvas_indexer.py` speaks SQLite *or* PostgreSQL per-canvas (respects `<CANVAS>_STORAGE_BACKEND`), so the same pipeline works on a laptop and in air-gapped IL4/IL5 deployments.
+- **Scheduler worktree-before-rebase fix** — 52-branch preserved-branch pile (caused by worktree-locked rebases) cleared; new reflex detaches worktree before merge so the pile can't regrow.
+- **Single license** — commercial tier removed. ICDEV™ is Apache-2.0, full stop.
 
 ---
 
@@ -391,6 +402,49 @@ The **dual-hub crosswalk engine** eliminates duplicate assessments:
 
 ---
 
+## Ask Any Canvas
+
+Every one of ICDEV™'s seven design canvases answers natural-language questions over its own knowledge graph. No chatbot wrapper — the answers are grounded in actual design data (nodes, edges, relationships) that users dragged onto the canvas or imported from real topologies, pipelines, and SBOMs.
+
+| Canvas | Route | KG scope | Example queries |
+|---|---|---|---|
+| **NDC** (Network) | `/network/ask` | topology devices + links | `firewall`, `PaloAlto`, `NYC`, `wan_link` |
+| **SDC** (Security) | `/security/ask` | STRIDE × NIST crosswalk | `spoofing`, `tampering`, `elevation of privilege`, `threat` |
+| **PDC** (Pipeline) | `/devops/ask` | CI/CD stages + connectors | `build`, `deploy`, `scm-gitlab`, `monorepo` |
+| **BDC** (Boundary) | `/boundary/ask` | authorization boundaries | `boundary`, `interconnection`, `ISA`, `CUI` |
+| **DDC** (Data) | `/data/ask` | column-level lineage | `lineage`, `table`, `PII`, `classification` |
+| **ODC** (Observability) | `/observability/ask` | detection coverage | `detection`, `sigma`, `MITRE`, `log source` |
+| **IDC** (Infrastructure) | `/infra/ask` | IaC resources | `terraform`, `compute`, `KMS`, `region` |
+
+**How it works:**
+
+```
+user query ─▶ graph_rag.retrieve(graph_id, profile) ─▶ top-K nodes + edges
+                                                          │
+                                          (optional) LLMRouter narrative_generation
+                                                          │
+                                                          ▼
+                                               chat UI with cited nodes
+```
+
+- **Per-canvas scoring profile** — network_infrastructure, security, provenance, compliance — weights edge structure, centrality, and recency differently based on what you're asking about.
+- **Optional narration** — tick the `narrate` box and the response routes through `LLMRouter function=narrative_generation`. If the router is offline (air-gap safe), the raw graph hits render instead.
+- **No router, no network, no browser build step** — the chat page is one `<script>` tag against the blueprint API. Works in IL4/IL5 air-gap deployments.
+
+**Freshness:**
+
+- **On save:** save-hooks on every `/<canvas>/api/designs` POST/PUT call `reindex_canvas_on_save()` — new/edited designs are queryable in under a second.
+- **Safety net:** a `canvas_indexer` Genesis reflex re-indexes every 6 hours regardless, so if the hook misses (e.g., direct DB writes), the next query-able state is at most one cycle away.
+- **Manual trigger:** `python -m tools.knowledge_graph.canvas_indexer --canvas <slug>` any time.
+
+**Under the hood:**
+
+- `tools/knowledge_graph/canvas_indexer.py` — reads each canvas's sidecar DB (SQLite or PostgreSQL), flattens `graph_json` blobs into `kg_nodes` + `kg_edges`, UPSERTs `kg_graphs`. Idempotent.
+- `tools/knowledge_graph/canvas_ask.py` — shared `handle_ask_request()` so each blueprint `/ask` endpoint is ~15 lines. One place to audit retrieval + narration + response shape.
+- `tools/dashboard/templates/canvas_ask.html` — one shared chat template, parameterized via Jinja context per canvas.
+
+---
+
 ## Quick Start
 
 ### Option 1: Install from PyPI (recommended)
@@ -689,6 +743,13 @@ python tools/dashboard/app.py
 | `/network/facilities` | Facilities management: rack layouts, power/cooling, cable tracking |
 | `/sre` | SRE Operations: runbook library, incident tracking, toil budgets, SLO monitoring |
 | `/pipeline` | Pipeline Canvas: visual CI/CD pipeline design with drag-and-drop stages |
+| `/network/ask` | **Ask NDC** — natural-language Q&A over the network topology KG (GraphRAG) |
+| `/security/ask` | **Ask SDC** — Q&A over the STRIDE × NIST crosswalk graph |
+| `/devops/ask` | **Ask PDC** — Q&A over pipeline stages + connectors |
+| `/boundary/ask` | **Ask BDC** — Q&A over authorization-boundary designs |
+| `/data/ask` | **Ask DDC** — Q&A over column-level data lineage |
+| `/observability/ask` | **Ask ODC** — Q&A over detection coverage + Sigma rules |
+| `/infra/ask` | **Ask IDC** — Q&A over IaC designs (Terraform/Pulumi/CloudFormation resources) |
 
 Auth: per-user API keys (SHA-256 hashed), 6 RBAC roles (admin, pm, developer, isso, co, cor). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
