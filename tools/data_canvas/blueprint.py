@@ -1811,4 +1811,34 @@ def create_data_canvas_blueprint():
         status_code = 200 if result.get("status") == "ok" else 207
         return jsonify(result), status_code
 
+    # ── GraphRAG /ask — shared canvas_ask pattern ──────────────────────────
+    @bp.route("/ask")
+    @dc_login_required
+    def ddc_ask_page():
+        return render_template(
+            "canvas_ask.html",
+            canvas_label="Data Design Canvas",
+            graph_id="ddc-designs",
+            profile="provenance",
+            examples=["lineage", "table", "column", "PII", "classification"],
+            api_url="/data/api/ask",
+            home_url="/data/",
+        )
+
+    @bp.route("/api/ask", methods=["POST"])
+    @dc_login_required
+    def ddc_api_ask():
+        from tools.knowledge_graph.canvas_ask import handle_ask_request
+        data = request.get_json(silent=True) or {}
+        payload = handle_ask_request(
+            query=data.get("query", ""),
+            graph_id="ddc-designs",
+            profile="provenance",
+            top_k=int(data.get("top_k", 10)),
+            narrate=bool(data.get("narrate", False)),
+            canvas_label="data design / lineage graph",
+        )
+        status = payload.pop("_status", 200)
+        return jsonify(payload), status
+
     return bp

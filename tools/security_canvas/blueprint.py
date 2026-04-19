@@ -1850,85 +1850,29 @@ def create_security_blueprint():
             }
         )
 
-    # ── GraphRAG /ask endpoint — SDC second canvas in the pilot rollout ────
-    # Mirrors /network/ask; scoped to the SDC crosswalk graph (STRIDE →
-    # NIST → frameworks) using the existing `security` scoring profile.
-
+    # ── GraphRAG /ask endpoint — SDC ───────────────────────────────────────
     _SDC_KG_PROJECT_ID = "sdc-kg-9acdfb94bea0"
     _SDC_KG_PROFILE = "security"
 
     @bp.route("/ask")
     @sc_login_required
     def sc_ask_page():
-        """SDC Q&A page — chat against the STRIDE × NIST crosswalk graph."""
         return render_template("security_canvas/ask.html")
 
     @bp.route("/api/ask", methods=["POST"])
     @sc_login_required
     def sc_api_ask():
-        """POST {query, narrate?, top_k?} → GraphRAG over the SDC KG."""
+        from tools.knowledge_graph.canvas_ask import handle_ask_request
         data = request.get_json(silent=True) or {}
-        query = (data.get("query") or "").strip()
-        narrate = bool(data.get("narrate", False))
-        top_k = int(data.get("top_k", 10))
-        if not query:
-            return jsonify({"error": "query is required"}), 400
-
-        try:
-            from tools.knowledge_graph.graph_rag import retrieve
-            kg = retrieve(
-                query=query,
-                graph_id=_SDC_KG_PROJECT_ID,
-                profile=_SDC_KG_PROFILE,
-                top_k=top_k,
-                compress=False,
-            )
-        except Exception as exc:
-            logger.warning("SDC ask: graph_rag.retrieve failed: %s", exc)
-            kg = {"nodes": [], "edges": [], "error": str(exc)[:200]}
-
-        nodes = kg.get("nodes", []) if isinstance(kg, dict) else []
-        edges = kg.get("edges", []) if isinstance(kg, dict) else []
-
-        narration = None
-        narrated = False
-        if narrate and nodes:
-            try:
-                from tools.llm.router import LLMRouter
-                prompt = (
-                    "Answer the user's security/threat-model question in 3-6 sentences "
-                    "using only the SDC KG evidence below. Cite node labels inline, "
-                    "and name STRIDE categories or NIST controls when relevant.\n\n"
-                    f"QUESTION: {query}\n\n"
-                    f"NODES ({len(nodes)}): {json.dumps(nodes[:top_k], ensure_ascii=False)[:3000]}\n\n"
-                    f"EDGES ({len(edges)}): {json.dumps(edges[:top_k], ensure_ascii=False)[:1500]}\n"
-                )
-                r = LLMRouter().invoke(
-                    function="narrative_generation",
-                    prompt=prompt,
-                    max_tokens=400,
-                )
-                if isinstance(r, dict):
-                    narration = r.get("content") or r.get("text") or str(r)
-                else:
-                    narration = str(r) if r else None
-                narrated = bool(narration)
-            except Exception as exc:
-                logger.info("SDC ask: narration skipped (router unavailable): %s", exc)
-
-        payload = {
-            "query": query,
-            "profile": _SDC_KG_PROFILE,
-            "nodes_matched": kg.get("nodes_matched", len(nodes)) if isinstance(kg, dict) else len(nodes),
-            "nodes_returned": len(nodes),
-            "edges_returned": len(edges),
-            "nodes": nodes,
-            "edges": edges,
-            "narration": narration,
-            "narrated": narrated,
-        }
-        if isinstance(kg, dict) and kg.get("error"):
-            payload["kg_error"] = kg["error"]
-        return jsonify(json.loads(json.dumps(payload, default=str)))
+        payload = handle_ask_request(
+            query=data.get("query", ""),
+            graph_id=_SDC_KG_PROJECT_ID,
+            profile=_SDC_KG_PROFILE,
+            top_k=int(data.get("top_k", 10)),
+            narrate=bool(data.get("narrate", False)),
+            canvas_label="security design (STRIDE × NIST)",
+        )
+        status = payload.pop("_status", 200)
+        return jsonify(payload), status
 
     return bp

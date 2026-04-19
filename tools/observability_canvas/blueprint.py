@@ -1301,4 +1301,34 @@ def create_observability_blueprint():
             sigma_sources=sigma_sources,
         )
 
+    # ── GraphRAG /ask — shared canvas_ask pattern ──────────────────────────
+    @bp.route("/ask")
+    @oc_login_required
+    def odc_ask_page():
+        return render_template(
+            "canvas_ask.html",
+            canvas_label="Observability Design Canvas",
+            graph_id="odc-designs",
+            profile="security",
+            examples=["detection", "sigma", "MITRE", "SIEM", "log source"],
+            api_url="/observability/api/ask",
+            home_url="/observability/",
+        )
+
+    @bp.route("/api/ask", methods=["POST"])
+    @oc_login_required
+    def odc_api_ask():
+        from tools.knowledge_graph.canvas_ask import handle_ask_request
+        data = request.get_json(silent=True) or {}
+        payload = handle_ask_request(
+            query=data.get("query", ""),
+            graph_id="odc-designs",
+            profile="security",
+            top_k=int(data.get("top_k", 10)),
+            narrate=bool(data.get("narrate", False)),
+            canvas_label="observability / detection coverage",
+        )
+        status = payload.pop("_status", 200)
+        return jsonify(payload), status
+
     return bp

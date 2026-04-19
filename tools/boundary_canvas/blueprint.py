@@ -1599,4 +1599,34 @@ def create_boundary_blueprint():
         _audit("global", "sop_rejected", f"id={sop_id} reason={reason[:60]}")
         return jsonify(sop)
 
+    # ── GraphRAG /ask — shared canvas_ask pattern ──────────────────────────
+    @bp.route("/ask")
+    @bdc_login_required
+    def bdc_ask_page():
+        return render_template(
+            "canvas_ask.html",
+            canvas_label="Boundary Design Canvas",
+            graph_id="bdc-designs",
+            profile="compliance",
+            examples=["boundary", "interconnection", "ISA", "authorization", "CUI"],
+            api_url="/boundary/api/ask",
+            home_url="/boundary/",
+        )
+
+    @bp.route("/api/ask", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_ask():
+        from tools.knowledge_graph.canvas_ask import handle_ask_request
+        data = request.get_json(silent=True) or {}
+        payload = handle_ask_request(
+            query=data.get("query", ""),
+            graph_id="bdc-designs",
+            profile="compliance",
+            top_k=int(data.get("top_k", 10)),
+            narrate=bool(data.get("narrate", False)),
+            canvas_label="authorization boundary",
+        )
+        status = payload.pop("_status", 200)
+        return jsonify(payload), status
+
     return bp
