@@ -129,3 +129,69 @@ achievements:
       type: portfolio_value
       params:
         threshold_usd: 1000000
+
+  # ─── Options achievements (Phase 7+ complex options + progression) ──
+  first_options_trade:
+    name: "Option Curious"
+    description: "Executed your first paper option trade."
+    icon: "📈"
+    tier: bronze
+    xp_bonus: 25
+    progress_hint: "Visit /options, pick a contract, place a trade."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_filled
+        threshold: 1
+
+  first_multileg:
+    name: "Strategist"
+    description: "Executed your first multi-leg option strategy."
+    icon: "🎲"
+    tier: silver
+    xp_bonus: 50
+    progress_hint: "Open a vertical spread or condor from the Strategy Builder."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_multileg_executed
+        threshold: 1
+
+  five_multilegs:
+    name: "Spread Specialist"
+    description: "Executed 5 multi-leg option strategies."
+    icon: "🃏"
+    tier: silver
+    xp_bonus: 75
+    progress_hint: "5 strategies through the Strategy Builder."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_multileg_executed
+        threshold: 5
+
+  options_profit_hunter:
+    name: "Profit Hunter"
+    description: "Closed 3 option positions profitably."
+    icon: "🎯"
+    tier: silver
+    xp_bonus: 60
+    progress_hint: "Sell_to_close a long option for a gain, 3 times."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_profitable_close
+        threshold: 3
+
+  premium_collector:
+    name: "Premium Collector"
+    description: "3 short options expired worthless (you kept the premium)."
+    icon: "💰"
+    tier: gold
+    xp_bonus: 80
+    progress_hint: "Sell_to_open options that expire OTM — the time-decay trade."
+    predicate:
+      type: xp_event_count
+      params:
+        reason: option_expired_worthless_short
+        threshold: 3
