@@ -38,9 +38,13 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS fairness_assessments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT NOT NULL,
-            assessment_data TEXT NOT NULL,
-            overall_score REAL DEFAULT 0.0,
-            created_at TEXT DEFAULT (datetime('now'))
+            dimension TEXT NOT NULL,
+            status TEXT DEFAULT 'not_assessed',
+            evidence TEXT,
+            score REAL DEFAULT 0.0,
+            assessed_at TEXT DEFAULT (datetime('now')),
+            classification TEXT DEFAULT 'CUI',
+            UNIQUE(project_id, dimension)
         );
         CREATE INDEX IF NOT EXISTS idx_fairness_project
             ON fairness_assessments(project_id);
@@ -246,13 +250,27 @@ def assess_fairness(
             "dimensions": dimension_results,
         }
 
-        # Store (append-only)
-        conn.execute(
-            """INSERT INTO fairness_assessments
-               (project_id, assessment_data, overall_score, created_at)
-               VALUES (?, ?, ?, ?)""",
-            (project_id, json.dumps(assessment), overall_score, now),
-        )
+        # Store per-dimension rows (upsert)
+        for dim_result in dimension_results:
+            score_val = 1.0 if dim_result["status"] == "satisfied" else 0.0
+            conn.execute(
+                """INSERT INTO fairness_assessments
+                   (project_id, dimension, status, evidence, score, assessed_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(project_id, dimension) DO UPDATE SET
+                       status=excluded.status,
+                       evidence=excluded.evidence,
+                       score=excluded.score,
+                       assessed_at=excluded.assessed_at""",
+                (
+                    project_id,
+                    dim_result["id"],
+                    dim_result["status"],
+                    dim_result["evidence"],
+                    score_val,
+                    now,
+                ),
+            )
         conn.commit()
 
         return assessment
@@ -265,16 +283,19 @@ def evaluate_gate(project_id: str, db_path: Path = DB_PATH) -> Dict:
     conn = _get_connection(db_path)
     try:
         _ensure_table(conn)
-        row = conn.execute(
-            """SELECT overall_score FROM fairness_assessments
-               WHERE project_id = ? ORDER BY created_at DESC LIMIT 1""",
+        rows = conn.execute(
+            """SELECT COUNT(*) as total,
+                      SUM(CASE WHEN status = 'satisfied' THEN 1 ELSE 0 END) as satisfied
+               FROM fairness_assessments WHERE project_id = ?""",
             (project_id,),
         ).fetchone()
 
-        if not row:
+        if not rows or not rows["total"]:
             return {"pass": False, "reason": "No fairness assessment conducted"}
 
-        score = row["overall_score"]
+        total = rows["total"]
+        satisfied = rows["satisfied"] or 0
+        score = round(satisfied / total * 100, 1) if total > 0 else 0.0
         return {
             "pass": score >= 25.0,
             "score": score,
@@ -282,6 +303,19 @@ def evaluate_gate(project_id: str, db_path: Path = DB_PATH) -> Dict:
         }
     finally:
         conn.close()
+
+
+class FairnessAssessor:
+    """Class-based wrapper around assess_fairness / evaluate_gate."""
+
+    def __init__(self, db_path: Optional[Path] = None):
+        self.db_path = Path(db_path) if db_path else DB_PATH
+
+    def assess_fairness(self, project_id: str, project_dir: Optional[str] = None) -> Dict:
+        return assess_fairness(project_id, project_dir=project_dir, db_path=self.db_path)
+
+    def evaluate_gate(self, project_id: str) -> Dict:
+        return evaluate_gate(project_id, db_path=self.db_path)
 
 
 def main():

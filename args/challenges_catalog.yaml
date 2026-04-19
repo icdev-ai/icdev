@@ -149,6 +149,26 @@ challenges:
         min_positions: 3
         min_days: 21
 
+  options_lab:
+    name: "Options Lab"
+    description: "Open-ended paper options playground — no deadline pressure."
+    long_description: >
+      A long-running sandbox for experimenting with paper options. No
+      performance target — the predicate never fires, so this attempt
+      stays open for a full year (or until you abandon it). Use the
+      /options page to browse chains and place single-leg option
+      orders into this sandbox.
+    icon: "🧪"
+    difficulty: easy
+    duration_days: 365
+    xp_on_complete: 0
+    predicate:
+      # Uses a scenario key that won't ever run — keeps the attempt
+      # pending so users can trade freely.
+      type: scenario_completion
+      params:
+        scenario_key: __options_lab_never_fires__
+
   double_down:
     name: "Double Down"
     description: "Grow your paper portfolio by 20% in 90 days."

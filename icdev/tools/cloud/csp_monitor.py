@@ -70,8 +70,6 @@ except ImportError:
     _HAS_YAML = False
 
 try:
-    import requests
-
     from tools.http.client import request as http_request
 
     _HAS_REQUESTS = True

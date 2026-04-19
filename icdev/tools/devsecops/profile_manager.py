@@ -95,7 +95,7 @@ def _load_config() -> dict:
 
 def _get_db():
     """Get database connection."""
-    conn = get_connection()
+    conn = get_connection(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

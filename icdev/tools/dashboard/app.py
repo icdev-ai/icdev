@@ -39,6 +39,7 @@ from flask import (
     session as flask_session,
     redirect,
     url_for,
+    send_from_directory,
 )  # noqa: E402
 
 from tools.dashboard.config import (  # noqa: E402
@@ -54,68 +55,12 @@ from tools.dashboard.config import (  # noqa: E402
 )
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
-from tools.dashboard.api.projects import projects_api  # noqa: E402
-from tools.dashboard.api.kanban import kanban_api  # noqa: E402
-from tools.dashboard.api.kanban_plan import kanban_plan_api  # noqa: E402
-from tools.dashboard.api.agents import agents_api  # noqa: E402
-from tools.dashboard.api.compliance import compliance_api  # noqa: E402
-from tools.dashboard.api.poam import poam_api  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
     close_canvas_connections as _close_canvas_connections,
 )
-from tools.dashboard.api.audit import audit_api  # noqa: E402
-from tools.dashboard.api.metrics import metrics_api  # noqa: E402
-from tools.dashboard.api.events import events_bp  # noqa: E402
-from tools.dashboard.api.nlq import nlq_bp  # noqa: E402
-from tools.dashboard.api.batch import batch_api  # noqa: E402
-from tools.dashboard.api.diagrams import diagrams_api  # noqa: E402
-from tools.dashboard.api.cicd import cicd_api  # noqa: E402
-from tools.dashboard.api.intake import intake_api  # noqa: E402
-from tools.dashboard.api.admin import admin_api  # noqa: E402
-from tools.dashboard.api.activity import activity_api  # noqa: E402
-from tools.dashboard.api.usage import usage_api  # noqa: E402
-from tools.dashboard.api.traces import traces_api, provenance_api, xai_api  # noqa: E402
-from tools.dashboard.api.oscal import oscal_api  # noqa: E402
-from tools.dashboard.api.prod_audit import prod_audit_api  # noqa: E402
-from tools.dashboard.api.ai_transparency import ai_transparency_api  # noqa: E402
-from tools.dashboard.api.ai_accountability import ai_accountability_api  # noqa: E402
-from tools.dashboard.api.code_quality import code_quality_api  # noqa: E402
-from tools.dashboard.api.fedramp_20x import fedramp_20x_api  # noqa: E402
-from tools.dashboard.api.evidence import evidence_api  # noqa: E402
-from tools.dashboard.api.lineage import lineage_api  # noqa: E402
-from tools.dashboard.api.filesync import filesync_api  # noqa: E402
-from tools.dashboard.api.security_scan import security_scan_api  # noqa: E402
-from tools.dashboard.api.migration import migration_api  # noqa: E402
-from tools.dashboard.api.sbd import sbd_api  # noqa: E402
-from tools.dashboard.api.pr_intel import pr_intel_api  # noqa: E402
-from tools.dashboard.api.iac import iac_api  # noqa: E402
-from tools.dashboard.api.cato import cato_api  # noqa: E402
-from tools.dashboard.api.control_inheritance import control_inheritance_api  # noqa: E402
-from tools.dashboard.api.migration_cost import migration_cost_api  # noqa: E402
-from tools.dashboard.api.compliance_debt import compliance_debt_api  # noqa: E402
-from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
-from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
-from tools.dashboard.api.oracle import oracle_api  # noqa: E402
-from tools.dashboard.api.sandbox import sandbox_api  # noqa: E402 (OPT-57)
-from tools.dashboard.api.analytics import analytics_api  # noqa: E402
-from tools.dashboard.api.ndc_labs import ndc_labs_api  # noqa: E402
-from tools.dashboard.api.ndc_sops import ndc_sops_api  # noqa: E402
-from tools.dashboard.api.canvas_projects import canvas_projects_api  # noqa: E402
-from tools.dashboard.api.writeguard import writeguard_api  # noqa: E402
-
-try:
-    from tools.dashboard.api.finetune import finetune_api  # noqa: E402
-
-    _HAS_FINETUNE_API = True
-except ImportError:
-    _HAS_FINETUNE_API = False
-try:
-    from tools.dashboard.api.rag_eval import rag_eval_api  # noqa: E402
-
-    _HAS_RAG_EVAL_API = True
-except ImportError:
-    _HAS_RAG_EVAL_API = False
+# P1.1: Centralized API blueprint registration (replaces 50+ individual imports)
+from tools.dashboard.api import register_api_blueprints  # noqa: E402
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
@@ -161,34 +106,25 @@ _GOVCON_ENABLED = (
     os.environ.get("ICDEV_GOVCON_ENABLED", "false").lower() == "true"
     and not _AIRGAP_MODE
 )
+# Feature flags for page-route registration (blueprints registered via register_api_blueprints)
 _HAS_GOVCON = False
 if _GOVCON_ENABLED:
-    try:
-        from tools.dashboard.api.proposals import proposals_api  # noqa: E402
-        from tools.dashboard.api.govcon import govcon_api  # noqa: E402
-        from tools.dashboard.api.cpmp import cpmp_api  # noqa: E402
-
-        _HAS_GOVCON = True
-    except ImportError:
-        _HAS_GOVCON = False
-    try:
-        from tools.dashboard.api.proposal_genesis import proposal_genesis_api  # noqa: E402
-
-        _HAS_PROPOSAL_GENESIS = True
-    except ImportError:
-        _HAS_PROPOSAL_GENESIS = False
+    import importlib.util as _ilu  # noqa: E402
+    _HAS_GOVCON = all(
+        _ilu.find_spec(m) is not None
+        for m in (
+            "tools.dashboard.api.proposals",
+            "tools.dashboard.api.govcon",
+            "tools.dashboard.api.cpmp",
+        )
+    )
+    _HAS_PROPOSAL_GENESIS = _ilu.find_spec("tools.dashboard.api.proposal_genesis") is not None
 else:
     _HAS_PROPOSAL_GENESIS = False
-from tools.dashboard.api.orchestration import orchestration_api  # noqa: E402
-
-try:
-    from tools.dashboard.api.chat import chat_api  # noqa: E402
-
-    _HAS_CHAT_API = True
-except ImportError:
-    _HAS_CHAT_API = False
+# Feature flags for finetune and chat API (always available — routes exist unconditionally)
+_HAS_FINETUNE_API = True
+_HAS_CHAT_API = True
 from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
-from tools.dashboard.api.studio import studio_api  # noqa: E402
 
 # ── Design Canvases (conditional registration) ────────────────────────────
 _CANVAS_FLAGS = {}
@@ -1120,77 +1056,10 @@ def create_app() -> Flask:
     except Exception as exc:
         app.logger.debug("Agent auto-registration skipped: %s", exc)
 
-    # ---- Register API blueprints ----
-    app.register_blueprint(projects_api)
-    app.register_blueprint(kanban_api)
-    app.register_blueprint(kanban_plan_api)
-    app.register_blueprint(agents_api)
-    app.register_blueprint(compliance_api)
-    app.register_blueprint(poam_api)
-    app.register_blueprint(audit_api)
-    app.register_blueprint(metrics_api)
-    app.register_blueprint(events_bp)
-    app.register_blueprint(nlq_bp)
-    app.register_blueprint(batch_api)
-    app.register_blueprint(diagrams_api)
-    app.register_blueprint(cicd_api)
-    app.register_blueprint(intake_api)
-    app.register_blueprint(admin_api)
-    app.register_blueprint(activity_api)
-    app.register_blueprint(usage_api)
-    app.register_blueprint(traces_api)
-    app.register_blueprint(provenance_api)
-    app.register_blueprint(xai_api)
-    app.register_blueprint(oscal_api)
-    app.register_blueprint(prod_audit_api)
-    app.register_blueprint(ai_transparency_api)
-    app.register_blueprint(ai_accountability_api)
-    app.register_blueprint(code_quality_api)
-    app.register_blueprint(fedramp_20x_api)
-    app.register_blueprint(evidence_api)
-    app.register_blueprint(lineage_api)
-    app.register_blueprint(filesync_api)
-    app.register_blueprint(security_scan_api)
-    app.register_blueprint(migration_api)
-    app.register_blueprint(sbd_api)
-    app.register_blueprint(pr_intel_api)
-    app.register_blueprint(iac_api)
-    app.register_blueprint(cato_api)
-    app.register_blueprint(control_inheritance_api)
-    app.register_blueprint(migration_cost_api)
-    app.register_blueprint(compliance_debt_api)
-    app.register_blueprint(stig_manager_api)
-    app.register_blueprint(ato_package_api)
-    app.register_blueprint(oracle_api)
-    app.register_blueprint(sandbox_api)  # OPT-57
-    app.register_blueprint(analytics_api)
-    app.register_blueprint(ndc_labs_api)
-    app.register_blueprint(ndc_sops_api)
-    app.register_blueprint(canvas_projects_api)
-    app.register_blueprint(writeguard_api)
-    if _HAS_FINETUNE_API:
-        app.register_blueprint(finetune_api)
-    if _HAS_RAG_EVAL_API:
-        app.register_blueprint(rag_eval_api)
-    if _HAS_GOVCON:
-        app.register_blueprint(proposals_api)
-        app.register_blueprint(govcon_api)
-        app.register_blueprint(cpmp_api)
-    if _HAS_PROPOSAL_GENESIS:
-        app.register_blueprint(proposal_genesis_api)
-    app.register_blueprint(orchestration_api)
-    if _HAS_CHAT_API:
-        app.register_blueprint(chat_api)
-    app.register_blueprint(studio_api)
-
-    # ---- SRE API Blueprint ----
-    try:
-        from tools.dashboard.api.sre import sre_api
-
-        app.register_blueprint(sre_api)
-        app.logger.info("SRE API registered at /api/sre/")
-    except ImportError as exc:
-        app.logger.warning("SRE API failed to register: %s", exc)
+    # ---- Register API blueprints (P1.1: centralized via register_api_blueprints) ----
+    # All 55+ blueprints are mounted under /api/v1/* with /api/* legacy aliases.
+    # See tools/dashboard/api/__init__.py for the full registration sequence.
+    register_api_blueprints(app)
 
     # ---- SRE Dashboard Page ----
     @app.route("/sre")
@@ -7881,6 +7750,394 @@ def create_app() -> Flask:
 
         _logging.getLogger(__name__).warning("Platform health module unavailable: %s", _ph_err)
 
+    # ---- Air-gap Next.js static export ----
+    try:
+        from tools.airgap.detector import is_airgap as _is_airgap
+
+        if _is_airgap():
+            _next_out = str(Path(__file__).resolve().parent.parent.parent / "frontend" / "out")
+
+            @app.route("/next/<path:path>")
+            def next_static(path):
+                return send_from_directory(_next_out, path)
+
+            app.logger.info("Air-gap Next.js static route registered at /next/")
+    except Exception as _ag_err:
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
+
+    # ── Projects-in-Flight registry ─────────────────────────────────────────
+    # Config-driven: args/projects.yaml. Each project renders as a collapsible
+    # card on Home below the Task Board via tools/dashboard/templates/
+    # _projects_in_flight.html. A project auto-hides when every task in its
+    # prefix is done (total > 0 and done == total) or when no tasks match
+    # the prefix yet (total == 0). Adding a project is a YAML edit.
+    #
+    # Invariants enforced here:
+    #   * task_prefix and every epic.key MUST be present — silently dropped
+    #     entries would produce empty cards that confuse operators.
+    #   * LIKE wildcards (% and _) in prefix / keys are escaped with \ —
+    #     prevents cross-project row leakage and SQL-wildcard surprises.
+    #   * Within a project, no epic.key may be a prefix of another when both
+    #     use the '-' separator (e.g. 'idc' + 'idc-iac' would double-count).
+    #   * Across projects, no task_prefix may be a prefix of another — that
+    #     would mean project A's query silently captures project B's tasks.
+    #
+    # Violations are logged via the app logger and cause the offending entry
+    # (or epic) to be dropped from the rendered output so the rest still
+    # works.
+    import logging as _proj_logging
+    _proj_log = _proj_logging.getLogger(__name__ + ".projects")
+
+    _LIKE_ESCAPE = "\\"
+
+    def _escape_like(s: str) -> str:
+        """Escape LIKE metacharacters (% _ \) for use with `LIKE ? ESCAPE '\\'`."""
+        if not isinstance(s, str):
+            return ""
+        return (s.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
+                 .replace("%", _LIKE_ESCAPE + "%")
+                 .replace("_", _LIKE_ESCAPE + "_"))
+
+    def _validate_projects(raw: list) -> list:
+        """Validate + normalize project entries. Drops invalid ones with a
+        logged warning so the page keeps rendering the rest."""
+        out: list = []
+        seen_prefixes: list = []
+        seen_keys: set = set()
+        for i, p in enumerate(raw):
+            if not isinstance(p, dict):
+                _proj_log.warning("projects.yaml entry #%d is not a dict — skipping", i)
+                continue
+            key = (p.get("key") or "").strip()
+            prefix = (p.get("task_prefix") or "").strip()
+            if not key:
+                _proj_log.warning("projects.yaml entry #%d missing 'key' — skipping", i)
+                continue
+            if not prefix:
+                _proj_log.warning("projects.yaml '%s' missing 'task_prefix' — skipping", key)
+                continue
+            if key in seen_keys:
+                _proj_log.warning("projects.yaml duplicate key '%s' — skipping", key)
+                continue
+            # Cross-project prefix-of collision
+            for seen in seen_prefixes:
+                if prefix.startswith(seen) or seen.startswith(prefix):
+                    _proj_log.warning(
+                        "projects.yaml '%s' prefix %r collides with earlier "
+                        "prefix %r — tasks would double-count. Skipping.",
+                        key, prefix, seen,
+                    )
+                    prefix = ""  # mark collision
+                    break
+            if not prefix:
+                continue
+            # Within-project epic key prefix-of collision
+            raw_epics = p.get("epics", []) or []
+            clean_epics: list = []
+            ekeys_sorted = sorted(
+                [(e.get("key") or "").strip() for e in raw_epics if isinstance(e, dict)],
+                key=len,
+            )
+            bad_ekeys: set = set()
+            for a in range(len(ekeys_sorted)):
+                for b in range(a + 1, len(ekeys_sorted)):
+                    short, long = ekeys_sorted[a], ekeys_sorted[b]
+                    if short and long and long.startswith(short + "-"):
+                        _proj_log.warning(
+                            "projects.yaml '%s' epic keys '%s' and '%s' overlap "
+                            "(one is a prefix of the other under '-' separator). "
+                            "Keeping '%s' only.",
+                            key, short, long, long,
+                        )
+                        bad_ekeys.add(short)
+            for ep in raw_epics:
+                if not isinstance(ep, dict):
+                    continue
+                ek = (ep.get("key") or "").strip()
+                if not ek or ek in bad_ekeys:
+                    continue
+                if not ep.get("title"):
+                    _proj_log.warning(
+                        "projects.yaml '%s' epic '%s' missing title — skipping epic",
+                        key, ek,
+                    )
+                    continue
+                clean_epics.append(ep)
+            p2 = dict(p)
+            p2["task_prefix"] = prefix
+            p2["epics"] = clean_epics
+            out.append(p2)
+            seen_keys.add(key)
+            seen_prefixes.append(prefix)
+        return out
+
+    def _load_projects_yaml() -> list:
+        try:
+            import yaml as _yaml  # PyYAML — declared dep
+        except Exception as exc:
+            _proj_log.warning("PyYAML import failed (%s); projects panel disabled", exc)
+            return []
+        cfg_path = Path(__file__).resolve().parent.parent.parent / "args" / "projects.yaml"
+        if not cfg_path.exists():
+            return []
+        try:
+            data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            raw = list(data.get("projects", []))
+        except Exception as exc:
+            _proj_log.warning("projects.yaml parse failed: %s", exc)
+            return []
+        return _validate_projects(raw)
+
+    def _compute_project_progress(project: dict, conn) -> dict:
+        """Query kanban_tasks for one project's epics + in-flight + failures.
+
+        All LIKE patterns derived from YAML are escaped with `ESCAPE '\\'`
+        so a malformed prefix or epic key can't leak across projects or
+        match wildcards unintentionally.
+        """
+        prefix = project.get("task_prefix", "")
+        prefix_esc = _escape_like(prefix)
+        epics_out: list = []
+        total_all = 0
+        done_all = 0
+        for ep in project.get("epics", []):
+            ek_esc = _escape_like(ep["key"])
+            pattern = f"{prefix_esc}{ek_esc}-%"
+            rows = conn.execute(
+                "SELECT status, COUNT(*) AS n FROM kanban_tasks "
+                "WHERE id LIKE ? ESCAPE '\\' GROUP BY status",
+                (pattern,),
+            ).fetchall()
+            counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
+            total = sum(counts.values())
+            done = counts.get("done", 0)
+            pct = int(round(100 * done / total)) if total else 0
+            total_all += total
+            done_all += done
+            epics_out.append({
+                "key": ep["key"],
+                "title": ep["title"],
+                "priority": ep.get("priority", "medium"),
+                "total": total,
+                "done": done,
+                "in_progress": counts.get("in_progress", 0),
+                "scheduled": counts.get("scheduled", 0),
+                "backlog": counts.get("backlog", 0),
+                "failed": counts.get("failed", 0),
+                "pct": pct,
+            })
+        in_flight_rows = conn.execute(
+            "SELECT id, title, status, priority, updated_at "
+            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
+            "  AND status IN ('in_progress','scheduled') "
+            "ORDER BY updated_at DESC LIMIT 15",
+            (f"{prefix_esc}%",),
+        ).fetchall()
+        fail_rows = conn.execute(
+            "SELECT id, title, status, failure_count, "
+            "       last_failure_reason, updated_at "
+            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
+            "  AND last_failure_reason IS NOT NULL "
+            "ORDER BY updated_at DESC LIMIT 10",
+            (f"{prefix_esc}%",),
+        ).fetchall()
+        return {
+            "key": project.get("key"),
+            "name": project.get("name"),
+            "description": project.get("description", "").strip(),
+            "default_open": bool(project.get("default_open", True)),
+            "briefs": project.get("briefs", []),
+            "epics": epics_out,
+            "in_flight": [dict(r) for r in in_flight_rows],
+            "recent_failures": [dict(r) for r in fail_rows],
+            "total_tasks": total_all,
+            "done_tasks": done_all,
+            "overall_pct": int(round(100 * done_all / total_all)) if total_all else 0,
+            "visible": total_all > 0 and done_all < total_all,
+        }
+
+    def _compute_triage_summary() -> dict:
+        """Global failure_triage audit summary — applies to all projects."""
+        summary = {"total": 0, "applied": 0, "rejected": 0, "verification_failed": 0}
+        recent: list = []
+        audit_dir = (Path(__file__).resolve().parent.parent.parent
+                     / ".tmp" / "kanban" / "autofix-audit")
+        if not audit_dir.exists():
+            return {"summary": summary, "recent": recent}
+        try:
+            files = sorted(audit_dir.glob("*.json"),
+                           key=lambda p: p.stat().st_mtime, reverse=True)
+            summary["total"] = len(files)
+            for f in files:
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    outcome = data.get("outcome") or ""
+                    if outcome.startswith("applied_"):
+                        summary["applied"] += 1
+                    elif outcome.startswith("rejected_"):
+                        summary["rejected"] += 1
+                    elif outcome == "verification_failed":
+                        summary["verification_failed"] += 1
+                    if len(recent) < 5:
+                        recent.append({
+                            "task_id": data.get("task_id"),
+                            "outcome": outcome,
+                            "branch": data.get("branch"),
+                            "started_at": data.get("started_at"),
+                        })
+                except Exception:
+                    continue
+        except Exception:  # pragma: no cover
+            pass
+        return {"summary": summary, "recent": recent}
+
+    @app.route("/api/projects/progress")
+    def api_projects_progress():
+        """GET /api/projects/progress — JSON snapshot of every in-flight
+        project. Auto-filters out projects with 0 tasks or 100% done."""
+        from tools.db.storage import get_connection as _gc
+
+        projects_cfg = _load_projects_yaml()
+        out: list = []
+        try:
+            with _gc() as conn:
+                for p in projects_cfg:
+                    snap = _compute_project_progress(p, conn)
+                    if snap["visible"]:
+                        out.append(snap)
+        except Exception as exc:
+            return jsonify({"error": str(exc), "projects": []}), 500
+        triage = _compute_triage_summary()
+        return jsonify({"projects": out, "triage": triage})
+
+    # ── Autonomous Recovery panel ───────────────────────────────────────────
+    # Surfaces failure_triage activity + autofix branches + recent failures
+    # on Home below Projects in Flight. Auto-hides when no activity —
+    # "idle" means no triage markers in the last 24h, no autofix branches,
+    # no unresolved failures in the last hour.
+    @app.route("/api/autonomy/status")
+    def api_autonomy_status():
+        """GET /api/autonomy/status — autonomous-flow snapshot:
+          * recent triage markers (last 24h)
+          * active autofix branches
+          * unresolved failures (last 1h)
+          * failure_triage audit summary (global)
+        All three empty → partial's host page hides the section entirely.
+        """
+        from tools.db.storage import get_connection as _gc
+        import subprocess as _sp
+
+        base_dir = Path(__file__).resolve().parent.parent.parent
+
+        # 1. Recent triage markers (last 24h) — sorted newest-first
+        triage_recent: list = []
+        triaged_dir = base_dir / ".tmp" / "kanban" / "triaged"
+        if triaged_dir.exists():
+            cutoff = time.time() - 86400
+            for f in sorted(
+                triaged_dir.glob("*.marker"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )[:10]:
+                if f.stat().st_mtime < cutoff:
+                    continue
+                try:
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    outcome = data.get("outcome") or {}
+                    diag = outcome.get("diagnosis") or {}
+                    gate = outcome.get("autofix_gate") or {}
+                    triage_recent.append({
+                        "task_id": data.get("task_id") or outcome.get("task_id"),
+                        "title": outcome.get("title"),
+                        "signature": data.get("sig"),
+                        "recommendation": diag.get("recommendation"),
+                        "confidence": diag.get("confidence"),
+                        "gate_reason": gate.get("reason"),
+                        "outcome": outcome.get("outcome"),
+                        "ts": data.get("ts"),
+                    })
+                except Exception:
+                    continue
+
+        # 2. Autofix branches — each represents a real applied patch
+        autofix_branches: list = []
+        try:
+            r = _sp.run(
+                ["git", "branch", "--list", "autofix/*"],
+                cwd=str(base_dir), capture_output=True, text=True, timeout=5,
+            )
+            for line in r.stdout.splitlines():
+                name = line.replace("*", "").strip()
+                if not name:
+                    continue
+                # Get the commit message for context
+                try:
+                    msg = _sp.run(
+                        ["git", "log", "-1", "--format=%s|%ci", name],
+                        cwd=str(base_dir), capture_output=True, text=True, timeout=5,
+                    ).stdout.strip()
+                except Exception:
+                    msg = ""
+                subject, _, when = msg.partition("|")
+                autofix_branches.append({
+                    "branch": name,
+                    "subject": subject[:80],
+                    "ts": when,
+                })
+        except Exception:
+            pass
+
+        # 3. Unresolved failures in the last hour — kanban tasks with
+        # last_failure_reason set that are back in backlog/scheduled/failed
+        unresolved_failures: list = []
+        try:
+            cutoff_iso = datetime.now(timezone.utc).replace(microsecond=0)
+            from datetime import timedelta as _td
+            cutoff_iso = (cutoff_iso - _td(hours=1)).isoformat()
+            with _gc() as conn:
+                rows = conn.execute(
+                    "SELECT id, title, status, failure_count, "
+                    "       last_failure_reason, updated_at "
+                    "FROM kanban_tasks "
+                    "WHERE last_failure_reason IS NOT NULL "
+                    "  AND updated_at > ? "
+                    "  AND status IN ('backlog','failed','scheduled') "
+                    "ORDER BY updated_at DESC LIMIT 10",
+                    (cutoff_iso,),
+                ).fetchall()
+                for r in rows:
+                    d = dict(r)
+                    unresolved_failures.append({
+                        "id": d.get("id"),
+                        "title": d.get("title"),
+                        "status": d.get("status"),
+                        "failure_count": d.get("failure_count"),
+                        "reason": (d.get("last_failure_reason") or "")[:200],
+                        "updated_at": d.get("updated_at"),
+                    })
+        except Exception:
+            pass
+
+        # 4. Global triage summary
+        triage = _compute_triage_summary()
+
+        visible = bool(triage_recent) or bool(autofix_branches) or bool(unresolved_failures)
+        return jsonify({
+            "visible": visible,
+            "triage_recent": triage_recent,
+            "autofix_branches": autofix_branches,
+            "unresolved_failures": unresolved_failures,
+            "triage_summary": triage.get("summary", {}),
+        })
+
+    @app.route("/digital-twin")
+    def digital_twin_roadmap_legacy():
+        """Legacy route — project moved inline under /kanban. Redirect to
+        the anchor so old links still work."""
+        return redirect("/kanban#project-digital-twin", code=302)
+
     return app
 
 
@@ -7964,7 +8221,7 @@ if __name__ == "__main__":
             _ctx.verify_mode = _ssl.CERT_REQUIRED
             print(f"[ICDEV™ Dashboard] mTLS enabled (CA: {_tls_ca})")
         else:
-            print(f"[ICDEV™ Dashboard] TLS enabled (server-only; no client CA)")
+            print("[ICDEV™ Dashboard] TLS enabled (server-only; no client CA)")
         _ssl_context = _ctx
 
     # Use SocketIO runner if available (D170), otherwise plain Flask

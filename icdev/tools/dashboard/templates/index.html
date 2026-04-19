@@ -74,6 +74,16 @@
     {% endfor %}
 </div>
 
+{# Projects in Flight — reusable partial (config at args/projects.yaml).
+   Auto-hides each project when done; Task Board auto-hides when all active
+   columns are empty. Init hooks wired below in the DOMContentLoaded block. #}
+{% include "_projects_in_flight.html" %}
+
+{# Autonomous Recovery — shows failure_triage activity, autofix branches,
+   and unresolved failures. Auto-hides when idle (no triage in 24h, no
+   branches, no unresolved failures in the last hour). #}
+{% include "_autonomy_status.html" %}
+
 <!-- Add/Edit Task Modal -->
 <div id="task-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:none; align-items:center; justify-content:center;">
     <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:500px; border:1px solid var(--border);">
@@ -247,6 +257,7 @@ function refreshKanbanTasks() {
         .then(function(data) {
             _allTasks = data.tasks || [];
             renderTaskKanban(_allTasks);
+            if (window.checkBoardEmptyAndToggle) window.checkBoardEmptyAndToggle();
         });
 }
 
@@ -572,6 +583,10 @@ var _countdownTimer = null;
 function refreshDashboard() {
     // Refresh kanban tasks
     refreshKanbanTasks();
+    // Refresh in-flight projects (reusable partial in _projects_in_flight.html)
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
+    // Refresh autonomous recovery panel (reusable partial in _autonomy_status.html)
+    if (window.refreshAutonomyStatus) window.refreshAutonomyStatus();
     // Refresh charts (re-trigger the chart loader in the scripts block)
     if (window._loadCharts) window._loadCharts();
     // Visual feedback on button
@@ -607,6 +622,8 @@ function _startAutoRefresh() {
 
 document.addEventListener('DOMContentLoaded', function() {
     refreshKanbanTasks();
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
+    if (window.refreshAutonomyStatus)   window.refreshAutonomyStatus();
     _startAutoRefresh();
 });
 </script>
@@ -639,6 +656,15 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="card" style="padding: 20px;">
         <div class="card-label">Agent Health</div>
         <div id="chart-agent-health" style="min-height: 140px;"></div>
+    </div>
+    <!-- Oracle Insights: 4 stat tiles + severity mini-bar over 24h -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Oracle Insights
+            <span class="help-icon" title="Anticipatory predictions from Oracle lenses (24h window)">?</span>
+        </div>
+        <div id="tile-oracle" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
     </div>
     <!-- OPT-57: Sandbox liveness tile -->
     <div class="card" style="padding: 20px;">
@@ -691,6 +717,59 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderSandboxTile);
+})();
+
+// Oracle Insights tile renderer
+(function () {
+    function renderOracleTile() {
+        fetch('/api/oracle/summary').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-oracle');
+            if (!el) return;
+            var sev = d.severity || {critical:0, high:0, medium:0, low:0};
+            var total = (sev.critical||0) + (sev.high||0) + (sev.medium||0) + (sev.low||0);
+            var stat = function (label, val) {
+                return '<div style="flex:1; min-width:60px;">'
+                    + '<div style="font-size:18px; font-weight:600; color:var(--text-primary);">' + (val == null ? '—' : val) + '</div>'
+                    + '<div style="font-size:11px; color:var(--text-dim);">' + label + '</div>'
+                    + '</div>';
+            };
+            var seg = function (color, n) {
+                if (total === 0 || !n) return '';
+                var pct = (n / total) * 100;
+                return '<span title="' + n + '" style="background:' + color + '; width:' + pct.toFixed(1) + '%; display:inline-block; height:100%;"></span>';
+            };
+            var bar = total > 0
+                ? '<div style="display:flex; width:100%; height:8px; border-radius:4px; overflow:hidden; background:var(--card-bg);">'
+                    + seg('#ef4444', sev.critical)
+                    + seg('#f59e0b', sev.high)
+                    + seg('#eab308', sev.medium)
+                    + seg('#22c55e', sev.low)
+                    + '</div>'
+                    + '<div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-dim); margin-top:4px;">'
+                    + '<span>C ' + (sev.critical||0) + '</span>'
+                    + '<span>H ' + (sev.high||0) + '</span>'
+                    + '<span>M ' + (sev.medium||0) + '</span>'
+                    + '<span>L ' + (sev.low||0) + '</span>'
+                    + '</div>'
+                : '<div style="color:var(--text-dim); font-style:italic;">No predictions in 24h</div>';
+            el.innerHTML =
+                '<div style="display:flex; gap:8px; margin-bottom:12px;">'
+                + stat('Total 24h', d.total_24h)
+                + stat('High-conf pending', d.high_conf_pending)
+                + stat('Convergence', d.unresolved_convergence)
+                + stat('Median horizon (d)', d.median_horizon_days)
+                + '</div>'
+                + bar
+                + '<div style="margin-top:10px;"><a href="/oracle" class="btn" style="font-size:11px; padding:3px 10px;">View all</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-oracle');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Oracle summary unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderOracleTile);
 })();
 </script>
 

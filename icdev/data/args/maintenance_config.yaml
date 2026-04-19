@@ -48,7 +48,7 @@ reporting:
 # Supported package registries for version lookups (used by dependency_scanner)
 registries:
   pypi: "https://pypi.org/pypi/{package}/json"
-  npm: "https://registry.npmjs.org/{package}"
+  npm: "https://registry.npmjs.org/{package}"  # NOTE: No npm mirror in air-gap — npm lookups fail offline
   maven: "https://search.maven.org/solrsearch/select?q=g:{group}+AND+a:{artifact}&rows=1&wt=json"
   crates: "https://crates.io/api/v1/crates/{crate}"
   go: "https://proxy.golang.org/{module}/@latest"
