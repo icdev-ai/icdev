@@ -304,6 +304,9 @@ def create_data_canvas_blueprint():
         conn.commit()
         conn.close()
         _audit(design_id, session.get("user_id", "system"), "CREATE", name)
+        # Hook: refresh DDC KG so /ask reflects the new design immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("ddc")
         return jsonify({"id": design_id, "name": name}), 201
 
     @bp.route("/api/designs/<design_id>", methods=["GET"])
@@ -338,6 +341,9 @@ def create_data_canvas_blueprint():
         conn.commit()
         conn.close()
         _audit(design_id, session.get("user_id", "system"), "UPDATE", data.get("name", ""))
+        # Hook: refresh DDC KG so /ask reflects the edit immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("ddc")
 
         # Cross-canvas trigger: auto-classify data flows, detect CUI/PII threats
         try:

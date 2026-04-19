@@ -333,6 +333,9 @@ def create_boundary_blueprint():
                 ),
             )
         _audit(design_id, "CREATE", name)
+        # Hook: refresh BDC KG so /ask reflects the new design immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("bdc")
         return jsonify({"id": design_id, "name": name}), 201
 
     @bp.route("/api/designs/<design_id>", methods=["GET"])
@@ -373,6 +376,9 @@ def create_boundary_blueprint():
                 params,
             )
         _audit(design_id, "UPDATE", json.dumps(list(data.keys())))
+        # Hook: refresh BDC KG so /ask reflects the edit immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("bdc")
 
         # Cross-canvas trigger: validate boundary vs NDC enclaves, check ISA
         try:

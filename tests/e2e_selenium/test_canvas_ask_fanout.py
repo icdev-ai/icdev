@@ -39,7 +39,7 @@ CANVASES = [
     ("/boundary",      "BDC", "boundary"),
     ("/data",          "DDC", "table"),
     ("/observability", "ODC", "detection"),
-    ("/infra",         "IDC", "terraform"),
+    ("/infra",         "IDC", "compute"),  # matches entity_type=idc_compute
 ]
 
 

@@ -521,9 +521,12 @@ def create_design():
             ),
         )
         conn.commit()
-        return jsonify({"status": "created", "id": design_id}), 201
     finally:
         conn.close()
+    # Hook: refresh IDC KG so /ask reflects the new design immediately
+    from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+    reindex_canvas_on_save("idc")
+    return jsonify({"status": "created", "id": design_id}), 201
 
 
 @infra_bp.route("/api/designs/<design_id>", methods=["GET"])
@@ -563,6 +566,10 @@ def save_design(design_id):
         conn.commit()
     finally:
         conn.close()
+
+    # Hook: refresh IDC KG so /ask reflects the edit immediately
+    from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+    reindex_canvas_on_save("idc")
 
     # Cross-canvas trigger: auto-assess for security gaps
     try:

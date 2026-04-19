@@ -422,6 +422,9 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("CREATE", "pipeline", pipe_id, name)
+        # Hook: refresh PDC KG so /ask reflects the new design immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("pdc")
         return jsonify({"id": pipe_id, "name": name}), 201
 
     @bp.route("/api/pipelines/<pipe_id>", methods=["GET"])
@@ -458,6 +461,9 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("UPDATE", "pipeline", pipe_id, data.get("name", ""))
+        # Hook: refresh PDC KG so /ask reflects the edit immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("pdc")
         # Hook: auto-snapshot on every pipeline save (PDC twin)
         try:
             from tools.pipeline.twin import take_snapshot as _twin_snapshot

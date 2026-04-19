@@ -252,3 +252,10 @@
 | Proposal Builder | tools\trading\options\proposal_builder.py | Auto-registered: options/proposal_builder.py | --json | JSON |
 | Strategy Selector | tools\trading\options\strategy_selector.py | Auto-registered: options/strategy_selector.py | --json | JSON |
 | Strike Picker | tools\trading\options\strike_picker.py | Auto-registered: options/strike_picker.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Coach Engine | tools\trading\options\coach_engine.py | Auto-registered: options/coach_engine.py | --json | JSON |
+| Coach Llm | tools\trading\options\coach_llm.py | Auto-registered: options/coach_llm.py | --json | JSON |

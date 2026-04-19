@@ -24,6 +24,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sqlite3
 import sys
@@ -35,13 +36,17 @@ from tools.db.storage import get_connection
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Canvas slug → (sidecar DB path, designs table name, human name)
-CANVAS_CONFIG: Dict[str, Tuple[str, str, str]] = {
-    "pdc": ("data/pipeline_canvas.db",       "pipelines",             "Pipeline Design Canvas"),
-    "bdc": ("data/boundary_canvas.db",       "boundary_designs",      "Boundary Design Canvas"),
-    "ddc": ("data/data_canvas.db",           "data_designs",          "Data Design Canvas"),
-    "odc": ("data/observability_canvas.db",  "observability_designs", "Observability Design Canvas"),
-    "idc": ("data/infra_canvas.db",          "infra_designs",         "Infrastructure Design Canvas"),
+# Canvas slug → (sidecar module path for get_connection, designs table, human name, fallback SQLite path)
+# Each canvas's own get_connection() respects SQLite / PostgreSQL backend env
+# flags (e.g. IDC_STORAGE_BACKEND=postgresql routes IDC designs into a PG db
+# named "infra_canvas" instead of the .db file). Using the canvas's helper
+# keeps the indexer in lockstep with live save traffic regardless of backend.
+CANVAS_CONFIG: Dict[str, Tuple[str, str, str, str]] = {
+    "pdc": ("tools.pipeline.db.init_db",            "pipelines",             "Pipeline Design Canvas",       "data/pipeline_canvas.db"),
+    "bdc": ("tools.boundary_canvas.db.init_db",     "boundary_designs",      "Boundary Design Canvas",       "data/boundary_canvas.db"),
+    "ddc": ("tools.data_canvas.db.init_db",         "data_designs",          "Data Design Canvas",           "data/data_canvas.db"),
+    "odc": ("tools.observability_canvas.db.init_db","observability_designs", "Observability Design Canvas",  "data/observability_canvas.db"),
+    "idc": ("tools.infra_canvas.db.init_db",        "infra_designs",         "Infrastructure Design Canvas", "data/infra_canvas.db"),
 }
 
 
@@ -53,27 +58,53 @@ def _graph_id(canvas: str) -> str:
     return f"{canvas}-designs"
 
 
-def _load_designs(db_path: str, tbl: str) -> List[Tuple[str, str, str]]:
-    """Return list of (design_id, design_name, graph_json_str) tuples."""
-    abs_path = _REPO_ROOT / db_path
-    if not abs_path.exists():
-        return []
-    c = sqlite3.connect(str(abs_path))
+def _load_designs(conn_module: str, tbl: str, fallback_sqlite: str) -> List[Tuple[str, str, str]]:
+    """Return list of (design_id, design_name, graph_json_str) tuples.
+
+    Uses the canvas's own get_connection() so both SQLite and PostgreSQL
+    storage backends work. Falls back to a direct sqlite3 read of the
+    sidecar file only if the canvas module isn't importable (keeps the
+    indexer working in slim / test envs).
+    """
+    rows: List[Tuple[str, str, str]] = []
     try:
-        cur = c.cursor()
-        cur.execute(f"SELECT id, name, graph_json FROM {tbl} WHERE graph_json IS NOT NULL")  # nosec B608 -- table names from fixed CANVAS_CONFIG
-        return [(r[0], r[1], r[2]) for r in cur.fetchall()]
-    finally:
-        c.close()
+        mod = importlib.import_module(conn_module)
+        conn = mod.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT id, name, graph_json FROM {tbl} WHERE graph_json IS NOT NULL")  # nosec B608 -- fixed allowlist
+            for r in cur.fetchall():
+                if hasattr(r, "keys"):  # dict-like row (PG/sqlite-Row)
+                    rows.append((r["id"], r["name"], r["graph_json"]))
+                else:
+                    rows.append((r[0], r[1], r[2]))
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return rows
+    except Exception:
+        # Fallback: direct sqlite read of the sidecar file
+        abs_path = _REPO_ROOT / fallback_sqlite
+        if not abs_path.exists():
+            return []
+        c = sqlite3.connect(str(abs_path))
+        try:
+            cur = c.cursor()
+            cur.execute(f"SELECT id, name, graph_json FROM {tbl} WHERE graph_json IS NOT NULL")  # nosec B608
+            return [(r[0], r[1], r[2]) for r in cur.fetchall()]
+        finally:
+            c.close()
 
 
 def index_canvas(canvas: str) -> Dict[str, int]:
     """Index one canvas. Returns counters."""
     if canvas not in CANVAS_CONFIG:
         raise ValueError(f"unknown canvas '{canvas}'")
-    db_path, tbl, human = CANVAS_CONFIG[canvas]
+    conn_module, tbl, human, fallback = CANVAS_CONFIG[canvas]
     gid = _graph_id(canvas)
-    designs = _load_designs(db_path, tbl)
+    designs = _load_designs(conn_module, tbl, fallback)
 
     nodes_seen = 0
     edges_seen = 0
@@ -153,7 +184,7 @@ def index_canvas(canvas: str) -> Dict[str, int]:
         (
             gid, gid, human, f"Canvas-indexed {human} designs",
             nodes_seen, edges_seen,
-            json.dumps({"source": "canvas_indexer", "sidecar_db": db_path, "designs_table": tbl}),
+            json.dumps({"source": "canvas_indexer", "conn_module": conn_module, "designs_table": tbl}),
             _now(), _now(),
         ),
     )

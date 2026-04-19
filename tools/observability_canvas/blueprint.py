@@ -324,6 +324,9 @@ def create_observability_blueprint():
         finally:
             conn.close()
         _audit("CREATE", design_id, name)
+        # Hook: refresh ODC KG so /ask reflects the new design immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("odc")
         return jsonify({"id": design_id, "name": name}), 201
 
     @bp.route("/api/designs", methods=["GET"])
@@ -379,6 +382,9 @@ def create_observability_blueprint():
         finally:
             conn.close()
         _audit("UPDATE", design_id, data.get("name", ""))
+        # Hook: refresh ODC KG so /ask reflects the edit immediately
+        from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
+        reindex_canvas_on_save("odc")
 
         # Cross-canvas trigger: verify SIEM/logging controls match SDC requirements
         try:
