@@ -580,17 +580,20 @@ def scan_trustradius(config, competitors=None):
         reviews = []
         if isinstance(data, dict):
             if "_raw" in data:
-                raw_text = data["_raw"][:50000]
-                reviews.append(
-                    {
-                        "title": f"TrustRadius reviews page for {comp['name']}",
-                        "body": raw_text[:MAX_BODY_LENGTH],
-                        "url": url,
-                        "author": None,
-                        "rating": comp.get("rating"),
-                        "upvotes": 0,
-                    }
+                # TrustRadius no longer returns JSON for /reviews pages — we get
+                # HTML. Previously we stuffed the raw HTML into one signal with
+                # a generic "TrustRadius reviews page for X" title, polluting
+                # creative_signals and spawning broken specs. Skip until a
+                # real HTML review extractor lands. See
+                # tests/e2e/test_trustradius_scraper.py for the acceptance test.
+                _audit(
+                    "creative.scan.trustradius",
+                    "creative-engine",
+                    f"HTML fallback hit for {comp['name']} — skipping until review extractor is implemented",
+                    {"url": url, "competitor": comp["name"]},
                 )
+                time.sleep(delay)
+                continue
             else:
                 items = data.get("reviews", data.get("data", []))
                 if isinstance(items, list):

@@ -263,6 +263,144 @@ trading:
     - AI trading
     - quant trading
 
+# Security Canvas domain — attack simulation, BAS, MITRE ATT&CK, threat modeling
+security_canvas:
+  name: "security design canvas"
+  g2_category_url: "https://www.g2.com/categories/breach-and-attack-simulation-bas"
+  capterra_category_url: "https://www.capterra.com/penetration-testing-software/"
+  trustradius_category_url: "https://www.trustradius.com/security"
+  producthunt_topic: "security"
+  keywords:
+    - attack path
+    - attack graph
+    - breach and attack simulation
+    - BAS
+    - threat modeling
+    - STRIDE
+    - MITRE ATT&CK
+    - adversary emulation
+    - red team automation
+    - purple team
+    - Caldera
+    - AttackIQ
+    - Cymulate
+    - XM Cyber
+    - SafeBreach
+    - Mandiant Security Validation
+    - Stratus Red Team
+    - Atomic Red Team
+    - attack chain
+    - kill chain
+    - blast radius
+    - lateral movement
+    - privilege escalation path
+
+# Observability Canvas domain — detection engineering, SIEM rule authoring, MITRE coverage
+observability_canvas:
+  name: "observability and detection"
+  g2_category_url: "https://www.g2.com/categories/security-information-and-event-management-siem"
+  capterra_category_url: "https://www.capterra.com/siem-software/"
+  trustradius_category_url: "https://www.trustradius.com/security-information-event-management-siem"
+  producthunt_topic: "security"
+  keywords:
+    - detection engineering
+    - Sigma rule
+    - SIEM rule
+    - Splunk SPL
+    - Elastic KQL
+    - Sentinel KQL
+    - MITRE coverage
+    - ATT&CK coverage
+    - attack-navigator
+    - D3FEND
+    - detection coverage
+    - Tidal Cyber
+    - SOC Prime
+    - Panther
+    - Anvilogic
+    - Detection.FYI
+    - hayabusa
+    - chainsaw
+    - SigmaHQ
+    - OpenTelemetry
+    - distributed tracing
+    - detection-as-code
+    - threat hunting
+    - log volume
+    - SIEM cost
+
+# Infrastructure Canvas domain — IaC, Terraform drift, cloud config, pre-apply gates
+infra_canvas:
+  name: "infrastructure as code"
+  g2_category_url: "https://www.g2.com/categories/infrastructure-as-code-iac"
+  capterra_category_url: "https://www.capterra.com/infrastructure-software/"
+  trustradius_category_url: "https://www.trustradius.com/infrastructure-as-code"
+  producthunt_topic: "devtools"
+  keywords:
+    - infrastructure as code
+    - Terraform
+    - OpenTofu
+    - Pulumi
+    - CloudFormation
+    - Spacelift
+    - env0
+    - Firefly
+    - Terrateam
+    - Atlantis
+    - Scalr
+    - tfautomv
+    - tfmigrate
+    - terraform drift
+    - terraform plan
+    - pre-apply gate
+    - CSP drift
+    - cloud drift
+    - config drift
+    - Helm chart
+    - Kustomize
+    - multi-cloud
+    - GovCloud
+    - Azure Government
+    - STIG-hardened
+    - CIS benchmark
+
+# Boundary Canvas domain — ATO boundary, supply chain, cATO, SBOM, FedRAMP 20x
+boundary_canvas:
+  name: "boundary and supply chain"
+  g2_category_url: "https://www.g2.com/categories/grc"
+  capterra_category_url: "https://www.capterra.com/compliance-software/"
+  trustradius_category_url: "https://www.trustradius.com/compliance-management"
+  producthunt_topic: "productivity"
+  keywords:
+    - ATO boundary
+    - authorization boundary
+    - continuous ATO
+    - cATO
+    - POA&M
+    - plan of action
+    - SSP
+    - control narrative
+    - FedRAMP
+    - FedRAMP 20x
+    - CMMC
+    - OSCAL
+    - NIST 800-53
+    - eMASS
+    - Xacta
+    - SBOM
+    - supply chain
+    - SLSA
+    - in-toto
+    - bomber
+    - bomfather
+    - sbom-tool
+    - Anduril Lattice
+    - Palantir Foundry
+    - Second Front
+    - Highside
+    - compliance snapshot
+    - control assessment
+
 # =========================================================================
 # Source Adapters
 # =========================================================================
