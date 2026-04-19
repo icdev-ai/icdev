@@ -563,12 +563,24 @@ Single-leg option contracts inside the existing sandbox framework. Paper-only �
 
 ## Phase 7+ (specialized infra — wait for actual demand)
 
-- **Day-trader real-time stack** — WebSocket tick feeds, L2 order book,
-  hot-key engine, sub-second exec. **Infra-gated** — needs SIP market-data subscription + server-side streaming.
-- **Crypto universe** — BTC/ETH/SOL on-chain signals + 24/7 reflexes. **Upstream-blocked** — wait for Alpaca Crypto API maturity (per `memory/project_alphadesk_futures_deferred.md`).
-- **Family-office multi-asset** — alts, illiquidity tracking, tax-aware reporting. Scope: tax-lot tracking (FIFO/LIFO/specific-ID) + wash-sale detection + LTCG/STCG report. ~1.5 sessions.
+- **Day-trader real-time stack — PARTIAL (DONE 2026-04-19)**: hot-keys (j/k/b/s) + 5-sec polling shipped (gated on `requires_realtime` persona flag). **Still infra-gated:** WebSocket tick feeds + L2 order book + sub-second exec.
+- **Crypto universe — PARTIAL (DONE 2026-04-19)**: spot 10-pair routing through Alpaca `v1beta3/crypto/us` (BTC/ETH/SOL/AVAX/DOGE/LTC/LINK/BCH/UNI/AAVE), 24/7 pending-order sweep. **Still out:** on-chain signals, perps, lending, staking.
+- **Family-office multi-asset — DONE 2026-04-19**: tax-lot tracking (FIFO/LIFO/specific_id) + ±30-day wash-sale flagging (IRS §1091, flag-only) + ST/LT report. `/api/taxes/{report,realizations,lots,wash-sale-flags}` live. Section 1256 + K-1 pass-throughs remain out.
 - **DoD smart-card auth** — PIV/CAC cert-based auth. **Infra-gated** — needs reverse-proxy cert validation + DoD root CA trust chain at the deployment layer.
 - ✅ **Compliance-officer dashboard — DONE 2026-04-19** — see below.
+- ✅ **Phase 7.6 — AI-Assisted Options — DONE 2026-04-19** — see below.
+
+### ✅ Phase 7.6 — AI-Assisted Options Strategy Creation (DONE 2026-04-19)
+Hybrid design: LLM only for natural-language intent parsing + post-event coach recommendations; deterministic rules own strategy selection + strike/expiry picking (NIST AU auditable).
+- **Flow:** intent textarea → `parse_intent` → `rank_strategies` (top-3) → `pick_expiry` + `pick_strikes` (delta-target) → `compute_payoff` → `run_preflight` → LLM rationale (grounded, no new numbers) → confirm modal → `place_multileg_order`.
+- **Coach daemon** (`options_coach` reflex, 10m): scans `ad_sandbox_option_positions`, emits events on 50% profit / 2× loss / 7 DTE / 21 DTE roll window, LLM writes ≤3-sentence recommendations. Never auto-closes.
+- **New modules:** `intent_parser`, `strategy_selector`, `strike_picker`, `proposal_builder`, `preflight`, `coach_db`, `coach_engine`, `coach_llm`.
+- **New configs:** `args/options_intent_schema.yaml`, `options_strike_targets.yaml`, `options_risk_gates.yaml`, `options_coach_thresholds.yaml`.
+- **New DB:** migration 020 → `ad_options_coach_events` (append-only NIST AU; mutable `recommendation` column only).
+- **New routes:** `POST /api/options/ai-assist/{propose,execute}`, `GET /api/options/coach/events{,/id}`.
+- **UI:** "AI Assist" tab in `/options` (intent → proposal modal with payoff chart + rationale + warnings/blocks + Execute button). "🎯 Options Coach" card on `/portfolio` (auto-hides when no events).
+- **Project registry:** `args/projects.yaml → alphadesk-7-6`, prefix `ad76-`, 26 tasks across 5 epics — all green.
+- **Coherence 17/17 at every phase gate.** Companion synced 10 platforms. Selenium E2E `tests/e2e_selenium/test_ad76_ai_options_assist.py`.
 
 ### ✅ Compliance-officer dashboard (DONE 2026-04-19)
 - **New module** `tools/trading/compliance/audit_aggregator.py` — unified read-only query layer across 12 append-only audit tables. Hot-reloads `args/nist_au_crosswalk.yaml` for per-table column mappings + NIST 800-53 AU control tags.

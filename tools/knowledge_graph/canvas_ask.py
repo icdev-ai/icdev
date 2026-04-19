@@ -93,3 +93,18 @@ def handle_ask_request(
         payload["kg_error"] = kg["error"]
     # JSON-safe (flatten datetime etc.)
     return json.loads(json.dumps(payload, default=str))
+
+
+def reindex_canvas_on_save(canvas: str) -> None:
+    """Best-effort re-index hook for canvas save endpoints.
+
+    Called after a design is created or updated so /ask reflects the
+    change immediately instead of waiting up to the canvas_indexer
+    reflex's 6-hour cycle. Swallows all errors — a save must never
+    fail because the KG indexer had a bad day.
+    """
+    try:
+        from tools.knowledge_graph.canvas_indexer import index_canvas
+        index_canvas(canvas)
+    except Exception as exc:
+        logger.info("reindex_canvas_on_save[%s]: skipped (%s)", canvas, exc)
