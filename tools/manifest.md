@@ -265,3 +265,15 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Schedule Phase 7 7 Prob Compare Plan | tools\scripts\schedule_phase_7_7_prob_compare_plan.py | Auto-registered: scripts/schedule_phase_7_7_prob_compare_plan.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Schedule Phase 7 8 Greeks Share Plan | tools\scripts\schedule_phase_7_8_greeks_share_plan.py | Auto-registered: scripts/schedule_phase_7_8_greeks_share_plan.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Portfolio Greeks | tools\trading\options\portfolio_greeks.py | Auto-registered: options/portfolio_greeks.py | --json | JSON |
