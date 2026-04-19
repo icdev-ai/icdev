@@ -116,6 +116,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_user_achievements",
         # AlphaDesk challenges (Phase 6.3.5) — sandbox order fills (NIST AU; full trade audit)
         "ad_sandbox_orders",
+        # AlphaDesk challenges (Phase 6.3.5 follow-up) — daily snapshots drive continuously-held predicate; rewriting history would corrupt past-day checks
+        "ad_sandbox_daily_snapshots",
         # AlphaDesk lessons (Phase 6.5) — quiz attempt audit (NIST AU; anti-cheat + learning analytics)
         "ad_user_quiz_attempts",
         # Phase 44 — Innovation Adaptation
