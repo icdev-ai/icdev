@@ -215,6 +215,23 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_trail(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_trail_actor_action ON audit_trail(actor, action);
 
 -- ============================================================
+-- AUDIT (lightweight general event log — alias sink for DELETE/UPDATE guards)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audit (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor      TEXT NOT NULL DEFAULT '',
+    action     TEXT NOT NULL DEFAULT '',
+    table_name TEXT NOT NULL DEFAULT '',
+    row_id     TEXT,
+    detail     TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit(actor);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit(action);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit(created_at);
+
+-- ============================================================
 -- CONTINUOUS COMPLIANCE EVIDENCE CHAIN (D-CHAIN-1)
 -- Unified PDC/NDC/SDC audit trail snapshots aligned to OSCAL 1.1.2
 -- ============================================================
