@@ -104,6 +104,86 @@ projects:
         title: "Registration + docs + E2E"
         priority: high
 
+  - key: alphadesk-7-9
+    name: "AlphaDesk 7.9 — TA Foundation"
+    description: >
+      Candlestick 1D chart + Volume Profile (HVN/LVN/POC/VA) + algorithmic
+      S/R clusters + reversal pattern detectors (double top/bottom, triple
+      top/bottom, rising + falling wedge). Layer 1 primitives that the
+      trap engine (7.10) and news-on-chart overlay (7.11) both build on.
+      No LLM — pure deterministic TA math.
+    task_prefix: "ad79-"
+    default_open: true
+    briefs:
+      - label: "Phase 7.9 brief — TA foundation"
+        path: "/docs/briefs/phase-7.9-ta-foundation.md"
+    epics:
+      - key: primitives
+        title: "Swings, Volume Profile, S/R clusters"
+        priority: critical
+      - key: patterns
+        title: "Double, triple, wedge detectors"
+        priority: critical
+      - key: ui
+        title: "Candlestick chart + overlays on /analysis"
+        priority: high
+      - key: wrap
+        title: "Registration + docs + E2E"
+        priority: high
+
+  - key: alphadesk-7-10
+    name: "AlphaDesk 7.10 — Trap Detection"
+    description: >
+      Blocked on 7.9. Macro liquidity-trap regime detector feeding Oracle
+      + preflight; technical bull/bear trap detector built on 7.9's S/R +
+      swing primitives; coach + alerts + Genesis wiring for autonomous
+      actions. Trap coach never moves positions — only notifies.
+    task_prefix: "ad710-"
+    default_open: true
+    briefs:
+      - label: "Phase 7.10 brief — trap detection"
+        path: "/docs/briefs/phase-7.10-trap-detection.md"
+    epics:
+      - key: macro
+        title: "Liquidity trap regime detector"
+        priority: high
+      - key: technical
+        title: "Bull/bear trap detector"
+        priority: critical
+      - key: integration
+        title: "Coach + Genesis + preflight wiring"
+        priority: high
+      - key: wrap
+        title: "Registration + docs + E2E"
+        priority: high
+
+  - key: alphadesk-7-11
+    name: "AlphaDesk 7.11 — News 2.0"
+    description: >
+      Blocked on 7.9 (uses the chart layer for news-on-price overlays).
+      Categorized /news tabs (not one firehose list); per-category pattern
+      analyzer with append-only audit table; Genesis reflex for autonomous
+      actions (alerts + scenario auto-spawn + Pulse digest). Genesis never
+      places orders — signals only.
+    task_prefix: "ad711-"
+    default_open: true
+    briefs:
+      - label: "Phase 7.11 brief — news 2.0"
+        path: "/docs/briefs/phase-7.11-news-2.md"
+    epics:
+      - key: cat
+        title: "Category tabs + news-on-chart overlay"
+        priority: high
+      - key: pattern
+        title: "Pattern analyzer + ad_news_patterns"
+        priority: critical
+      - key: genesis
+        title: "Genesis reflex for autonomous actions"
+        priority: high
+      - key: wrap
+        title: "Registration + docs + E2E"
+        priority: high
+
   - key: alphadesk-7-8
     name: "AlphaDesk 7.8 — Greeks Deep Dive + Quick Wins"
     description: >
