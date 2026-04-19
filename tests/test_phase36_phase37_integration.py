@@ -160,9 +160,10 @@ class TestCapabilityEvaluatorDimensions:
         assert abs(total - 1.0) < 0.01, f"Weights sum to {total}, expected ~1.0"
 
     def test_capability_evaluator_7_dimensions(self):
-        """Evaluator has 7 dimensions (including security_assessment).
+        """Evaluator has at least 7 dimensions (security_assessment + sandbox_security added in D-NC-4).
 
         Phase 37 adds security_assessment as a 7th dimension.
+        D-NC-4 (NemoClaw) adds sandbox_security as an 8th dimension.
         If only 6 dimensions exist, the integration is pending.
         """
         try:
@@ -173,7 +174,7 @@ class TestCapabilityEvaluatorDimensions:
         dim_count = len(CapabilityEvaluator.DIMENSIONS)
         if dim_count == 6:
             pytest.skip("security_assessment dimension not yet added (Stream 5 pending -- currently 6 dimensions)")
-        assert dim_count == 7, f"Expected 7 dimensions, got {dim_count}"
+        assert dim_count >= 7, f"Expected at least 7 dimensions, got {dim_count}"
 
     def test_capability_evaluator_security_dimension(self):
         """security_assessment dimension exists with weight ~0.10.

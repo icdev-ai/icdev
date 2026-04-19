@@ -293,3 +293,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Triple | tools\trading\ta\patterns\triple.py | Auto-registered: patterns/triple.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Wedge | tools\trading\ta\patterns\wedge.py | Auto-registered: patterns/wedge.py | --json | JSON |

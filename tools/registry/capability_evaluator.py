@@ -148,6 +148,7 @@ class CapabilityEvaluator:
         "security_assessment": 0.10,
         "sandbox_security": 0.12,
     }
+    DIMENSIONS = _DEFAULT_DIMENSIONS
 
     _DEFAULT_THRESHOLD_AUTO_QUEUE = 0.85
     _DEFAULT_THRESHOLD_RECOMMEND = 0.65
