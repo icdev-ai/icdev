@@ -277,3 +277,13 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Portfolio Greeks | tools\trading\options\portfolio_greeks.py | Auto-registered: options/portfolio_greeks.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Schedule Phase 7 10 Traps Plan | tools\scripts\schedule_phase_7_10_traps_plan.py | Auto-registered: scripts/schedule_phase_7_10_traps_plan.py | --json | JSON |
+| Schedule Phase 7 11 News 2 Plan | tools\scripts\schedule_phase_7_11_news_2_plan.py | Auto-registered: scripts/schedule_phase_7_11_news_2_plan.py | --json | JSON |
+| Schedule Phase 7 9 Ta Foundation Plan | tools\scripts\schedule_phase_7_9_ta_foundation_plan.py | Auto-registered: scripts/schedule_phase_7_9_ta_foundation_plan.py | --json | JSON |
+| Swings | tools\trading\ta\swings.py | Auto-registered: ta/swings.py | --json | JSON |
+| Volume Profile | tools\trading\ta\volume_profile.py | Auto-registered: ta/volume_profile.py | --json | JSON |
