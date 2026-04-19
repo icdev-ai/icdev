@@ -227,6 +227,36 @@ signal_categories:
     priority_boost: 1.1
     auto_triage: true
     notes: "Detected by introspective analyzer every 12 hours. Auto-fixable via tools/compat/cli_harmonizer.py"
+  digital_twin:
+    keywords: [digital twin, digital-twin, Eclipse Ditto, Azure Digital Twins, AWS IoT TwinMaker, what-if simulation, Monte Carlo, pre-apply gate, compliance snapshot, continuous ATO, cATO, model-based, network verification, intent-based networking, path verification]
+    priority_boost: 1.3
+    auto_triage: true
+    notes: "Feeds ICDEV's 7-canvas digital-twin suite (NDC/SDC/PDC/BDC/DDC/ODC/IDC)"
+  breach_attack_simulation:
+    keywords: [attack path, attack graph, breach and attack simulation, BAS, Caldera, AttackIQ, Cymulate, XM Cyber, SafeBreach, Mandiant Security Validation, Stratus Red Team, Atomic Red Team, adversary emulation, purple team, red team automation, lateral movement path]
+    priority_boost: 1.3
+    auto_triage: true
+    notes: "Feeds SDC (Security Design Canvas) attack-path twin"
+  data_lineage:
+    keywords: [data lineage, column lineage, OpenLineage, Marquez, DataHub, Atlan, Collibra, Alation, Apache Atlas, Amundsen, Unity Catalog, OpenMetadata, data contract, active metadata, data catalog, schema registry, lineage graph, provenance]
+    priority_boost: 1.3
+    auto_triage: true
+    notes: "Feeds DDC (Data Design Canvas) lineage engine"
+  iac_drift:
+    keywords: [terraform drift, terraform plan, pre-apply gate, OpenTofu, Pulumi, Spacelift, env0, Firefly, Terrateam, Atlantis, Scalr, tfautomv, tfmigrate, cloud drift, config drift, CSP drift, CloudFormation drift, infrastructure drift]
+    priority_boost: 1.2
+    auto_triage: true
+    notes: "Feeds IDC (Infrastructure Design Canvas) pre-apply + drift engines"
+  detection_engineering:
+    keywords: [Sigma rule, SigmaHQ, detection engineering, detection-as-code, SIEM rule, Splunk SPL, Elastic KQL, Sentinel KQL, MITRE coverage, attack-navigator, D3FEND, Tidal Cyber, SOC Prime, Panther, Anvilogic, hayabusa, chainsaw, threat hunting, OpenTelemetry detection]
+    priority_boost: 1.3
+    auto_triage: true
+    notes: "Feeds ODC (Observability Design Canvas) MITRE coverage + Sigma generator"
+  sbom_supply_chain:
+    keywords: [SBOM, CycloneDX, SPDX, SLSA, in-toto, Sigstore, bomber, bomfather, sbom-tool, Syft, Grype, Trivy image, provenance attestation, supply chain attack, package poisoning, build provenance]
+    priority_boost: 1.3
+    auto_triage: true
+    notes: "Feeds BDC (Boundary Canvas) supply-chain + SBOM graph"
 
 # =========================================================================
 # Innovation Scoring (D21-style weighted average)
