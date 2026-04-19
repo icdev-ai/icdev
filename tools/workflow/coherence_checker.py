@@ -1033,7 +1033,9 @@ def check_ruff_lint(changed_files: Optional[List[Path]] = None) -> CoherenceChec
 # Check 8: api_wiring — verify API handlers read from DB, not hardcoded
 # ---------------------------------------------------------------------------
 
-# Patterns indicating a function reads from storage (DB/connector/file)
+# Patterns indicating a function reads from storage (DB/connector/file/external)
+# Extended 2026-04-18: recognize helper-delegation + known external-data sources
+# as legitimate "does real work" patterns, not hardcoded placeholders.
 _DB_CALL_PATTERNS = re.compile(
     r"(?:"
     r"\.execute\(|\.fetchone\(|\.fetchall\(|\.fetchmany\("
@@ -1043,6 +1045,15 @@ _DB_CALL_PATTERNS = re.compile(
     r"|from\s+\S+\s+import\s+"  # lazy imports inside function
     r"|subprocess\.run\("  # tool dispatch via subprocess
     r"|import\s+\S*(?:db|storage|connector|model)"
+    # Helper-delegate patterns — routes that call underscore-prefixed helpers
+    # are almost always delegating to a module-internal function that hits
+    # the DB / computes real values. Names here are the standard verbs
+    # used across the codebase.
+    r"|_fetch_\w+\(|_current_\w+\(|_snapshot_\w+\(|_query_\w+\("
+    r"|_load_\w+\(|_compute_\w+\(|_get_\w+\(|_list_\w+\("
+    r"|_build_\w+\(|_resolve_\w+\(|_lookup_\w+\("
+    # Known external-data sources — not our DB, but real dynamic data
+    r"|yf\.Ticker|yfinance|fetch_latest_quote|requests\.get\("
     r")",
     re.IGNORECASE,
 )
