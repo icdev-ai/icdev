@@ -7858,7 +7858,7 @@ def create_app() -> Flask:
     _LIKE_ESCAPE = "\\"
 
     def _escape_like(s: str) -> str:
-        """Escape LIKE metacharacters (% _ \) for use with `LIKE ? ESCAPE '\\'`."""
+        r"""Escape LIKE metacharacters (% _ \) for use with `LIKE ? ESCAPE '\\'`."""
         if not isinstance(s, str):
             return ""
         return (s.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
