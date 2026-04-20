@@ -143,6 +143,51 @@ def check_claude_code_session(config: Dict) -> Tuple[bool, str]:
     return True, "No active Claude Code session detected"
 
 
+_SHORT_PREMIUM_STRATEGIES = frozenset({
+    "short_condor",
+    "short_strangle",
+    "short_straddle",
+    "short_call",
+    "short_put",
+    "iron_condor",
+    "iron_butterfly",
+})
+
+
+def check_liquidity_trap(
+    macro_data: Dict,
+    strategy: str = "",
+    bypass: bool = False,
+) -> Tuple[bool, str]:
+    """Block short-premium strategies when a macro liquidity trap is active.
+
+    Bypassable per-call via ``bypass=True`` or env
+    ``ICDEV_PREFLIGHT_LIQTRAP_OVERRIDE=true``.
+    """
+    import os
+
+    if bypass or os.environ.get("ICDEV_PREFLIGHT_LIQTRAP_OVERRIDE", "").lower() == "true":
+        return True, "Liquidity-trap check bypassed"
+
+    if strategy and strategy not in _SHORT_PREMIUM_STRATEGIES:
+        return True, f"Strategy '{strategy}' not subject to liquidity-trap gate"
+
+    try:
+        from tools.trading.ta.macro_liquidity import detect_liquidity_trap
+
+        result = detect_liquidity_trap(macro_data)
+    except Exception as exc:
+        return True, f"Liquidity-trap check unavailable ({exc}) — allowing"
+
+    if result["active"]:
+        return False, (
+            f"liquidity_trap active (confidence={result['confidence']:.0%}) — "
+            f"short-premium strategy '{strategy}' blocked. "
+            "Set ICDEV_PREFLIGHT_LIQTRAP_OVERRIDE=true to bypass."
+        )
+    return True, f"Liquidity trap inactive (confidence={result['confidence']:.0%}) — strategy allowed"
+
+
 def check_all(config: Dict) -> Tuple[bool, str, Dict]:
     """Run all preflight checks. Returns (all_ok, first_failure_reason, details)."""
     pf = config.get("preflight", {})
