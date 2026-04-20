@@ -21,6 +21,7 @@ COACH_EVENT_TYPES = (
     "dte_roll_window",
     "iv_crush",
     "greeks_drift",
+    "trap_against_position",
 )
 
 COACH_EVENT_SEVERITIES = ("info", "warn", "critical")
@@ -40,6 +41,7 @@ def _ddl_sqlite() -> str:
         summary               TEXT NOT NULL,
         recommendation        TEXT,
         position_snapshot_json TEXT,
+        trap_event_id         TEXT,
         created_at            TEXT NOT NULL
     )
     """
@@ -59,6 +61,7 @@ def _ddl_pg() -> str:
         summary               TEXT NOT NULL,
         recommendation        TEXT,
         position_snapshot_json TEXT,
+        trap_event_id         TEXT,
         created_at            TEXT NOT NULL,
         CONSTRAINT ad_options_coach_events_event_type_check
             CHECK (event_type IN ({et})),
@@ -73,6 +76,16 @@ INDEXES = [
     "ON ad_options_coach_events(user_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_ad_coach_position_created "
     "ON ad_options_coach_events(position_id, created_at DESC)",
+    # Partial unique index: enforce one coach event per (position, trap) pair.
+    # WHERE clause excludes non-trap events so NULL trap_event_id rows are ignored.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_ad_coach_position_trap_dedup "
+    "ON ad_options_coach_events(position_id, trap_event_id) "
+    "WHERE trap_event_id IS NOT NULL",
+]
+
+# Column additions for tables that already exist (idempotent via try/except).
+_ALTER_STMTS = [
+    "ALTER TABLE ad_options_coach_events ADD COLUMN trap_event_id TEXT",
 ]
 
 
@@ -84,6 +97,13 @@ def up(conn) -> dict:
     actions = []
     conn.execute(_ddl_pg() if _is_pg(conn) else _ddl_sqlite())
     actions.append("ad_options_coach_events_table")
+    for stmt in _ALTER_STMTS:
+        try:
+            conn.execute(stmt)
+            actions.append(f"column_added: {stmt.split('ADD COLUMN')[1].strip()}")
+        except Exception:
+            # Column already exists — idempotent.
+            pass
     for idx in INDEXES:
         conn.execute(idx)
     actions.append("indexes_created")
