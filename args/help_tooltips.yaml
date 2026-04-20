@@ -1931,3 +1931,124 @@ news.export_csv:
     status), and aggregate impact metrics (total Σ, trace count,
     impacted-ticker count). Honors `?category=...` and `?limit=N`
     query args.
+
+# ───────────────────────────────────────────────────────────────────
+# /options — Paper Options Trading page
+# ───────────────────────────────────────────────────────────────────
+
+options.target:
+  title: Active Sandbox
+  body: |
+    Selects which paper portfolio your trades are booked into.
+
+    The Free Paper Account ($100K) is always available — no challenge
+    required. Positions, cash, and P&L persist across sessions until
+    you click Reset.
+
+    Challenge sandboxes appear here when you have an active challenge
+    attempt. Each challenge has its own isolated portfolio and rules.
+
+    Use Reset to wipe all positions and restore $100K to the paper
+    account at any time.
+
+options.tabs:
+  title: Options Trading Tabs
+  body: |
+    Three ways to build and place option trades:
+
+    Chain — Browse live bid/ask/IV/delta for every strike and expiry.
+    Click Trade on any contract to open a single-leg order.
+
+    Strategy Builder — Select a named strategy (covered call, iron
+    condor, calendar spread, etc.), enter strikes and expiry, then
+    submit the full multi-leg order atomically to your sandbox.
+
+    AI Assist — Describe your thesis in plain English ("bullish AAPL,
+    short-term, low risk") and the AI picks the strategy, strikes, and
+    expiry for you. Review the proposal, then execute with one click.
+
+options.chain:
+  title: Option Chain
+  body: |
+    Live options chain fetched from Alpaca (real market data) with a
+    yfinance fallback when markets are closed.
+
+    Columns shown: Bid, Ask, IV (implied volatility, annualized), and
+    Delta for both calls and puts at each strike. The chain refreshes
+    on demand — click Refresh to force a new fetch.
+
+    Click Trade on any row to pre-fill a single-leg order in your
+    active sandbox. IV is color-coded: high IV (>60%) is flagged in
+    amber — elevated premiums favor selling strategies.
+
+options.strategy:
+  title: Strategy Builder
+  body: |
+    Build a named multi-leg strategy and submit it as a single atomic
+    order to your sandbox. All legs fill simultaneously — no partial
+    fills that leave you with unintended exposure.
+
+    Select a strategy from the dropdown (20 strategies across novice,
+    intermediate, and advanced complexity). Enter the underlying ticker,
+    current price, expiry date, and strikes for each leg.
+
+    Click Compute Payoff to preview the P&L curve before committing.
+    The chart shows max profit, max loss, and breakeven prices at expiry.
+
+    Calendar and diagonal strategies require two expiry dates — a
+    near-term and far-term leg. The form updates automatically when
+    you select a multi-expiry strategy.
+
+options.ai_assist:
+  title: AI Assist
+  body: |
+    Describe your market thesis in plain English and the AI builds a
+    complete options proposal for you.
+
+    Examples: "neutral TSLA, sell premium", "bullish SPY into earnings",
+    "hedge my portfolio against a 10% drop".
+
+    The AI parses your intent, selects the best-fit strategy from the
+    library, picks delta-targeted strikes from the live chain, runs a
+    preflight check (margin, buying power, risk limits), and explains
+    the trade in plain language.
+
+    Review the proposed legs and payoff chart, then click Execute to
+    book the trade into your active sandbox.
+
+options.positions:
+  title: My Option Positions
+  body: |
+    Open option positions in your active sandbox, marked to live mid
+    prices. P&L updates each time you refresh or place a new order.
+
+    Greeks shown (Delta, Gamma, Theta, Vega) are per-position, computed
+    from Black-Scholes at current IV. Net portfolio Greeks appear in
+    the summary row.
+
+    Positions are settled at expiry: ITM options receive intrinsic
+    value in cash; OTM options expire worthless. Use the sandbox Reset
+    button to clear all positions and start fresh.
+
+options.combo:
+  title: AI Combo Analyzer
+  body: |
+    Tests all 20 strategies individually against live chain data, then
+    evaluates every possible two-strategy combination to find synergistic
+    edges.
+
+    Each strategy is scored on three factors:
+    - Probability of Profit (Monte Carlo, 8,000 paths, lognormal GBM)
+    - Expected P&L relative to max risk
+    - Theta efficiency (time decay per dollar at risk)
+
+    Combos are ranked by a weighted composite edge score and graded
+    S/A/B/C. Industry names are shown where they exist (e.g. Calendar
+    Risk Reversal, Double Diagonal, Wheel Strategy).
+
+    The ticker dropdown is pre-loaded with FathomDesk's top-ranked
+    signals — sorted by composite score so the best opportunities
+    appear first. You can also type any ticker freely.
+
+    Click Build This Trade to pre-fill the Strategy Builder above, or
+    Execute in Paper Account to book the combined legs directly.

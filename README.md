@@ -29,6 +29,9 @@ One developer built this. Imagine what your team could do with it.
 - **Backend-aware indexer** — `tools/knowledge_graph/canvas_indexer.py` speaks SQLite *or* PostgreSQL per-canvas (respects `<CANVAS>_STORAGE_BACKEND`), so the same pipeline works on a laptop and in air-gapped IL4/IL5 deployments.
 - **Scheduler worktree-before-rebase fix** — 52-branch preserved-branch pile (caused by worktree-locked rebases) cleared; new reflex detaches worktree before merge so the pile can't regrow.
 - **Single license** — commercial tier removed. ICDEV™ is Apache-2.0, full stop.
+- **Failure Triage auto-fix loop** (1.2.17–1.2.19) — Genesis daemon runs `failure_triage` on a 30-min cadence. Two-tier LLM routing: Claude diagnoses, Ollama generates patches. Conservative defaults: `ICDEV_AUTOFIX_ENABLED=false`, confidence threshold 0.85, 5-apply/hour rate cap, task-type whitelist. Patches land as `status='suggested'` Oracle cards for human review. Opt-in `ICDEV_AUTOFIX_AUTOMERGE` fast-forward merges verified clean patches. Includes full worktree isolation — each fix runs in `.tmp/autofix/<task>/` and rolls back on failure.
+- **IQE v0.1 — ICDEV Query Engine** — declarative `foreach / where / select` DSL for compliance and network-health checks across all 7 design-canvas databases. Ships with recursive-descent parser, typed AST, SQL-injection-safe executor, and a 5-query NDC seed library (vendor inventory, BGP peer asymmetry, CAT I STIG open findings, capacity threshold).
+- **FathomDesk Phase 7+** — complex options (13 strategies including multi-expiry calendar butterfly), crypto spot (10 pairs), tax-lots (FIFO/LIFO/specific-ID with wash-sale flag), and day-trader hot-keys with 5-second polling.
 
 ---
 
@@ -53,7 +56,7 @@ ICDEV™ generated GovProposal the same way it generates any application — thr
 |-------------|--------------|
 | **6-layer FORGE framework** | Frameworks, Orchestration, Routines, Guidance, Evidence — separating deterministic logic from AI |
 | **Multi-agent architecture** | 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) + 2 ATO agents |
-| **229-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
+| **588-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
 | **42 compliance frameworks** | Dual-hub crosswalk engine — implement a control once, map to FedRAMP, CMMC, CJIS, HIPAA, and 38 more |
 | **9-step testing pipeline** | Syntax → lint → unit → BDD → SAST → E2E → vision → acceptance → security gates |
 | **CI/CD integration** | GitHub + GitLab dual-platform, webhook-triggered workflows |
@@ -234,7 +237,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 ┌─ GENERATE ────────────────────────────────────────────┐
 │  Full application in 12 deterministic steps            │
 │  → 300+ files: agents, tools, goals, tests, CI/CD     │
-│  → 229-table database with append-only audit trail     │
+│  → 588-table database with append-only audit trail     │
 │  → FORGE framework + ANVIL workflow baked in          │
 │  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
 └───────────────────────────┬───────────────────────────┘
@@ -521,7 +524,7 @@ git clone https://github.com/icdev-ai/icdev.git
 cd icdev
 pip install -r requirements.txt
 
-# Initialize databases (234 tables)
+# Initialize databases (588+ tables)
 python tools/db/init_icdev_db.py
 
 # Start the dashboard
@@ -663,7 +666,7 @@ ICDEV™'s core architecture separates deterministic tools from probabilistic AI
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Goals         →  What to achieve (48 workflows)      │
+│  Goals         →  What to achieve (56+ workflows)     │
 │  Orchestration →  AI decides tool order (LLM layer)   │
 │  Tools         →  Deterministic scripts (500+ tools)  │
 │  Context       →  Static reference (42 catalogs)      │
@@ -700,7 +703,7 @@ Generated child applications inherit the full FORGE framework — they aren't wr
 │       Goals │ Tools │ Args │ Context │ Hard Prompts        │
 ├──────────────────────────────────────────────────────────┤
 │  SQLite (dev) / PostgreSQL (prod)  │   Multi-Cloud CSP    │
-│  210 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
+│  588 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
 │  Per-tenant DB isolation           │  IBM │Local/Air-Gap   │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -716,10 +719,14 @@ python tools/dashboard/app.py
 
 | Page | Purpose |
 |------|---------|
-| `/` | Home with auto-notifications and pipeline status |
+| `/` | Home with auto-notifications, pipeline status, and projects-in-flight |
 | `/projects` | Project listing with compliance posture |
+| `/kanban` | Kanban task board with dependency gating and auto-fix Oracle cards |
+| `/oracle` | Genesis Oracle: AI-suggested improvements from drift/gap detection |
 | `/agents` | Agent registry with heartbeat monitoring |
 | `/monitoring` | System health with status icons |
+| `/activity` | Activity feed: merged audit trail + hook events |
+| `/usage` | Usage tracking and cost dashboard per-user and per-provider |
 | `/wizard` | Getting Started wizard (3 questions → workflow) |
 | `/query` | Natural language compliance queries |
 | `/chat` | Multi-agent chat interface |
@@ -737,6 +744,25 @@ python tools/dashboard/app.py
 | `/govcon` | GovCon Intelligence: SAM.gov scanning, pipeline status, domain distribution |
 | `/govcon/requirements` | Requirement pattern analysis: frequency, domain heatmap, trend detection |
 | `/govcon/capabilities` | ICDEV™ capability coverage: L/M/N grading, gaps, enhancement recommendations |
+| `/proposal-genesis` | Proposal Genesis daemon: autonomous capture pipeline, R1–R20 reflexes, CRM module |
+| `/genesis` | Genesis v2: autonomous research lab with 14 reflexes and Trust Kernel |
+| `/pulse` | AI Blog Engine: deterministic article generation, WriteGuard quality scoring |
+| `/finetune` | Fine-Tuning Dashboard: datasets, labeling, training jobs, model registry, evaluation |
+| `/clawhub` | ClawHub: skill browser and marketplace bridge with 10-gate security scan |
+| `/knowledge-graph` | Knowledge graph explorer: 973-node graph, entity relationships |
+| `/components-map` | Internal Awareness Engine visual component map |
+| `/ask-icdev` | Natural-language Q&A over ICDEV™'s own knowledge graph |
+| `/fathomdesk` | FathomDesk: multi-agent trading intelligence with options, crypto, and technical analysis |
+| `/news` | News feed: category-tab layout with show-on-chart links |
+| `/simulation` | Digital Program Twin: 6-dimension what-if simulation, Monte Carlo COA comparison |
+| `/migration` | Application modernization: 7R assessment, legacy migration tracking |
+| `/translations` | Cross-language code translation: 30 pairs, pass@k candidates, auto-repair |
+| `/compliance` | Multi-framework compliance dashboard with crosswalk deduplication |
+| `/ato-package` | ATO package: SSP, POAM, STIG, SBOM, OSCAL artifact management |
+| `/cato` | Continuous ATO monitoring: evidence freshness, control drift alerts |
+| `/lineage` | Data lineage: column-level traceability, PII classification |
+| `/studio/workflows` | ICDEV Studio: low-code workflow canvas |
+| `/studio/marketplace` | ICDEV Studio: marketplace integration |
 | `/network/canvas` | Network Design Canvas: topology builder, drag-and-drop, cloud architecture diagrams |
 | `/network/ingestion` | Network data ingestion: drag-and-drop upload, NMS adapter management, ingestion audit log |
 | `/network/compliance` | Network compliance audit: STIG findings, ACAS/Nessus vulnerability overlay, heat maps |
@@ -837,7 +863,7 @@ helm install icdev deploy/helm/ --values deploy/helm/values-on-prem.yaml
 
 ```
 icdev/
-├── goals/                # 47 workflow definitions
+├── goals/                # 56+ workflow definitions
 ├── tools/                # 500+ tools across 44 categories
 │   ├── compliance/       # 25+ framework assessors, crosswalk, OSCAL
 │   ├── security/         # SAST, AI security, ATLAS, prompt injection
@@ -858,6 +884,9 @@ icdev/
 │   ├── infra/            # IaC generators — Terraform for AWS, Azure, GCP, OCI, IBM Cloud
 │   ├── sre/              # SRE Operations — runbooks, incident tracking, toil budgets, SLO monitoring
 │   ├── pipeline/         # Pipeline Canvas — visual CI/CD pipeline design
+│   ├── trading/          # FathomDesk — multi-agent trading intelligence, TA, options, crypto, tax-lots
+│   ├── iqe/              # ICDEV Query Engine — foreach/where/select DSL over canvas databases
+│   ├── workflow/         # Failure triage, auto-fix loop, coherence checker, worktree isolation
 │   └── ...               # 30+ more specialized categories
 ├── args/                 # 30+ YAML/JSON configuration files
 ├── context/              # 42 compliance catalogs, language profiles
@@ -912,6 +941,26 @@ Visual CI/CD pipeline design tool with drag-and-drop stage composition:
 - Export to GitLab CI and GitHub Actions YAML
 - Compliance gate integration — security scan and approval stages auto-inserted based on impact level
 - Template library for common patterns (TDD, DevSecOps, cATO continuous monitoring)
+
+---
+
+## FathomDesk — AI-Powered Trading Intelligence
+
+Multi-agent market intelligence platform built on the FORGE framework. 9 logical agents in a 5-layer DAG provide anticipatory, multiperspectivity market analysis.
+
+| Capability | Description |
+|------------|-------------|
+| **Multi-Agent DAG** | 4 parallel analyst agents (Fundamental, Sentiment, News, Technical) → Debate (Bull vs Bear) → Trader → Risk Manager → Portfolio Manager |
+| **Trading Oracle** | 4-lens anticipatory intelligence: macro regime, sector rotation, options flow, earnings catalyst |
+| **News Pipeline** | RSS ingestion → classifier → INTaaS reasoner → aggregator with category-tab layout and show-on-chart links |
+| **Technical Analysis** | Volume profile, support/resistance lines, pattern markers (head-and-shoulders, wedges, flags), 13 complex options strategies |
+| **Complex Options** | Multi-leg strategies including multi-expiry calendar butterfly, iron condor, ratio spreads, and 10 more |
+| **Crypto Spot** | 10 trading pairs with unified data pipeline |
+| **Tax Lots** | FIFO / LIFO / specific-ID tracking with wash-sale detection flag |
+| **Day-Trader Mode** | Hot-key order entry with 5-second polling |
+| **232 Tickers / 18 Industries** | Pre-loaded universe with Knowledge Graph integration |
+
+Dashboard: `/fathomdesk`
 
 ---
 
