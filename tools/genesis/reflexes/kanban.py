@@ -442,6 +442,35 @@ def _create_worktree(task_id: str) -> Optional[str]:
                     capture_output=True, text=True, timeout=10)
             return None
         logger.info("Created worktree for %s at %s", task_id, worktree_path)
+        # Guard: scrub any accidentally-tracked pyc/pycache files from the new
+        # worktree's index before the agent runs. These are build artifacts that
+        # should never be committed; if they slipped into the index on main,
+        # every worktree inherits them and marks them as dirty after any import.
+        try:
+            tracked_pycs = _sp.run(
+                ["git", "ls-files", "*.pyc", "*.pyo", "*.pyd"],
+                cwd=str(worktree_path),
+                capture_output=True, text=True, timeout=10,
+            ).stdout.strip()
+            if tracked_pycs:
+                pyc_list = tracked_pycs.split("\n")
+                _sp.run(
+                    ["git", "rm", "--cached", "--force", "--ignore-unmatch"] + pyc_list,
+                    cwd=str(worktree_path),
+                    capture_output=True, text=True, timeout=15,
+                )
+                _sp.run(
+                    ["git", "commit", "-m",
+                     "chore: remove accidentally-tracked pyc files from worktree index"],
+                    cwd=str(worktree_path),
+                    capture_output=True, text=True, timeout=15,
+                )
+                logger.info(
+                    "Scrubbed %d tracked pyc(s) from worktree index for %s",
+                    len(pyc_list), task_id,
+                )
+        except Exception as _pyc_exc:
+            logger.warning("pyc scrub failed for %s: %s", task_id, _pyc_exc)
         return str(worktree_path)
     except Exception as exc:
         logger.warning("Worktree creation failed for %s: %s", task_id, exc)
