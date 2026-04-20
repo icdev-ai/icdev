@@ -22,7 +22,6 @@ GREEN tier (read + draft writes, no LLM in hot path).  Air-gap safe.
 
 from __future__ import annotations
 
-import hashlib
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
