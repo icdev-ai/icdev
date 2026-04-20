@@ -4,7 +4,7 @@
 > Each entry: **what**, **why**, **roughly when** to land it, **dependencies**.
 > When picking up work, scan this list alongside the active TaskList.
 
-Last updated: 2026-04-19 (Phase 5B + 6.1-6.6 + 6.3.5 follow-ups #1-3 + 2C + 2D + 7.5 paper options shipped)
+Last updated: 2026-04-19 (Phase 5B + 6.1-6.6 + 6.3.5 follow-ups #1-3 + 2C + 2D + 7.5 paper options + 7.11 news intelligence shipped)
 
 ---
 
@@ -636,6 +636,17 @@ Hybrid design: LLM only for natural-language intent parsing + post-event coach r
 - **Routes:** `/compliance`, `GET /api/compliance/{audit, audit.csv, summary, crosswalk}`
 - **Verified end-to-end:** 12 tables registered, 528 events aggregated in 30d window from real audit data, severity breakdown correct (48 info + 1 warn last 24h), CSV export with normalized column order, role gate blocks non-admins.
 - **Coherence 17/17 clean** (no regression). Companion synced.
+
+### ✅ Phase 7.11 — News Intelligence Dashboard + Pattern Detection (DONE 2026-04-19)
+News layer connecting macro/geopolitical events to the FathomDesk price chart. Full-page `/news` dashboard with RSS ingestion, 7-tab category filtering, sentiment aggregation, pattern detection, and one-click chart annotation.
+- **`/news` dashboard** — 7 tabs: `all | macro | geopolitical | earnings | regulatory | sector | corporate`. Summary cards: News Reading (mood + sentiment counts), Cross-Signal Divergences, Regime Watch (`clusters` status=regime), Emerging Clusters (status=emerging). Per-item: impact badge, net\_direction badge, ticker chips, source, time-ago.
+- **RSS ingestor** `tools/trading/news/rss_ingestor.py` — ingests + categorizes items at ingest time.
+- **API endpoints** `tools/dashboard/api/news.py` — `GET /api/news`, `/api/news/category-summary/<cat>`, `/api/news/reading`, `/api/news/clusters`, `/api/news/divergences`, `/api/news/export.csv`, `/api/news/<id>`, `POST /api/news/<id>/analyze` (INTaaS stub → 501).
+- **"Show on chart"** — `📈 Show on chart` on each card navigates to `/fathomdesk?ticker=<ticker>&highlight=<id>`; `maybeAnnotateNews()` draws a yellow dashed vertical annotation with "N" marker + hover tooltip at the matching bar timestamp.
+- **Pattern analyzer** `tools/trading/news/pattern_analyzer.py` — two detectors: `regime_shift` (≥70% bearish in any category, ≥4 items, 24h window; severity: info/warn/critical) and `crackdown` (≥4 bearish regulatory items all mentioning same ticker; always critical). 4h cooldown guard prevents re-emission of same `(pattern_type, category)`. Results persisted to `ad_news_patterns` (migration 023, append-only NIST AU).
+- **Genesis reflex** `tools/genesis/reflexes/alphadesk_news_patterns.py` — GREEN tier (read+write, no LLM, air-gap safe); promotes top-5 new patterns as GKP `capability_update` artifacts; cooldown guard prevents duplicate kanban suggestions across the 3h Genesis cadence.
+- **DB tables** (`data/fathomdesk.db`): `ad_news_items`, `ad_news_scenario_links`, `ad_news_clusters`, `ad_news_patterns`.
+- **Coherence 15/17** (openapi\_parity pre-existing gap). Companion synced 10 platforms. Selenium E2E `tests/e2e_selenium/test_ad711_news_2.py`.
 
 ### Phase 7+ remaining — honest status
 
