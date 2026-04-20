@@ -188,6 +188,7 @@ function matchesSearch(item) {
 
 // ── Data loading ───────────────────────────────────────────────────────────
 function loadNews() {
+    loadHeldSet();  // pre-warm held cache; buildNewsRow reads synchronously
     fetch('/api/news')
         .then(r => r.json())
         .then(data => {
@@ -268,18 +269,25 @@ function buildCategorySummary(cat, data) {
 
 // ── News row builder ───────────────────────────────────────────────────────
 function buildNewsRow(item) {
+    // Ensure held set loaded (sync read — loadHeldSet() called at page load)
+
     const impact = item.impact_level || 'low';
     const impactColor = impact === 'high' ? '#f85149' : impact === 'medium' ? '#d29922' : '#8b949e';
     const dir = item.net_direction || 'neutral';
     const dirIcon = dir === 'bullish' ? '&#9650;' : dir === 'bearish' ? '&#9660;' : '&#9644;';
     const dirColor = dir === 'bullish' ? '#3fb950' : dir === 'bearish' ? '#f85149' : '#8b949e';
     const cat = item.category || 'general';
-    const tickers = (() => {
-        try {
-            const t = typeof item.mentioned_tickers === 'string' ? JSON.parse(item.mentioned_tickers) : (item.mentioned_tickers || []);
-            return t.slice(0, 5).join(', ');
-        } catch { return ''; }
+    const tickerList = (() => {
+        try { return typeof item.mentioned_tickers === 'string' ? JSON.parse(item.mentioned_tickers) : (item.mentioned_tickers || []); }
+        catch { return []; }
     })();
+    const firstTicker = tickerList[0] || null;
+    const tickerChips = tickerList.slice(0, 5).map(t => `${t}${heldBadge(t)}`).join(', ');
+    const newsDir = dir === 'bullish' ? 'BUY' : dir === 'bearish' ? 'SELL' : '';
+    const tickerBtns = firstTicker ? `
+        <a href="/analysis?ticker=${firstTicker}&auto=true" style="font-size:0.75rem;padding:2px 8px;text-decoration:none;background:#1c2128;border:1px solid #30363d;color:#e6edf3;border-radius:4px">&#8594; Analysis</a>
+        <a href="/options?ticker=${firstTicker}&tab=aiassist${newsDir?'&direction='+newsDir:''}" style="font-size:0.75rem;padding:2px 8px;text-decoration:none;background:#1c2128;border:1px solid #30363d;color:#e6edf3;border-radius:4px">&#9889; Options</a>
+    ` : '';
     const timeAgo = item.published_at ? new Date(item.published_at).toLocaleString() : '';
     return `
     <div style="border-bottom:1px solid #30363d;padding:0.75rem 0">
@@ -290,10 +298,11 @@ function buildNewsRow(item) {
             <span style="opacity:0.5;font-size:0.75rem;margin-left:auto">${item.source || ''} &middot; ${timeAgo}</span>
         </div>
         <a href="${item.link || '#'}" target="_blank" style="color:#58a6ff;text-decoration:none;font-weight:500">${item.title || 'Untitled'}</a>
-        ${tickers ? `<div style="font-size:0.75rem;margin-top:4px;opacity:0.7">Tickers: ${tickers}</div>` : ''}
+        ${tickerChips ? `<div style="font-size:0.75rem;margin-top:4px;opacity:0.7">Tickers: ${tickerChips}</div>` : ''}
         <div style="margin-top:0.5rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <button onclick="analyzeItem('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#8b5cf6;color:#fff;border:none;border-radius:4px">Analyze</button>
-            <button onclick="traceImpact('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#1976d2;color:#fff;border:none;border-radius:4px" title="Walk the Knowledge Graph: extract countries/commodities/tickers from this headline and aggregate supply-chain impact across every exposed ticker.">🔗 Trace Impact</button>
+            <button onclick="traceImpact('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#1976d2;color:#fff;border:none;border-radius:4px" title="Walk the Knowledge Graph">&#128279; Trace Impact</button>
+            ${tickerBtns}
             <span id="msg-${item.id}" style="font-size:0.75rem;display:none"></span>
         </div>
         <div id="intel-${item.id}" class="panel-analyze" style="display:none;margin-top:0.5rem;padding:0.75rem;font-size:0.8rem"></div>
