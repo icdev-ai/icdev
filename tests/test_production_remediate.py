@@ -333,8 +333,13 @@ class TestRemediationRegistry:
     def test_auto_fix_entries_have_commands(self):
         for check_id, entry in REMEDIATION_REGISTRY.items():
             if entry["tier"] == "auto_fix":
-                assert entry["command"] is not None, f"{check_id} auto_fix but no command"
-                assert isinstance(entry["command"], list), f"{check_id} command must be list"
+                has_command = "command" in entry and entry["command"] is not None
+                has_factory = "command_factory" in entry and callable(entry["command_factory"])
+                assert has_command or has_factory, f"{check_id} auto_fix but no command or command_factory"
+                if has_command:
+                    assert isinstance(entry["command"], list), f"{check_id} command must be list"
+                if has_factory:
+                    assert isinstance(entry["command_factory"](), list), f"{check_id} command_factory must return list"
 
     def test_suggest_entries_have_suggestions(self):
         for check_id, entry in REMEDIATION_REGISTRY.items():
