@@ -2373,8 +2373,8 @@ def check_openapi_parity() -> CoherenceCheck:
     # --- 5. Collect /api/v1/* paths from app.url_map ---
     url_map_paths: Set[str] = set()
     try:
-        for _method, openapi_path, _path_params, _endpoint in walk_api_v1_routes(app):
-            url_map_paths.add(openapi_path)
+        for route in walk_api_v1_routes(app):
+            url_map_paths.add(route["path"])
     except Exception as exc:
         return CoherenceCheck(
             check_id="openapi_parity",
