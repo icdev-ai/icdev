@@ -1414,6 +1414,14 @@ CREATE TABLE IF NOT EXISTS pulse_topic_clusters (
     used_count      INTEGER DEFAULT 0,
     created_at      TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ad_macro_regimes (
+    id            TEXT PRIMARY KEY,
+    regime_type   TEXT NOT NULL,
+    active        INTEGER NOT NULL DEFAULT 0,
+    evidence_json TEXT NOT NULL DEFAULT '{}',
+    confidence    REAL NOT NULL DEFAULT 0.0,
+    created_at    TEXT NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------
