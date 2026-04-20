@@ -536,6 +536,23 @@ reflexes:
       operator: eq  # 0 canvas-level errors means clean cycle
     canvases: [pdc, bdc, ddc, odc, idc]  # NDC and SDC use other pipelines
 
+  # ── AlphaDesk Trap Scenarios (Phase 7.10 integration-01) ─────────────────────
+
+  alphadesk_trap_scenarios:
+    enabled: true
+    risk_tier: green
+    schedule: "every 1h"
+    interval_seconds: 3600  # 1 hour — match trap_scanner 15m cadence × 4
+    cooldown_minutes: 30    # Minimum gap between consecutive cycles
+    description: "Detect high-confidence trap events (>=0.8) since last run, spawn potential_reversal_cascade scenarios, write daily Pulse digest"
+    success_metric:
+      name: events_found
+      threshold: 0
+      operator: gte  # 0 = no new traps (healthy), >0 = scenarios spawned
+    confidence_threshold: 0.8          # Minimum confidence to spawn a scenario
+    scenario_key: potential_reversal_cascade  # Scenario template to execute per trap
+    digest_status: draft               # Pulse post status for daily digest
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

@@ -73,6 +73,7 @@ REFLEX_NAMES = [
     "remediation_lens",
     "awareness",
     "canvas_indexer",
+    "alphadesk_trap_scenarios",
 ]
 
 # Backward-compat aliases for module-level access used by other code
