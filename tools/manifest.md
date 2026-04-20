@@ -317,3 +317,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Auto Trade Options | tools\trading\options\auto_trade_options.py | Auto-registered: options/auto_trade_options.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Alphadesk Trap Scenarios | tools\genesis\reflexes\alphadesk_trap_scenarios.py | Auto-registered: reflexes/alphadesk_trap_scenarios.py | --json | JSON |
