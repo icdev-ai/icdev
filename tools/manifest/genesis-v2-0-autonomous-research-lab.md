@@ -57,6 +57,7 @@
 | Experiment Reflex | tools/genesis/reflexes/experiment.py | Bayesian Autoresearch — Karpathy-loop autonomous experiments (D-AR-9). ORANGE tier | config dict | Experiment results |
 | GovCon Scan Reflex | tools/genesis/reflexes/govcon_scan.py | SAM.gov incremental scan + pain-point extraction + Pulse demand bridge | config dict | Demand signals |
 | Kanban Reflex | tools/genesis/reflexes/kanban.py | Kanban Executor — polls kanban_tasks, promotes due scheduled cards, dispatches via Claude Code CLI | config dict | Dispatch results |
+| AlphaDesk News Patterns Reflex | tools/genesis/reflexes/alphadesk_news_patterns.py | Genesis reflex that runs NewsPatternAnalyzer each cycle, emits regime_shift and crackdown patterns, and promotes detections to GKP artifacts. GREEN tier, air-gap safe, no LLM | config dict | Pattern count + GKP export |
 | Quality Reflex | tools/genesis/reflexes/quality.py | Self-Learning QA/QC: QDC gates, trend tracking, auto-fix lint/deprecation, GKP improvement proposals | config dict | Quality report |
 | Synthesize Reflex | tools/genesis/reflexes/synthesize.py | Auto-generate FORGE goal drafts from telemetry patterns; stages as GKP for human review. YELLOW, confidence 0.55 (D-SYN-1) | config dict | GKP goal drafts |
 
