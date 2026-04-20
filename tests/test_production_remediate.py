@@ -297,10 +297,14 @@ class TestRemediationRegistry:
         assert len(REMEDIATION_REGISTRY) >= 14
 
     def test_all_entries_have_required_fields(self):
-        required = {"confidence", "tier", "strategy", "command", "suggestion"}
+        required = {"confidence", "tier", "strategy", "suggestion"}
         for check_id, entry in REMEDIATION_REGISTRY.items():
             for field in required:
                 assert field in entry, f"{check_id} missing field: {field}"
+            # command or command_factory must be present
+            assert "command" in entry or "command_factory" in entry, (
+                f"{check_id} missing both 'command' and 'command_factory'"
+            )
 
     def test_confidence_ranges(self):
         for check_id, entry in REMEDIATION_REGISTRY.items():
