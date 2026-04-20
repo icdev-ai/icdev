@@ -311,3 +311,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Combo Analyzer | tools\trading\options\combo_analyzer.py | Auto-registered: options/combo_analyzer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Auto Trade Options | tools\trading\options\auto_trade_options.py | Auto-registered: options/auto_trade_options.py | --json | JSON |
