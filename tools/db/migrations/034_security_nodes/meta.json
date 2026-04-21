@@ -1,0 +1,11 @@
+{
+  "id": "034",
+  "name": "security_nodes",
+  "description": "Create security_nodes table for the SDC Security Design Canvas module (tools/security_canvas/twin.py). Resolves orphan_db_table gap: take_snapshot() queries node count per design, but no migration previously defined the schema.",
+  "created_at": "2026-04-21",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "resolves": "task-1c1e47ea88"
+}
