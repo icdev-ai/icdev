@@ -209,3 +209,43 @@ projects:
       - key: wrap
         title: "Registration + docs + E2E"
         priority: high
+
+  - key: fdm-macro
+    name: "FathomDesk — Macro Intelligence Expansion"
+    description: >
+      8-phase macro signal expansion: credit market foundation (IG/BBB OAS +
+      SOFR funding stress), QE/QT phase detector, bond ETF technicals, cross-asset
+      rotation engine (Gold/S&P, Copper/Gold, TLT/SPY ratios + multi-signal exit
+      confirmation), fiscal/Treasury supply pressure, credit impulse & fallen-angel
+      risk, sector policy tailwind scoring (IRA/CHIPS/NDAA), and full FathomDesk
+      UI integration. Each phase gated by CodeLens + Coherence + Selenium E2E.
+    task_prefix: "fdm-"
+    default_open: true
+    briefs:
+      - label: "Macro Intelligence analysis + evaluation"
+        path: "/docs/briefs/fdm-macro-intelligence-plan.md"
+    epics:
+      - key: crd
+        title: "Phase 1 — Credit Market Foundation (IG/BBB OAS + SOFR)"
+        priority: critical
+      - key: qeqt
+        title: "Phase 2 — QE/QT Phase Detector"
+        priority: critical
+      - key: betf
+        title: "Phase 3 — Bond ETF Technicals (TLT/HYG/LQD/AGG)"
+        priority: high
+      - key: xar
+        title: "Phase 4 — Cross-Asset Rotation Engine"
+        priority: critical
+      - key: fisc
+        title: "Phase 5 — Fiscal/Treasury Supply Pressure"
+        priority: high
+      - key: cimp
+        title: "Phase 6 — Credit Impulse & Credit Cycle"
+        priority: high
+      - key: subsidy
+        title: "Phase 7 — Sector Policy Tailwind Scoring"
+        priority: medium
+      - key: ui
+        title: "Phase 8 — FathomDesk UI Integration"
+        priority: critical
