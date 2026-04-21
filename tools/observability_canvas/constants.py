@@ -264,6 +264,38 @@ OBSERVABILITY_OBJECTS = {
             "desc": "MITRE ATT&CK detection coverage baseline",
         },
     ],
+    "digital_twin": [
+        {
+            "type": "twin-otel",
+            "label": "OTel Collector Twin",
+            "icon": "OT",
+            "desc": "OTel-based observability digital twin — snapshots collector topology and instrumentation coverage for gap analysis and what-if simulation",
+        },
+        {
+            "type": "twin-coverage",
+            "label": "Instrumentation Coverage",
+            "icon": "IC",
+            "desc": "Scores traces/metrics/logs coverage per service; surfaces blind and partially-instrumented services",
+        },
+        {
+            "type": "twin-alert-delta",
+            "label": "Alert Coverage Delta",
+            "icon": "AD",
+            "desc": "Projects which alerts would be gained or lost as a result of a proposed collector configuration change",
+        },
+        {
+            "type": "twin-slo-projector",
+            "label": "SLO Impact Projector",
+            "icon": "SP",
+            "desc": "Projects error budget burn rate and MTTR delta from a proposed collector change based on historical incident data",
+        },
+        {
+            "type": "twin-trace-analyzer",
+            "label": "Trace Coverage Twin",
+            "icon": "TC",
+            "desc": "Analyzes distributed trace completeness — identifies uninstrumented spans and missing context propagation",
+        },
+    ],
 }
 
 # Observability Compliance Rules
