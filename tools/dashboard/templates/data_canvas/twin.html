@@ -65,27 +65,30 @@
 
       <div id="verdictBanner" class="verdict-banner"></div>
 
-      <!-- Coverage metrics -->
-      <div style="margin-bottom:16px;">
-        <strong style="font-size:12px;color:#7a8cb0;">LINEAGE COVERAGE</strong>
-        <div class="metric-row" style="margin-top:6px;">
-          <div class="metric-stat"><div class="val val-info" id="coverageScore">—</div><div class="lbl">Coverage</div></div>
-          <div class="metric-stat"><div class="val val-fail" id="orphanCount">—</div><div class="lbl">Orphans</div></div>
-          <div class="metric-stat"><div class="val val-warn" id="impactedCount">—</div><div class="lbl">Impacted</div></div>
+      <!-- Coverage gauge + schema drift bar -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;">
+        <div style="flex:0 0 160px;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Lineage Coverage</strong>
+          <div id="coverageGauge" style="margin-top:6px;"></div>
+          <div class="metric-row" style="margin-top:6px;justify-content:center;gap:12px;">
+            <div class="metric-stat"><div class="val val-fail" style="font-size:16px;" id="orphanCount">—</div><div class="lbl">Orphans</div></div>
+            <div class="metric-stat"><div class="val val-warn" style="font-size:16px;" id="impactedCount">—</div><div class="lbl">Impacted</div></div>
+          </div>
         </div>
-        <div class="score-bar" style="margin-top:8px;">
-          <div class="score-fill" id="coverageBar" style="width:0%;"></div>
+        <div style="flex:1;min-width:0;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Schema Drift</strong>
+          <div id="schemaDriftBar" style="margin-top:6px;"></div>
         </div>
       </div>
 
-      <!-- Schema drift -->
+      <!-- Numeric summary -->
       <div style="margin-bottom:16px;">
-        <strong style="font-size:12px;color:#7a8cb0;">SCHEMA DRIFT</strong>
-        <div class="metric-row" style="margin-top:6px;">
+        <div class="metric-row">
+          <div class="metric-stat"><div class="val val-info" id="coverageScore">—</div><div class="lbl">Coverage</div></div>
           <div class="metric-stat"><div class="val val-pass" id="addedCols">—</div><div class="lbl">Added</div></div>
           <div class="metric-stat"><div class="val val-fail" id="removedCols">—</div><div class="lbl">Removed</div></div>
           <div class="metric-stat"><div class="val val-warn" id="renamedCols">—</div><div class="lbl">Renamed</div></div>
-          <div class="metric-stat"><div class="val val-info" id="changedTypes">—</div><div class="lbl">Type Changes</div></div>
+          <div class="metric-stat"><div class="val val-info" id="changedTypes">—</div><div class="lbl">Type Chg</div></div>
         </div>
       </div>
 
@@ -191,18 +194,42 @@ function renderResults(d) {
   renderVerdict(document.getElementById('verdictBanner'), d.verdict);
 
   const cov = d.coverage_score ?? 0;
-  document.getElementById('coverageScore').textContent = Math.round(cov * 100) + '%';
-  document.getElementById('orphanCount').textContent = d.orphan_count ?? 0;
-  document.getElementById('impactedCount').textContent = d.impacted_table_count ?? 0;
-  const bar = document.getElementById('coverageBar');
-  bar.style.width = Math.round(cov * 100) + '%';
-  bar.style.background = scoreColor(cov);
+  document.getElementById('coverageScore').textContent  = Math.round(cov * 100) + '%';
+  document.getElementById('orphanCount').textContent    = d.orphan_count ?? 0;
+  document.getElementById('impactedCount').textContent  = d.impacted_table_count ?? 0;
 
   const drift = d.schema_drift || {};
-  document.getElementById('addedCols').textContent = drift.added ?? 0;
-  document.getElementById('removedCols').textContent = drift.removed ?? 0;
-  document.getElementById('renamedCols').textContent = drift.renamed ?? 0;
-  document.getElementById('changedTypes').textContent = drift.type_changes ?? 0;
+  const dAdded   = drift.added        ?? 0;
+  const dRemoved = drift.removed      ?? 0;
+  const dRenamed = drift.renamed      ?? 0;
+  const dTyped   = drift.type_changes ?? 0;
+  document.getElementById('addedCols').textContent   = dAdded;
+  document.getElementById('removedCols').textContent = dRemoved;
+  document.getElementById('renamedCols').textContent = dRenamed;
+  document.getElementById('changedTypes').textContent = dTyped;
+
+  // ── Coverage gauge ────────────────────────────────────────────────────────
+  if (window.ICDEV) {
+    ICDEV.gaugeChart('coverageGauge', {
+      value: cov,
+      label: Math.round(cov * 100) + '% Coverage',
+      thresholds: { good: 0.7, warning: 0.4 },
+      size: 155
+    });
+  }
+
+  // ── Schema drift bar ──────────────────────────────────────────────────────
+  if ((dAdded + dRemoved + dRenamed + dTyped) > 0 && window.ICDEV) {
+    ICDEV.barChart('schemaDriftBar', {
+      labels: ['Added', 'Removed', 'Renamed', 'Type Chg'],
+      series: [{
+        name: 'Columns',
+        data: [dAdded, dRemoved, dRenamed, dTyped],
+        color: '#9b59b6'
+      }],
+      height: 130, showValues: true, showLegend: false
+    });
+  }
 
   renderFindingList(document.getElementById('impactList'), d.downstream_impacts || [], document.getElementById('noImpact'));
   document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';

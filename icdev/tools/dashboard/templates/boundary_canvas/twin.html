@@ -70,24 +70,27 @@
 
       <div id="verdictBanner" class="verdict-banner"></div>
 
-      <!-- Readiness score -->
-      <div style="margin-bottom:16px;">
-        <strong style="font-size:12px;color:#7a8cb0;">READINESS SCORE</strong>
-        <div class="metric-row" style="margin-top:6px;">
-          <div class="metric-stat"><div class="val val-info" id="readinessScore">—</div><div class="lbl">Overall</div></div>
-          <div class="metric-stat"><div class="val val-pass" id="ctrlScore">—</div><div class="lbl">Controls</div></div>
-          <div class="metric-stat"><div class="val val-warn" id="evScore">—</div><div class="lbl">Evidence</div></div>
-          <div class="metric-stat"><div class="val val-fail" id="critGaps">—</div><div class="lbl">Crit. Gaps</div></div>
+      <!-- Readiness score gauge + compliance donut -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;">
+        <div style="flex:0 0 160px;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Readiness</strong>
+          <div id="readinessGauge" style="margin-top:6px;"></div>
+          <div class="metric-row" style="margin-top:6px;justify-content:center;gap:12px;">
+            <div class="metric-stat"><div class="val val-pass" style="font-size:16px;" id="ctrlScore">—</div><div class="lbl">Controls</div></div>
+            <div class="metric-stat"><div class="val val-warn" style="font-size:16px;" id="evScore">—</div><div class="lbl">Evidence</div></div>
+          </div>
         </div>
-        <div class="score-bar" style="margin-top:8px;">
-          <div class="score-fill" id="readinessBar" style="width:0%;background:#2ecc71;"></div>
+        <div style="flex:1;min-width:0;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Compliance Delta</strong>
+          <div id="complianceDonut" style="margin-top:6px;"></div>
         </div>
       </div>
 
-      <!-- Compliance delta -->
+      <!-- Numeric summary -->
       <div style="margin-bottom:16px;">
-        <strong style="font-size:12px;color:#7a8cb0;">COMPLIANCE DELTA</strong>
-        <div class="metric-row" style="margin-top:6px;">
+        <div class="metric-row">
+          <div class="metric-stat"><div class="val val-info" id="readinessScore">—</div><div class="lbl">Overall</div></div>
+          <div class="metric-stat"><div class="val val-fail" id="critGaps">—</div><div class="lbl">Crit. Gaps</div></div>
           <div class="metric-stat"><div class="val val-pass" id="deltaResolved">—</div><div class="lbl">Resolved</div></div>
           <div class="metric-stat"><div class="val val-fail" id="deltaNew">—</div><div class="lbl">New Gaps</div></div>
           <div class="metric-stat"><div class="val val-info" id="deltaTotal">—</div><div class="lbl">Total</div></div>
@@ -221,14 +224,38 @@ function renderResults(d) {
   document.getElementById('ctrlScore').textContent = Math.round((d.control_score ?? 0) * 100) + '%';
   document.getElementById('evScore').textContent = Math.round((d.evidence_score ?? 0) * 100) + '%';
   document.getElementById('critGaps').textContent = d.critical_gaps ?? 0;
-  const bar = document.getElementById('readinessBar');
-  bar.style.width = Math.round(score * 100) + '%';
-  bar.style.background = scoreColor(score);
 
   const delta = d.compliance_delta || {};
-  document.getElementById('deltaResolved').textContent = delta.resolved ?? 0;
-  document.getElementById('deltaNew').textContent = delta.new_gaps ?? 0;
-  document.getElementById('deltaTotal').textContent = delta.total ?? 0;
+  const resolved  = delta.resolved  ?? 0;
+  const newGaps   = delta.new_gaps  ?? 0;
+  const totalGaps = delta.total     ?? 0;
+  document.getElementById('deltaResolved').textContent = resolved;
+  document.getElementById('deltaNew').textContent      = newGaps;
+  document.getElementById('deltaTotal').textContent    = totalGaps;
+
+  // ── Readiness gauge ───────────────────────────────────────────────────────
+  if (window.ICDEV) {
+    ICDEV.gaugeChart('readinessGauge', {
+      value: score,
+      label: Math.round(score * 100) + '% Ready',
+      thresholds: { good: 0.7, warning: 0.4 },
+      size: 155
+    });
+  }
+
+  // ── Compliance delta donut ────────────────────────────────────────────────
+  if ((resolved + newGaps) > 0 && window.ICDEV) {
+    ICDEV.donutChart('complianceDonut', {
+      segments: [
+        { label: 'Resolved',  value: resolved,  color: '#2ecc71' },
+        { label: 'New Gaps',  value: newGaps,   color: '#e74c3c' },
+        { label: 'Unchanged', value: Math.max(0, totalGaps - newGaps - resolved), color: '#3498db' }
+      ].filter(s => s.value > 0),
+      centerLabel: totalGaps + '',
+      centerSubLabel: 'Total Gaps',
+      size: 140, showLegend: true
+    });
+  }
 
   renderFindingList(document.getElementById('violationList'), d.violations || [], document.getElementById('noViolations'));
   document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';

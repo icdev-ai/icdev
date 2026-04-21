@@ -65,22 +65,30 @@
 
       <div id="verdictBanner" class="verdict-banner"></div>
 
-      <!-- Signal coverage -->
+      <!-- Coverage gauge + service donut -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;">
+        <div style="flex:0 0 160px;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Coverage</strong>
+          <div id="coverageGauge" style="margin-top:6px;"></div>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Service Coverage</strong>
+          <div id="serviceDonut" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <!-- Signal coverage grid -->
       <div style="margin-bottom:16px;">
         <strong style="font-size:12px;color:#7a8cb0;">SIGNAL COVERAGE</strong>
         <div id="signalGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px;"></div>
       </div>
 
-      <!-- Service coverage metrics -->
+      <!-- Service instrumentation metrics -->
       <div style="margin-bottom:16px;">
-        <strong style="font-size:12px;color:#7a8cb0;">SERVICE INSTRUMENTATION</strong>
-        <div class="metric-row" style="margin-top:6px;">
+        <div class="metric-row">
           <div class="metric-stat"><div class="val val-pass" id="coveredSvc">—</div><div class="lbl">Covered</div></div>
           <div class="metric-stat"><div class="val val-fail" id="blindSvc">—</div><div class="lbl">Blind</div></div>
           <div class="metric-stat"><div class="val val-warn" id="partialSvc">—</div><div class="lbl">Partial</div></div>
-        </div>
-        <div class="score-bar" style="margin-top:8px;">
-          <div class="score-fill" id="coverageBar" style="width:0%;"></div>
         </div>
       </div>
 
@@ -201,6 +209,7 @@ function renderResults(d) {
   document.getElementById('noResultsHint').style.display = 'none';
   renderVerdict(document.getElementById('verdictBanner'), d.verdict);
 
+  // ── Signal coverage grid ──────────────────────────────────────────────────
   const signals = d.signal_coverage || {};
   const grid = document.getElementById('signalGrid');
   grid.innerHTML = '';
@@ -208,26 +217,52 @@ function renderResults(d) {
     const cov = signals[sig] ?? 0;
     const pct = Math.round(cov * 100);
     const div = document.createElement('div');
-    div.style.cssText = `padding:8px;border-radius:6px;background:#0f3460;border:1px solid #1e3a6e;`;
-    div.innerHTML = `<div style="font-size:18px;font-weight:700;color:${scoreColor(cov)};">${pct}%</div><div style="font-size:10px;color:#7a8cb0;">${sig}</div>
+    div.style.cssText = 'padding:8px;border-radius:6px;background:#0f3460;border:1px solid #1e3a6e;';
+    div.innerHTML = `<div style="font-size:18px;font-weight:700;color:${scoreColor(cov)};">${pct}%</div>
+      <div style="font-size:10px;color:#7a8cb0;">${sig}</div>
       <div class="score-bar" style="margin-top:4px;"><div class="score-fill" style="width:${pct}%;background:${scoreColor(cov)};"></div></div>`;
     grid.appendChild(div);
   });
 
-  const svc = d.service_coverage || {};
-  document.getElementById('coveredSvc').textContent = svc.covered ?? 0;
-  document.getElementById('blindSvc').textContent = svc.blind ?? 0;
-  document.getElementById('partialSvc').textContent = svc.partial ?? 0;
-  const total = (svc.covered??0) + (svc.blind??0) + (svc.partial??0);
-  const covPct = total > 0 ? (svc.covered??0) / total : 0;
-  const bar = document.getElementById('coverageBar');
-  bar.style.width = Math.round(covPct * 100) + '%';
-  bar.style.background = scoreColor(covPct);
+  const svc   = d.service_coverage || {};
+  const covered = svc.covered ?? 0;
+  const blind   = svc.blind   ?? 0;
+  const partial = svc.partial ?? 0;
+  const total   = covered + blind + partial;
+  const covPct  = total > 0 ? covered / total : 0;
 
-  const alert = d.alert_delta || {};
-  document.getElementById('alertGained').textContent = alert.gained ?? 0;
-  document.getElementById('alertLost').textContent = alert.lost ?? 0;
-  document.getElementById('sloImpact').textContent = d.slo_impact || 'N/A';
+  document.getElementById('coveredSvc').textContent = covered;
+  document.getElementById('blindSvc').textContent   = blind;
+  document.getElementById('partialSvc').textContent = partial;
+
+  const alertD = d.alert_delta || {};
+  document.getElementById('alertGained').textContent = alertD.gained ?? 0;
+  document.getElementById('alertLost').textContent   = alertD.lost   ?? 0;
+  document.getElementById('sloImpact').textContent   = d.slo_impact  || 'N/A';
+
+  // ── Coverage gauge ────────────────────────────────────────────────────────
+  if (window.ICDEV) {
+    ICDEV.gaugeChart('coverageGauge', {
+      value: covPct,
+      label: Math.round(covPct * 100) + '% Covered',
+      thresholds: { good: 0.7, warning: 0.4 },
+      size: 155
+    });
+  }
+
+  // ── Service coverage donut ────────────────────────────────────────────────
+  if (total > 0 && window.ICDEV) {
+    ICDEV.donutChart('serviceDonut', {
+      segments: [
+        { label: 'Covered', value: covered, color: '#2ecc71' },
+        { label: 'Partial', value: partial, color: '#f39c12' },
+        { label: 'Blind',   value: blind,   color: '#e74c3c' }
+      ].filter(s => s.value > 0),
+      centerLabel: total + '',
+      centerSubLabel: 'Services',
+      size: 140, showLegend: true
+    });
+  }
 
   renderFindingList(document.getElementById('gapList'), d.gaps || [], document.getElementById('noGaps'));
   document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';

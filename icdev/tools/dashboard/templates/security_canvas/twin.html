@@ -79,19 +79,22 @@
         </div>
       </div>
 
-      <!-- Risk score -->
-      <div style="margin-bottom:16px;">
-        <strong style="font-size:12px;color:#7a8cb0;">RISK SCORE</strong>
-        <div style="font-size:11px;color:#7a8cb0;margin-top:4px;margin-bottom:2px;" id="riskScoreLabel">—</div>
-        <div class="score-bar">
-          <div class="score-fill" id="riskBar" style="width:0%;background:#e74c3c;"></div>
+      <!-- Risk score gauge + severity donut -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;">
+        <div style="flex:0 0 160px;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Risk Score</strong>
+          <div id="riskGauge" style="margin-top:6px;"></div>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Path Severity</strong>
+          <div id="severityDonut" style="margin-top:6px;"></div>
         </div>
       </div>
 
-      <!-- STRIDE coverage -->
+      <!-- STRIDE coverage bar chart -->
       <div style="margin-bottom:16px;">
         <strong style="font-size:12px;color:#7a8cb0;">STRIDE COVERAGE</strong>
-        <div id="strideGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;"></div>
+        <div id="strideChart" style="margin-top:8px;"></div>
       </div>
 
       <!-- Top attack paths -->
@@ -187,31 +190,62 @@ function renderResults(d) {
 
   document.getElementById('totalPaths').textContent = d.total_paths ?? 0;
   document.getElementById('criticalPaths').textContent = d.critical_paths ?? 0;
-  const delta = (d.total_paths ?? 0) - (d.baseline_path_count ?? d.total_paths ?? 0);
-  document.getElementById('deltaPaths').textContent = (delta >= 0 ? '+' : '') + delta;
+  const pathDelta = (d.total_paths ?? 0) - (d.baseline_path_count ?? d.total_paths ?? 0);
+  document.getElementById('deltaPaths').textContent = (pathDelta >= 0 ? '+' : '') + pathDelta;
 
   const risk = d.risk_score ?? 0;
-  document.getElementById('riskScoreLabel').textContent = `Risk score: ${Math.round(risk * 100)}%`;
-  const riskBar = document.getElementById('riskBar');
-  riskBar.style.width = Math.round(risk * 100) + '%';
-  riskBar.style.background = risk >= 0.7 ? '#e74c3c' : risk >= 0.4 ? '#f39c12' : '#2ecc71';
 
-  const strideGrid = document.getElementById('strideGrid');
-  strideGrid.innerHTML = '';
+  // ── Risk gauge ────────────────────────────────────────────────────────────
+  if (window.ICDEV) {
+    ICDEV.gaugeChart('riskGauge', {
+      value: risk,
+      label: Math.round(risk * 100) + '% Risk',
+      thresholds: { good: 0.35, warning: 0.65 },
+      size: 155
+    });
+  }
+
+  // ── STRIDE bar chart ──────────────────────────────────────────────────────
   const stride = d.stride_coverage || {};
-  ['Spoofing','Tampering','Repudiation','Info Disclosure','DoS','Elevation'].forEach(cat => {
-    const key = cat.toLowerCase().replace(/\s+/g,'_');
-    const covered = stride[key] ?? stride[cat] ?? false;
-    const div = document.createElement('div');
-    div.style.cssText = `padding:4px 8px;border-radius:4px;font-size:11px;text-align:center;background:${covered ? '#0d3d1e' : '#3d0d0d'};color:${covered ? '#2ecc71' : '#e74c3c'};`;
-    div.textContent = cat;
-    strideGrid.appendChild(div);
-  });
+  const strideKeys   = ['spoofing','tampering','repudiation','info_disclosure','dos','elevation'];
+  const strideLabels = ['Spoofing','Tampering','Repudiat.','Info Disc.','DoS','Elevation'];
+  if (window.ICDEV) {
+    ICDEV.barChart('strideChart', {
+      labels: strideLabels,
+      series: [{
+        name: 'Covered',
+        data: strideKeys.map(k => stride[k] ?? stride[k.replace('_',' ')] ? 1 : 0),
+        color: '#3498db'
+      }],
+      height: 120, showValues: true, showLegend: false
+    });
+  }
 
+  // ── Severity donut ────────────────────────────────────────────────────────
+  const paths = d.attack_paths || [];
+  if (paths.length > 0 && window.ICDEV) {
+    const counts = { critical:0, high:0, medium:0, low:0 };
+    paths.forEach(p => {
+      const s = (p.severity || p.risk_level || 'medium').toLowerCase();
+      if (counts[s] !== undefined) counts[s]++; else counts.medium++;
+    });
+    ICDEV.donutChart('severityDonut', {
+      segments: [
+        { label:'Critical', value:counts.critical, color:'#e74c3c' },
+        { label:'High',     value:counts.high,     color:'#e67e22' },
+        { label:'Medium',   value:counts.medium,   color:'#f1c40f' },
+        { label:'Low',      value:counts.low,      color:'#3498db' }
+      ].filter(s => s.value > 0),
+      centerLabel: paths.length + '',
+      centerSubLabel: 'Paths',
+      size: 140, showLegend: true
+    });
+  }
+
+  // ── Attack path list ──────────────────────────────────────────────────────
   const pathList = document.getElementById('pathList');
   pathList.innerHTML = '';
   const noPaths = document.getElementById('noPaths');
-  const paths = d.attack_paths || [];
   if (paths.length === 0) {
     noPaths.style.display = 'block';
   } else {
