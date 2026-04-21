@@ -569,11 +569,12 @@ def main():
     logger.info("REST API:     %s://%s:%d/api/v1/", scheme, args.host, args.port)
     logger.info("MCP HTTP:     %s://%s:%d/mcp/v1/", scheme, args.host, args.port)
 
-    # Run Flask dev server
+    # Run Flask dev server (reloader disabled — worktrees cause constant restarts)
     app.run(
         host=args.host,
         port=args.port,
         debug=args.debug,
+        use_reloader=False,
         ssl_context=ssl_context,
         threaded=True,
     )
