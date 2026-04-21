@@ -1849,7 +1849,7 @@ def create_data_canvas_blueprint():
 
     # ── Digital Twin ───────────────────────────────────────────────────────
     @bp.route("/twin/<design_id>")
-    @login_required
+    @dc_login_required
     def dc_twin_page(design_id):
         conn = get_connection()
         design = conn.execute("SELECT * FROM data_designs WHERE id=?", (design_id,)).fetchone()
@@ -1870,7 +1870,7 @@ def create_data_canvas_blueprint():
         )
 
     @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
-    @login_required
+    @dc_login_required
     def dc_api_twin_snapshot(design_id):
         from tools.data_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
@@ -1878,7 +1878,7 @@ def create_data_canvas_blueprint():
         return jsonify(snap), 201
 
     @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
-    @login_required
+    @dc_login_required
     def dc_api_twin_simulate(design_id):
         from tools.data_canvas.twin import simulate_delta
         data = request.get_json(silent=True) or {}
@@ -1891,7 +1891,7 @@ def create_data_canvas_blueprint():
         return jsonify(result), 200
 
     @bp.route("/api/twin/<design_id>/quality-gate", methods=["POST"])
-    @login_required
+    @dc_login_required
     def dc_api_twin_quality_gate(design_id):
         from tools.data_canvas.twin import quality_gate
         data = request.get_json(silent=True) or {}
