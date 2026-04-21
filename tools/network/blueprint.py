@@ -9665,7 +9665,7 @@ Output ONLY the JSON object. No other text."""
         return jsonify(payload), status
 
     # ── Digital Twin ───────────────────────────────────────────────────────
-    @bp.route("/project/<topo_id>/twin")
+    @bp.route("/twin/<topo_id>")
     @nc_login_required
     def nc_twin_page(topo_id):
         conn = get_connection()
@@ -9684,21 +9684,16 @@ Output ONLY the JSON object. No other text."""
         except Exception:
             snaps = []
 
-        try:
-            from tools.network.constants import INTENT_RULES
-            intent_rules = INTENT_RULES
-        except ImportError:
-            intent_rules = []
-
+        from tools.network.constants import INTENT_RULES
         return render_template(
             "network/twin.html",
             project=topo,
             snapshots=[_row_to_dict(s) for s in snaps],
-            intent_rules=intent_rules,
+            intent_rules=INTENT_RULES,
             classification_banner=NC_CONFIG.get("app", {}).get("classification", ""),
         )
 
-    @bp.route("/api/projects/<topo_id>/twin/snapshot", methods=["POST"])
+    @bp.route("/api/twin/<topo_id>/snapshot", methods=["POST"])
     @nc_login_required
     def nc_api_twin_snapshot(topo_id):
         from tools.network.twin import take_snapshot
@@ -9706,7 +9701,7 @@ Output ONLY the JSON object. No other text."""
         snap = take_snapshot(topo_id, label=data.get("label"))
         return jsonify(snap), 201
 
-    @bp.route("/api/projects/<topo_id>/twin/simulate", methods=["POST"])
+    @bp.route("/api/twin/<topo_id>/simulate", methods=["POST"])
     @nc_login_required
     def nc_api_twin_simulate(topo_id):
         from tools.network.twin import simulate_delta
@@ -9719,7 +9714,7 @@ Output ONLY the JSON object. No other text."""
         )
         return jsonify(result), 200
 
-    @bp.route("/api/projects/<topo_id>/twin/blast-radius", methods=["POST"])
+    @bp.route("/api/twin/<topo_id>/blast-radius", methods=["POST"])
     @nc_login_required
     def nc_api_twin_blast_radius(topo_id):
         from tools.network.twin import blast_radius

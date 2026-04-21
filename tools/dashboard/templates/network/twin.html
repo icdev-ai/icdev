@@ -6,7 +6,7 @@
 
 {% block content %}
 <div class="twin-header">
-  <a href="/network/project/{{ project.id }}" class="twin-back">← Network Canvas</a>
+  <a href="/network/canvas/{{ project.id }}" class="twin-back">← Network Canvas</a>
   <h1>Network Twin — {{ project.name }}</h1>
   <p>Forward Networks-style intent validation. Snapshot network state, validate reachability intent, and simulate topology changes before pushing configs.</p>
 </div>
@@ -149,7 +149,7 @@ async function takeSnapshot() {
   const spinner = document.getElementById('snapSpinner');
   spinner.style.display = 'inline-block';
   try {
-    const r = await fetch(`/network/api/projects/${PROJECT_ID}/twin/snapshot`, {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/snapshot`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({label: 'snap-' + new Date().toISOString().slice(0,10)})
     });
@@ -188,7 +188,7 @@ async function runSimulation() {
   try {
     const body = { topology_delta: delta, intent_rules: getSelectedIntentRules() };
     if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
-    const r = await fetch(`/network/api/projects/${PROJECT_ID}/twin/simulate`, {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/simulate`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();
@@ -233,7 +233,7 @@ async function runBlastRadius() {
     if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
     const raw = document.getElementById('deltaInput').value.trim();
     if (raw) { try { body.topology_delta = JSON.parse(raw); } catch(_) {} }
-    const r = await fetch(`/network/api/projects/${PROJECT_ID}/twin/blast-radius`, {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/blast-radius`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();
