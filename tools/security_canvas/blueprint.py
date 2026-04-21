@@ -1877,7 +1877,7 @@ def create_security_blueprint():
 
     # ── Digital Twin ───────────────────────────────────────────────────────
     @bp.route("/twin/<design_id>")
-    @login_required
+    @sc_login_required
     def sc_twin_page(design_id):
         conn = get_connection()
         design = conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone()
@@ -1898,7 +1898,7 @@ def create_security_blueprint():
         )
 
     @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
-    @login_required
+    @sc_login_required
     def sc_api_twin_snapshot(design_id):
         from tools.security_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
@@ -1906,7 +1906,7 @@ def create_security_blueprint():
         return jsonify(snap), 201
 
     @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
-    @login_required
+    @sc_login_required
     def sc_api_twin_simulate(design_id):
         from tools.security_canvas.twin import simulate_delta
         data = request.get_json(silent=True) or {}
@@ -1920,7 +1920,7 @@ def create_security_blueprint():
         return jsonify(result), 200
 
     @bp.route("/api/twin/<design_id>/attack-paths/snapshot", methods=["POST"])
-    @login_required
+    @sc_login_required
     def sc_api_attack_snapshot(design_id):
         from tools.security_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
@@ -1928,7 +1928,7 @@ def create_security_blueprint():
         return jsonify(snap), 201
 
     @bp.route("/api/twin/<design_id>/attack-paths/simulate", methods=["POST"])
-    @login_required
+    @sc_login_required
     def sc_api_attack_simulate(design_id):
         from tools.security_canvas.twin import simulate_delta
         data = request.get_json(silent=True) or {}

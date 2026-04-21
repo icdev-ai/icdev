@@ -1637,7 +1637,7 @@ def create_boundary_blueprint():
 
     # ── Digital Twin ───────────────────────────────────────────────────────
     @bp.route("/twin/<design_id>")
-    @login_required
+    @bdc_login_required
     def bdc_twin_page(design_id):
         conn = get_connection()
         design = conn.execute("SELECT * FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
@@ -1660,7 +1660,7 @@ def create_boundary_blueprint():
         )
 
     @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
-    @login_required
+    @bdc_login_required
     def bdc_api_twin_snapshot(design_id):
         from tools.boundary_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
@@ -1669,7 +1669,7 @@ def create_boundary_blueprint():
         return jsonify(snap), 201
 
     @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
-    @login_required
+    @bdc_login_required
     def bdc_api_twin_simulate(design_id):
         from tools.boundary_canvas.twin import simulate_delta
         data = request.get_json(silent=True) or {}
@@ -1683,7 +1683,7 @@ def create_boundary_blueprint():
         return jsonify(result), 200
 
     @bp.route("/api/twin/<design_id>/crosswalk-drift", methods=["GET"])
-    @login_required
+    @bdc_login_required
     def bdc_api_twin_crosswalk(design_id):
         from tools.boundary_canvas.twin import crosswalk_drift
         fw_src = request.args.get("fw_src", "NIST 800-53")
@@ -1692,7 +1692,7 @@ def create_boundary_blueprint():
         return jsonify(result), 200
 
     @bp.route("/api/twin/<design_id>/oscal-export", methods=["GET"])
-    @login_required
+    @bdc_login_required
     def bdc_api_twin_oscal(design_id):
         snap_id = request.args.get("snapshot_id")
         artifact_type = request.args.get("artifact_type", "ssp")

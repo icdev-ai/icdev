@@ -1339,7 +1339,7 @@ def create_observability_blueprint():
 
     # ── Digital Twin ───────────────────────────────────────────────────────
     @bp.route("/twin/<design_id>")
-    @login_required
+    @oc_login_required
     def oc_twin_page(design_id):
         conn = get_connection()
         design = conn.execute("SELECT * FROM observability_designs WHERE id=?", (design_id,)).fetchone()
@@ -1360,7 +1360,7 @@ def create_observability_blueprint():
         )
 
     @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
-    @login_required
+    @oc_login_required
     def oc_api_twin_snapshot(design_id):
         from tools.observability_canvas.twin import take_snapshot
         data = request.get_json(silent=True) or {}
@@ -1368,7 +1368,7 @@ def create_observability_blueprint():
         return jsonify(snap), 201
 
     @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
-    @login_required
+    @oc_login_required
     def oc_api_twin_simulate(design_id):
         from tools.observability_canvas.twin import simulate_delta
         data = request.get_json(silent=True) or {}
@@ -1381,7 +1381,7 @@ def create_observability_blueprint():
         return jsonify(result), 200
 
     @bp.route("/api/twin/<design_id>/slo-projection", methods=["POST"])
-    @login_required
+    @oc_login_required
     def oc_api_twin_slo(design_id):
         from tools.observability_canvas.twin import slo_projection
         data = request.get_json(silent=True) or {}
