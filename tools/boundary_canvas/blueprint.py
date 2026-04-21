@@ -1700,4 +1700,28 @@ def create_boundary_blueprint():
         result = export_oscal(design_id, snap_id, artifact_type)
         return jsonify(result), 200
 
+    @bp.route("/api/twin/<design_id>/current-topology", methods=["GET"])
+    @bdc_login_required
+    def bdc_api_twin_current_topology(design_id):
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Design not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"] or "{}")
+        except Exception:
+            graph = {}
+        return jsonify({"graph_json": graph}), 200
+
+    @bp.route("/api/twin/<design_id>/chat-delta", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_twin_chat_delta(design_id):
+        from tools.twin_chat import boundary_chat_to_delta
+        data = request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        if not message:
+            return jsonify({"error": "message is required"}), 400
+        result = boundary_chat_to_delta(message, data.get("graph_json"))
+        return jsonify(result), (500 if "error" in result else 200)
+
     return bp

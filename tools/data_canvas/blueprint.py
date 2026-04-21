@@ -1898,4 +1898,28 @@ def create_data_canvas_blueprint():
         result = quality_gate(design_id, schema_changes=data.get("schema_changes", []), baseline_snap_id=data.get("baseline_snap_id"))
         return jsonify(result), 200
 
+    @bp.route("/api/twin/<design_id>/current-topology", methods=["GET"])
+    @dc_login_required
+    def dc_api_twin_current_topology(design_id):
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Design not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"] or "{}")
+        except Exception:
+            graph = {}
+        return jsonify({"graph_json": graph}), 200
+
+    @bp.route("/api/twin/<design_id>/chat-delta", methods=["POST"])
+    @dc_login_required
+    def dc_api_twin_chat_delta(design_id):
+        from tools.twin_chat import data_chat_to_delta
+        data = request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        if not message:
+            return jsonify({"error": "message is required"}), 400
+        result = data_chat_to_delta(message, data.get("graph_json"))
+        return jsonify(result), (500 if "error" in result else 200)
+
     return bp

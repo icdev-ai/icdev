@@ -1941,4 +1941,28 @@ def create_security_blueprint():
         )
         return jsonify(result), 200
 
+    @bp.route("/api/twin/<design_id>/current-topology", methods=["GET"])
+    @sc_login_required
+    def sc_api_twin_current_topology(design_id):
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM security_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Design not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"] or "{}")
+        except Exception:
+            graph = {}
+        return jsonify({"graph_json": graph}), 200
+
+    @bp.route("/api/twin/<design_id>/chat-delta", methods=["POST"])
+    @sc_login_required
+    def sc_api_twin_chat_delta(design_id):
+        from tools.twin_chat import security_chat_to_delta
+        data = request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        if not message:
+            return jsonify({"error": "message is required"}), 400
+        result = security_chat_to_delta(message, data.get("graph_json"))
+        return jsonify(result), (500 if "error" in result else 200)
+
     return bp
