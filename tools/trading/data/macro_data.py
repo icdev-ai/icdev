@@ -1257,6 +1257,26 @@ EXTENDED_FRED_SERIES = {
 }
 
 
+def _classify_qeqt(roc_4w_b: float) -> tuple[str, str]:
+    """Classify QE/QT phase and magnitude from 4-week balance sheet RoC (billions/week)."""
+    if roc_4w_b > 50:
+        phase = "EXPANDING"
+    elif roc_4w_b < -25:
+        phase = "CONTRACTING"
+    else:
+        phase = "NEUTRAL"
+
+    abs_roc = abs(roc_4w_b)
+    if abs_roc > 100:
+        magnitude = "AGGRESSIVE"
+    elif abs_roc >= 25:
+        magnitude = "MODERATE"
+    else:
+        magnitude = "SLOW"
+
+    return phase, magnitude
+
+
 def _generate_sample_extended() -> dict:
     """Generate deterministic sample data for SROR extended indicators."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1282,6 +1302,8 @@ def _generate_sample_extended() -> dict:
     seed, consumer_conf_prev2 = _p(seed, 55.0, 85.0)
     seed, fed_bs = _p(seed, 6500, 9000)                # billions
     seed, fed_bs_prev = _p(seed, 6500, 9000)
+    seed, fed_bs_4w_ago = _p(seed, 6500, 9000)         # billions, 4 weeks ago
+    seed, fed_bs_13w_ago = _p(seed, 6500, 9000)        # billions, 13 weeks ago
     seed, tga = _p(seed, 200, 900)                     # billions
     seed, bank_reserves = _p(seed, 2500, 4000)         # billions
     seed, m2 = _p(seed, 20000, 22000)                  # billions
@@ -1295,6 +1317,9 @@ def _generate_sample_extended() -> dict:
     lei_change = lei - lei_prev
     fed_bs_change = ((fed_bs - fed_bs_prev) / fed_bs_prev * 100) if fed_bs_prev else 0
     net_liquidity = fed_bs - tga - 200  # RRP placeholder from base macro
+    fed_bs_4w_roc_b = (fed_bs - fed_bs_4w_ago) / 4.0
+    fed_bs_13w_roc_b = (fed_bs - fed_bs_13w_ago) / 13.0
+    _qeqt_phase, _qeqt_magnitude = _classify_qeqt(fed_bs_4w_roc_b)
     cc_declining = (consumer_confidence < consumer_conf_prev1 < consumer_conf_prev2)
     # SOFR spread = SOFR minus Fed Funds effective rate (use fed_funds stub ~5.33 as proxy)
     sofr_ff_spread_bps = round((sofr_rate - 5.33) * 100, 1)
@@ -1318,6 +1343,10 @@ def _generate_sample_extended() -> dict:
         "consumer_confidence_declining_3m": cc_declining,
         "fed_balance_sheet_b": round(fed_bs, 0),
         "fed_bs_change_pct": round(fed_bs_change, 2),
+        "fed_bs_4w_roc_b": round(fed_bs_4w_roc_b, 1),
+        "fed_bs_13w_roc_b": round(fed_bs_13w_roc_b, 1),
+        "qeqt_phase": _qeqt_phase,
+        "qeqt_magnitude": _qeqt_magnitude,
         "tga_balance_b": round(tga, 0),
         "bank_reserves_b": round(bank_reserves, 0),
         "m2_supply_b": round(m2, 0),
@@ -1461,7 +1490,7 @@ def _fetch_live_extended() -> dict | None:
         data["consumer_confidence_declining_3m"] = False
 
     try:
-        walcl = fred.get_series("WALCL", observation_start="2024-01-01")
+        walcl = fred.get_series("WALCL", observation_start="2023-01-01")
         walcl_clean = walcl.dropna()
         bs_val = float(walcl_clean.iloc[-1]) / 1000  # millions to billions
         data["fed_balance_sheet_b"] = round(bs_val, 0)
@@ -1470,9 +1499,30 @@ def _fetch_live_extended() -> dict | None:
             data["fed_bs_change_pct"] = round((bs_val - prev) / prev * 100, 2) if prev else 0.0
         else:
             data["fed_bs_change_pct"] = 0.0
+        # 4-week RoC: WALCL is weekly; 4 observations back = 4 weeks ago
+        if len(walcl_clean) >= 5:
+            bs_4w_ago = float(walcl_clean.iloc[-5]) / 1000
+            roc_4w = (bs_val - bs_4w_ago) / 4.0
+        else:
+            roc_4w = 0.0
+        # 13-week RoC: 13 observations back = 13 weeks ago
+        if len(walcl_clean) >= 14:
+            bs_13w_ago = float(walcl_clean.iloc[-14]) / 1000
+            roc_13w = (bs_val - bs_13w_ago) / 13.0
+        else:
+            roc_13w = roc_4w
+        data["fed_bs_4w_roc_b"] = round(roc_4w, 1)
+        data["fed_bs_13w_roc_b"] = round(roc_13w, 1)
+        qeqt_phase, qeqt_magnitude = _classify_qeqt(roc_4w)
+        data["qeqt_phase"] = qeqt_phase
+        data["qeqt_magnitude"] = qeqt_magnitude
     except Exception:
         data["fed_balance_sheet_b"] = 7500.0
         data["fed_bs_change_pct"] = 0.0
+        data["fed_bs_4w_roc_b"] = 0.0
+        data["fed_bs_13w_roc_b"] = 0.0
+        data["qeqt_phase"] = "NEUTRAL"
+        data["qeqt_magnitude"] = "SLOW"
 
     try:
         tga = fred.get_series("WTREGEN", observation_start="2024-01-01")
