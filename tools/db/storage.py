@@ -621,28 +621,97 @@ def _pg_ssl_kwargs() -> dict:
     return {k: os.environ[v] for k, v in mapping.items() if os.environ.get(v)}
 
 
-def _get_pg_connection(db_url: str = None):
-    """Create a PostgreSQL connection via psycopg2."""
-    import psycopg2
-    import psycopg2.extras
+_pg_pool = None
+_pg_pool_lock = None
 
-    ssl_kwargs = _pg_ssl_kwargs()
-    if db_url:
-        conn = psycopg2.connect(
-            db_url, cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs
-        )
-    else:
-        conn = psycopg2.connect(
-            host=os.environ.get("ICDEV_PG_HOST", "localhost"),
-            port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
-            user=os.environ.get("ICDEV_PG_USER", "icdev"),
-            password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
-            dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
-            cursor_factory=psycopg2.extras.RealDictCursor,
-            **ssl_kwargs,
-        )
-    conn.autocommit = False
-    return conn
+
+def _get_pg_pool():
+    """Return (or lazily create) a thread-safe PostgreSQL connection pool."""
+    global _pg_pool, _pg_pool_lock
+    import threading
+    if _pg_pool_lock is None:
+        _pg_pool_lock = threading.Lock()
+    with _pg_pool_lock:
+        if _pg_pool is not None:
+            return _pg_pool
+        import psycopg2.pool
+        import psycopg2.extras
+        ssl_kwargs = _pg_ssl_kwargs()
+        db_url = os.environ.get("ICDEV_DATABASE_URL")
+        minconn = int(os.environ.get("ICDEV_PG_POOL_MIN", "2"))
+        maxconn = int(os.environ.get("ICDEV_PG_POOL_MAX", "20"))
+        if db_url:
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn, maxconn, db_url,
+                cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs,
+            )
+        else:
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn, maxconn,
+                host=os.environ.get("ICDEV_PG_HOST", "localhost"),
+                port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
+                user=os.environ.get("ICDEV_PG_USER", "icdev"),
+                password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
+                dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+                cursor_factory=psycopg2.extras.RealDictCursor,
+                **ssl_kwargs,
+            )
+        return _pg_pool
+
+
+class _PooledPgConnection:
+    """Thin wrapper that returns the connection to the pool on close()."""
+    def __init__(self, raw_conn, pool):
+        self._conn = raw_conn
+        self._pool = pool
+        self.autocommit = False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        try:
+            if not self._conn.closed:
+                self._conn.rollback()  # return in clean state
+            self._pool.putconn(self._conn)
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+def _get_pg_connection(db_url: str = None):
+    """Return a PostgreSQL connection from the shared pool."""
+    try:
+        pool = _get_pg_pool()
+        raw = pool.getconn()
+        raw.autocommit = False
+        return _PooledPgConnection(raw, pool)
+    except Exception:
+        # Pool exhausted or unavailable — fall back to direct connect
+        import psycopg2
+        import psycopg2.extras
+        ssl_kwargs = _pg_ssl_kwargs()
+        if db_url:
+            conn = psycopg2.connect(
+                db_url, cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs
+            )
+        else:
+            conn = psycopg2.connect(
+                host=os.environ.get("ICDEV_PG_HOST", "localhost"),
+                port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
+                user=os.environ.get("ICDEV_PG_USER", "icdev"),
+                password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
+                dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+                cursor_factory=psycopg2.extras.RealDictCursor,
+                **ssl_kwargs,
+            )
+        conn.autocommit = False
+        return conn
 
 
 def _get_sqlite_connection(db_path: str = None):
