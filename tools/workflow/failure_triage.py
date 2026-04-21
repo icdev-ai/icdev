@@ -51,6 +51,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from tools.workflow.git_utils import default_branch
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -717,8 +719,9 @@ def _ff_merge_autofix_branch(branch: str) -> bool:
     # 1. Are we on main? If not, abort — automerge is only for the
     # straightforward case.
     rc, head = _run(["git", "symbolic-ref", "--short", "HEAD"], cwd=BASE_DIR, timeout=10)
-    if rc != 0 or head.strip() != "main":
-        logger.info("automerge skipped — current branch is not main (%s)", head.strip())
+    db = default_branch()
+    if rc != 0 or head.strip() != db:
+        logger.info("automerge skipped — current branch is not %s (%s)", db, head.strip())
         return False
     # 2. Refuse to merge with a dirty tree
     rc, out = _run(["git", "status", "--porcelain"], cwd=BASE_DIR, timeout=10)

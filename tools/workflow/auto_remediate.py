@@ -21,6 +21,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from tools.workflow.git_utils import default_branch
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -151,7 +153,7 @@ def remediate_phantom_paths(cwd: str, task_id: str) -> Tuple[bool, str]:
     try:
         # 1) Commits on the task branch
         r = _run(
-            ["git", "log", f"main..{branch}", "--name-only", "--pretty=format:"],
+            ["git", "log", f"{default_branch(cwd)}..{branch}", "--name-only", "--pretty=format:"],
             cwd, timeout=10,
         )
         files = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
@@ -170,7 +172,7 @@ def remediate_phantom_paths(cwd: str, task_id: str) -> Tuple[bool, str]:
             )
         # 3) Main advanced (agent's work may have merged already)
         r = _run(
-            ["git", "log", "main", "--name-only", "--since=30 minutes ago",
+            ["git", "log", default_branch(cwd), "--name-only", "--since=30 minutes ago",
              "--pretty=format:"],
             cwd, timeout=10,
         )
@@ -194,9 +196,10 @@ def remediate_stale_baseline(cwd: str, task_id: str) -> Tuple[bool, str]:
     branch = f"kanban/{task_id}"
     try:
         # Attempt rebase from the worktree (which has the branch checked out)
-        r = _run(["git", "rebase", "main"], cwd, timeout=90)
+        db = default_branch(cwd)
+        r = _run(["git", "rebase", db], cwd, timeout=90)
         if r.returncode == 0:
-            return True, f"rebased {branch} onto main"
+            return True, f"rebased {branch} onto {db}"
         # Conflict — abort to leave a clean state
         _run(["git", "rebase", "--abort"], cwd)
         return False, f"rebase conflict: {r.stderr[:200]}"
