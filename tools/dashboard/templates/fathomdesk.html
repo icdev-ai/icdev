@@ -422,7 +422,7 @@
     // ── HVN horizontal lines ───────────────────────────────────────────────────
     if (vp && vp.hvns) {
       vp.hvns.forEach(function (hvn) {
-        var yh = py(hvn.price);
+        var yh = py(+hvn);
         svg.appendChild(svgEl('line', {
           x1: padL, y1: yh, x2: W - padR, y2: yh,
           stroke: '#e8a838', 'stroke-width': '1',
@@ -484,7 +484,7 @@
       if (maxVol <= 0) maxVol = 1;
 
       var hvnPrices = {};
-      if (vp.hvns) vp.hvns.forEach(function (h) { hvnPrices[h.price.toFixed(4)] = true; });
+      if (vp.hvns) vp.hvns.forEach(function (h) { hvnPrices[(+h).toFixed(4)] = true; });
 
       vp.buckets.forEach(function (bkt) {
         var bktMid    = (bkt.price_low + bkt.price_high) / 2;
