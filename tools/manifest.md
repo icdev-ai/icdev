@@ -323,3 +323,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Alphadesk Trap Scenarios | tools\genesis\reflexes\alphadesk_trap_scenarios.py | Auto-registered: reflexes/alphadesk_trap_scenarios.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Git Utils | tools\workflow\git_utils.py | Auto-registered: workflow/git_utils.py | --json | JSON |
