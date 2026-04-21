@@ -144,6 +144,39 @@ CREATE TABLE IF NOT EXISTS compliance_snapshots (
     taken_at     TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS data_nodes (
+    id TEXT PRIMARY KEY,
+    design_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    node_type TEXT DEFAULT '',
+    label TEXT DEFAULT '',
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS data_edges (
+    id TEXT PRIMARY KEY,
+    design_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    edge_type TEXT DEFAULT '',
+    label TEXT DEFAULT '',
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS data_twin_snapshots (
+    id TEXT PRIMARY KEY,
+    design_id TEXT NOT NULL,
+    label TEXT DEFAULT '',
+    table_count INTEGER DEFAULT 0,
+    edge_count INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS dev_profiles (
     id TEXT PRIMARY KEY,
     scope TEXT NOT NULL CHECK(scope IN ('platform','tenant','program','project','user')),
