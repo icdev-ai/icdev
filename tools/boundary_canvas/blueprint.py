@@ -1635,4 +1635,69 @@ def create_boundary_blueprint():
         status = payload.pop("_status", 200)
         return jsonify(payload), status
 
+    # ── Digital Twin ───────────────────────────────────────────────────────
+    @bp.route("/twin/<design_id>")
+    @login_required
+    def bdc_twin_page(design_id):
+        conn = get_connection()
+        design = conn.execute("SELECT * FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+        if not design:
+            return render_template("404.html"), 404
+        design = _row_to_dict(design)
+        try:
+            snapshots = conn.execute(
+                "SELECT * FROM compliance_snapshots WHERE project_id=? ORDER BY taken_at DESC LIMIT 20",
+                (design_id,),
+            ).fetchall()
+        except Exception:
+            snapshots = []
+        frameworks = ["FedRAMP Moderate", "CMMC Level 2", "NIST 800-53", "NIST 800-171", "IL4", "IL5"]
+        return render_template(
+            "boundary_canvas/twin.html",
+            project=design,
+            snapshots=[_row_to_dict(s) for s in snapshots],
+            frameworks=frameworks,
+        )
+
+    @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
+    @login_required
+    def bdc_api_twin_snapshot(design_id):
+        from tools.boundary_canvas.twin import take_snapshot
+        data = request.get_json(silent=True) or {}
+        snap = take_snapshot(design_id, framework_id=data.get("framework_id", "FedRAMP Moderate"))
+        _audit(design_id, "twin_snapshot", f"snap={snap.get('snapshot_id')}")
+        return jsonify(snap), 201
+
+    @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
+    @login_required
+    def bdc_api_twin_simulate(design_id):
+        from tools.boundary_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            delta=data.get("delta", []),
+            framework_id=data.get("framework_id", "FedRAMP Moderate"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+        )
+        _audit(design_id, "twin_simulate", f"verdict={result.get('rating')}")
+        return jsonify(result), 200
+
+    @bp.route("/api/twin/<design_id>/crosswalk-drift", methods=["GET"])
+    @login_required
+    def bdc_api_twin_crosswalk(design_id):
+        from tools.boundary_canvas.twin import crosswalk_drift
+        fw_src = request.args.get("fw_src", "NIST 800-53")
+        fw_tgt = request.args.get("fw_tgt", "CMMC Level 2")
+        result = crosswalk_drift(design_id, fw_src, fw_tgt)
+        return jsonify(result), 200
+
+    @bp.route("/api/twin/<design_id>/oscal-export", methods=["GET"])
+    @login_required
+    def bdc_api_twin_oscal(design_id):
+        snap_id = request.args.get("snapshot_id")
+        artifact_type = request.args.get("artifact_type", "ssp")
+        from tools.boundary_canvas.twin import export_oscal
+        result = export_oscal(design_id, snap_id, artifact_type)
+        return jsonify(result), 200
+
     return bp

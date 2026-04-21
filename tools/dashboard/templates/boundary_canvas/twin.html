@@ -161,7 +161,7 @@ async function takeSnapshot() {
   spinner.style.display = 'inline-block';
   const fw = document.getElementById('frameworkSelect').value;
   try {
-    const r = await fetch(`/boundary/cato/snapshot`, {
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/snapshot`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({project_id: PROJECT_ID, framework_id: fw})
     });
@@ -200,7 +200,7 @@ async function runSimulation() {
   try {
     const body = { project_id: PROJECT_ID, delta, framework_id: document.getElementById('frameworkSelect').value };
     if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
-    const r = await fetch(`/boundary/cato/simulate`, {
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/simulate`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();
@@ -236,7 +236,7 @@ function renderResults(d) {
 
 async function exportOscal(artifactType) {
   if (!selectedSnapId) { alert('Take or select a snapshot first.'); return; }
-  window.open(`/boundary/cato/oscal-export?snapshot_id=${selectedSnapId}&artifact_type=${artifactType}&format=json`, '_blank');
+  window.open(`/boundary/api/twin/${PROJECT_ID}/oscal-export?snapshot_id=${selectedSnapId}&artifact_type=${artifactType}&format=json`, '_blank');
 }
 
 async function runDrift() {
@@ -245,7 +245,7 @@ async function runDrift() {
   const src = document.getElementById('fwSrc').value;
   const tgt = document.getElementById('fwTgt').value;
   try {
-    const r = await fetch(`/boundary/cato/crosswalk-drift?project_id=${PROJECT_ID}&fw_src=${encodeURIComponent(src)}&fw_tgt=${encodeURIComponent(tgt)}`);
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/crosswalk-drift?fw_src=${encodeURIComponent(src)}&fw_tgt=${encodeURIComponent(tgt)}`);
     const data = await r.json();
     if (!r.ok) { alert(data.error || 'Drift detection failed'); return; }
     document.getElementById('driftResults').style.display = 'block';

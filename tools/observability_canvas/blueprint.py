@@ -1337,4 +1337,55 @@ def create_observability_blueprint():
         status = payload.pop("_status", 200)
         return jsonify(payload), status
 
+    # ── Digital Twin ───────────────────────────────────────────────────────
+    @bp.route("/twin/<design_id>")
+    @login_required
+    def oc_twin_page(design_id):
+        conn = get_connection()
+        design = conn.execute("SELECT * FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+        if not design:
+            return render_template("404.html"), 404
+        design = _row_to_dict(design)
+        try:
+            snapshots = conn.execute(
+                "SELECT * FROM odc_twin_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
+                (design_id,),
+            ).fetchall()
+        except Exception:
+            snapshots = []
+        return render_template(
+            "observability_canvas/twin.html",
+            design=design,
+            snapshots=[_row_to_dict(s) for s in snapshots],
+        )
+
+    @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
+    @login_required
+    def oc_api_twin_snapshot(design_id):
+        from tools.observability_canvas.twin import take_snapshot
+        data = request.get_json(silent=True) or {}
+        snap = take_snapshot(design_id, label=data.get("label"))
+        return jsonify(snap), 201
+
+    @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
+    @login_required
+    def oc_api_twin_simulate(design_id):
+        from tools.observability_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            collector_delta=data.get("collector_delta", {}),
+            signals=data.get("signals", ["all"]),
+            baseline_snap_id=data.get("baseline_snap_id"),
+        )
+        return jsonify(result), 200
+
+    @bp.route("/api/twin/<design_id>/slo-projection", methods=["POST"])
+    @login_required
+    def oc_api_twin_slo(design_id):
+        from tools.observability_canvas.twin import slo_projection
+        data = request.get_json(silent=True) or {}
+        result = slo_projection(design_id, collector_delta=data.get("collector_delta"), baseline_snap_id=data.get("baseline_snap_id"))
+        return jsonify(result), 200
+
     return bp

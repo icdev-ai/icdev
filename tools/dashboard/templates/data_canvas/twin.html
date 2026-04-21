@@ -135,7 +135,7 @@ async function takeSnapshot() {
   const spinner = document.getElementById('snapSpinner');
   spinner.style.display = 'inline-block';
   try {
-    const r = await fetch(`/data/api/designs/${DESIGN_ID}/twin/snapshot`, {
+    const r = await fetch(`/data/api/twin/${DESIGN_ID}/snapshot`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({label: 'snap-' + new Date().toISOString().slice(0,10), classification: document.getElementById('classSelect').value})
     });
@@ -174,7 +174,7 @@ async function runSimulation() {
   try {
     const body = { schema_changes: delta, classification: document.getElementById('classSelect').value };
     if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
-    const r = await fetch(`/data/api/designs/${DESIGN_ID}/twin/simulate`, {
+    const r = await fetch(`/data/api/twin/${DESIGN_ID}/simulate`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();
@@ -218,7 +218,7 @@ async function runQualityGate() {
   try {
     const body = { schema_changes: delta };
     if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
-    const r = await fetch(`/data/api/designs/${DESIGN_ID}/twin/quality-gate`, {
+    const r = await fetch(`/data/api/twin/${DESIGN_ID}/quality-gate`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();
