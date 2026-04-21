@@ -48,6 +48,23 @@
         <button class="cat-tab"        data-tab="regulatory"   onclick="switchTab('regulatory')">Regulatory    <span class="tab-badge" id="tbadge-regulatory">0</span></button>
         <button class="cat-tab"        data-tab="sector"       onclick="switchTab('sector')">Sector        <span class="tab-badge" id="tbadge-sector">0</span></button>
         <button class="cat-tab"        data-tab="corporate"    onclick="switchTab('corporate')">Corporate     <span class="tab-badge" id="tbadge-corporate">0</span></button>
+        <button class="cat-tab"        data-tab="cluster"      onclick="switchTab('cluster')">Cluster Intel <span class="tab-badge" id="tbadge-cluster"></span></button>
+    </div>
+</div>
+
+<!-- Cluster Intel pane -->
+<div class="cat-pane" id="pane-cluster" style="display:none">
+    <div class="card" id="news-cluster-card">
+        <h3 style="color:#56d364">Supply Chain Cluster Intel</h3>
+        <div id="news-cluster-body" style="font-size:12.5px">
+            <div style="opacity:0.6">Loading cluster states…</div>
+        </div>
+    </div>
+    <div class="card" id="news-catalyst-card">
+        <h3 style="color:#58a6ff">Active Monetary Catalysts</h3>
+        <div id="news-catalyst-body" style="font-size:12.5px">
+            <div style="opacity:0.6">Loading catalysts…</div>
+        </div>
     </div>
 </div>
 
@@ -168,7 +185,41 @@ function switchTab(tab) {
     currentTab = tab;
     document.getElementById('pane-' + tab).style.display = 'block';
     document.querySelector('.cat-tab[data-tab="' + tab + '"]').classList.add('active');
+    if (tab === 'cluster') { loadNewsClusterIntel(); return; }
     renderPane(tab, allNews);
+}
+
+async function loadNewsClusterIntel() {
+    try {
+        const [cd, mc] = await Promise.all([
+            fetch('/api/correlation/clusters').then(r => r.json()),
+            fetch('/api/correlation/monetary-catalysts').then(r => r.json()),
+        ]);
+        const clusterEl = document.getElementById('news-cluster-body');
+        const clusters = cd.clusters || [];
+        const stateColor = {bullish:'#3fb950', bearish:'#f85149', neutral:'#8b949e', diverging:'#d29922'};
+        clusterEl.innerHTML = clusters.length
+            ? clusters.map(cl => {
+                const c = stateColor[cl.state] || '#8b949e';
+                return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #21262d">
+                    <span style="color:${c};font-weight:600;min-width:80px">${(cl.state||'neutral').toUpperCase()}</span>
+                    <span style="color:#e6edf3">${cl.name || cl.cluster_id}</span>
+                    <span style="font-size:11px;color:#8b949e;margin-left:auto">${(cl.tickers||[]).slice(0,5).join(', ')}</span>
+                </div>`;
+            }).join('')
+            : '<div style="opacity:0.5">No cluster data yet — run correlation scan</div>';
+
+        const catEl = document.getElementById('news-catalyst-body');
+        const active = (mc.catalysts || []).filter(c => c.active);
+        catEl.innerHTML = active.length
+            ? active.map(c => `<div style="padding:6px 0;border-bottom:1px solid #21262d">
+                <strong style="color:#58a6ff">${c.name || c.catalyst_id}</strong>
+                <span style="font-size:11px;color:#8b949e;margin-left:8px">strength: ${((c.strength||0)*100).toFixed(0)}%</span>
+              </div>`).join('')
+            : '<div style="opacity:0.5">No active monetary catalysts detected</div>';
+    } catch(e) {
+        document.getElementById('news-cluster-body').textContent = 'Error loading cluster data';
+    }
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────

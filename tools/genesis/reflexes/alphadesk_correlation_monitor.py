@@ -14,7 +14,6 @@ Cooldown: 2 hours per catalyst (prevents alert fatigue).
 
 from __future__ import annotations
 
-import json
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
