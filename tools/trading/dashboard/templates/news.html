@@ -341,7 +341,7 @@ function buildNewsRow(item) {
     ` : '';
     const timeAgo = item.published_at ? new Date(item.published_at).toLocaleString() : '';
     return `
-    <div style="border-bottom:1px solid #30363d;padding:0.75rem 0">
+    <div class="news-item-row" style="border-bottom:1px solid #30363d;padding:0.75rem 0">
         <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.25rem">
             <span style="background:#30363d;padding:2px 8px;border-radius:4px;font-size:0.75rem">${cat}</span>
             <span style="color:${impactColor};font-size:0.75rem;font-weight:bold">${impact.toUpperCase()}</span>
@@ -354,7 +354,7 @@ function buildNewsRow(item) {
             <button onclick="analyzeItem('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#8b5cf6;color:#fff;border:none;border-radius:4px">Analyze</button>
             <button onclick="traceImpact('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#1976d2;color:#fff;border:none;border-radius:4px" title="Walk the Knowledge Graph">&#128279; Trace Impact</button>
             ${tickerBtns}
-            <span id="msg-${item.id}" style="font-size:0.75rem;display:none"></span>
+            <span class="news-item-msg" style="font-size:0.75rem;display:none"></span>
         </div>
         <div id="intel-${item.id}" class="panel-analyze" style="display:none;margin-top:0.5rem;padding:0.75rem;font-size:0.8rem"></div>
         <div id="impact-${item.id}" class="panel-trace" style="display:none;margin-top:0.5rem;padding:0.75rem;font-size:0.8rem"></div>
@@ -423,7 +423,7 @@ function loadDivergences() {
 const _traceState = {};
 
 function traceImpact(newsId, btn) {
-    const panel = document.getElementById('impact-' + newsId);
+    const panel = btn.closest('.news-item-row').querySelector('.panel-trace');
     const state = _traceState[newsId] || (_traceState[newsId] = {});
 
     if (state.controller) {
@@ -527,8 +527,9 @@ function traceImpact(newsId, btn) {
 const _analyzeState = {};
 
 function analyzeItem(newsId, btn) {
-    const panel = document.getElementById('intel-' + newsId);
-    const msg = document.getElementById('msg-' + newsId);
+    const row = btn.closest('.news-item-row');
+    const panel = row.querySelector('.panel-analyze');
+    const msg = row.querySelector('.news-item-msg');
     const state = _analyzeState[newsId] || (_analyzeState[newsId] = {});
 
     if (state.controller) {
