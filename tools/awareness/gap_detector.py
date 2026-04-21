@@ -651,6 +651,14 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     created: Set[str] = set()
     referenced: Dict[str, str] = {}  # table → first referencing file
 
+    # Tables whose write path is intentionally deferred to a future phase.
+    # The schema (CREATE TABLE) exists in a migration; only INSERT is deferred.
+    # Add here to suppress recurring orphan_db_table gap tasks.
+    deferred_write_tables = {
+        "ad_trap_events",      # write path deferred to Phase 7.12 (trap scanner daemon)
+        "ad_radar_snapshots",  # write path deferred pending radar reflex wiring
+    }
+
     # Table names that are legitimately referenced but are DBMS-provided
     # and have no CREATE TABLE anywhere in tool code. Filtered at the
     # end so they never enter the orphan list.
@@ -755,6 +763,8 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         if t in created:
             continue
         if t in system_tables:
+            continue
+        if t in deferred_write_tables:
             continue
         # Catch any pg_*, sqlite_*, or information_schema.* catalog the
         # explicit set above hasn't enumerated yet.
