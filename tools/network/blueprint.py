@@ -9727,6 +9727,30 @@ Output ONLY the JSON object. No other text."""
         )
         return jsonify(result), 200
 
+    @bp.route("/api/twin/<topo_id>/current-topology", methods=["GET"])
+    @nc_login_required
+    def nc_api_twin_current_topology(topo_id):
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"] or "{}")
+        except Exception:
+            graph = {}
+        return jsonify({"graph_json": graph}), 200
+
+    @bp.route("/api/twin/<topo_id>/chat-delta", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_chat_delta(topo_id):
+        from tools.twin_chat import network_chat_to_delta
+        data = request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        if not message:
+            return jsonify({"error": "message is required"}), 400
+        result = network_chat_to_delta(message, data.get("graph_json"))
+        return jsonify(result), (500 if "error" in result else 200)
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
