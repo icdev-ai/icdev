@@ -137,6 +137,48 @@ CREATE INDEX IF NOT EXISTS idx_dd_lineage_design ON dd_lineage(design_id);
 CREATE INDEX IF NOT EXISTS idx_dd_lineage_source ON dd_lineage(source_node_id);
 CREATE INDEX IF NOT EXISTS idx_dd_lineage_target ON dd_lineage(target_node_id);
 
+CREATE TABLE IF NOT EXISTS data_nodes (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL REFERENCES data_designs(id) ON DELETE CASCADE,
+    node_type       TEXT NOT NULL DEFAULT 'table',
+    label           TEXT DEFAULT '',
+    x               REAL DEFAULT 0,
+    y               REAL DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    properties_json TEXT DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_nodes_design ON data_nodes(design_id);
+CREATE INDEX IF NOT EXISTS idx_data_nodes_type   ON data_nodes(node_type);
+
+CREATE TABLE IF NOT EXISTS data_edges (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL REFERENCES data_designs(id) ON DELETE CASCADE,
+    source_node_id  TEXT NOT NULL,
+    target_node_id  TEXT NOT NULL,
+    edge_type       TEXT DEFAULT '',
+    label           TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_edges_design ON data_edges(design_id);
+CREATE INDEX IF NOT EXISTS idx_data_edges_source ON data_edges(source_node_id);
+CREATE INDEX IF NOT EXISTS idx_data_edges_target ON data_edges(target_node_id);
+
+CREATE TABLE IF NOT EXISTS data_twin_snapshots (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL REFERENCES data_designs(id) ON DELETE CASCADE,
+    label           TEXT DEFAULT '',
+    table_count     INTEGER DEFAULT 0,
+    edge_count      INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_twin_snapshots_design ON data_twin_snapshots(design_id);
+
 -- Immutability triggers (SQLite)
 CREATE TRIGGER IF NOT EXISTS dd_audit_no_update
     BEFORE UPDATE ON dd_audit
