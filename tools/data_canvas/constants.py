@@ -224,6 +224,38 @@ DATA_OBJECTS = {
             "desc": "Secure data enclave — restricted access analytical environment",
         },
     ],
+    "digital_twin": [
+        {
+            "type": "twin-lineage",
+            "label": "Data Lineage Twin",
+            "icon": "LT",
+            "desc": "Snapshots the table schema graph and lineage edges as a baseline for schema drift detection and downstream impact analysis",
+        },
+        {
+            "type": "twin-schema-drift",
+            "label": "Schema Drift Detector",
+            "icon": "SD",
+            "desc": "Detects added/removed/renamed columns and type changes between lineage snapshots; scores coverage delta",
+        },
+        {
+            "type": "twin-impact-analyzer",
+            "label": "Impact Analyzer",
+            "icon": "IA",
+            "desc": "Traces downstream impact of a proposed schema change through the lineage graph — surfaces breaking changes before they hit production",
+        },
+        {
+            "type": "twin-quality-gate",
+            "label": "Data Quality Gate",
+            "icon": "QG",
+            "desc": "Evaluates null constraints, referential integrity, and CUI boundary rules against a proposed schema change",
+        },
+        {
+            "type": "twin-catalog",
+            "label": "Catalog Twin",
+            "icon": "CT",
+            "desc": "Integrates with external data catalogs (Collibra/Alation pattern) — bridges catalog metadata into ICDEV lineage graph",
+        },
+    ],
 }
 
 # Classification levels for data objects
