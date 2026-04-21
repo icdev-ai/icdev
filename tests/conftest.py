@@ -810,6 +810,18 @@ CREATE TABLE IF NOT EXISTS redaction_audit (
     classification TEXT DEFAULT 'CUI'
 );
 
+CREATE TABLE IF NOT EXISTS evidence (
+    id TEXT PRIMARY KEY,
+    project_id TEXT DEFAULT '',
+    control_id TEXT DEFAULT '',
+    evidence_type TEXT DEFAULT '',
+    evidence_source TEXT DEFAULT '',
+    evidence_path TEXT DEFAULT '',
+    collected_at TEXT,
+    status TEXT DEFAULT 'fresh',
+    created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS compliance_evidence_chain (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     chain_id       TEXT NOT NULL,

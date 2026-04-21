@@ -3,13 +3,14 @@
 """Migration 017: auto-generate CREATE TABLE for orphan tables.
 
 Generated 2026-04-12 by tools/awareness/orphan_table_generator.py.
+Updated 2026-04-21: added 'evidence' table (tools/boundary_canvas/twin.py).
 
 Resolves orphan_db_table findings from the Internal Awareness Engine
 gap detector. These tables are written by tool code (INSERT INTO / SELECT)
 but had no CREATE TABLE statement in any migration, so fresh sqlite
 deployments would 500 on first use.
 
-This migration covers 56 distinct orphan tables.
+This migration covers 57 distinct orphan tables.
 All CREATE TABLE statements are idempotent (IF NOT EXISTS).
 
 REVIEW GATE: Human review required before applying. Run:
@@ -22,7 +23,7 @@ import sqlite3
 MIGRATION_ID = "017"
 MIGRATION_NAME = "orphan_tables"
 DESCRIPTION = (
-    "Create 56 orphan tables identified by the Internal Awareness Engine "
+    "Create 57 orphan tables identified by the Internal Awareness Engine "
     "gap detector. Resolves schema drift — tables referenced by tool code but missing "
     "from any migration, causing fresh sqlite deploys to 500 on first use."
 )
@@ -47,6 +48,7 @@ _ORPHAN_TABLES = [
     "decision_records",
     "deploy_history",
     "dh_enrichment_cache",
+    "evidence",
     "ft_training_pairs",
     "genesis_knowledge_packets",
     "genesis_runs",
@@ -125,6 +127,8 @@ _CREATE_STMTS = [
     "CREATE TABLE IF NOT EXISTS deploy_history (\n    id TEXT PRIMARY KEY,\n    project_id TEXT DEFAULT '',\n    environment TEXT DEFAULT 'staging',\n    status TEXT DEFAULT 'pending',\n    deployed_by TEXT DEFAULT '',\n    deployed_at TEXT,\n    created_at TEXT\n);",
     # dh_enrichment_cache — first referenced in tools/genesis/promoter.py [known_schema]
     "CREATE TABLE IF NOT EXISTS dh_enrichment_cache (\n    id TEXT PRIMARY KEY,\n    source TEXT DEFAULT '',\n    query_hash TEXT DEFAULT '',\n    result_data TEXT DEFAULT '{}',\n    expires_at TEXT,\n    created_at TEXT\n);",
+    # evidence — first referenced in tools/boundary_canvas/twin.py [known_schema]
+    "CREATE TABLE IF NOT EXISTS evidence (\n    id TEXT PRIMARY KEY,\n    project_id TEXT DEFAULT '',\n    control_id TEXT DEFAULT '',\n    evidence_type TEXT DEFAULT '',\n    evidence_source TEXT DEFAULT '',\n    evidence_path TEXT DEFAULT '',\n    collected_at TEXT,\n    status TEXT DEFAULT 'fresh',\n    created_at TEXT\n);",
     # ft_training_pairs — first referenced in tools/genesis/promoter.py [known_schema]
     "CREATE TABLE IF NOT EXISTS ft_training_pairs (\n    id TEXT PRIMARY KEY,\n    dataset_id TEXT DEFAULT '',\n    instruction TEXT DEFAULT '',\n    input_text TEXT DEFAULT '',\n    output_text TEXT DEFAULT '',\n    purpose TEXT DEFAULT 'general',\n    approved INTEGER DEFAULT 0,\n    source TEXT DEFAULT '',\n    created_at TEXT\n);",
     # genesis_knowledge_packets — first referenced in tools/dashboard/app.py [known_schema]
