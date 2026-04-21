@@ -139,6 +139,11 @@ def _generate_sample_macro() -> dict:
     seed, breakeven_5y5y = _pseudo(seed, 1.5, 2.8)   # 5y5y forward breakeven %
     seed, breakeven_10y = _pseudo(seed, 1.5, 2.8)    # 10y breakeven %
 
+    # Fed balance sheet for QE/QT phase classification
+    seed, fed_bs = _pseudo(seed, 6500.0, 9000.0)
+    seed, fed_bs_4w_ago = _pseudo(seed, 6500.0, 9000.0)
+    fed_bs_4w_roc_b = (fed_bs - fed_bs_4w_ago) / 4.0
+
     oil_change_30d = (oil - oil_prev) / oil_prev if oil_prev else 0
     gold_change_30d = (gold - gold_prev) / gold_prev if gold_prev else 0
     gold_copper_ratio = gold / max(4.0, 3.5 + (seed % 100) / 50.0)
@@ -174,6 +179,8 @@ def _generate_sample_macro() -> dict:
         "m2_yoy_pct": round(m2_yoy_pct, 2),
         "breakeven_5y5y": round(breakeven_5y5y, 2),
         "breakeven_10y": round(breakeven_10y, 2),
+        # Fed balance sheet for QE/QT phase
+        "fed_bs_4w_roc_b": round(fed_bs_4w_roc_b, 1),
     }
 
 
@@ -419,6 +426,19 @@ def _fetch_live_macro() -> dict | None:
             data["breakeven_10y"] = round(float(be10y.dropna().iloc[-1]), 2)
         except Exception:
             data["breakeven_10y"] = 2.3
+
+        # Fed Balance Sheet 4-week RoC (WALCL — weekly, billions) for QE/QT phase
+        try:
+            walcl = fred.get_series("WALCL", observation_start="2024-01-01")
+            walcl_clean = walcl.dropna()
+            if len(walcl_clean) >= 5:
+                fed_bs_now = float(walcl_clean.iloc[-1])
+                fed_bs_4w_ago = float(walcl_clean.iloc[-5])
+                data["fed_bs_4w_roc_b"] = round((fed_bs_now - fed_bs_4w_ago) / 4.0, 1)
+            else:
+                data["fed_bs_4w_roc_b"] = 0.0
+        except Exception:
+            data["fed_bs_4w_roc_b"] = 0.0
     else:
         data["yield_spread"] = 0.5
         data["fed_funds"] = 5.0
@@ -436,6 +456,7 @@ def _fetch_live_macro() -> dict | None:
         data["m2_yoy_pct"] = 2.0
         data["breakeven_5y5y"] = 2.3
         data["breakeven_10y"] = 2.3
+        data["fed_bs_4w_roc_b"] = 0.0
 
     return data
 
@@ -965,6 +986,7 @@ def _classify_regime(
     indicators: list[dict],
     stagflation_risk: dict | None = None,
     deflation_risk: dict | None = None,
+    qeqt_phase: str | None = None,
 ) -> str:
     """Classify macro regime.
 
@@ -977,6 +999,9 @@ def _classify_regime(
       3. Fall back to Van Metre monetary framework for richer labels
          (EXPANSION/INFLATION/DEFLATION/LIQUIDITY_TRAP) + final
          GREEN/YELLOW/RED tiebreak when HMM is unavailable.
+      4. Append QE/QT context to Van Metre labels when phase is active:
+         EXPANSION+EXPANDING_QE, EXPANSION+CONTRACTING_QT,
+         LIQUIDITY_TRAP+EXPANDING_QE (Japan-style suppression), etc.
     """
     hmm_label = _hmm_regime(raw)
     if hmm_label in ("GREEN", "YELLOW", "RED"):
@@ -986,40 +1011,44 @@ def _classify_regime(
     sf_flags = (stagflation_risk or {}).get("active_flags", 0)
     df_flags = (deflation_risk or {}).get("active_flags", 0)
     if sf_flags >= 3:
-        return "STAGFLATION"
-    if df_flags >= 2:
-        return "DEFLATION"
-
-    loan_growth = raw.get("loan_growth_yoy", 2.0)
-    velocity = raw.get("velocity_of_money", 1.2)
-    multiplier = raw.get("money_multiplier", 3.5)
-    rrp = raw.get("rrp_balance_b", 200)
-    fed_funds = raw.get("fed_funds", 5.0)
-
-    # LIQUIDITY_TRAP: low multiplier + low velocity + high RRP
-    if multiplier < 3.0 and velocity < 1.1 and rrp > 500:
-        return "LIQUIDITY_TRAP"
-
-    # DEFLATION (legacy point trigger, kept as belt-and-suspenders)
-    if loan_growth < 0 and velocity < 1.2:
-        return "DEFLATION"
-
-    # INFLATION: high rates + strong lending + rising commodities
-    oil_change = raw.get("oil_change_30d", 0)
-    if fed_funds > 5.0 and loan_growth > 3.0 and oil_change > 0.05:
-        return "INFLATION"
-
-    # EXPANSION: healthy lending + normal velocity + supportive macro
-    if macro_score >= 60 and loan_growth > 2.0 and velocity > 1.2:
-        return "EXPANSION"
-
-    # Fallback to simple regime
-    if macro_score >= 60:
-        return "GREEN"
-    elif macro_score >= 30:
-        return "YELLOW"
+        base = "STAGFLATION"
+    elif df_flags >= 2:
+        base = "DEFLATION"
     else:
-        return "RED"
+        loan_growth = raw.get("loan_growth_yoy", 2.0)
+        velocity = raw.get("velocity_of_money", 1.2)
+        multiplier = raw.get("money_multiplier", 3.5)
+        rrp = raw.get("rrp_balance_b", 200)
+        fed_funds = raw.get("fed_funds", 5.0)
+
+        # LIQUIDITY_TRAP: low multiplier + low velocity + high RRP
+        if multiplier < 3.0 and velocity < 1.1 and rrp > 500:
+            base = "LIQUIDITY_TRAP"
+        # DEFLATION (legacy point trigger, kept as belt-and-suspenders)
+        elif loan_growth < 0 and velocity < 1.2:
+            base = "DEFLATION"
+        else:
+            # INFLATION: high rates + strong lending + rising commodities
+            oil_change = raw.get("oil_change_30d", 0)
+            if fed_funds > 5.0 and loan_growth > 3.0 and oil_change > 0.05:
+                base = "INFLATION"
+            # EXPANSION: healthy lending + normal velocity + supportive macro
+            elif macro_score >= 60 and loan_growth > 2.0 and velocity > 1.2:
+                base = "EXPANSION"
+            # Fallback to simple regime
+            elif macro_score >= 60:
+                base = "GREEN"
+            elif macro_score >= 30:
+                base = "YELLOW"
+            else:
+                base = "RED"
+
+    # Append QE/QT suffix to Van Metre labels when Fed balance sheet is moving
+    _VAN_METRE = {"EXPANSION", "INFLATION", "STAGFLATION", "DEFLATION", "LIQUIDITY_TRAP"}
+    if base in _VAN_METRE and qeqt_phase and qeqt_phase != "NEUTRAL":
+        suffix = "EXPANDING_QE" if qeqt_phase == "EXPANDING" else "CONTRACTING_QT"
+        return f"{base}+{suffix}"
+    return base
 
 
 def _build_summary(
@@ -1044,7 +1073,7 @@ def _build_summary(
         "YELLOW": "Macro environment shows mixed signals.",
         "RED": "Macro environment presents significant headwinds.",
     }
-    parts = [regime_descriptions.get(regime, "Macro environment uncertain.")]
+    parts = [regime_descriptions.get(regime.split("+")[0], "Macro environment uncertain.")]
 
     parts.append(f"{green_count} indicators positive, {red_count} negative.")
 
@@ -1169,8 +1198,11 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     macro_score = sum(i["score"] * i["weight"] for i in indicators)
     macro_score = int(max(0, min(100, macro_score)))
 
-    # Granular regime classification (Van Metre-inspired + composite-aware)
-    regime = _classify_regime(macro_score, raw, indicators, stagflation_risk, deflation_risk)
+    # QE/QT phase from Fed balance sheet 4-week rate of change
+    _qeqt_phase, _ = _classify_qeqt(raw.get("fed_bs_4w_roc_b", 0.0))
+
+    # Granular regime classification (Van Metre-inspired + composite-aware + QE/QT context)
+    regime = _classify_regime(macro_score, raw, indicators, stagflation_risk, deflation_risk, _qeqt_phase)
 
     # Geopolitical risk
     geo_risk = _compute_geopolitical_risk(headlines)
