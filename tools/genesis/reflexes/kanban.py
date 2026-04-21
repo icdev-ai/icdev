@@ -376,6 +376,54 @@ _worktrees: Dict[str, str] = {}
 # stay visible even if main advances between dispatch and verification.
 _dispatch_main_heads: Dict[str, str] = {}
 
+# Cache the detected default branch so we only shell out once per process.
+_default_branch_cache: Optional[str] = None
+
+
+def _default_branch() -> str:
+    """Return the repo's default branch (main / master / trunk / dev).
+
+    Tries in order:
+      1. Cached value from a previous call.
+      2. ``git symbolic-ref refs/remotes/origin/HEAD`` — reliable when origin exists.
+      3. ``git rev-parse --verify main`` / master / trunk / dev — local fallback.
+      4. Hard-coded "main" as last resort.
+    """
+    global _default_branch_cache
+    if _default_branch_cache:
+        return _default_branch_cache
+
+    import subprocess as _sp
+
+    # Strategy 1: remote HEAD ref (most reliable)
+    try:
+        r = _sp.run(
+            ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            branch = r.stdout.strip().removeprefix("origin/")
+            _default_branch_cache = branch
+            return branch
+    except Exception:
+        pass
+
+    # Strategy 2: probe common names
+    for candidate in ("main", "master", "trunk", "dev"):
+        try:
+            r = _sp.run(
+                ["git", "rev-parse", "--verify", candidate],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0:
+                _default_branch_cache = candidate
+                return candidate
+        except Exception:
+            pass
+
+    _default_branch_cache = "main"
+    return "main"
+
 
 def _create_worktree(task_id: str) -> Optional[str]:
     """Create an isolated git worktree for a kanban task.
@@ -501,7 +549,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     # 1) Is there anything to merge?
     try:
         result = _sp.run(
-            ["git", "log", "main.." + branch_name, "--oneline"],
+            ["git", "log", _default_branch() + ".." + branch_name, "--oneline"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -524,9 +572,9 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             text=True,
             timeout=10,
         )
-        cur_branch = (cur_branch_proc.stdout or "main").strip() or "main"
+        cur_branch = (cur_branch_proc.stdout or _default_branch()).strip() or _default_branch()
     except Exception:
-        cur_branch = "main"
+        cur_branch = _default_branch()
 
     # 3) Stash dirty working tree if needed
     stashed = False
@@ -554,7 +602,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
 
     def _restore():
         """Restore original branch and pop stash."""
-        if cur_branch != "main":
+        if cur_branch != _default_branch():
             _sp.run(
                 ["git", "checkout", cur_branch],
                 cwd=str(BASE_DIR),
@@ -579,7 +627,7 @@ def _merge_worktree_to_main(task_id: str) -> bool:
         """
         try:
             push = _sp.run(
-                ["git", "push", "origin", "main"],
+                ["git", "push", "origin", _default_branch()],
                 cwd=str(BASE_DIR),
                 capture_output=True,
                 text=True,
@@ -595,10 +643,10 @@ def _merge_worktree_to_main(task_id: str) -> bool:
         except Exception as exc:
             logger.warning("Push main error for %s: %s", task_id, exc)
 
-    # 4) Checkout main and attempt fast-forward merge
+    # 4) Checkout default branch and attempt fast-forward merge
     try:
         co = _sp.run(
-            ["git", "checkout", "main"],
+            ["git", "checkout", _default_branch()],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -632,10 +680,10 @@ def _merge_worktree_to_main(task_id: str) -> bool:
 
         # 5) FF failed — try rebase-then-ff
         logger.info(
-            "FF merge failed for %s, attempting rebase onto main", task_id
+            "FF merge failed for %s, attempting rebase onto %s", task_id, _default_branch()
         )
         rebase = _sp.run(
-            ["git", "rebase", "main", branch_name],
+            ["git", "rebase", _default_branch(), branch_name],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -655,9 +703,9 @@ def _merge_worktree_to_main(task_id: str) -> bool:
                 task_id,
                 rebase.stderr[:200],
             )
-            # Rebase leaves us on the branch — go back to main
+            # Rebase leaves us on the branch — go back to default branch
             _sp.run(
-                ["git", "checkout", "main"],
+                ["git", "checkout", _default_branch()],
                 cwd=str(BASE_DIR),
                 capture_output=True,
                 text=True,
@@ -666,9 +714,9 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             _restore()
             return False
 
-        # Rebase succeeded — now on the rebased branch, switch to main and ff
+        # Rebase succeeded — now on the rebased branch, switch to default branch and ff
         _sp.run(
-            ["git", "checkout", "main"],
+            ["git", "checkout", _default_branch()],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -2321,7 +2369,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     try:
         import subprocess as _sp
         head_proc = _sp.run(
-            ["git", "rev-parse", "main"],
+            ["git", "rev-parse", _default_branch()],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             cwd=str(BASE_DIR), timeout=10,
         )
@@ -2672,6 +2720,27 @@ def _run_verify_checks(task_id, claude_output):
         "already exists",
     ]
     output_lower = claude_output.lower()
+
+    # Permission-blocked guard: detect before hard-fail markers so the task
+    # is quarantined for human review instead of endlessly retried. The agent
+    # cannot self-resolve a permission prompt — retrying is futile.
+    _perm_blocked_signals = [
+        "approve the write permission",
+        "grant write permission",
+        "please approve",
+        "awaiting permission",
+        "permission to write to the file",
+        "need permission to write",
+        "i need permission to",
+        "request permission",
+        "requires your permission",
+        "waiting for permission",
+        "waiting for your approval",
+        "once you grant",
+    ]
+    if any(sig in output_lower for sig in _perm_blocked_signals):
+        return False, "PERMISSION_BLOCKED: agent awaiting write approval — route to human review"
+
     for marker in hard_fail_markers:
         if marker.lower() in output_lower[:1000]:
             return False, f"Output contains failure indicator: {marker}"
@@ -3356,7 +3425,7 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     branch_name = f"kanban/{task_id}"
     try:
         result = _sp.run(
-            ["git", "diff", "--name-only", f"main...{branch_name}"],
+            ["git", "diff", "--name-only", f"{_default_branch()}...{branch_name}"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             cwd=str(BASE_DIR), timeout=15,
         )
@@ -3454,7 +3523,7 @@ def _verify_task_completed(task_id, claude_output):
                 # Get the list of files the agent touched (for targeted ruff/manifest)
                 import subprocess as _sp
                 diff = _sp.run(
-                    ["git", "diff", "--name-only", f"main...kanban/{task_id}"],
+                    ["git", "diff", "--name-only", f"{_default_branch()}...kanban/{task_id}"],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                     cwd=str(BASE_DIR), timeout=15,
                 )
@@ -3837,18 +3906,46 @@ def _check_completed():
                     _clear_timeout_count(task_id)
                 else:
                     print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
-                    # guard-18: track failure count; flag for decomposition
-                    # after repeated failures (task is probably too big).
-                    new_status = _record_failure_and_maybe_flag(task_id, reason)
-                    try:
-                        _move_task(task_id, new_status,
-                                   actor="scheduler",
-                                   reason=f"unverified: {reason[:80]}")
-                    except Exception as _mt_exc:
-                        logger.error(
-                            "_move_task(%s) failed for %s: %s",
-                            new_status, task_id, _mt_exc,
-                        )
+                    # Permission-blocked: agent cannot self-resolve a write
+                    # permission prompt. Retrying is futile — quarantine to
+                    # 'suggested' for human review instead of burning retries.
+                    if reason.startswith("PERMISSION_BLOCKED:"):
+                        try:
+                            _move_task(
+                                task_id, "suggested",
+                                actor="scheduler",
+                                reason=reason[:200],
+                            )
+                        except Exception as _mt_exc:
+                            logger.error(
+                                "_move_task(suggested/perm-blocked) failed for %s: %s",
+                                task_id, _mt_exc,
+                            )
+                        try:
+                            from tools.notifications.adapters.telegram import (
+                                send as tg_send,
+                            )
+                            tg_send(
+                                f"PERMISSION BLOCKED: {task_dict.get('title', task_id)[:60]}",
+                                f"Task quarantined — agent awaiting write approval.\n{reason}",
+                                severity="warning",
+                            )
+                        except Exception:
+                            pass
+                        print(f"  Kanban: {task_id} PERMISSION-BLOCKED — moved to suggested")
+                    else:
+                        # guard-18: track failure count; flag for decomposition
+                        # after repeated failures (task is probably too big).
+                        new_status = _record_failure_and_maybe_flag(task_id, reason)
+                        try:
+                            _move_task(task_id, new_status,
+                                       actor="scheduler",
+                                       reason=f"unverified: {reason[:80]}")
+                        except Exception as _mt_exc:
+                            logger.error(
+                                "_move_task(%s) failed for %s: %s",
+                                new_status, task_id, _mt_exc,
+                            )
 
                 if verified:
                     _send_notification(task_dict, event="done")
