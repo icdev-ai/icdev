@@ -276,7 +276,7 @@ def create_task():
     if not data.get("title"):
         return jsonify({"error": "title is required"}), 400
 
-    task_id = _gen_id()
+    task_id = data.get("id") or _gen_id()
     now = _utcnow()
     depends_on = data.get("depends_on_task_id") or None
     conn = get_connection()
