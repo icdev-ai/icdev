@@ -20,7 +20,13 @@ family_weights:
 families:
   market_stress:
     enabled: true
-    description: "VIX, credit spreads, put/call, skew, breadth, copper/gold"
+    description: "VIX, credit spreads (IG OAS, BBB OAS, HY OAS, SOFR-FF), put/call, skew, breadth, copper/gold"
+    # Per-indicator weights within the credit spreads group (must sum to 1.0)
+    credit_spreads_weights:
+      ig_oas:  0.30   # ICE BofA IG OAS — broad investment-grade stress
+      bbb_oas: 0.25   # ICE BofA BBB OAS — fallen-angel risk
+      hy_oas:  0.25   # ICE BofA HY OAS — high-yield / risk-on barometer
+      sofr_ff: 0.20   # SOFR minus Fed Funds spread — short-term funding stress
   macro_leading:
     enabled: true
     description: "LEI, ISM PMI, building permits, claims, Sahm Rule, consumer confidence"
