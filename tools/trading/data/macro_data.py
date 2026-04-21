@@ -1288,6 +1288,7 @@ def _generate_sample_extended() -> dict:
     seed, m2_yago = _p(seed, 20000, 22000)
     seed, skew = _p(seed, 110, 160)                    # CBOE SKEW index
     seed, put_call = _p(seed, 0.5, 1.5)               # ratio
+    seed, bbb_oas_prev8w = _p(seed, 100, 350)          # bps, 8 weeks ago
 
     m2_yoy = ((m2 - m2_yago) / m2_yago * 100) if m2_yago else 0
     permits_yoy = ((building_permits - building_permits_yago) / building_permits_yago * 100) if building_permits_yago else 0
@@ -1297,11 +1298,14 @@ def _generate_sample_extended() -> dict:
     cc_declining = (consumer_confidence < consumer_conf_prev1 < consumer_conf_prev2)
     # SOFR spread = SOFR minus Fed Funds effective rate (use fed_funds stub ~5.33 as proxy)
     sofr_ff_spread_bps = round((sofr_rate - 5.33) * 100, 1)
+    # BBB OAS 8-week slope in bps/week (positive = widening trend)
+    bbb_oas_slope_8w_bps = round((bbb_oas - bbb_oas_prev8w) / 8.0, 2)
 
     return {
         "credit_spread_hy_bps": round(credit_spread_hy, 0),
         "ig_oas_bps": round(ig_oas, 1),
         "bbb_oas_bps": round(bbb_oas, 1),
+        "bbb_oas_slope_8w_bps": bbb_oas_slope_8w_bps,
         "sofr_ff_spread_bps": sofr_ff_spread_bps,
         "lei_index": round(lei, 2),
         "lei_monthly_change": round(lei_change, 2),
@@ -1376,9 +1380,18 @@ def _fetch_live_extended() -> dict | None:
 
     try:
         bbb = fred.get_series("BAMLC0A4CBBB", observation_start="2024-01-01")
-        data["bbb_oas_bps"] = round(float(bbb.dropna().iloc[-1]) * 100, 1)
+        bbb_clean = bbb.dropna()
+        data["bbb_oas_bps"] = round(float(bbb_clean.iloc[-1]) * 100, 1)
+        if len(bbb_clean) >= 40:
+            # ~8 weeks of business days (8 * 5 = 40 observations)
+            val_now = float(bbb_clean.iloc[-1]) * 100
+            val_8w_ago = float(bbb_clean.iloc[-40]) * 100
+            data["bbb_oas_slope_8w_bps"] = round((val_now - val_8w_ago) / 8.0, 2)
+        else:
+            data["bbb_oas_slope_8w_bps"] = 0.0
     except Exception:
         data["bbb_oas_bps"] = 175.0
+        data["bbb_oas_slope_8w_bps"] = 0.0
 
     try:
         sofr_s = fred.get_series("SOFR", observation_start="2024-01-01")
