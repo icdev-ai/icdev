@@ -46,7 +46,7 @@ def take_snapshot(project_id: str, label: str | None = None) -> dict:
         )
         conn.commit()
     except Exception:
-        pass  # table may not exist yet — migration pending
+        pass  # defensive: migration 031 creates the table; guard against mid-upgrade reads
 
     return {
         "id": snap_id,
