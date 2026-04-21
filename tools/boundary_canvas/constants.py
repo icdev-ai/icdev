@@ -205,6 +205,38 @@ BOUNDARY_OBJECTS = {
         },
         {"type": "doc-conops", "label": "ConOps", "icon": "COP", "desc": "Concept of Operations for interconnection"},
     ],
+    "digital_twin": [
+        {
+            "type": "twin-cato",
+            "label": "cATO Twin",
+            "icon": "CT",
+            "desc": "Continuous Authority to Operate digital twin — snapshots cross-framework control state and enables what-if compliance simulation",
+        },
+        {
+            "type": "twin-compliance-snapshot",
+            "label": "Compliance Snapshot",
+            "icon": "CS",
+            "desc": "Append-only snapshot of control satisfaction status across all mapped frameworks at a point in time",
+        },
+        {
+            "type": "twin-crosswalk-drift",
+            "label": "Crosswalk Drift Detector",
+            "icon": "XD",
+            "desc": "Surfaces controls satisfied in one framework but not another (e.g., NIST AC-2 satisfied, CMMC AC.L2-3.1.1 not_satisfied)",
+        },
+        {
+            "type": "twin-oscal-exporter",
+            "label": "OSCAL Exporter",
+            "icon": "OX",
+            "desc": "Generates machine-readable OSCAL SSP, POA&M, Assessment Results, and Component Definition from snapshot state",
+        },
+        {
+            "type": "twin-readiness-scorer",
+            "label": "Readiness Scorer",
+            "icon": "RS",
+            "desc": "Real-time cATO readiness score (0–100) across control satisfaction %, evidence freshness %, POA&M age, and critical-control gaps",
+        },
+    ],
 }
 
 # ISA Lifecycle States

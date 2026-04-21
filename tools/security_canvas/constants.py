@@ -225,6 +225,32 @@ SECURITY_OBJECTS = {
             "classification_levels": ["CUI", "SECRET"],
         },
     ],
+    "digital_twin": [
+        {
+            "type": "twin-attack-graph",
+            "label": "Attack Graph Twin",
+            "icon": "ag",
+            "desc": "BAS-style digital twin — snapshots the STRIDE/attack graph and enumerates all paths from entry points to high-value targets",
+        },
+        {
+            "type": "twin-posture",
+            "label": "Security Posture Twin",
+            "icon": "sp",
+            "desc": "Continuous security posture twin — tracks risk score delta across topology changes with PASS/WARN/FAIL verdict",
+        },
+        {
+            "type": "twin-bas",
+            "label": "BAS Replay Engine",
+            "icon": "br",
+            "desc": "Breach and Attack Simulation replay — maps Caldera ability IDs to ATT&CK technique IDs for automated path validation",
+        },
+        {
+            "type": "twin-mitre-delta",
+            "label": "MITRE Delta Detector",
+            "icon": "md",
+            "desc": "Surfaces new or resolved ATT&CK technique exposures introduced by a proposed topology change",
+        },
+    ],
 }
 
 # ── STRIDE Threat Categories ────────────────────────────────────────────────

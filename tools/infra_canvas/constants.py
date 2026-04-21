@@ -1118,6 +1118,38 @@ INFRA_OBJECTS = {
             "desc": "HashiCorp Vault — secret management + encryption as a service",
         },
     ],
+    "digital_twin": [
+        {
+            "type": "twin-iac",
+            "label": "IaC Twin",
+            "icon": "IT",
+            "desc": "Infrastructure-as-Code digital twin — imports Terraform/Pulumi/AWS state into append-only snapshots for drift detection and pre-apply compliance gating",
+        },
+        {
+            "type": "twin-drift",
+            "label": "Infra Drift Detector",
+            "icon": "ID",
+            "desc": "Compares live infra state against last approved snapshot; emits drift events (added/removed/changed resources) on deviation",
+        },
+        {
+            "type": "twin-preapply-gate",
+            "label": "Pre-Apply Gate",
+            "icon": "PG",
+            "desc": "Parses terraform plan JSON, runs IQE seed checks against planned final state, exits 1 on fail — blocks non-compliant applies",
+        },
+        {
+            "type": "twin-cross-csp",
+            "label": "Cross-CSP Simulator",
+            "icon": "CC",
+            "desc": "Simulates migrating a workload across CSPs — surfaces cost delta, FedRAMP IL compliance delta, and unmapped resource types",
+        },
+        {
+            "type": "twin-compliance-gate",
+            "label": "IDC Compliance Gate",
+            "icon": "CG",
+            "desc": "Evaluates delta snapshot against FIPS 199/200, FedRAMP baseline, STIG checks, and IL boundary rules before apply",
+        },
+    ],
 }
 
 # ── Infrastructure Compliance Frameworks ─────────────────────────────────────
