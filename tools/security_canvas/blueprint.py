@@ -1875,4 +1875,70 @@ def create_security_blueprint():
         status = payload.pop("_status", 200)
         return jsonify(payload), status
 
+    # ── Digital Twin ───────────────────────────────────────────────────────
+    @bp.route("/twin/<design_id>")
+    @login_required
+    def sc_twin_page(design_id):
+        conn = get_connection()
+        design = conn.execute("SELECT * FROM security_designs WHERE id=?", (design_id,)).fetchone()
+        if not design:
+            return render_template("404.html"), 404
+        design = _row_to_dict(design)
+        try:
+            snapshots = conn.execute(
+                "SELECT * FROM sdc_attack_snapshots WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
+                (design_id,),
+            ).fetchall()
+        except Exception:
+            snapshots = []
+        return render_template(
+            "security_canvas/twin.html",
+            design=design,
+            snapshots=[_row_to_dict(s) for s in snapshots],
+        )
+
+    @bp.route("/api/twin/<design_id>/snapshot", methods=["POST"])
+    @login_required
+    def sc_api_twin_snapshot(design_id):
+        from tools.security_canvas.twin import take_snapshot
+        data = request.get_json(silent=True) or {}
+        snap = take_snapshot(design_id, label=data.get("label"))
+        return jsonify(snap), 201
+
+    @bp.route("/api/twin/<design_id>/simulate", methods=["POST"])
+    @login_required
+    def sc_api_twin_simulate(design_id):
+        from tools.security_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            delta_graph=data.get("delta_graph", {}),
+            entry_point=data.get("entry_point"),
+            target_goal=data.get("target_goal"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+        )
+        return jsonify(result), 200
+
+    @bp.route("/api/twin/<design_id>/attack-paths/snapshot", methods=["POST"])
+    @login_required
+    def sc_api_attack_snapshot(design_id):
+        from tools.security_canvas.twin import take_snapshot
+        data = request.get_json(silent=True) or {}
+        snap = take_snapshot(design_id, label=data.get("label"))
+        return jsonify(snap), 201
+
+    @bp.route("/api/twin/<design_id>/attack-paths/simulate", methods=["POST"])
+    @login_required
+    def sc_api_attack_simulate(design_id):
+        from tools.security_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            delta_graph=data.get("delta_graph", {}),
+            entry_point=data.get("entry_point"),
+            target_goal=data.get("target_goal"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+        )
+        return jsonify(result), 200
+
     return bp

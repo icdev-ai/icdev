@@ -126,7 +126,7 @@ async function takeSnapshot() {
   const spinner = document.getElementById('snapSpinner');
   spinner.style.display = 'inline-block';
   try {
-    const r = await fetch(`/api/designs/${DESIGN_ID}/attack-paths/snapshot`, {
+    const r = await fetch(`/security/api/twin/${DESIGN_ID}/snapshot`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({label: 'snap-' + new Date().toISOString().slice(0,10)})
     });
@@ -169,7 +169,7 @@ async function runSimulation() {
     const tg = document.getElementById('targetInput').value.trim();
     if (ep) body.entry_point = ep;
     if (tg) body.target_goal = tg;
-    const r = await fetch(`/api/designs/${DESIGN_ID}/attack-paths/simulate`, {
+    const r = await fetch(`/security/api/twin/${DESIGN_ID}/simulate`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();

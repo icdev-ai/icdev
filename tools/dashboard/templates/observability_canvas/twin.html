@@ -147,7 +147,7 @@ async function takeSnapshot() {
   const spinner = document.getElementById('snapSpinner');
   spinner.style.display = 'inline-block';
   try {
-    const r = await fetch(`/observability/api/designs/${DESIGN_ID}/twin/snapshot`, {
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/snapshot`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({label: 'snap-' + new Date().toISOString().slice(0,10)})
     });
@@ -186,7 +186,7 @@ async function runSimulation() {
   try {
     const body = { collector_delta: delta, signals: getSelectedSignals() };
     if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
-    const r = await fetch(`/observability/api/designs/${DESIGN_ID}/twin/simulate`, {
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/simulate`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();
@@ -241,7 +241,7 @@ async function runSloProjection() {
     if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
     const raw = document.getElementById('deltaInput').value.trim();
     if (raw) { try { body.collector_delta = JSON.parse(raw); } catch(_) {} }
-    const r = await fetch(`/observability/api/designs/${DESIGN_ID}/twin/slo-projection`, {
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/slo-projection`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     const data = await r.json();
