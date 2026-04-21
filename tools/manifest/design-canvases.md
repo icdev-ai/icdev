@@ -32,6 +32,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | DDC OpenMetadata Client | tools/data_canvas/clients/openmetadata.py | OpenMetadata REST client — fetches tables and lineage from a running OpenMetadata instance. Configurable via `OPENMETADATA_HOST` env var (default: localhost:8585). `get_tables()`, `get_lineage(table_id)`. | --host, --json | Table list / lineage graph |
+| DDC Digital Twin | tools/data_canvas/twin.py | Data lineage digital twin — snapshot table schema and lineage edges, simulate downstream impact of schema changes, and enforce quality gates (null constraints, referential integrity, CUI boundary). Tables: `data_nodes` (design graph nodes), `data_edges` (lineage edges), `data_twin_snapshots` (immutable forensic snapshots, NIST AU, migration 031). `data_twin_snapshots` is append-only. | `take_snapshot(design_id, label, classification)`, `simulate_delta(design_id, schema_changes, classification, baseline_snap_id)`, `quality_gate(design_id, schema_changes)` | Snapshot dict / Simulation result dict (verdict, coverage_score, downstream_impacts, schema_drift) / Gate dict (violations, gate) |
 
 ## NDC Sub-Tools
 | Tool | File | Description | Input | Output |
