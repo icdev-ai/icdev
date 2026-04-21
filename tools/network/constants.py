@@ -244,6 +244,32 @@ CLOUD_OBJECTS = {
         {"type": "cdn-pop", "label": "CDN PoP", "icon": "CDN", "desc": "Content Delivery Network point of presence"},
         {"type": "kiosk", "label": "Kiosk", "icon": "KSK", "desc": "Public-facing kiosk/digital signage endpoint"},
     ],
+    "digital_twin": [
+        {
+            "type": "twin-network",
+            "label": "Network Twin",
+            "icon": "NT",
+            "desc": "Forward Networks-style network digital twin — snapshots topology (devices, links, ACLs, routing tables) for intent validation and what-if simulation",
+        },
+        {
+            "type": "twin-intent-validator",
+            "label": "Intent Validator",
+            "icon": "IV",
+            "desc": "Validates reachability, ACL compliance, and IL boundary isolation intent rules against proposed topology changes",
+        },
+        {
+            "type": "twin-blast-radius",
+            "label": "Blast Radius Analyzer",
+            "icon": "BR",
+            "desc": "Identifies downstream systems impacted by failure of any device or link in the proposed topology change",
+        },
+        {
+            "type": "twin-topo-simulator",
+            "label": "Topology Simulator",
+            "icon": "TS",
+            "desc": "Simulates proposed network topology delta — emits PASS/WARN/FAIL verdict before pushing device configs",
+        },
+    ],
 }
 
 # ── Extended Cloud Networking Objects (Well-Architected Hybrid Networking) ────

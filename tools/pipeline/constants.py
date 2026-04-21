@@ -1921,6 +1921,44 @@ PIPELINE_OBJECTS = {
             "license": "MIT",
         },
     ],
+    "digital_twin": [
+        {
+            "type": "twin-pipeline",
+            "label": "Pipeline Twin",
+            "icon": "DT",
+            "desc": "Digital twin node for this pipeline — enables snapshot/simulate/what-if before merging changes",
+            "stage": "policy_gate",
+        },
+        {
+            "type": "twin-snapshot",
+            "label": "Snapshot Trigger",
+            "icon": "SS",
+            "desc": "Triggers an append-only snapshot of the current pipeline DAG state for baseline comparison",
+            "stage": "build",
+        },
+        {
+            "type": "twin-simulator",
+            "label": "What-If Simulator",
+            "icon": "WI",
+            "desc": "Pre-merge what-if engine — compares delta graph against baseline snapshot and emits PASS/WARN/FAIL verdict",
+            "stage": "policy_gate",
+        },
+        {
+            "type": "twin-drift-detector",
+            "label": "Drift Detector",
+            "icon": "DD",
+            "desc": "Continuously compares live pipeline state against last approved snapshot; emits drift events on deviation",
+            "stage": "monitor",
+        },
+        {
+            "type": "twin-slsa-gate",
+            "label": "SLSA Gate (Twin)",
+            "icon": "SG",
+            "desc": "Twin-aware SLSA level evaluator — asserts minimum provenance level before delta is allowed to proceed",
+            "stage": "policy_gate",
+            "license": "Apache-2.0",
+        },
+    ],
 }
 
 # ── CSP Service Equivalence (maps generic concepts across CSPs) ──────────────
