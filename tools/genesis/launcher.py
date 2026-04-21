@@ -35,7 +35,36 @@ os.environ.setdefault("PYTHONPATH", ROOT)
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 DASHBOARD_PORT = 5050
+TRADING_DASHBOARD_PORT = 5100
 LOG_FILE = ".tmp/genesis/launcher.log"
+_PID_FILE = ".tmp/genesis/launcher.pid"
+
+
+def _acquire_pid_lock() -> bool:
+    """Return True if this process is now the sole launcher. False = another is running."""
+    if os.path.exists(_PID_FILE):
+        try:
+            with open(_PID_FILE) as f:
+                existing_pid = int(f.read().strip())
+            # Check if that PID is still alive
+            result = subprocess.run(
+                ["powershell", "-Command", f"Get-Process -Id {existing_pid} -ErrorAction SilentlyContinue"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0 and str(existing_pid) in result.stdout:
+                return False  # another launcher is alive
+        except Exception:
+            pass  # stale or unreadable PID file — take the lock
+    with open(_PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    return True
+
+
+def _release_pid_lock() -> None:
+    try:
+        os.remove(_PID_FILE)
+    except OSError:
+        pass
 
 
 def _log(msg: str) -> None:
@@ -173,7 +202,26 @@ def _start_kanban_scheduler():
     return proc, kb_log
 
 
+def _start_trading_dashboard():
+    """Start FathomDesk trading dashboard subprocess."""
+    _kill_stale_instances("trading/dashboard/app.py")
+    td_log = open(".tmp/trading_dashboard.log", "a", encoding="utf-8")
+    proc = subprocess.Popen(
+        [sys.executable, "tools/trading/dashboard/app.py"],
+        stdout=td_log,
+        stderr=td_log,
+        cwd=ROOT,
+        env=_child_env(),
+    )
+    _log(f"FathomDesk Dashboard started (PID {proc.pid}, port {TRADING_DASHBOARD_PORT})")
+    return proc, td_log
+
+
 def main():
+    if not _acquire_pid_lock():
+        _log("Another launcher instance is already running — exiting to avoid port conflicts.")
+        return
+
     _log("=" * 60)
     _log("ICDEV™ Services Launcher starting")
     _log(f"  Root: {ROOT}")
@@ -194,6 +242,9 @@ def main():
 
     # Start Kanban Scheduler (autonomous task execution)
     kb_proc, kb_log_f = _start_kanban_scheduler()
+
+    # Start FathomDesk Trading Dashboard
+    td_proc, td_log_f = _start_trading_dashboard()
 
     # Monitor loop — restart crashed processes
     try:
@@ -228,13 +279,20 @@ def main():
                 time.sleep(2)
                 kb_proc, kb_log_f = _start_kanban_scheduler()
 
+            # Check FathomDesk Trading Dashboard
+            if td_proc.poll() is not None:
+                _log(f"FathomDesk Dashboard exited (code {td_proc.returncode}), restarting...")
+                td_log_f.close()
+                time.sleep(2)
+                td_proc, td_log_f = _start_trading_dashboard()
+
     except KeyboardInterrupt:
         _log("Shutdown requested")
     finally:
         _log("Stopping services...")
-        for proc in [daemon_proc, pg_proc, kb_proc, dash_proc]:
+        for proc in [daemon_proc, pg_proc, kb_proc, td_proc, dash_proc]:
             proc.terminate()
-        for proc in [daemon_proc, pg_proc, kb_proc, dash_proc]:
+        for proc in [daemon_proc, pg_proc, kb_proc, td_proc, dash_proc]:
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -243,6 +301,8 @@ def main():
         daemon_log_f.close()
         pg_log_f.close()
         kb_log_f.close()
+        td_log_f.close()
+        _release_pid_lock()
         _log("ICDEV™ Services stopped")
 
 
