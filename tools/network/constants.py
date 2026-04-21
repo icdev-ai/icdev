@@ -3392,3 +3392,13 @@ CONTAINER_PROPERTIES_SCHEMA = {
     "network_mode": {"type": "str", "default": "bridge"},
     "privileged": {"type": "bool", "default": False},
 }
+
+# ── Network Twin: Intent Validation Rules ────────────────────────────────────
+INTENT_RULES = [
+    {"id": "reach-prod",       "label": "Prod Reachability",         "desc": "All production services must be reachable from their expected ingress paths"},
+    {"id": "no-direct-internet","label": "No Direct Internet",       "desc": "No workload node may have a direct unmediated path to the public internet"},
+    {"id": "acl-compliance",   "label": "ACL Compliance",             "desc": "All ACL changes must comply with the approved ports/protocols/services matrix"},
+    {"id": "il-boundary",      "label": "IL Boundary Isolation",      "desc": "CUI/IL4+ resources must not have data-path adjacency to IL2 resources without a cross-domain solution"},
+    {"id": "no-unencrypted",   "label": "Encryption in Transit",      "desc": "No plaintext protocols (HTTP, Telnet, FTP) allowed across trust-boundary links"},
+    {"id": "redundancy",       "label": "Redundancy (N+1)",           "desc": "Critical paths must have at least one redundant link; single-path segments must be flagged"},
+]

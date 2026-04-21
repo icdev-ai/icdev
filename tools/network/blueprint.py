@@ -9664,6 +9664,74 @@ Output ONLY the JSON object. No other text."""
         status = payload.pop("_status", 200)
         return jsonify(payload), status
 
+    # ── Digital Twin ───────────────────────────────────────────────────────
+    @bp.route("/project/<topo_id>/twin")
+    @nc_login_required
+    def nc_twin_page(topo_id):
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT * FROM topologies WHERE id = ?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            return render_template("404.html"), 404
+        topo = _row_to_dict(topo)
+
+        try:
+            snaps = conn.execute(
+                "SELECT * FROM network_twin_snapshots WHERE project_id = ? ORDER BY created_at DESC LIMIT 20",
+                (topo_id,),
+            ).fetchall()
+        except Exception:
+            snaps = []
+
+        try:
+            from tools.network.constants import INTENT_RULES
+            intent_rules = INTENT_RULES
+        except ImportError:
+            intent_rules = []
+
+        return render_template(
+            "network/twin.html",
+            project=topo,
+            snapshots=[_row_to_dict(s) for s in snaps],
+            intent_rules=intent_rules,
+            classification_banner=NC_CONFIG.get("app", {}).get("classification", ""),
+        )
+
+    @bp.route("/api/projects/<topo_id>/twin/snapshot", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_snapshot(topo_id):
+        from tools.network.twin import take_snapshot
+        data = request.get_json(silent=True) or {}
+        snap = take_snapshot(topo_id, label=data.get("label"))
+        return jsonify(snap), 201
+
+    @bp.route("/api/projects/<topo_id>/twin/simulate", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_simulate(topo_id):
+        from tools.network.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            topo_id,
+            topology_delta=data.get("topology_delta", {}),
+            intent_rules=data.get("intent_rules", []),
+            baseline_snap_id=data.get("baseline_snap_id"),
+        )
+        return jsonify(result), 200
+
+    @bp.route("/api/projects/<topo_id>/twin/blast-radius", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_blast_radius(topo_id):
+        from tools.network.twin import blast_radius
+        data = request.get_json(silent=True) or {}
+        result = blast_radius(
+            topo_id,
+            node_id=data.get("node_id", ""),
+            topology_delta=data.get("topology_delta"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+        )
+        return jsonify(result), 200
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
