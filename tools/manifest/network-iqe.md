@@ -4,6 +4,22 @@
 
 ---
 
+## NDC — Network Path Analysis
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| `find_paths()` | `tools/network/path_analyzer.py` | BFS all-simple-paths between two nodes; ACL filtering per edge; returns reachability verdict with `{src, dst, paths, reachable, blocked_by_acl, path_count}`. Uses `_resolve_node_id()` from `tools.network.twin` for fuzzy node lookup. |
+
+```bash
+python -c "
+from tools.network.path_analyzer import find_paths
+graph = {'nodes': {...}, 'edges': [...]}
+print(find_paths('router-a', 'server-d', graph, max_depth=10))
+"
+```
+
+---
+
 ## IQE — ICDEV Query Engine
 
 | Tool | Path | Purpose |
