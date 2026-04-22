@@ -4112,6 +4112,171 @@ def _check_token_exhausted_tasks() -> list:
         conn.close()
 
 
+def _auto_decompose_stalled_tasks() -> list:
+    """Step 3c: LLM-powered decomposer for needs_decomposition tasks.
+
+    Finds tasks stuck at needs_decomposition, calls the LLM to break each
+    one into 2-5 concrete subtasks, inserts them as backlog children, and
+    marks the parent 'decomposed'. Returns list of parent IDs processed.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM kanban_tasks WHERE status = 'needs_decomposition' "
+                "ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+                "WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT 3"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("auto_decompose: DB read failed: %s", exc)
+        return []
+
+    if not rows:
+        return []
+
+    processed = []
+    for row in rows:
+        task = dict(row)
+        tid = task["id"]
+        try:
+            _decompose_one_task(task)
+            processed.append(tid)
+        except Exception as exc:
+            logger.warning("auto_decompose: failed for %s: %s", tid, exc)
+
+    return processed
+
+
+def _decompose_one_task(task: dict) -> None:
+    """Call LLM to decompose a single needs_decomposition task into subtasks."""
+    from tools.llm.router import LLMRouter, LLMRequest
+
+    tid = task["id"]
+    title = task.get("title") or tid
+    description = task.get("description") or ""
+    priority = task.get("priority") or "medium"
+    task_type = task.get("task_type") or "build"
+    failure_reason = task.get("last_failure_reason") or "Task exceeded single-session capacity."
+
+    # Determine valid child task_type (constrained by DB CHECK)
+    VALID_TYPES = {"build", "run", "fix", "research", "deploy", "test", "chore"}
+    child_type = task_type if task_type in VALID_TYPES else "build"
+
+    system_prompt = (
+        "You are a software project decomposer. Given a task that is too large for one session, "
+        "break it into 2-5 concrete, independent subtasks that each fit in a single Claude CLI session "
+        "(under 900 seconds of work). Each subtask must be specific, actionable, and include a clear "
+        "acceptance criterion. Output ONLY valid JSON — a list of objects with keys: "
+        "'title' (str, max 120 chars), 'description' (str), 'task_type' "
+        f"(one of: {sorted(VALID_TYPES)}), 'priority' (one of: critical, high, medium, low). "
+        "No markdown, no explanation, just the JSON array."
+    )
+    user_prompt = (
+        f"Task ID: {tid}\n"
+        f"Title: {title}\n"
+        f"Description: {description}\n"
+        f"Priority: {priority}\n"
+        f"Failure reason: {failure_reason}\n\n"
+        "Decompose this into 2-5 smaller subtasks."
+    )
+
+    try:
+        router = LLMRouter()
+        req = LLMRequest(
+            system_prompt=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=1200,
+        )
+        raw = router.invoke("kanban_decompose", req)
+        if isinstance(raw, str):
+            response_text = raw
+        elif hasattr(raw, "content"):
+            response_text = raw.content
+        else:
+            response_text = str(raw)
+    except Exception as exc:
+        raise RuntimeError(f"LLM invoke failed: {exc}") from exc
+
+    # Parse the JSON subtask list
+    import re as _re
+    # Strip markdown fences if present
+    clean = _re.sub(r"^```(?:json)?\s*|\s*```$", "", response_text.strip(), flags=_re.MULTILINE)
+    try:
+        import json as _json
+        subtasks = _json.loads(clean)
+        if not isinstance(subtasks, list):
+            raise ValueError("Expected JSON array")
+    except Exception as exc:
+        raise RuntimeError(f"LLM returned invalid JSON: {exc}\nRaw: {response_text[:300]}") from exc
+
+    VALID_PRIORITIES = {"critical", "high", "medium", "low"}
+    VALID_TYPES_SET = {"build", "run", "fix", "research", "deploy", "test", "chore"}
+
+    now = _utcnow_iso()
+    conn = get_connection()
+    try:
+        # Mark parent decomposed first
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'decomposed', updated_at = ? WHERE id = ?",
+            (now, tid),
+        )
+
+        inserted = []
+        for i, sub in enumerate(subtasks[:5], start=1):
+            sub_title = str(sub.get("title") or f"{title} — part {i}")[:120]
+            sub_desc = str(sub.get("description") or "")
+            sub_type = sub.get("task_type") or child_type
+            if sub_type not in VALID_TYPES_SET:
+                sub_type = child_type
+            sub_pri = sub.get("priority") or priority
+            if sub_pri not in VALID_PRIORITIES:
+                sub_pri = priority
+
+            # Generate child ID: parent_id + suffix
+            child_id = f"{tid}-d{i}"
+            # Truncate if too long for any DB column limit
+            child_id = child_id[:64]
+
+            # depends_on_task_id: chain children sequentially so they
+            # run in order (each child depends on the previous)
+            dep = inserted[-1] if inserted else None
+
+            conn.execute(
+                "INSERT OR IGNORE INTO kanban_tasks "
+                "(id, title, description, priority, task_type, status, "
+                " executor_type, depends_on_task_id, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'backlog', 'claude_cli', ?, ?, ?)",
+                (child_id, sub_title, sub_desc, sub_pri, sub_type, dep, now, now),
+            )
+            inserted.append(child_id)
+
+        conn.commit()
+        print(
+            f"  Kanban: auto-decomposed {tid!r} into {len(inserted)} subtask(s): "
+            + ", ".join(inserted)
+        )
+
+        # Telegram notification
+        try:
+            import os as _os
+            if not (_os.environ.get("PYTEST_CURRENT_TEST") or
+                    _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"):
+                from tools.notifications.adapters.telegram import send as tg_send
+                tg_send(
+                    f"AUTO-DECOMPOSED: {title[:50]}",
+                    f"Task {tid} was split into {len(inserted)} subtasks: "
+                    + ", ".join(inserted),
+                    severity="info",
+                )
+        except Exception:
+            pass
+
+    finally:
+        conn.close()
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
     # 0a. Orphan-done sweep — roll back any done task whose parent isn't done.
@@ -4334,6 +4499,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 print(f"  Kanban: token retry dispatch failed for {task['id']}")
         except Exception as e:
             print(f"  Kanban: token retry error for {task['id']}: {e}")
+
+    # 3c. Auto-decompose tasks stuck at needs_decomposition
+    try:
+        decomposed = _auto_decompose_stalled_tasks()
+        if decomposed:
+            print(f"  Kanban: auto-decomposed {len(decomposed)} stalled task(s): {decomposed}")
+    except Exception as _ad_exc:
+        logger.warning("auto_decompose sweep failed: %s", _ad_exc)
 
     # 4. Find due tasks
     due_tasks = _get_due_tasks()
