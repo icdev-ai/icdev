@@ -341,3 +341,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Bond Etf Data | tools\trading\data\bond_etf_data.py | Auto-registered: data/bond_etf_data.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cross Asset Rotation | tools\trading\market_intel\cross_asset_rotation.py | Auto-registered: market_intel/cross_asset_rotation.py | --json | JSON |
