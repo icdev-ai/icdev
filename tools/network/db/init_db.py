@@ -1626,26 +1626,40 @@ CREATE INDEX IF NOT EXISTS idx_ndc_sop_log_sop ON ndc_sop_approval_log(sop_id);
 
 -- ── Traffic Flow Walkthroughs (DoD BCAP path analysis) ───────────────────────
 CREATE TABLE IF NOT EXISTS nc_traffic_flows (
-    id              TEXT PRIMARY KEY,
-    topology_id     TEXT NOT NULL REFERENCES topologies(id) ON DELETE CASCADE,
-    name            TEXT NOT NULL,
-    src_zone        TEXT NOT NULL,
-    dst_zone        TEXT NOT NULL,
-    app_type        TEXT NOT NULL,
-    classification  TEXT DEFAULT 'CUI',
-    created_at      TEXT DEFAULT (datetime('now'))
+    id                  TEXT PRIMARY KEY,
+    topology_id         TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    description         TEXT DEFAULT '',
+    source_zone         TEXT NOT NULL,
+    destination_zone    TEXT NOT NULL,
+    application_type    TEXT NOT NULL CHECK(application_type IN
+                            ('sso_saml','sso_oauth','api_rest','rdp','ssh','https_web',
+                             'ipsec_tunnel','bgp','dns','custom')),
+    protocols           TEXT DEFAULT '[]',
+    classification      TEXT DEFAULT 'NIPR' CHECK(classification IN
+                            ('NIPR','SIPR','IL2','IL4','IL5','IL6')),
+    path_nodes          TEXT DEFAULT '[]',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_nc_tf_topology ON nc_traffic_flows(topology_id);
 
--- Optional per-node domain policy overrides (falls back to DOMAIN_DEFAULTS)
+-- Per-node security domain policy overrides
 CREATE TABLE IF NOT EXISTS nc_security_domain_policies (
     id              TEXT PRIMARY KEY,
-    topology_id     TEXT NOT NULL REFERENCES topologies(id) ON DELETE CASCADE,
+    topology_id     TEXT NOT NULL,
     node_id         TEXT NOT NULL,
-    domain_type     TEXT NOT NULL,
-    inspection_type TEXT,
-    policy_json     TEXT DEFAULT '{}',
-    created_at      TEXT DEFAULT (datetime('now'))
+    domain_type     TEXT NOT NULL CHECK(domain_type IN
+                        ('on_prem','nipr','sipr','bcap_vdms','bcap_vdss',
+                         'csp_il2','csp_il4','csp_il5','csp_il6',
+                         'internet','inter_csp','dmz','custom')),
+    domain_label    TEXT DEFAULT '',
+    security_policy TEXT DEFAULT '{}',
+    routing_policy  TEXT DEFAULT '{}',
+    vpn_policy      TEXT DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(topology_id, node_id)
 );
 CREATE INDEX IF NOT EXISTS idx_nc_sdp_topology ON nc_security_domain_policies(topology_id);
 CREATE INDEX IF NOT EXISTS idx_nc_sdp_node ON nc_security_domain_policies(node_id);
@@ -1655,15 +1669,33 @@ CREATE TABLE IF NOT EXISTS nc_flow_walkthrough_steps (
     id              TEXT PRIMARY KEY,
     flow_id         TEXT NOT NULL REFERENCES nc_traffic_flows(id) ON DELETE CASCADE,
     step_number     INTEGER NOT NULL,
-    node_id         TEXT NOT NULL,
-    node_label      TEXT NOT NULL,
-    action_type     TEXT NOT NULL,
+    node_id         TEXT DEFAULT '',
+    node_label      TEXT DEFAULT '',
+    action_type     TEXT NOT NULL CHECK(action_type IN
+                        ('originate','route_lookup','security_inspect','encrypt_vpn',
+                         'decrypt_vpn','tls_inspect','authenticate','authorize',
+                         'load_balance','failover_check','dns_resolve','nat_translate',
+                         'deliver','custom')),
     security_detail TEXT DEFAULT '{}',
     network_detail  TEXT DEFAULT '{}',
     narrative       TEXT DEFAULT '',
-    created_at      TEXT DEFAULT (datetime('now'))
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(flow_id, step_number)
 );
 CREATE INDEX IF NOT EXISTS idx_nc_fws_flow ON nc_flow_walkthrough_steps(flow_id);
+
+-- Per-step persona narrative responses
+CREATE TABLE IF NOT EXISTS nc_step_persona_responses (
+    id          TEXT PRIMARY KEY,
+    step_id     TEXT NOT NULL REFERENCES nc_flow_walkthrough_steps(id) ON DELETE CASCADE,
+    persona_id  TEXT NOT NULL CHECK(persona_id IN
+                    ('seceng','neteng','cloudarch','compofficer','appdev','missionowner','ciso')),
+    narrative   TEXT DEFAULT '',
+    detail_json TEXT DEFAULT '{}',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(step_id, persona_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nc_spr_step ON nc_step_persona_responses(step_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -13105,6 +13137,19 @@ def init_db():
             ("nc_ipam_blocks", "address_family", "TEXT DEFAULT 'ipv4'"),
             ("nc_ipam_blocks", "gateway_v6", "TEXT"),
             # NetBox integration tables (added via schema above; migrations cover pre-existing DBs)
+            # TFW-01: Traffic flow walkthrough tables — new columns on existing tables
+            ("nc_traffic_flows", "description", "TEXT DEFAULT ''"),
+            ("nc_traffic_flows", "source_zone", "TEXT DEFAULT ''"),
+            ("nc_traffic_flows", "destination_zone", "TEXT DEFAULT ''"),
+            ("nc_traffic_flows", "application_type", "TEXT DEFAULT 'custom'"),
+            ("nc_traffic_flows", "protocols", "TEXT DEFAULT '[]'"),
+            ("nc_traffic_flows", "path_nodes", "TEXT DEFAULT '[]'"),
+            ("nc_traffic_flows", "updated_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
+            ("nc_security_domain_policies", "domain_label", "TEXT DEFAULT ''"),
+            ("nc_security_domain_policies", "security_policy", "TEXT DEFAULT '{}'"),
+            ("nc_security_domain_policies", "routing_policy", "TEXT DEFAULT '{}'"),
+            ("nc_security_domain_policies", "vpn_policy", "TEXT DEFAULT '{}'"),
+            ("nc_security_domain_policies", "updated_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
         ]
         for table, col, coltype in _migrations:
             try:
