@@ -11,6 +11,13 @@
   .twin-chart-label { font-size:11px; color:#7a8cb0; font-weight:600; letter-spacing:.5px; margin-bottom:6px; text-transform:uppercase; }
   #topologyGraphWrap { margin:14px 0; }
   #topologyGraph { background:#0a1628; border:1px solid #1e3a6e; border-radius:6px; padding:8px; overflow:hidden; min-height:80px; }
+  .twin-tab-nav { display:flex; gap:0; margin-bottom:10px; border-bottom:1px solid #1e3a6e; }
+  .twin-tab { background:none; border:none; border-bottom:2px solid transparent; color:#7a8cb0; font-size:12px; font-weight:600; padding:6px 14px; cursor:pointer; letter-spacing:.4px; transition:color .15s,border-color .15s; }
+  .twin-tab.active { color:#3498db; border-bottom-color:#3498db; }
+  .twin-tab:hover:not(.active) { color:#eaeaea; }
+  #iqePreview pre { background:#0a1628; border:1px solid #1e3a6e; border-radius:4px; padding:8px; font-size:11px; color:#7a8cb0; white-space:pre-wrap; margin:0; max-height:90px; overflow-y:auto; }
+  #iqeResultsTable th, #iqeResultsTable td { padding:4px 8px; border-bottom:1px solid #1e3a6e; text-align:left; }
+  #iqeResultsTable thead { background:#1e3a6e; color:#7a8cb0; font-size:11px; }
 </style>
 {% endblock %}
 
@@ -63,18 +70,50 @@
         placeholder='{"add_devices":[{"id":"fw-dmz-02","type":"firewall","vendor":"cisco","ip":"10.10.20.2"}],"add_links":[{"src":"fw-dmz-02","dst":"switch-core-01","bandwidth_gbps":10}],"remove_links":[],"acl_changes":[{"device":"fw-dmz-02","rule":"permit tcp 10.10.20.0/24 any eq 443"}]}'></textarea>
 
       <div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
-        <strong style="font-size:12px;color:#7a8cb0;">DESCRIBE YOUR CHANGE</strong>
-        <p class="hint" style="margin:4px 0 6px;">Describe the topology change in plain English — AI converts it to simulation JSON.</p>
-        <div style="display:flex;gap:8px;align-items:flex-start;">
-          <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
-            placeholder="e.g. Add a new firewall between the DMZ and the internet gateway, remove the legacy MPLS link to site-b..."></textarea>
-          <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
+        <!-- Tab navigation -->
+        <div class="twin-tab-nav">
+          <button class="twin-tab active" id="tabGenDelta" onclick="switchChatTab('gen-delta')">Generate Delta</button>
+          <button class="twin-tab" id="tabQueryTopo" onclick="switchChatTab('query-topo')">Query Topology</button>
         </div>
-        <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
-        <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
-          <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
+
+        <!-- Generate Delta tab -->
+        <div id="tabPaneGenDelta">
+          <p class="hint" style="margin:0 0 6px;">Describe the topology change in plain English — AI converts it to simulation JSON.</p>
+          <div style="display:flex;gap:8px;align-items:flex-start;">
+            <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
+              placeholder="e.g. Add a new firewall between the DMZ and the internet gateway, remove the legacy MPLS link to site-b..."></textarea>
+            <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
+          </div>
+          <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
+          <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
+            <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
+          </div>
+          <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
         </div>
-        <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
+
+        <!-- Query Topology tab -->
+        <div id="tabPaneQueryTopo" style="display:none;">
+          <p class="hint" style="margin:0 0 6px;">Ask a plain-English question about this topology. Example: "show all switches".</p>
+          <textarea id="iqeQueryInput" rows="3"
+            style="width:100%;box-sizing:border-box;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;"
+            placeholder="show all switches"></textarea>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+            <button class="btn btn-primary btn-sm" onclick="sendIQEQuery()">Run Query</button>
+            <span id="iqeSpinner" class="spinner" style="display:none;"></span>
+          </div>
+          <div id="iqePreview" style="display:none;margin-top:10px;">
+            <div class="twin-chart-label" style="margin-bottom:4px;">IQE Query</div>
+            <pre id="iqeStr"></pre>
+            <div id="iqeResultsTableWrap" style="display:none;overflow-x:auto;margin-top:8px;">
+              <table id="iqeResultsTable" style="width:100%;border-collapse:collapse;font-size:12px;color:#dfe6e9;">
+                <thead id="iqeResultsHead"></thead>
+                <tbody id="iqeResultsBody"></tbody>
+              </table>
+            </div>
+            <p id="iqeCaption" style="font-size:11px;color:#7a8cb0;margin-top:6px;display:none;"></p>
+            <p id="iqeError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
+          </div>
+        </div>
       </div>
 
       <!-- Intent validation rules -->
@@ -229,29 +268,6 @@
       </div>
       <p id="pathNoRoutes" style="font-size:12px;color:#e74c3c;display:none;">No paths found between the specified nodes.</p>
     </div>
-  </div>
-</div>
-
-<!-- Query Topology panel (IQE AI Assist) -->
-<div class="twin-panel" id="queryTopologyPanel" style="margin-top:16px;">
-  <h2>Query Topology</h2>
-  <p style="font-size:12px;color:#5a6e8c;margin:0 0 10px;">Ask a natural language question about this topology. Examples: "show all switches", "what happens if RTR-Edge fails?", "path from A to B".</p>
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-    <input id="iqeQueryInput" type="text" placeholder="show all switches"
-      style="flex:1;min-width:220px;background:#0d1b2a;border:1px solid #1e3a6e;color:#eaeaea;padding:6px 10px;border-radius:5px;font-size:13px;"
-      onkeydown="if(event.key==='Enter')runIqeQuery()">
-    <button class="btn btn-primary btn-sm" onclick="runIqeQuery()">Run Query</button>
-    <span id="iqeSpinner" class="spinner" style="display:none;"></span>
-  </div>
-  <div id="iqePreview" style="display:none;margin-top:10px;">
-    <div id="iqeAnswerBox" style="background:#0d1b2a;border:1px solid #1e3a6e;border-radius:5px;padding:10px;font-size:13px;color:#eaeaea;white-space:pre-wrap;margin-bottom:10px;"></div>
-    <div id="iqeResultsTableWrap" style="display:none;">
-      <table id="iqeResultsTable" style="width:100%;border-collapse:collapse;font-size:12px;color:#dfe6e9;">
-        <thead id="iqeResultsHead" style="background:#1e3a6e;"></thead>
-        <tbody id="iqeResultsBody"></tbody>
-      </table>
-    </div>
-    <p id="iqeError" style="color:#e74c3c;font-size:12px;display:none;"></p>
   </div>
 </div>
 
@@ -627,43 +643,49 @@ async function sendChatDelta() {
   finally { spinner.style.display = 'none'; }
 }
 
-async function runIqeQuery() {
+function switchChatTab(tab) {
+  const tabs = { 'gen-delta': ['tabGenDelta','tabPaneGenDelta'], 'query-topo': ['tabQueryTopo','tabPaneQueryTopo'] };
+  Object.entries(tabs).forEach(([key, [btnId, paneId]]) => {
+    document.getElementById(btnId).classList.toggle('active', key === tab);
+    document.getElementById(paneId).style.display = key === tab ? '' : 'none';
+  });
+}
+
+async function sendIQEQuery() {
   const question = document.getElementById('iqeQueryInput').value.trim();
   if (!question) return;
   const spinner = document.getElementById('iqeSpinner');
   const preview = document.getElementById('iqePreview');
-  const answerBox = document.getElementById('iqeAnswerBox');
+  const iqeStr = document.getElementById('iqeStr');
   const tableWrap = document.getElementById('iqeResultsTableWrap');
+  const caption = document.getElementById('iqeCaption');
   const errEl = document.getElementById('iqeError');
   spinner.style.display = 'inline-block';
   preview.style.display = 'none';
   errEl.style.display = 'none';
+  tableWrap.style.display = 'none';
+  caption.style.display = 'none';
   try {
-    const r = await fetch(`/network/api/twin/${PROJECT_ID}/nl-query`, {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/iqe-query`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({question})
     });
     const data = await r.json();
-    if (data.error) { errEl.textContent = data.error; errEl.style.display = 'block'; preview.style.display = 'block'; return; }
-    answerBox.textContent = data.answer || '';
     preview.style.display = 'block';
-    // Render results table if data.data contains an array or object with a list
-    const rows = Array.isArray(data.data) ? data.data
-      : (data.data && Array.isArray(data.data.devices)) ? data.data.devices.map(d => ({'device': d}))
-      : null;
-    if (rows && rows.length > 0 && typeof rows[0] === 'object') {
+    iqeStr.textContent = data.iqe || '';
+    if (data.error) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+    const rows = Array.isArray(data.results) ? data.results : [];
+    if (rows.length > 0 && typeof rows[0] === 'object') {
       const cols = Object.keys(rows[0]);
-      const thead = document.getElementById('iqeResultsHead');
-      thead.innerHTML = '<tr>' + cols.map(c => `<th style="padding:4px 8px;text-align:left;border-bottom:1px solid #1e3a6e;">${c}</th>`).join('') + '</tr>';
-      const tbody = document.getElementById('iqeResultsBody');
-      tbody.innerHTML = rows.map(row =>
-        '<tr>' + cols.map(c => `<td style="padding:4px 8px;border-bottom:1px solid #1e3a6e;">${row[c] ?? ''}</td>`).join('') + '</tr>'
+      document.getElementById('iqeResultsHead').innerHTML =
+        '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+      document.getElementById('iqeResultsBody').innerHTML = rows.map(row =>
+        '<tr>' + cols.map(c => `<td>${row[c] ?? ''}</td>`).join('') + '</tr>'
       ).join('');
       tableWrap.style.display = 'block';
-    } else {
-      tableWrap.style.display = 'none';
     }
+    if (data.explanation) { caption.textContent = data.explanation; caption.style.display = 'block'; }
   } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; preview.style.display = 'block'; }
   finally { spinner.style.display = 'none'; }
 }
