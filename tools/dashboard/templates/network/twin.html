@@ -167,12 +167,15 @@
   <div class="twin-panel">
     <h2>Blast Radius Analysis</h2>
     <p class="hint" style="margin-bottom:10px;">Identifies which downstream systems would be impacted if a device or link in the proposed change fails.</p>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <input id="blastNode" type="text" placeholder="Device / link ID to simulate failure"
-             style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:6px 10px;font-size:12px;width:260px;">
+    <p class="hint" style="margin-bottom:6px;">Type a device name or label — exact node IDs not required. Click <strong>Load from Canvas</strong> above first to enable autocomplete.</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input id="blastNode" type="text" list="blastNodeList" placeholder="e.g. transit gateway, dc-core, firewall…"
+             style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:6px 10px;font-size:12px;width:300px;">
+      <datalist id="blastNodeList"></datalist>
       <button class="btn btn-danger btn-sm" onclick="runBlastRadius()">Analyze Blast Radius</button>
       <span id="blastSpinner" class="spinner"></span>
     </div>
+    <p id="blastResolvedNote" style="font-size:11px;color:#7a8cb0;margin-top:4px;display:none;"></p>
     <div id="blastResults" style="margin-top:12px;display:none;">
       <div style="display:flex;gap:16px;align-items:flex-start;">
         <div style="flex:0 0 160px;">
@@ -410,6 +413,13 @@ async function runBlastRadius() {
     });
     const data = await r.json();
     document.getElementById('blastResults').style.display = 'block';
+    const note = document.getElementById('blastResolvedNote');
+    if (data.node_label && data.node_label !== nodeId) {
+      note.textContent = `Matched: "${data.node_label}" (${data.node_id})`;
+      note.style.display = 'block';
+    } else {
+      note.style.display = 'none';
+    }
     const impactedCount = data.impacted_count ?? 0;
     const critCount     = data.critical_path_count ?? 0;
     document.getElementById('blastImpacted').textContent = impactedCount;
@@ -437,13 +447,23 @@ async function loadCurrentTopology() {
     const data = await r.json();
     if (!r.ok) { alert(data.error || 'Failed to load topology'); return; }
     _loadedGraphJson = data.graph_json;
-    const nodes = (data.graph_json.nodes || []).length;
+    const nodeList = data.graph_json.nodes || [];
     const edges = (data.graph_json.edges || []).length;
     document.getElementById('topoPreviewText').textContent =
-      `${nodes} nodes, ${edges} edges\n` +
+      `${nodeList.length} nodes, ${edges} edges\n` +
       JSON.stringify(data.graph_json, null, 2).slice(0, 600) +
       (JSON.stringify(data.graph_json).length > 600 ? '\n…' : '');
     document.getElementById('topoPreview').style.display = 'block';
+
+    // Populate blast radius autocomplete datalist
+    const dl = document.getElementById('blastNodeList');
+    dl.innerHTML = '';
+    nodeList.forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n.label || n.id;
+      opt.dataset.nodeId = n.id;
+      dl.appendChild(opt);
+    });
   } catch(e) { alert('Error loading topology: ' + e.message); }
 }
 
