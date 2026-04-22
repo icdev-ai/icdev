@@ -12,6 +12,15 @@ Ratios:
   6. gold_oil      — GLD / USO    (quality spread within real assets)
   7. real_yield    — ^TNX - T5YIFR (real yield proxy in %)
 
+Multi-signal rotation confirmation (5-condition, score 0-5):
+  1. TLT/SPY rising ≥3 weeks   → bonds_equity trend_3w == RISING
+  2. Gold/S&P rising ≥3 weeks  → gold_sp500 trend_3w == RISING
+  3. HY OAS >50bps above 8-week trough
+  4. VIX 20-day MA > 22
+  5. Copper/Gold falling ≥4 weeks
+
+  Signals: ≥3 → ROTATION_ALERT, ≥4 → HARD_EXIT, <3 → NEUTRAL
+
 Usage:
     python tools/trading/market_intel/cross_asset_rotation.py --compute --json
 """
@@ -42,6 +51,20 @@ _MAGNITUDE_MODERATE_MULT = 1.0 # |slope| ≥ 1.0× threshold → "moderate" (els
 
 # Fallback when FRED T5YIFR is unavailable (long-run median)
 _BREAKEVEN_FALLBACK_PCT = 2.3
+
+# 4-week window for copper/gold falling check (condition 5)
+_DAYS_4W = 20  # 4 calendar weeks ≈ 20 trading days
+
+# Rotation scoring parameters
+_VIX_MA_DAYS = 20
+_VIX_MA_THRESHOLD = 22.0
+_HY_OAS_WIDENING_BPS = 50.0          # bps above 8-week trough triggers condition 3
+_HY_OAS_TROUGH_LOOKBACK = 40         # trading days (~8 weeks) for trough window
+_ROTATION_ALERT_SCORE = 3
+_ROTATION_HARD_EXIT_SCORE = 4
+
+# Approximate anchor for deterministic HY OAS fallback (bps)
+_HY_OAS_ANCHOR_BPS = 420.0
 
 # Definitions for price-pair ratios (numerator ETF / denominator ETF)
 _RATIO_DEFS: list[dict] = [
@@ -242,6 +265,61 @@ def _generate_sample_prices(tickers: list[str], n: int = 65) -> dict[str, list[f
     return result
 
 
+def _fetch_vix_history(n_days: int = 30) -> list[float]:
+    """Fetch ^VIX daily closes via yfinance. Returns [] if unavailable."""
+    try:
+        import yfinance as yf
+        raw = yf.Ticker("^VIX").history(period="2mo")
+        closes = [round(float(v), 4) for v in raw["Close"].dropna()]
+        return closes[-n_days:] if closes else []
+    except Exception:
+        return []
+
+
+def _fetch_hy_oas_history(n_days: int = 45) -> list[float]:
+    """Fetch HY OAS (BAMLH0A0HYM2) from FRED in basis points. Returns [] if unavailable."""
+    import os
+    api_key = os.environ.get("FRED_API_KEY", "")
+    if not api_key:
+        return []
+    try:
+        from fredapi import Fred
+        fred = Fred(api_key=api_key)
+        series = fred.get_series("BAMLH0A0HYM2", observation_start="2025-01-01")
+        values = [float(v) for v in series.dropna()]
+        return values[-n_days:] if values else []
+    except Exception:
+        return []
+
+
+def _generate_sample_vix(n: int = 30) -> list[float]:
+    """Deterministic VIX daily sample seeded by UTC date."""
+    seed_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    base_seed = int(hashlib.sha256(seed_str.encode()).hexdigest()[:8], 16)
+    rng = base_seed ^ hash("VIX")
+    values: list[float] = []
+    v = 18.0
+    for i in range(n):
+        step = ((rng >> (i % 30)) & 0xFF) / 255 * 0.12 - 0.06
+        v = round(max(v * (1 + step), 8.0), 2)
+        values.append(v)
+    return values
+
+
+def _generate_sample_hy_oas(n: int = 45) -> list[float]:
+    """Deterministic HY OAS daily sample seeded by UTC date (in basis points)."""
+    seed_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    base_seed = int(hashlib.sha256(seed_str.encode()).hexdigest()[:8], 16)
+    rng = base_seed ^ hash("HYOAS")
+    values: list[float] = []
+    v = _HY_OAS_ANCHOR_BPS
+    for i in range(n):
+        step = ((rng >> (i % 30)) & 0xFF) / 255 * 0.04 - 0.02
+        v = round(max(v * (1 + step), 100.0), 2)
+        values.append(v)
+    return values
+
+
 # ---------------------------------------------------------------------------
 # Rotation engine
 # ---------------------------------------------------------------------------
@@ -371,11 +449,89 @@ def compute_rotation(
     return {"ratios": ratios, "ratio_count": len(ratios)}
 
 
-def compute_cross_asset_rotation() -> dict:
-    """Fetch data and compute all 7 cross-asset rotation ratios.
+def compute_rotation_scoring(
+    rotation_result: dict,
+    prices: dict[str, list[float]],
+    vix_series: list[float],
+    hy_oas_series: list[float],
+) -> dict:
+    """Score the 5-condition rotation confirmation model.
+
+    Conditions:
+      1. TLT/SPY rising ≥3 weeks  (bonds_equity trend_3w == RISING)
+      2. Gold/S&P rising ≥3 weeks  (gold_sp500 trend_3w == RISING)
+      3. HY OAS >50bps above 8-week trough
+      4. VIX 20-day MA > 22
+      5. Copper/Gold falling ≥4 weeks  (OLS slope over 20 trading days)
+
+    Thresholds:
+      score ≥ 4 → HARD_EXIT
+      score ≥ 3 → ROTATION_ALERT
+      score <  3 → NEUTRAL
 
     Returns:
-        Dict with ratios, data_source, and timestamp.
+        rotation_score (int 0-5), rotation_signal (str),
+        triggered_conditions (list[str]).
+    """
+    ratios_by_name = {r["name"]: r for r in rotation_result.get("ratios", [])}
+    triggered: list[str] = []
+
+    # Condition 1: TLT/SPY rising 3+ weeks
+    if ratios_by_name.get("bonds_equity", {}).get("trend_3w") == "RISING":
+        triggered.append("tlt_spy_rising_3w")
+
+    # Condition 2: Gold/S&P rising 3+ weeks
+    if ratios_by_name.get("gold_sp500", {}).get("trend_3w") == "RISING":
+        triggered.append("gold_sp500_rising_3w")
+
+    # Condition 3: HY OAS widened >50bps from 8-week trough
+    if len(hy_oas_series) >= 8:
+        lookback = min(_HY_OAS_TROUGH_LOOKBACK, len(hy_oas_series))
+        trough = min(hy_oas_series[-lookback:])
+        if hy_oas_series[-1] - trough > _HY_OAS_WIDENING_BPS:
+            triggered.append("hy_oas_widened_50bps")
+
+    # Condition 4: VIX 20-day MA > 22
+    if len(vix_series) >= _VIX_MA_DAYS:
+        vix_ma = sum(vix_series[-_VIX_MA_DAYS:]) / _VIX_MA_DAYS
+        if vix_ma > _VIX_MA_THRESHOLD:
+            triggered.append("vix_20d_ma_above_22")
+
+    # Condition 5: Copper/Gold falling 4+ weeks
+    cg_num = prices.get("HG=F", [])
+    cg_den = prices.get("GLD", [])
+    if len(cg_num) >= 4 and len(cg_den) >= 4:
+        min_len = min(len(cg_num), len(cg_den))
+        cg_series = [
+            round(n / d, 8) if d != 0.0 else 0.0
+            for n, d in zip(cg_num[-min_len:], cg_den[-min_len:])
+        ]
+        _, label_4w, _ = _compute_slope(cg_series, _DAYS_4W)
+        if label_4w == "FALLING":
+            triggered.append("copper_gold_falling_4w")
+
+    score = len(triggered)
+
+    if score >= _ROTATION_HARD_EXIT_SCORE:
+        signal = "HARD_EXIT"
+    elif score >= _ROTATION_ALERT_SCORE:
+        signal = "ROTATION_ALERT"
+    else:
+        signal = "NEUTRAL"
+
+    return {
+        "rotation_score": score,
+        "rotation_signal": signal,
+        "triggered_conditions": triggered,
+    }
+
+
+def compute_cross_asset_rotation() -> dict:
+    """Fetch data, compute 7 cross-asset rotation ratios, and score 5-condition rotation signal.
+
+    Returns:
+        Dict with ratios, rotation_signal, rotation_score, triggered_conditions,
+        data_source, and timestamp.
     """
     all_tickers = _RATIO_TICKERS + [_TNX_TICKER]
 
@@ -395,6 +551,14 @@ def compute_cross_asset_rotation() -> dict:
     breakeven = _fetch_fred_breakeven(n_days=65)
 
     result = compute_rotation(prices, breakeven)
+
+    # VIX and HY OAS for 5-condition scoring (fall back to deterministic sample)
+    vix_series = _fetch_vix_history(n_days=30) or _generate_sample_vix(n=30)
+    hy_oas_series = _fetch_hy_oas_history(n_days=45) or _generate_sample_hy_oas(n=45)
+
+    scoring = compute_rotation_scoring(result, prices, vix_series, hy_oas_series)
+    result.update(scoring)
+
     result["data_source"] = data_source
     result["timestamp"] = datetime.now(timezone.utc).isoformat()
     return result
@@ -406,9 +570,9 @@ def compute_cross_asset_rotation() -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Cross-asset rotation engine — 7 inter-market ratios with trend slopes"
+        description="Cross-asset rotation engine — 7 ratios + 5-condition rotation scoring"
     )
-    parser.add_argument("--compute", action="store_true", help="Compute all 7 ratios")
+    parser.add_argument("--compute", action="store_true", help="Compute all 7 ratios and rotation signal")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     args = parser.parse_args()
 
@@ -435,6 +599,13 @@ def main() -> None:
             f"{r['trend_3w']:<8} {mag3:<10} {r['slope_3w']:>+7.3f}{unit}  "
             f"{r['trend_8w']:<8} {mag8:<10} {r['slope_8w']:>+7.3f}{unit}"
         )
+
+    score = result.get("rotation_score", 0)
+    signal = result.get("rotation_signal", "NEUTRAL")
+    triggered = result.get("triggered_conditions", [])
+    print(f"\nRotation Score: {score}/5  →  {signal}")
+    if triggered:
+        print("Triggered:", ", ".join(triggered))
 
 
 if __name__ == "__main__":
