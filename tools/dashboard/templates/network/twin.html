@@ -195,6 +195,66 @@
   </div>
 </div>
 
+<!-- Path Analysis panel -->
+<div style="padding:0 30px 30px;">
+  <div class="twin-panel" id="pathPanel">
+    <h2>Path Analysis</h2>
+    <p class="hint" style="margin-bottom:10px;">Check reachability between two nodes. Applies ACL rules per hop and reports all discovered paths. Fuzzy node names (e.g. "transit gateway") are resolved automatically.</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+      <input id="pathSrcInput" type="text" placeholder="Source node (e.g. dc-core-r1)"
+             style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:6px 10px;font-size:12px;width:220px;">
+      <span style="color:#5a6e8c;font-size:12px;">→</span>
+      <input id="pathDstInput" type="text" placeholder="Destination node (e.g. web-server-01)"
+             style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:6px 10px;font-size:12px;width:220px;">
+      <button class="btn btn-primary btn-sm" onclick="runPathAnalysis()">Analyze Path</button>
+      <span id="pathSpinner" class="spinner"></span>
+    </div>
+    <p id="pathResolveNote" style="font-size:11px;color:#7a8cb0;margin-top:4px;display:none;"></p>
+    <div id="pathResults" style="margin-top:12px;display:none;">
+      <div id="pathVerdictBanner" class="verdict-banner" style="margin-bottom:10px;"></div>
+      <div id="pathTable" style="display:none;">
+        <strong style="font-size:12px;color:#7a8cb0;">PATHS FOUND</strong>
+        <table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:12px;">
+          <thead>
+            <tr style="color:#7a8cb0;text-align:left;border-bottom:1px solid #1e3a6e;">
+              <th style="padding:4px 8px;">#</th>
+              <th style="padding:4px 8px;">Hops</th>
+              <th style="padding:4px 8px;">Hop Count</th>
+              <th style="padding:4px 8px;">Protocols</th>
+              <th style="padding:4px 8px;">Status</th>
+            </tr>
+          </thead>
+          <tbody id="pathTableBody"></tbody>
+        </table>
+      </div>
+      <p id="pathNoRoutes" style="font-size:12px;color:#e74c3c;display:none;">No paths found between the specified nodes.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Query Topology panel (IQE AI Assist) -->
+<div class="twin-panel" id="queryTopologyPanel" style="margin-top:16px;">
+  <h2>Query Topology</h2>
+  <p style="font-size:12px;color:#5a6e8c;margin:0 0 10px;">Ask a natural language question about this topology. Examples: "show all switches", "what happens if RTR-Edge fails?", "path from A to B".</p>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+    <input id="iqeQueryInput" type="text" placeholder="show all switches"
+      style="flex:1;min-width:220px;background:#0d1b2a;border:1px solid #1e3a6e;color:#eaeaea;padding:6px 10px;border-radius:5px;font-size:13px;"
+      onkeydown="if(event.key==='Enter')runIqeQuery()">
+    <button class="btn btn-primary btn-sm" onclick="runIqeQuery()">Run Query</button>
+    <span id="iqeSpinner" class="spinner" style="display:none;"></span>
+  </div>
+  <div id="iqePreview" style="display:none;margin-top:10px;">
+    <div id="iqeAnswerBox" style="background:#0d1b2a;border:1px solid #1e3a6e;border-radius:5px;padding:10px;font-size:13px;color:#eaeaea;white-space:pre-wrap;margin-bottom:10px;"></div>
+    <div id="iqeResultsTableWrap" style="display:none;">
+      <table id="iqeResultsTable" style="width:100%;border-collapse:collapse;font-size:12px;color:#dfe6e9;">
+        <thead id="iqeResultsHead" style="background:#1e3a6e;"></thead>
+        <tbody id="iqeResultsBody"></tbody>
+      </table>
+    </div>
+    <p id="iqeError" style="color:#e74c3c;font-size:12px;display:none;"></p>
+  </div>
+</div>
+
 {{ verdict_js() }}
 <script>
 const PROJECT_ID = "{{ project.id }}";
@@ -467,6 +527,82 @@ async function loadCurrentTopology() {
   } catch(e) { alert('Error loading topology: ' + e.message); }
 }
 
+async function runPathAnalysis() {
+  const src = document.getElementById('pathSrcInput').value.trim();
+  const dst = document.getElementById('pathDstInput').value.trim();
+  if (!src || !dst) { alert('Enter both source and destination nodes.'); return; }
+  const spinner = document.getElementById('pathSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/analyze-path`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({src_id: src, dst_id: dst})
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Error: ' + r.status); return; }
+    renderPathResults(data, src, dst);
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+function renderPathResults(d, inputSrc, inputDst) {
+  document.getElementById('pathResults').style.display = 'block';
+
+  // Verdict banner
+  const banner = document.getElementById('pathVerdictBanner');
+  if (d.reachable) {
+    banner.className = 'verdict-banner verdict-pass';
+    banner.textContent = d.blocked_by_acl ? 'REACHABLE (some paths ACL-blocked)' : 'REACHABLE';
+  } else if (d.path_count > 0) {
+    banner.className = 'verdict-banner verdict-warn';
+    banner.textContent = 'ALL PATHS ACL-BLOCKED';
+  } else {
+    banner.className = 'verdict-banner verdict-fail';
+    banner.textContent = 'UNREACHABLE — no paths found';
+  }
+
+  // Fuzzy resolve note
+  const note = document.getElementById('pathResolveNote');
+  const srcResolved = d.src !== inputSrc;
+  const dstResolved = d.dst !== inputDst;
+  if (srcResolved || dstResolved) {
+    const parts = [];
+    if (srcResolved) parts.push(`"${inputSrc}" → "${d.src}"`);
+    if (dstResolved) parts.push(`"${inputDst}" → "${d.dst}"`);
+    note.textContent = 'Resolved: ' + parts.join(' · ');
+    note.style.display = 'block';
+  } else {
+    note.style.display = 'none';
+  }
+
+  // Path table
+  const tbody = document.getElementById('pathTableBody');
+  tbody.innerHTML = '';
+  d.paths.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid #1e3a6e';
+    const status = p.acl_blocked ? 'Blocked' : 'Open';
+    const statusColor = p.acl_blocked ? '#e74c3c' : '#2ecc71';
+    tr.innerHTML =
+      `<td style="padding:4px 8px;">${i + 1}</td>` +
+      `<td style="padding:4px 8px;">${p.hops.join(' → ')}</td>` +
+      `<td style="padding:4px 8px;text-align:center;">${p.hop_count}</td>` +
+      `<td style="padding:4px 8px;">${p.protocols.join(', ') || '—'}</td>` +
+      `<td style="padding:4px 8px;color:${statusColor};font-weight:600;">${status}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  const pathTable = document.getElementById('pathTable');
+  const noRoutes  = document.getElementById('pathNoRoutes');
+  if (d.paths.length > 0) {
+    pathTable.style.display = 'block';
+    noRoutes.style.display  = 'none';
+  } else {
+    pathTable.style.display = 'none';
+    noRoutes.style.display  = 'block';
+  }
+}
+
 async function sendChatDelta() {
   const msg = document.getElementById('chatInput').value.trim();
   if (!msg) return;
@@ -488,6 +624,47 @@ async function sendChatDelta() {
       document.getElementById('chatExplanation').style.display = 'block';
     }
   } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+
+async function runIqeQuery() {
+  const question = document.getElementById('iqeQueryInput').value.trim();
+  if (!question) return;
+  const spinner = document.getElementById('iqeSpinner');
+  const preview = document.getElementById('iqePreview');
+  const answerBox = document.getElementById('iqeAnswerBox');
+  const tableWrap = document.getElementById('iqeResultsTableWrap');
+  const errEl = document.getElementById('iqeError');
+  spinner.style.display = 'inline-block';
+  preview.style.display = 'none';
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/nl-query`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question})
+    });
+    const data = await r.json();
+    if (data.error) { errEl.textContent = data.error; errEl.style.display = 'block'; preview.style.display = 'block'; return; }
+    answerBox.textContent = data.answer || '';
+    preview.style.display = 'block';
+    // Render results table if data.data contains an array or object with a list
+    const rows = Array.isArray(data.data) ? data.data
+      : (data.data && Array.isArray(data.data.devices)) ? data.data.devices.map(d => ({'device': d}))
+      : null;
+    if (rows && rows.length > 0 && typeof rows[0] === 'object') {
+      const cols = Object.keys(rows[0]);
+      const thead = document.getElementById('iqeResultsHead');
+      thead.innerHTML = '<tr>' + cols.map(c => `<th style="padding:4px 8px;text-align:left;border-bottom:1px solid #1e3a6e;">${c}</th>`).join('') + '</tr>';
+      const tbody = document.getElementById('iqeResultsBody');
+      tbody.innerHTML = rows.map(row =>
+        '<tr>' + cols.map(c => `<td style="padding:4px 8px;border-bottom:1px solid #1e3a6e;">${row[c] ?? ''}</td>`).join('') + '</tr>'
+      ).join('');
+      tableWrap.style.display = 'block';
+    } else {
+      tableWrap.style.display = 'none';
+    }
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; preview.style.display = 'block'; }
   finally { spinner.style.display = 'none'; }
 }
 </script>

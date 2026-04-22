@@ -346,4 +346,8 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+<<<<<<< Updated upstream
+=======
+| Seed Dt Competitors | tools\creative\seed_dt_competitors.py | Auto-registered: creative/seed_dt_competitors.py | --json | JSON |
+>>>>>>> Stashed changes
 | Cross Asset Rotation | tools\trading\market_intel\cross_asset_rotation.py | Auto-registered: market_intel/cross_asset_rotation.py | --json | JSON |
