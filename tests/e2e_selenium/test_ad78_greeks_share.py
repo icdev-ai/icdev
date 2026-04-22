@@ -29,17 +29,41 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from selenium.common.exceptions import TimeoutException  # noqa: E402
 from tools.browser.driver_manager import get_driver  # noqa: E402
 
 BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5100")
+TRADING_EMAIL = os.environ.get("FATHOMDESK_EMAIL", "sovanna.chuon@gmail.com")
+TRADING_PASSWORD = os.environ.get("FATHOMDESK_PASSWORD", "FathomDesk2026!")
 SHOTS = _PROJECT_ROOT / "playwright" / "screenshots"
 SHOTS.mkdir(parents=True, exist_ok=True)
+
+
+def _login(driver) -> None:
+    """Log into the FathomDesk trading dashboard via email/password form."""
+    driver.get(f"{BASE_URL}/login")
+    try:
+        email_input = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.ID, "login-email"))
+        )
+        email_input.clear()
+        email_input.send_keys(TRADING_EMAIL)
+        pw_input = driver.find_element(By.ID, "login-password")
+        pw_input.clear()
+        pw_input.send_keys(TRADING_PASSWORD)
+        driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
+        WebDriverWait(driver, 10).until(
+            lambda d: "/login" not in d.current_url
+        )
+    except TimeoutException:
+        pass  # Already authenticated or auth disabled
 
 
 @pytest.fixture(scope="module")
 def driver():
     drv = get_driver(headless=True, window_size=(1600, 1000))
     drv.implicitly_wait(5)
+    _login(drv)
     yield drv
     drv.quit()
 
