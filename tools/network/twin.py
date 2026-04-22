@@ -162,36 +162,103 @@ def simulate_delta(
     }
 
 
-def _resolve_node_id(query: str, nodes: dict) -> str | None:
-    """Resolve a user query (ID or natural language label) to an actual node ID.
+# Common network abbreviation expansions used during fuzzy node resolution
+_NETWORK_ABBREVS = {
+    "tgw": "transit gateway",
+    "dx": "direct connect",
+    "dxgw": "direct connect gateway",
+    "alb": "application load balancer",
+    "nlb": "network load balancer",
+    "gwlb": "gateway load balancer",
+    "nfw": "network firewall",
+    "fw": "firewall",
+    "r53": "route 53",
+    "ad": "active directory",
+    "kms": "key management service",
+    "ct": "cloudtrail",
+    "ep": "endpoint",
+    "pl": "privatelink",
+    "gd": "guardduty",
+    "vpc": "virtual private cloud",
+    "rtr": "router",
+    "sw": "switch",
+    "lb": "load balancer",
+    "vpn": "virtual private network",
+    "wan": "wide area network",
+    "lan": "local area network",
+    "agg": "aggregation",
+    "mgr": "manager",
+    "pri": "primary",
+    "sec": "secondary",
+    "dr": "disaster recovery",
+}
 
-    Tries exact ID match first, then case-insensitive label/name substring match,
-    returning the best single match or None.
+
+def _expand(text: str) -> set[str]:
+    """Return tokens from text plus forward abbreviation expansions only.
+
+    Forward only: 'tgw' -> adds 'transit','gateway'. Does NOT reverse-expand
+    common words like 'gateway' into every abbreviation that contains it —
+    that creates false positives when scoring node matches.
+    """
+    tokens = set(text.lower().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ").split())
+    expanded = set(tokens)
+    for tok in tokens:
+        if tok in _NETWORK_ABBREVS:
+            expanded.update(_NETWORK_ABBREVS[tok].split())
+    return expanded
+
+
+def _resolve_node_id(query: str, nodes: dict) -> str | None:
+    """Resolve a user query (node ID, label, or natural language) to an actual node ID.
+
+    Tries in order:
+      1. Exact ID match
+      2. Exact label match (case-insensitive)
+      3. Substring match (label contains query or vice versa)
+      4. Token overlap with abbreviation expansion
     """
     if not query:
         return None
     q = query.strip()
+    q_lower = q.lower()
 
     # 1. Exact ID match
     if q in nodes:
         return q
 
-    # 2. Case-insensitive label / name substring match — score by closeness
-    q_lower = q.lower()
+    # 2. Exact label match (case-insensitive)
+    for nid, node in nodes.items():
+        label = (node.get("label") or node.get("name") or nid).lower()
+        if label == q_lower:
+            return nid
+
+    # 3. Direct substring match
     best_id = None
     best_score = -1
     for nid, node in nodes.items():
         label = (node.get("label") or node.get("name") or nid).lower()
-        # Exact label match
-        if label == q_lower:
-            return nid
-        # Substring: score by how much of the label the query covers
-        if q_lower in label or label in q_lower:
-            score = len(set(q_lower.split()) & set(label.split()))
+        candidate = f"{nid.lower()} {label}"
+        if q_lower in candidate or label in q_lower:
+            score = 100 + len(q_lower)  # prefer longer match
             if score > best_score:
                 best_score = score
                 best_id = nid
-    return best_id
+
+    if best_id:
+        return best_id
+
+    # 4. Token overlap with abbreviation expansion
+    q_tokens = _expand(q)
+    for nid, node in nodes.items():
+        label = node.get("label") or node.get("name") or nid
+        node_tokens = _expand(f"{nid} {label}")
+        overlap = len(q_tokens & node_tokens)
+        if overlap > best_score:
+            best_score = overlap
+            best_id = nid
+
+    return best_id if best_score > 0 else None
 
 
 def blast_radius(
