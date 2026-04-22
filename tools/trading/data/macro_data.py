@@ -17,6 +17,11 @@ from pathlib import Path
 # ICDEV™ parent path setup
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from tools.trading.data.bond_etf_data import (  # noqa: E402
+    classify_bond_etf_regime,
+    get_bond_etf_snapshot,
+)
+
 # Sector macro sensitivity lookup (deterministic)
 SECTOR_MACRO_SENSITIVITY = {
     "Technology": {"rate_sensitivity": -0.8, "oil_sensitivity": -0.2, "dxy_sensitivity": -0.4},
@@ -1340,6 +1345,15 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     # Granular regime classification (Van Metre-inspired + composite-aware + QE/QT context)
     regime = _classify_regime(macro_score, raw, indicators, stagflation_risk, deflation_risk, _qeqt_phase)
 
+    # Bond ETF relative momentum + regime
+    _bond_snapshot = get_bond_etf_snapshot()
+    _bond_regime_detail = classify_bond_etf_regime(_bond_snapshot)
+    bond_etf_regime = {
+        **_bond_regime_detail,
+        "etf_data": {t: _bond_snapshot[t] for t in ["TLT", "HYG", "LQD", "AGG", "SPY"] if t in _bond_snapshot},
+        "data_source": _bond_snapshot.get("data_source", "sample"),
+    }
+
     # Geopolitical risk
     geo_risk = _compute_geopolitical_risk(headlines)
 
@@ -1397,6 +1411,7 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
         "stagflation_risk": stagflation_risk,
         "deflation_risk": deflation_risk,
         "treasury_supply_pressure": treasury_supply_pressure,
+        "bond_etf_regime": bond_etf_regime,
         "sector_impacts": sector_impacts,
         "summary": summary,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
