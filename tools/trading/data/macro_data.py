@@ -155,6 +155,10 @@ def _generate_sample_macro() -> dict:
     seed, _fd_coin = _pseudo(seed, 0.0, 10.0)
     fiscal_deficit_expanding = 1.0 if _fd_coin < 5.0 else 0.0
 
+    # Credit impulse components (TOTCI 4-week and 13-week delta as % of nominal GDP)
+    seed, short_credit_impulse = _pseudo(seed, -0.12, 0.22)
+    seed, long_credit_impulse = _pseudo(seed, -0.25, 0.40)
+
     oil_change_30d = (oil - oil_prev) / oil_prev if oil_prev else 0
     gold_change_30d = (gold - gold_prev) / gold_prev if gold_prev else 0
     gold_copper_ratio = gold / max(4.0, 3.5 + (seed % 100) / 50.0)
@@ -196,6 +200,10 @@ def _generate_sample_macro() -> dict:
         "t10y2y_4w_roc": round(t10y2y_4w_roc, 2),
         "net_liquidity_4w_roc_b": round(net_liquidity_4w_roc_b, 1),
         "fiscal_deficit_expanding": fiscal_deficit_expanding,
+        # Credit impulse (TOTCI 4-week and 13-week delta as % of nominal GDP)
+        "short_credit_impulse": round(short_credit_impulse, 4),
+        "long_credit_impulse": round(long_credit_impulse, 4),
+        "credit_impulse_label": _classify_credit_impulse(short_credit_impulse, long_credit_impulse),
     }
 
 
@@ -340,6 +348,30 @@ def _fetch_live_macro() -> dict | None:
                 data["loan_growth_yoy"] = 2.0
         except Exception:
             data["loan_growth_yoy"] = 2.0
+
+        # TOTCI: Commercial & Industrial loans (weekly H8, billions) — credit impulse
+        # 4-week delta = short_credit_impulse; 13-week delta = long_credit_impulse; both as % of nominal GDP
+        try:
+            totci = fred.get_series("TOTCI", observation_start="2023-01-01")
+            totci_clean = totci.dropna()
+            gdp_nom = fred.get_series("GDP", observation_start="2022-01-01")
+            gdp_level = float(gdp_nom.dropna().iloc[-1]) if len(gdp_nom.dropna()) > 0 else 28000.0
+            if len(totci_clean) >= 14 and gdp_level > 0:
+                latest_ci = float(totci_clean.iloc[-1])
+                ci_4w_ago = float(totci_clean.iloc[-5]) if len(totci_clean) >= 5 else latest_ci
+                ci_13w_ago = float(totci_clean.iloc[-14])
+                data["short_credit_impulse"] = round((latest_ci - ci_4w_ago) / gdp_level * 100, 4)
+                data["long_credit_impulse"] = round((latest_ci - ci_13w_ago) / gdp_level * 100, 4)
+            else:
+                data["short_credit_impulse"] = 0.0
+                data["long_credit_impulse"] = 0.0
+            data["credit_impulse_label"] = _classify_credit_impulse(
+                data["short_credit_impulse"], data["long_credit_impulse"]
+            )
+        except Exception:
+            data["short_credit_impulse"] = 0.0
+            data["long_credit_impulse"] = 0.0
+            data["credit_impulse_label"] = "NEUTRAL"
 
         # Cash Assets at Commercial Banks (CASACBW027SBOG) — weekly
         try:
@@ -522,8 +554,28 @@ def _fetch_live_macro() -> dict | None:
         data["t10y2y_4w_roc"] = 0.0
         data["fiscal_deficit_expanding"] = 0.0
         data["net_liquidity_4w_roc_b"] = 0.0
+        # Credit impulse defaults (no FRED key)
+        data["short_credit_impulse"] = 0.0
+        data["long_credit_impulse"] = 0.0
+        data["credit_impulse_label"] = "NEUTRAL"
 
     return data
+
+
+def _classify_credit_impulse(short: float, long: float) -> str:
+    """Classify credit impulse trend as ACCELERATING/DECELERATING/CONTRACTING/NEUTRAL.
+
+    long_credit_impulse (13-week TOTCI delta as % of nominal GDP) leads GDP by ~12 months.
+    short_credit_impulse (4-week delta) provides momentum confirmation.
+    """
+    if abs(long) < 0.05:
+        return "NEUTRAL"
+    elif long > 0.20:
+        return "ACCELERATING"
+    elif long > 0:
+        return "DECELERATING"
+    else:
+        return "CONTRACTING"
 
 
 def _compute_treasury_supply_pressure(raw: dict) -> dict:
@@ -757,6 +809,19 @@ def _score_indicator(name: str, value: float) -> dict:
             return {"signal": "YELLOW", "score": 45, "label": "Moderate treasury supply pressure (2/3 flags)"}
         else:
             return {"signal": "RED", "score": 10, "label": "ELEVATED treasury supply pressure (all 3 flags)"}
+
+    elif name == "long_credit_impulse":
+        # 13-week TOTCI delta as % of nominal GDP — leads GDP by ~12 months (slow weight)
+        if value > 0.30:
+            return {"signal": "GREEN", "score": 85, "label": "Credit impulse accelerating (GDP tailwind ~12mo)"}
+        elif value > 0.10:
+            return {"signal": "GREEN", "score": 65, "label": "Credit impulse positive (mild GDP support ~12mo)"}
+        elif value > -0.10:
+            return {"signal": "YELLOW", "score": 45, "label": "Credit impulse neutral/decelerating"}
+        elif value > -0.30:
+            return {"signal": "RED", "score": 25, "label": "Credit impulse contracting (GDP headwind ~12mo)"}
+        else:
+            return {"signal": "RED", "score": 5, "label": "Credit impulse deep contraction"}
 
     return {"signal": "YELLOW", "score": 50, "label": "Unknown indicator"}
 
@@ -1253,7 +1318,7 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     deflation_risk = _compute_deflation_risk(raw)
     treasury_supply_pressure = _compute_treasury_supply_pressure(raw)
 
-    # Score each indicator — original 8 + Van Metre 6 + stagflation 1 + deflation 1 + breakevens 2 + treasury 1 = 19 total
+    # Score each indicator — original 8 + Van Metre 6 + stagflation 1 + deflation 1 + breakevens 2 + treasury 1 + credit impulse 1 = 20 total
     indicator_inputs = {
         "vix": raw.get("vix", 20),
         "yield_spread": raw.get("yield_spread", 0.5),
@@ -1279,11 +1344,13 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
         "breakeven_10y": raw.get("breakeven_10y", 2.3),
         # Treasury supply pressure composite (score 0-3)
         "treasury_supply_pressure": float(treasury_supply_pressure["score"]),
+        # Credit impulse: 13-week TOTCI delta as % of nominal GDP (slow weight, leads GDP ~12mo)
+        "long_credit_impulse": raw.get("long_credit_impulse", 0.0),
     }
 
     indicators = []
-    # Weights: original 8 → 50%, Van Metre 6 → 33%, stagflation 6%, deflation 5%, breakevens 2%, treasury 4%
-    # (Trimmed gold_change_30d, breakeven_5y5y, rrp_balance each by 1pt to fund treasury 4%.)
+    # Weights: original 8 → 50%, Van Metre 6 → 31%, stagflation 6%, deflation 4%, breakevens 2%, treasury 4%, credit impulse 3%
+    # (loan_growth_yoy -1%, bank_cash_assets -1%, deflation_risk_score -1% to fund credit impulse 3%.)
     indicator_weights = {
         # Original indicators (50% total)
         "vix": 0.10,
@@ -1294,22 +1361,24 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
         "fed_funds": 0.04,
         "nasdaq_trend": 0.04,
         "gold_change_30d": 0.02,
-        # Van Metre monetary system (33% total)
+        # Van Metre monetary system (31% total)
         "money_multiplier": 0.06,
         "velocity_of_money": 0.07,
-        "loan_growth_yoy": 0.09,  # highest — "only real engine of inflation"
-        "bank_cash_assets": 0.05,
+        "loan_growth_yoy": 0.08,  # "only real engine of inflation" (trimmed 1% to fund credit impulse)
+        "bank_cash_assets": 0.04,  # (trimmed 1% to fund credit impulse)
         "rrp_balance": 0.02,
         "gdx_trend": 0.04,  # crash leading indicator
         # Stagflation composite (6%)
         "stagflation_risk_score": 0.06,
-        # Deflation composite (5%)
-        "deflation_risk_score": 0.05,
+        # Deflation composite (4%; trimmed 1% to fund credit impulse)
+        "deflation_risk_score": 0.04,
         # Market-implied inflation expectations (2% total)
         "breakeven_5y5y": 0.01,
         "breakeven_10y": 0.01,
         # Treasury supply pressure composite (4%)
         "treasury_supply_pressure": 0.04,
+        # Credit impulse: 13-week TOTCI delta / GDP — slow weight, leads GDP ~12 months (3%)
+        "long_credit_impulse": 0.03,
     }
 
     for name, value in indicator_inputs.items():
@@ -1405,12 +1474,21 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
             "fiscal_deficit_expanding": raw.get("fiscal_deficit_expanding"),
             "t10y2y_4w_roc": raw.get("t10y2y_4w_roc"),
             "net_liquidity_4w_roc_b": raw.get("net_liquidity_4w_roc_b"),
+            # Credit impulse inputs (TOTCI delta as % of nominal GDP)
+            "short_credit_impulse": raw.get("short_credit_impulse"),
+            "long_credit_impulse": raw.get("long_credit_impulse"),
+            "credit_impulse_label": raw.get("credit_impulse_label"),
         },
         "supply_chain_risk": supply_risk,
         "geopolitical_risk": geo_risk,
         "stagflation_risk": stagflation_risk,
         "deflation_risk": deflation_risk,
         "treasury_supply_pressure": treasury_supply_pressure,
+        "credit_impulse": {
+            "short": raw.get("short_credit_impulse", 0.0),
+            "long": raw.get("long_credit_impulse", 0.0),
+            "label": raw.get("credit_impulse_label", "NEUTRAL"),
+        },
         "bond_etf_regime": bond_etf_regime,
         "sector_impacts": sector_impacts,
         "summary": summary,
