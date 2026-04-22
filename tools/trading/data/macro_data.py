@@ -144,6 +144,12 @@ def _generate_sample_macro() -> dict:
     seed, fed_bs_4w_ago = _pseudo(seed, 6500.0, 9000.0)
     fed_bs_4w_roc_b = (fed_bs - fed_bs_4w_ago) / 4.0
 
+    # Treasury supply pressure components
+    seed, t10y2y_4w_roc = _pseudo(seed, -0.5, 0.5)       # percentage points
+    seed, net_liquidity_4w_roc_b = _pseudo(seed, -300.0, 300.0)  # billions
+    seed, _fd_coin = _pseudo(seed, 0.0, 10.0)
+    fiscal_deficit_expanding = 1.0 if _fd_coin < 5.0 else 0.0
+
     oil_change_30d = (oil - oil_prev) / oil_prev if oil_prev else 0
     gold_change_30d = (gold - gold_prev) / gold_prev if gold_prev else 0
     gold_copper_ratio = gold / max(4.0, 3.5 + (seed % 100) / 50.0)
@@ -181,6 +187,10 @@ def _generate_sample_macro() -> dict:
         "breakeven_10y": round(breakeven_10y, 2),
         # Fed balance sheet for QE/QT phase
         "fed_bs_4w_roc_b": round(fed_bs_4w_roc_b, 1),
+        # Treasury supply pressure components
+        "t10y2y_4w_roc": round(t10y2y_4w_roc, 2),
+        "net_liquidity_4w_roc_b": round(net_liquidity_4w_roc_b, 1),
+        "fiscal_deficit_expanding": fiscal_deficit_expanding,
     }
 
 
@@ -276,9 +286,18 @@ def _fetch_live_macro() -> dict | None:
     if fred:
         try:
             t10y2y = fred.get_series("T10Y2Y", observation_start="2024-01-01")
-            data["yield_spread"] = round(float(t10y2y.dropna().iloc[-1]), 2)
+            t10y2y_clean = t10y2y.dropna()
+            data["yield_spread"] = round(float(t10y2y_clean.iloc[-1]), 2)
+            # 4-week rate of change (~20 trading days) for treasury supply pressure
+            if len(t10y2y_clean) >= 21:
+                data["t10y2y_4w_roc"] = round(
+                    float(t10y2y_clean.iloc[-1]) - float(t10y2y_clean.iloc[-21]), 2
+                )
+            else:
+                data["t10y2y_4w_roc"] = 0.0
         except Exception:
             data["yield_spread"] = 0.5
+            data["t10y2y_4w_roc"] = 0.0
 
         try:
             fedfunds = fred.get_series("FEDFUNDS", observation_start="2024-01-01")
@@ -439,6 +458,43 @@ def _fetch_live_macro() -> dict | None:
                 data["fed_bs_4w_roc_b"] = 0.0
         except Exception:
             data["fed_bs_4w_roc_b"] = 0.0
+
+        # --- Treasury supply pressure components ---
+        # Fiscal deficit trajectory (MTSDS133FMS — monthly, millions; negative = deficit)
+        try:
+            deficit = fred.get_series("MTSDS133FMS", observation_start="2022-01-01")
+            deficit_clean = deficit.dropna()
+            if len(deficit_clean) >= 24:
+                recent_12m = float(deficit_clean.iloc[-12:].sum())
+                prior_12m = float(deficit_clean.iloc[-24:-12].sum())
+                # Expanding deficit = recent 12-month sum more negative than prior year
+                data["fiscal_deficit_expanding"] = 1.0 if recent_12m < prior_12m else 0.0
+            else:
+                data["fiscal_deficit_expanding"] = 0.0
+        except Exception:
+            data["fiscal_deficit_expanding"] = 0.0
+
+        # Net liquidity 4-week trend (Fed BS - TGA - RRP, in billions)
+        try:
+            walcl_nl = fred.get_series("WALCL", observation_start="2024-01-01").dropna()
+            tga_nl = fred.get_series("WTREGEN", observation_start="2024-01-01").dropna()
+            rrp_nl = fred.get_series("RRPONTSYD", observation_start="2024-01-01").dropna()
+            if len(walcl_nl) >= 5 and len(tga_nl) >= 5 and len(rrp_nl) >= 21:
+                nl_now = (
+                    float(walcl_nl.iloc[-1]) / 1000
+                    - float(tga_nl.iloc[-1]) / 1000
+                    - float(rrp_nl.iloc[-1]) / 1000
+                )
+                nl_4w_ago = (
+                    float(walcl_nl.iloc[-5]) / 1000
+                    - float(tga_nl.iloc[-5]) / 1000
+                    - float(rrp_nl.iloc[-21]) / 1000
+                )
+                data["net_liquidity_4w_roc_b"] = round(nl_now - nl_4w_ago, 1)
+            else:
+                data["net_liquidity_4w_roc_b"] = 0.0
+        except Exception:
+            data["net_liquidity_4w_roc_b"] = 0.0
     else:
         data["yield_spread"] = 0.5
         data["fed_funds"] = 5.0
@@ -457,8 +513,53 @@ def _fetch_live_macro() -> dict | None:
         data["breakeven_5y5y"] = 2.3
         data["breakeven_10y"] = 2.3
         data["fed_bs_4w_roc_b"] = 0.0
+        # Treasury supply pressure defaults (no FRED key)
+        data["t10y2y_4w_roc"] = 0.0
+        data["fiscal_deficit_expanding"] = 0.0
+        data["net_liquidity_4w_roc_b"] = 0.0
 
     return data
+
+
+def _compute_treasury_supply_pressure(raw: dict) -> dict:
+    """Compute treasury supply pressure index (score 0-3, level LOW/MODERATE/ELEVATED).
+
+    Three binary signals — each contributes +1:
+      - fiscal_deficit_expanding: rolling 12-month deficit worsened vs prior year
+      - t10y2y_4w_roc > 0: yield spread rising (more supply pressure on long end)
+      - net_liquidity_4w_roc_b < 0: net liquidity (Fed BS - TGA - RRP) falling
+
+    ELEVATED (3/3) is wired into yield spread scoring as an additional headwind.
+    """
+    score = 0
+    flags = []
+
+    if raw.get("fiscal_deficit_expanding", 0.0) >= 1.0:
+        score += 1
+        flags.append("deficit_expanding")
+
+    if raw.get("t10y2y_4w_roc", 0.0) > 0.0:
+        score += 1
+        flags.append("t10y2y_rising")
+
+    if raw.get("net_liquidity_4w_roc_b", 0.0) < 0.0:
+        score += 1
+        flags.append("net_liquidity_falling")
+
+    if score == 3:
+        level = "ELEVATED"
+    elif score == 2:
+        level = "MODERATE"
+    else:
+        level = "LOW"
+
+    return {
+        "score": score,
+        "level": level,
+        "active_flags": score,
+        "flags": flags,
+        "label": ", ".join(flags) if flags else "no supply pressure signals",
+    }
 
 
 def _score_indicator(name: str, value: float) -> dict:
@@ -640,6 +741,17 @@ def _score_indicator(name: str, value: float) -> dict:
             return {"signal": "YELLOW", "score": 50, "label": "10y inflation expectations elevated"}
         else:
             return {"signal": "RED", "score": 20, "label": "10y inflation expectations un-anchoring"}
+
+    elif name == "treasury_supply_pressure":
+        # Score 0-3; higher = more fiscal/liquidity supply pressure = headwind for yields/macro
+        if value == 0:
+            return {"signal": "GREEN", "score": 100, "label": "No treasury supply pressure (0/3 flags)"}
+        elif value == 1:
+            return {"signal": "GREEN", "score": 70, "label": "Low treasury supply pressure (1/3 flags)"}
+        elif value == 2:
+            return {"signal": "YELLOW", "score": 45, "label": "Moderate treasury supply pressure (2/3 flags)"}
+        else:
+            return {"signal": "RED", "score": 10, "label": "ELEVATED treasury supply pressure (all 3 flags)"}
 
     return {"signal": "YELLOW", "score": 50, "label": "Unknown indicator"}
 
@@ -1058,6 +1170,7 @@ def _build_summary(
     supply: dict,
     stagflation: dict | None = None,
     deflation: dict | None = None,
+    treasury_pressure: dict | None = None,
 ) -> str:
     """Build a prose summary of the macro environment."""
     red_count = sum(1 for i in indicators if i["signal"] == "RED")
@@ -1091,6 +1204,16 @@ def _build_summary(
             f"Deflation risk {deflation['risk_level'].lower()} "
             f"({deflation['active_flags']}/4 flags: {deflation['label']})."
         )
+    if treasury_pressure and treasury_pressure["level"] == "ELEVATED":
+        parts.append(
+            "Treasury supply pressure ELEVATED — deficit expanding, yield spread rising, "
+            "and net liquidity falling simultaneously."
+        )
+    elif treasury_pressure and treasury_pressure["level"] == "MODERATE":
+        parts.append(
+            f"Treasury supply pressure moderate ({treasury_pressure['active_flags']}/3 flags: "
+            f"{treasury_pressure['label']})."
+        )
 
     return " ".join(parts)
 
@@ -1123,8 +1246,9 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     # Composite risks (computed before indicator scoring)
     stagflation_risk = _compute_stagflation_risk(raw)
     deflation_risk = _compute_deflation_risk(raw)
+    treasury_supply_pressure = _compute_treasury_supply_pressure(raw)
 
-    # Score each indicator — original 8 + Van Metre 6 + stagflation 1 + deflation 1 + breakevens 2 = 18 total
+    # Score each indicator — original 8 + Van Metre 6 + stagflation 1 + deflation 1 + breakevens 2 + treasury 1 = 19 total
     indicator_inputs = {
         "vix": raw.get("vix", 20),
         "yield_spread": raw.get("yield_spread", 0.5),
@@ -1148,15 +1272,15 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
         # Market-implied inflation expectations
         "breakeven_5y5y": raw.get("breakeven_5y5y", 2.3),
         "breakeven_10y": raw.get("breakeven_10y", 2.3),
+        # Treasury supply pressure composite (score 0-3)
+        "treasury_supply_pressure": float(treasury_supply_pressure["score"]),
     }
 
     indicators = []
-    # Weights: original 8 → 52%, Van Metre 6 → 34%, stagflation 6%, deflation 5%, breakevens 3%
-    # (Trimmed point-indicator weights to make room for the deflation+breakeven block
-    #  while keeping the total at 1.0. Stagflation/deflation composites together
-    #  carry 11% — slightly more than before — reflecting their leading-indicator role.)
+    # Weights: original 8 → 50%, Van Metre 6 → 33%, stagflation 6%, deflation 5%, breakevens 2%, treasury 4%
+    # (Trimmed gold_change_30d, breakeven_5y5y, rrp_balance each by 1pt to fund treasury 4%.)
     indicator_weights = {
-        # Original indicators (52% total)
+        # Original indicators (50% total)
         "vix": 0.10,
         "yield_spread": 0.09,
         "oil_change_30d": 0.07,
@@ -1164,21 +1288,23 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
         "sp500_trend": 0.09,
         "fed_funds": 0.04,
         "nasdaq_trend": 0.04,
-        "gold_change_30d": 0.04,
-        # Van Metre monetary system (34% total)
+        "gold_change_30d": 0.02,
+        # Van Metre monetary system (33% total)
         "money_multiplier": 0.06,
         "velocity_of_money": 0.07,
         "loan_growth_yoy": 0.09,  # highest — "only real engine of inflation"
         "bank_cash_assets": 0.05,
-        "rrp_balance": 0.03,
+        "rrp_balance": 0.02,
         "gdx_trend": 0.04,  # crash leading indicator
         # Stagflation composite (6%)
         "stagflation_risk_score": 0.06,
         # Deflation composite (5%)
         "deflation_risk_score": 0.05,
-        # Market-implied inflation expectations (3% total)
-        "breakeven_5y5y": 0.02,
+        # Market-implied inflation expectations (2% total)
+        "breakeven_5y5y": 0.01,
         "breakeven_10y": 0.01,
+        # Treasury supply pressure composite (4%)
+        "treasury_supply_pressure": 0.04,
     }
 
     for name, value in indicator_inputs.items():
@@ -1193,6 +1319,16 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
                 "weight": indicator_weights.get(name, 0.05),
             }
         )
+
+    # Wire ELEVATED treasury supply pressure into yield spread — extra headwind on long-end
+    if treasury_supply_pressure["level"] == "ELEVATED":
+        for ind in indicators:
+            if ind["name"] == "yield_spread":
+                ind["score"] = max(0, ind["score"] - 20)
+                ind["label"] = ind["label"] + " [treasury supply ELEVATED]"
+                if ind["score"] < 30 and ind["signal"] != "RED":
+                    ind["signal"] = "RED"
+                break
 
     # Weighted macro score (0-100)
     macro_score = sum(i["score"] * i["weight"] for i in indicators)
@@ -1213,7 +1349,7 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     # Sector impacts
     sector_impacts = _compute_sector_impacts(raw)
 
-    summary = _build_summary(regime, indicators, geo_risk, supply_risk, stagflation_risk, deflation_risk)
+    summary = _build_summary(regime, indicators, geo_risk, supply_risk, stagflation_risk, deflation_risk, treasury_supply_pressure)
 
     return {
         "macro_score": macro_score,
@@ -1251,11 +1387,16 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
             "m2_yoy_pct": raw.get("m2_yoy_pct"),
             "breakeven_5y5y": raw.get("breakeven_5y5y"),
             "breakeven_10y": raw.get("breakeven_10y"),
+            # Treasury supply pressure inputs
+            "fiscal_deficit_expanding": raw.get("fiscal_deficit_expanding"),
+            "t10y2y_4w_roc": raw.get("t10y2y_4w_roc"),
+            "net_liquidity_4w_roc_b": raw.get("net_liquidity_4w_roc_b"),
         },
         "supply_chain_risk": supply_risk,
         "geopolitical_risk": geo_risk,
         "stagflation_risk": stagflation_risk,
         "deflation_risk": deflation_risk,
+        "treasury_supply_pressure": treasury_supply_pressure,
         "sector_impacts": sector_impacts,
         "summary": summary,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
