@@ -162,15 +162,53 @@ def simulate_delta(
     }
 
 
+def _resolve_node_id(query: str, nodes: dict) -> str | None:
+    """Resolve a user query (ID or natural language label) to an actual node ID.
+
+    Tries exact ID match first, then case-insensitive label/name substring match,
+    returning the best single match or None.
+    """
+    if not query:
+        return None
+    q = query.strip()
+
+    # 1. Exact ID match
+    if q in nodes:
+        return q
+
+    # 2. Case-insensitive label / name substring match — score by closeness
+    q_lower = q.lower()
+    best_id = None
+    best_score = -1
+    for nid, node in nodes.items():
+        label = (node.get("label") or node.get("name") or nid).lower()
+        # Exact label match
+        if label == q_lower:
+            return nid
+        # Substring: score by how much of the label the query covers
+        if q_lower in label or label in q_lower:
+            score = len(set(q_lower.split()) & set(label.split()))
+            if score > best_score:
+                best_score = score
+                best_id = nid
+    return best_id
+
+
 def blast_radius(
     project_id: str,
     node_id: str,
     topology_delta: dict | None = None,
     baseline_snap_id: str | None = None,
 ) -> dict:
-    """Identify systems impacted by failure or removal of a given device or link."""
+    """Identify systems impacted by failure or removal of a given device or link.
+
+    node_id may be a raw graph node ID or a natural language label — the function
+    resolves it against the topology before querying edges.
+    """
     conn = _nc_conn()
     impacted = []
+    resolved_id = node_id
+    resolved_label = node_id
 
     try:
         row = conn.execute(
@@ -182,19 +220,25 @@ def blast_radius(
             nodes = {n["id"]: n for n in graph.get("nodes", [])}
             edges = graph.get("edges", [])
 
-            # Also merge any delta-added links into the edge set
+            # Resolve natural language / partial label to actual node ID
+            matched = _resolve_node_id(node_id, nodes)
+            if matched:
+                resolved_id = matched
+                resolved_label = nodes[matched].get("label") or nodes[matched].get("name") or matched
+
+            # Merge any delta-added links into the edge set
             if topology_delta:
                 for link in topology_delta.get("add_links", []):
                     edges.append(link)
 
-            # Find all neighbors directly connected to node_id
+            # Find all neighbors directly connected to resolved_id
             neighbors = set()
             for edge in edges:
                 src = edge.get("source") or edge.get("src")
                 dst = edge.get("target") or edge.get("dst")
-                if src == node_id and dst:
+                if src == resolved_id and dst:
                     neighbors.add(dst)
-                elif dst == node_id and src:
+                elif dst == resolved_id and src:
                     neighbors.add(src)
             neighbors.discard(None)
 
@@ -216,7 +260,6 @@ def blast_radius(
                     "recommendation": f"Verify redundant path exists for {label}",
                 })
 
-            # Sort by severity
             sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
             impacted.sort(key=lambda x: sev_order.get(x["severity"], 9))
 
@@ -228,7 +271,8 @@ def blast_radius(
     slo_risk = "High" if total > 5 else ("Medium" if total > 2 else "Low")
 
     return {
-        "node_id": node_id,
+        "node_id": resolved_id,
+        "node_label": resolved_label,
         "impacted_count": total,
         "critical_path_count": critical,
         "slo_risk": slo_risk,
