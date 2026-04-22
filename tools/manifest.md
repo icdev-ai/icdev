@@ -335,3 +335,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Twin Chat | tools\twin_chat.py | Auto-registered: tools/twin_chat.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Bond Etf Data | tools\trading\data\bond_etf_data.py | Auto-registered: data/bond_etf_data.py | --json | JSON |
