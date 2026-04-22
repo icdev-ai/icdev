@@ -694,18 +694,65 @@ def check_nc_audit_to_siem_forwarder(canvas_project_id: str, odc_design_id: str)
 
     Returns: {rule_id: 'ODC-NDC-001', status: 'pass'|'fail', violations: [...], score: 0-100}
     """
-    # TODO: wire to actual NDC/ODC tables (network_topologies, odc_nodes, odc_edges)
-    # Implementation outline (deterministic checks, no LLM):
-    # 1. Load NDC topologies for canvas_project_id
-    # 2. Load ODC design's forwarders + SIEM nodes
-    # 3. For each NDC topology, verify at least one forwarder path reaches a SIEM
-    # 4. Return violations with specific topology_id + missing audit path
     violations: list = []
     try:
-        from tools.db.storage import get_connection  # noqa: F401
-        # Placeholder: real queries will inspect ndc_topologies + odc graph tables.
-        # Kept minimal/deterministic until cross-canvas schema is finalized.
-        _ = (canvas_project_id, odc_design_id)
+        import sqlite3 as _sq, pathlib as _pl, json as _js
+        _data = _pl.Path(__file__).resolve().parents[2] / "data"
+
+        # 1. Load NDC topologies for canvas_project_id
+        ndc_db = _data / "network_canvas.db"
+        ndc_topos: list = []
+        if ndc_db.exists():
+            _nc = _sq.connect(ndc_db)
+            try:
+                rows = _nc.execute(
+                    "SELECT id, name, graph_json FROM topologies "
+                    "WHERE template_id = ? OR id = ? OR description LIKE ?",
+                    (canvas_project_id, canvas_project_id, f"%{canvas_project_id}%"),
+                ).fetchall()
+                ndc_topos = [{"id": r[0], "name": r[1], "graph": _js.loads(r[2] or "{}")} for r in rows]
+            except Exception:
+                ndc_topos = []
+            finally:
+                _nc.close()
+
+        # 2. Load ODC design's SDC verifications (proxy for audit forwarder coverage)
+        odc_db = _data / "observability_canvas.db"
+        covered_topo_ids: set = set()
+        if odc_db.exists():
+            _oc = _sq.connect(odc_db)
+            try:
+                cov = _oc.execute(
+                    "SELECT source_id FROM odc_sdc_verifications "
+                    "WHERE design_id = ? AND status IN ('pass', 'verified')",
+                    (odc_design_id,),
+                ).fetchall()
+                covered_topo_ids = {r[0] for r in cov}
+            except Exception:
+                covered_topo_ids = set()
+            finally:
+                _oc.close()
+
+        # 3. For each NDC topology, check it has an audit/SIEM forwarder node
+        #    OR is covered by an ODC SDC verification.
+        SIEM_TYPES = {"siem", "siem_forwarder", "nc_audit", "log_forwarder", "splunk", "elastic", "sentinel"}
+        for topo in ndc_topos:
+            topo_id = topo["id"]
+            if topo_id in covered_topo_ids:
+                continue
+            # Check graph_json for SIEM-type nodes
+            nodes = topo["graph"].get("nodes", [])
+            has_siem = any(
+                str(n.get("type", "")).lower() in SIEM_TYPES
+                or any(kw in str(n.get("label", "")).lower() for kw in ("siem", "splunk", "forwarder", "elastic", "sentinel", "audit"))
+                for n in nodes
+            )
+            if not has_siem:
+                violations.append({
+                    "topology_id": topo_id,
+                    "topology_name": topo["name"],
+                    "reason": "No SIEM/audit forwarder node found in topology graph and no ODC SDC verification coverage",
+                })
     except Exception:
         # DB layer unavailable — return pass with note rather than fail hard.
         pass

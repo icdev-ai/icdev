@@ -212,15 +212,49 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         feed_type = feed.get("type", "rss")
         url = feed.get("url", "")
 
-        # Skip non-fetchable types
-        if feed_type in ("sam_bridge", "html_scrape"):
-            feed_results.append(
-                {
-                    "feed": feed_name,
-                    "status": "skipped",
-                    "reason": f"Type '{feed_type}' not yet implemented in Research Reflex",
-                }
-            )
+        # sam_bridge — delegate to existing tools/pulse/engine/sam_bridge.py
+        if feed_type == "sam_bridge":
+            try:
+                from tools.pulse.engine.sam_bridge import run_sam_to_pulse
+                sam_result = run_sam_to_pulse()
+                count = sam_result.get("opportunities_found", 0) if isinstance(sam_result, dict) else 0
+                feed_results.append({"feed": feed_name, "status": "ok", "new_entries": count})
+                total_signals += count
+            except Exception as sam_exc:
+                feed_results.append({"feed": feed_name, "status": "error", "reason": str(sam_exc)[:200]})
+            continue
+
+        # html_scrape — fetch page and extract links matching scrape_pattern
+        if feed_type == "html_scrape":
+            if not url:
+                feed_results.append({"feed": feed_name, "status": "skipped", "reason": "no url"})
+                continue
+            content = _fetch_url(url)
+            if not content:
+                feed_results.append({"feed": feed_name, "status": "fetch_failed"})
+                continue
+            import re as _re
+            pattern = feed.get("scrape_pattern", "")
+            # Extract all hrefs from anchor tags
+            hrefs = _re.findall(r'href=["\']([^"\']+)["\']', content)
+            if pattern:
+                hrefs = [h for h in hrefs if _re.search(pattern, h, _re.IGNORECASE)]
+            # Deduplicate and build entries
+            seen: set = set()
+            entries = []
+            for href in hrefs:
+                if href in seen:
+                    continue
+                seen.add(href)
+                full_url = href if href.startswith("http") else url.rstrip("/") + "/" + href.lstrip("/")
+                entries.append({
+                    "title": href.split("/")[-1] or href,
+                    "description": f"Scraped from {url}",
+                    "link": full_url,
+                    "published": "",
+                })
+            feed_results.append({"feed": feed_name, "status": "ok", "new_entries": len(entries)})
+            total_signals += len(entries)
             continue
 
         if not url:

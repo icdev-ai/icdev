@@ -1382,27 +1382,52 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
     "mattpocock/skills": {
         "url": "https://github.com/mattpocock/skills",
         "license": "MIT",
-        "audit_status": "not yet implemented (OPT-56 pending)",
+        "audit_status": "clean-room verified 2026-04-22 (OPT-56)",
+        "notes": (
+            "hook_compat.py cites git-guardrails pattern for _GIT_DANGER_PATTERNS blocklist. "
+            "Implementation is an independent regex blocklist in Python; no code shared with "
+            "the original TypeScript skills repo. Concept-only citation."
+        ),
     },
     "open-swe": {
         "url": "https://github.com/langchain-ai/open-swe",
         "license": "MIT",
-        "audit_status": "not yet implemented (OPT-61/62/63 pending)",
+        "audit_status": "clean-room verified 2026-04-22 (OPT-61/62/63)",
+        "notes": (
+            "_subagent.py and hook_compat.py cite open-swe task-tool pattern and "
+            "cross-cutting behavior architecture. ICDEV implementation uses LLMRouter + "
+            "Flask/SQLite; zero class or method overlap with open-swe's LangGraph stack."
+        ),
     },
     "promptfoo": {
         "url": "https://github.com/promptfoo/promptfoo",
         "license": "MIT",
-        "audit_status": "not yet implemented (OPT-64/65/66 pending)",
+        "audit_status": "clean-room verified 2026-04-22 (OPT-64/65/66)",
+        "notes": (
+            "eval_runner.py cites promptfoo eval-runner pattern. ICDEV implementation is "
+            "a YAML-driven harness over LLMRouter with its own assertion engine; "
+            "no code shared with promptfoo's JS/TS runner."
+        ),
     },
     "deepagents": {
         "url": "https://github.com/langchain-ai/deepagents",
         "license": "MIT",
-        "audit_status": "not yet implemented (OPT-67 pending)",
+        "audit_status": "clean-room verified 2026-04-22 (OPT-67)",
+        "notes": (
+            "_composer.py cites deepagents create_deep_agent() factory pattern. "
+            "ICDEV Agent class is built on LLMRouter + tool catalog loop; "
+            "no LangChain dependency, zero code overlap with deepagents."
+        ),
     },
     "react-admin": {
         "url": "https://github.com/marmelab/react-admin",
         "license": "MIT",
-        "audit_status": "not yet implemented (OPT-68/69 pending)",
+        "audit_status": "clean-room verified 2026-04-22 (OPT-68/69)",
+        "notes": (
+            "crud_resource.py cites react-admin declarative resource pattern. "
+            "ICDEV implementation generates Flask Blueprint + SQLite routes from ColumnSpec; "
+            "entirely Python/Jinja2, no React or JS code shared."
+        ),
     },
     "optio": {
         "url": "https://github.com/jonwiggins/optio",

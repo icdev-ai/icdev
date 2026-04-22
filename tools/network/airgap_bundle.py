@@ -221,10 +221,27 @@ def build_bundle(
 
     size_bytes = out.stat().st_size
 
-    # TODO(boundary-canvas): register this bundle as an authorized component.
-    # from tools.boundary_canvas.registry import register_authorized_component
-    # register_authorized_component(
-    #     name=out.name, sha256=manifest_sha, kind="airgap_bundle")
+    # Register bundle as an authorized component in the boundary canvas supply-chain DB.
+    try:
+        from tools.boundary_canvas.db.init_db import get_connection as _bdc_conn
+        import uuid as _uuid
+        _bc = _bdc_conn()
+        _bc.execute(
+            "INSERT OR IGNORE INTO bd_authorized_components "
+            "(id, component_type, name, sha256_manifest, bundle_path, "
+            " file_count, sbom_count, registered_by, status, created_at, updated_at) "
+            "VALUES (?, 'airgap_bundle', ?, ?, ?, ?, ?, 'icdev-airgap-engine', 'authorized', ?, ?)",
+            (
+                str(_uuid.uuid4()), out.name, manifest_sha, str(out),
+                len(artifacts), len(sboms),
+                datetime.now(timezone.utc).isoformat(),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        _bc.commit()
+        _bc.close()
+    except Exception as _reg_exc:
+        logger.warning("boundary-canvas registration skipped: %s", _reg_exc)
 
     logger.info(
         "Bundle built: %s (%d bytes, %d artifacts, %d sboms)",
