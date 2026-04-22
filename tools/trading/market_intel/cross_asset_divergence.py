@@ -17,12 +17,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 
-def detect_divergences(macro_raw: dict, extended: dict | None = None) -> dict:
+def detect_divergences(
+    macro_raw: dict,
+    extended: dict | None = None,
+    rotation: dict | None = None,
+) -> dict:
     """Detect cross-asset divergences from macro indicator data.
 
     Args:
         macro_raw: Raw values dict from fetch_macro_context()["raw_values"].
         extended: Optional extended macro dict from fetch_extended_macro().
+        rotation: Optional cross-asset rotation result from compute_cross_asset_rotation().
+                  When rotation_score >= 4 (HARD_EXIT), emits a CRITICAL divergence event.
 
     Returns:
         Dict with divergences list, danger_score, and opportunity_score.
@@ -135,6 +141,24 @@ def detect_divergences(macro_raw: dict, extended: dict | None = None) -> dict:
                     "credit markets pricing risk ahead of equity; historically a leading indicator"
                 ),
             })
+
+    # --- 9. Cross-asset rotation HARD_EXIT (rotation_score >= 4) — CRITICAL (XAR-04) ---
+    # Five inter-market confirmation conditions met simultaneously: full risk-off rotation.
+    if rotation and rotation.get("rotation_score", 0) >= 4:
+        r_score = rotation["rotation_score"]
+        triggered = rotation.get("triggered_conditions", [])
+        cond_summary = ", ".join(triggered[:2])
+        if len(triggered) > 2:
+            cond_summary += f" +{len(triggered) - 2} more"
+        divergences.append({
+            "name": "rotation_hard_exit",
+            "severity": "critical",
+            "danger_score": 90,
+            "message": (
+                f"Cross-asset rotation HARD_EXIT (score={r_score}/5) — "
+                f"{len(triggered)} inter-market conditions: {cond_summary or 'none'}"
+            ),
+        })
 
     # Compute aggregate scores
     if divergences:
