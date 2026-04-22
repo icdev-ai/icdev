@@ -9751,6 +9751,123 @@ Output ONLY the JSON object. No other text."""
         result = network_chat_to_delta(message, data.get("graph_json"))
         return jsonify(result), (500 if "error" in result else 200)
 
+    @bp.route("/api/twin/<topo_id>/nl-query", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_nl_query(topo_id):
+        """IQE AI Assist — answer a natural language question about a topology."""
+        from tools.network.nl_query import answer_query
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+        conn = get_connection()
+        try:
+            result = answer_query(topo_id, question, conn)
+        finally:
+            conn.close()
+        return jsonify(result), 200
+
+    @bp.route("/api/twin/<topo_id>/iqe-query", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_iqe_query(topo_id):
+        """IQE structured query — translate NL to IQE and optionally execute against topology."""
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import Executor
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+        execute = data.get("execute", True)
+
+        # Derive available collections from topology node/edge tables
+        collections = ["nodes", "edges"]
+
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not execute:
+            return jsonify({"iqe": iqe_str, "explanation": explanation}), 200
+
+        conn = get_connection()
+        try:
+            ast = parse(iqe_str)
+
+            # Build adapters for topology node/edge data
+            def _nodes_adapter(c):
+                row = c.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+                if not row:
+                    return []
+                import json as _json
+                graph = _json.loads(row["graph_json"] or "{}")
+                cells = graph.get("cells") or []
+                result = []
+                for cell in cells:
+                    kind = (cell.get("type") or "").lower()
+                    if "link" in kind or "edge" in kind:
+                        continue
+                    attrs = cell.get("attrs") or {}
+                    label = ""
+                    for key in ("label", "text", "body"):
+                        val = attrs.get(key)
+                        if isinstance(val, dict):
+                            label = val.get("text") or val.get("textWrap", {}).get("text", "") or ""
+                        if label:
+                            break
+                    if not label:
+                        label = cell.get("label") or cell.get("name") or cell.get("id", "")
+                    result.append({
+                        "id": cell.get("id", ""),
+                        "label": str(label).strip(),
+                        "type": cell.get("deviceType") or attrs.get("deviceType", "") or cell.get("type", ""),
+                        "position": cell.get("position", {}),
+                    })
+                return result
+
+            def _edges_adapter(c):
+                row = c.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+                if not row:
+                    return []
+                import json as _json
+                graph = _json.loads(row["graph_json"] or "{}")
+                cells = graph.get("cells") or []
+                result = []
+                for cell in cells:
+                    kind = (cell.get("type") or "").lower()
+                    if "link" not in kind and "edge" not in kind:
+                        continue
+                    src = (cell.get("source") or {})
+                    tgt = (cell.get("target") or {})
+                    result.append({
+                        "id": cell.get("id", ""),
+                        "source": src.get("id", "") if isinstance(src, dict) else str(src),
+                        "target": tgt.get("id", "") if isinstance(tgt, dict) else str(tgt),
+                        "protocol": (cell.get("attrs") or {}).get("line", {}).get("strokeDasharray", "") or cell.get("protocol", ""),
+                        "bandwidth": cell.get("bandwidth", ""),
+                    })
+                return result
+
+            executor = Executor()
+            executor.register_collection("nodes", _nodes_adapter)
+            executor.register_collection("edges", _edges_adapter)
+
+            rows = executor.run(ast, conn)
+            return jsonify({
+                "iqe": iqe_str,
+                "explanation": explanation,
+                "results": rows,
+                "row_count": len(rows),
+            }), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            logger.warning("IQE query execution error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+        finally:
+            conn.close()
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
