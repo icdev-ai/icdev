@@ -569,9 +569,22 @@ def _score_supply_chain_geo(macro_raw: dict, macro_ctx: dict) -> dict:
 
 def _score_cross_asset_divergence(macro_raw: dict, extended: dict) -> dict:
     """Family 6: Cross-Asset Divergences."""
+    # Fetch rotation signal to pass into divergence detector (XAR-04)
+    rotation = None
+    try:
+        from tools.trading.market_intel.cross_asset_rotation import compute_cross_asset_rotation
+        xar = compute_cross_asset_rotation()
+        rotation = {
+            "rotation_signal": xar.get("rotation_signal", "NEUTRAL"),
+            "rotation_score": xar.get("rotation_score", 0),
+            "triggered_conditions": xar.get("triggered_conditions", []),
+        }
+    except Exception:
+        pass
+
     try:
         from tools.trading.market_intel.cross_asset_divergence import detect_divergences
-        result = detect_divergences(macro_raw, extended)
+        result = detect_divergences(macro_raw, extended, rotation=rotation)
     except Exception:
         result = {"divergences": [], "divergence_count": 0, "danger_score": 20, "opportunity_score": 75}
 
@@ -582,7 +595,7 @@ def _score_cross_asset_divergence(macro_raw: dict, extended: dict) -> dict:
             "name": d["name"],
             "raw_value": d["danger_score"],
             "score": max(0, 100 - d["danger_score"]),
-            "signal": "RED" if d["severity"] == "high" else "YELLOW",
+            "signal": "RED" if d["severity"] in ("high", "critical") else "YELLOW",
             "label": d["message"],
             "horizon": HORIZON_MAP.get(d["name"], "near_term"),
             "weight": 1.0,
