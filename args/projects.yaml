@@ -27,8 +27,14 @@ projects:
         path: "/docs/briefs/digital-twin-market-canvas-implementation-plan.md"
     epics:
       - key: iqe
-        title: "IQE v0.1 — ICDEV Query Engine"
+        title: "IQE AI Assist — NL→IQE Translation"
         priority: critical
+      - key: ndc
+        title: "NDC Path Reachability Analysis"
+        priority: critical
+      - key: ce
+        title: "Creative Engine — Digital Twin Domain Fix"
+        priority: high
       - key: bdc
         title: "BDC cATO Twin (Phase 1)"
         priority: critical
