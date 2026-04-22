@@ -1241,6 +1241,7 @@ def _build_summary(
     stagflation: dict | None = None,
     deflation: dict | None = None,
     treasury_pressure: dict | None = None,
+    fallen_angel_risk: str | None = None,
 ) -> str:
     """Build a prose summary of the macro environment."""
     red_count = sum(1 for i in indicators if i["signal"] == "RED")
@@ -1283,6 +1284,11 @@ def _build_summary(
         parts.append(
             f"Treasury supply pressure moderate ({treasury_pressure['active_flags']}/3 flags: "
             f"{treasury_pressure['label']})."
+        )
+    if fallen_angel_risk == "ELEVATED":
+        parts.append(
+            "Fallen angel risk ELEVATED — credit contracting with secondary stress; "
+            "watch for IG-to-HY downgrades as crisis precursor."
         )
 
     return " ".join(parts)
@@ -1349,8 +1355,8 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     }
 
     indicators = []
-    # Weights: original 8 → 50%, Van Metre 6 → 31%, stagflation 6%, deflation 4%, breakevens 2%, treasury 4%, credit impulse 3%
-    # (loan_growth_yoy -1%, bank_cash_assets -1%, deflation_risk_score -1% to fund credit impulse 3%.)
+    # Weights: original 8 → 50%, Van Metre 6 → 28%, stagflation 4%, deflation 4%, breakevens 2%, treasury 4%, credit impulse 8%
+    # (velocity_of_money -1%, loan_growth_yoy -2%, stagflation_risk_score -2% to fund credit impulse 8%.)
     indicator_weights = {
         # Original indicators (50% total)
         "vix": 0.10,
@@ -1361,24 +1367,24 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
         "fed_funds": 0.04,
         "nasdaq_trend": 0.04,
         "gold_change_30d": 0.02,
-        # Van Metre monetary system (31% total)
+        # Van Metre monetary system (28% total)
         "money_multiplier": 0.06,
-        "velocity_of_money": 0.07,
-        "loan_growth_yoy": 0.08,  # "only real engine of inflation" (trimmed 1% to fund credit impulse)
-        "bank_cash_assets": 0.04,  # (trimmed 1% to fund credit impulse)
+        "velocity_of_money": 0.06,  # trimmed 1% to fund credit impulse
+        "loan_growth_yoy": 0.06,  # "only real engine of inflation" (trimmed 2% to fund credit impulse)
+        "bank_cash_assets": 0.04,
         "rrp_balance": 0.02,
         "gdx_trend": 0.04,  # crash leading indicator
-        # Stagflation composite (6%)
-        "stagflation_risk_score": 0.06,
-        # Deflation composite (4%; trimmed 1% to fund credit impulse)
+        # Stagflation composite (4%; trimmed 2% to fund credit impulse)
+        "stagflation_risk_score": 0.04,
+        # Deflation composite (4%)
         "deflation_risk_score": 0.04,
         # Market-implied inflation expectations (2% total)
         "breakeven_5y5y": 0.01,
         "breakeven_10y": 0.01,
         # Treasury supply pressure composite (4%)
         "treasury_supply_pressure": 0.04,
-        # Credit impulse: 13-week TOTCI delta / GDP — slow weight, leads GDP ~12 months (3%)
-        "long_credit_impulse": 0.03,
+        # Credit impulse: 13-week TOTCI delta / GDP — slow weight, leads GDP ~12 months (8%)
+        "long_credit_impulse": 0.08,
     }
 
     for name, value in indicator_inputs.items():
@@ -1408,6 +1414,28 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     macro_score = sum(i["score"] * i["weight"] for i in indicators)
     macro_score = int(max(0, min(100, macro_score)))
 
+    # Credit impulse composite overlay — slow-signal (13-week lag) adjustment on top of weighted score
+    # CONTRACTING reduces composite by up to 8 pts; ACCELERATING adds up to 5 pts
+    _credit_label = raw.get("credit_impulse_label", "NEUTRAL")
+    _long_ci = raw.get("long_credit_impulse", 0.0)
+    if _credit_label == "CONTRACTING":
+        # Linear scale: full -8 pts at long_ci <= -0.25
+        _ci_penalty = min(8, round(abs(min(_long_ci, 0.0)) / 0.25 * 8))
+        macro_score = max(0, macro_score - _ci_penalty)
+    elif _credit_label == "ACCELERATING":
+        # Linear scale: full +5 pts at long_ci >= 0.40
+        _ci_boost = min(5, round(max(0.0, _long_ci - 0.20) / 0.20 * 5))
+        macro_score = min(100, macro_score + _ci_boost)
+
+    # Fallen angel risk — crisis precursor when credit contracts + secondary stress confirms
+    _fallen_angel_risk = "LOW"
+    if _credit_label == "CONTRACTING":
+        _df_flags = deflation_risk.get("active_flags", 0)
+        if _df_flags >= 2 or raw.get("loan_growth_yoy", 2.0) < 0.0:
+            _fallen_angel_risk = "ELEVATED"
+        else:
+            _fallen_angel_risk = "MODERATE"
+
     # QE/QT phase from Fed balance sheet 4-week rate of change
     _qeqt_phase, _ = _classify_qeqt(raw.get("fed_bs_4w_roc_b", 0.0))
 
@@ -1432,7 +1460,7 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     # Sector impacts
     sector_impacts = _compute_sector_impacts(raw)
 
-    summary = _build_summary(regime, indicators, geo_risk, supply_risk, stagflation_risk, deflation_risk, treasury_supply_pressure)
+    summary = _build_summary(regime, indicators, geo_risk, supply_risk, stagflation_risk, deflation_risk, treasury_supply_pressure, _fallen_angel_risk)
 
     return {
         "macro_score": macro_score,
@@ -1489,6 +1517,7 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
             "long": raw.get("long_credit_impulse", 0.0),
             "label": raw.get("credit_impulse_label", "NEUTRAL"),
         },
+        "fallen_angel_risk": _fallen_angel_risk,
         "bond_etf_regime": bond_etf_regime,
         "sector_impacts": sector_impacts,
         "summary": summary,
