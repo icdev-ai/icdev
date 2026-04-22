@@ -9727,6 +9727,47 @@ Output ONLY the JSON object. No other text."""
         )
         return jsonify(result), 200
 
+    @bp.route("/api/twin/<topo_id>/analyze-path", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_analyze_path(topo_id):
+        from tools.network.path_analyzer import find_paths
+        import json as _json
+        data = request.get_json(silent=True) or {}
+        src_query = (data.get("src") or data.get("src_id") or "").strip()
+        dst_query = (data.get("dst") or data.get("dst_id") or "").strip()
+        if not src_query or not dst_query:
+            return jsonify({"error": "src and dst are required"}), 400
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        finally:
+            conn.close()
+        if not row or not row["graph_json"]:
+            return jsonify({"error": "Topology not found"}), 404
+        try:
+            raw_graph = _json.loads(row["graph_json"])
+        except Exception:
+            return jsonify({"error": "Invalid topology JSON"}), 500
+        nodes_list = raw_graph.get("nodes", [])
+        nodes_dict = {n["id"]: n for n in nodes_list if isinstance(n, dict) and "id" in n}
+        graph = {"nodes": nodes_dict, "edges": raw_graph.get("edges", [])}
+        result = find_paths(src_query, dst_query, graph)
+        resolve_parts = []
+        if result["src"] != src_query:
+            src_label = nodes_dict.get(result["src"], {}).get("label") or result["src"]
+            resolve_parts.append(f'"{src_query}" → {src_label}')
+        if result["dst"] != dst_query:
+            dst_label = nodes_dict.get(result["dst"], {}).get("label") or result["dst"]
+            resolve_parts.append(f'"{dst_query}" → {dst_label}')
+        result["resolve_note"] = "Matched: " + ", ".join(resolve_parts) if resolve_parts else None
+        if result["reachable"]:
+            result["verdict"] = "green"
+        elif result["blocked_by_acl"]:
+            result["verdict"] = "amber"
+        else:
+            result["verdict"] = "red"
+        return jsonify(result), 200
+
     @bp.route("/api/twin/<topo_id>/current-topology", methods=["GET"])
     @nc_login_required
     def nc_api_twin_current_topology(topo_id):
