@@ -162,3 +162,54 @@ def compute_ivr(ticker: str, current_atm_iv: float) -> dict:
     _IVR_CACHE[cache_key] = (now, result)
 
     return {k: v for k, v in result.items() if not k.startswith("_")}
+
+
+def snapshot_chain(ticker: str, conn=None) -> dict:
+    """Take an option chain snapshot for *ticker*, compute IVR, and persist it.
+
+    Fetches the nearest monthly expiration via yfinance, derives ATM IV,
+    calls compute_ivr(), stores the result in ad_option_chain_snapshots.ivr_pct,
+    and returns the persisted dict (including snap_id).
+    """
+    from tools.trading.db import save_chain_snapshot
+
+    cache_key = ticker.upper()
+    ticker_obj = yf.Ticker(cache_key)
+
+    # Spot price
+    spot: float = 0.0
+    try:
+        spot = float(ticker_obj.fast_info.last_price)
+    except Exception:
+        pass
+
+    # Nearest expiration for ATM IV
+    try:
+        expirations = ticker_obj.options
+    except Exception:
+        expirations = ()
+
+    atm_iv: float = 0.0
+    expiration_count = len(expirations)
+    for exp in expirations:
+        try:
+            chain = ticker_obj.option_chain(exp)
+            iv = _get_atm_iv(chain, spot) if spot > 0 else None
+            if iv and iv > 0:
+                atm_iv = iv
+                break
+        except Exception:
+            continue
+
+    if atm_iv <= 0 and spot > 0:
+        atm_iv = spot * 0.25  # 25% IV fallback when chain unavailable
+
+    ivr = compute_ivr(cache_key, atm_iv)
+    snap_id = save_chain_snapshot(
+        ticker=cache_key,
+        ivr=ivr,
+        spot_price=spot if spot > 0 else None,
+        expiration_count=expiration_count,
+        conn=conn,
+    )
+    return {"snap_id": snap_id, "ticker": cache_key, **ivr}

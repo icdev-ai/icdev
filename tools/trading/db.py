@@ -690,6 +690,21 @@ _TABLES = [
     )""",
     """CREATE UNIQUE INDEX IF NOT EXISTS idx_watchlist_user_ticker
        ON ad_watchlists(user_id, ticker)""",
+    # --- Options chain snapshots (IV Rank cache) ---
+    """CREATE TABLE IF NOT EXISTS ad_option_chain_snapshots (
+        id TEXT PRIMARY KEY,
+        ticker TEXT NOT NULL,
+        spot_price REAL,
+        atm_iv REAL,
+        ivr_pct REAL,
+        iv_percentile REAL,
+        iv_52w_high REAL,
+        iv_52w_low REAL,
+        expiration_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_ad_chain_snap_ticker_created
+       ON ad_option_chain_snapshots(ticker, created_at DESC)""",
 ]
 
 
@@ -716,6 +731,10 @@ def _ensure_schema(conn: StorageConnection) -> None:
         ("ad_signals", "price_at_add", "REAL"),
         ("ad_signals", "current_price", "REAL"),
         ("ad_strategy_holdings", "macro_alignment", "REAL"),
+        ("ad_option_chain_snapshots", "ivr_pct", "REAL"),
+        ("ad_option_chain_snapshots", "iv_percentile", "REAL"),
+        ("ad_option_chain_snapshots", "iv_52w_high", "REAL"),
+        ("ad_option_chain_snapshots", "iv_52w_low", "REAL"),
     ]
     for table, col, col_type in _safe_migrations:
         try:
@@ -1446,6 +1465,60 @@ def get_runs_for_ticker(
             del d["result_json"]
         results.append(d)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Option Chain Snapshots (IVR cache)
+# ---------------------------------------------------------------------------
+def save_chain_snapshot(
+    ticker: str,
+    ivr: dict,
+    spot_price: float | None = None,
+    expiration_count: int = 0,
+    conn: StorageConnection | None = None,
+) -> str:
+    """Persist an option chain IVR snapshot, return snapshot_id.
+
+    *ivr* is the dict returned by compute_ivr() — must contain iv_rank
+    (stored as ivr_pct), iv_percentile, iv_52w_high, iv_52w_low, current_iv.
+    """
+    c = conn or get_conn()
+    snap_id = f"ocs-{_uid()}"
+    c.execute(
+        "INSERT INTO ad_option_chain_snapshots "
+        "(id, ticker, spot_price, atm_iv, ivr_pct, iv_percentile, "
+        "iv_52w_high, iv_52w_low, expiration_count, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            snap_id,
+            ticker.upper(),
+            spot_price,
+            ivr.get("current_iv"),
+            ivr.get("iv_rank"),
+            ivr.get("iv_percentile"),
+            ivr.get("iv_52w_high"),
+            ivr.get("iv_52w_low"),
+            expiration_count,
+            _now(),
+        ),
+    )
+    c.commit()
+    return snap_id
+
+
+def get_chain_snapshots(
+    ticker: str,
+    limit: int = 50,
+    conn: StorageConnection | None = None,
+) -> list[dict]:
+    """Return recent IVR snapshots for *ticker*, newest first."""
+    c = conn or get_conn()
+    rows = c.execute(
+        "SELECT * FROM ad_option_chain_snapshots "
+        "WHERE ticker = ? ORDER BY created_at DESC LIMIT ?",
+        (ticker.upper(), limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_debate_history(
