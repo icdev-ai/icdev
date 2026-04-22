@@ -157,6 +157,20 @@ _CAT_FEATURES = {
         "FIPS 140-2 validated images",
         "supply chain provenance for images",
     ],
+    "digital_twin_platform": [
+        "mathematical network model with header-space analysis",
+        "multi-vendor configuration normalization",
+        "behavioral snapshot diff with impact correlation",
+        "intent verification with policy-as-code rules",
+        "path reachability analysis with ACL simulation",
+        "blast radius isolation with L4 protocol detail",
+        "pre-deployment what-if simulation sandbox",
+        "zero-trust segmentation enforcement verification",
+        "natural language network query interface",
+        "continuous drift detection with alert integration",
+        "OSCAL compliance export for ATO evidence",
+        "network query engine (NQE) with custom checks",
+    ],
 }
 
 
@@ -611,6 +625,8 @@ def get_competitor_report(db_path=None):
         recs.append("Compliance automation gaps detected — consider continuous monitoring.")
     if "platform_engineering" in gc:
         recs.append("Platform engineering gaps — consider developer portal features.")
+    if "digital_twin_platform" in gc:
+        recs.append("Digital twin platform gaps — prioritize path reachability analysis and policy-as-code intent rules.")
     if not recs:
         recs.append("No significant gaps detected. Continue regular scanning.")
     _audit("competitive_intel.report", f"Report: {len(comps_cfg)} competitors, {tg} gaps")
