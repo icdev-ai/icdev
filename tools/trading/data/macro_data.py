@@ -1287,6 +1287,7 @@ EXTENDED_FRED_SERIES = {
     "tga_balance": "WTREGEN",             # Treasury General Account
     "bank_reserves": "WRESBAL",           # Reserve Balances at Fed
     "m2_money_supply": "M2SL",            # M2 Money Stock
+    "federal_deficit": "MTSDS133FMS",     # Monthly Treasury Statement Deficit/Surplus
 }
 
 
@@ -1308,6 +1309,21 @@ def _classify_qeqt(roc_4w_b: float) -> tuple[str, str]:
         magnitude = "SLOW"
 
     return phase, magnitude
+
+
+def _classify_fiscal_deficit(deficit_pct_gdp: float, deficit_pct_gdp_yago: float) -> str:
+    """Classify 12-month rolling deficit trajectory vs prior year.
+
+    delta > +0.5 ppt of GDP → EXPANDING_DEFICIT (worsening)
+    delta < -0.5 ppt       → IMPROVING
+    otherwise              → STABLE
+    """
+    delta = deficit_pct_gdp - deficit_pct_gdp_yago
+    if delta > 0.5:
+        return "EXPANDING_DEFICIT"
+    if delta < -0.5:
+        return "IMPROVING"
+    return "STABLE"
 
 
 def _generate_sample_extended() -> dict:
@@ -1344,6 +1360,9 @@ def _generate_sample_extended() -> dict:
     seed, skew = _p(seed, 110, 160)                    # CBOE SKEW index
     seed, put_call = _p(seed, 0.5, 1.5)               # ratio
     seed, bbb_oas_prev8w = _p(seed, 100, 350)          # bps, 8 weeks ago
+    seed, deficit_12m_b = _p(seed, 1400, 2200)         # 12-month rolling deficit, billions
+    seed, deficit_12m_b_yago = _p(seed, 1200, 2000)    # same metric 12 months prior
+    seed, gdp_nominal_b = _p(seed, 26000, 29000)       # nominal GDP, billions
 
     m2_yoy = ((m2 - m2_yago) / m2_yago * 100) if m2_yago else 0
     permits_yoy = ((building_permits - building_permits_yago) / building_permits_yago * 100) if building_permits_yago else 0
@@ -1358,6 +1377,9 @@ def _generate_sample_extended() -> dict:
     sofr_ff_spread_bps = round((sofr_rate - 5.33) * 100, 1)
     # BBB OAS 8-week slope in bps/week (positive = widening trend)
     bbb_oas_slope_8w_bps = round((bbb_oas - bbb_oas_prev8w) / 8.0, 2)
+    deficit_pct_gdp = round(deficit_12m_b / gdp_nominal_b * 100, 2)
+    deficit_pct_gdp_yago = round(deficit_12m_b_yago / gdp_nominal_b * 100, 2)
+    _fiscal_trajectory = _classify_fiscal_deficit(deficit_pct_gdp, deficit_pct_gdp_yago)
 
     return {
         "credit_spread_hy_bps": round(credit_spread_hy, 0),
@@ -1387,6 +1409,9 @@ def _generate_sample_extended() -> dict:
         "net_liquidity_b": round(net_liquidity, 0),
         "skew_index": round(skew, 1),
         "put_call_ratio": round(put_call, 2),
+        "deficit_12m_b": round(deficit_12m_b, 0),
+        "deficit_pct_gdp": deficit_pct_gdp,
+        "fiscal_deficit_trajectory": _fiscal_trajectory,
     }
 
 
@@ -1591,6 +1616,41 @@ def _fetch_live_extended() -> dict | None:
         data.get("tga_balance_b", 500) -
         rrp, 0
     )
+
+    # Federal deficit/surplus trajectory (MTSDS133FMS — Monthly Treasury Statement)
+    try:
+        mts = fred.get_series("MTSDS133FMS", observation_start="2022-01-01")
+        mts_clean = mts.dropna()
+        if len(mts_clean) >= 12:
+            # 12-month rolling sum; MTSDS133FMS is negative for deficit
+            deficit_12m_mm = float(mts_clean.iloc[-12:].sum())
+            deficit_12m_b = -deficit_12m_mm / 1000.0  # positive = deficit, in billions
+            data["deficit_12m_b"] = round(deficit_12m_b, 0)
+            # Nominal GDP for % of GDP calculation
+            try:
+                gdp_s = fred.get_series("GDP", observation_start="2023-01-01")
+                gdp_nominal_b = float(gdp_s.dropna().iloc[-1])  # already in billions
+            except Exception:
+                gdp_nominal_b = 28000.0
+            deficit_pct_gdp = round(deficit_12m_b / gdp_nominal_b * 100, 2)
+            data["deficit_pct_gdp"] = deficit_pct_gdp
+            # Year-ago window requires 24 months of data
+            if len(mts_clean) >= 24:
+                deficit_12m_b_yago = -float(mts_clean.iloc[-24:-12].sum()) / 1000.0
+                deficit_pct_gdp_yago = round(deficit_12m_b_yago / gdp_nominal_b * 100, 2)
+            else:
+                deficit_pct_gdp_yago = deficit_pct_gdp
+            data["fiscal_deficit_trajectory"] = _classify_fiscal_deficit(
+                deficit_pct_gdp, deficit_pct_gdp_yago
+            )
+        else:
+            data["deficit_12m_b"] = 1800.0
+            data["deficit_pct_gdp"] = 6.4
+            data["fiscal_deficit_trajectory"] = "STABLE"
+    except Exception:
+        data["deficit_12m_b"] = 1800.0
+        data["deficit_pct_gdp"] = 6.4
+        data["fiscal_deficit_trajectory"] = "STABLE"
 
     return data
 
