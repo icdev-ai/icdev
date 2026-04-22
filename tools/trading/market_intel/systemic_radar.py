@@ -495,7 +495,6 @@ def _score_supply_chain_geo(macro_raw: dict, macro_ctx: dict) -> dict:
         kg_stress = {"danger_score": 30, "opportunity_score": 60, "stress_depth": 0}
 
     # Correlation cluster states + monetary catalyst overlay
-    cluster_concentration_score = 75  # default safe
     monetary_catalyst_score_val = 75
     cluster_divergence_score = 80
     try:
@@ -519,8 +518,6 @@ def _score_supply_chain_geo(macro_raw: dict, macro_ctx: dict) -> dict:
         )
         # Diverging clusters = warning (internal breakdown, potential cascade)
         cluster_divergence_score = max(20, 85 - diverging * 15 - bearish_clusters * 8)
-        # Concentration: high monetary catalyst activation can mean systemic reversal risk
-        cluster_concentration_score = max(30, 80 - active_cats * 5)
     except Exception:
         pass
 
