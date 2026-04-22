@@ -210,6 +210,43 @@ projects:
         title: "Registration + docs + E2E"
         priority: high
 
+  - key: opts-greeks
+    name: "FathomDesk — Options Greeks Engine"
+    description: >
+      7-epic expansion: rho completeness, IV Rank/Percentile, Greek-profile
+      strategy ranking, Greek-aware AI intent + coach, Greek visualizations
+      (heatmap, time-decay slider, P&L attribution), second-order Greeks
+      (Vanna/Charm/Volga), and Portfolio Greek Manager (targets, hedges,
+      IV skew + term structure). Each phase gated by CodeLens + Coherence +
+      Selenium E2E.
+    task_prefix: "og-"
+    default_open: true
+    briefs:
+      - label: "Options Greeks 6-phase brief"
+        path: "/docs/briefs/opts-greeks-brief.md"
+    epics:
+      - key: data
+        title: "Phase 1 — Greek Data Completeness (rho + chain display)"
+        priority: critical
+      - key: ivr
+        title: "Phase 2 — IV Rank/Percentile"
+        priority: critical
+      - key: profile
+        title: "Phase 3 — Greek Profile + Strategy Ranking"
+        priority: high
+      - key: ai
+        title: "Phase 4 — Greek-Aware AI Intent + Coach"
+        priority: high
+      - key: viz
+        title: "Phase 5 — Greek Visualizations"
+        priority: medium
+      - key: sog
+        title: "Phase 6a — Second-Order Greeks (Vanna/Charm/Volga)"
+        priority: high
+      - key: pgm
+        title: "Phase 6b — Portfolio Greek Manager + Harmonization"
+        priority: medium
+
   - key: fdm-macro
     name: "FathomDesk — Macro Intelligence Expansion"
     description: >
