@@ -531,7 +531,7 @@ def compute_cross_asset_rotation() -> dict:
 
     Returns:
         Dict with ratios, rotation_signal, rotation_score, triggered_conditions,
-        data_source, and timestamp.
+        sector_rotation_ranking, data_source, and timestamp.
     """
     all_tickers = _RATIO_TICKERS + [_TNX_TICKER]
 
@@ -558,6 +558,22 @@ def compute_cross_asset_rotation() -> dict:
 
     scoring = compute_rotation_scoring(result, prices, vix_series, hy_oas_series)
     result.update(scoring)
+
+    # Sector rotation momentum ranking (XAR-03)
+    try:
+        from tools.trading.market_intel.sector_rotation_ranking import (
+            compute_sector_rotation_ranking,
+        )
+        sector_rank = compute_sector_rotation_ranking(xar_ratios=result.get("ratios"))
+        result["sector_rotation_ranking"] = sector_rank["sector_rotation_ranking"]
+        result["sector_rotation_spy_reference"] = sector_rank["spy_reference"]
+        result["sector_rotation_data_source"] = sector_rank["data_source"]
+        result["sector_rotation_policy_tailwind_active"] = sector_rank["policy_tailwind_active"]
+    except Exception:
+        result["sector_rotation_ranking"] = []
+        result["sector_rotation_spy_reference"] = None
+        result["sector_rotation_data_source"] = "error"
+        result["sector_rotation_policy_tailwind_active"] = False
 
     result["data_source"] = data_source
     result["timestamp"] = datetime.now(timezone.utc).isoformat()
@@ -606,6 +622,23 @@ def main() -> None:
     print(f"\nRotation Score: {score}/5  →  {signal}")
     if triggered:
         print("Triggered:", ", ".join(triggered))
+
+    ranking = result.get("sector_rotation_ranking", [])
+    if ranking:
+        spy_ref = result.get("sector_rotation_spy_reference") or {}
+        print(
+            f"\nSector Rotation Ranking  [{result.get('sector_rotation_data_source', '?')}]"
+            f"  SPY 4w={spy_ref.get('momentum_4w_pct', 0):+.2f}%"
+            f"  13w={spy_ref.get('momentum_13w_pct', 0):+.2f}%"
+        )
+        print(f"{'Rank':<5} {'ETF':<5} {'Label':<14} {'Rel 4w':>8} {'Rel 13w':>9} {'Composite':>10} {'Arrow'}")
+        print("-" * 62)
+        for entry in ranking:
+            print(
+                f"{entry['rank']:<5} {entry['ticker']:<5} {entry['label']:<14} "
+                f"{entry['relative_4w_pct']:>+7.2f}%  {entry['relative_13w_pct']:>+8.2f}%  "
+                f"{entry['composite_score']:>+9.2f}%  {entry['arrow']}"
+            )
 
 
 if __name__ == "__main__":
