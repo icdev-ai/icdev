@@ -26,7 +26,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection, sql_placeholder
+from tools.db.storage import get_connection
 from tools.trading.oracle.base_lens import BaseTradingLens, TradingPrediction
 
 
@@ -104,8 +104,6 @@ class RegimeTrajectoryLens(BaseTradingLens):
         macro = analysis.get("macro", {})
         raw = macro.get("raw_values", macro)
         ctx = analysis.get("regime_ctx", {})
-        history = analysis.get("sror_history", [])
-
         regime = ctx.get("regime", "NEUTRAL")
         danger = ctx.get("composite_danger", 50)
         opportunity = ctx.get("composite_opportunity", 50)
