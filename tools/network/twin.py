@@ -6,36 +6,57 @@ docs/briefs/digital-twin-market-canvas-implementation-plan.md (NDC §7).
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
-
-from tools.db.storage import get_connection
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _nc_conn():
+    """Return a connection to the network canvas SQLite database."""
+    from tools.network.db.init_db import get_connection
+    return get_connection()
+
+
+def _ensure_snapshots_table(conn) -> None:
+    """Create network_twin_snapshots if it doesn't exist yet."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS network_twin_snapshots (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            label TEXT,
+            device_count INTEGER DEFAULT 0,
+            link_count INTEGER DEFAULT 0,
+            created_at TEXT
+        )
+    """)
+    conn.commit()
+
+
 def take_snapshot(project_id: str, label: str | None = None) -> dict:
     """Freeze current topology state into network_twin_snapshots (append-only)."""
-    conn = get_connection()
+    conn = _nc_conn()
+    _ensure_snapshots_table(conn)
+
     snap_id = str(uuid.uuid4())
     taken_at = _now()
     label = label or f"snap-{taken_at[:10]}"
 
-    # Count devices and links from the topology
+    device_count = 0
+    link_count = 0
     try:
-        device_count = conn.execute(
-            "SELECT COUNT(*) FROM topology_nodes WHERE topology_id = ?", (project_id,)
-        ).fetchone()[0]
+        row = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id = ?", (project_id,)
+        ).fetchone()
+        if row and row["graph_json"]:
+            graph = json.loads(row["graph_json"])
+            device_count = len(graph.get("nodes", []))
+            link_count = len(graph.get("edges", []))
     except Exception:
-        device_count = 0
-    try:
-        link_count = conn.execute(
-            "SELECT COUNT(*) FROM topology_edges WHERE topology_id = ?", (project_id,)
-        ).fetchone()[0]
-    except Exception:
-        link_count = 0
+        pass
 
     try:
         conn.execute(
@@ -46,7 +67,7 @@ def take_snapshot(project_id: str, label: str | None = None) -> dict:
         )
         conn.commit()
     except Exception:
-        pass  # defensive: migration 031 creates the table; guard against mid-upgrade reads
+        pass
 
     return {
         "id": snap_id,
@@ -89,14 +110,12 @@ def simulate_delta(
         detail = None
 
         if rule_id == "no-direct-internet":
-            # Flag any new device with no firewall on its path (heuristic)
             new_types = [d.get("type", "") for d in added_devices]
             if any(t in ("server", "vm", "container") for t in new_types) and not any(t in ("firewall", "waf") for t in new_types):
                 passed = False
                 detail = f"{len(added_devices)} new node(s) added without co-located firewall/WAF"
 
         elif rule_id == "acl-compliance":
-            # Flag permissive ACL rules
             risky = [c for c in acl_changes if "permit" in c.get("rule", "").lower() and "any" in c.get("rule", "").lower()]
             if risky:
                 passed = False
@@ -149,29 +168,69 @@ def blast_radius(
     topology_delta: dict | None = None,
     baseline_snap_id: str | None = None,
 ) -> dict:
-    """Identify systems impacted by failure of a given device or link."""
-    conn = get_connection()
+    """Identify systems impacted by failure or removal of a given device or link."""
+    conn = _nc_conn()
     impacted = []
+
     try:
-        rows = conn.execute(
-            "SELECT * FROM topology_edges WHERE source = ? OR target = ?", (node_id, node_id)
-        ).fetchall()
-        neighbors = set()
-        for row in rows:
-            r = dict(row)
-            neighbors.add(r.get("source") or r.get("src"))
-            neighbors.add(r.get("target") or r.get("dst"))
-        neighbors.discard(node_id)
-        neighbors.discard(None)
-        impacted = [{"id": n, "severity": "high", "title": n, "recommendation": "Verify redundant path exists"} for n in neighbors]
+        row = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id = ?", (project_id,)
+        ).fetchone()
+
+        if row and row["graph_json"]:
+            graph = json.loads(row["graph_json"])
+            nodes = {n["id"]: n for n in graph.get("nodes", [])}
+            edges = graph.get("edges", [])
+
+            # Also merge any delta-added links into the edge set
+            if topology_delta:
+                for link in topology_delta.get("add_links", []):
+                    edges.append(link)
+
+            # Find all neighbors directly connected to node_id
+            neighbors = set()
+            for edge in edges:
+                src = edge.get("source") or edge.get("src")
+                dst = edge.get("target") or edge.get("dst")
+                if src == node_id and dst:
+                    neighbors.add(dst)
+                elif dst == node_id and src:
+                    neighbors.add(src)
+            neighbors.discard(None)
+
+            # Build impacted list with real node labels and severities
+            for nid in neighbors:
+                node = nodes.get(nid, {})
+                label = node.get("label") or node.get("name") or nid
+                ntype = node.get("type", "")
+                if ntype in ("server", "database", "load-balancer"):
+                    severity = "critical"
+                elif ntype in ("router", "switch-l3", "firewall"):
+                    severity = "high"
+                else:
+                    severity = "medium"
+                impacted.append({
+                    "id": nid,
+                    "severity": severity,
+                    "title": label,
+                    "recommendation": f"Verify redundant path exists for {label}",
+                })
+
+            # Sort by severity
+            sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+            impacted.sort(key=lambda x: sev_order.get(x["severity"], 9))
+
     except Exception:
         pass
 
-    slo_risk = "High" if len(impacted) > 5 else ("Medium" if len(impacted) > 2 else "Low")
+    total = len(impacted)
+    critical = sum(1 for i in impacted if i.get("severity") == "critical")
+    slo_risk = "High" if total > 5 else ("Medium" if total > 2 else "Low")
+
     return {
         "node_id": node_id,
-        "impacted_count": len(impacted),
-        "critical_path_count": sum(1 for i in impacted if i.get("severity") == "high"),
+        "impacted_count": total,
+        "critical_path_count": critical,
         "slo_risk": slo_risk,
         "impacted_systems": impacted,
     }
