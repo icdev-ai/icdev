@@ -329,3 +329,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Git Utils | tools\workflow\git_utils.py | Auto-registered: workflow/git_utils.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Twin Chat | tools\twin_chat.py | Auto-registered: tools/twin_chat.py | --json | JSON |

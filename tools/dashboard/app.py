@@ -8216,6 +8216,27 @@ def create_app() -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("fathomdesk.html", ticker=ticker)
 
+    @app.route("/api/trading/market")
+    def api_trading_market():
+        """Return macro context snapshot including qeqt_phase for FathomDesk overlay."""
+        try:
+            from tools.trading.data.macro_data import fetch_macro_context, fetch_extended_macro
+            ctx = fetch_macro_context()
+            ext = fetch_extended_macro()
+            return jsonify({
+                "macro_score": ctx.get("macro_score"),
+                "regime": ctx.get("regime"),
+                "qeqt_phase": ctx.get("qeqt_phase"),
+                "qeqt_magnitude": ext.get("qeqt_magnitude"),
+                "fed_bs_4w_roc_b": ext.get("fed_bs_4w_roc_b"),
+                "fed_bs_13w_roc_b": ext.get("fed_bs_13w_roc_b"),
+                "data_source": ctx.get("data_source"),
+                "fetched_at": ctx.get("fetched_at"),
+                "summary": ctx.get("summary"),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @app.route("/api/trading/chart/<ticker>")
     def api_trading_chart(ticker: str):
         """Return OHLCV bars, volume profile, patterns, and S/R levels for *ticker*."""

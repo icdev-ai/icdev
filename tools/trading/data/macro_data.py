@@ -1218,6 +1218,7 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
     return {
         "macro_score": macro_score,
         "regime": regime,
+        "qeqt_phase": _qeqt_phase,
         "data_source": data_source,
         "indicators": indicators,
         "raw_values": {
