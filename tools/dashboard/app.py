@@ -8216,6 +8216,16 @@ def create_app() -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("options.html", ticker=ticker)
 
+    @app.route("/api/options/portfolio-greeks/<user_id>")
+    def api_options_portfolio_greeks(user_id: str):
+        """Return aggregate net Greeks for all open option positions for *user_id*."""
+        try:
+            from tools.trading.options.portfolio_greeks import compute_portfolio_greeks
+            data = compute_portfolio_greeks(user_id=user_id)
+            return jsonify(data)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     # ── FathomDesk Trading Engine ─────────────────────────────────────────────
     @app.route("/fathomdesk")
     def fathomdesk_page():
