@@ -102,3 +102,4 @@ python tools/iqe/cli.py --file context/iqe/queries/network/09_stig_open_findings
 | NetBox client | `tools/network/netbox_client.py` | NetBox integration (CMDB sync) |
 | NDC routes (API) | `tools/network/routes/` | Flask blueprints for NDC API endpoints |
 | NDC adapters | `tools/network/adapters/` | Network data source adapters (extend here) |
+| TFW narrative generator | `tools/network/narrative_generator.py` | Traffic Flow Walkthrough narratives — per-persona LLM narratives + deterministic detail_json (CSP detection, multi-CSP hops, classification overlay, NIST 800-53 pre-population). CLI: `--flow-id <id> --json` |
