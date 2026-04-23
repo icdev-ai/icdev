@@ -3269,13 +3269,18 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             )
     else:
         # Anchor to a single line so newlines don't pull in section headers.
+        # Skip "IF NOT EXISTS" so "Add CREATE TABLE IF NOT EXISTS foo" extracts "foo".
         table_match = re.search(
-            r"(?:create\s+table|add\s+(?:table|DB\s+table|schema))[ \t]+(\w+)",
+            r"(?:create\s+table|add\s+(?:table|DB\s+table|schema))[ \t]+"
+            r"(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
             description,
             re.IGNORECASE,
         )
         if table_match:
             table_name = table_match.group(1)
+            # "IF" means the pattern matched "TABLE IF" (no actual table name) — skip
+            if table_name.upper() == "IF":
+                table_name = None
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
         # file with CREATE TABLE <name>, but that migration has not been
