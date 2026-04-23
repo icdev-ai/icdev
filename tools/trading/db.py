@@ -1387,12 +1387,13 @@ def get_signal_history(
     limit: int = 30,
     conn: StorageConnection | None = None,
 ) -> list[dict]:
-    """Get signal evolution for a specific ticker over time."""
+    """Get signal evolution for a specific ticker, with regime joined per run_id."""
     c = conn or get_conn()
     rows = c.execute(
-        "SELECT s.*, r.created_at as run_date "
+        "SELECT s.*, r.created_at as run_date, m.regime as regime "
         "FROM ad_signals s "
         "JOIN ad_analysis_runs r ON s.run_id = r.id "
+        "LEFT JOIN ad_macro_context m ON m.run_id = s.run_id "
         "WHERE s.ticker = ? "
         "ORDER BY s.created_at DESC LIMIT ?",
         (ticker, limit),
