@@ -7757,6 +7757,7 @@ Output ONLY the JSON object. No other text."""
 
         import re
 
+        import requests as _req
         from tools.http.client import request as _req_request
 
         def _parse_llm_response(content):
