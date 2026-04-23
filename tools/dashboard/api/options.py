@@ -102,3 +102,132 @@ def hedge_proposal():
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@options_api.route("/api/options/net_greeks/<ticker>", methods=["GET"])
+def net_greeks(ticker: str):
+    """Return portfolio-level net Greeks for *user_id* (ticker param kept for UI compat).
+
+    Query params:
+        user_id (str, default "default")
+    """
+    ticker = ticker.upper()
+    user_id = request.args.get("user_id", "default")
+    try:
+        from tools.trading.options.portfolio_greeks import compute_portfolio_greeks
+
+        pg = compute_portfolio_greeks(user_id=user_id)
+        # Remap net_X → X for frontend slider compatibility
+        return jsonify({
+            "ticker": ticker,
+            "user_id": user_id,
+            "delta": pg.get("net_delta", 0.0),
+            "gamma": pg.get("net_gamma", 0.0),
+            "theta": pg.get("net_theta", 0.0),
+            "vega":  pg.get("net_vega",  0.0),
+            "rho":   0.0,
+            "vanna": pg.get("net_vanna", 0.0),
+            "charm": pg.get("net_charm", 0.0),
+            "volga": pg.get("net_volga", 0.0),
+            "position_count": pg.get("position_count", 0),
+            "stale_count":    pg.get("stale_count", 0),
+            "as_of": pg.get("as_of"),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@options_api.route("/api/options/iv-skew/<ticker>", methods=["GET"])
+def iv_skew(ticker: str):
+    """Return IV smile (by strike) and IV term structure (by expiry) for *ticker*.
+
+    Query params:
+        expiry_index (int, default 0) — which expiry to use for the skew slice
+    """
+    ticker = ticker.upper()
+    expiry_index = request.args.get("expiry_index", 0, type=int)
+    try:
+        import math
+
+        import yfinance as yf
+
+        ticker_obj = yf.Ticker(ticker)
+        try:
+            spot = float(ticker_obj.fast_info.last_price)
+        except Exception:
+            spot = 0.0
+
+        expirations = list(ticker_obj.options or [])
+        if not expirations:
+            return jsonify({"ticker": ticker, "skew": [], "term": [], "spot": spot})
+
+        # IV smile for the chosen expiry
+        chosen_exp = expirations[min(expiry_index, len(expirations) - 1)]
+        skew: list[dict] = []
+        try:
+            chain = ticker_obj.option_chain(chosen_exp)
+            for _, row in chain.calls.iterrows():
+                iv = float(row.get("impliedVolatility") or 0)
+                if iv > 0 and not math.isnan(iv):
+                    skew.append({"strike": float(row["strike"]), "iv": round(iv * 100, 2), "type": "call"})
+            for _, row in chain.puts.iterrows():
+                iv = float(row.get("impliedVolatility") or 0)
+                if iv > 0 and not math.isnan(iv):
+                    skew.append({"strike": float(row["strike"]), "iv": round(iv * 100, 2), "type": "put"})
+        except Exception:
+            pass
+
+        # ATM IV term structure across nearest 6 expirations
+        from datetime import date, datetime
+
+        term: list[dict] = []
+        for exp in expirations[:6]:
+            try:
+                c = ticker_obj.option_chain(exp)
+                if spot > 0:
+                    atm = c.calls.iloc[(c.calls["strike"] - spot).abs().argsort()[:1]]
+                    iv = float(atm.iloc[0].get("impliedVolatility") or 0)
+                else:
+                    iv = float(c.calls.iloc[0].get("impliedVolatility") or 0)
+                if iv > 0 and not math.isnan(iv):
+                    exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                    dte = (exp_date - date.today()).days
+                    term.append({"expiry": exp, "dte": dte, "atm_iv": round(iv * 100, 2)})
+            except Exception:
+                continue
+
+        return jsonify({
+            "ticker": ticker,
+            "expiry": chosen_exp,
+            "spot": spot,
+            "skew": sorted(skew, key=lambda x: x["strike"]),
+            "term": term,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@options_api.route("/api/options/portfolio-greeks/<user_id>", methods=["GET"])
+def portfolio_greeks_by_user(user_id: str):
+    """Return portfolio-level Greek P&L attribution for *user_id*.
+
+    Calls compute_portfolio_greeks() and returns the net Greeks used by the
+    Greek P&L Attribution panel (delta contribution, theta burn, vega risk,
+    gamma convexity).
+    """
+    try:
+        from tools.trading.options.portfolio_greeks import compute_portfolio_greeks
+
+        pg = compute_portfolio_greeks(user_id=user_id)
+        return jsonify({
+            "user_id": user_id,
+            "net_delta": pg.get("net_delta", 0.0),
+            "net_theta": pg.get("net_theta", 0.0),
+            "net_vega":  pg.get("net_vega",  0.0),
+            "net_gamma": pg.get("net_gamma", 0.0),
+            "position_count": pg.get("position_count", 0),
+            "stale_count":    pg.get("stale_count", 0),
+            "as_of": pg.get("as_of"),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500

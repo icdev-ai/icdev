@@ -45,10 +45,27 @@ _GREEK_PATTERNS: list[tuple[re.Pattern, dict]] = [
     (re.compile(r"\b(reduce|lower|decrease|cut)\b.{0,30}\bvega\b", re.I), {"vega_direction": "reduce"}),
     (re.compile(r"\b(reduce|lower|decrease|cut|hedge)\b.{0,40}\biv\b.{0,20}\bexposure\b", re.I), {"vega_direction": "reduce"}),
     (re.compile(r"\b(reduce|lower|decrease|cut|hedge)\b.{0,40}\bimplied.{0,10}vol", re.I), {"vega_direction": "reduce"}),
-    # Gamma: neutralize
+    # Delta: neutralize
+    (re.compile(r"\bneutralize\b.{0,30}\bdelta\b", re.I), {"delta_direction": "neutral"}),
+    (re.compile(r"\bdelta.{0,30}\bneutralize\b", re.I), {"delta_direction": "neutral"}),
+    # Delta: protect against
+    (re.compile(r"\bprotect.{0,30}\bdelta\b", re.I), {"delta_direction": "reduce"}),
+    (re.compile(r"\bdelta.{0,30}\bprotect\b", re.I), {"delta_direction": "reduce"}),
+    # Vega: manage / add
+    (re.compile(r"\bmanage\b.{0,30}\bvega\b", re.I), {"vega_direction": "reduce"}),
+    (re.compile(r"\bvega.{0,30}\bmanage\b", re.I), {"vega_direction": "reduce"}),
+    # Theta: protect against / reduce
+    (re.compile(r"\bprotect.{0,30}\btheta\b", re.I), {"theta": "reduce"}),
+    (re.compile(r"\btheta.{0,30}\bprotect\b", re.I), {"theta": "reduce"}),
+    (re.compile(r"\btheta.{0,20}decay\b", re.I), {"theta": "reduce"}),
+    # Gamma: neutralize / hedge / reduce
     (re.compile(r"\bneutralize\b.{0,30}\bgamma\b", re.I), {"gamma": "neutral"}),
     (re.compile(r"\bgamma.{0,30}\bneutralize\b", re.I), {"gamma": "neutral"}),
     (re.compile(r"\b(flatten|flat)\b.{0,20}\bgamma\b", re.I), {"gamma": "neutral"}),
+    (re.compile(r"\bhedge\b.{0,30}\bgamma\b", re.I), {"gamma": "neutral"}),
+    (re.compile(r"\bgamma.{0,30}\bhedge\b", re.I), {"gamma": "neutral"}),
+    (re.compile(r"\b(reduce|lower|decrease|cut)\b.{0,30}\bgamma\b", re.I), {"gamma": "reduce"}),
+    (re.compile(r"\bgamma.{0,30}\b(reduce|lower|decrease|cut)\b", re.I), {"gamma": "reduce"}),
 ]
 
 
