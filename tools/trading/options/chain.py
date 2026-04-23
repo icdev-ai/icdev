@@ -196,6 +196,90 @@ def format_occ_symbol(
     return f"{underlying.upper()}{yy}{mm}{dd}{cp}{strike_int:08d}"
 
 
+def parse_occ_symbol(symbol: str) -> Optional[dict]:
+    """Parse an OCC option symbol into its components.
+
+    Format: {UNDERLYING}{YY}{MM}{DD}{C/P}{strike*1000 zero-padded to 8 digits}
+    Returns dict with keys: underlying, expiry, option_type, strike — or None on parse failure.
+    """
+    import re
+    if not symbol:
+        return None
+    m = re.match(r"^([A-Z]{1,6})(\d{2})(\d{2})(\d{2})([CP])(\d{8})$", symbol.upper().strip())
+    if not m:
+        return None
+    underlying, yy, mm, dd, cp, strike_raw = m.groups()
+    try:
+        expiry = f"20{yy}-{mm}-{dd}"
+        strike = int(strike_raw) / 1000.0
+        return {
+            "underlying": underlying,
+            "root": underlying,        # alias used by sandbox_engine
+            "expiry": expiry,
+            "option_type": "call" if cp == "C" else "put",
+            "strike": strike,
+        }
+    except Exception:
+        return None
+
+
+def fetch_contract_quote(contract_symbol: str) -> Optional[dict]:
+    """Return a live bid/ask/mid quote for a single OCC contract symbol.
+
+    Parses the symbol to get underlying/expiry/strike/type, fetches the chain
+    for that underlying, and finds the matching contract row.
+    Returns None if the symbol is invalid or no quote is available.
+    """
+    meta = parse_occ_symbol(contract_symbol)
+    if not meta:
+        return None
+    try:
+        ticker_obj = yf.Ticker(meta["underlying"])
+        expiry = meta["expiry"]
+        strike = meta["strike"]
+        opt_type = meta["option_type"]
+        try:
+            spot = float(ticker_obj.fast_info.last_price)
+        except Exception:
+            spot = 0.0
+        chain = ticker_obj.option_chain(expiry)
+        df = chain.calls if opt_type == "call" else chain.puts
+        row_df = df[abs(df["strike"] - strike) < 0.01]
+        if row_df.empty:
+            return None
+        row = row_df.iloc[0]
+        bid = _sf_static(row.get("bid"))
+        ask = _sf_static(row.get("ask"))
+        iv = _sf_static(row.get("impliedVolatility"))
+        mid = round((bid + ask) / 2, 4) if (bid + ask) > 0 else None
+        return {
+            "symbol": contract_symbol,
+            "underlying": meta["underlying"],
+            "expiry": expiry,
+            "option_type": opt_type,
+            "strike": strike,
+            "bid": bid,
+            "ask": ask,
+            "mid": mid,
+            "last": _sf_static(row.get("lastPrice")),
+            "iv": iv,
+            "volume": _safe_int(row.get("volume")),
+            "open_interest": _safe_int(row.get("openInterest")),
+            "spot": spot,
+        }
+    except Exception:
+        return None
+
+
+def _sf_static(v, default: float = 0.0) -> float:
+    """NaN-safe float for use outside fetch_chain's local scope."""
+    try:
+        f = float(v)
+        return default if (math.isnan(f) or math.isinf(f)) else f
+    except Exception:
+        return default
+
+
 def _compute_dte(expiry: str) -> float:
     """Time to expiry in years (fractional) for Black-Scholes input."""
     try:
