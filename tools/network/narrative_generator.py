@@ -486,6 +486,7 @@ def generate_for_persona(
     classification: str = "NIPR",
     prev_node: dict | None = None,
     llm_client: Any = None,
+    use_llm: bool = True,
 ) -> dict:
     """Generate narrative + detail_json for one walkthrough step + persona.
 
@@ -562,7 +563,7 @@ def generate_for_persona(
         + f"\nNetwork detail: {json.dumps(step.get('network_detail', {}))}"
     )
 
-    narrative = _invoke_llm(system_prompt, user_content)
+    narrative = _invoke_llm(system_prompt, user_content) if use_llm else None
 
     if not narrative:
         # Try NARRATIVE_TEMPLATES for a richer deterministic fallback
@@ -715,6 +716,7 @@ def generate_all(
                 classification=classification,
                 prev_node=prev_node if prev_node else None,
                 llm_client=None,
+                use_llm=use_llm,
             )
             step_result["personas"][pid] = result
             per_step_results[pid] = result

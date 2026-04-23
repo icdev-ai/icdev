@@ -288,27 +288,25 @@ class TrafficFlowEngine:
         topo_row = conn.execute(
             "SELECT graph_json FROM topologies WHERE id = ?", (flow["topology_id"],)
         ).fetchone()
-        if not topo_row or not topo_row["graph_json"]:
-            return []
 
-        raw_graph = json.loads(topo_row["graph_json"])
-        nodes_list: list[dict] = raw_graph.get("nodes", [])
-        edges: list[dict] = raw_graph.get("edges", [])
-
-        # path_analyzer expects nodes as a dict keyed by node id
-        nodes_dict: dict[str, dict] = {n["id"]: n for n in nodes_list}
-        graph = {"nodes": nodes_dict, "edges": edges}
-
-        result = find_paths(flow["src_zone"], flow["dst_zone"], graph)
-        hops: list[str] = []
-        if result.get("paths"):
-            # Use first open path; fall back to first path if all blocked
-            open_paths = [p for p in result["paths"] if not p.get("acl_blocked")]
-            chosen = open_paths[0] if open_paths else result["paths"][0]
-            hops = chosen.get("hops", [])
+        nodes_dict: dict[str, dict] = {}
+        if topo_row and topo_row["graph_json"]:
+            raw_graph = json.loads(topo_row["graph_json"])
+            nodes_list: list[dict] = raw_graph.get("nodes", [])
+            edges: list[dict] = raw_graph.get("edges", [])
+            nodes_dict = {n["id"]: n for n in nodes_list}
+            graph = {"nodes": nodes_dict, "edges": edges}
+            result = find_paths(flow["src_zone"], flow["dst_zone"], graph)
+            hops: list[str] = []
+            if result.get("paths"):
+                open_paths = [p for p in result["paths"] if not p.get("acl_blocked")]
+                chosen = open_paths[0] if open_paths else result["paths"][0]
+                hops = chosen.get("hops", [])
+        else:
+            hops = []
 
         if not hops:
-            # No path found — still emit src/dst as two steps
+            # No path found (or no topology) — still emit src/dst as two steps
             hops = [flow["src_zone"], flow["dst_zone"]]
 
         app_type: str = flow["app_type"]

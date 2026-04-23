@@ -10051,6 +10051,38 @@ Output ONLY the JSON object. No other text."""
         from tools.network.narrative_generator import load_personas
         return jsonify({"personas": load_personas()}), 200
 
+    @bp.route("/api/twin/<topo_id>/traffic-flows", methods=["GET", "POST"])
+    @nc_login_required
+    def nc_api_twin_traffic_flows(topo_id):
+        """GET: list flows for a topology. POST: create a new flow (returns 201 + id)."""
+        from tools.network.traffic_flow import TrafficFlowEngine
+        from tools.network.db.init_db import get_connection as _gc
+
+        conn = _gc()
+        try:
+            engine = TrafficFlowEngine()
+            if request.method == "GET":
+                flows = engine.list_flows(topo_id, conn)
+                return jsonify({"flows": flows}), 200
+            # POST — create
+            data = request.get_json(silent=True) or {}
+            name = (data.get("name") or "").strip()
+            src_zone = (data.get("src_zone") or "").strip()
+            dst_zone = (data.get("dst_zone") or "").strip()
+            app_type = (data.get("app_type") or "sso_saml").strip()
+            classification = (data.get("classification") or "NIPR").strip()
+            if not name or not src_zone or not dst_zone:
+                return jsonify({"error": "name, src_zone, and dst_zone are required"}), 400
+            flow_id = engine.create_flow(topo_id, name, src_zone, dst_zone, app_type, classification, conn)
+            return jsonify({"id": flow_id, "name": name, "src_zone": src_zone,
+                            "dst_zone": dst_zone, "app_type": app_type,
+                            "classification": classification}), 201
+        except Exception as exc:
+            logger.warning("traffic-flows error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
     @bp.route("/api/twin/<topo_id>/traffic-flows/<flow_id>/walkthrough", methods=["POST"])
     @nc_login_required
     def nc_api_twin_tfw_walkthrough(topo_id, flow_id):
