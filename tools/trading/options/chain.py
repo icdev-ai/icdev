@@ -207,6 +207,17 @@ def _compute_dte(expiry: str) -> float:
         return 0.0
 
 
+def _safe(v: float, decimals: int) -> Optional[float]:
+    """Round v, returning None for NaN/Inf so JSON stays valid."""
+    try:
+        f = float(v)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return round(f, decimals)
+    except Exception:
+        return None
+
+
 def _attach_greeks(contract: dict, spot: float, r: float = 0.05) -> dict:
     """Compute and attach BS Greeks to a contract dict in-place. Returns contract."""
     try:
@@ -219,14 +230,14 @@ def _attach_greeks(contract: dict, spot: float, r: float = 0.05) -> dict:
         if iv > 0 and strike > 0 and T > 0 and spot > 0:
             g = bs_greeks(S=spot, K=strike, T=T, r=r, sigma=iv, option_type=opt_type)
             contract.update({
-                "delta": round(g.get("delta", 0), 4),
-                "gamma": round(g.get("gamma", 0), 4),
-                "theta": round(g.get("theta", 0), 4),
-                "vega": round(g.get("vega", 0), 4),
-                "rho": round(g.get("rho", 0), 4),
-                "vanna": round(g.get("vanna", 0), 6),
-                "charm": round(g.get("charm", 0), 6),
-                "volga": round(g.get("volga", 0), 6),
+                "delta": _safe(g.get("delta", 0), 4),
+                "gamma": _safe(g.get("gamma", 0), 4),
+                "theta": _safe(g.get("theta", 0), 4),
+                "vega":  _safe(g.get("vega",  0), 4),
+                "rho":   _safe(g.get("rho",   0), 4),
+                "vanna": _safe(g.get("vanna", 0), 6),
+                "charm": _safe(g.get("charm", 0), 6),
+                "volga": _safe(g.get("volga", 0), 6),
             })
     except Exception:
         pass
@@ -249,31 +260,43 @@ def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
         expirations = list(ticker_obj.options or [])
         all_calls: list[dict] = []
         all_puts: list[dict] = []
+        def _sf(v, default: float = 0.0) -> float:
+            """NaN-safe float — returns default if value is NaN/Inf/None."""
+            try:
+                f = float(v)
+                return default if (math.isnan(f) or math.isinf(f)) else f
+            except Exception:
+                return default
+
         for exp in expirations[:4]:  # limit to nearest 4 expirations for speed
             try:
                 yf_chain = ticker_obj.option_chain(exp)
                 for _, row in yf_chain.calls.iterrows():
+                    bid = _sf(row.get("bid"))
+                    ask = _sf(row.get("ask"))
                     c = {
-                        "strike": float(row.get("strike", 0)),
+                        "strike": _sf(row.get("strike")),
                         "expiry": exp,
                         "option_type": "call",
-                        "bid": float(row.get("bid", 0) or 0),
-                        "ask": float(row.get("ask", 0) or 0),
-                        "mid": round((float(row.get("bid", 0) or 0) + float(row.get("ask", 0) or 0)) / 2, 2),
-                        "iv": float(row.get("impliedVolatility") or 0),
+                        "bid": bid,
+                        "ask": ask,
+                        "mid": round((bid + ask) / 2, 2),
+                        "iv": _sf(row.get("impliedVolatility")),
                         "volume": _safe_int(row.get("volume")),
                         "open_interest": _safe_int(row.get("openInterest")),
                     }
                     all_calls.append(_attach_greeks(c, spot))
                 for _, row in yf_chain.puts.iterrows():
+                    bid = _sf(row.get("bid"))
+                    ask = _sf(row.get("ask"))
                     c = {
-                        "strike": float(row.get("strike", 0)),
+                        "strike": _sf(row.get("strike")),
                         "expiry": exp,
                         "option_type": "put",
-                        "bid": float(row.get("bid", 0) or 0),
-                        "ask": float(row.get("ask", 0) or 0),
-                        "mid": round((float(row.get("bid", 0) or 0) + float(row.get("ask", 0) or 0)) / 2, 2),
-                        "iv": float(row.get("impliedVolatility") or 0),
+                        "bid": bid,
+                        "ask": ask,
+                        "mid": round((bid + ask) / 2, 2),
+                        "iv": _sf(row.get("impliedVolatility")),
                         "volume": _safe_int(row.get("volume")),
                         "open_interest": _safe_int(row.get("openInterest")),
                     }
