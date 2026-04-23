@@ -9909,6 +9909,134 @@ Output ONLY the JSON object. No other text."""
         finally:
             conn.close()
 
+    @bp.route("/api/twin/<topo_id>/nodes/<node_id>/domain-policy", methods=["GET", "POST"])
+    @nc_login_required
+    def nc_api_twin_node_domain_policy(topo_id, node_id):
+        """GET: load domain policy for a node. POST: save domain policy for a node."""
+        import json as _json
+        import uuid
+        from datetime import datetime, timezone
+
+        conn = get_connection()
+        try:
+            if request.method == "GET":
+                row = conn.execute(
+                    "SELECT domain_type, domain_label, security_policy, routing_policy, vpn_policy"
+                    " FROM nc_security_domain_policies WHERE topology_id=? AND node_id=?",
+                    (topo_id, node_id),
+                ).fetchone()
+                if not row:
+                    return jsonify({"domain_type": "on_prem", "security_policy": {}, "routing_policy": {}, "vpn_policy": {}}), 200
+                return jsonify({
+                    "domain_type": row["domain_type"],
+                    "domain_label": row["domain_label"] or "",
+                    "security_policy": _json.loads(row["security_policy"] or "{}"),
+                    "routing_policy": _json.loads(row["routing_policy"] or "{}"),
+                    "vpn_policy": _json.loads(row["vpn_policy"] or "{}"),
+                }), 200
+            else:
+                data = request.get_json(silent=True) or {}
+                domain_type = (data.get("domain_type") or "on_prem").strip()
+                domain_label = (data.get("domain_label") or "").strip()
+                sec = _json.dumps(data.get("security_policy") or {})
+                route = _json.dumps(data.get("routing_policy") or {})
+                vpn = _json.dumps(data.get("vpn_policy") or {})
+                now = datetime.now(timezone.utc).isoformat()
+                existing = conn.execute(
+                    "SELECT id FROM nc_security_domain_policies WHERE topology_id=? AND node_id=?",
+                    (topo_id, node_id),
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE nc_security_domain_policies"
+                        " SET domain_type=?, domain_label=?, security_policy=?, routing_policy=?, vpn_policy=?, updated_at=?"
+                        " WHERE topology_id=? AND node_id=?",
+                        (domain_type, domain_label, sec, route, vpn, now, topo_id, node_id),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO nc_security_domain_policies"
+                        " (id, topology_id, node_id, domain_type, domain_label, security_policy, routing_policy, vpn_policy, created_at, updated_at)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (str(uuid.uuid4()), topo_id, node_id, domain_type, domain_label, sec, route, vpn, now, now),
+                    )
+                conn.commit()
+                return jsonify({"ok": True}), 200
+        except Exception as exc:
+            logger.warning("domain-policy error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/twin/<topo_id>/domain-policy-templates", methods=["GET"])
+    @nc_login_required
+    def nc_api_twin_domain_policy_templates(topo_id):
+        """Return pre-built JSON templates for each domain type."""
+        templates = {
+            "on_prem": {
+                "security": {"allowed_ports": [22, 80, 443], "denied_ports": [], "inspection_type": "stateful", "encryption_required": False, "mfa_required": False, "pki_required": False, "cdm_sensor": False, "idps_enabled": False},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": None, "load_balance_algo": "round_robin", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256", "auth_algo": "SHA-256", "pfs_group": 14, "tunnel_endpoints": [], "dpd_timeout": 30},
+            },
+            "nipr": {
+                "security": {"allowed_ports": [22, 80, 443, 8080], "denied_ports": [], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": 65001, "static_routes": [], "next_hops": [], "failover_group": "nipr-primary", "load_balance_algo": "weighted", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-384", "pfs_group": 20, "tunnel_endpoints": [], "dpd_timeout": 10},
+            },
+            "sipr": {
+                "security": {"allowed_ports": [22, 443], "denied_ports": [80, 8080], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": 65002, "static_routes": [], "next_hops": [], "failover_group": "sipr-primary", "load_balance_algo": "weighted", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-512", "pfs_group": 21, "tunnel_endpoints": [], "dpd_timeout": 5},
+            },
+            "bcap_vdms": {
+                "security": {"allowed_ports": [443], "denied_ports": [80], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": "bcap-vdms", "load_balance_algo": "least_conn", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-384", "pfs_group": 20, "tunnel_endpoints": [], "dpd_timeout": 10},
+            },
+            "bcap_vdss": {
+                "security": {"allowed_ports": [443], "denied_ports": [80, 22], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": "bcap-vdss", "load_balance_algo": "least_conn", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-512", "pfs_group": 21, "tunnel_endpoints": [], "dpd_timeout": 5},
+            },
+            "csp_il2": {
+                "security": {"allowed_ports": [80, 443], "denied_ports": [], "inspection_type": "stateful", "encryption_required": False, "mfa_required": False, "pki_required": False, "cdm_sensor": False, "idps_enabled": False},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": None, "load_balance_algo": "round_robin", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-128", "auth_algo": "SHA-256", "pfs_group": 14, "tunnel_endpoints": [], "dpd_timeout": 30},
+            },
+            "csp_il4": {
+                "security": {"allowed_ports": [443], "denied_ports": [80], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": "il4-primary", "load_balance_algo": "weighted", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-384", "pfs_group": 20, "tunnel_endpoints": [], "dpd_timeout": 10},
+            },
+            "csp_il5": {
+                "security": {"allowed_ports": [443], "denied_ports": [80, 22], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": "il5-primary", "load_balance_algo": "weighted", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-512", "pfs_group": 21, "tunnel_endpoints": [], "dpd_timeout": 5},
+            },
+            "csp_il6": {
+                "security": {"allowed_ports": [443], "denied_ports": [80, 22, 8080], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": 65006, "static_routes": [], "next_hops": [], "failover_group": "il6-primary", "load_balance_algo": "weighted", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-512", "pfs_group": 21, "tunnel_endpoints": [], "dpd_timeout": 5},
+            },
+            "inter_csp": {
+                "security": {"allowed_ports": [443], "denied_ports": [80], "inspection_type": "deep_packet", "encryption_required": True, "mfa_required": True, "pki_required": True, "cdm_sensor": True, "idps_enabled": True},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": "inter-csp", "load_balance_algo": "weighted", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256-GCM", "auth_algo": "SHA-384", "pfs_group": 20, "tunnel_endpoints": [], "dpd_timeout": 10},
+            },
+            "dmz": {
+                "security": {"allowed_ports": [80, 443, 25, 53], "denied_ports": [], "inspection_type": "stateful", "encryption_required": False, "mfa_required": False, "pki_required": False, "cdm_sensor": False, "idps_enabled": True},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": None, "load_balance_algo": "round_robin", "advertised_prefixes": []},
+                "vpn": {"ike_version": 2, "encryption_algo": "AES-256", "auth_algo": "SHA-256", "pfs_group": 14, "tunnel_endpoints": [], "dpd_timeout": 30},
+            },
+            "internet": {
+                "security": {"allowed_ports": [80, 443], "denied_ports": [], "inspection_type": "none", "encryption_required": False, "mfa_required": False, "pki_required": False, "cdm_sensor": False, "idps_enabled": False},
+                "routing": {"bgp_as": None, "static_routes": [], "next_hops": [], "failover_group": None, "load_balance_algo": "round_robin", "advertised_prefixes": []},
+                "vpn": {},
+            },
+            "custom": {"security": {}, "routing": {}, "vpn": {}},
+        }
+        return jsonify(templates), 200
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

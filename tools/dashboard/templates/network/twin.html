@@ -271,6 +271,86 @@
   </div>
 </div>
 
+<!-- TFW-06: Right-click context menu for topology SVG nodes -->
+<div id="tfwContextMenu" style="position:fixed;display:none;z-index:1000;
+  background:#0f1e3d;border:1px solid #1e3a6e;border-radius:6px;
+  padding:4px 0;min-width:180px;box-shadow:0 4px 16px rgba(0,0,0,.6);">
+  <div id="tfwCtxNodeLabel" style="font-size:10px;color:#7a8cb0;padding:4px 12px 6px;border-bottom:1px solid #1e3a6e;"></div>
+  <button onclick="tfwOpenPolicyEditor()" style="display:block;width:100%;text-align:left;
+    padding:6px 12px;font-size:12px;color:#eaeaea;background:none;border:none;cursor:pointer;">
+    &#128737; Set Security Domain Policy...
+  </button>
+  <button onclick="tfwStartFlowFromNode()" style="display:block;width:100%;text-align:left;
+    padding:6px 12px;font-size:12px;color:#eaeaea;background:none;border:none;cursor:pointer;">
+    &#9654; Use as Flow Source
+  </button>
+  <button onclick="tfwEndFlowAtNode()" style="display:block;width:100%;text-align:left;
+    padding:6px 12px;font-size:12px;color:#eaeaea;background:none;border:none;cursor:pointer;">
+    &#9724; Use as Flow Destination
+  </button>
+</div>
+
+<!-- TFW-06: Security Domain Policy editor modal -->
+<div id="tfwPolicyModal" style="display:none;position:fixed;inset:0;z-index:2000;
+  background:rgba(0,0,0,.7);align-items:center;justify-content:center;">
+  <div style="background:#0f1e3d;border:1px solid #1e3a6e;border-radius:8px;
+    width:640px;max-width:95vw;max-height:85vh;overflow-y:auto;padding:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="font-size:14px;font-weight:700;color:#eaeaea;margin:0;">
+        Security Domain Policy — <span id="tfwModalNodeLabel"></span>
+      </h3>
+      <button onclick="tfwClosePolicyModal()" style="background:none;border:none;color:#7a8cb0;font-size:18px;cursor:pointer;">&#x2715;</button>
+    </div>
+    <div style="margin-bottom:14px;">
+      <label style="font-size:11px;color:#7a8cb0;">Domain Type</label>
+      <select id="tfwModalDomainType" onchange="tfwLoadTemplate()" style="display:block;width:100%;
+        margin-top:4px;padding:6px 8px;background:#0a1628;border:1px solid #1e3a6e;
+        color:#eaeaea;border-radius:4px;font-size:12px;">
+        <option value="on_prem">On-Premises Network</option>
+        <option value="nipr">NIPRNet (Unclassified)</option>
+        <option value="sipr">SIPRNet (Secret)</option>
+        <option value="bcap_vdms">BCAP VDMS (Data Management Stack)</option>
+        <option value="bcap_vdss">BCAP VDSS (Security Inspection Stack)</option>
+        <option value="csp_il2">CSP IL2 (Public)</option>
+        <option value="csp_il4">CSP IL4 (FedRAMP-High CUI)</option>
+        <option value="csp_il5">CSP IL5 (CUI Dedicated)</option>
+        <option value="csp_il6">CSP IL6 (SECRET)</option>
+        <option value="inter_csp">Inter-CSP Transit</option>
+        <option value="dmz">DMZ</option>
+        <option value="internet">Internet</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div style="border-bottom:1px solid #1e3a6e;margin-bottom:12px;display:flex;gap:0;">
+      <button class="twin-tab active" id="pTab0" onclick="tfwPolicyTab(0)">Security</button>
+      <button class="twin-tab" id="pTab1" onclick="tfwPolicyTab(1)">Routing</button>
+      <button class="twin-tab" id="pTab2" onclick="tfwPolicyTab(2)">VPN / IPSec</button>
+    </div>
+    <div id="pTabSec">
+      <textarea id="tfwModalSecPolicy" rows="10" style="width:100%;box-sizing:border-box;
+        background:#0a1628;border:1px solid #1e3a6e;color:#c0cfe8;border-radius:4px;
+        font-family:monospace;font-size:11px;padding:8px;"></textarea>
+      <p style="font-size:10px;color:#5a6e8c;margin-top:4px;">JSON: allowed_ports, denied_ports, inspection_type, encryption_required, mfa_required, pki_required, cdm_sensor, idps_enabled</p>
+    </div>
+    <div id="pTabRoute" style="display:none;">
+      <textarea id="tfwModalRoutePolicy" rows="10" style="width:100%;box-sizing:border-box;
+        background:#0a1628;border:1px solid #1e3a6e;color:#c0cfe8;border-radius:4px;
+        font-family:monospace;font-size:11px;padding:8px;"></textarea>
+      <p style="font-size:10px;color:#5a6e8c;margin-top:4px;">JSON: bgp_as, static_routes, next_hops, failover_group, load_balance_algo, advertised_prefixes</p>
+    </div>
+    <div id="pTabVPN" style="display:none;">
+      <textarea id="tfwModalVPNPolicy" rows="10" style="width:100%;box-sizing:border-box;
+        background:#0a1628;border:1px solid #1e3a6e;color:#c0cfe8;border-radius:4px;
+        font-family:monospace;font-size:11px;padding:8px;"></textarea>
+      <p style="font-size:10px;color:#5a6e8c;margin-top:4px;">JSON: ike_version, encryption_algo, auth_algo, pfs_group, tunnel_endpoints, dpd_timeout</p>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+      <button class="btn btn-sm" onclick="tfwClosePolicyModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="tfwSaveDomainPolicy()">Save Policy</button>
+    </div>
+  </div>
+</div>
+
 {{ verdict_js() }}
 <script>
 const PROJECT_ID = "{{ project.id }}";
@@ -459,7 +539,10 @@ function renderTopologyGraph(topo, intentResults) {
     if (!pos) return;
     const { x, y } = pos;
     const stroke = TYPE_COLOR[dev.type] || '#3498db';
-    svg.appendChild(el('rect', { x, y, width:NODE_W, height:NODE_H, rx:5, fill:'#0f1e3d', stroke, 'stroke-width':'2' }));
+    const rect = el('rect', { x, y, width:NODE_W, height:NODE_H, rx:5, fill:'#0f1e3d', stroke, 'stroke-width':'2' });
+    rect.style.cursor = 'context-menu';
+    rect.addEventListener('contextmenu', (e) => { e.preventDefault(); tfwShowContextMenu(e, dev); });
+    svg.appendChild(rect);
     // type badge pill
     svg.appendChild(el('rect', { x:x+5, y:y+5, width:26, height:14, rx:3, fill:stroke }));
     svg.appendChild(txt(x+18, y+13, TYPE_ABBR[dev.type] || (dev.type||'DEV').slice(0,3).toUpperCase(), '#fff', 8, 'middle', 'bold'));
@@ -688,6 +771,84 @@ async function sendIQEQuery() {
     if (data.explanation) { caption.textContent = data.explanation; caption.style.display = 'block'; }
   } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; preview.style.display = 'block'; }
   finally { spinner.style.display = 'none'; }
+}
+
+// TFW-06: Security Domain Policy context menu & editor
+let _tfwCtxNode = null;
+
+function tfwShowContextMenu(e, node) {
+  _tfwCtxNode = node;
+  const menu = document.getElementById('tfwContextMenu');
+  document.getElementById('tfwCtxNodeLabel').textContent = node.label || node.id;
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.style.display = 'block';
+}
+document.addEventListener('click', () => {
+  document.getElementById('tfwContextMenu').style.display = 'none';
+});
+
+async function tfwOpenPolicyEditor() {
+  document.getElementById('tfwContextMenu').style.display = 'none';
+  if (!_tfwCtxNode) return;
+  document.getElementById('tfwModalNodeLabel').textContent = _tfwCtxNode.label || _tfwCtxNode.id;
+  const r = await fetch(`/network/api/twin/${PROJECT_ID}/nodes/${_tfwCtxNode.id}/domain-policy`);
+  const data = await r.json();
+  const domType = data.domain_type || 'on_prem';
+  document.getElementById('tfwModalDomainType').value = domType;
+  document.getElementById('tfwModalSecPolicy').value = JSON.stringify(data.security_policy || {}, null, 2);
+  document.getElementById('tfwModalRoutePolicy').value = JSON.stringify(data.routing_policy || {}, null, 2);
+  document.getElementById('tfwModalVPNPolicy').value = JSON.stringify(data.vpn_policy || {}, null, 2);
+  const modal = document.getElementById('tfwPolicyModal');
+  modal.style.display = 'flex';
+  tfwPolicyTab(0);
+}
+
+function tfwClosePolicyModal() {
+  document.getElementById('tfwPolicyModal').style.display = 'none';
+}
+
+function tfwPolicyTab(idx) {
+  ['pTabSec','pTabRoute','pTabVPN'].forEach((id,i) => {
+    document.getElementById(id).style.display = i===idx ? 'block' : 'none';
+  });
+  [0,1,2].forEach(i => {
+    document.getElementById('pTab'+i).classList.toggle('active', i===idx);
+  });
+}
+
+async function tfwLoadTemplate() {
+  const domType = document.getElementById('tfwModalDomainType').value;
+  const r = await fetch(`/network/api/twin/${PROJECT_ID}/domain-policy-templates`);
+  const data = await r.json();
+  const tmpl = data[domType] || {};
+  document.getElementById('tfwModalSecPolicy').value = JSON.stringify(tmpl.security || {}, null, 2);
+  document.getElementById('tfwModalRoutePolicy').value = JSON.stringify(tmpl.routing || {}, null, 2);
+  document.getElementById('tfwModalVPNPolicy').value = JSON.stringify(tmpl.vpn || {}, null, 2);
+}
+
+async function tfwSaveDomainPolicy() {
+  if (!_tfwCtxNode) return;
+  let sec={}, route={}, vpn={};
+  try { sec = JSON.parse(document.getElementById('tfwModalSecPolicy').value || '{}'); } catch(e){ alert('Invalid JSON in Security Policy'); return; }
+  try { route = JSON.parse(document.getElementById('tfwModalRoutePolicy').value || '{}'); } catch(e){ alert('Invalid JSON in Routing Policy'); return; }
+  try { vpn = JSON.parse(document.getElementById('tfwModalVPNPolicy').value || '{}'); } catch(e){ alert('Invalid JSON in VPN Policy'); return; }
+  const domType = document.getElementById('tfwModalDomainType').value;
+  const r = await fetch(`/network/api/twin/${PROJECT_ID}/nodes/${_tfwCtxNode.id}/domain-policy`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({domain_type:domType, domain_label:_tfwCtxNode.label||'',
+      security_policy:sec, routing_policy:route, vpn_policy:vpn})
+  });
+  if (r.ok) { tfwClosePolicyModal(); } else { const d=await r.json(); alert(d.error||'Save failed'); }
+}
+
+function tfwStartFlowFromNode() {
+  document.getElementById('tfwContextMenu').style.display = 'none';
+  if (_tfwCtxNode) document.getElementById('tfwSrcZone').value = _tfwCtxNode.label || _tfwCtxNode.id;
+}
+function tfwEndFlowAtNode() {
+  document.getElementById('tfwContextMenu').style.display = 'none';
+  if (_tfwCtxNode) document.getElementById('tfwDstZone').value = _tfwCtxNode.label || _tfwCtxNode.id;
 }
 </script>
 {% endblock %}
