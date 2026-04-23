@@ -280,6 +280,104 @@
   </div>
 </div>
 
+<!-- TFW-10: Traffic Flow Walkthrough panel -->
+<div style="padding:0 30px 30px;" id="tfwPanel">
+  <div class="twin-panel">
+    <h2>Traffic Flow Walkthrough</h2>
+    <p class="hint" style="margin-bottom:12px;">Define a traffic flow (source, destination, app type) and generate a hop-by-hop walkthrough across the DoD BCAP path with per-persona narratives.</p>
+
+    <!-- Flow creation form -->
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #1e3a6e;">
+      <div>
+        <label style="font-size:10px;color:#7a8cb0;display:block;margin-bottom:3px;">Flow Name</label>
+        <input id="tfwFlowName" type="text" placeholder="e.g. SSO SAML Test"
+               style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:5px 9px;font-size:12px;width:160px;">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#7a8cb0;display:block;margin-bottom:3px;">Source</label>
+        <input id="tfwSrcZone" type="text" placeholder="e.g. on-prem-user"
+               style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:5px 9px;font-size:12px;width:140px;">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#7a8cb0;display:block;margin-bottom:3px;">Destination</label>
+        <input id="tfwDstZone" type="text" placeholder="e.g. azure-gov-app"
+               style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:5px 9px;font-size:12px;width:140px;">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#7a8cb0;display:block;margin-bottom:3px;">App Type</label>
+        <select id="tfwAppType" style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:5px 8px;font-size:12px;">
+          <option value="sso_saml">SSO / SAML</option>
+          <option value="sso_oauth">SSO / OAuth</option>
+          <option value="api_rest">REST API</option>
+          <option value="ipsec_tunnel">IPSec Tunnel</option>
+          <option value="bgp">BGP</option>
+          <option value="dns">DNS</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:#7a8cb0;display:block;margin-bottom:3px;">Classification</label>
+        <select id="tfwClassification" style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:5px 8px;font-size:12px;">
+          <option value="NIPR">NIPR</option>
+          <option value="IL4">IL4</option>
+          <option value="IL5">IL5</option>
+          <option value="IL6">IL6</option>
+          <option value="SIPR">SIPR</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="tfwSaveFlow()" style="align-self:flex-end;">+ Save Flow</button>
+      <span id="tfwSaveSpinner" class="spinner" style="align-self:flex-end;"></span>
+      <span id="tfwSaveError" style="font-size:11px;color:#e74c3c;align-self:flex-end;display:none;"></span>
+    </div>
+
+    <!-- Flow list -->
+    <div id="tfwFlowListWrap">
+      <strong style="font-size:11px;color:#7a8cb0;display:block;margin-bottom:6px;">SAVED FLOWS</strong>
+      <ul id="tfwFlowList" style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;">
+        <li id="tfwNoFlows" style="font-size:12px;color:#5a6e8c;font-style:italic;">No flows yet. Create one above.</li>
+      </ul>
+    </div>
+
+    <!-- Walkthrough viewer -->
+    <div id="tfwWalkthrough" style="display:none;margin-top:18px;border-top:1px solid #1e3a6e;padding-top:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span id="tfwStepCounter" style="font-size:13px;font-weight:700;color:#3498db;">Step 1 of 1</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-sm" onclick="tfwPrev()" id="tfwPrevBtn">&#8592; Prev</button>
+          <button class="btn btn-primary btn-sm" onclick="tfwNext()" id="tfwNextBtn">Next &#8594;</button>
+        </div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <span style="font-size:10px;color:#7a8cb0;margin-right:6px;">View:</span>
+        <button id="tfwAudSec" class="btn btn-sm" onclick="tfwToggleAudience('security')"
+          style="font-size:11px;padding:3px 10px;margin-right:4px;">Security</button>
+        <button id="tfwAudNet" class="btn btn-sm" onclick="tfwToggleAudience('network')"
+          style="font-size:11px;padding:3px 10px;">Network</button>
+      </div>
+      <div style="background:#0a1628;border:1px solid #1e3a6e;border-radius:6px;padding:14px;margin-bottom:10px;">
+        <div style="font-size:10px;color:#7a8cb0;margin-bottom:6px;">
+          NODE: <span id="tfwStepNode" style="color:#3498db;"></span>
+          &nbsp;|&nbsp; ACTION: <span id="tfwStepAction" style="color:#2ecc71;"></span>
+        </div>
+        <p id="tfwNarrative" style="font-size:13px;color:#c0cfe8;line-height:1.6;margin:0;"></p>
+      </div>
+      <!-- Security detail table -->
+      <div id="tfwSecDetail" style="display:none;margin-bottom:10px;">
+        <strong style="font-size:11px;color:#7a8cb0;">Security Detail</strong>
+        <table id="tfwSecTable" style="width:100%;border-collapse:collapse;margin-top:6px;font-size:11px;">
+          <tbody id="tfwSecTableBody"></tbody>
+        </table>
+      </div>
+      <!-- Network detail table -->
+      <div id="tfwNetDetail" style="display:none;">
+        <strong style="font-size:11px;color:#7a8cb0;">Network Detail</strong>
+        <table id="tfwNetTable" style="width:100%;border-collapse:collapse;margin-top:6px;font-size:11px;">
+          <tbody id="tfwNetTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- TFW-14/15: Persona Selector for Traffic Flow Walkthrough -->
 <div style="padding:0 30px 30px;" id="tfwPersonaSection">
   <div class="twin-panel">
@@ -1039,5 +1137,144 @@ function tfwSetStepData(steps) {
 }
 
 tfwInitChips();
+
+// TFW-10: Traffic Flow Walkthrough — flow management & viewer
+let _tfwSteps = [];
+let _tfwStepIdx = 0;
+
+async function tfwLoadFlows() {
+  try {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/traffic-flows`);
+    const data = await r.json();
+    tfwRenderFlowList(data.flows || []);
+  } catch(e) { /* silent — page may not have flows yet */ }
+}
+
+function tfwRenderFlowList(flows) {
+  const ul = document.getElementById('tfwFlowList');
+  const noFlows = document.getElementById('tfwNoFlows');
+  if (!flows.length) { noFlows.style.display = 'block'; return; }
+  noFlows.style.display = 'none';
+  // Clear existing flow rows (keep the noFlows sentinel)
+  Array.from(ul.children).forEach(li => { if (li.id !== 'tfwNoFlows') li.remove(); });
+  flows.forEach(f => {
+    const li = document.createElement('li');
+    li.style.cssText = 'display:flex;justify-content:space-between;align-items:center;background:#0a1628;border:1px solid #1e3a6e;border-radius:4px;padding:6px 10px;font-size:12px;';
+    li.dataset.flowId = f.id;
+    li.innerHTML =
+      `<span style="color:#eaeaea;font-weight:600;">${f.name}</span>` +
+      `<span style="color:#7a8cb0;font-size:11px;margin-left:8px;">${f.src_zone} → ${f.dst_zone}</span>` +
+      `<span style="color:#5a6e8c;font-size:10px;margin-left:8px;">${f.app_type} · ${f.classification}</span>` +
+      `<button class="btn btn-primary btn-sm" style="margin-left:auto;font-size:11px;padding:3px 10px;" onclick="tfwWalkThrough('${f.id}')">Walk Through</button>`;
+    ul.appendChild(li);
+  });
+}
+
+async function tfwSaveFlow() {
+  const name = document.getElementById('tfwFlowName').value.trim();
+  const src  = document.getElementById('tfwSrcZone').value.trim();
+  const dst  = document.getElementById('tfwDstZone').value.trim();
+  const app  = document.getElementById('tfwAppType').value;
+  const cls  = document.getElementById('tfwClassification').value;
+  const errEl = document.getElementById('tfwSaveError');
+  errEl.style.display = 'none';
+  if (!name || !src || !dst) { errEl.textContent = 'Name, source, and destination are required.'; errEl.style.display='inline'; return; }
+  const spinner = document.getElementById('tfwSaveSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/traffic-flows`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, src_zone: src, dst_zone: dst, app_type: app, classification: cls})
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || 'Save failed'; errEl.style.display='inline'; return; }
+    document.getElementById('tfwFlowName').value = '';
+    await tfwLoadFlows();
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='inline'; }
+  finally { spinner.style.display = 'none'; }
+}
+
+async function tfwWalkThrough(flowId) {
+  const viewer = document.getElementById('tfwWalkthrough');
+  viewer.style.display = 'none';
+  _tfwSteps = [];
+  _tfwStepIdx = 0;
+  try {
+    const r = await fetch(`/network/api/twin/${PROJECT_ID}/traffic-flows/${flowId}/walkthrough`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({use_llm: false})
+    });
+    const data = await r.json();
+    if (!r.ok || !Array.isArray(data.steps)) { alert((data.error || 'Walkthrough failed')); return; }
+    _tfwSteps = data.steps;
+    if (!_tfwSteps.length) { alert('No walkthrough steps generated — ensure the topology has nodes.'); return; }
+    viewer.style.display = 'block';
+    tfwRenderStep(0);
+  } catch(e) { alert('Walkthrough error: ' + e.message); }
+}
+
+function tfwRenderStep(idx) {
+  if (!_tfwSteps.length) return;
+  _tfwStepIdx = Math.max(0, Math.min(idx, _tfwSteps.length - 1));
+  const step = _tfwSteps[_tfwStepIdx];
+  document.getElementById('tfwStepCounter').textContent = `Step ${_tfwStepIdx + 1} of ${_tfwSteps.length}`;
+  document.getElementById('tfwStepNode').textContent = step.node_label || step.node_id || '—';
+  document.getElementById('tfwStepAction').textContent = step.action_type || '—';
+
+  // Narrative: prefer seceng persona, fallback to first available, then action_type
+  const personas = step.persona_responses || {};
+  const narrative = (personas.seceng || Object.values(personas)[0] || {}).narrative
+    || `Action: ${step.action_type} at ${step.node_label || step.node_id}`;
+  document.getElementById('tfwNarrative').textContent = narrative;
+
+  // Security / Network details
+  const secDetail = (personas.seceng || Object.values(personas)[0] || {}).detail_json || {};
+  const netDetail = (personas.neteng || {}).detail_json || {};
+  tfwRenderDetailTable('tfwSecTableBody', secDetail);
+  tfwRenderDetailTable('tfwNetTableBody', netDetail);
+
+  // Reset audience toggles
+  document.getElementById('tfwSecDetail').style.display = 'none';
+  document.getElementById('tfwNetDetail').style.display = 'none';
+  document.getElementById('tfwAudSec').classList.remove('btn-primary');
+  document.getElementById('tfwAudNet').classList.remove('btn-primary');
+
+  document.getElementById('tfwPrevBtn').disabled = _tfwStepIdx === 0;
+  document.getElementById('tfwNextBtn').disabled = _tfwStepIdx === _tfwSteps.length - 1;
+}
+
+function tfwRenderDetailTable(tbodyId, obj) {
+  const tbody = document.getElementById(tbodyId);
+  tbody.innerHTML = '';
+  if (!obj || typeof obj !== 'object') return;
+  Object.entries(obj).forEach(([k, v]) => {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid #1e3a6e';
+    tr.innerHTML = `<td style="padding:3px 8px;color:#7a8cb0;width:40%">${k}</td><td style="padding:3px 8px;color:#c0cfe8;">${JSON.stringify(v)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function tfwNext() { tfwRenderStep(_tfwStepIdx + 1); }
+function tfwPrev() { tfwRenderStep(_tfwStepIdx - 1); }
+
+function tfwToggleAudience(type) {
+  const secDiv = document.getElementById('tfwSecDetail');
+  const netDiv = document.getElementById('tfwNetDetail');
+  const secBtn = document.getElementById('tfwAudSec');
+  const netBtn = document.getElementById('tfwAudNet');
+  if (type === 'security') {
+    const showing = secDiv.style.display !== 'none';
+    secDiv.style.display = showing ? 'none' : 'block';
+    secBtn.classList.toggle('btn-primary', !showing);
+  } else {
+    const showing = netDiv.style.display !== 'none';
+    netDiv.style.display = showing ? 'none' : 'block';
+    netBtn.classList.toggle('btn-primary', !showing);
+  }
+}
+
+// Load flows on page ready
+document.addEventListener('DOMContentLoaded', tfwLoadFlows);
 </script>
 {% endblock %}
