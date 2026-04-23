@@ -34,7 +34,6 @@ fall through to intrinsic for expired / zero-vol contracts.
 from __future__ import annotations
 
 import math
-from typing import Literal
 
 _SQRT_TWO = math.sqrt(2.0)
 _SQRT_2PI = math.sqrt(2.0 * math.pi)
