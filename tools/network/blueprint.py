@@ -10051,6 +10051,82 @@ Output ONLY the JSON object. No other text."""
         from tools.network.narrative_generator import load_personas
         return jsonify({"personas": load_personas()}), 200
 
+    @bp.route("/api/twin/<topo_id>/traffic-flows/<flow_id>/walkthrough", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_tfw_walkthrough(topo_id, flow_id):
+        """Run multi-persona walkthrough for a traffic flow.
+
+        Request body (JSON, all optional):
+          personas       : list of persona IDs to generate (default: all 7)
+          classification : override flow classification (NIPR, IL4, IL5, IL6, SIPR)
+          use_llm        : bool, default True
+
+        Returns:
+          {steps: [...], summary: {...}}
+          Each step has: step_number, node_id, node_label, action_type,
+          persona_responses: {persona_id: {narrative, detail_json}}
+        """
+        from tools.network.narrative_generator import generate_all
+        from tools.network.db.init_db import get_connection
+
+        body = request.get_json(silent=True) or {}
+        personas = body.get("personas") or None
+        use_llm = bool(body.get("use_llm", True))
+
+        try:
+            conn = get_connection()
+            engine_cls = None
+            try:
+                from tools.network.traffic_flow import TrafficFlowEngine
+                engine_cls = TrafficFlowEngine
+            except Exception:
+                pass
+
+            if engine_cls:
+                engine = engine_cls()
+                engine._ensure_tables(conn)
+
+            # Verify flow belongs to this topology
+            flow_row = conn.execute(
+                "SELECT * FROM nc_traffic_flows WHERE id = ? AND topology_id = ?",
+                (flow_id, topo_id),
+            ).fetchone()
+            if not flow_row:
+                return jsonify({"error": "flow not found"}), 404
+
+            flow = dict(flow_row)
+            classification = body.get("classification") or flow.get("classification", "NIPR")
+
+            result = generate_all(
+                flow_id=flow_id,
+                conn=conn,
+                personas=personas,
+                classification=classification,
+                use_llm=use_llm,
+            )
+
+            # Reformat steps to use 'persona_responses' key for API consumers
+            api_steps = []
+            for step in result.get("steps", []):
+                api_step = {
+                    "step_number": step["step_number"],
+                    "node_id":     step["node_id"],
+                    "node_label":  step["node_label"],
+                    "action_type": step["action_type"],
+                    "persona_responses": step.get("personas", {}),
+                }
+                api_steps.append(api_step)
+
+            return jsonify({"steps": api_steps, "summary": result.get("summary", {})}), 200
+        except Exception as exc:
+            logger.warning("walkthrough error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
