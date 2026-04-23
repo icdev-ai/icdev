@@ -103,3 +103,112 @@ python tools/iqe/cli.py --file context/iqe/queries/network/09_stig_open_findings
 | NDC routes (API) | `tools/network/routes/` | Flask blueprints for NDC API endpoints |
 | NDC adapters | `tools/network/adapters/` | Network data source adapters (extend here) |
 | TFW narrative generator | `tools/network/narrative_generator.py` | Traffic Flow Walkthrough narratives — per-persona LLM narratives + deterministic detail_json (CSP detection, multi-CSP hops, classification overlay, NIST 800-53 pre-population). CLI: `--flow-id <id> --json` |
+
+---
+
+## TFW Narrative Generator — Detailed Analysis
+
+**File:** `tools/network/narrative_generator.py`
+**Classification:** CUI // SP-CTI
+
+### Purpose
+
+Wraps `TrafficFlowEngine` walkthrough steps with per-persona LLM narratives and deterministic `detail_json` enrichment. For each hop in a traffic flow, it generates a role-specific narrative (security engineer, network engineer, compliance officer, etc.) explaining what happens at that node, plus structured metadata (NIST controls, CSP info, latency, endpoints).
+
+### Public API
+
+| Function | Signature | Returns |
+|----------|-----------|---------|
+| `generate_for_persona` | `(step, node, persona_id, flow, classification, prev_node, llm_client, use_llm)` | `{"narrative": str, "detail_json": dict}` |
+| `generate_all` | `(flow_id, conn, personas, classification, use_llm)` | `{"steps": [...], "summary": {...}}` |
+| `load_personas` | `()` | `list[dict]` — all personas from `tfw_personas.yaml` |
+| `load_classification_context` | `(level)` | `dict` — encryption/MFA/audit overlay for a classification level |
+| `load_cross_cloud_context` | `(node)` | `dict | None` — CSP metadata for a node, or None |
+| `detect_csp` | `(node)` | `str | None` — `cross_cloud_contexts` key (e.g. `aws_govcloud`) |
+| `build_classification_overlay` | `(flow)` | `str` — classification context string for LLM system prompt injection |
+
+### Key Internal Functions
+
+| Function | Purpose |
+|----------|---------|
+| `_load_personas_config()` | Lazy-loads and caches `args/tfw_personas.yaml` |
+| `_build_system_prompt()` | Assembles persona base prompt + classification overlay + CSP context block |
+| `_build_compofficer_detail()` | Maps `action_type` → NIST 800-53 + FedRAMP controls via `_ACTION_NIST_MAP` |
+| `_build_appdev_detail()` | Infers endpoint URL, DNS name, and token endpoint from node config + CSP type |
+| `_invoke_llm()` | Routes to `LLMRouter` via function key `tfw_narrative`; returns `None` on any failure |
+| `_highest_risk()` | Scans all persona `detail_json` and returns highest `risk_level`/`risk_rating` |
+
+### Dependencies
+
+| Dependency | Type | Notes |
+|-----------|------|-------|
+| `tools.llm.router.LLMRouter` | Internal (optional) | Used for LLM narrative generation; gracefully skipped when unavailable |
+| `tools.llm.provider.LLMRequest` | Internal (optional) | Request wrapper for LLM invocations |
+| `tools.network.traffic_flow.TrafficFlowEngine` | Internal | Loads walkthrough steps and generates them if missing |
+| `tools.network.db.init_db.get_connection` | Internal | DB connection for CLI mode |
+| `args/tfw_personas.yaml` | Config | Persona definitions, system prompts, CSP contexts, classification levels |
+| `yaml` | stdlib/PyPI | YAML config loading |
+| `json`, `logging`, `uuid`, `pathlib` | stdlib | Standard utilities |
+
+### Configuration
+
+All behavioral data lives in `args/tfw_personas.yaml`:
+- **`personas[]`** — list of persona objects with `id`, `short`, `system_prompt`
+- **`cross_cloud_contexts`** — CSP metadata keyed by `aws_govcloud`, `azure_gov`, `gcp_gov`, `oci_gov`; includes `name`, `regions[]`, `il_levels[]`, `network_constructs[]`, `identity`, `connectivity_to_bcap`
+- **`classification_levels`** — `NIPR`, `IL4`, `IL5`, `IL6`, `SIPR`; each with `label`, `encryption`, `key_mgmt`, `mfa`, `audit_retention`
+
+### Personas Supported
+
+`seceng` (Security Engineer), `neteng` (Network Engineer), `cloudarch` (Cloud Architect), `compofficer` (Compliance Officer), `appdev` (App Developer), `missionowner` (Mission Owner), `ciso` (CISO)
+
+### NIST 800-53 Action Mapping
+
+Action types are normalized to canonical keys (`authenticate`, `encrypt_vpn`, `security_inspect`, `tls_inspect`, `route_lookup`, `authorize`) then mapped to NIST and FedRAMP controls in `_ACTION_NIST_MAP`. Raw action aliases (e.g. `mfa-verify`, `idps-scan`, `waf-filter`) are resolved via `_ACTION_NORMALIZE`.
+
+### Narrative Generation Strategy
+
+1. **LLM path** — builds a system prompt (persona base + classification overlay + CSP context block), sends hop details as user content to `LLMRouter` with function key `tfw_narrative`
+2. **Template fallback** — if LLM unavailable, uses `NARRATIVE_TEMPLATES[action_type][persona_id]` with `{node_label}`, `{action_type}`, `{classification}` substitution
+3. **Generic fallback** — constructs a plain-text narrative from step metadata
+
+### `generate_all()` Summary Fields
+
+| Field | Description |
+|-------|-------------|
+| `hop_count` | Total number of walkthrough steps |
+| `csps_traversed` | List of CSP names encountered |
+| `inter_csp_hops` | List of CSP-to-CSP transition strings (e.g. `"AWS GovCloud → Azure Government"`) |
+| `classification` | Human-readable classification label |
+| `encryption` | Encryption chain string from classification context |
+| `key_risk` | Highest risk level found across all persona `detail_json` outputs |
+| `total_latency_ms` | Accumulated per-hop latency estimates from `_DOMAIN_LATENCY_MS` |
+| `description` | Human-readable flow summary sentence |
+
+### DB Persistence
+
+After generating narratives, `generate_all()` persists all persona responses to `nc_step_persona_responses` via `INSERT OR REPLACE`, keyed by `step_id` + `persona_id`. Failures are logged as warnings (non-blocking).
+
+### CLI Usage
+
+```bash
+# Generate JSON output for a traffic flow
+python tools/network/narrative_generator.py --flow-id <uuid> --json
+
+# With explicit classification and personas
+python tools/network/narrative_generator.py --flow-id <uuid> \
+  --classification IL4 --personas seceng compofficer --json
+
+# Deterministic only (no LLM)
+python tools/network/narrative_generator.py --flow-id <uuid> --no-llm --json
+```
+
+### Latency Domain Estimates
+
+| Domain | Latency (ms) |
+|--------|-------------|
+| `on_prem` | 2 |
+| `nipr` | 5 |
+| `bcap_vdms` | 8 |
+| `bcap_vdss` | 12 |
+| `csp_il4` | 15 |
+| `csp_il5` | 18 |
