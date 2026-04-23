@@ -271,6 +271,24 @@
   </div>
 </div>
 
+<!-- TFW-14: Persona Selector for Traffic Flow Walkthrough -->
+<div style="padding:0 30px 30px;" id="tfwPersonaSection">
+  <div class="twin-panel">
+    <h2>Traffic Flow Walkthrough — Persona Selector</h2>
+    <p class="hint" style="margin-bottom:10px;">Select one or more personas to generate role-specific step-by-step narratives for your traffic flows.</p>
+    <div id="personaChipList" style="display:flex;flex-wrap:wrap;gap:8px;">
+      {% for p in personas %}
+      <span class="persona-chip" data-persona-id="{{ p.id }}"
+        style="display:inline-flex;align-items:center;padding:5px 14px;
+          border-radius:16px;border:1px solid {{ p.badge_color }};
+          background:{{ p.color }}22;color:#eaeaea;font-size:12px;cursor:pointer;
+          user-select:none;transition:opacity .15s;"
+        title="{{ p.name }}">{{ p.short }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
 <!-- TFW-06: Right-click context menu for topology SVG nodes -->
 <div id="tfwContextMenu" style="position:fixed;display:none;z-index:1000;
   background:#0f1e3d;border:1px solid #1e3a6e;border-radius:6px;

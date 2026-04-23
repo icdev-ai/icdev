@@ -9686,12 +9686,18 @@ Output ONLY the JSON object. No other text."""
             snaps = []
 
         from tools.network.constants import INTENT_RULES
+        from tools.network.narrative_generator import load_personas as _ng_personas
+        try:
+            _tfw_personas = _ng_personas()
+        except Exception:
+            _tfw_personas = []
         return render_template(
             "network/twin.html",
             project=topo,
             snapshots=[_row_to_dict(s) for s in snaps],
             intent_rules=INTENT_RULES,
             classification_banner=NC_CONFIG.get("app", {}).get("classification", ""),
+            personas=_tfw_personas,
         )
 
     @bp.route("/api/twin/<topo_id>/snapshot", methods=["POST"])
@@ -10037,6 +10043,13 @@ Output ONLY the JSON object. No other text."""
             "custom": {"security": {}, "routing": {}, "vpn": {}},
         }
         return jsonify(templates), 200
+
+    @bp.route("/api/twin/<topo_id>/persona-definitions", methods=["GET"])
+    @nc_login_required
+    def nc_api_twin_persona_definitions(topo_id):
+        """Return all TFW persona definitions from tfw_personas.yaml."""
+        from tools.network.narrative_generator import load_personas
+        return jsonify({"personas": load_personas()}), 200
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

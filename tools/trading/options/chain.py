@@ -274,8 +274,10 @@ def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
                 for _, row in yf_chain.calls.iterrows():
                     bid = _sf(row.get("bid"))
                     ask = _sf(row.get("ask"))
+                    strike_c = _sf(row.get("strike"))
                     c = {
-                        "strike": _sf(row.get("strike")),
+                        "symbol": format_occ_symbol(ticker.upper(), exp, "call", strike_c),
+                        "strike": strike_c,
                         "expiry": exp,
                         "option_type": "call",
                         "bid": bid,
@@ -289,8 +291,10 @@ def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
                 for _, row in yf_chain.puts.iterrows():
                     bid = _sf(row.get("bid"))
                     ask = _sf(row.get("ask"))
+                    strike_p = _sf(row.get("strike"))
                     c = {
-                        "strike": _sf(row.get("strike")),
+                        "symbol": format_occ_symbol(ticker.upper(), exp, "put", strike_p),
+                        "strike": strike_p,
                         "expiry": exp,
                         "option_type": "put",
                         "bid": bid,
