@@ -98,6 +98,93 @@
     color: #e6edf3;
     letter-spacing: 0.03em;
   }
+
+  /* Greek Targets Panel */
+  .greek-header-row {
+    display: grid;
+    grid-template-columns: 72px 1fr 90px 90px 14px;
+    gap: 12px;
+    padding: 4px 0 10px 0;
+    border-bottom: 1px solid #30363d;
+    font-size: 11px;
+    color: #8b949e;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .greek-row {
+    display: grid;
+    grid-template-columns: 72px 1fr 90px 90px 14px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .greek-row:last-child { border-bottom: none; }
+  .greek-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #8b949e;
+  }
+  .greek-slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .greek-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: #30363d;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .greek-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #58a6ff;
+    cursor: pointer;
+    border: 2px solid #0d1117;
+  }
+  .greek-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #58a6ff;
+    cursor: pointer;
+    border: 2px solid #0d1117;
+  }
+  .greek-slider-val {
+    font-size: 11px;
+    color: #8b949e;
+    min-width: 34px;
+    text-align: right;
+  }
+  .greek-current {
+    font-size: 13px;
+    color: #c9d1d9;
+    text-align: right;
+  }
+  .greek-target {
+    font-size: 13px;
+    color: #58a6ff;
+    text-align: right;
+    font-weight: 600;
+  }
+  .greek-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #30363d;
+    justify-self: center;
+  }
+  .greek-indicator.ind-within  { background: #3fb950; }
+  .greek-indicator.ind-outside { background: #f85149; }
 </style>
 {% endblock %}
 
@@ -124,6 +211,65 @@
         Low IVR favors debit spreads and long options.
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Greek Targets Panel -->
+<div class="card" style="margin-top:16px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+    <h3 style="margin:0">Greek Targets</h3>
+    <span style="font-size:11px;color:#8b949e">Persisted per ticker · localStorage</span>
+  </div>
+  <div class="greek-header-row">
+    <div>Greek</div>
+    <div>Set Target</div>
+    <div style="text-align:right">Current</div>
+    <div style="text-align:right">Target</div>
+    <div></div>
+  </div>
+  <!-- Delta -->
+  <div class="greek-row">
+    <div class="greek-label">Delta</div>
+    <div class="greek-slider-wrap">
+      <input type="range" class="greek-slider" id="slider-delta" min="-500" max="500" step="1" value="0">
+      <span class="greek-slider-val" id="slv-delta">0</span>
+    </div>
+    <div class="greek-current" id="cur-delta">—</div>
+    <div class="greek-target"  id="tgt-delta">0</div>
+    <div class="greek-indicator" id="ind-delta"></div>
+  </div>
+  <!-- Theta -->
+  <div class="greek-row">
+    <div class="greek-label">Theta</div>
+    <div class="greek-slider-wrap">
+      <input type="range" class="greek-slider" id="slider-theta" min="-100" max="100" step="1" value="0">
+      <span class="greek-slider-val" id="slv-theta">0</span>
+    </div>
+    <div class="greek-current" id="cur-theta">—</div>
+    <div class="greek-target"  id="tgt-theta">0</div>
+    <div class="greek-indicator" id="ind-theta"></div>
+  </div>
+  <!-- Vega -->
+  <div class="greek-row">
+    <div class="greek-label">Vega</div>
+    <div class="greek-slider-wrap">
+      <input type="range" class="greek-slider" id="slider-vega" min="-500" max="500" step="1" value="0">
+      <span class="greek-slider-val" id="slv-vega">0</span>
+    </div>
+    <div class="greek-current" id="cur-vega">—</div>
+    <div class="greek-target"  id="tgt-vega">0</div>
+    <div class="greek-indicator" id="ind-vega"></div>
+  </div>
+  <!-- Gamma -->
+  <div class="greek-row">
+    <div class="greek-label">Gamma</div>
+    <div class="greek-slider-wrap">
+      <input type="range" class="greek-slider" id="slider-gamma" min="-100" max="100" step="0.1" value="0">
+      <span class="greek-slider-val" id="slv-gamma">0</span>
+    </div>
+    <div class="greek-current" id="cur-gamma">—</div>
+    <div class="greek-target"  id="tgt-gamma">0</div>
+    <div class="greek-indicator" id="ind-gamma"></div>
   </div>
 </div>
 
@@ -201,6 +347,87 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     loadIvr(TICKER);
+  });
+})();
+
+// Greek Targets — localStorage-persisted sliders with current vs target comparison
+(function () {
+  const TICKER  = {{ ticker | tojson }};
+  const LS_KEY  = 'greek_targets_v1_' + TICKER.toUpperCase();
+
+  const GREEKS = [
+    { key: 'delta', range: 1000 },
+    { key: 'theta', range: 200  },
+    { key: 'vega',  range: 1000 },
+    { key: 'gamma', range: 200  },
+  ];
+
+  let targets  = { delta: 0, theta: 0, vega: 0, gamma: 0 };
+  let currents = { delta: null, theta: null, vega: null, gamma: null };
+
+  function loadTargets() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) Object.assign(targets, JSON.parse(raw));
+    } catch (_) {}
+  }
+
+  function saveTargets() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(targets)); } catch (_) {}
+  }
+
+  function renderAll() {
+    GREEKS.forEach(function (g) {
+      const t = targets[g.key];
+      const c = currents[g.key];
+
+      document.getElementById('slider-' + g.key).value = t;
+      document.getElementById('slv-' + g.key).textContent = t;
+      document.getElementById('tgt-' + g.key).textContent = t;
+
+      const curEl = document.getElementById('cur-' + g.key);
+      const indEl = document.getElementById('ind-' + g.key);
+
+      if (c !== null && c !== undefined) {
+        curEl.textContent = c.toFixed(2);
+        const within = Math.abs(c - t) <= g.range * 0.20;
+        indEl.className = 'greek-indicator ' + (within ? 'ind-within' : 'ind-outside');
+      } else {
+        curEl.textContent = '—';
+        indEl.className = 'greek-indicator';
+      }
+    });
+  }
+
+  function bindSliders() {
+    GREEKS.forEach(function (g) {
+      document.getElementById('slider-' + g.key).addEventListener('input', function () {
+        targets[g.key] = parseFloat(this.value);
+        saveTargets();
+        renderAll();
+      });
+    });
+  }
+
+  function fetchCurrentGreeks() {
+    fetch('/api/options/net_greeks/' + encodeURIComponent(TICKER))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && !data.error) {
+          ['delta', 'theta', 'vega', 'gamma'].forEach(function (k) {
+            if (data[k] != null) currents[k] = parseFloat(data[k]);
+          });
+        }
+        renderAll();
+      })
+      .catch(function () { renderAll(); });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    loadTargets();
+    bindSliders();
+    renderAll();
+    fetchCurrentGreeks();
   });
 })();
 </script>
