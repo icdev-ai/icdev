@@ -357,3 +357,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Nl To Iqe | tools\iqe\nl_to_iqe.py | Auto-registered: iqe/nl_to_iqe.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Traffic Flow | tools\network\traffic_flow.py | Auto-registered: network/traffic_flow.py | --json | JSON |

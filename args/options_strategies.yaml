@@ -48,6 +48,12 @@ strategies:
       max_loss: "premium_paid"
       max_profit: "unlimited"
       breakevens: ["strike + premium"]
+    greek_profile:
+      delta_bias: bullish
+      theta_sign: negative
+      vega_sign: positive
+      gamma_sign: positive
+      iv_environment: low
 
   long_put:
     name: "Long Put"
@@ -65,6 +71,12 @@ strategies:
       max_loss: "premium_paid"
       max_profit: "strike - premium (stock to $0)"
       breakevens: ["strike - premium"]
+    greek_profile:
+      delta_bias: bearish
+      theta_sign: negative
+      vega_sign: positive
+      gamma_sign: positive
+      iv_environment: low
 
   covered_call:
     name: "Covered Call"
@@ -82,6 +94,12 @@ strategies:
       max_loss: "stock cost basis (stock to $0)"
       max_profit: "premium_received + (strike - entry_price) × 100"
       breakevens: ["entry_price - premium"]
+    greek_profile:
+      delta_bias: bullish
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: high
 
   cash_secured_put:
     name: "Cash-Secured Put"
@@ -99,6 +117,12 @@ strategies:
       max_loss: "(strike - premium) × 100"
       max_profit: "premium_received"
       breakevens: ["strike - premium"]
+    greek_profile:
+      delta_bias: bullish
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: high
 
   bull_call_spread:
     name: "Bull Call Spread"
@@ -121,6 +145,12 @@ strategies:
       max_loss: "net_premium_paid"
       max_profit: "(upper_strike - lower_strike) - net_premium_paid"
       breakevens: ["lower_strike + net_premium"]
+    greek_profile:
+      delta_bias: bullish
+      theta_sign: negative
+      vega_sign: positive
+      gamma_sign: positive
+      iv_environment: low
 
   bear_put_spread:
     name: "Bear Put Spread"
@@ -143,6 +173,12 @@ strategies:
       max_loss: "net_premium_paid"
       max_profit: "(upper_strike - lower_strike) - net_premium_paid"
       breakevens: ["upper_strike - net_premium"]
+    greek_profile:
+      delta_bias: bearish
+      theta_sign: negative
+      vega_sign: positive
+      gamma_sign: positive
+      iv_environment: low
 
   iron_condor:
     name: "Iron Condor"
@@ -175,6 +211,12 @@ strategies:
       max_loss: "wing_width - net_credit (per side)"
       max_profit: "net_credit"
       breakevens: ["short_put_strike - net_credit", "short_call_strike + net_credit"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: high
 
   long_straddle:
     name: "Long Straddle"
@@ -197,6 +239,12 @@ strategies:
       max_loss: "total_premium_paid"
       max_profit: "unlimited (upside) / strike - premium (downside)"
       breakevens: ["strike + total_premium", "strike - total_premium"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: negative
+      vega_sign: positive
+      gamma_sign: positive
+      iv_environment: low
 
   # ─── Phase 7+ complex strategies (multi-expiry + 3-4-leg butterflies)
   #
@@ -232,6 +280,12 @@ strategies:
       max_loss: "net_premium_paid"
       max_profit: "(mid_strike - low_strike) - net_premium_paid"
       breakevens: ["low + net_premium", "high - net_premium"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: low
 
   iron_butterfly:
     name: "Iron Butterfly"
@@ -268,6 +322,12 @@ strategies:
       max_loss: "wing_width - net_credit"
       max_profit: "net_credit"
       breakevens: ["atm - net_credit", "atm + net_credit"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: high
 
   calendar_spread:
     name: "Calendar Spread"
@@ -292,6 +352,12 @@ strategies:
       max_loss: "net_premium_paid (far leg > near leg)"
       max_profit: "depends on IV + time to far expiry (est. at near expiry, ATM)"
       breakevens: ["approximate — depends on remaining far-leg value at near expiry"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: positive
+      gamma_sign: negative
+      iv_environment: low
 
   diagonal_spread:
     name: "Diagonal Spread"
@@ -316,6 +382,12 @@ strategies:
       max_loss: "net_premium_paid"
       max_profit: "complex — depends on remaining time value of far leg at near expiry"
       breakevens: ["approximate, depends on remaining far-leg value"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: positive
+      gamma_sign: negative
+      iv_environment: low
 
   # "Calendar and triangle combined" — a double calendar butterfly: wings
   # in the FAR expiry, body in the NEAR expiry. Classic volatility
@@ -349,6 +421,12 @@ strategies:
       max_loss: "net_premium_paid (far legs + extra time value)"
       max_profit: "substantial at middle strike when near legs expire worthless — depends on remaining far-leg value"
       breakevens: ["complex — multi-expiry payoff; analyze with simulator"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: positive
+      gamma_sign: negative
+      iv_environment: low
 
   # ── Risk Reversals (Triangle) ──────────────────────────────────────────
   # Colloquially called "triangle" in options desks: the payoff diagram
@@ -376,6 +454,12 @@ strategies:
       max_loss: "put_strike - net_credit (significant downside)"
       max_profit: "unlimited above call strike"
       breakevens: ["call_strike + net_debit  OR  put_strike - net_credit"]
+    greek_profile:
+      delta_bias: bullish
+      theta_sign: neutral
+      vega_sign: neutral
+      gamma_sign: neutral
+      iv_environment: any
 
   risk_reversal_bear:
     name: "Bear Risk Reversal"
@@ -398,6 +482,12 @@ strategies:
       max_loss: "unlimited above call strike"
       max_profit: "put_strike - net_debit (stock to $0)"
       breakevens: ["put_strike - net_credit  OR  call_strike + net_debit"]
+    greek_profile:
+      delta_bias: bearish
+      theta_sign: neutral
+      vega_sign: neutral
+      gamma_sign: neutral
+      iv_environment: any
 
   # ── Broken Wing Butterfly ──────────────────────────────────────────────
   # Asymmetric butterfly: wider upside wing to collect net credit or
@@ -430,6 +520,12 @@ strategies:
       max_loss: "lower_wing_width - net_credit (defined)"
       max_profit: "net_credit + lower_wing_width (at body strike)"
       breakevens: ["low_strike + lower_wing - net_credit"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: high
 
   broken_wing_butterfly_put:
     name: "Broken Wing Butterfly (Put)"
@@ -457,6 +553,12 @@ strategies:
       max_loss: "upper_wing_width - net_credit (defined)"
       max_profit: "net_credit + upper_wing_width (at body strike)"
       breakevens: ["high_strike - upper_wing + net_credit"]
+    greek_profile:
+      delta_bias: neutral
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: high
 
   # ── Jade Lizard ────────────────────────────────────────────────────────
   # Short put + short call spread (OTM). No upside risk if call spread
@@ -488,6 +590,12 @@ strategies:
       max_loss: "put_strike - total_credit (downside); zero upside risk if call_credit >= call_spread_width"
       max_profit: "total_net_credit"
       breakevens: ["put_strike - total_credit  (upside: none if structured correctly)"]
+    greek_profile:
+      delta_bias: bullish
+      theta_sign: positive
+      vega_sign: negative
+      gamma_sign: negative
+      iv_environment: high
 
   # ── Call Backspread ────────────────────────────────────────────────────
   # Sell 1 ATM call, buy 2 OTM calls. Net debit or small credit.
@@ -514,6 +622,12 @@ strategies:
       max_loss: "spread_width - net_credit (at short strike at expiry)"
       max_profit: "unlimited above upper breakeven"
       breakevens: ["lower: atm + spread - net_credit", "upper: otm + net_debit / qty_ratio"]
+    greek_profile:
+      delta_bias: bullish
+      theta_sign: negative
+      vega_sign: positive
+      gamma_sign: positive
+      iv_environment: low
 
   put_backspread:
     name: "Put Backspread (1×2)"
@@ -536,3 +650,9 @@ strategies:
       max_loss: "spread_width - net_credit (at short strike at expiry)"
       max_profit: "substantial below lower breakeven (stock to $0)"
       breakevens: ["upper: atm - spread + net_credit", "lower: otm - net_debit / qty_ratio"]
+    greek_profile:
+      delta_bias: bearish
+      theta_sign: negative
+      vega_sign: positive
+      gamma_sign: positive
+      iv_environment: low

@@ -164,6 +164,155 @@ def compute_ivr(ticker: str, current_atm_iv: float) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
+def _safe_int(v) -> int:
+    """Convert v to int, returning 0 for None/NaN/non-numeric."""
+    try:
+        f = float(v)
+        return 0 if math.isnan(f) else int(f)
+    except (TypeError, ValueError):
+        return 0
+
+
+def format_occ_symbol(
+    underlying: str,
+    expiry: str,
+    option_type: str,
+    strike: float,
+) -> str:
+    """Return an OCC option symbol string.
+
+    Format: {UNDERLYING}{YY}{MM}{DD}{C/P}{strike*1000 zero-padded to 8 digits}
+    Example: AAPL231020C00150000 (AAPL, 2023-10-20, Call, $150.00 strike)
+    """
+    try:
+        dt = datetime.strptime(expiry, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        dt = datetime.now(timezone.utc)
+    yy = dt.strftime("%y")
+    mm = dt.strftime("%m")
+    dd = dt.strftime("%d")
+    cp = "C" if str(option_type).lower().startswith("c") else "P"
+    strike_int = int(round(float(strike) * 1000))
+    return f"{underlying.upper()}{yy}{mm}{dd}{cp}{strike_int:08d}"
+
+
+def _compute_dte(expiry: str) -> float:
+    """Time to expiry in years (fractional) for Black-Scholes input."""
+    try:
+        exp_dt = datetime.strptime(expiry, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        today = datetime.now(timezone.utc)
+        seconds = (exp_dt - today).total_seconds()
+        return max(seconds, 0.0) / (365.25 * 24 * 3600)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _attach_greeks(contract: dict, spot: float, r: float = 0.05) -> dict:
+    """Compute and attach BS Greeks to a contract dict in-place. Returns contract."""
+    try:
+        from tools.trading.options.pricing import bs_greeks
+        iv = float(contract.get("iv") or 0)
+        strike = float(contract.get("strike") or 0)
+        expiry = contract.get("expiry", "")
+        T = _compute_dte(expiry)
+        opt_type = contract.get("option_type", "call")
+        if iv > 0 and strike > 0 and T > 0 and spot > 0:
+            g = bs_greeks(S=spot, K=strike, T=T, r=r, sigma=iv, option_type=opt_type)
+            contract.update({
+                "delta": round(g.get("delta", 0), 4),
+                "gamma": round(g.get("gamma", 0), 4),
+                "theta": round(g.get("theta", 0), 4),
+                "vega": round(g.get("vega", 0), 4),
+                "rho": round(g.get("rho", 0), 4),
+                "vanna": round(g.get("vanna", 0), 6),
+                "charm": round(g.get("charm", 0), 6),
+                "volga": round(g.get("volga", 0), 6),
+            })
+    except Exception:
+        pass
+    return contract
+
+
+def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
+    """Fetch the live options chain for *ticker* via yfinance with BS Greeks.
+
+    Returns a dict with keys: underlying, spot, expirations, contracts, calls, puts.
+    Returns empty dict on failure.
+    """
+    try:
+        ticker_obj = yf.Ticker(ticker.upper())
+        spot: float = 0.0
+        try:
+            spot = float(ticker_obj.fast_info.last_price)
+        except Exception:
+            pass
+        expirations = list(ticker_obj.options or [])
+        all_calls: list[dict] = []
+        all_puts: list[dict] = []
+        for exp in expirations[:4]:  # limit to nearest 4 expirations for speed
+            try:
+                yf_chain = ticker_obj.option_chain(exp)
+                for _, row in yf_chain.calls.iterrows():
+                    c = {
+                        "strike": float(row.get("strike", 0)),
+                        "expiry": exp,
+                        "option_type": "call",
+                        "bid": float(row.get("bid", 0) or 0),
+                        "ask": float(row.get("ask", 0) or 0),
+                        "mid": round((float(row.get("bid", 0) or 0) + float(row.get("ask", 0) or 0)) / 2, 2),
+                        "iv": float(row.get("impliedVolatility") or 0),
+                        "volume": _safe_int(row.get("volume")),
+                        "open_interest": _safe_int(row.get("openInterest")),
+                    }
+                    all_calls.append(_attach_greeks(c, spot))
+                for _, row in yf_chain.puts.iterrows():
+                    c = {
+                        "strike": float(row.get("strike", 0)),
+                        "expiry": exp,
+                        "option_type": "put",
+                        "bid": float(row.get("bid", 0) or 0),
+                        "ask": float(row.get("ask", 0) or 0),
+                        "mid": round((float(row.get("bid", 0) or 0) + float(row.get("ask", 0) or 0)) / 2, 2),
+                        "iv": float(row.get("impliedVolatility") or 0),
+                        "volume": _safe_int(row.get("volume")),
+                        "open_interest": _safe_int(row.get("openInterest")),
+                    }
+                    all_puts.append(_attach_greeks(c, spot))
+            except Exception:
+                continue
+        contracts = all_calls + all_puts
+
+        # Compute ATM IV for IVR badge
+        atm_iv: float = 0.0
+        if all_calls and spot > 0:
+            atm_call = min(all_calls, key=lambda c: abs(c["strike"] - spot))
+            atm_iv = atm_call.get("iv") or 0.0
+
+        ivr_data: dict = {}
+        if atm_iv > 0:
+            try:
+                ivr_data = compute_ivr(ticker.upper(), atm_iv)
+            except Exception:
+                pass
+
+        return {
+            "underlying": ticker.upper(),
+            "underlying_last": spot,
+            "spot": spot,
+            "expirations": expirations,
+            "calls": all_calls,
+            "puts": all_puts,
+            "contracts": contracts,  # flat list expected by strike_picker / pick_expiry
+            "atm_iv": round(atm_iv * 100, 2),  # as percentage
+            "iv_rank": ivr_data.get("iv_rank"),
+            "iv_percentile": ivr_data.get("iv_percentile"),
+            "iv_52w_high": ivr_data.get("iv_52w_high"),
+            "iv_52w_low": ivr_data.get("iv_52w_low"),
+        }
+    except Exception:
+        return {}
+
+
 def snapshot_chain(ticker: str, conn=None) -> dict:
     """Take an option chain snapshot for *ticker*, compute IVR, and persist it.
 
