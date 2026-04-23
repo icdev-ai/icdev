@@ -1587,6 +1587,10 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         if new_status == "done":
             sql += ", completed_at = ?"
             vals.append(now)
+        elif new_status == "in_progress":
+            # Clear stale failure reason on re-dispatch so the Autonomous
+            # Recovery panel doesn't keep showing this task as broken.
+            sql += ", last_failure_reason = NULL"
         elif new_status == "scheduled":
             # Root-cause fix (2026-04-17): the scheduler's due-task query
             # (_get_due_tasks) requires `status='scheduled' AND scheduled_at
@@ -3618,6 +3622,48 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
 # Track when each task was dispatched: {task_id: datetime}
 _dispatch_times: Dict[str, datetime] = {}
 
+# Startup-recovery flag: True after the first cycle's stale-in_progress sweep runs.
+_startup_recovery_done: bool = False
+
+
+def _startup_recover_stale_in_progress() -> None:
+    """On first cycle after a scheduler restart, reset any tasks stuck in
+    'in_progress' back to 'backlog'.  After a crash, _running is empty but
+    the DB still has rows from the previous session — they will never be
+    promoted or timed-out without this sweep.
+    """
+    global _startup_recovery_done
+    if _startup_recovery_done:
+        return
+    _startup_recovery_done = True
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+        ).fetchall()
+        if not rows:
+            conn.close()
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        reason = (
+            "startup-recovery: task was in_progress when the scheduler "
+            "restarted — process died or scheduler crashed mid-run."
+        )
+        for r in rows:
+            tid = dict(r)["id"]
+            if tid in _running:
+                continue  # live process from this session — skip
+            conn.execute(
+                "UPDATE kanban_tasks SET status='backlog', "
+                "last_failure_reason=?, updated_at=? WHERE id=?",
+                (reason, now_iso, tid),
+            )
+            print(f"  Kanban: startup-recovery reset {tid} in_progress → backlog")
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.warning("startup-recovery sweep failed: %s", exc)
+
 
 def _check_completed():
     """Check for completed claude subprocesses and clean up.
@@ -4361,7 +4407,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     except Exception as _osw_exc:
         logger.warning("orphan-done sweep failed: %s", _osw_exc)
 
-    # 0b. Worktree age sweep — remove worktrees older than the threshold
+    # 0b. Startup-recovery sweep — on the very first cycle after a restart,
+    # reset any tasks still in_progress (they were orphaned when the scheduler
+    # crashed or the OS killed the Claude CLI process mid-run).  Must run
+    # before step 3 (promotion gate) so these tasks can be re-queued.
+    try:
+        _startup_recover_stale_in_progress()
+    except Exception as _sr_exc:
+        logger.warning("startup-recovery sweep failed: %s", _sr_exc)
+
+    # 0c. Worktree age sweep — remove worktrees older than the threshold
     # whose owning task is not in_progress. Disk hygiene; prevents long
     # runs from filling disk with failure-train worktrees. Opportunistic
     # (only runs when cycle count % 30 == 0 to avoid spending every 60s
