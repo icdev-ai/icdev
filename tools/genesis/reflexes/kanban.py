@@ -1028,7 +1028,10 @@ def _get_due_tasks() -> list:
             return result
 
         # Backlog cooldown: skip tasks updated in the last 10 minutes
-        # (prevents rapid-fire retry of recently failed tasks)
+        # (prevents rapid-fire retry of recently failed tasks).
+        # Exception: tasks with reset_count > 0 were explicitly reset by
+        # _reset_to_backlog() which back-dates updated_at by 11 minutes,
+        # so they pass the cooldown naturally.
         backlog = conn.execute(
             "SELECT kt.* FROM kanban_tasks kt "
             "WHERE kt.status = 'backlog' "
@@ -4115,9 +4118,14 @@ def _check_token_exhausted_tasks() -> list:
 def _auto_decompose_stalled_tasks() -> list:
     """Step 3c: LLM-powered decomposer for needs_decomposition tasks.
 
-    Finds tasks stuck at needs_decomposition, calls the LLM to break each
-    one into 2-5 concrete subtasks, inserts them as backlog children, and
-    marks the parent 'decomposed'. Returns list of parent IDs processed.
+    For each needs_decomposition task:
+    1. If other tasks depend on it (chain-blocker), reset it directly to backlog
+       with reset_count incremented so the scheduler retries it immediately.
+    2. Otherwise, call the LLM to break it into 2-5 subtasks.
+    3. If the LLM fails for any reason, fall back to a direct backlog reset so
+       the task retries rather than staying stuck forever.
+
+    Returns list of parent IDs processed (reset or decomposed).
     """
     try:
         conn = get_connection()
@@ -4141,12 +4149,67 @@ def _auto_decompose_stalled_tasks() -> list:
         task = dict(row)
         tid = task["id"]
         try:
+            # Check if this task is a chain-blocker (other tasks depend on it).
+            # If so, bypass LLM decomposition and reset directly to backlog —
+            # blocking the chain is worse than a direct retry.
+            is_blocker = _is_chain_blocker(tid)
+            if is_blocker:
+                _reset_to_backlog(tid, reason="chain-blocker reset by auto_decompose")
+                print(f"  Kanban: chain-blocker {tid!r} reset to backlog (has dependents)")
+                processed.append(tid)
+                continue
+
             _decompose_one_task(task)
             processed.append(tid)
         except Exception as exc:
-            logger.warning("auto_decompose: failed for %s: %s", tid, exc)
+            logger.warning("auto_decompose: LLM failed for %s: %s — falling back to backlog reset", tid, exc)
+            # Fallback: reset to backlog so the scheduler retries directly
+            # rather than leaving the task permanently stuck.
+            try:
+                _reset_to_backlog(tid, reason=f"LLM decompose failed: {exc}")
+                processed.append(tid)
+            except Exception as reset_exc:
+                logger.warning("auto_decompose: backlog reset also failed for %s: %s", tid, reset_exc)
 
     return processed
+
+
+def _is_chain_blocker(task_id: str) -> bool:
+    """Return True if any other task depends on task_id."""
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM kanban_tasks WHERE depends_on_task_id = ? LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
+def _reset_to_backlog(task_id: str, reason: str = "") -> None:
+    """Reset a needs_decomposition task to backlog, bypassing the 10-minute cooldown.
+
+    Back-dates updated_at by 11 minutes so _get_due_tasks() picks it up on the
+    very next cycle (cooldown window is 10 minutes, checked via updated_at).
+    Does NOT increment failure_count — this is a recovery reset, not a new failure.
+    """
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'backlog', "
+            "last_failure_reason = ?, "
+            # Back-date updated_at so the 10-min cooldown passes immediately
+            "updated_at = datetime('now', '-11 minutes') "
+            "WHERE id = ? AND status = 'needs_decomposition'",
+            (reason[:500] if reason else None, task_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _decompose_one_task(task: dict) -> None:
