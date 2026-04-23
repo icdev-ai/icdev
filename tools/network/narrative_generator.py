@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,23 @@ def _cross_cloud_contexts() -> dict[str, dict]:
 
 def _classification_levels() -> dict[str, dict]:
     return _load_personas_config().get("classification_levels", {})
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def load_personas() -> list[dict]:
+    """Return the list of all persona dicts from tfw_personas.yaml."""
+    return _load_personas_config().get("personas", [])
+
+
+def load_classification_context(level: str) -> dict:
+    """Return the classification overlay dict for a given level key (NIPR, IL4, IL5, IL6, SIPR)."""
+    return _get_classification_ctx(level)
+
+
+def load_cross_cloud_context(node: dict) -> dict | None:
+    """Return cross-cloud context dict for a CSP node, or None if not a CSP node."""
+    return _get_csp_ctx(node)
 
 
 # ── CSP detection ─────────────────────────────────────────────────────────────
@@ -594,6 +612,34 @@ def generate_all(
         "total_latency_ms": total_latency_ms,
         "description":      description,
     }
+
+    # Persist persona responses to nc_step_persona_responses (best-effort)
+    try:
+        step_id_rows = conn.execute(
+            "SELECT id, step_number FROM nc_flow_walkthrough_steps WHERE flow_id = ?",
+            (flow_id,),
+        ).fetchall()
+        step_id_by_num = {r["step_number"]: r["id"] for r in step_id_rows}
+        for out_step in output_steps:
+            s_id = step_id_by_num.get(out_step["step_number"])
+            if not s_id:
+                continue
+            for pid, pr in out_step["personas"].items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO nc_step_persona_responses"
+                    " (id, step_id, persona_id, narrative, detail_json)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    (
+                        str(uuid.uuid4()),
+                        s_id,
+                        pid,
+                        pr.get("narrative", ""),
+                        json.dumps(pr.get("detail_json", {})),
+                    ),
+                )
+        conn.commit()
+    except Exception:
+        pass
 
     return {"steps": output_steps, "summary": summary}
 
