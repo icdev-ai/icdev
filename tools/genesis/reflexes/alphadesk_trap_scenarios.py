@@ -201,12 +201,14 @@ def _write_digest(
 
     now = _utcnow_iso()
     post_id = f"trap-digest-{uuid.uuid4().hex[:8]}"
+    wc = len(body.split())
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO pulse_posts "
-            "(id, title, slug, status, topic, body_markdown, author_id, created_at, updated_at) "
-            "VALUES (?, ?, ?, 'draft', ?, ?, 'genesis_trap_scenarios', ?, ?)",
-            (post_id, title, slug, title, body, now, now),
+            "INSERT INTO pulse_posts "
+            "(id, title, slug, status, topic, body_markdown, word_count, author_id, created_at, updated_at) "
+            "VALUES (?, ?, ?, 'draft', ?, ?, ?, 'genesis_trap_scenarios', ?, ?) "
+            "ON CONFLICT (id) DO NOTHING",
+            (post_id, title, slug, title, body, wc, now, now),
         )
         conn.commit()
         return post_id
