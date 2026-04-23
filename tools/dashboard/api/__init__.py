@@ -251,6 +251,12 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("news_api skipped: %s", exc)
 
+    try:
+        from tools.dashboard.api.options import options_api
+        _mount_inline(options_api)   # inline routes: /api/options/*
+    except Exception as exc:
+        logger.warning("options_api skipped: %s", exc)
+
     # ------------------------------------------------------------------ #
     #  Optional blueprints — graceful skip on ImportError                 #
     # ------------------------------------------------------------------ #
