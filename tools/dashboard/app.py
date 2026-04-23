@@ -8209,6 +8209,13 @@ def create_app() -> Flask:
         """FathomDesk News — category-tab layout with sentiment sparklines."""
         return render_template("news.html")
 
+    # ── FathomDesk Options Chain ──────────────────────────────────────────────
+    @app.route("/options")
+    def options_page():
+        """Options page — IV Rank/Percentile badge and chain viewer."""
+        ticker = flask_request.args.get("ticker", "SPY").upper()
+        return render_template("options.html", ticker=ticker)
+
     # ── FathomDesk Trading Engine ─────────────────────────────────────────────
     @app.route("/fathomdesk")
     def fathomdesk_page():
