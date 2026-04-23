@@ -264,3 +264,6 @@ exclude = [
 pythonpath = ["."]
 testpaths = ["tests"]
 timeout = 30
+markers = [
+    "selenium: marks tests that require a running Selenium/ChromeDriver (skip if unavailable)",
+]
