@@ -25,3 +25,21 @@ iv_crush_pct: 20
 # Dedupe window — don't re-emit the same event type for the same
 # position inside this many hours (escalation still allowed).
 dedupe_hours: 24
+
+# ── Portfolio-level Greek exposure alert thresholds ──────────────────────────
+# Consumed by tools/trading/options/coach.py:check_greek_exposure().
+
+# Cooldown: don't re-fire the same alert_type for the same user within N hours.
+greek_alert_cooldown_hours: 4
+
+# |net_delta| > N share-equivalents → 'delta_high'
+greek_delta_shares: 500
+
+# net_theta < -N USD/day → 'theta_burn'
+greek_theta_day_usd: 50
+
+# |net_vega| > N USD per 1% IV move → 'vega_exposure'
+greek_vega_per_iv_usd: 200
+
+# |net_gamma| > N → 'gamma_elevated'
+greek_gamma_abs: 50
