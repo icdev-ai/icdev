@@ -28,10 +28,13 @@ Usage
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import uuid
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -791,8 +794,8 @@ def generate_all(
                     ),
                 )
         conn.commit()
-    except Exception:
-        pass
+    except Exception as _persist_exc:
+        logger.warning("narrative_generator: nc_step_persona_responses persist failed: %s", _persist_exc)
 
     return {"steps": output_steps, "summary": summary}
 
