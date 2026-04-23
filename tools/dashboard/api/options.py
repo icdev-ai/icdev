@@ -207,20 +207,23 @@ def iv_skew(ticker: str):
         return jsonify({"error": str(exc)}), 500
 
 
+_PAPER_PREFIX = "paper_"
+
+
 @options_api.route("/api/options/portfolio-greeks/<user_id>", methods=["GET"])
 def portfolio_greeks_by_user(user_id: str):
     """Return portfolio-level Greek P&L attribution for *user_id*.
 
-    Calls compute_portfolio_greeks() and returns the net Greeks used by the
-    Greek P&L Attribution panel (delta contribution, theta burn, vega risk,
-    gamma convexity).
+    Paper sandboxes pass attempt IDs like ``paper_u-<id>``; strip the prefix
+    so positions stored under the real user_id are found.
     """
     try:
         from tools.trading.options.portfolio_greeks import compute_portfolio_greeks
 
-        pg = compute_portfolio_greeks(user_id=user_id)
+        real_uid = user_id[len(_PAPER_PREFIX):] if user_id.startswith(_PAPER_PREFIX) else user_id
+        pg = compute_portfolio_greeks(user_id=real_uid)
         return jsonify({
-            "user_id": user_id,
+            "user_id": real_uid,
             "net_delta": pg.get("net_delta", 0.0),
             "net_theta": pg.get("net_theta", 0.0),
             "net_vega":  pg.get("net_vega",  0.0),
