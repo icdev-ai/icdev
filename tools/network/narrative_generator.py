@@ -207,6 +207,146 @@ _DOMAIN_LATENCY_MS: dict[str, int] = {
 }
 
 
+# ── Deterministic narrative templates (per action × persona) ─────────────────
+# Used as rich fallback when LLM is unavailable.  Template variables: {node_label},
+# {action_type}, {classification}.  Add entries for new action types as needed.
+
+NARRATIVE_TEMPLATES: dict[str, dict[str, str]] = {
+    "authenticate": {
+        "seceng": (
+            "[SecEng] Authentication at {node_label}: CAC/PIV or FIDO2 MFA required. "
+            "DoD PKI chain validated. TLS 1.3 with AES-256-GCM enforced."
+        ),
+        "neteng": (
+            "[NetEng] Auth hop at {node_label}. Route selected for {action_type}. "
+            "BGP-advertised path, latency ~5 ms."
+        ),
+        "cloudarch": (
+            "[CloudArch] Authentication at {node_label} via CSP identity federation "
+            "(SAML 2.0 / OIDC)."
+        ),
+        "compofficer": (
+            "[CompOfficer] NIST IA-2(1) satisfied at {node_label}. "
+            "MFA mandatory per FedRAMP-High baseline. DoD PKI required."
+        ),
+        "appdev": (
+            "[AppDev] App authenticates at {node_label}. "
+            "Check HTTP 401 on token expiry; refresh via /token endpoint."
+        ),
+        "missionowner": (
+            "[Mission] Users authenticate at {node_label} before accessing the mission system."
+        ),
+        "ciso": (
+            "[CISO] Authentication control at {node_label}. MEDIUM risk. "
+            "IA-2 satisfied; MFA in place."
+        ),
+    },
+    "encrypt_vpn": {
+        "seceng": (
+            "[SecEng] VPN encryption at {node_label}: IKEv2/AES-256-GCM, SHA-384, "
+            "DH Group 20 (ECDH P-384), PFS enabled."
+        ),
+        "neteng": (
+            "[NetEng] IPSec tunnel at {node_label}. IKEv2, AES-256-GCM, PFS Group 20, "
+            "SA lifetime 1 h / 4 GB."
+        ),
+        "cloudarch": (
+            "[CloudArch] Cloud VPN gateway at {node_label}. FIPS 140-2 Level 1+ compliant."
+        ),
+        "compofficer": (
+            "[CompOfficer] SC-8 Transmission Confidentiality at {node_label}. "
+            "SC-8(1) cryptographic protection required. FIPS 140-2 Level 1+."
+        ),
+        "appdev": (
+            "[AppDev] Traffic encrypted at {node_label}. "
+            "App observes TLS 1.3 to backend; no cleartext at this hop."
+        ),
+        "missionowner": (
+            "[Mission] Mission traffic encrypted at {node_label}. "
+            "No capability impact from this hop."
+        ),
+        "ciso": (
+            "[CISO] Encryption control at {node_label}. SC-8 satisfied. LOW risk."
+        ),
+    },
+    "security_inspect": {
+        "seceng": (
+            "[SecEng] Security inspection at {node_label}: IDPS signatures, CDM posture, WAF, DLP."
+        ),
+        "neteng": (
+            "[NetEng] Inspect hop at {node_label}. Traffic mirrored to IDPS sensor."
+        ),
+        "cloudarch": (
+            "[CloudArch] Cloud-native WAF/IDPS at {node_label}. CSP firewall premium tier."
+        ),
+        "compofficer": (
+            "[CompOfficer] SI-4 monitoring at {node_label}. CDM sensor active; logs to SIEM."
+        ),
+        "appdev": (
+            "[AppDev] Traffic inspected at {node_label}. WAF may return HTTP 403 for malformed requests."
+        ),
+        "missionowner": (
+            "[Mission] Security inspection at {node_label} protects mission data from threats."
+        ),
+        "ciso": (
+            "[CISO] IDPS/WAF at {node_label}. SC-7 satisfied. Active monitoring in place."
+        ),
+    },
+    "originate": {
+        "seceng": (
+            "[SecEng] Traffic originates at {node_label}. Source address validation required."
+        ),
+        "neteng": (
+            "[NetEng] Packet originates at {node_label}. Initial routing decision; source IP verified."
+        ),
+        "cloudarch": (
+            "[CloudArch] Traffic originates at {node_label}. Source endpoint configured in landing zone."
+        ),
+        "compofficer": (
+            "[CompOfficer] Traffic originates at {node_label}. Source boundary documented in SSP §8."
+        ),
+        "appdev": (
+            "[AppDev] Request initiates at {node_label}. App sends initial HTTP request to backend."
+        ),
+        "missionowner": "[Mission] Mission flow begins at {node_label}.",
+        "ciso": "[CISO] Flow origination at {node_label}. Source boundary verified.",
+    },
+    "deliver": {
+        "seceng": (
+            "[SecEng] Traffic delivered at {node_label}. Final ACL check and logging complete."
+        ),
+        "neteng": "[NetEng] Packet delivered at {node_label}. Destination reached; route confirmed.",
+        "cloudarch": (
+            "[CloudArch] Traffic delivered at {node_label}. Destination service reached via private endpoint."
+        ),
+        "compofficer": (
+            "[CompOfficer] Traffic delivered at {node_label}. Destination boundary documented in SSP."
+        ),
+        "appdev": "[AppDev] Response received at {node_label}. Expect HTTP 200.",
+        "missionowner": "[Mission] Mission flow completes at {node_label}. Capability delivered.",
+        "ciso": "[CISO] Flow delivered at {node_label}. Destination boundary verified. LOW risk.",
+    },
+}
+
+
+# ── Classification overlay builder ────────────────────────────────────────────
+
+def build_classification_overlay(flow: dict) -> str:
+    """Return a classification context string for injection into a system prompt.
+
+    For IL5 flows the string includes "FIPS 140-2 Level 2".
+    """
+    classification = flow.get("classification", "NIPR")
+    ctx = _get_classification_ctx(classification)
+    return (
+        f"Classification: {ctx.get('label', classification)}. "
+        f"Required encryption: {ctx.get('encryption', 'FIPS 140-2, AES-256')}. "
+        f"Key management: {ctx.get('key_mgmt', 'DoD PKI')}. "
+        f"MFA: {ctx.get('mfa', 'CAC/PIV')}. "
+        f"Audit retention: {ctx.get('audit_retention', '3 years')}."
+    )
+
+
 # ── System prompt builders ────────────────────────────────────────────────────
 
 def _csp_prompt_block(csp: dict, label: str = "") -> str:
@@ -425,15 +565,26 @@ def generate_for_persona(
     narrative = _invoke_llm(system_prompt, user_content)
 
     if not narrative:
-        # Deterministic fallback narrative
-        csp_suffix = f" via {csp_name}" if csp_name else ""
-        narrative = (
-            f"[{persona.get('short', persona_id)}] "
-            f"Hop {step.get('step_number', '?')}: {node_label}{csp_suffix}. "
-            f"Action: {action_type}. "
-            f"Classification: {cls_ctx.get('label', classification)}. "
-            f"Encryption: {cls_ctx.get('encryption', 'FIPS 140-2, AES-256')}."
-        )
+        # Try NARRATIVE_TEMPLATES for a richer deterministic fallback
+        tmpl = NARRATIVE_TEMPLATES.get(action_type, {}).get(persona_id, "")
+        if tmpl:
+            try:
+                narrative = tmpl.format(
+                    node_label=node_label,
+                    action_type=action_type,
+                    classification=classification,
+                )
+            except KeyError:
+                narrative = tmpl
+        else:
+            csp_suffix = f" via {csp_name}" if csp_name else ""
+            narrative = (
+                f"[{persona.get('short', persona_id)}] "
+                f"Hop {step.get('step_number', '?')}: {node_label}{csp_suffix}. "
+                f"Action: {action_type}. "
+                f"Classification: {cls_ctx.get('label', classification)}. "
+                f"Encryption: {cls_ctx.get('encryption', 'FIPS 140-2, AES-256')}."
+            )
 
     return {"narrative": narrative, "detail_json": detail_json}
 
