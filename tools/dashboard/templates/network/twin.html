@@ -18,6 +18,15 @@
   #iqePreview pre { background:#0a1628; border:1px solid #1e3a6e; border-radius:4px; padding:8px; font-size:11px; color:#7a8cb0; white-space:pre-wrap; margin:0; max-height:90px; overflow-y:auto; }
   #iqeResultsTable th, #iqeResultsTable td { padding:4px 8px; border-bottom:1px solid #1e3a6e; text-align:left; }
   #iqeResultsTable thead { background:#1e3a6e; color:#7a8cb0; font-size:11px; }
+  /* TFW-15 persona chip + accordion */
+  .persona-chip.tfw-deselected { opacity:0.32; text-decoration:line-through; }
+  .tfw-accordion-section { border:1px solid #1e3a6e; border-radius:6px; margin-bottom:6px; overflow:hidden; }
+  .tfw-accordion-header { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; cursor:pointer; user-select:none; background:#0f1e3d; font-size:12px; font-weight:600; color:#eaeaea; }
+  .tfw-accordion-header:hover { background:#152347; }
+  .tfw-accordion-header .tfw-acc-arrow { font-size:10px; transition:transform .2s; display:inline-block; }
+  .tfw-accordion-section.tfw-collapsed .tfw-acc-arrow { transform:rotate(-90deg); }
+  .tfw-accordion-body { padding:10px 12px; font-size:12px; color:#c0cfe8; line-height:1.6; background:#0a1628; }
+  .tfw-accordion-section.tfw-collapsed .tfw-accordion-body { display:none; }
 </style>
 {% endblock %}
 
@@ -271,21 +280,35 @@
   </div>
 </div>
 
-<!-- TFW-14: Persona Selector for Traffic Flow Walkthrough -->
+<!-- TFW-14/15: Persona Selector for Traffic Flow Walkthrough -->
 <div style="padding:0 30px 30px;" id="tfwPersonaSection">
   <div class="twin-panel">
     <h2>Traffic Flow Walkthrough — Persona Selector</h2>
-    <p class="hint" style="margin-bottom:10px;">Select one or more personas to generate role-specific step-by-step narratives for your traffic flows.</p>
-    <div id="personaChipList" style="display:flex;flex-wrap:wrap;gap:8px;">
-      {% for p in personas %}
-      <span class="persona-chip" data-persona-id="{{ p.id }}"
-        style="display:inline-flex;align-items:center;padding:5px 14px;
-          border-radius:16px;border:1px solid {{ p.badge_color }};
-          background:{{ p.color }}22;color:#eaeaea;font-size:12px;cursor:pointer;
-          user-select:none;transition:opacity .15s;"
-        title="{{ p.name }}">{{ p.short }}</span>
-      {% endfor %}
+    <p class="hint" style="margin-bottom:10px;">Select one or more personas to generate role-specific step-by-step narratives for your traffic flows. Click a chip again to deselect it.</p>
+    <div id="personaChipList" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+  </div>
+</div>
+
+<!-- TFW-15: Step Card with Collapsible Persona Accordion -->
+<div style="padding:0 30px 30px;" id="tfwStepCardSection">
+  <div class="twin-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h2 style="margin:0;">Walkthrough — Step Detail</h2>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-sm" onclick="tfwNavigateStep(-1)" id="tfwPrevBtn" disabled>&#8592; Prev</button>
+        <span id="tfwStepCounter" style="font-size:12px;color:#7a8cb0;min-width:80px;text-align:center;">—</span>
+        <button class="btn btn-sm" onclick="tfwNavigateStep(1)" id="tfwNextBtn" disabled>Next &#8594;</button>
+      </div>
     </div>
+    <div id="tfwStepInfo" style="display:none;margin-bottom:14px;padding:10px;background:#0a1628;border-radius:4px;border-left:3px solid #3498db;">
+      <div style="font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Current Hop</div>
+      <div id="tfwStepTitle" style="font-size:14px;color:#eaeaea;font-weight:600;"></div>
+      <div id="tfwStepMeta" style="font-size:11px;color:#5a6e8c;margin-top:2px;"></div>
+    </div>
+    <div id="tfwPersonaAccordion"></div>
+    <p id="tfwNoDataHint" style="color:#5a6e8c;font-size:12px;text-align:center;padding:20px 0;">
+      Select personas above and run a walkthrough to see role-specific narratives for each hop.
+    </p>
   </div>
 </div>
 
@@ -868,5 +891,153 @@ function tfwEndFlowAtNode() {
   document.getElementById('tfwContextMenu').style.display = 'none';
   if (_tfwCtxNode) document.getElementById('tfwDstZone').value = _tfwCtxNode.label || _tfwCtxNode.id;
 }
+
+// ── TFW-15: Persona chip selection + step accordion ───────────────────────────
+const TFW_PERSONA_DEFS = [
+  { id:'seceng',       name:'Security Engineer',      short:'SecEng',      color:'#e74c3c', badge:'#c0392b' },
+  { id:'neteng',       name:'Network Engineer',       short:'NetEng',      color:'#2980b9', badge:'#1a6fa8' },
+  { id:'cloudarch',    name:'Cloud Architect',        short:'CloudArch',   color:'#16a085', badge:'#0d7a65' },
+  { id:'compofficer',  name:'Compliance Officer',     short:'CompOfficer', color:'#f39c12', badge:'#d68910' },
+  { id:'appdev',       name:'Application Developer',  short:'AppDev',      color:'#9b59b6', badge:'#7d3c98' },
+  { id:'missionowner', name:'Mission Owner',          short:'Mission',     color:'#27ae60', badge:'#1e8449' },
+  { id:'ciso',         name:'CISO',                  short:'CISO',        color:'#d35400', badge:'#a04000' },
+];
+
+const tfwSelectedPersonas = new Set(TFW_PERSONA_DEFS.map(p => p.id));
+let tfwStepData = [];
+let tfwCurrentStepIdx = 0;
+const _tfwAccordionExpanded = {};
+
+function tfwInitChips() {
+  const container = document.getElementById('personaChipList');
+  if (!container) return;
+  container.innerHTML = '';
+  TFW_PERSONA_DEFS.forEach(function(p) {
+    var chip = document.createElement('span');
+    chip.className = 'persona-chip';
+    chip.dataset.personaId = p.id;
+    chip.title = p.name;
+    chip.style.cssText = 'display:inline-flex;align-items:center;padding:5px 14px;' +
+      'border-radius:16px;border:1px solid ' + p.badge + ';' +
+      'background:' + p.color + '22;color:#eaeaea;font-size:12px;cursor:pointer;' +
+      'user-select:none;transition:opacity .15s,background .15s;';
+    chip.textContent = p.short;
+    chip.addEventListener('click', function() { tfwToggleChip(p.id); });
+    container.appendChild(chip);
+  });
+}
+
+function tfwToggleChip(personaId) {
+  if (tfwSelectedPersonas.has(personaId)) {
+    tfwSelectedPersonas.delete(personaId);
+  } else {
+    tfwSelectedPersonas.add(personaId);
+  }
+  var chip = document.querySelector('.persona-chip[data-persona-id="' + personaId + '"]');
+  if (chip) {
+    chip.classList.toggle('tfw-deselected', !tfwSelectedPersonas.has(personaId));
+  }
+  tfwRenderAccordion();
+}
+
+function tfwRenderAccordion() {
+  var accordion = document.getElementById('tfwPersonaAccordion');
+  var hint = document.getElementById('tfwNoDataHint');
+  if (!accordion) return;
+
+  var activePersonas = TFW_PERSONA_DEFS.filter(function(p) {
+    return tfwSelectedPersonas.has(p.id);
+  });
+
+  if (!tfwStepData.length || !activePersonas.length) {
+    accordion.innerHTML = '';
+    if (hint) hint.style.display = 'block';
+    return;
+  }
+  if (hint) hint.style.display = 'none';
+
+  var step = tfwStepData[tfwCurrentStepIdx] || {};
+  var personaNarratives = step.personas || {};
+
+  accordion.innerHTML = '';
+  activePersonas.forEach(function(p) {
+    var expanded = (_tfwAccordionExpanded[p.id] !== false);
+    var rawText = personaNarratives[p.id] || personaNarratives[p.name] || '(no narrative for this step)';
+
+    var section = document.createElement('div');
+    section.className = 'tfw-accordion-section' + (expanded ? '' : ' tfw-collapsed');
+    section.dataset.personaId = p.id;
+
+    var header = document.createElement('div');
+    header.className = 'tfw-accordion-header';
+    header.innerHTML =
+      '<span style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="width:10px;height:10px;border-radius:50%;background:' + p.color + ';display:inline-block;flex-shrink:0;"></span>' +
+        '<span>' + p.name + '</span>' +
+      '</span>' +
+      '<span class="tfw-acc-arrow">&#9660;</span>';
+    (function(pid) {
+      header.addEventListener('click', function() { tfwToggleAccordionSection(pid); });
+    }(p.id));
+
+    var body = document.createElement('div');
+    body.className = 'tfw-accordion-body';
+    body.innerHTML = rawText.replace(/\n/g, '<br>');
+
+    section.appendChild(header);
+    section.appendChild(body);
+    accordion.appendChild(section);
+  });
+}
+
+function tfwToggleAccordionSection(personaId) {
+  var section = document.querySelector('.tfw-accordion-section[data-persona-id="' + personaId + '"]');
+  if (!section) return;
+  var nowCollapsed = section.classList.toggle('tfw-collapsed');
+  _tfwAccordionExpanded[personaId] = !nowCollapsed;
+}
+
+function tfwNavigateStep(delta) {
+  if (!tfwStepData.length) return;
+  tfwCurrentStepIdx = Math.max(0, Math.min(tfwStepData.length - 1, tfwCurrentStepIdx + delta));
+  tfwUpdateStepUI();
+  tfwRenderAccordion();
+}
+
+function tfwUpdateStepUI() {
+  var total = tfwStepData.length;
+  var idx = tfwCurrentStepIdx;
+  var counter = document.getElementById('tfwStepCounter');
+  var prevBtn = document.getElementById('tfwPrevBtn');
+  var nextBtn = document.getElementById('tfwNextBtn');
+  var stepInfo = document.getElementById('tfwStepInfo');
+  var stepTitle = document.getElementById('tfwStepTitle');
+  var stepMeta = document.getElementById('tfwStepMeta');
+
+  if (counter) counter.textContent = total ? ('Step ' + (idx + 1) + ' of ' + total) : '—';
+  if (prevBtn) prevBtn.disabled = idx <= 0;
+  if (nextBtn) nextBtn.disabled = idx >= total - 1;
+
+  if (total && stepInfo) {
+    var step = tfwStepData[idx] || {};
+    stepInfo.style.display = 'block';
+    if (stepTitle) stepTitle.textContent = step.hop || step.label || step.title || ('Hop ' + (idx + 1));
+    if (stepMeta) {
+      var parts = [step.device, step.interface, step.ip].filter(Boolean);
+      stepMeta.textContent = parts.join(' · ');
+    }
+  } else if (stepInfo) {
+    stepInfo.style.display = 'none';
+  }
+}
+
+function tfwSetStepData(steps) {
+  tfwStepData = Array.isArray(steps) ? steps : [];
+  tfwCurrentStepIdx = 0;
+  tfwUpdateStepUI();
+  tfwRenderAccordion();
+}
+
+tfwInitChips();
 </script>
 {% endblock %}
