@@ -401,6 +401,56 @@ def _probe_coherence_status(
     return {"ok": ok, "fail": fail}
 
 
+def _probe_gap_tool_not_in_manifest(
+    conn: Any,
+    run_id: str,
+    **_kwargs: Any,
+) -> Dict[str, int]:
+    """Run the gap_detector tool_not_in_manifest rule and record one
+    snapshot. Zero findings → pass (gap resolved); any findings → fail.
+    """
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "tools/awareness/gap_detector.py",
+                "--detect",
+                "--rule", "tool_not_in_manifest",
+                "--dry-run",
+                "--json",
+            ],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        stdout = result.stdout or ""
+        try:
+            report = json.loads(stdout)
+        except json.JSONDecodeError:
+            idx = stdout.rfind("{")
+            if idx >= 0:
+                report = json.loads(stdout[idx:])
+            else:
+                return {"ok": 0, "fail": 1, "error": "could not parse gap_detector output"}
+    except Exception as exc:
+        return {"ok": 0, "fail": 1, "error": str(exc)[:200]}
+
+    by_rule = report.get("by_rule", {})
+    rule_data = by_rule.get("tool_not_in_manifest", {})
+    findings_count = rule_data.get("findings", report.get("total_findings", 0))
+    status = "pass" if findings_count == 0 else "fail"
+    detail: Dict[str, Any] = {
+        "rule": "tool_not_in_manifest",
+        "findings_count": findings_count,
+        "confidence": rule_data.get("confidence", 0.95),
+        "severity": rule_data.get("severity", "medium"),
+    }
+    node_id = "gap::tool_not_in_manifest"
+    _write_snapshot(conn, node_id, "gap::tool_not_in_manifest", status, detail, run_id)
+    return {"ok": 1 if status == "pass" else 0, "fail": 0 if status == "pass" else 1}
+
+
 # ---------------------------------------------------------------------------
 # Probe registry + orchestrator
 # ---------------------------------------------------------------------------
@@ -410,6 +460,7 @@ _PROBE_REGISTRY: Dict[str, Callable[..., Dict[str, int]]] = {
     "http_head": _probe_http_head,
     "module_import": _probe_module_import,
     "coherence_status": _probe_coherence_status,
+    "gap::tool_not_in_manifest": _probe_gap_tool_not_in_manifest,
 }
 
 
