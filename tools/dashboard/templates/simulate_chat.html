@@ -39,7 +39,7 @@
         DDC
       </button>
     </div>
-    <input type="hidden" id="active-canvas-type" value="ndc" />
+    <input type="hidden" id="active-canvas-type" value="{{ canvas_type|default('ndc') }}" />
   </div>
 
   <!-- Slash-command autocomplete hints (context-sensitive) -->
@@ -189,9 +189,10 @@ function downloadBundle() {
   });
 }
 
-// Auto-start session on page load
+// Auto-start session on page load; pre-select canvas from server-rendered value
 document.addEventListener('DOMContentLoaded', function() {
-  selectCanvas('ndc');
+  var presel = document.getElementById('active-canvas-type').value || 'ndc';
+  selectCanvas(presel);
 });
 </script>
 {% endblock %}

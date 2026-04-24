@@ -1175,6 +1175,16 @@ def create_app() -> Flask:
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
 
+    # ---- Simulation Chat Blueprint ----
+    try:
+        from tools.simulation.blueprint import create_simulation_blueprint
+        _sim_bp = create_simulation_blueprint()
+        if _sim_bp:
+            app.register_blueprint(_sim_bp)
+            app.logger.info("Simulation chat blueprint registered")
+    except Exception as _exc:
+        app.logger.warning("Simulation blueprint failed to register: %s", _exc)
+
     # ---- Convenience JSON routes that match the spec ----
 
     @app.route("/api/alerts", methods=["GET"])
@@ -3229,161 +3239,6 @@ def create_app() -> Flask:
     def analytics_page():
         """Compliance Funnel Analytics — ATO pipeline funnel, time-series, child app telemetry."""
         return render_template("analytics.html")
-
-    @app.route("/simulate/chat")
-    def simulate_chat_page():
-        """TFW Simulation Chat — conversational Digital Program Twin for NDC/SDC/EDA/DDC."""
-        return render_template("simulate_chat.html")
-
-    @app.route("/api/simulate/session", methods=["POST"])
-    def api_simulate_session():
-        """Create a new simulation chat session. Returns session_id."""
-        import uuid as _uuid
-        data = flask_request.get_json(silent=True) or {}
-        canvas_type = data.get("canvas_type", "ndc")
-        allowed = {"ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
-        if canvas_type not in allowed:
-            return jsonify({"error": f"Unknown canvas_type '{canvas_type}'"}), 400
-        session_id = str(_uuid.uuid4())
-        try:
-            conn = _get_db()
-            conn.execute(
-                "INSERT INTO nc_simulation_sessions (id, canvas_type, metadata) VALUES (?, ?, ?)",
-                (session_id, canvas_type, "{}"),
-            )
-            conn.commit()
-            conn.close()
-        except Exception:
-            pass
-        return jsonify({"session_id": session_id, "canvas_type": canvas_type, "status": "active"})
-
-    @app.route("/api/simulate/message", methods=["POST"])
-    def api_simulate_message():
-        """Process a chat message in a simulation session. Returns assistant reply with Mermaid diagram."""
-        data = flask_request.get_json(silent=True) or {}
-        content = (data.get("content") or "").strip()
-        session_id = (data.get("session_id") or "").strip()
-
-        # Detect mode from message content
-        mode = "explain"
-        if content.startswith("/troubleshoot") or "troubleshoot" in content.lower():
-            mode = "troubleshoot"
-        elif content.startswith("/refine") or "refine" in content.lower():
-            mode = "refine"
-
-        # Look up canvas_type from session record
-        canvas_type = "ndc"
-        if session_id:
-            try:
-                _conn = _get_db()
-                _row = _conn.execute(
-                    "SELECT canvas_type FROM nc_simulation_sessions WHERE id = ?",
-                    (session_id,),
-                ).fetchone()
-                _conn.close()
-                if _row:
-                    canvas_type = _row[0] or "ndc"
-            except Exception:
-                pass
-
-        # Promote to REFINE mode when an active refine session exists for this session_id
-        if mode == "explain" and session_id:
-            try:
-                from tools.simulation.diagram_refiner import has_active_refine_session
-                if has_active_refine_session(session_id):
-                    mode = "refine"
-            except Exception:
-                pass
-
-        # TROUBLESHOOT mode — canvas-aware fault localization
-        if mode == "troubleshoot":
-            try:
-                from tools.simulation.fault_localizer import localize_fault
-                _symptom = content.removeprefix("/troubleshoot").strip() or content
-                _result = localize_fault(symptom_text=_symptom, canvas_type=canvas_type)
-                _mermaid_src = _result["sub_diagram_mermaid"]
-                _mermaid_fence = f"```mermaid\n{_mermaid_src}\n```"
-                _reply = f"{_result['summary_text']}\n\n{_mermaid_fence}"
-                return jsonify({
-                    "reply": _reply,
-                    "mode": mode,
-                    "diagram_mermaid": _mermaid_fence,
-                    "fault_category": _result["fault_category"],
-                    "root_causes": _result["root_causes"],
-                    "suspect_hops": _result["suspect_hops"],
-                })
-            except Exception:
-                pass  # Fall through to generic reply on unexpected error
-
-        # REFINE mode — conversational diagram refinement with clarifying questions
-        if mode == "refine":
-            try:
-                from tools.simulation.diagram_refiner import (
-                    extract_mermaid_from_message,
-                    has_active_refine_session,
-                    start_refine,
-                    continue_refine,
-                )
-                _diagram_src = extract_mermaid_from_message(content)
-                if _diagram_src:
-                    # New diagram pasted — start a fresh refine session
-                    _result = start_refine(
-                        raw_diagram=_diagram_src,
-                        canvas_type=canvas_type,
-                        session_id=session_id,
-                    )
-                else:
-                    # Continuing an existing refine session (user is answering questions)
-                    _answer_text = content.removeprefix("/refine").strip() or content
-                    _result = continue_refine(
-                        session_id=session_id,
-                        user_text=_answer_text,
-                        canvas_type=canvas_type,
-                    )
-                return jsonify({
-                    "reply": _result["reply"],
-                    "mode": "refine",
-                    "diagram_mermaid": _result.get("diagram_mermaid"),
-                    "phase": _result.get("phase"),
-                    "is_complete": _result.get("is_complete", False),
-                    "questions": _result.get("questions", []),
-                })
-            except Exception:
-                pass  # Fall through to generic reply on unexpected error
-
-        mermaid_fence = (
-            "```mermaid\n"
-            "graph TD\n"
-            "    A[User] --> B[Simulation Engine]\n"
-            "    B --> C{Canvas Type}\n"
-            "    C -->|NDC| D[Network Digital Canvas]\n"
-            "    C -->|SDC| E[Security Design Canvas]\n"
-            "    C -->|EDA| F[Enterprise Data Architecture]\n"
-            "```"
-        )
-        reply = f"[{mode.upper()} mode] Analysis complete.\n\n{mermaid_fence}"
-        return jsonify({"reply": reply, "mode": mode, "diagram_mermaid": mermaid_fence})
-
-    @app.route("/api/simulate/bundle", methods=["POST"])
-    def api_simulate_bundle():
-        """Generate a downloadable artifact bundle for a simulation session."""
-        data = flask_request.get_json(silent=True) or {}
-        session_id = data.get("session_id", "")
-        if not session_id:
-            return jsonify({"error": "session_id required"}), 400
-        download_url = f"/api/simulate/bundle/{session_id}/download"
-        return jsonify({"download_url": download_url, "session_id": session_id, "status": "ready"})
-
-    @app.route("/api/simulate/bundle/<session_id>/download")
-    def api_simulate_bundle_download(session_id):
-        """Serve the bundle file."""
-        from flask import Response as _FlaskResponse
-        content = f"# Simulation Bundle\nsession_id: {session_id}\n"
-        return _FlaskResponse(
-            content,
-            mimetype="text/plain",
-            headers={"Content-Disposition": f"attachment; filename=bundle-{session_id[:8]}.txt"},
-        )
 
     @app.route("/api/simulation/scenarios", methods=["POST"])
     def api_simulation_create():
