@@ -3622,6 +3622,93 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
 # Track when each task was dispatched: {task_id: datetime}
 _dispatch_times: Dict[str, datetime] = {}
 
+def _reap_stale_in_progress() -> None:
+    """Periodic reaper: reset in_progress tasks not tracked in _running.
+
+    Catches two failure modes that survive past startup-recovery:
+      1. Process died mid-run after dispatch (PID gone, DB still in_progress).
+      2. Verification gate left the task in_progress with 'human review needed'
+         instead of resetting to backlog.
+
+    Threshold: updated_at older than 2× the task's normal timeout (≥30 min).
+    Only resets tasks NOT currently in _running to avoid killing live agents.
+    """
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, title, failure_count FROM kanban_tasks "
+            "WHERE status = 'in_progress'"
+        ).fetchall()
+        if not rows:
+            conn.close()
+            return
+
+        now = datetime.now(timezone.utc)
+        reaped = []
+        for r in rows:
+            d = dict(r)
+            tid = d["id"]
+            if tid in _running:
+                continue  # live subprocess — skip
+
+            # Fetch updated_at separately to get the real timestamp
+            ts_row = conn.execute(
+                "SELECT updated_at FROM kanban_tasks WHERE id = ?", (tid,)
+            ).fetchone()
+            if not ts_row:
+                continue
+            updated_raw = dict(ts_row)["updated_at"]
+            if updated_raw is None:
+                continue
+
+            # Parse updated_at
+            try:
+                if hasattr(updated_raw, "tzinfo"):
+                    updated_at = updated_raw if updated_raw.tzinfo else updated_raw.replace(tzinfo=timezone.utc)
+                else:
+                    from dateutil.parser import parse as _dp
+                    updated_at = _dp(str(updated_raw))
+                    if updated_at.tzinfo is None:
+                        updated_at = updated_at.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+
+            age_seconds = (now - updated_at).total_seconds()
+            threshold = _get_task_timeout(tid) * 2  # 2× normal budget = 30–80 min
+
+            if age_seconds < threshold:
+                continue  # task is recent enough — let it run
+
+            now_iso = now.isoformat()
+            reason = (
+                f"stale-reaper: task was in_progress for {age_seconds / 60:.0f} min "
+                f"with no live subprocess (threshold={threshold / 60:.0f} min). "
+                "Automatically reset to backlog for re-dispatch."
+            )
+            conn.execute(
+                "UPDATE kanban_tasks SET "
+                "  status = 'backlog', "
+                "  failure_count = COALESCE(failure_count, 0) + 1, "
+                "  last_failure_reason = ?, "
+                "  last_failure_at = ?, "
+                "  updated_at = ? "
+                "WHERE id = ? AND status = 'in_progress'",
+                (reason, now_iso, now_iso, tid),
+            )
+            reaped.append(tid)
+            print(
+                f"  Kanban: stale-reaper reset {tid} "
+                f"(in_progress {age_seconds / 60:.0f} min, no subprocess)"
+            )
+
+        if reaped:
+            conn.commit()
+            logger.info("stale-reaper: reset %d orphaned in_progress task(s): %s", len(reaped), reaped)
+        conn.close()
+    except Exception as exc:
+        logger.warning("stale-reaper sweep error: %s", exc)
+
+
 # Startup-recovery flag: True after the first cycle's stale-in_progress sweep runs.
 _startup_recovery_done: bool = False
 
@@ -4429,6 +4516,18 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 print(f"  Kanban: worktree age sweep removed {len(swept)} stale worktree(s)")
     except Exception as _ws_exc:
         logger.warning("worktree age sweep failed: %s", _ws_exc)
+
+    # 0d. Periodic stale-in_progress reaper — catches tasks that are in_progress
+    # in the DB but absent from _running (process died after dispatch without
+    # going through the verification gate, OR verification left them in_progress
+    # with "human review needed" instead of resetting to backlog).
+    # Runs ~every 30 cycles (≈30 min). Threshold: 2× the per-task timeout.
+    try:
+        import random as _rr  # noqa: PLC0415
+        if _rr.random() < 0.033:  # ~1-in-30 ≈ once per 30 min  # noqa: S311
+            _reap_stale_in_progress()
+    except Exception as _rip_exc:
+        logger.warning("stale-in_progress reaper failed: %s", _rip_exc)
 
     # 1. Check for completed claude subprocesses
     completed = _check_completed()
