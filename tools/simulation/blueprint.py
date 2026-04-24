@@ -94,6 +94,8 @@ def create_simulation_blueprint() -> Blueprint:
             mode = "troubleshoot"
         elif content.startswith("/refine") or "refine" in content.lower():
             mode = "refine"
+        elif content.startswith("/spec"):
+            mode = "spec"
 
         canvas_type = "ndc"
         if session_id:
@@ -116,6 +118,26 @@ def create_simulation_blueprint() -> Blueprint:
                     mode = "refine"
             except Exception:
                 pass
+
+        if mode == "spec":
+            try:
+                from tools.simulation.artifacts.spec_generator import generate_spec, spec_to_yaml
+                spec = generate_spec(session_id, canvas_type)
+                yaml_str = spec_to_yaml(spec)
+                canvas_display = spec.get("canvas_display", canvas_type.upper())
+                reply = (
+                    f"[SPEC — {canvas_display}]\n\n"
+                    f"```yaml\n{yaml_str}\n```\n\n"
+                    "Use `/refine` to update the diagram or `/troubleshoot` to analyze fault paths."
+                )
+                return jsonify({
+                    "reply": reply,
+                    "mode": "spec",
+                    "spec": spec,
+                    "canvas_type": canvas_type,
+                })
+            except Exception as exc:
+                return jsonify({"reply": f"[SPEC] Error: {exc}", "mode": "spec", "spec": {}}), 400
 
         if mode == "troubleshoot":
             try:
