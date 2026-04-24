@@ -29,7 +29,8 @@ exit_rules:
 scanner:
   top_n: 25                    # candidates to score per genesis run
   min_pnl_ratio: 0.08          # pre-filter before oracle rules (wider net)
-  max_workers: 6
+  max_workers: 4               # reduced from 6 — fewer concurrent yfinance requests
+  worker_delay_sec: 0.5        # stagger delay between worker fetches to avoid 429
   fetch_timeout_sec: 30        # per-ticker yfinance timeout (prevents hangs)
 
 genesis:

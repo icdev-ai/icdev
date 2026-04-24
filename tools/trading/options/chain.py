@@ -333,12 +333,21 @@ def _attach_greeks(contract: dict, spot: float, r: float = 0.05) -> dict:
     return contract
 
 
-def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
+def _is_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc)
+    return any(k in msg for k in ("Rate", "Too Many", "429", "HTTPError: 429", "rate limit"))
+
+
+def fetch_chain(ticker: str, force_refresh: bool = False, _retry: int = 0) -> dict:
     """Fetch the live options chain for *ticker* via yfinance with BS Greeks.
 
     Returns a dict with keys: underlying, spot, expirations, contracts, calls, puts.
-    Returns empty dict on failure.
+    Returns empty dict on failure. Retries up to 2× on rate-limit with exponential backoff.
     """
+    import time as _time
+    _MAX_RETRIES = 2
+    _BACKOFF_BASE = 15  # seconds — 15s, 30s on successive rate limits
+
     try:
         ticker_obj = yf.Ticker(ticker.upper())
         spot: float = 0.0
@@ -356,10 +365,15 @@ def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
         try:
             expirations = list(ticker_obj.options or [])
         except Exception as _oe:
-            _msg = str(_oe)
-            if "Rate" in _msg or "Too Many" in _msg or "429" in _msg:
+            if _is_rate_limit_error(_oe):
+                if _retry < _MAX_RETRIES:
+                    wait = _BACKOFF_BASE * (2 ** _retry)
+                    log.warning("chain.fetch_chain: rate limited on %s — backoff %ds (attempt %d/%d)",
+                                ticker, wait, _retry + 1, _MAX_RETRIES)
+                    _time.sleep(wait)
+                    return fetch_chain(ticker, force_refresh=force_refresh, _retry=_retry + 1)
                 return {"error": "rate_limited", "message": "Yahoo Finance rate limit — wait 60s and retry"}
-            return {"error": "no_options", "message": f"No options data for {ticker.upper()}: {_msg}"}
+            return {"error": "no_options", "message": f"No options data for {ticker.upper()}: {_oe}"}
         all_calls: list[dict] = []
         all_puts: list[dict] = []
         def _sf(v, default: float = 0.0) -> float:
