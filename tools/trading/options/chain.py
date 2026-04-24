@@ -341,7 +341,20 @@ def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
             spot = float(ticker_obj.fast_info.last_price)
         except Exception:
             pass
-        expirations = list(ticker_obj.options or [])
+        if not spot:
+            try:
+                hist = ticker_obj.history(period="1d")
+                if not hist.empty:
+                    spot = float(hist["Close"].iloc[-1])
+            except Exception:
+                pass
+        try:
+            expirations = list(ticker_obj.options or [])
+        except Exception as _oe:
+            _msg = str(_oe)
+            if "Rate" in _msg or "Too Many" in _msg or "429" in _msg:
+                return {"error": "rate_limited", "message": "Yahoo Finance rate limit — wait 60s and retry"}
+            return {"error": "no_options", "message": f"No options data for {ticker.upper()}: {_msg}"}
         all_calls: list[dict] = []
         all_puts: list[dict] = []
         def _sf(v, default: float = 0.0) -> float:
@@ -420,8 +433,11 @@ def fetch_chain(ticker: str, force_refresh: bool = False) -> dict:
             "iv_52w_high": ivr_data.get("iv_52w_high"),
             "iv_52w_low": ivr_data.get("iv_52w_low"),
         }
-    except Exception:
-        return {}
+    except Exception as _fe:
+        _msg = str(_fe)
+        if "Rate" in _msg or "Too Many" in _msg or "429" in _msg:
+            return {"error": "rate_limited", "message": "Yahoo Finance rate limit — wait 60s and retry"}
+        return {"error": "fetch_failed", "message": _msg}
 
 
 def snapshot_chain(ticker: str, conn=None) -> dict:
