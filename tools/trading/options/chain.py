@@ -8,8 +8,10 @@ from typing import Optional
 
 import yfinance as yf
 
-# In-memory cache: key -> (timestamp, result)
+# In-memory cache: key -> (timestamp, result)  — protected by a lock for thread safety
+import threading as _threading
 _IVR_CACHE: dict = {}
+_IVR_LOCK = _threading.Lock()
 _CACHE_TTL = 3600  # 1 hour in seconds
 
 
@@ -56,11 +58,13 @@ def compute_ivr(ticker: str, current_atm_iv: float) -> dict:
     cache_key = ticker.upper()
     now = time.monotonic()
 
-    # Return cached result if fresh
-    if cache_key in _IVR_CACHE:
-        ts, cached = _IVR_CACHE[cache_key]
+    # Return cached result if fresh (lock for thread safety)
+    with _IVR_LOCK:
+        _cached_entry = _IVR_CACHE.get(cache_key)
+    if _cached_entry is not None:
+        ts, cached = _cached_entry
         if now - ts < _CACHE_TTL:
-            # Update current_iv in cached result to the caller's value
+            # Update live IV fields without mutating the cached dict
             result = dict(cached)
             result["current_iv"] = current_atm_iv
             iv_high = result["iv_52w_high"]
@@ -159,7 +163,8 @@ def compute_ivr(ticker: str, current_atm_iv: float) -> dict:
         "_hist_ivs": monthly_ivs,
     }
 
-    _IVR_CACHE[cache_key] = (now, result)
+    with _IVR_LOCK:
+        _IVR_CACHE[cache_key] = (now, result)
 
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
