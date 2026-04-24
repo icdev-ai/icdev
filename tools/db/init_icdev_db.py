@@ -1785,7 +1785,7 @@ CREATE TABLE IF NOT EXISTS simulation_results (
     scenario_id TEXT NOT NULL REFERENCES simulation_scenarios(id),
     dimension TEXT NOT NULL
         CHECK(dimension IN ('architecture', 'compliance', 'supply_chain',
-            'schedule', 'cost', 'risk')),
+            'schedule', 'cost', 'risk', 'resource_allocation', 'quality')),
     metric_name TEXT NOT NULL,
     baseline_value REAL,
     simulated_value REAL,

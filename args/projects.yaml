@@ -1,335 +1,370 @@
 # CUI // SP-CTI
 #
-# Project registry — rendered as a "Projects in Flight" section below the
-# Task Board at /kanban. Every project gets its own collapsible card with:
-#   * progress bars per epic (computed from kanban_tasks with id LIKE <prefix>*)
-#   * brief links
-#   * in-flight + recent-failure summaries
-#   * failure_triage activity stats (shared across all projects — global)
-#
-# Adding a new project = appending an entry here. No code change required.
+# Auto-managed by tools/project/kanban_project_sync.py
+# Human edits to name/description/briefs are preserved.
 
 projects:
+- key: task_kb
+  name: Task Kb Project
+  description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: task-kb-
+  default_open: true
+  briefs: []
+  epics:
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+- key: plan_dtwin_pdc_pipeline
+  name: Plan Dtwin Pdc Pipeline Project
+  description: Auto-registered project for tasks with prefix 'plan-dtwin-pdc-pipeline-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: plan-dtwin-pdc-pipeline-
+  default_open: true
+  briefs: []
+  epics:
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: l0
+    title: L0 — Foundation
+    priority: medium
+  - key: l1
+    title: L1 — Parsers / Ingestion
+    priority: medium
+  - key: l2
+    title: L2 — Router / Dispatch
+    priority: medium
+  - key: l3
+    title: L3 — Core Agent / Engine
+    priority: medium
+  - key: l4
+    title: L4 — Artifacts / Output
+    priority: medium
+  - key: l5
+    title: L5 — Dashboard UI
+    priority: medium
+  - key: l6
+    title: L6 — Integrations
+    priority: medium
+  - key: l7
+    title: L7 — Validation / Gate
+    priority: medium
+- key: sim-chat
+  name: TFW Simulation Chat Workbench
+  description: 'Canvas-agnostic simulation engine at /simulate/chat — upload any diagram
+    (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows with
+    color-coded Mermaid diagrams, troubleshoot auth and routing issues, and generate
+    compliance artifacts (PPSM, DFD, CIS, ISA, POA&M, OSCAL). Covers all 7 canvases:
+    NDC, SDC, EDA, DDC, PDC, BDC, IDC. 35 dependency-chained tasks across 7 layers.
 
-  - key: sim-chat
-    name: "TFW Simulation Chat Workbench"
-    description: >
-      Canvas-agnostic simulation engine at /simulate/chat — upload any diagram
-      (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows
-      with color-coded Mermaid diagrams, troubleshoot auth and routing issues,
-      and generate compliance artifacts (PPSM, DFD, CIS, ISA, POA&M, OSCAL).
-      Covers all 7 canvases: NDC, SDC, EDA, DDC, PDC, BDC, IDC.
-      35 dependency-chained tasks across 7 layers.
-    task_prefix: "sim-"
-    default_open: true
-    briefs: []
-    epics:
-      - key: l0
-        title: "L0 — Foundation (canvas registry, schema, DB)"
-        priority: critical
-      - key: l1
-        title: "L1 — Diagram Parsers (Mermaid, draw.io, Visio, image, PDF)"
-        priority: high
-      - key: l2
-        title: "L2 — Format Router (diagram_ingestor)"
-        priority: high
-      - key: l3
-        title: "L3 — Chat Agent (EXPLAIN / TROUBLESHOOT / REFINE + session)"
-        priority: critical
-      - key: l4
-        title: "L4 — Artifact Generators (PPSM, DFD, CIS, ISA, POA&M, OSCAL, bundle)"
-        priority: high
-      - key: l5
-        title: "L5 — Dashboard UI (/simulate/chat, upload, chat, Mermaid renderer)"
-        priority: high
-      - key: l6
-        title: "L6 — Integrations (evidence, poam, diff, spec)"
-        priority: medium
-      - key: l7
-        title: "L7 — Validation (E2E Selenium, coherence gate)"
-        priority: critical
+    '
+  task_prefix: sim-
+  default_open: true
+  briefs: []
+  epics:
+  - key: l0
+    title: L0 — Foundation (canvas registry, schema, DB)
+    priority: critical
+  - key: l1
+    title: L1 — Diagram Parsers (Mermaid, draw.io, Visio, image, PDF)
+    priority: high
+  - key: l2
+    title: L2 — Format Router (diagram_ingestor)
+    priority: high
+  - key: l3
+    title: L3 — Chat Agent (EXPLAIN / TROUBLESHOOT / REFINE + session)
+    priority: critical
+  - key: l4
+    title: L4 — Artifact Generators (PPSM, DFD, CIS, ISA, POA&M, OSCAL, bundle)
+    priority: high
+  - key: l5
+    title: L5 — Dashboard UI (/simulate/chat, upload, chat, Mermaid renderer)
+    priority: high
+  - key: l6
+    title: L6 — Integrations (evidence, poam, diff, spec)
+    priority: medium
+  - key: l7
+    title: L7 — Validation (E2E Selenium, coherence gate)
+    priority: critical
+- key: digital-twin
+  name: Digital Twin Roadmap
+  description: 'Per-canvas digital-twin implementation across 8 epics, 86 dependency-chained
+    kanban tasks.
 
-  - key: digital-twin
-    name: "Digital Twin Roadmap"
-    description: >
-      Per-canvas digital-twin implementation across 8 epics,
-      86 dependency-chained kanban tasks.
-    task_prefix: "dt-"
-    # Default-expanded on the board (first render). Set to false for
-    # projects you want collapsed by default once the list grows.
-    default_open: true
-    briefs:
-      - label: "Inspiration brief — pattern + ICDEV mapping"
-        path: "/docs/briefs/digital-twin-inspiration-brief.md"
-      - label: "Full market scan + per-canvas plan"
-        path: "/docs/briefs/digital-twin-market-canvas-implementation-plan.md"
-    epics:
-      - key: iqe
-        title: "IQE AI Assist — NL→IQE Translation"
-        priority: critical
-      - key: ndc
-        title: "NDC Path Reachability Analysis"
-        priority: critical
-      - key: ce
-        title: "Creative Engine — Digital Twin Domain Fix"
-        priority: high
-      - key: bdc
-        title: "BDC cATO Twin (Phase 1)"
-        priority: critical
-      - key: idc-iac
-        title: "IDC IaC Generation"
-        priority: high
-      - key: idc-twin
-        title: "IDC IaC Twin (Phase 1)"
-        priority: high
-      - key: pdc
-        title: "PDC Pipeline Twin"
-        priority: medium
-      - key: sdc
-        title: "SDC Attack Path Twin"
-        priority: medium
-      - key: odc
-        title: "ODC MITRE Coverage Twin"
-        priority: medium
-      - key: ddc
-        title: "DDC Lineage Adapter"
-        priority: low
-      - key: tfw
-        title: "NDC Traffic Flow Walkthrough"
-        priority: critical
+    '
+  task_prefix: dt-
+  default_open: true
+  briefs:
+  - label: Inspiration brief — pattern + ICDEV mapping
+    path: /docs/briefs/digital-twin-inspiration-brief.md
+  - label: Full market scan + per-canvas plan
+    path: /docs/briefs/digital-twin-market-canvas-implementation-plan.md
+  epics:
+  - key: iqe
+    title: IQE AI Assist — NL→IQE Translation
+    priority: critical
+  - key: ndc
+    title: NDC Path Reachability Analysis
+    priority: critical
+  - key: ce
+    title: Creative Engine — Digital Twin Domain Fix
+    priority: high
+  - key: bdc
+    title: BDC cATO Twin (Phase 1)
+    priority: critical
+  - key: idc-iac
+    title: IDC IaC Generation
+    priority: high
+  - key: idc-twin
+    title: IDC IaC Twin (Phase 1)
+    priority: high
+  - key: pdc
+    title: PDC Pipeline Twin
+    priority: medium
+  - key: sdc
+    title: SDC Attack Path Twin
+    priority: medium
+  - key: odc
+    title: ODC MITRE Coverage Twin
+    priority: medium
+  - key: ddc
+    title: DDC Lineage Adapter
+    priority: low
+  - key: tfw
+    title: NDC Traffic Flow Walkthrough
+    priority: critical
+- key: fathomdesk-7-6
+  name: FathomDesk 7.6 — AI-Assisted Options
+  description: 'LLM-interpretation + deterministic-selection hybrid: intent parser,
+    strategy scorer, strike/expiry picker, pre-flight gates, confirm-to-execute modal,
+    and a position-coach daemon reflex. LLM stays on interpretation + explanation;
+    rules engine owns selection + strike picking (NIST AU auditable).
 
-  - key: fathomdesk-7-6
-    name: "FathomDesk 7.6 — AI-Assisted Options"
-    description: >
-      LLM-interpretation + deterministic-selection hybrid: intent parser,
-      strategy scorer, strike/expiry picker, pre-flight gates, confirm-to-execute
-      modal, and a position-coach daemon reflex. LLM stays on interpretation +
-      explanation; rules engine owns selection + strike picking (NIST AU auditable).
-    task_prefix: "ad76-"
-    default_open: true
-    briefs:
-      - label: "Phase 7.6 brief — scope + safety boundaries"
-        path: "/docs/briefs/phase-7.6-ai-options-assist.md"
-    epics:
-      - key: intake
-        title: "Intent parser (LLM + rule fallback)"
-        priority: high
-      - key: scorer
-        title: "Deterministic strategy + strike + expiry picker"
-        priority: critical
-      - key: confirm
-        title: "Pre-flight gates + confirm-to-execute modal"
-        priority: critical
-      - key: coach
-        title: "Position coach daemon + LLM recommendations"
-        priority: high
-      - key: wrap
-        title: "Registration + feature doc + E2E"
-        priority: high
+    '
+  task_prefix: ad76-
+  default_open: true
+  briefs:
+  - label: Phase 7.6 brief — scope + safety boundaries
+    path: /docs/briefs/phase-7.6-ai-options-assist.md
+  epics:
+  - key: intake
+    title: Intent parser (LLM + rule fallback)
+    priority: high
+  - key: scorer
+    title: Deterministic strategy + strike + expiry picker
+    priority: critical
+  - key: confirm
+    title: Pre-flight gates + confirm-to-execute modal
+    priority: critical
+  - key: coach
+    title: Position coach daemon + LLM recommendations
+    priority: high
+  - key: wrap
+    title: Registration + feature doc + E2E
+    priority: high
+- key: fathomdesk-7-7
+  name: FathomDesk 7.7 — Probability & Compare
+  description: 'OptionStrat-inspired upgrades on top of 7.6''s proposal flow: (1)
+    Probability-of-profit + price-cone overlay on the payoff chart (Monte Carlo on
+    IV-implied lognormal), and (2) side-by-side compare so the top-3 alternates from
+    build_proposal get first-class UI. Fully deterministic — no new LLM calls.
 
-  - key: fathomdesk-7-7
-    name: "FathomDesk 7.7 — Probability & Compare"
-    description: >
-      OptionStrat-inspired upgrades on top of 7.6's proposal flow:
-      (1) Probability-of-profit + price-cone overlay on the payoff chart
-      (Monte Carlo on IV-implied lognormal), and (2) side-by-side compare
-      so the top-3 alternates from build_proposal get first-class UI.
-      Fully deterministic — no new LLM calls.
-    task_prefix: "ad77-"
-    default_open: true
-    briefs:
-      - label: "Phase 7.7 brief — probability + compare"
-        path: "/docs/briefs/phase-7.7-probability-compare.md"
-    epics:
-      - key: prob
-        title: "POP + price cone overlay"
-        priority: critical
-      - key: compare
-        title: "Side-by-side strategy comparison"
-        priority: high
-      - key: wrap
-        title: "Registration + docs + E2E"
-        priority: high
+    '
+  task_prefix: ad77-
+  default_open: true
+  briefs:
+  - label: Phase 7.7 brief — probability + compare
+    path: /docs/briefs/phase-7.7-probability-compare.md
+  epics:
+  - key: prob
+    title: POP + price cone overlay
+    priority: critical
+  - key: compare
+    title: Side-by-side strategy comparison
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+- key: fathomdesk-7-9
+  name: FathomDesk 7.9 — TA Foundation
+  description: 'Candlestick 1D chart + Volume Profile (HVN/LVN/POC/VA) + algorithmic
+    S/R clusters + reversal pattern detectors (double top/bottom, triple top/bottom,
+    rising + falling wedge). Layer 1 primitives that the trap engine (7.10) and news-on-chart
+    overlay (7.11) both build on. No LLM — pure deterministic TA math.
 
-  - key: fathomdesk-7-9
-    name: "FathomDesk 7.9 — TA Foundation"
-    description: >
-      Candlestick 1D chart + Volume Profile (HVN/LVN/POC/VA) + algorithmic
-      S/R clusters + reversal pattern detectors (double top/bottom, triple
-      top/bottom, rising + falling wedge). Layer 1 primitives that the
-      trap engine (7.10) and news-on-chart overlay (7.11) both build on.
-      No LLM — pure deterministic TA math.
-    task_prefix: "ad79-"
-    default_open: true
-    briefs:
-      - label: "Phase 7.9 brief — TA foundation"
-        path: "/docs/briefs/phase-7.9-ta-foundation.md"
-    epics:
-      - key: primitives
-        title: "Swings, Volume Profile, S/R clusters"
-        priority: critical
-      - key: patterns
-        title: "Double, triple, wedge detectors"
-        priority: critical
-      - key: ui
-        title: "Candlestick chart + overlays on /analysis"
-        priority: high
-      - key: wrap
-        title: "Registration + docs + E2E"
-        priority: high
+    '
+  task_prefix: ad79-
+  default_open: true
+  briefs:
+  - label: Phase 7.9 brief — TA foundation
+    path: /docs/briefs/phase-7.9-ta-foundation.md
+  epics:
+  - key: primitives
+    title: Swings, Volume Profile, S/R clusters
+    priority: critical
+  - key: patterns
+    title: Double, triple, wedge detectors
+    priority: critical
+  - key: ui
+    title: Candlestick chart + overlays on /analysis
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+- key: fathomdesk-7-10
+  name: FathomDesk 7.10 — Trap Detection
+  description: 'Blocked on 7.9. Macro liquidity-trap regime detector feeding Oracle
+    + preflight; technical bull/bear trap detector built on 7.9''s S/R + swing primitives;
+    coach + alerts + Genesis wiring for autonomous actions. Trap coach never moves
+    positions — only notifies.
 
-  - key: fathomdesk-7-10
-    name: "FathomDesk 7.10 — Trap Detection"
-    description: >
-      Blocked on 7.9. Macro liquidity-trap regime detector feeding Oracle
-      + preflight; technical bull/bear trap detector built on 7.9's S/R +
-      swing primitives; coach + alerts + Genesis wiring for autonomous
-      actions. Trap coach never moves positions — only notifies.
-    task_prefix: "ad710-"
-    default_open: true
-    briefs:
-      - label: "Phase 7.10 brief — trap detection"
-        path: "/docs/briefs/phase-7.10-trap-detection.md"
-    epics:
-      - key: macro
-        title: "Liquidity trap regime detector"
-        priority: high
-      - key: technical
-        title: "Bull/bear trap detector"
-        priority: critical
-      - key: integration
-        title: "Coach + Genesis + preflight wiring"
-        priority: high
-      - key: wrap
-        title: "Registration + docs + E2E"
-        priority: high
+    '
+  task_prefix: ad710-
+  default_open: true
+  briefs:
+  - label: Phase 7.10 brief — trap detection
+    path: /docs/briefs/phase-7.10-trap-detection.md
+  epics:
+  - key: macro
+    title: Liquidity trap regime detector
+    priority: high
+  - key: technical
+    title: Bull/bear trap detector
+    priority: critical
+  - key: integration
+    title: Coach + Genesis + preflight wiring
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+- key: fathomdesk-7-11
+  name: FathomDesk 7.11 — News 2.0
+  description: 'Blocked on 7.9 (uses the chart layer for news-on-price overlays).
+    Categorized /news tabs (not one firehose list); per-category pattern analyzer
+    with append-only audit table; Genesis reflex for autonomous actions (alerts +
+    scenario auto-spawn + Pulse digest). Genesis never places orders — signals only.
 
-  - key: fathomdesk-7-11
-    name: "FathomDesk 7.11 — News 2.0"
-    description: >
-      Blocked on 7.9 (uses the chart layer for news-on-price overlays).
-      Categorized /news tabs (not one firehose list); per-category pattern
-      analyzer with append-only audit table; Genesis reflex for autonomous
-      actions (alerts + scenario auto-spawn + Pulse digest). Genesis never
-      places orders — signals only.
-    task_prefix: "ad711-"
-    default_open: true
-    briefs:
-      - label: "Phase 7.11 brief — news 2.0"
-        path: "/docs/briefs/phase-7.11-news-2.md"
-    epics:
-      - key: cat
-        title: "Category tabs + news-on-chart overlay"
-        priority: high
-      - key: pattern
-        title: "Pattern analyzer + ad_news_patterns"
-        priority: critical
-      - key: genesis
-        title: "Genesis reflex for autonomous actions"
-        priority: high
-      - key: wrap
-        title: "Registration + docs + E2E"
-        priority: high
+    '
+  task_prefix: ad711-
+  default_open: true
+  briefs:
+  - label: Phase 7.11 brief — news 2.0
+    path: /docs/briefs/phase-7.11-news-2.md
+  epics:
+  - key: cat
+    title: Category tabs + news-on-chart overlay
+    priority: high
+  - key: pattern
+    title: Pattern analyzer + ad_news_patterns
+    priority: critical
+  - key: genesis
+    title: Genesis reflex for autonomous actions
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+- key: fathomdesk-7-8
+  name: FathomDesk 7.8 — Greeks Deep Dive + Quick Wins
+  description: 'Three OptionStrat-inspired upgrades: (1) Black-Scholes pricer + time-T
+    payoff slider (not just expiry intrinsic); (2) portfolio net Greeks aggregation
+    card; (3) shareable trade URLs. No new LLM calls; all deterministic.
 
-  - key: fathomdesk-7-8
-    name: "FathomDesk 7.8 — Greeks Deep Dive + Quick Wins"
-    description: >
-      Three OptionStrat-inspired upgrades: (1) Black-Scholes pricer +
-      time-T payoff slider (not just expiry intrinsic); (2) portfolio
-      net Greeks aggregation card; (3) shareable trade URLs. No new
-      LLM calls; all deterministic.
-    task_prefix: "ad78-"
-    default_open: true
-    briefs:
-      - label: "Phase 7.8 brief — BS pricer, portfolio greeks, share"
-        path: "/docs/briefs/phase-7.8-greeks-share.md"
-    epics:
-      - key: pricing
-        title: "Black-Scholes pricer + time-T payoff"
-        priority: critical
-      - key: portfolio
-        title: "Portfolio net Greeks"
-        priority: high
-      - key: share
-        title: "Shareable trade URLs"
-        priority: medium
-      - key: wrap
-        title: "Registration + docs + E2E"
-        priority: high
+    '
+  task_prefix: ad78-
+  default_open: true
+  briefs:
+  - label: Phase 7.8 brief — BS pricer, portfolio greeks, share
+    path: /docs/briefs/phase-7.8-greeks-share.md
+  epics:
+  - key: pricing
+    title: Black-Scholes pricer + time-T payoff
+    priority: critical
+  - key: portfolio
+    title: Portfolio net Greeks
+    priority: high
+  - key: share
+    title: Shareable trade URLs
+    priority: medium
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+- key: opts-greeks
+  name: FathomDesk — Options Greeks Engine
+  description: '7-epic expansion: rho completeness, IV Rank/Percentile, Greek-profile
+    strategy ranking, Greek-aware AI intent + coach, Greek visualizations (heatmap,
+    time-decay slider, P&L attribution), second-order Greeks (Vanna/Charm/Volga),
+    and Portfolio Greek Manager (targets, hedges, IV skew + term structure). Each
+    phase gated by CodeLens + Coherence + Selenium E2E.
 
-  - key: opts-greeks
-    name: "FathomDesk — Options Greeks Engine"
-    description: >
-      7-epic expansion: rho completeness, IV Rank/Percentile, Greek-profile
-      strategy ranking, Greek-aware AI intent + coach, Greek visualizations
-      (heatmap, time-decay slider, P&L attribution), second-order Greeks
-      (Vanna/Charm/Volga), and Portfolio Greek Manager (targets, hedges,
-      IV skew + term structure). Each phase gated by CodeLens + Coherence +
-      Selenium E2E.
-    task_prefix: "og-"
-    default_open: true
-    briefs:
-      - label: "Options Greeks 6-phase brief"
-        path: "/docs/briefs/opts-greeks-brief.md"
-    epics:
-      - key: data
-        title: "Phase 1 — Greek Data Completeness (rho + chain display)"
-        priority: critical
-      - key: ivr
-        title: "Phase 2 — IV Rank/Percentile"
-        priority: critical
-      - key: profile
-        title: "Phase 3 — Greek Profile + Strategy Ranking"
-        priority: high
-      - key: ai
-        title: "Phase 4 — Greek-Aware AI Intent + Coach"
-        priority: high
-      - key: viz
-        title: "Phase 5 — Greek Visualizations"
-        priority: medium
-      - key: sog
-        title: "Phase 6a — Second-Order Greeks (Vanna/Charm/Volga)"
-        priority: high
-      - key: pgm
-        title: "Phase 6b — Portfolio Greek Manager + Harmonization"
-        priority: medium
+    '
+  task_prefix: og-
+  default_open: true
+  briefs:
+  - label: Options Greeks 6-phase brief
+    path: /docs/briefs/opts-greeks-brief.md
+  epics:
+  - key: data
+    title: Phase 1 — Greek Data Completeness (rho + chain display)
+    priority: critical
+  - key: ivr
+    title: Phase 2 — IV Rank/Percentile
+    priority: critical
+  - key: profile
+    title: Phase 3 — Greek Profile + Strategy Ranking
+    priority: high
+  - key: ai
+    title: Phase 4 — Greek-Aware AI Intent + Coach
+    priority: high
+  - key: viz
+    title: Phase 5 — Greek Visualizations
+    priority: medium
+  - key: sog
+    title: Phase 6a — Second-Order Greeks (Vanna/Charm/Volga)
+    priority: high
+  - key: pgm
+    title: Phase 6b — Portfolio Greek Manager + Harmonization
+    priority: medium
+- key: fdm-macro
+  name: FathomDesk — Macro Intelligence Expansion
+  description: '8-phase macro signal expansion: credit market foundation (IG/BBB OAS
+    + SOFR funding stress), QE/QT phase detector, bond ETF technicals, cross-asset
+    rotation engine (Gold/S&P, Copper/Gold, TLT/SPY ratios + multi-signal exit confirmation),
+    fiscal/Treasury supply pressure, credit impulse & fallen-angel risk, sector policy
+    tailwind scoring (IRA/CHIPS/NDAA), and full FathomDesk UI integration. Each phase
+    gated by CodeLens + Coherence + Selenium E2E.
 
-  - key: fdm-macro
-    name: "FathomDesk — Macro Intelligence Expansion"
-    description: >
-      8-phase macro signal expansion: credit market foundation (IG/BBB OAS +
-      SOFR funding stress), QE/QT phase detector, bond ETF technicals, cross-asset
-      rotation engine (Gold/S&P, Copper/Gold, TLT/SPY ratios + multi-signal exit
-      confirmation), fiscal/Treasury supply pressure, credit impulse & fallen-angel
-      risk, sector policy tailwind scoring (IRA/CHIPS/NDAA), and full FathomDesk
-      UI integration. Each phase gated by CodeLens + Coherence + Selenium E2E.
-    task_prefix: "fdm-"
-    default_open: true
-    briefs:
-      - label: "Macro Intelligence analysis + evaluation"
-        path: "/docs/briefs/fdm-macro-intelligence-plan.md"
-    epics:
-      - key: crd
-        title: "Phase 1 — Credit Market Foundation (IG/BBB OAS + SOFR)"
-        priority: critical
-      - key: qeqt
-        title: "Phase 2 — QE/QT Phase Detector"
-        priority: critical
-      - key: betf
-        title: "Phase 3 — Bond ETF Technicals (TLT/HYG/LQD/AGG)"
-        priority: high
-      - key: xar
-        title: "Phase 4 — Cross-Asset Rotation Engine"
-        priority: critical
-      - key: fisc
-        title: "Phase 5 — Fiscal/Treasury Supply Pressure"
-        priority: high
-      - key: cimp
-        title: "Phase 6 — Credit Impulse & Credit Cycle"
-        priority: high
-      - key: subsidy
-        title: "Phase 7 — Sector Policy Tailwind Scoring"
-        priority: medium
-      - key: ui
-        title: "Phase 8 — FathomDesk UI Integration"
-        priority: critical
+    '
+  task_prefix: fdm-
+  default_open: true
+  briefs:
+  - label: Macro Intelligence analysis + evaluation
+    path: /docs/briefs/fdm-macro-intelligence-plan.md
+  epics:
+  - key: crd
+    title: Phase 1 — Credit Market Foundation (IG/BBB OAS + SOFR)
+    priority: critical
+  - key: qeqt
+    title: Phase 2 — QE/QT Phase Detector
+    priority: critical
+  - key: betf
+    title: Phase 3 — Bond ETF Technicals (TLT/HYG/LQD/AGG)
+    priority: high
+  - key: xar
+    title: Phase 4 — Cross-Asset Rotation Engine
+    priority: critical
+  - key: fisc
+    title: Phase 5 — Fiscal/Treasury Supply Pressure
+    priority: high
+  - key: cimp
+    title: Phase 6 — Credit Impulse & Credit Cycle
+    priority: high
+  - key: subsidy
+    title: Phase 7 — Sector Policy Tailwind Scoring
+    priority: medium
+  - key: ui
+    title: Phase 8 — FathomDesk UI Integration
+    priority: critical

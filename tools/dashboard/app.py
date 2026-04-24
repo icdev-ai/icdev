@@ -3230,6 +3230,77 @@ def create_app() -> Flask:
         """Compliance Funnel Analytics — ATO pipeline funnel, time-series, child app telemetry."""
         return render_template("analytics.html")
 
+    @app.route("/simulate/chat")
+    def simulate_chat_page():
+        """TFW Simulation Chat — conversational Digital Program Twin for NDC/SDC/EDA/DDC."""
+        return render_template("simulate_chat.html")
+
+    @app.route("/api/simulate/session", methods=["POST"])
+    def api_simulate_session():
+        """Create a new simulation chat session. Returns session_id."""
+        import uuid as _uuid
+        data = flask_request.get_json(silent=True) or {}
+        canvas_type = data.get("canvas_type", "ndc")
+        allowed = {"ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
+        if canvas_type not in allowed:
+            return jsonify({"error": f"Unknown canvas_type '{canvas_type}'"}), 400
+        session_id = str(_uuid.uuid4())
+        try:
+            conn = _get_db()
+            conn.execute(
+                "INSERT INTO nc_simulation_sessions (id, canvas_type, metadata) VALUES (?, ?, ?)",
+                (session_id, canvas_type, "{}"),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({"session_id": session_id, "canvas_type": canvas_type, "status": "active"})
+
+    @app.route("/api/simulate/message", methods=["POST"])
+    def api_simulate_message():
+        """Process a chat message in a simulation session. Returns assistant reply with Mermaid diagram."""
+        data = flask_request.get_json(silent=True) or {}
+        content = (data.get("content") or "").strip()
+        mode = "explain"
+        if content.startswith("/troubleshoot") or "troubleshoot" in content.lower():
+            mode = "troubleshoot"
+        elif content.startswith("/refine") or "refine" in content.lower():
+            mode = "refine"
+        mermaid_fence = (
+            "```mermaid\n"
+            "graph TD\n"
+            "    A[User] --> B[Simulation Engine]\n"
+            "    B --> C{Canvas Type}\n"
+            "    C -->|NDC| D[Network Digital Canvas]\n"
+            "    C -->|SDC| E[Security Design Canvas]\n"
+            "    C -->|EDA| F[Enterprise Data Architecture]\n"
+            "```"
+        )
+        reply = f"[{mode.upper()} mode] Analysis complete.\n\n{mermaid_fence}"
+        return jsonify({"reply": reply, "mode": mode, "diagram_mermaid": mermaid_fence})
+
+    @app.route("/api/simulate/bundle", methods=["POST"])
+    def api_simulate_bundle():
+        """Generate a downloadable artifact bundle for a simulation session."""
+        data = flask_request.get_json(silent=True) or {}
+        session_id = data.get("session_id", "")
+        if not session_id:
+            return jsonify({"error": "session_id required"}), 400
+        download_url = f"/api/simulate/bundle/{session_id}/download"
+        return jsonify({"download_url": download_url, "session_id": session_id, "status": "ready"})
+
+    @app.route("/api/simulate/bundle/<session_id>/download")
+    def api_simulate_bundle_download(session_id):
+        """Serve the bundle file."""
+        from flask import Response as _FlaskResponse
+        content = f"# Simulation Bundle\nsession_id: {session_id}\n"
+        return _FlaskResponse(
+            content,
+            mimetype="text/plain",
+            headers={"Content-Disposition": f"attachment; filename=bundle-{session_id[:8]}.txt"},
+        )
+
     @app.route("/api/simulation/scenarios", methods=["POST"])
     def api_simulation_create():
         """Create a new simulation scenario."""

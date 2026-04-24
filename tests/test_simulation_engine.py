@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS simulation_results (
     scenario_id TEXT NOT NULL,
     dimension TEXT NOT NULL
         CHECK(dimension IN ('architecture', 'compliance', 'supply_chain',
-            'schedule', 'cost', 'risk')),
+            'schedule', 'cost', 'risk', 'resource_allocation', 'quality')),
     metric_name TEXT NOT NULL,
     baseline_value REAL,
     simulated_value REAL,
@@ -302,8 +302,8 @@ class TestImpactScoring:
             "schedule": {"delta_pct": 30.0},
         }
         score = _impact_score(dims)
-        # cost weight=0.20, schedule weight=0.15 -> 50*0.20 + 30*0.15 = 10+4.5 = 14.5
-        assert score == 14.5
+        # cost weight=0.15, schedule weight=0.15 -> 50*0.15 + 30*0.15 = 7.5+4.5 = 12.0
+        assert score == 12.0
 
     def test_impact_score_capped_at_100(self):
         dims = {dim: {"delta_pct": 200.0} for dim in ALL_DIMENSIONS}
@@ -350,7 +350,7 @@ class TestHelpers:
         assert _pct("GREEN", "RED") == 0.0
 
     def test_all_dimensions_constant(self):
-        assert len(ALL_DIMENSIONS) == 6
+        assert len(ALL_DIMENSIONS) == 8
         assert "architecture" in ALL_DIMENSIONS
         assert "compliance" in ALL_DIMENSIONS
         assert "risk" in ALL_DIMENSIONS
