@@ -1844,6 +1844,28 @@ CREATE TABLE IF NOT EXISTS cve_passive_watch_log (
     source_event_type TEXT,
     processed_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS nc_simulation_sessions (
+    id TEXT NOT NULL PRIMARY KEY,
+    canvas_type TEXT NOT NULL,
+    topology_id TEXT,
+    mode TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS nc_simulation_runs (
+    id TEXT NOT NULL PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES nc_simulation_sessions(id),
+    run_at TEXT NOT NULL DEFAULT (datetime('now')),
+    steps TEXT NOT NULL DEFAULT '[]',
+    summary TEXT
+);
+CREATE TABLE IF NOT EXISTS nc_simulation_artifacts (
+    id TEXT NOT NULL PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES nc_simulation_runs(id),
+    artifact_type TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------

@@ -382,6 +382,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # SDC Attack Path Twin — append-only attack graph (NIST AU; migration 028)
         "attack_graph_nodes",
         "attack_graph_edges",
+        # Network Canvas simulation history (migration 037, NIST AU)
+        "nc_simulation_sessions",
+        "nc_simulation_runs",
+        "nc_simulation_artifacts",
     ]
 
     if tool_name == "Bash":
