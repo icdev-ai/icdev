@@ -10,4 +10,5 @@
 | COA Generator | tools/simulation/coa_generator.py | Generate 3 COAs (Speed/Balanced/Comprehensive) + RED alternatives | --session-id, --generate-3-coas, --simulate, --compare, --json | COAs + comparison |
 | Scenario Manager | tools/simulation/scenario_manager.py | Save, fork, compare, export, archive simulation scenarios | --scenario-id, --fork, --compare, --export, --json | Scenario operations |
 | MCP Simulation Server | tools/mcp/simulation_server.py | MCP server for simulation tools (8 tools) | stdio | JSON-RPC responses |
+| Diagram Style | tools/simulation/diagram_style.py | Canvas-agnostic color/style constants: AWS/Azure/BCAP/IDPS/BGP/Megaport/PrivateLink zones, microservice zones, EDA zones, flow palette F1-F8, edge semantics; get_node_style(zone, canvas_type), get_edge_style(semantic, canvas_type), get_flow_color(flow_id) | import | Style dicts |
 

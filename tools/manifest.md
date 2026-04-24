@@ -361,3 +361,11 @@
 |------|------|-------------|-------|--------|
 | Traffic Flow | tools\network\traffic_flow.py | Auto-registered: network/traffic_flow.py | --json | JSON |
 | Narrative Generator | tools\network\narrative_generator.py | TFW Narrative Generator — wraps `TrafficFlowEngine` walkthrough steps with per-persona LLM narratives (seceng, neteng, cloudarch, compofficer, appdev, missionowner, ciso) and deterministic `detail_json` enrichment (CSP detection, multi-CSP inter-hop, classification overlay, NIST 800-53/FedRAMP control pre-population). Public API: `generate_for_persona(step, node, persona_id, flow, classification, prev_node, llm_client, use_llm) -> {"narrative": str, "detail_json": dict}` and `generate_all(flow_id, conn, personas, classification, use_llm) -> {"steps": [...], "summary": {...}}`. Falls back to `NARRATIVE_TEMPLATES` then generic text when LLM unavailable. CLI: `--flow-id <uuid> [--classification NIPR\|IL4\|IL5\|IL6\|SIPR] [--personas <id>...] [--no-llm] --json`. Full API reference: [manifest/network-iqe.md](manifest/network-iqe.md#tfw-narrative-generator--detailed-analysis) | `--flow-id <uuid> [--classification NIPR] [--personas seceng compofficer] [--no-llm] --json` | JSON `{steps, summary}` |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Canvas Registry | tools\canvas\canvas_registry.py | Auto-registered: canvas/canvas_registry.py | --json | JSON |
+| Tfw Chat Schema | tools\simulation\tfw_chat_schema.py | Auto-registered: simulation/tfw_chat_schema.py | --json | JSON |
+| Mermaid Parser | tools\simulation\parsers\mermaid_parser.py | Auto-registered: parsers/mermaid_parser.py | --json | JSON |
