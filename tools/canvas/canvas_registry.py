@@ -33,6 +33,31 @@ CANVAS_DISPLAY_NAMES: dict[str, str] = {
 
 _FALLBACK_FLOW_NOUN = "flow"
 
+# Artifacts each canvas type can produce via ppsm_extractor.generate_ppsm().
+# Keys: artifact_type (logical name), artifact_name (display), columns (ordered list).
+CANVAS_AVAILABLE_ARTIFACTS: dict[str, dict] = {
+    "ndc": {
+        "artifact_type": "ppsm",
+        "artifact_name": "Port Protocol Service Matrix",
+        "columns": ["port", "protocol", "service", "direction", "source_zone", "destination_zone", "classification"],
+    },
+    "sdc": {
+        "artifact_type": "ppsm",
+        "artifact_name": "API Surface Matrix",
+        "columns": ["endpoint", "method", "auth", "upstream", "downstream", "sla"],
+    },
+    "eda": {
+        "artifact_type": "ppsm",
+        "artifact_name": "Event Catalog Matrix",
+        "columns": ["topic", "schema_ref", "producer", "consumer", "retention", "ordering"],
+    },
+}
+
+
+def get_available_artifacts(canvas_type: str) -> dict:
+    """Return the available_artifacts spec for a canvas type, or empty dict."""
+    return CANVAS_AVAILABLE_ARTIFACTS.get(canvas_type.lower(), {})
+
 
 def get_flow_noun(canvas_type: str) -> str:
     """Return the domain flow noun for a canvas type (e.g. 'ndc' -> 'traffic flow')."""
