@@ -17,15 +17,16 @@ Endpoints:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request, session
 
 from tools.dashboard.config import DB_PATH
-from tools.dashboard.findings_aggregator import aggregate_findings, summary
+from tools.dashboard.findings_aggregator import aggregate_findings, compute_finding_hash, summary
 from tools.db.storage import get_connection
 
 # ---------------------------------------------------------------------------
@@ -540,4 +541,236 @@ def file_github_issue(finding_hash):
         "finding_hash": finding_hash,
         "rule_id": target["rule_id"],
         "github_url": github_url,
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET /api/poam/simulation-sessions
+# POST /api/poam/import-from-simulation
+# ---------------------------------------------------------------------------
+
+_SIM_SEVERITY_MAP = {
+    "critical": "CAT1", "high": "CAT1", "cat1": "CAT1",
+    "medium": "CAT2", "moderate": "CAT2", "warning": "CAT2", "cat2": "CAT2",
+    "low": "CAT3", "info": "CAT3", "informational": "CAT3", "cat3": "CAT3",
+}
+_SIM_REMEDIATION_DAYS = {"CAT1": 15, "CAT2": 90, "CAT3": 180}
+
+
+def _map_sim_severity(raw: str) -> str:
+    return _SIM_SEVERITY_MAP.get((raw or "").lower().strip(), "CAT3")
+
+
+def _extract_sim_findings(session_row: dict, runs: list[dict]) -> list[dict]:
+    """Convert simulation session/runs into normalised finding dicts."""
+    session_id = session_row["id"]
+    canvas_type = (session_row.get("canvas_type") or "unknown").upper()
+    topology_id = session_row.get("topology_id") or ""
+    affected = topology_id or session_id
+
+    findings: list[dict] = []
+    seen_hashes: set[str] = set()
+
+    for run in runs:
+        run_id = run.get("id", "")
+        steps_raw = run.get("steps") or "[]"
+        try:
+            steps = json.loads(steps_raw) if isinstance(steps_raw, str) else steps_raw
+        except (json.JSONDecodeError, TypeError):
+            steps = []
+
+        for i, step in enumerate(steps if isinstance(steps, list) else []):
+            if not isinstance(step, dict):
+                continue
+            step_type = (step.get("type") or step.get("kind") or "").lower()
+            if step_type not in ("risk", "finding", "error", "warning", "vulnerability",
+                                  "compliance", "failure", "alert"):
+                continue
+            raw_sev = step.get("severity") or step.get("risk_level") or step.get("level") or ""
+            sev = _map_sim_severity(raw_sev or step_type)
+            title = (step.get("message") or step.get("description") or step.get("text") or
+                     f"Simulation {step_type} #{i + 1}")[:200]
+            rule_id = (step.get("rule_id") or step.get("id") or
+                       f"SIM-{canvas_type}-{i + 1:03d}")
+            fhash = compute_finding_hash("tfw_simulation", rule_id, title, affected)
+            if fhash in seen_hashes:
+                continue
+            seen_hashes.add(fhash)
+            findings.append({
+                "finding_hash": fhash,
+                "rule_id": rule_id,
+                "severity": sev,
+                "title": title,
+                "affected_entity": affected,
+                "description": title,
+                "run_id": run_id,
+            })
+
+        # If no step findings, surface the run summary as a finding
+        if not findings:
+            summary_text = (run.get("summary") or "").strip()
+            if summary_text:
+                rule_id = f"SIM-{canvas_type}-RUN-SUMMARY"
+                title = summary_text[:200]
+                fhash = compute_finding_hash("tfw_simulation", rule_id, title, affected)
+                if fhash not in seen_hashes:
+                    seen_hashes.add(fhash)
+                    findings.append({
+                        "finding_hash": fhash,
+                        "rule_id": rule_id,
+                        "severity": "CAT3",
+                        "title": title,
+                        "affected_entity": affected,
+                        "description": summary_text,
+                        "run_id": run_id,
+                    })
+
+    # Session-level fallback when there are no runs or no extractable findings
+    if not findings:
+        rule_id = f"SIM-{canvas_type}-SESSION"
+        title = f"Simulation session {canvas_type}: {session_id[:12]}"
+        fhash = compute_finding_hash("tfw_simulation", rule_id, title, affected)
+        findings.append({
+            "finding_hash": fhash,
+            "rule_id": rule_id,
+            "severity": "CAT3",
+            "title": title,
+            "affected_entity": affected,
+            "description": f"Digital twin simulation run on {canvas_type} canvas.",
+            "run_id": "",
+        })
+
+    return findings
+
+
+@poam_api.route("/simulation-sessions", methods=["GET"])
+def list_simulation_sessions():
+    """List available simulation sessions for the import modal.
+
+    Returns up to 50 most-recent nc_simulation_sessions rows with run counts.
+    """
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT s.id, s.canvas_type, s.topology_id, s.mode, s.created_at, "
+            "  COUNT(r.id) AS run_count "
+            "FROM nc_simulation_sessions s "
+            "LEFT JOIN nc_simulation_runs r ON r.session_id = s.id "
+            "GROUP BY s.id "
+            "ORDER BY s.created_at DESC "
+            "LIMIT 50"
+        ).fetchall()
+        sessions = [dict(r) for r in rows]
+    except Exception as exc:
+        logger.warning("list_simulation_sessions: query failed: %s", exc)
+        sessions = []
+    finally:
+        conn.close()
+    return jsonify({"sessions": sessions})
+
+
+@poam_api.route("/import-from-simulation", methods=["POST"])
+def import_from_simulation():
+    """Import POA&M findings from a simulation session.
+
+    Body (JSON):
+        session_id  - ID of an nc_simulation_sessions row
+
+    Inserts finding_approvals rows with canvas_source='tfw_simulation'.
+    Skips hashes that already exist (idempotent).
+
+    Returns:
+        { ok, session_id, inserted, skipped, findings_count }
+    """
+    payload = request.get_json(silent=True) or {}
+    session_id = (payload.get("session_id") or "").strip()
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+
+    conn = _get_db()
+    try:
+        session_row = conn.execute(
+            "SELECT id, canvas_type, topology_id, mode, created_at, metadata "
+            "FROM nc_simulation_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if not session_row:
+            return jsonify({"error": "simulation session not found"}), 404
+        session_row = dict(session_row)
+
+        run_rows = conn.execute(
+            "SELECT id, run_at, steps, summary FROM nc_simulation_runs "
+            "WHERE session_id = ? ORDER BY run_at DESC LIMIT 10",
+            (session_id,),
+        ).fetchall()
+        runs = [dict(r) for r in run_rows]
+
+        findings = _extract_sim_findings(session_row, runs)
+
+        now = _now_iso()
+        reviewer = (session.get("user") or request.headers.get("X-User") or "icdev-simulation")
+        inserted = 0
+        skipped = 0
+
+        for f in findings:
+            existing = conn.execute(
+                "SELECT finding_hash FROM finding_approvals WHERE finding_hash = ?",
+                (f["finding_hash"],),
+            ).fetchone()
+            if existing:
+                skipped += 1
+                continue
+
+            sev = f["severity"]
+            days = _SIM_REMEDIATION_DAYS.get(sev, 90)
+            milestone = (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+            description = f"[SIM] {f.get('description', f['title'])}\nMilestone: {milestone}"
+
+            conn.execute(
+                "INSERT INTO finding_approvals "
+                "(finding_hash, canvas_source, rule_id, severity, title, "
+                "affected_entity, decision, classification, created_at, updated_at, decision_rationale) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    f["finding_hash"],
+                    "tfw_simulation",
+                    f["rule_id"],
+                    sev,
+                    f["title"],
+                    f["affected_entity"],
+                    "pending",
+                    "CUI // SP-CTI",
+                    now,
+                    now,
+                    description,
+                ),
+            )
+            inserted += 1
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    try:
+        from tools.audit.audit_logger import log_event
+        log_event(
+            event_type="finding_approval",
+            actor=(session.get("user") or request.headers.get("X-User") or "icdev-simulation"),
+            action="poam.import_from_simulation",
+            details=json.dumps({
+                "session_id": session_id,
+                "inserted": inserted,
+                "skipped": skipped,
+            }),
+            project_id="dashboard-poam",
+        )
+    except Exception as exc:
+        logger.warning("audit logging failed for import_from_simulation: %s", exc)
+
+    return jsonify({
+        "ok": True,
+        "session_id": session_id,
+        "inserted": inserted,
+        "skipped": skipped,
+        "findings_count": len(findings),
     })

@@ -236,6 +236,45 @@ def _load_approvals(get_db_conn) -> dict[str, dict]:
         return {}
 
 
+def _read_simulation_findings(get_db_conn) -> list[dict]:
+    """Return tfw_simulation findings stored directly in finding_approvals."""
+    if get_db_conn is None:
+        return []
+    try:
+        conn = get_db_conn()
+        rows = conn.execute(
+            "SELECT finding_hash, rule_id, severity, title, affected_entity, "
+            "decision, decision_by, decision_at, decision_rationale, created_at "
+            "FROM finding_approvals WHERE canvas_source = 'tfw_simulation'"
+        ).fetchall()
+        conn.close()
+        out = []
+        for r in rows:
+            d = dict(r)
+            out.append({
+                "finding_hash": d["finding_hash"],
+                "canvas_label": "Simulation",
+                "canvas_source": "tfw_simulation",
+                "rule_id": d.get("rule_id") or "",
+                "title": d.get("title") or "(untitled)",
+                "severity": d.get("severity") or "CAT3",
+                "category": "simulation",
+                "description": d.get("decision_rationale") or "",
+                "affected_entity": d.get("affected_entity") or "",
+                "affected_type": "",
+                "source_status": "open",
+                "discovered_at": d.get("created_at") or "",
+                "decision": d.get("decision") or "pending",
+                "decision_by": d.get("decision_by") or "",
+                "decision_at": str(d.get("decision_at") or ""),
+                "decision_rationale": d.get("decision_rationale") or "",
+            })
+        return out
+    except Exception as exc:
+        logger.warning("findings_aggregator: failed to load simulation findings: %s", exc)
+        return []
+
+
 def aggregate_findings(get_db_conn=None, include_remediated: bool = False) -> list[dict]:
     """Return all canvas findings joined with their approval state.
 
@@ -267,6 +306,13 @@ def aggregate_findings(get_db_conn=None, include_remediated: bool = False) -> li
                 continue
             seen.add(f["finding_hash"])
             findings.append(f)
+
+    # Simulation findings are self-contained rows in finding_approvals
+    for f in _read_simulation_findings(get_db_conn):
+        if f["finding_hash"] in seen:
+            continue
+        seen.add(f["finding_hash"])
+        findings.append(f)
 
     approvals = _load_approvals(get_db_conn)
     for f in findings:

@@ -34,6 +34,7 @@
         <option value="data">Data Canvas</option>
         <option value="network">Network Canvas</option>
         <option value="pipeline">Pipeline Canvas</option>
+        <option value="tfw_simulation">&#x1F4CA; Simulation</option>
     </select>
     <select id="filter-severity" onchange="loadFindings()" style="padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
         <option value="">All Severities</option>
@@ -50,6 +51,7 @@
         <option value="remediated">Remediated</option>
     </select>
     <button class="btn" onclick="document.getElementById('filter-canvas').value=''; document.getElementById('filter-severity').value=''; document.getElementById('filter-decision').value=''; loadFindings();" style="padding:8px 14px;">Clear Filters</button>
+    <button class="btn btn-primary" onclick="openSimImportModal()" style="padding:8px 14px; margin-left:auto;" title="Import findings from a simulation session">&#x1F4CA; Import from Simulation</button>
     <!-- OPT-68 Pattern 4: saved filter presets -->
     <select id="poam-preset-dropdown" aria-label="Saved filter presets"
             style="padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
@@ -167,7 +169,7 @@ function renderFindings(findings) {
     tbody.innerHTML = findings.map(f => `
         <tr>
             <td><span class="sev-${escapeHtml(f.severity)}">${escapeHtml(f.severity)}</span></td>
-            <td><span class="text-muted">${escapeHtml(f.canvas_label || f.canvas_source)}</span></td>
+            <td><span class="text-muted">${f.canvas_source === 'tfw_simulation' ? '&#x1F4CA; ' : ''}${escapeHtml(f.canvas_label || f.canvas_source)}</span></td>
             <td><code style="font-size:11px;">${escapeHtml(f.rule_id || '-')}</code></td>
             <td>${escapeHtml(f.title)}</td>
             <td><code style="font-size:11px;">${escapeHtml(f.affected_entity || '-')}</code></td>
@@ -303,6 +305,74 @@ async function fileGithubIssue(findingHash) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Import from Simulation modal
+// ---------------------------------------------------------------------------
+async function openSimImportModal() {
+    const modal = document.getElementById('sim-import-modal');
+    const select = document.getElementById('sim-session-select');
+    const statusEl = document.getElementById('sim-import-status');
+    statusEl.textContent = '';
+    select.innerHTML = '<option value="">Loading sessions...</option>';
+    modal.style.display = 'flex';
+    try {
+        const r = await fetch('/api/poam/simulation-sessions');
+        const data = await r.json();
+        const sessions = data.sessions || [];
+        if (!sessions.length) {
+            select.innerHTML = '<option value="">No simulation sessions found</option>';
+            return;
+        }
+        select.innerHTML = '<option value="">-- select a session --</option>' +
+            sessions.map(s => {
+                const label = [
+                    s.canvas_type ? s.canvas_type.toUpperCase() : '',
+                    s.mode ? s.mode : '',
+                    s.created_at ? s.created_at.slice(0, 16).replace('T', ' ') : '',
+                    s.run_count ? `(${s.run_count} run${s.run_count !== 1 ? 's' : ''})` : '',
+                    s.topology_id ? `topo:${s.topology_id.slice(0, 8)}` : '',
+                ].filter(Boolean).join(' · ');
+                return `<option value="${escapeHtml(s.id)}">${escapeHtml(label)} — ${escapeHtml(s.id.slice(0, 12))}</option>`;
+            }).join('');
+    } catch (e) {
+        select.innerHTML = `<option value="">Error: ${escapeHtml(e.message)}</option>`;
+    }
+}
+
+function closeSimImportModal() {
+    document.getElementById('sim-import-modal').style.display = 'none';
+}
+
+async function confirmSimImport() {
+    const sessionId = document.getElementById('sim-session-select').value;
+    if (!sessionId) { alert('Please select a simulation session.'); return; }
+    const btn = document.getElementById('sim-import-confirm-btn');
+    const statusEl = document.getElementById('sim-import-status');
+    btn.disabled = true; btn.textContent = 'Importing...';
+    statusEl.textContent = '';
+    try {
+        const r = await fetch('/api/poam/import-from-simulation', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId}),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            statusEl.style.color = 'var(--red, #e94560)';
+            statusEl.textContent = 'Error: ' + (data.error || r.statusText);
+            return;
+        }
+        statusEl.style.color = 'var(--green, #66bb6a)';
+        statusEl.textContent = `Imported ${data.inserted} finding${data.inserted !== 1 ? 's' : ''} (${data.skipped} skipped — already present).`;
+        setTimeout(() => { closeSimImportModal(); loadFindings(); }, 1500);
+    } catch (e) {
+        statusEl.style.color = 'var(--red, #e94560)';
+        statusEl.textContent = 'Error: ' + e.message;
+    } finally {
+        btn.disabled = false; btn.textContent = 'Import';
+    }
+}
+
 // Initial load — honor ?severity=CAT1, ?canvas=X, ?decision=Y query params
 // so deep links from index.html ("Firing Alerts" → /poam?severity=CAT1) land
 // on a pre-filtered view instead of the default.
@@ -357,4 +427,26 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <script src="{{ url_for('static', filename='js/filter_presets.js') }}"></script>
+
+<!-- Simulation Import Modal -->
+<div id="sim-import-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1001; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:540px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border);">
+            <h3 style="margin:0;">&#x1F4CA; Import from Simulation</h3>
+            <button class="btn btn-sm" onclick="closeSimImportModal()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+            <p style="color:var(--text-dim); font-size:13px; margin:0 0 14px;">Select a simulation session to import its findings into POA&amp;M with <code>source=tfw_simulation</code>. Already-imported findings are skipped.</p>
+            <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Simulation Session</label>
+            <select id="sim-session-select" style="width:100%; padding:10px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); margin-bottom:14px;">
+                <option value="">-- select a session --</option>
+            </select>
+            <div id="sim-import-status" style="font-size:13px; min-height:18px; margin-bottom:12px;"></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" onclick="closeSimImportModal()" style="padding:8px 16px;">Cancel</button>
+                <button class="btn btn-primary" id="sim-import-confirm-btn" onclick="confirmSimImport()" style="padding:8px 16px;">Import</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
