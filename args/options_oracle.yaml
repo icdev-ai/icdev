@@ -5,29 +5,31 @@
 mode: paper          # paper | live
 
 entry_rules:
-  min_edge: 0.65           # combo_analyzer edge_score floor
-  min_pnl_ratio: 0.20      # expected_pnl / max_loss floor (20%)
+  min_edge: 0.65           # combo_analyzer edge_score floor (IV-aware weighted)
+  min_pnl_ratio: 0.20      # slippage-adjusted expected_pnl / max_loss floor (20%)
   min_pop: 55.0            # probability of profit floor (%)
   max_positions: 10        # max concurrent open oracle positions
   max_qty_per_ticker: 2    # contracts per leg per ticker
-  block_on_earnings: true  # skip tickers with earnings inside expiry window
+  block_on_earnings: true  # skip tickers with earnings within 3d or before expiry
   block_regimes:           # regimes where new entries are blocked
     - DANGER
     - CRISIS
+  slippage_pct: 1.0        # haircut on expected_pnl to model real fill costs (%)
 
 exit_rules:
   regime_exit: true              # close positions when regime turns against signal
   regime_exit_triggers:          # regime transitions that force exit
     - DANGER
     - CRISIS
-  take_profit_pct: 50.0          # close at 50% of max_profit
-  stop_loss_pct: 200.0           # close at 200% of max_loss (2× risk)
-  dte_exit: 5                    # close when days-to-expiry <= 5
+  take_profit_pct: 50.0          # close when unrealized P&L >= 50% of max_profit
+  stop_loss_pct: 100.0           # close when loss >= 100% of theoretical max_loss
+  dte_exit: 2                    # close when days-to-expiry <= 2 (gamma risk zone)
 
 scanner:
   top_n: 25                    # candidates to score per genesis run
   min_pnl_ratio: 0.08          # pre-filter before oracle rules (wider net)
   max_workers: 6
+  fetch_timeout_sec: 30        # per-ticker yfinance timeout (prevents hangs)
 
 genesis:
   scan_and_enter_interval_min: 30   # run scanner + entry logic every 30 min
