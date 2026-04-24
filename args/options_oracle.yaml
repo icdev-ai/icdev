@@ -22,7 +22,8 @@ exit_rules:
     - DANGER
     - CRISIS
   take_profit_pct: 50.0          # close when unrealized P&L >= 50% of max_profit
-  stop_loss_pct: 100.0           # close when loss >= 100% of theoretical max_loss
+  stop_loss_pct: 100.0           # close when loss >= 100% of theoretical max_loss (defined-risk)
+  naked_stop_loss_multiplier: 2.0 # undefined-risk (naked): stop at 2× net_debit collected
   dte_exit: 2                    # close when days-to-expiry <= 2 (gamma risk zone)
 
 scanner:
