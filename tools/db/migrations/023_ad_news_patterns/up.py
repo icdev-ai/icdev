@@ -7,7 +7,7 @@ clusters, correlated headlines) for the FathomDesk Trading Oracle.
 
 Table: ad_news_patterns
   - Append-only (NIST AU) — rows are never updated or deleted.
-  - severity CHECK constraint is derived from NEWS_PATTERN_SEVERITIES.
+  - severity CHECK constraint values enumerated in NEWS_PATTERN_SEVERITIES.
 """
 
 MIGRATION_ID = "023"
@@ -18,7 +18,7 @@ DESCRIPTION = (
 )
 
 # Single source of truth for severity values.
-# The CHECK constraint below is derived from this tuple.
+# The CHECK constraint below uses values from this tuple.
 NEWS_PATTERN_SEVERITIES = ("info", "warn", "critical")
 
 
