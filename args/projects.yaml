@@ -11,6 +11,44 @@
 
 projects:
 
+  - key: sim-chat
+    name: "TFW Simulation Chat Workbench"
+    description: >
+      Canvas-agnostic simulation engine at /simulate/chat — upload any diagram
+      (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows
+      with color-coded Mermaid diagrams, troubleshoot auth and routing issues,
+      and generate compliance artifacts (PPSM, DFD, CIS, ISA, POA&M, OSCAL).
+      Covers all 7 canvases: NDC, SDC, EDA, DDC, PDC, BDC, IDC.
+      35 dependency-chained tasks across 7 layers.
+    task_prefix: "sim-"
+    default_open: true
+    briefs: []
+    epics:
+      - key: l0
+        title: "L0 — Foundation (canvas registry, schema, DB)"
+        priority: critical
+      - key: l1
+        title: "L1 — Diagram Parsers (Mermaid, draw.io, Visio, image, PDF)"
+        priority: high
+      - key: l2
+        title: "L2 — Format Router (diagram_ingestor)"
+        priority: high
+      - key: l3
+        title: "L3 — Chat Agent (EXPLAIN / TROUBLESHOOT / REFINE + session)"
+        priority: critical
+      - key: l4
+        title: "L4 — Artifact Generators (PPSM, DFD, CIS, ISA, POA&M, OSCAL, bundle)"
+        priority: high
+      - key: l5
+        title: "L5 — Dashboard UI (/simulate/chat, upload, chat, Mermaid renderer)"
+        priority: high
+      - key: l6
+        title: "L6 — Integrations (evidence, poam, diff, spec)"
+        priority: medium
+      - key: l7
+        title: "L7 — Validation (E2E Selenium, coherence gate)"
+        priority: critical
+
   - key: digital-twin
     name: "Digital Twin Roadmap"
     description: >
