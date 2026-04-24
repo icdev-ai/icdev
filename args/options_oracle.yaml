@@ -19,13 +19,17 @@ entry_rules:
 
 exit_rules:
   regime_exit: true              # close positions when regime turns against signal
-  regime_exit_triggers:          # regime transitions that force exit
+  regime_exit_triggers:          # regimes that trigger directional conflict exits
     - DANGER
     - CRISIS
-  take_profit_pct: 50.0          # close when unrealized P&L >= 50% of max_profit
-  stop_loss_pct: 100.0           # close when loss >= 100% of theoretical max_loss (defined-risk)
-  naked_stop_loss_multiplier: 2.0 # undefined-risk (naked): stop at 2× net_debit collected
-  dte_exit: 2                    # close when days-to-expiry <= 2 (gamma risk zone)
+  full_exit_regimes:             # regimes that close ALL positions (not just directional conflicts)
+    - CRISIS
+  take_profit_pct: 50.0              # close when unrealized P&L >= 50% of TP anchor
+  take_profit_use_expected_pnl: true # anchor on expected_pnl at entry (better for spreads); false = use max_profit
+  take_profit_dte: 21               # also close profitable positions when DTE <= 21 (theta lock-in); 0 = disabled
+  stop_loss_pct: 100.0              # close when loss >= 100% of theoretical max_loss (defined-risk)
+  naked_stop_loss_multiplier: 2.0   # undefined-risk (naked): stop at 2× net_debit collected
+  dte_exit: 2                       # close when days-to-expiry <= 2 (gamma risk zone)
 
 scanner:
   top_n: 25                    # candidates to score per genesis run
