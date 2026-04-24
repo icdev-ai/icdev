@@ -42,13 +42,28 @@
     <input type="hidden" id="active-canvas-type" value="{{ canvas_type|default('ndc') }}" />
   </div>
 
-  <!-- Slash-command autocomplete hints (context-sensitive) -->
-  <div id="slash-autocomplete" style="margin-bottom:1rem;padding:0.6rem 1rem;background:#f5f5f5;border-radius:8px;font-size:0.85rem;color:#555;">
-    <strong>NDC commands:</strong>
-    <span class="slash-cmd">/explain</span> &bull;
-    <span class="slash-cmd">/troubleshoot</span> &bull;
-    <span class="slash-cmd">/refine</span> &bull;
-    <span class="slash-cmd">/audit</span>
+  <!-- Slash-command autocomplete hints (context-sensitive, canvas-filtered) -->
+  <div id="slash-autocomplete" style="margin-bottom:1rem;padding:0.6rem 1rem;background:#f5f5f5;border-radius:8px;font-size:0.85rem;color:#555;position:relative;">
+    <span id="slash-hint-text">
+      <strong>NDC commands:</strong>
+      <span class="slash-cmd">/explain</span> &bull;
+      <span class="slash-cmd">/troubleshoot</span> &bull;
+      <span class="slash-cmd">/refine</span> &bull;
+      <span class="slash-cmd">/audit</span> &bull;
+      <span class="slash-cmd">/ppsm</span> &bull;
+      <span class="slash-cmd">/dfd</span> &bull;
+      <span class="slash-cmd">/cis</span> &bull;
+      <span class="slash-cmd">/isa</span> &bull;
+      <span class="slash-cmd">/poam</span> &bull;
+      <span class="slash-cmd">/oscal</span> &bull;
+      <span class="slash-cmd">/bundle</span> &bull;
+      <span class="slash-cmd">/diff</span> &bull;
+      <span class="slash-cmd">/spec</span>
+    </span>
+    <!-- Dropdown for interactive autocomplete -->
+    <div id="slash-dropdown" style="display:none;position:absolute;left:0;top:100%;z-index:200;
+         background:#fff;border:1px solid #ccc;border-radius:6px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.12);">
+    </div>
   </div>
 
   <!-- Upload Panel -->
@@ -75,7 +90,9 @@
       <div style="display:flex;gap:0.5rem;">
         <input id="chat-input" type="text" placeholder='/explain — describe your architecture'
                style="flex:1;padding:0.65rem 1rem;border:1px solid #ccc;border-radius:8px;font-size:0.95rem;"
-               onkeydown="if(event.key==='Enter')sendMessage()" />
+               onkeydown="if(event.key==='Enter'){hideSlashDropdown();sendMessage();} else if(event.key==='Escape')hideSlashDropdown();"
+               oninput="_updateSlashDropdown(this.value.trim())"
+               onblur="setTimeout(hideSlashDropdown,150)" />
         <button onclick="sendMessage()"
                 style="padding:0.65rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
           Send
@@ -108,24 +125,75 @@
 <script>
 var _sessionId = null;
 var _canvasType = 'ndc';
+// canvas_type → slash command lists (fetched from /api/simulate/slash-commands on canvas switch)
+var _canvasCmds = {};
 
-var _slashCmds = {
-  ndc: ['<strong>NDC commands:</strong>', '/explain', '/troubleshoot', '/refine', '/audit'],
-  sdc: ['<strong>SDC commands:</strong>', '/explain', '/troubleshoot', '/threat path', '/attack', 'security', '/vulnerability'],
-  eda: ['<strong>EDA commands:</strong>', '/explain', '/troubleshoot', '/refine', '/event flow'],
-  ddc: ['<strong>DDC commands:</strong>', '/explain', '/troubleshoot', '/refine', '/deployment'],
-};
+function _fetchCanvasCommands(ct) {
+  if (_canvasCmds[ct]) { _renderSlashHints(ct, _canvasCmds[ct]); return; }
+  fetch('/api/simulate/slash-commands?canvas_type=' + ct)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      _canvasCmds[ct] = d.commands || [];
+      _renderSlashHints(ct, _canvasCmds[ct]);
+    })
+    .catch(function() {
+      // Fallback static commands if API unavailable
+      var fallback = {
+        ndc: ['/explain', '/troubleshoot', '/refine', '/audit', '/ppsm', '/dfd', '/cis', '/isa', '/poam', '/oscal', '/bundle', '/diff', '/spec'],
+        sdc: ['/explain', '/troubleshoot', '/audit', '/api-surface', '/dfd', '/cis', '/isa', '/poam', '/oscal', '/bundle', '/diff', '/spec'],
+        eda: ['/explain', '/troubleshoot', '/refine', '/audit', '/event-catalog', '/dfd', '/cis', '/isa', '/poam', '/oscal', '/bundle', '/diff', '/spec'],
+      };
+      _canvasCmds[ct] = fallback[ct] || fallback['ndc'];
+      _renderSlashHints(ct, _canvasCmds[ct]);
+    });
+}
+
+function _renderSlashHints(ct, cmds) {
+  var displayName = ct.toUpperCase();
+  var parts = ['<strong>' + displayName + ' commands:</strong>'];
+  cmds.forEach(function(cmd) {
+    parts.push('<span class="slash-cmd" onclick="insertCommand(\'' + cmd + '\')" '
+      + 'style="cursor:pointer;color:#1565c0;text-decoration:underline dotted;">'
+      + cmd + '</span>');
+  });
+  document.getElementById('slash-hint-text').innerHTML = parts.join(' &bull; ');
+}
+
+function insertCommand(cmd) {
+  var input = document.getElementById('chat-input');
+  input.value = cmd + ' ';
+  input.focus();
+  hideSlashDropdown();
+}
+
+// Interactive dropdown autocomplete when user types "/"
+function _updateSlashDropdown(val) {
+  var dropdown = document.getElementById('slash-dropdown');
+  if (!val.startsWith('/')) { hideSlashDropdown(); return; }
+  var cmds = _canvasCmds[_canvasType] || [];
+  var matches = cmds.filter(function(c) { return c.startsWith(val.toLowerCase()); });
+  if (!matches.length) { hideSlashDropdown(); return; }
+  dropdown.innerHTML = matches.map(function(c) {
+    return '<div class="slash-drop-item" onclick="insertCommand(\'' + c + '\')" '
+      + 'style="padding:0.4rem 1rem;cursor:pointer;font-size:0.85rem;" '
+      + 'onmouseover="this.style.background=\'#e3f2fd\'" '
+      + 'onmouseout="this.style.background=\'\'"><code>' + c + '</code></div>';
+  }).join('');
+  dropdown.style.display = 'block';
+}
+
+function hideSlashDropdown() {
+  document.getElementById('slash-dropdown').style.display = 'none';
+}
 
 function selectCanvas(ct) {
   _canvasType = ct;
   document.getElementById('active-canvas-type').value = ct;
-  var ac = document.getElementById('slash-autocomplete');
-  var cmds = _slashCmds[ct] || _slashCmds['ndc'];
-  ac.innerHTML = cmds.join(' &bull; ');
   document.querySelectorAll('.canvas-chip').forEach(function(el) {
     el.style.fontWeight = el.dataset.canvasType === ct ? '800' : '600';
     el.style.boxShadow = el.dataset.canvasType === ct ? '0 0 0 3px rgba(25,118,210,0.35)' : '';
   });
+  _fetchCanvasCommands(ct);
 }
 
 function startSession() {
@@ -148,6 +216,14 @@ function sendMessage() {
   var content = document.getElementById('chat-input').value.trim();
   if (!content) return;
   if (!_sessionId) { startSession(); return; }
+  // Echo user message
+  var msgs = document.getElementById('chat-messages');
+  var userEl = document.createElement('div');
+  userEl.style.marginBottom = '0.5rem';
+  userEl.innerHTML = '<strong style="color:#1565c0;">You:</strong> <span style="font-size:0.93rem;">' + content.replace(/</g,'&lt;') + '</span>';
+  msgs.appendChild(userEl);
+  msgs.scrollTop = msgs.scrollHeight;
+  document.getElementById('chat-input').value = '';
   document.getElementById('chat-status').textContent = 'Sending...';
   fetch('/api/simulate/message', {
     method: 'POST',
@@ -192,6 +268,7 @@ function downloadBundle() {
 // Auto-start session on page load; pre-select canvas from server-rendered value
 document.addEventListener('DOMContentLoaded', function() {
   var presel = document.getElementById('active-canvas-type').value || 'ndc';
+  _canvasType = presel;
   selectCanvas(presel);
 });
 </script>

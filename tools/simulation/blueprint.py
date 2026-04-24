@@ -89,6 +89,22 @@ def create_simulation_blueprint() -> Blueprint:
         content = (data.get("content") or "").strip()
         session_id = (data.get("session_id") or "").strip()
 
+        # Delegate slash commands to TFWChatAgent first
+        if content.startswith("/"):
+            _agent_handled = False
+            try:
+                from tools.simulation.tfw_chat_agent import process_message as _tfw_process
+                _agent_result = _tfw_process(session_id, content)
+                # None reply means not a known slash command — fall through to legacy handlers
+                if _agent_result.get("reply") is not None:
+                    _agent_handled = True
+            except Exception as _agent_exc:
+                logger.warning("TFWChatAgent error: %s", _agent_exc)
+                _agent_result = {"reply": f"[Agent error: {_agent_exc}]", "mode": "error"}
+                _agent_handled = True
+            if _agent_handled:
+                return jsonify(_agent_result)
+
         mode = "explain"
         if content.startswith("/troubleshoot") or "troubleshoot" in content.lower():
             mode = "troubleshoot"
@@ -203,6 +219,18 @@ def create_simulation_blueprint() -> Blueprint:
         )
         reply = f"[{mode.upper()} mode] Analysis complete.\n\n{mermaid_fence}"
         return jsonify({"reply": reply, "mode": mode, "diagram_mermaid": mermaid_fence})
+
+    @bp.route("/api/simulate/slash-commands", methods=["GET"])
+    def api_simulate_slash_commands():
+        """Return canvas-filtered slash commands for UI autocomplete."""
+        canvas_type = request.args.get("canvas_type", "ndc").lower()
+        try:
+            from tools.simulation.tfw_chat_agent import get_canvas_commands
+            commands = get_canvas_commands(canvas_type)
+        except Exception:
+            commands = ["/explain", "/troubleshoot", "/audit", "/dfd", "/cis",
+                        "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec"]
+        return jsonify({"canvas_type": canvas_type, "commands": commands})
 
     @bp.route("/api/simulate/sessions", methods=["GET"])
     def api_simulate_sessions():
