@@ -3262,11 +3262,50 @@ def create_app() -> Flask:
         """Process a chat message in a simulation session. Returns assistant reply with Mermaid diagram."""
         data = flask_request.get_json(silent=True) or {}
         content = (data.get("content") or "").strip()
+        session_id = (data.get("session_id") or "").strip()
+
+        # Detect mode from message content
         mode = "explain"
         if content.startswith("/troubleshoot") or "troubleshoot" in content.lower():
             mode = "troubleshoot"
         elif content.startswith("/refine") or "refine" in content.lower():
             mode = "refine"
+
+        # Look up canvas_type from session record
+        canvas_type = "ndc"
+        if session_id:
+            try:
+                _conn = _get_db()
+                _row = _conn.execute(
+                    "SELECT canvas_type FROM nc_simulation_sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+                _conn.close()
+                if _row:
+                    canvas_type = _row[0] or "ndc"
+            except Exception:
+                pass
+
+        # TROUBLESHOOT mode — canvas-aware fault localization
+        if mode == "troubleshoot":
+            try:
+                from tools.simulation.fault_localizer import localize_fault
+                _symptom = content.removeprefix("/troubleshoot").strip() or content
+                _result = localize_fault(symptom_text=_symptom, canvas_type=canvas_type)
+                _mermaid_src = _result["sub_diagram_mermaid"]
+                _mermaid_fence = f"```mermaid\n{_mermaid_src}\n```"
+                _reply = f"{_result['summary_text']}\n\n{_mermaid_fence}"
+                return jsonify({
+                    "reply": _reply,
+                    "mode": mode,
+                    "diagram_mermaid": _mermaid_fence,
+                    "fault_category": _result["fault_category"],
+                    "root_causes": _result["root_causes"],
+                    "suspect_hops": _result["suspect_hops"],
+                })
+            except Exception:
+                pass  # Fall through to generic reply on unexpected error
+
         mermaid_fence = (
             "```mermaid\n"
             "graph TD\n"
