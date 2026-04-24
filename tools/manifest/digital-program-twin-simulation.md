@@ -11,4 +11,6 @@
 | Scenario Manager | tools/simulation/scenario_manager.py | Save, fork, compare, export, archive simulation scenarios | --scenario-id, --fork, --compare, --export, --json | Scenario operations |
 | MCP Simulation Server | tools/mcp/simulation_server.py | MCP server for simulation tools (8 tools) | stdio | JSON-RPC responses |
 | Diagram Style | tools/simulation/diagram_style.py | Canvas-agnostic color/style constants: AWS/Azure/BCAP/IDPS/BGP/Megaport/PrivateLink zones, microservice zones, EDA zones, flow palette F1-F8, edge semantics; get_node_style(zone, canvas_type), get_edge_style(semantic, canvas_type), get_flow_color(flow_id) | import | Style dicts |
+| Mermaid Parser | tools/simulation/parsers/mermaid_parser.py | Parse Mermaid diagram source (flowchart, sequence, class, ER) into normalized graph_json; parse_mermaid(source: str) -> dict | diagram string | graph_json dict |
+| draw.io Parser | tools/simulation/parsers/drawio_parser.py | Parse draw.io mxGraph XML (.drawio/.xml) into normalized graph_json; swimlane containers → zones, vertex labels/styles, edge connections/labels; network, microservice, EDA diagrams; parse_drawio(xml_str: str) -> dict | XML string | graph_json dict with nodes/edges/zones |
 
