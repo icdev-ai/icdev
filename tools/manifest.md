@@ -369,3 +369,10 @@
 | Canvas Registry | tools\canvas\canvas_registry.py | Auto-registered: canvas/canvas_registry.py | --json | JSON |
 | Tfw Chat Schema | tools\simulation\tfw_chat_schema.py | Auto-registered: simulation/tfw_chat_schema.py | --json | JSON |
 | Mermaid Parser | tools\simulation\parsers\mermaid_parser.py | Auto-registered: parsers/mermaid_parser.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Genesis Daemon | tools\trading\options\genesis_daemon.py | Auto-registered: options/genesis_daemon.py | --json | JSON |
+| Oracle Engine | tools\trading\options\oracle_engine.py | Auto-registered: options/oracle_engine.py | --json | JSON |

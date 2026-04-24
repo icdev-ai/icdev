@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Simulate Chat — ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container" style="max-width:1200px;">
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+    <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+    <span style="color:#999;"> &gt; </span>
+    <span><a href="/simulation" style="color:#1976d2;text-decoration:none;">Simulation</a></span>
+    <span style="color:#999;"> &gt; </span>
+    <span style="color:#333;">Chat</span>
+  </nav>
+
+  <h1 style="margin-bottom:0.25rem;">Simulation Chat</h1>
+  <p class="text-muted" style="margin-bottom:1.5rem;">Conversational Digital Program Twin — EXPLAIN, TROUBLESHOOT, REFINE across canvas types.</p>
+
+  <!-- Canvas Type Selector -->
+  <div style="margin-bottom:1.25rem;">
+    <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Canvas Type</label>
+    <div class="canvas-selector" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <button class="canvas-chip" data-canvas-type="ndc" data-canvas="ndc"
+              onclick="selectCanvas('ndc')"
+              style="padding:0.4rem 1rem;border:2px solid #1976d2;border-radius:20px;background:#e3f2fd;color:#1565c0;cursor:pointer;font-weight:600;">
+        NDC
+      </button>
+      <button class="canvas-chip" data-canvas-type="sdc" data-canvas="sdc"
+              onclick="selectCanvas('sdc')"
+              style="padding:0.4rem 1rem;border:2px solid #e53935;border-radius:20px;background:#ffebee;color:#b71c1c;cursor:pointer;font-weight:600;">
+        SDC
+      </button>
+      <button class="canvas-chip" data-canvas-type="eda" data-canvas="eda"
+              onclick="selectCanvas('eda')"
+              style="padding:0.4rem 1rem;border:2px solid #388e3c;border-radius:20px;background:#e8f5e9;color:#1b5e20;cursor:pointer;font-weight:600;">
+        EDA
+      </button>
+      <button class="canvas-chip" data-canvas-type="ddc" data-canvas="ddc"
+              onclick="selectCanvas('ddc')"
+              style="padding:0.4rem 1rem;border:2px solid #f57c00;border-radius:20px;background:#fff3e0;color:#e65100;cursor:pointer;font-weight:600;">
+        DDC
+      </button>
+    </div>
+    <input type="hidden" id="active-canvas-type" value="ndc" />
+  </div>
+
+  <!-- Slash-command autocomplete hints (context-sensitive) -->
+  <div id="slash-autocomplete" style="margin-bottom:1rem;padding:0.6rem 1rem;background:#f5f5f5;border-radius:8px;font-size:0.85rem;color:#555;">
+    <strong>NDC commands:</strong>
+    <span class="slash-cmd">/explain</span> &bull;
+    <span class="slash-cmd">/troubleshoot</span> &bull;
+    <span class="slash-cmd">/refine</span> &bull;
+    <span class="slash-cmd">/audit</span>
+  </div>
+
+  <!-- Upload Panel -->
+  <div style="margin-bottom:1.25rem;padding:1rem;border:2px dashed #bdbdbd;border-radius:8px;background:#fafafa;">
+    <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Upload Diagram / Document</label>
+    <p style="font-size:0.85rem;color:#777;margin:0 0 0.75rem;">Drag and drop or browse to upload architecture diagrams, PDFs, or design files.</p>
+    <input type="file" id="sim-upload" name="file"
+           accept=".png,.jpg,.jpeg,.pdf,.drawio,.xml,.vsdx,image/png,image/jpeg,application/pdf"
+           style="margin-bottom:0.5rem;" />
+    <div style="font-size:0.78rem;color:#999;">Accepted: PNG, JPG, PDF, draw.io, XML, VSDX</div>
+  </div>
+
+  <!-- Chat Window -->
+  <div style="display:flex;gap:1.25rem;align-items:flex-start;">
+    <!-- Messages -->
+    <div style="flex:1;">
+      <div id="chat-messages"
+           style="border:1px solid #e0e0e0;border-radius:8px;padding:1rem;min-height:350px;max-height:500px;overflow-y:auto;background:#fff;margin-bottom:0.75rem;">
+        <div class="mermaid-diagram" id="mermaid-output" style="margin-bottom:0.5rem;"></div>
+        <div style="color:#9e9e9e;font-style:italic;font-size:0.9rem;">Session ready. Select a canvas type and start chatting.</div>
+      </div>
+
+      <!-- Input -->
+      <div style="display:flex;gap:0.5rem;">
+        <input id="chat-input" type="text" placeholder='/explain — describe your architecture'
+               style="flex:1;padding:0.65rem 1rem;border:1px solid #ccc;border-radius:8px;font-size:0.95rem;"
+               onkeydown="if(event.key==='Enter')sendMessage()" />
+        <button onclick="sendMessage()"
+                style="padding:0.65rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">
+          Send
+        </button>
+      </div>
+      <div id="chat-status" style="font-size:0.82rem;color:#999;margin-top:0.4rem;"></div>
+    </div>
+
+    <!-- Session info sidebar -->
+    <div style="width:220px;padding:1rem;border:1px solid #e0e0e0;border-radius:8px;background:#fafafa;font-size:0.85rem;">
+      <strong>Session</strong>
+      <div style="margin-top:0.5rem;word-break:break-all;color:#555;" id="session-info">No active session</div>
+      <div style="margin-top:1rem;">
+        <button onclick="startSession()"
+                style="width:100%;padding:0.5rem;background:#388e3c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;">
+          Start Session
+        </button>
+      </div>
+      <div id="bundle-section" style="display:none;margin-top:0.75rem;">
+        <button onclick="downloadBundle()"
+                style="width:100%;padding:0.5rem;background:#f57c00;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;">
+          Download Bundle
+        </button>
+        <div id="bundle-link" style="margin-top:0.4rem;font-size:0.78rem;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var _sessionId = null;
+var _canvasType = 'ndc';
+
+var _slashCmds = {
+  ndc: ['<strong>NDC commands:</strong>', '/explain', '/troubleshoot', '/refine', '/audit'],
+  sdc: ['<strong>SDC commands:</strong>', '/explain', '/troubleshoot', '/threat path', '/attack', 'security', '/vulnerability'],
+  eda: ['<strong>EDA commands:</strong>', '/explain', '/troubleshoot', '/refine', '/event flow'],
+  ddc: ['<strong>DDC commands:</strong>', '/explain', '/troubleshoot', '/refine', '/deployment'],
+};
+
+function selectCanvas(ct) {
+  _canvasType = ct;
+  document.getElementById('active-canvas-type').value = ct;
+  var ac = document.getElementById('slash-autocomplete');
+  var cmds = _slashCmds[ct] || _slashCmds['ndc'];
+  ac.innerHTML = cmds.join(' &bull; ');
+  document.querySelectorAll('.canvas-chip').forEach(function(el) {
+    el.style.fontWeight = el.dataset.canvasType === ct ? '800' : '600';
+    el.style.boxShadow = el.dataset.canvasType === ct ? '0 0 0 3px rgba(25,118,210,0.35)' : '';
+  });
+}
+
+function startSession() {
+  var ct = _canvasType;
+  fetch('/api/simulate/session', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({canvas_type: ct})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    _sessionId = d.session_id || d.id;
+    document.getElementById('session-info').textContent = 'ID: ' + (_sessionId || 'unknown') + '\nCanvas: ' + ct;
+    document.getElementById('bundle-section').style.display = 'block';
+    document.getElementById('chat-status').textContent = 'Session started (' + ct.toUpperCase() + ')';
+  }).catch(function(e) {
+    document.getElementById('chat-status').textContent = 'Error: ' + e;
+  });
+}
+
+function sendMessage() {
+  var content = document.getElementById('chat-input').value.trim();
+  if (!content) return;
+  if (!_sessionId) { startSession(); return; }
+  document.getElementById('chat-status').textContent = 'Sending...';
+  fetch('/api/simulate/message', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: _sessionId, content: content})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    var msgs = document.getElementById('chat-messages');
+    var reply = d.reply || d.content || d.message || JSON.stringify(d);
+    var el = document.createElement('div');
+    el.style.marginBottom = '0.5rem';
+    el.innerHTML = '<strong>Assistant:</strong> <pre style="white-space:pre-wrap;margin:0.25rem 0;">' + reply + '</pre>';
+    msgs.appendChild(el);
+    msgs.scrollTop = msgs.scrollHeight;
+    document.getElementById('chat-input').value = '';
+    document.getElementById('chat-status').textContent = '';
+    // Render mermaid if present
+    var mermaidMatch = reply.match(/```mermaid\n([\s\S]*?)```/);
+    if (mermaidMatch) {
+      var out = document.getElementById('mermaid-output');
+      out.innerHTML = '<div class="mermaid">' + mermaidMatch[1] + '</div>';
+      if (window.mermaid) { mermaid.init(undefined, out.querySelectorAll('.mermaid')); }
+    }
+  }).catch(function(e) {
+    document.getElementById('chat-status').textContent = 'Error: ' + e;
+  });
+}
+
+function downloadBundle() {
+  if (!_sessionId) return;
+  fetch('/api/simulate/bundle', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: _sessionId})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    var url = d.download_url || d.url || d.link || d.file_url;
+    if (url) {
+      document.getElementById('bundle-link').innerHTML = '<a href="' + url + '">Download bundle</a>';
+    }
+  });
+}
+
+// Auto-start session on page load
+document.addEventListener('DOMContentLoaded', function() {
+  selectCanvas('ndc');
+});
+</script>
+{% endblock %}

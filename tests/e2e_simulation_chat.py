@@ -127,6 +127,15 @@ def main() -> None:
         )
         screenshot(driver, "01-page-load")
 
+        # Dismiss tour overlay if present — it intercepts chip clicks
+        try:
+            driver.execute_script(
+                "var el = document.querySelector('.icdev-tour-welcome');"
+                "if (el) { el.classList.remove('visible'); el.style.display='none'; }"
+            )
+        except Exception:
+            pass
+
         # ============================================================
         # 2. CANVAS TYPE CHIPS RENDER
         # ============================================================
@@ -166,7 +175,8 @@ def main() -> None:
 
         if sdc_chip:
             try:
-                sdc_chip.click()
+                # JS click bypasses any overlapping elements
+                driver.execute_script("arguments[0].click();", sdc_chip)
                 time.sleep(1)
                 after_src = driver.page_source.lower()
                 sdc_terms = [
