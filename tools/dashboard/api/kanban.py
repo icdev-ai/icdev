@@ -321,6 +321,11 @@ def create_task():
             )
         except Exception:
             pass  # SSE is best-effort
+        try:
+            from tools.project.kanban_project_sync import sync_projects
+            sync_projects()
+        except Exception:
+            pass  # best-effort — never block task creation
         return jsonify({"status": "created", "id": task_id}), 201
     finally:
         conn.close()
