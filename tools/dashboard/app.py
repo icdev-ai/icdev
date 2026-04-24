@@ -3286,6 +3286,15 @@ def create_app() -> Flask:
             except Exception:
                 pass
 
+        # Promote to REFINE mode when an active refine session exists for this session_id
+        if mode == "explain" and session_id:
+            try:
+                from tools.simulation.diagram_refiner import has_active_refine_session
+                if has_active_refine_session(session_id):
+                    mode = "refine"
+            except Exception:
+                pass
+
         # TROUBLESHOOT mode — canvas-aware fault localization
         if mode == "troubleshoot":
             try:
@@ -3302,6 +3311,42 @@ def create_app() -> Flask:
                     "fault_category": _result["fault_category"],
                     "root_causes": _result["root_causes"],
                     "suspect_hops": _result["suspect_hops"],
+                })
+            except Exception:
+                pass  # Fall through to generic reply on unexpected error
+
+        # REFINE mode — conversational diagram refinement with clarifying questions
+        if mode == "refine":
+            try:
+                from tools.simulation.diagram_refiner import (
+                    extract_mermaid_from_message,
+                    has_active_refine_session,
+                    start_refine,
+                    continue_refine,
+                )
+                _diagram_src = extract_mermaid_from_message(content)
+                if _diagram_src:
+                    # New diagram pasted — start a fresh refine session
+                    _result = start_refine(
+                        raw_diagram=_diagram_src,
+                        canvas_type=canvas_type,
+                        session_id=session_id,
+                    )
+                else:
+                    # Continuing an existing refine session (user is answering questions)
+                    _answer_text = content.removeprefix("/refine").strip() or content
+                    _result = continue_refine(
+                        session_id=session_id,
+                        user_text=_answer_text,
+                        canvas_type=canvas_type,
+                    )
+                return jsonify({
+                    "reply": _result["reply"],
+                    "mode": "refine",
+                    "diagram_mermaid": _result.get("diagram_mermaid"),
+                    "phase": _result.get("phase"),
+                    "is_complete": _result.get("is_complete", False),
+                    "questions": _result.get("questions", []),
                 })
             except Exception:
                 pass  # Fall through to generic reply on unexpected error
