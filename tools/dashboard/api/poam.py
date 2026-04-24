@@ -17,7 +17,6 @@ Endpoints:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import subprocess
@@ -708,7 +707,6 @@ def import_from_simulation():
         findings = _extract_sim_findings(session_row, runs)
 
         now = _now_iso()
-        reviewer = (session.get("user") or request.headers.get("X-User") or "icdev-simulation")
         inserted = 0
         skipped = 0
 
