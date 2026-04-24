@@ -10,6 +10,7 @@ entry_rules:
   min_pop: 55.0            # probability of profit floor (%)
   max_positions: 10        # max concurrent open oracle positions
   max_qty_per_ticker: 2    # contracts per leg per ticker
+  max_notional_exposure: 0 # 0 = disabled; set e.g. 50000 to cap total abs(entry_net_debit) across all open positions
   block_on_earnings: true  # skip tickers with earnings within 3d or before expiry
   block_regimes:           # regimes where new entries are blocked
     - DANGER
