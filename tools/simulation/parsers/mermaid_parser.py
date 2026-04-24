@@ -339,7 +339,7 @@ _SEQ_PARTICIPANT_RE = re.compile(
     r"^(?:participant|actor)\s+(\S+)(?:\s+as\s+(.+))?$", re.IGNORECASE
 )
 _SEQ_MSG_RE = re.compile(
-    r"^(\S+)\s*(->>|-->>|->|-->|-)>?\s*(\S+)\s*:\s*(.*)$"
+    r"^(\w+)\s*(-->>|->>|--x|-x|-->|->|--\)|--|->)\s*(\w+)\s*:\s*(.*)$"
 )
 _SEQ_NOTE_RE = re.compile(
     r"^[Nn]ote\s+(?:over|(?:left|right)\s+of)\s+(\S+(?:\s*,\s*\S+)?)\s*:\s*(.*)$"
