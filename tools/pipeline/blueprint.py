@@ -964,6 +964,17 @@ def create_pipeline_blueprint():
 
         _audit("DEPLOY_GENERATE", "pipeline", pipe_id, result.get("summary", ""))
 
+        try:
+            from tools.canvas.event_bus import publish as _bus_publish
+            _bus_publish(
+                "pdc",
+                "pipeline_deployed",
+                {"pipeline_id": pipe_id, "env": data.get("target_csp", "auto")},
+                target_canvas="sdc",
+            )
+        except Exception as _exc:
+            logger.warning("canvas event publish failed for pipeline %s: %s", pipe_id, _exc)
+
         # Check if zip download requested
         if data.get("format") == "zip":
             import io

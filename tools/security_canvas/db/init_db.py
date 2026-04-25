@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS sc_threats (
     risk_score      REAL DEFAULT 0,
     affected_assets TEXT DEFAULT '[]',
     status          TEXT DEFAULT 'open',
+    is_stale        INTEGER DEFAULT 0,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1507,6 +1508,13 @@ def init_db():
                 pass
             conn.commit()
             print(f"[init_db] Schema created at {DB_PATH}")
+
+        # Runtime migration: add is_stale to sc_threats for existing installs
+        try:
+            conn.execute("ALTER TABLE sc_threats ADD COLUMN is_stale INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()

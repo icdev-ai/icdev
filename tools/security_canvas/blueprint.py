@@ -111,6 +111,14 @@ def create_security_blueprint():
     except Exception as exc:
         logger.warning("Security Canvas DB init failed: %s", exc)
 
+    # Register canvas event bus subscribers
+    try:
+        from tools.security_canvas.bus_subscriber import register as _register_bus
+
+        _register_bus()
+    except Exception as exc:
+        logger.warning("Security Canvas bus subscriber registration failed: %s", exc)
+
     # Seed SOPs
     try:
         seed_sops()
