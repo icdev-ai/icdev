@@ -15,8 +15,16 @@ from __future__ import annotations
 
 import os
 import socket
+import sys
+from pathlib import Path
 
 import pytest
+
+# Ensure the worktree root is first on sys.path so `import tools` resolves
+# correctly regardless of how pytest is invoked (subprocess, worktree, CI).
+_WORKTREE_ROOT = str(Path(__file__).resolve().parents[2])
+if _WORKTREE_ROOT not in sys.path:
+    sys.path.insert(0, _WORKTREE_ROOT)
 
 BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
 

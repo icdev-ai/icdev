@@ -702,6 +702,13 @@ def run_selenium(
     cmd = [sys.executable, "-m", "pytest", target, "-v", "--tb=short", "-q"]
     logger.info("e2e_runner: command: %s", " ".join(cmd))
 
+    # Propagate the worktree root via PYTHONPATH so `import tools` resolves in
+    # the subprocess even when the parent environment doesn't have it set.
+    env = os.environ.copy()
+    root_str = str(PROJECT_ROOT)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
+
     try:
         proc = subprocess.run(
             cmd,
@@ -711,6 +718,7 @@ def run_selenium(
             errors="replace",
             timeout=_SELENIUM_TIMEOUT_SECONDS,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         msg = f"pytest timed out after {_SELENIUM_TIMEOUT_SECONDS} seconds"
