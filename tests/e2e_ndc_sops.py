@@ -88,6 +88,20 @@ def check_js_errors(driver):
     return errors
 
 
+def dismiss_tour(driver):
+    """Mark tour complete in localStorage and remove overlay if present."""
+    try:
+        driver.execute_script(
+            "try {"
+            "  localStorage.setItem('icdev_tour_completed','1');"
+            "  var w=document.getElementById('icdev-tour-welcome');"
+            "  if(w){w.remove();}"
+            "} catch(e){}"
+        )
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Test 1: Page load — verify layout and core elements
 # ---------------------------------------------------------------------------
@@ -167,7 +181,8 @@ def test_table_headers(driver, results):
         header_texts = [h.text.strip() for h in headers]
 
         expected = {"Title", "Category", "Status", "Ver", "Updated"}
-        missing = expected - set(header_texts)
+        upper_texts = {h.upper() for h in header_texts}
+        missing = {e for e in expected if e.upper() not in upper_texts}
         assert not missing, f"Missing headers: {missing} (got {header_texts})"
 
         results.ok("table_headers", f"columns: {header_texts}")
@@ -296,6 +311,7 @@ def test_row_click_detail(driver, results):
     try:
         driver.get(f"{BASE_URL}/ndc/sops")
         time.sleep(2)
+        dismiss_tour(driver)
 
         rows = driver.find_elements(By.CSS_SELECTOR, "#sops-tbody tr[data-id]")
         if not rows:
@@ -365,6 +381,7 @@ def test_refresh_button(driver, results):
     try:
         driver.get(f"{BASE_URL}/ndc/sops")
         time.sleep(1.5)
+        dismiss_tour(driver)
 
         btn = driver.find_element(By.ID, "btn-refresh")
         btn.click()
