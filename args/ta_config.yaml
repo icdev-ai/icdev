@@ -2,3 +2,9 @@
 swing_threshold_pct: 1.5    # % retracement required to confirm a swing high/low
 vp_bucket_count: 40         # number of price buckets for volume profile
 sr_proximity_pct: 0.5       # % proximity to cluster S/R levels
+
+traps:
+  breakout_volume_ratio: 0.7  # breakout vol < this * 20-bar avg → weak-volume breakout
+  vol_lookback: 20            # bars to average for volume baseline
+  max_reentry_bars: 3         # bars after breakout to look for re-entry close
+  confirmation_lookback: 5    # bars after re-entry to look for lower-high/higher-low
