@@ -219,6 +219,18 @@
 
       <div id="gap-banners"></div>
 
+      <div id="spec-comparison-wrap" style="display:none;margin-bottom:16px">
+        <div class="section-title">Spec Comparison</div>
+        <table class="data-table" id="spec-comparison-table">
+          <thead><tr>
+            <th>Attribute</th>
+            <th id="spec-cmp-src-hdr">Source</th>
+            <th id="spec-cmp-tgt-hdr">Target</th>
+          </tr></thead>
+          <tbody id="spec-comparison-tbody"></tbody>
+        </table>
+      </div>
+
       <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">
         <div>
           <label>Source Device Name</label>
@@ -705,9 +717,54 @@ async function loadHwCatalog() {
   } catch(e) { toast('Could not load hardware catalog: ' + e.message, true); }
 }
 
+// Hardcoded spec data for comparison table (port count, power, form factor)
+const SPEC_COMPARISON_DATA = {
+  'EX2300':  { ports: 24,  power_w: 30,   form_factor: '1U' },
+  'EX3400':  { ports: 48,  power_w: 100,  form_factor: '1U' },
+  'EX4300':  { ports: 48,  power_w: 150,  form_factor: '1U' },
+  'EX4600':  { ports: 24,  power_w: 200,  form_factor: '1U' },
+  'EX9200':  { ports: 96,  power_w: 800,  form_factor: '7U' },
+  'QFX5100': { ports: 48,  power_w: 250,  form_factor: '1U' },
+  'QFX5200': { ports: 32,  power_w: 300,  form_factor: '2U' },
+  'MX204':   { ports: 4,   power_w: 350,  form_factor: '1U' },
+  'MX480':   { ports: 96,  power_w: 2800, form_factor: '7U' },
+};
+
+function updateSpecComparison() {
+  const srcModel = document.getElementById('src-model').value;
+  const tgtModel = document.getElementById('tgt-model').value;
+  const wrap = document.getElementById('spec-comparison-wrap');
+  if (!srcModel || !tgtModel) { wrap.style.display = 'none'; return; }
+
+  const srcSpec = SPEC_COMPARISON_DATA[srcModel] || {};
+  const tgtSpec = SPEC_COMPARISON_DATA[tgtModel] || {};
+
+  document.getElementById('spec-cmp-src-hdr').textContent = srcModel;
+  document.getElementById('spec-cmp-tgt-hdr').textContent = tgtModel;
+
+  const rows = [
+    ['Port Count',   srcSpec.ports       ?? '—', tgtSpec.ports       ?? '—'],
+    ['Power (W)',    srcSpec.power_w      ?? '—', tgtSpec.power_w      ?? '—'],
+    ['Form Factor',  srcSpec.form_factor  ?? '—', tgtSpec.form_factor  ?? '—'],
+  ];
+
+  document.getElementById('spec-comparison-tbody').innerHTML = rows.map(([attr, srcVal, tgtVal]) => {
+    const mismatch = srcVal !== tgtVal && srcVal !== '—' && tgtVal !== '—';
+    const cellStyle = mismatch ? 'background:rgba(255,215,0,0.15);color:#f1c40f;font-weight:600;' : '';
+    return `<tr>
+      <td>${escapeHtml(attr)}</td>
+      <td style="${cellStyle}">${escapeHtml(String(srcVal))}</td>
+      <td style="${cellStyle}">${escapeHtml(String(tgtVal))}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.style.display = 'block';
+}
+
 function onModelChange() {
   const srcModel = document.getElementById('src-model').value;
   const tgtModel = document.getElementById('tgt-model').value;
+  updateSpecComparison();
   if (!srcModel || !tgtModel) { document.getElementById('spec-cards').style.display='none'; return; }
   srcHw = hwCatalog.find(d=>d.model===srcModel);
   tgtHw = hwCatalog.find(d=>d.model===tgtModel);
