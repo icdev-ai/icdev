@@ -752,3 +752,75 @@ def move_task(task_id):
         return jsonify({"status": "moved", "id": task_id, "new_status": new_status})
     finally:
         conn.close()
+
+
+@kanban_api.route("/live-activity", methods=["GET"])
+def live_activity():
+    """Return in_progress tasks enriched with elapsed time and scheduler heartbeat.
+
+    Staleness signals:
+      - elapsed_dispatch_secs: seconds since the task moved to in_progress (updated_at).
+        The scheduler does NOT update this during execution, so it reflects dispatch age.
+      - scheduler_last_seen_secs: seconds since kanban_scheduler.log was last written.
+        If > 180s the scheduler may have died and in_progress tasks are zombies.
+      - staleness: "active" | "warning" (scheduler quiet 3-10 min) | "stale" (> 10 min)
+    """
+    import pathlib
+    import time as _time
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, status, priority, task_type, failure_count, "
+            "last_failure_at, created_at, updated_at, description, "
+            "dispatch_source, executor_type "
+            "FROM kanban_tasks WHERE status = 'in_progress' "
+            "ORDER BY updated_at DESC"
+        ).fetchall()
+
+        now = datetime.now(timezone.utc)
+
+        # Scheduler heartbeat — last write to the scheduler log.
+        log_path = pathlib.Path(".tmp/kanban_scheduler.log")
+        scheduler_last_seen_secs = None
+        if log_path.exists():
+            scheduler_last_seen_secs = int(_time.time() - log_path.stat().st_mtime)
+
+        tasks = []
+        for r in rows:
+            d = dict(r)
+
+            # Elapsed time since task was dispatched (updated_at = dispatch timestamp).
+            updated_raw = d.get("updated_at") or d.get("created_at")
+            elapsed_dispatch_secs = None
+            if updated_raw:
+                try:
+                    from dateutil.parser import parse as _parse_dt
+                    dt = _parse_dt(str(updated_raw))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    elapsed_dispatch_secs = int((now - dt).total_seconds())
+                except Exception:
+                    pass
+
+            d["elapsed_dispatch_secs"] = elapsed_dispatch_secs
+            d["scheduler_last_seen_secs"] = scheduler_last_seen_secs
+
+            # Staleness based on how long the scheduler has been quiet.
+            if scheduler_last_seen_secs is None:
+                d["staleness"] = "unknown"
+            elif scheduler_last_seen_secs > 600:   # > 10 min — scheduler likely dead
+                d["staleness"] = "stale"
+            elif scheduler_last_seen_secs > 180:   # 3-10 min — scheduler quiet
+                d["staleness"] = "warning"
+            else:
+                d["staleness"] = "active"
+
+            tasks.append(d)
+
+        return jsonify({
+            "tasks": tasks,
+            "scheduler_last_seen_secs": scheduler_last_seen_secs,
+        })
+    finally:
+        conn.close()
