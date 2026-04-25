@@ -110,8 +110,46 @@ def check_js_errors(driver) -> list[str]:
     return errors
 
 
+_E2E_DEP_TITLES = ("E2E-DEP-PARENT", "E2E-DEP-CHILD")
+
+
+def _cleanup_stale_dep_rows() -> int:
+    """Delete any E2E-DEP-* rows left over from a previous aborted run.
+
+    Without this, leftover tasks are picked up by the kanban scheduler and
+    dispatched as real work items, causing false-positive task failures.
+    """
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    try:
+        removed = 0
+        for title in _E2E_DEP_TITLES:
+            cur = conn.execute(
+                "SELECT id FROM kanban_tasks WHERE title = ?",
+                (title,),
+            )
+            rows = cur.fetchall() if cur else []
+            for row in rows:
+                conn.execute("DELETE FROM kanban_tasks WHERE id = ?", (dict(row)["id"],))
+                removed += 1
+        conn.commit()
+        return removed
+    finally:
+        conn.close()
+
+
 def main() -> int:
     result = TestResult()
+
+    # Clean up any stale E2E-DEP-* rows from a previous aborted run so they
+    # don't get dispatched as real kanban work by the scheduler.
+    try:
+        wiped = _cleanup_stale_dep_rows()
+        if wiped:
+            result.ok("cleanup stale E2E-DEP rows", f"{wiped} removed")
+    except Exception as e:
+        result.fail("cleanup stale E2E-DEP rows", e)
 
     # --- Step 1: seed parent + dependent via dashboard API ----------------
     parent_id = None
