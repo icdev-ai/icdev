@@ -1567,6 +1567,161 @@ def create_network_blueprint():
         return jsonify({"deleted": topo_id})
 
     # ══════════════════════════════════════════════════════════════════════
+    # API: Executive Briefing Generator
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/topologies/<topo_id>/briefing", methods=["POST"])
+    @nc_login_required
+    def nc_api_executive_briefing(topo_id):
+        """Generate a plain-English executive briefing from a topology graph for CISO/PM audience."""
+        import re
+
+        from tools.http.client import request as _req_request
+
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo.get("graph_json") or "{}")
+        except Exception:
+            graph = {}
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+
+        # ── Build structured graph summary for LLM context ─────────────────
+        type_counts: dict = {}
+        for n in nodes:
+            t = n.get("type", "unknown")
+            type_counts[t] = type_counts.get(t, 0) + 1
+
+        security_zones = [n.get("label") or n.get("type") for n in nodes if n.get("type") in (
+            "security-zone", "firewall", "vrf", "vlan", "nc_boundary",
+        )]
+
+        node_list = ", ".join(
+            f"{n.get('label') or n.get('type')} ({n.get('type')})"
+            for n in nodes[:40]
+        )
+        if len(nodes) > 40:
+            node_list += f" … and {len(nodes) - 40} more"
+
+        edge_list = ", ".join(
+            f"{e.get('source')} → {e.get('target')}"
+            + (f" [{e.get('protocol')}]" if e.get("protocol") else "")
+            for e in edges[:30]
+        )
+        if len(edges) > 30:
+            edge_list += f" … and {len(edges) - 30} more"
+
+        type_summary = ", ".join(f"{v}× {k}" for k, v in sorted(type_counts.items(), key=lambda x: -x[1]))
+
+        graph_summary = (
+            f"Topology name: {topo.get('name', 'Unnamed')}\n"
+            f"Classification: {topo.get('classification', 'unclassified')}\n"
+            f"Total nodes: {len(nodes)}, Total links: {len(edges)}\n"
+            f"Device types: {type_summary or 'none'}\n"
+            f"Security zones/firewalls: {', '.join(security_zones) or 'none identified'}\n"
+            f"Nodes: {node_list or 'empty'}\n"
+            f"Links: {edge_list or 'none'}\n"
+        )
+
+        _BRIEFING_SYSTEM = (
+            "You are a senior network architect writing a 1–2 page executive briefing for a CISO and Program Manager. "
+            "Your audience is non-technical leadership. Use plain English — no jargon acronyms without explanation. "
+            "Be concise, confident, and specific. "
+            "Output ONLY a Markdown document with exactly these five sections (use ## headings):\n\n"
+            "## Network Overview\n"
+            "A 3–5 sentence plain-English description of what this network does, its scale, and its purpose.\n\n"
+            "## Security Zones\n"
+            "List the security boundaries, trust zones, or enclaves. Explain what data or users live in each zone.\n\n"
+            "## Critical Path\n"
+            "Describe the most important data flows or connectivity paths. Identify single points of failure if visible.\n\n"
+            "## Technology Stack\n"
+            "Summarize key device categories, vendors (if inferrable from node types), and any cloud services present.\n\n"
+            "## Risk Highlights\n"
+            "List 3–5 specific risks or concerns visible in this topology (missing redundancy, exposed endpoints, "
+            "mixed classification zones, unencrypted paths, etc.). Each risk on its own bullet.\n\n"
+            "Do not add any preamble or postscript outside these five sections."
+        )
+
+        user_msg = f"Generate an executive briefing for this network topology:\n\n{graph_summary}"
+
+        def _call_claude_briefing():
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                return None, "No ANTHROPIC_API_KEY set"
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req_request(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 2048,
+                    "temperature": 0.4,
+                    "system": _BRIEFING_SYSTEM,
+                    "messages": [{"role": "user", "content": user_msg}],
+                },
+                timeout=60,
+            )
+            r.raise_for_status()
+            return r.json().get("content", [{}])[0].get("text", ""), None
+
+        def _call_ollama_briefing():
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
+            r = _req_request(
+                "POST",
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": ollama_model,
+                    "messages": [
+                        {"role": "system", "content": _BRIEFING_SYSTEM},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 2048, "temperature": 0.4},
+                },
+                timeout=120,
+            )
+            r.raise_for_status()
+            return r.json().get("message", {}).get("content", ""), None
+
+        try:
+            provider = os.environ.get("NC_AI_PROVIDER", "auto")
+            content = None
+
+            if provider in ("auto", "claude"):
+                content, err = _call_claude_briefing()
+                if not content and provider == "claude":
+                    return jsonify({"error": f"Claude API failed: {err}"}), 503
+
+            if not content and provider in ("auto", "ollama"):
+                content, err = _call_ollama_briefing()
+                if not content and provider == "ollama":
+                    return jsonify({"error": f"Ollama failed: {err}"}), 503
+
+            if not content:
+                return jsonify({"error": "No LLM provider available. Set ANTHROPIC_API_KEY or start Ollama."}), 503
+
+            # Strip any <think> blocks from reasoning models
+            markdown = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+            _audit("BRIEFING", "topology", topo_id)
+            return jsonify({"markdown": markdown, "topo_name": topo.get("name", "Unnamed")})
+
+        except Exception as exc:
+            logger.exception("Executive briefing failed for %s", topo_id)
+            return jsonify({"error": str(exc)}), 500
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Simulation
     # ══════════════════════════════════════════════════════════════════════
 
