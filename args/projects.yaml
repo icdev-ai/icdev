@@ -4,6 +4,29 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: cdh
+  name: Cdh Project
+  description: Auto-registered project for tasks with prefix 'cdh-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: cdh-
+  default_open: true
+  briefs: []
+  epics:
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: mfst
+    title: MFST
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: task_kb
   name: Task Kb Project
   description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
@@ -17,6 +40,9 @@ projects:
     priority: medium
   - key: test
     title: TEST
+    priority: medium
+  - key: twin
+    title: TWIN
     priority: medium
 - key: plan_dtwin_pdc_pipeline
   name: Plan Dtwin Pdc Pipeline Project
@@ -90,6 +116,21 @@ projects:
   - key: l7
     title: L7 — Validation (E2E Selenium, coherence gate)
     priority: critical
+  - key: bdc
+    title: BDC
+    priority: medium
+  - key: ce
+    title: CE
+    priority: medium
+  - key: iqe
+    title: IQE
+    priority: medium
+  - key: ndc
+    title: NDC
+    priority: medium
+  - key: tfw
+    title: TFW
+    priority: medium
 - key: digital-twin
   name: Digital Twin Roadmap
   description: 'Per-canvas digital-twin implementation across 8 epics, 86 dependency-chained
@@ -292,6 +333,27 @@ projects:
   - key: wrap
     title: Registration + docs + E2E
     priority: high
+  - key: ai
+    title: AI
+    priority: medium
+  - key: data
+    title: DATA
+    priority: medium
+  - key: ivr
+    title: IVR
+    priority: medium
+  - key: pgm
+    title: PGM
+    priority: medium
+  - key: profile
+    title: PROFILE
+    priority: medium
+  - key: sog
+    title: SOG
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
 - key: opts-greeks
   name: FathomDesk — Options Greeks Engine
   description: '7-epic expansion: rho completeness, IV Rank/Percentile, Greek-profile
@@ -327,6 +389,30 @@ projects:
     priority: high
   - key: pgm
     title: Phase 6b — Portfolio Greek Manager + Harmonization
+    priority: medium
+  - key: betf
+    title: BETF
+    priority: medium
+  - key: cimp
+    title: CIMP
+    priority: medium
+  - key: crd
+    title: CRD
+    priority: medium
+  - key: fisc
+    title: FISC
+    priority: medium
+  - key: qeqt
+    title: QEQT
+    priority: medium
+  - key: subsidy
+    title: SUBSIDY
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+  - key: xar
+    title: XAR
     priority: medium
 - key: fdm-macro
   name: FathomDesk — Macro Intelligence Expansion
