@@ -1,0 +1,1268 @@
+<!-- CUI // SP-CTI — Network Device Migration Wizard -->
+{% extends "base.html" %}
+{% block title %}Network Device Migration — ICDEV{% endblock %}
+{% block extra_css %}
+<style>
+/* ── Wizard Shell ─────────────────────────────────────────────── */
+.nw-shell { display: flex; height: calc(100vh - 56px); overflow: hidden; }
+.nw-sidebar { width: 220px; min-width: 220px; background: #0d1b2e; border-right: 1px solid #1e3a6e; padding: 20px 0; overflow-y: auto; }
+.nw-sidebar-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #4a6080; padding: 0 16px 12px; }
+.nw-step-link { display: flex; align-items: center; gap: 10px; padding: 9px 16px; cursor: pointer; color: #7a8cb0; font-size: 13px; border-left: 3px solid transparent; transition: all 0.15s; }
+.nw-step-link:hover { color: #eaeaea; background: #111f35; }
+.nw-step-link.active { color: #27ae60; border-left-color: #27ae60; background: #111f35; }
+.nw-step-link.done { color: #5a8a6a; }
+.nw-step-link.done .step-icon { color: #27ae60; }
+.step-num { width: 20px; height: 20px; border-radius: 50%; background: #1e3a6e; display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+.nw-step-link.active .step-num { background: #27ae60; color: #fff; }
+.nw-step-link.done .step-num { background: #1a5e2d; color: #27ae60; }
+.nw-readiness { padding: 16px; border-top: 1px solid #1e3a6e; margin-top: auto; }
+.nw-readiness-bar-wrap { background: #1e3a6e; border-radius: 4px; height: 6px; margin: 6px 0 4px; }
+.nw-readiness-bar { height: 6px; border-radius: 4px; background: #27ae60; transition: width 0.4s; }
+.nw-readiness-score { font-size: 20px; font-weight: 700; color: #27ae60; }
+.nw-readiness-label { font-size: 11px; color: #4a6080; }
+
+/* ── Main content ─────────────────────────────────────────────── */
+.nw-main { flex: 1; overflow-y: auto; padding: 24px 28px; }
+.nw-page { display: none; }
+.nw-page.active { display: block; }
+.nw-header { margin-bottom: 20px; }
+.nw-header h2 { font-size: 18px; margin: 0 0 4px; }
+.nw-header p { color: #7a8cb0; font-size: 13px; margin: 0; }
+.nw-actions { display: flex; gap: 10px; margin-top: 24px; }
+.btn { padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btn-primary { background: #27ae60; color: #fff; }
+.btn-primary:hover { background: #219a52; }
+.btn-secondary { background: #1e3a6e; color: #eaeaea; }
+.btn-secondary:hover { background: #254d8e; }
+.btn-danger { background: #a93226; color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Cards / Grid ─────────────────────────────────────────────── */
+.spec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.spec-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px; }
+.spec-card h4 { margin: 0 0 10px; font-size: 13px; color: #27ae60; }
+.spec-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid #1a2d4a; }
+.spec-row:last-child { border-bottom: none; }
+.spec-row .lbl { color: #7a8cb0; }
+.spec-row .val { color: #eaeaea; font-weight: 600; }
+.gap-banner { background: #3d1515; border: 1px solid #a93226; border-radius: 6px; padding: 10px 14px; font-size: 12px; color: #e74c3c; margin-bottom: 12px; }
+.gap-banner strong { color: #e74c3c; }
+
+/* ── Forms ────────────────────────────────────────────────────── */
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; color: #7a8cb0; margin-bottom: 4px; }
+.form-group select, .form-group input, .form-group textarea { width: 100%; background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 5px; color: #eaeaea; padding: 7px 10px; font-size: 13px; box-sizing: border-box; }
+.form-group select:focus, .form-group input:focus, .form-group textarea:focus { outline: none; border-color: #27ae60; }
+.form-group textarea { min-height: 200px; font-family: monospace; font-size: 12px; resize: vertical; }
+
+/* ── Tables ───────────────────────────────────────────────────── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table th { background: #0d1b2e; color: #7a8cb0; text-align: left; padding: 8px 10px; border-bottom: 1px solid #1e3a6e; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+.data-table td { padding: 7px 10px; border-bottom: 1px solid #141f33; vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: #111f35; }
+.badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.badge-pass { background: #1a5e2d; color: #27ae60; }
+.badge-fail { background: #3d1515; color: #e74c3c; }
+.badge-warn { background: #3d2e0d; color: #f39c12; }
+.badge-na { background: #1e3a6e; color: #7a8cb0; }
+.badge-optic { background: #3d2e0d; color: #f39c12; }
+.badge-speed { background: #3d1515; color: #e74c3c; }
+.badge-ok { background: #1a5e2d; color: #27ae60; }
+.badge-pending { background: #1e3a6e; color: #7a8cb0; }
+
+/* ── Config diff ──────────────────────────────────────────────── */
+.diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.diff-pane { background: #0a1624; border: 1px solid #1e3a6e; border-radius: 6px; }
+.diff-pane-title { padding: 8px 12px; font-size: 11px; color: #7a8cb0; border-bottom: 1px solid #1e3a6e; text-transform: uppercase; letter-spacing: 0.5px; }
+.diff-pane pre { margin: 0; padding: 12px; font-size: 11px; overflow-x: auto; max-height: 320px; overflow-y: auto; white-space: pre-wrap; }
+.diff-line-keep { color: #7a8cb0; }
+.diff-line-add { color: #27ae60; background: rgba(39,174,96,0.08); display: block; }
+.diff-line-remove { color: #e74c3c; background: rgba(231,76,60,0.08); display: block; text-decoration: line-through; }
+.diff-line-rename { color: #f39c12; background: rgba(243,156,18,0.08); display: block; }
+
+/* ── Commit check panel ───────────────────────────────────────── */
+.cc-panel { background: #0a1624; border: 1px solid #1e3a6e; border-radius: 6px; padding: 14px; margin-top: 12px; }
+.cc-panel h4 { margin: 0 0 10px; font-size: 12px; color: #7a8cb0; text-transform: uppercase; }
+.cc-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: 12px; border-bottom: 1px solid #141f33; }
+.cc-item:last-child { border-bottom: none; }
+.cc-icon { flex-shrink: 0; font-size: 14px; width: 18px; text-align: center; }
+.cc-icon.pass { color: #27ae60; }
+.cc-icon.fail { color: #e74c3c; }
+.cc-icon.warn { color: #f39c12; }
+.cc-msg { flex: 1; color: #eaeaea; }
+.cc-stmt { color: #7a8cb0; font-size: 11px; }
+
+/* ── Test plan ────────────────────────────────────────────────── */
+.tab-bar { display: flex; gap: 2px; margin-bottom: 14px; }
+.tab-btn { padding: 7px 14px; border-radius: 4px 4px 0 0; border: 1px solid #1e3a6e; border-bottom: none; background: #0d1b2e; color: #7a8cb0; cursor: pointer; font-size: 12px; }
+.tab-btn.active { background: #16213e; color: #27ae60; border-color: #27ae60; }
+.test-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+.test-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.test-card-name { font-size: 13px; font-weight: 600; }
+.test-toggle { display: flex; gap: 4px; }
+.test-toggle button { padding: 3px 10px; border-radius: 3px; border: 1px solid #1e3a6e; background: #0d1b2e; color: #7a8cb0; cursor: pointer; font-size: 11px; }
+.test-toggle button.pass-active { background: #1a5e2d; color: #27ae60; border-color: #27ae60; }
+.test-toggle button.fail-active { background: #3d1515; color: #e74c3c; border-color: #e74c3c; }
+.test-detail { font-size: 11px; color: #7a8cb0; margin-bottom: 6px; }
+.test-result-input { width: 100%; background: #0a1624; border: 1px solid #1a2d4a; border-radius: 4px; color: #eaeaea; padding: 5px 8px; font-size: 11px; box-sizing: border-box; }
+.progress-bar-wrap { background: #1e3a6e; border-radius: 4px; height: 5px; flex: 1; }
+.progress-bar-fill { height: 5px; border-radius: 4px; background: #27ae60; transition: width 0.3s; }
+
+/* ── Cutover ─────────────────────────────────────────────────── */
+.cutover-step { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; }
+.cutover-seq { font-size: 20px; font-weight: 700; color: #27ae60; min-width: 32px; text-align: center; }
+.cutover-body { flex: 1; }
+.cutover-circuit { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.cutover-actions { font-size: 11px; color: #7a8cb0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 6px; }
+.cutover-action-item strong { color: #eaeaea; }
+
+/* ── ERB package ─────────────────────────────────────────────── */
+.erb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.erb-section { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px; }
+.erb-section h4 { margin: 0 0 12px; font-size: 13px; color: #27ae60; border-bottom: 1px solid #1e3a6e; padding-bottom: 8px; }
+.risk-badge { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 13px; font-weight: 700; }
+.risk-LOW { background: #1a5e2d; color: #27ae60; }
+.risk-MEDIUM { background: #3d2e0d; color: #f39c12; }
+.risk-HIGH { background: #3d1515; color: #e74c3c; }
+.readiness-gate { background: #0d1b2e; border: 2px solid #1e3a6e; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 16px; }
+.readiness-gate.ready { border-color: #27ae60; }
+.readiness-gate .score-big { font-size: 48px; font-weight: 700; color: #27ae60; }
+.readiness-gate .score-label { color: #7a8cb0; font-size: 13px; }
+.blocker-list { list-style: none; padding: 0; margin: 10px 0 0; text-align: left; }
+.blocker-list li { font-size: 12px; color: #e74c3c; padding: 3px 0; }
+.blocker-list li::before { content: "✗ "; }
+
+/* ── Misc ─────────────────────────────────────────────────────── */
+.section-title { font-size: 13px; font-weight: 700; color: #eaeaea; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid #1e3a6e; }
+.info-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip { background: #1e3a6e; padding: 4px 10px; border-radius: 12px; font-size: 11px; color: #7a8cb0; }
+.chip strong { color: #eaeaea; }
+.parsed-table-wrap { overflow-x: auto; }
+.toast { position: fixed; bottom: 24px; right: 24px; background: #1a5e2d; color: #eaeaea; padding: 10px 18px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity 0.3s; z-index: 9999; }
+.toast.error { background: #3d1515; }
+.toast.show { opacity: 1; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #1e3a6e; border-top-color: #27ae60; border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="nw-shell">
+
+  <!-- ── Sidebar ── -->
+  <div class="nw-sidebar" id="nw-sidebar">
+    <div class="nw-sidebar-title">Network Migration</div>
+    {% set steps = [
+      (1,'Device Selection'),
+      (2,'Config Import'),
+      (3,'Port Mapping'),
+      (4,'Compatibility'),
+      (5,'Config Preview'),
+      (6,'Test Plan'),
+      (7,'Cutover Planner'),
+      (8,'ERB / CCB Package')
+    ] %}
+    {% for num, label in steps %}
+    <div class="nw-step-link" id="step-link-{{ num }}" onclick="goStep({{ num }})">
+      <span class="step-num">{{ num }}</span>
+      <span>{{ label }}</span>
+    </div>
+    {% endfor %}
+    <div class="nw-readiness">
+      <div class="nw-readiness-label">Readiness</div>
+      <div class="nw-readiness-score" id="sidebar-score">0%</div>
+      <div class="nw-readiness-bar-wrap"><div class="nw-readiness-bar" id="sidebar-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="nw-main">
+
+    <!-- ════════════════ STEP 1 — Device Selection ════════════════ -->
+    <div class="nw-page active" id="page-1">
+      <div class="nw-header">
+        <h2>Step 1 — Device Selection</h2>
+        <p>Select source and target network device models. Specs are loaded from the hardware profile database.</p>
+      </div>
+
+      <div class="spec-grid">
+        <div class="form-group">
+          <label>Source Device Model</label>
+          <select id="src-model" onchange="onModelChange()">
+            <option value="">— select model —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Target Device Model</label>
+          <select id="tgt-model" onchange="onModelChange()">
+            <option value="">— select model —</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="spec-grid" id="spec-cards" style="display:none">
+        <div class="spec-card" id="src-spec-card">
+          <h4 id="src-spec-title">Source</h4>
+          <div id="src-spec-rows"></div>
+        </div>
+        <div class="spec-card" id="tgt-spec-card">
+          <h4 id="tgt-spec-title">Target</h4>
+          <div id="tgt-spec-rows"></div>
+        </div>
+      </div>
+
+      <div id="gap-banners"></div>
+
+      <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">
+        <div>
+          <label>Source Device Name</label>
+          <input type="text" id="src-device-name" placeholder="e.g. core-rtr-01">
+        </div>
+        <div>
+          <label>Target Device Name</label>
+          <input type="text" id="tgt-device-name" placeholder="e.g. core-rtr-01-new">
+        </div>
+        <div>
+          <label>Site / Location</label>
+          <input type="text" id="src-site" placeholder="e.g. DC1-CAGE3">
+        </div>
+      </div>
+
+      <div class="nw-actions">
+        <button class="btn btn-primary" onclick="createSession()">Create Session &amp; Continue →</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 2 — Config Import ════════════════ -->
+    <div class="nw-page" id="page-2">
+      <div class="nw-header">
+        <h2>Step 2 — Config / Diagram Import</h2>
+        <p>Import the source device config or an existing network diagram (PNG, PDF, Visio, DrawIO). Topology is indexed into RAG + KG for what-if simulation and digital twin.</p>
+      </div>
+
+      <div class="tab-bar" style="margin-bottom:16px">
+        <button class="tab-btn active" id="import-tab-config" onclick="showImportTab('config',this)">Paste / Upload Config</button>
+        <button class="tab-btn" id="import-tab-diagram" onclick="showImportTab('diagram',this)">Import from Diagram</button>
+      </div>
+
+      <!-- Config tab -->
+      <div id="import-panel-config">
+        <div class="form-group">
+          <label>Paste Running Config (or upload below)</label>
+          <textarea id="config-text" placeholder="Paste Juniper 'show configuration | display set' or Cisco 'show running-config' output here..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Or upload config file</label>
+          <input type="file" id="config-file" accept=".txt,.conf,.cfg" onchange="onFileUpload(event)">
+        </div>
+        <div class="nw-actions">
+          <button class="btn btn-primary" onclick="parseConfig()">Parse Config →</button>
+          <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
+        </div>
+      </div>
+
+      <!-- Diagram import tab -->
+      <div id="import-panel-diagram" style="display:none">
+        <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;margin-bottom:16px">
+          <div style="font-size:13px;color:#7a8cb0;margin-bottom:12px">
+            Upload a network diagram — PNG/JPG screenshot, PDF (Visio export, documentation), DrawIO (.drawio), or Visio (.vsdx/.vdx).<br>
+            The NDC vision pipeline extracts devices, IPs, connections → RAG + KG → enables what-if simulation &amp; digital twin integration.
+          </div>
+          <div class="form-group">
+            <label>Network Diagram File</label>
+            <input type="file" id="diagram-file" accept=".png,.jpg,.jpeg,.pdf,.drawio,.xml,.vsdx,.vdx" onchange="onDiagramFileSelect(event)">
+          </div>
+          <div class="form-group">
+            <label>Topology Name (optional)</label>
+            <input type="text" id="diagram-name" placeholder="e.g. DC1-Core-Topology-2025">
+          </div>
+          <div id="diagram-upload-preview" style="display:none;margin-bottom:10px">
+            <img id="diagram-img-preview" style="max-width:100%;max-height:200px;border-radius:4px;border:1px solid #1e3a6e" />
+          </div>
+        </div>
+
+        <div id="diagram-progress" style="display:none;margin-bottom:14px">
+          <div style="font-size:12px;color:#7a8cb0;margin-bottom:6px" id="diagram-progress-msg">Ingesting diagram...</div>
+          <div class="progress-bar-wrap"><div class="progress-bar-fill" id="diagram-progress-bar" style="width:30%"></div></div>
+        </div>
+
+        <div class="nw-actions">
+          <button class="btn btn-primary" onclick="importDiagram()" id="diagram-import-btn">Extract Topology →</button>
+          <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
+        </div>
+
+        <!-- Extracted topology result -->
+        <div id="diagram-result" style="display:none;margin-top:20px">
+          <div class="section-title">Extracted Network Topology
+            <span id="diagram-confidence-chip" class="chip" style="margin-left:8px;font-size:10px"></span>
+          </div>
+          <div class="info-chips" id="diagram-chips"></div>
+
+          <div style="margin-top:14px;margin-bottom:8px;font-size:12px;font-weight:600;color:#eaeaea">Devices — Select the source device being migrated:</div>
+          <table class="data-table" id="diagram-devices-table">
+            <thead><tr>
+              <th style="width:32px"></th>
+              <th>Device Name</th><th>Type</th><th>Vendor / Model</th><th>IP Address</th><th>Connected To</th>
+            </tr></thead>
+            <tbody id="diagram-devices-tbody"></tbody>
+          </table>
+
+          <div style="margin-top:14px;margin-bottom:8px;font-size:12px;font-weight:600;color:#eaeaea">Connections ({{ edges }}):</div>
+          <table class="data-table" id="diagram-connections-table" style="margin-top:4px">
+            <thead><tr><th>Source</th><th>Link Type</th><th>Target</th><th>Label</th></tr></thead>
+            <tbody id="diagram-connections-tbody"></tbody>
+          </table>
+
+          <div class="nw-actions" style="margin-top:16px">
+            <button class="btn btn-primary" id="diagram-use-btn" onclick="useDiagramDevice()" disabled>Use Selected Device as Source →</button>
+            <span style="font-size:11px;color:#7a8cb0;margin-left:8px" id="diagram-selected-label"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Parsed result (shown for both tabs after successful parse) -->
+      <div id="parse-result" style="display:none;margin-top:20px">
+        <div class="section-title">Parsed Interface Inventory</div>
+        <div class="info-chips" id="parse-chips"></div>
+        <div class="parsed-table-wrap" style="margin-top:12px">
+          <table class="data-table" id="parsed-table">
+            <thead><tr><th>Interface</th><th>Speed</th><th>Media</th><th>Optic</th><th>IP Address</th><th>Description</th><th>Protocols</th></tr></thead>
+            <tbody id="parsed-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 3 — Port Mapping ════════════════ -->
+    <div class="nw-page" id="page-3">
+      <div class="nw-header">
+        <h2>Step 3 — Port Mapping</h2>
+        <p>Auto-generated mapping from source to target interfaces. Review and adjust as needed.</p>
+      </div>
+
+      <div class="nw-actions" style="margin-bottom:16px;margin-top:0">
+        <button class="btn btn-primary" onclick="generatePortMap()">Auto-Generate Mapping</button>
+        <button class="btn btn-secondary" onclick="savePortMap()">Save Mapping</button>
+        <button class="btn btn-secondary" onclick="downloadBOM()">Download BOM</button>
+      </div>
+
+      <div id="port-map-wrap">
+        <table class="data-table" id="port-map-table">
+          <thead><tr>
+            <th>Source Interface</th><th>Speed</th><th>Optic Change</th>
+            <th>Target Interface</th><th>IP / Circuit</th><th>Cable ID</th><th>Status</th>
+          </tr></thead>
+          <tbody id="port-map-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="nw-actions">
+        <button class="btn btn-primary" onclick="goStep(4)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(2)">← Back</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 4 — Compatibility ════════════════ -->
+    <div class="nw-page" id="page-4">
+      <div class="nw-header">
+        <h2>Step 4 — Compatibility Checklist</h2>
+        <p>Auto-generated hardware, software, protocol, and scale compatibility checks.</p>
+      </div>
+
+      <button class="btn btn-primary" style="margin-bottom:16px" onclick="runCompatCheck()">Run Compatibility Check</button>
+
+      <div id="compat-cats">
+        {% for cat in ['hardware','software','protocol','scale'] %}
+        <div style="margin-bottom:20px">
+          <div class="section-title" style="text-transform:capitalize">{{ cat }}</div>
+          <table class="data-table" id="compat-{{ cat }}">
+            <thead><tr><th>Check</th><th>Expected</th><th>Actual</th><th>Status</th><th>Category</th></tr></thead>
+            <tbody id="compat-{{ cat }}-tbody"></tbody>
+          </table>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="nw-actions">
+        <button class="btn btn-primary" onclick="goStep(5)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(3)">← Back</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 5 — Config Preview ════════════════ -->
+    <div class="nw-page" id="page-5">
+      <div class="nw-header">
+        <h2>Step 5 — Config Conversion &amp; Preview</h2>
+        <p>Generated target config with diff highlighting. Commit-check simulation validates syntax and compatibility.</p>
+      </div>
+
+      <button class="btn btn-primary" style="margin-bottom:16px" onclick="convertConfig()">Generate Target Config</button>
+      <button class="btn btn-secondary" style="margin-bottom:16px;margin-left:8px" onclick="downloadTargetConfig()">Download Config</button>
+
+      <div class="diff-grid" id="diff-view" style="display:none">
+        <div class="diff-pane">
+          <div class="diff-pane-title">Source Config</div>
+          <pre id="diff-source"></pre>
+        </div>
+        <div class="diff-pane">
+          <div class="diff-pane-title">Target Config (Generated)</div>
+          <pre id="diff-target"></pre>
+        </div>
+      </div>
+
+      <div class="cc-panel" id="cc-panel" style="display:none">
+        <h4>Commit-Check Simulation</h4>
+        <div id="cc-results"></div>
+      </div>
+
+      <div class="nw-actions">
+        <button class="btn btn-primary" onclick="goStep(6)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(4)">← Back</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 6 — Test Plan ════════════════ -->
+    <div class="nw-page" id="page-6">
+      <div class="nw-header">
+        <h2>Step 6 — Test Plan</h2>
+        <p>Pre-migration baseline, cutover smoke tests, and 24h post-monitoring checklist.</p>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="showTestTab('pre',this)">Pre-Migration</button>
+          <button class="tab-btn" onclick="showTestTab('cutover',this)">Cutover Smoke</button>
+          <button class="tab-btn" onclick="showTestTab('post',this)">Post (24h)</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#7a8cb0">
+          <span id="test-progress-label">0/0 executed</span>
+          <div class="progress-bar-wrap" style="width:120px"><div class="progress-bar-fill" id="test-progress-bar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div id="tests-pre"><div style="color:#7a8cb0;font-size:12px">Click a tab to load tests.</div></div>
+      <div id="tests-cutover" style="display:none"></div>
+      <div id="tests-post" style="display:none"></div>
+
+      <div class="nw-actions">
+        <button class="btn btn-primary" onclick="saveTests(); goStep(7)">Save &amp; Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(5)">← Back</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 7 — Cutover Planner ════════════════ -->
+    <div class="nw-page" id="page-7">
+      <div class="nw-header">
+        <h2>Step 7 — Cutover Sequence Planner</h2>
+        <p>Ordered circuit cutover plan with drain/cutover/verify/rollback actions.</p>
+      </div>
+
+      <div class="nw-actions" style="margin-bottom:16px;margin-top:0">
+        <button class="btn btn-primary" onclick="generateCutover()">Auto-Generate Sequence</button>
+        <button class="btn btn-secondary" onclick="saveCutover()">Save Plan</button>
+      </div>
+
+      <div class="spec-grid" style="margin-bottom:16px">
+        <div class="form-group">
+          <label>Sort Strategy</label>
+          <select id="cutover-strategy">
+            <option value="traffic_volume_asc">Lowest Traffic First (recommended)</option>
+            <option value="sequential">Sequential (port order)</option>
+          </select>
+        </div>
+        <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:12px">
+          <div style="font-size:11px;color:#7a8cb0">Est. Maintenance Window</div>
+          <div style="font-size:22px;font-weight:700;color:#27ae60" id="mw-estimate">—</div>
+        </div>
+      </div>
+
+      <div id="cutover-list"></div>
+
+      <div class="nw-actions">
+        <button class="btn btn-primary" onclick="saveCutover(); goStep(8)">Save &amp; Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(6)">← Back</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 8 — ERB / CCB Package ════════════════ -->
+    <div class="nw-page" id="page-8">
+      <div class="nw-header">
+        <h2>Step 8 — ERB / CCB Package</h2>
+        <p>Change request package for Engineering Review Board and Change Control Board submission.</p>
+      </div>
+
+      <div class="readiness-gate" id="readiness-gate">
+        <div class="score-big" id="erb-readiness-score">—</div>
+        <div class="score-label">Readiness Score</div>
+        <ul class="blocker-list" id="erb-blockers"></ul>
+      </div>
+
+      <div class="erb-grid">
+        <div class="erb-section">
+          <h4>Change Metadata</h4>
+          <div class="form-group"><label>Business Justification</label>
+            <textarea id="erb-justification" style="min-height:80px" placeholder="Describe business/technical driver for this change..."></textarea>
+          </div>
+          <div class="form-group"><label>Requestor</label>
+            <input type="text" id="erb-requestor" placeholder="Full name / team">
+          </div>
+          <div class="form-group"><label>Maintenance Window Start</label>
+            <input type="datetime-local" id="erb-mw-start">
+          </div>
+          <div class="form-group"><label>Maintenance Window End</label>
+            <input type="datetime-local" id="erb-mw-end">
+          </div>
+        </div>
+        <div class="erb-section">
+          <h4>Auto-Generated Summary</h4>
+          <div id="erb-summary-display" style="font-size:12px;color:#7a8cb0">Load readiness to view summary.</div>
+        </div>
+      </div>
+
+      <div class="nw-actions" style="margin-top:20px">
+        <button class="btn btn-primary" onclick="saveErbMetadata()" id="erb-save-btn">Save Metadata</button>
+        <button class="btn btn-primary" onclick="submitErb()" id="erb-submit-btn" disabled>Submit to ERB/CCB Approval Flow</button>
+        <a href="#" onclick="openErbPdf()" class="btn btn-secondary">Export PDF</a>
+        <button class="btn btn-secondary" onclick="goStep(7)">← Back</button>
+      </div>
+    </div>
+
+  </div><!-- /.nw-main -->
+</div><!-- /.nw-shell -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SESSION_ID = {{ session_id | tojson }};
+let _sid = SESSION_ID;
+
+// ── State ─────────────────────────────────────────────────────────
+let hwCatalog = [];
+let srcHw = null, tgtHw = null;
+let parsedInterfaces = [];
+let portMap = [];
+let testCases = {};  // {pre:[], cutover:[], post:[]}
+let cutoverSteps = [];
+let targetConfigText = '';
+let currentStep = 1;
+
+// ── Toast ─────────────────────────────────────────────────────────
+function toast(msg, isErr=false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (isErr ? ' error' : '');
+  setTimeout(() => el.className = 'toast', 3000);
+}
+
+// ── Step navigation ───────────────────────────────────────────────
+function goStep(n) {
+  document.querySelectorAll('.nw-page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nw-step-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('page-' + n).classList.add('active');
+  document.getElementById('step-link-' + n).classList.add('active');
+  currentStep = n;
+  if (n === 6 && Object.keys(testCases).length === 0) loadTests();
+  if (n === 8) loadReadiness();
+}
+
+// ── API helpers ───────────────────────────────────────────────────
+async function api(method, path, body=null) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch('/migration-canvas' + path, opts);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({error: resp.statusText}));
+    throw new Error(err.error || resp.statusText);
+  }
+  return resp.json();
+}
+
+// ── STEP 1 ────────────────────────────────────────────────────────
+async function loadHwCatalog() {
+  try {
+    const data = await api('GET', '/api/network-migration/hardware-catalog');
+    hwCatalog = data.devices || [];
+    const srcSel = document.getElementById('src-model');
+    const tgtSel = document.getElementById('tgt-model');
+    hwCatalog.forEach(d => {
+      const opt = (v,t) => { const o = document.createElement('option'); o.value=v; o.textContent=t; return o; };
+      srcSel.appendChild(opt(d.model, `${d.vendor} ${d.model}`));
+      tgtSel.appendChild(opt(d.model, `${d.vendor} ${d.model}`));
+    });
+  } catch(e) { toast('Could not load hardware catalog: ' + e.message, true); }
+}
+
+function onModelChange() {
+  const srcModel = document.getElementById('src-model').value;
+  const tgtModel = document.getElementById('tgt-model').value;
+  if (!srcModel || !tgtModel) { document.getElementById('spec-cards').style.display='none'; return; }
+  srcHw = hwCatalog.find(d=>d.model===srcModel);
+  tgtHw = hwCatalog.find(d=>d.model===tgtModel);
+  if (!srcHw || !tgtHw) return;
+  renderSpecCard('src', srcHw);
+  renderSpecCard('tgt', tgtHw);
+  document.getElementById('spec-cards').style.display='grid';
+  renderGaps(srcHw, tgtHw);
+}
+
+function renderSpecCard(side, hw) {
+  document.getElementById(side+'-spec-title').textContent = hw.vendor + ' ' + hw.model;
+  const rows = [
+    ['Form Factor', hw.form_factor||'—'],
+    ['Rack Units', hw.rack_units||'—'],
+    ['Throughput', hw.throughput_gbps ? hw.throughput_gbps+' Gbps' : '—'],
+    ['Max Power (W)', hw.power_max_w||hw.power_typical_w||'—'],
+    ['FIB / Routing Table', hw.routing_table_size ? parseInt(hw.routing_table_size).toLocaleString() : '—'],
+    ['ARP Table', hw.arp_table_size ? parseInt(hw.arp_table_size).toLocaleString() : '—'],
+    ['EOL Date', hw.eol_date||'—'],
+  ];
+  document.getElementById(side+'-spec-rows').innerHTML = rows.map(([l,v]) =>
+    `<div class="spec-row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`
+  ).join('');
+}
+
+function renderGaps(src, tgt) {
+  const banners = document.getElementById('gap-banners');
+  banners.innerHTML = '';
+  const gaps = [];
+  const srcTp = parseFloat(src.throughput_gbps||0), tgtTp = parseFloat(tgt.throughput_gbps||0);
+  if (srcTp > tgtTp && tgtTp > 0)
+    gaps.push(`<strong>Throughput:</strong> Source ${srcTp}Gbps > Target ${tgtTp}Gbps. Confirm traffic fits within target capacity.`);
+  const srcFib = parseInt(src.routing_table_size||0), tgtFib = parseInt(tgt.routing_table_size||0);
+  if (srcFib > tgtFib && tgtFib > 0)
+    gaps.push(`<strong>FIB Scale:</strong> Source routing table ${srcFib.toLocaleString()} routes > Target ${tgtFib.toLocaleString()}. Verify routing table fits.`);
+  gaps.push('<strong>AS-PIC Check:</strong> Run the compatibility check (Step 4) to verify AS-PIC / stateful firewall gaps for the selected models.');
+  gaps.forEach(g => {
+    const el = document.createElement('div');
+    el.className = 'gap-banner';
+    el.innerHTML = g;
+    banners.appendChild(el);
+  });
+}
+
+async function createSession() {
+  const srcModel = document.getElementById('src-model').value;
+  const tgtModel = document.getElementById('tgt-model').value;
+  if (!srcModel || !tgtModel) { toast('Select source and target models', true); return; }
+  try {
+    const data = await api('POST', '/api/network-migration', {
+      src_model: srcModel,
+      tgt_model: tgtModel,
+      src_device_name: document.getElementById('src-device-name').value,
+      tgt_device_name: document.getElementById('tgt-device-name').value,
+      src_site: document.getElementById('src-site').value,
+    });
+    _sid = data.id;
+    toast('Session created: ' + _sid);
+    goStep(2);
+    history.replaceState(null, '', '/migration-canvas/network-migration/' + _sid);
+  } catch(e) { toast('Create session failed: ' + e.message, true); }
+}
+
+// ── STEP 2 — Import tab toggle ─────────────────────────────────────
+function showImportTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => { if (b.id && b.id.startsWith('import-tab')) b.classList.remove('active'); });
+  btn.classList.add('active');
+  document.getElementById('import-panel-config').style.display = tab==='config'?'block':'none';
+  document.getElementById('import-panel-diagram').style.display = tab==='diagram'?'block':'none';
+}
+
+// ── STEP 2 — Diagram import ────────────────────────────────────────
+let diagramDevices = [];
+let selectedDiagramDevice = null;
+
+function onDiagramFileSelect(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const preview = document.getElementById('diagram-upload-preview');
+  const img = document.getElementById('diagram-img-preview');
+  if (file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = e => { img.src = e.target.result; preview.style.display='block'; };
+    reader.readAsDataURL(file);
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+async function importDiagram() {
+  const fileInput = document.getElementById('diagram-file');
+  if (!fileInput.files[0]) { toast('Select a diagram file first', true); return; }
+  if (!_sid) { toast('Create a session first (step 1)', true); return; }
+
+  const btn = document.getElementById('diagram-import-btn');
+  btn.disabled = true;
+  btn.textContent = 'Extracting...';
+  document.getElementById('diagram-progress').style.display = 'block';
+  document.getElementById('diagram-result').style.display = 'none';
+
+  const steps = [
+    [30, 'Analyzing diagram format...'],
+    [55, 'Running vision extraction...'],
+    [75, 'Indexing to RAG + KG...'],
+    [90, 'Building topology context...'],
+  ];
+  let stepIdx = 0;
+  const progressInterval = setInterval(() => {
+    if (stepIdx < steps.length) {
+      const [pct, msg] = steps[stepIdx++];
+      document.getElementById('diagram-progress-bar').style.width = pct + '%';
+      document.getElementById('diagram-progress-msg').textContent = msg;
+    }
+  }, 1800);
+
+  try {
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    const name = document.getElementById('diagram-name').value || ('migration-' + _sid + '-import');
+    formData.append('name', name);
+
+    const resp = await fetch(`/migration-canvas/api/network-migration/${_sid}/import-diagram`, {
+      method: 'POST',
+      body: formData,
+    });
+    clearInterval(progressInterval);
+    document.getElementById('diagram-progress-bar').style.width = '100%';
+    document.getElementById('diagram-progress-msg').textContent = 'Complete';
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({error: resp.statusText}));
+      throw new Error(err.error || resp.statusText);
+    }
+    const data = await resp.json();
+    diagramDevices = data.devices || [];
+    renderDiagramResult(data);
+    markStepDone(2);
+    toast(`Extracted ${data.node_count} devices, ${data.edge_count} connections. RAG + KG updated.`);
+  } catch(e) {
+    clearInterval(progressInterval);
+    toast('Diagram import failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Extract Topology →';
+    setTimeout(() => { document.getElementById('diagram-progress').style.display='none'; }, 1000);
+  }
+}
+
+function renderDiagramResult(data) {
+  const devices = data.devices || [];
+  const conns = data.connections || [];
+
+  document.getElementById('diagram-confidence-chip').textContent =
+    'Confidence: ' + Math.round((data.confidence||0)*100) + '%';
+  document.getElementById('diagram-chips').innerHTML = [
+    ['Devices', devices.length],
+    ['Connections', conns.length],
+    ['RAG', 'Indexed'],
+    ['KG', 'Updated'],
+  ].map(([l,v]) => `<div class="chip">${l}: <strong>${v}</strong></div>`).join('');
+
+  // Build adjacency for "Connected To" column
+  const adj = {};
+  conns.forEach(c => {
+    if (!adj[c.source]) adj[c.source] = [];
+    if (!adj[c.target]) adj[c.target] = [];
+    adj[c.source].push(c.target);
+    adj[c.target].push(c.source);
+  });
+
+  document.getElementById('diagram-devices-tbody').innerHTML = devices.map((d, i) => {
+    const neighbors = (adj[d.name]||[]).slice(0,3).join(', ') + ((adj[d.name]||[]).length>3?' …':'');
+    const typeIcon = {router:'🔄',switch:'🔀','switch-l2':'🔀','switch-l3':'🔀',firewall:'🛡',
+      server:'🖥',access_point:'📶',cloud_service:'☁',wan_link:'🌐',unknown:'❓'}[d.device_type]||'📦';
+    return `<tr onclick="selectDiagramDevice(${i},this)" style="cursor:pointer">
+      <td style="text-align:center" id="dev-select-${i}">○</td>
+      <td><strong>${escapeHtml(d.name)}</strong></td>
+      <td>${typeIcon} <span style="font-size:10px;color:#7a8cb0">${escapeHtml(d.device_type)}</span></td>
+      <td style="font-size:11px">${escapeHtml(d.vendor||'—')}${d.model?' '+escapeHtml(d.model):''}</td>
+      <td><code style="font-size:10px">${escapeHtml(d.ip_address||'—')}</code></td>
+      <td style="font-size:10px;color:#7a8cb0;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(neighbors||'—')}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('diagram-connections-tbody').innerHTML = conns.map(c => `
+    <tr>
+      <td>${escapeHtml(c.source)}</td>
+      <td><span class="badge badge-pending">${escapeHtml(c.link_type||'—')}</span></td>
+      <td>${escapeHtml(c.target)}</td>
+      <td style="font-size:11px;color:#7a8cb0">${escapeHtml(c.label||'—')}</td>
+    </tr>`).join('');
+
+  document.getElementById('diagram-result').style.display = 'block';
+}
+
+function selectDiagramDevice(idx, row) {
+  diagramDevices.forEach((_, i) => {
+    const el = document.getElementById('dev-select-'+i);
+    if (el) el.textContent = '○';
+  });
+  document.getElementById('dev-select-'+idx).textContent = '●';
+  selectedDiagramDevice = diagramDevices[idx];
+  document.getElementById('diagram-use-btn').disabled = false;
+  document.getElementById('diagram-selected-label').textContent = 'Selected: ' + (selectedDiagramDevice.name||'');
+}
+
+async function useDiagramDevice() {
+  if (!selectedDiagramDevice || !_sid) return;
+  const d = selectedDiagramDevice;
+  // Update session with device info from diagram
+  try {
+    await api('PATCH', `/api/network-migration/${_sid}`, {
+      src_device_name: d.name || '',
+    });
+    // Pre-fill device name in step 1 UI
+    document.getElementById('src-device-name').value = d.name || '';
+    // If model detected, try to match to hw catalog
+    if (d.model) {
+      const srcSel = document.getElementById('src-model');
+      for (const opt of srcSel.options) {
+        if (opt.value && opt.value.toLowerCase().includes((d.model||'').toLowerCase())) {
+          srcSel.value = opt.value;
+          onModelChange();
+          break;
+        }
+      }
+    }
+    toast(`Source device set to "${d.name}". Diagram topology in RAG+KG.`);
+    markStepDone(2);
+    goStep(3);
+  } catch(e) { toast('Could not update session: ' + e.message, true); }
+}
+
+// ── STEP 2 ────────────────────────────────────────────────────────
+function onFileUpload(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => document.getElementById('config-text').value = e.target.result;
+  reader.readAsText(file);
+}
+
+async function parseConfig() {
+  const text = document.getElementById('config-text').value.trim();
+  if (!text) { toast('Paste or upload a config first', true); return; }
+  if (!_sid) { toast('Create a session first (step 1)', true); return; }
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/parse-config`, {config_text: text});
+    parsedInterfaces = data.interfaces || [];
+    renderParsedResult(data);
+    toast(`Parsed ${parsedInterfaces.length} interfaces`);
+    markStepDone(2);
+  } catch(e) { toast('Parse failed: ' + e.message, true); }
+}
+
+function renderParsedResult(data) {
+  const chips = [
+    ['Interfaces', (data.interfaces||[]).length],
+    ['BGP Peers', (data.bgp_neighbors||[]).length],
+    ['OSPF Areas', (data.ospf_areas||[]).length],
+    ['ISIS', (data.isis_nets||[]).length],
+    ['MPLS', data.mpls_enabled ? 'Yes' : 'No'],
+    ['VRFs', (data.l3vpn_vrfs||[]).length],
+    ['L2VPN', (data.l2vpn_instances||[]).length],
+    ['Vendor', data.vendor||'—'],
+  ];
+  document.getElementById('parse-chips').innerHTML = chips.map(([l,v]) =>
+    `<div class="chip">${l}: <strong>${v}</strong></div>`
+  ).join('');
+
+  if (data.ms_mic_used) {
+    document.getElementById('gap-banners').insertAdjacentHTML('beforeend',
+      '<div class="gap-banner" style="margin-top:10px"><strong>CAT1:</strong> MS-MIC / stateful firewall detected in config. This function is unavailable on the target. Plan firewall migration separately.</div>');
+  }
+
+  const tbody = document.getElementById('parsed-tbody');
+  tbody.innerHTML = (data.interfaces||[]).map(ifc => `
+    <tr>
+      <td><code>${ifc.name||''}</code></td>
+      <td>${ifc.speed_gbps ? ifc.speed_gbps+'G' : (ifc.speed||'—')}</td>
+      <td>${ifc.media_type||'—'}</td>
+      <td>${ifc.optic_type||'—'}</td>
+      <td>${ifc.ip_address||'—'}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ifc.description||'—'}</td>
+      <td>${[ifc.bgp_peer?'BGP':'',ifc.ospf?'OSPF':'',ifc.isis?'ISIS':'',ifc.mpls?'MPLS':''].filter(Boolean).join(', ')||'—'}</td>
+    </tr>`).join('');
+  document.getElementById('parse-result').style.display='block';
+}
+
+// ── STEP 3 ────────────────────────────────────────────────────────
+async function generatePortMap() {
+  if (!_sid) { toast('Session required', true); return; }
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/port-map`, {action:'auto_generate'});
+    portMap = data.port_map || [];
+    renderPortMap();
+    toast('Port map generated');
+  } catch(e) { toast('Port map failed: ' + e.message, true); }
+}
+
+async function loadPortMap() {
+  if (!_sid) return;
+  try {
+    const data = await api('GET', `/api/network-migration/${_sid}/port-map`);
+    portMap = data.port_map || [];
+    if (portMap.length) renderPortMap();
+  } catch(e) {}
+}
+
+function renderPortMap() {
+  const tbody = document.getElementById('port-map-tbody');
+  tbody.innerHTML = portMap.map((row,i) => {
+    const opticOld = row.src_optic_type || '';
+    const opticNew = row.tgt_optic_required || '';
+    const opticChanged = row.optic_change;
+    const opticBadge = opticChanged
+      ? `<span class="badge badge-optic">Optic: ${escapeHtml(opticOld)} → ${escapeHtml(opticNew)}</span>`
+      : '<span class="badge badge-ok">Same</span>';
+    const speedBadge = row.speed_mismatch ? '<span class="badge badge-speed">Speed ⚠</span>' : '';
+    return `<tr>
+      <td><code>${escapeHtml(row.src_interface||'—')}</code></td>
+      <td>${row.src_speed_gbps ? row.src_speed_gbps+'G' : '—'}</td>
+      <td>${opticBadge} ${speedBadge}</td>
+      <td><input type="text" value="${escapeHtml(row.tgt_interface||'')}" data-idx="${i}" data-field="tgt_interface"
+          style="background:#0a1624;border:1px solid #1a2d4a;color:#eaeaea;padding:3px 6px;border-radius:3px;width:130px" onchange="updatePortRow(this)"></td>
+      <td><input type="text" value="${escapeHtml(row.src_ip_address||'')}" data-idx="${i}" data-field="src_ip_address"
+          style="background:#0a1624;border:1px solid #1a2d4a;color:#eaeaea;padding:3px 6px;border-radius:3px;width:130px" onchange="updatePortRow(this)"></td>
+      <td><input type="text" value="${escapeHtml(row.cable_id||'')}" data-idx="${i}" data-field="cable_id"
+          style="background:#0a1624;border:1px solid #1a2d4a;color:#eaeaea;padding:3px 6px;border-radius:3px;width:80px" onchange="updatePortRow(this)"></td>
+      <td><span class="badge badge-${row.status==='mapped'?'ok':'pending'}">${row.status||'pending'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function updatePortRow(el) {
+  const idx = parseInt(el.dataset.idx);
+  const field = el.dataset.field;
+  portMap[idx][field] = el.value;
+}
+
+async function savePortMap() {
+  if (!_sid) { toast('Session required', true); return; }
+  try {
+    await api('POST', `/api/network-migration/${_sid}/port-map`, {action:'save', port_map: portMap});
+    markStepDone(3);
+    toast('Port map saved');
+  } catch(e) { toast('Save failed: ' + e.message, true); }
+}
+
+function downloadBOM() {
+  const opticChanges = portMap.filter(r => r.optic_change);
+  if (!opticChanges.length) { toast('No optic changes in port map'); return; }
+  const lines = ['Source Interface,Target Interface,Old Optic,New Optic,Qty'];
+  opticChanges.forEach(r => lines.push(`${r.src_interface||''},${r.tgt_interface||''},${r.src_optic_type||''},${r.tgt_optic_required||''},1`));
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'optic-bom.csv'; a.click();
+}
+
+// ── STEP 4 ────────────────────────────────────────────────────────
+async function runCompatCheck() {
+  if (!_sid) { toast('Session required', true); return; }
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/compat-check`);
+    renderCompatChecks(data.checks || []);
+    markStepDone(4);
+    toast('Compatibility check complete');
+  } catch(e) { toast('Compat check failed: ' + e.message, true); }
+}
+
+function renderCompatChecks(checks) {
+  const cats = {hardware:[], software:[], protocol:[], scale:[]};
+  checks.forEach(c => { if (cats[c.category]) cats[c.category].push(c); });
+  Object.entries(cats).forEach(([cat, rows]) => {
+    document.getElementById('compat-'+cat+'-tbody').innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.item}</td>
+        <td style="font-size:11px;color:#7a8cb0">${r.expected||'—'}</td>
+        <td style="font-size:11px">${r.actual||'—'}</td>
+        <td><span class="badge badge-${r.status}">${r.status.toUpperCase()}</span></td>
+        <td style="font-size:11px;color:${r.severity==='CAT1'?'#e74c3c':r.severity==='CAT2'?'#f39c12':'#7a8cb0'}">${r.severity||'—'}</td>
+      </tr>`).join('');
+  });
+}
+
+// ── STEP 5 ────────────────────────────────────────────────────────
+async function convertConfig() {
+  if (!_sid) { toast('Session required', true); return; }
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/convert-config`);
+    targetConfigText = data.target || '';
+    renderDiff(data);
+    renderCommitCheck(data.commit_check || []);
+    document.getElementById('diff-view').style.display='grid';
+    document.getElementById('cc-panel').style.display='block';
+    markStepDone(5);
+    toast('Config generated');
+  } catch(e) { toast('Convert failed: ' + e.message, true); }
+}
+
+function renderDiff(data) {
+  const srcPre = document.getElementById('diff-source');
+  const tgtPre = document.getElementById('diff-target');
+  srcPre.innerHTML = (data.source||'').split('\n').map(l => `<span class="diff-line-keep">${escapeHtml(l)}</span>`).join('\n');
+  const diffLines = data.diff || [];
+  if (diffLines.length) {
+    tgtPre.innerHTML = diffLines.map(d => {
+      const cls = d.op==='add'?'diff-line-add':d.op==='remove'?'diff-line-remove':d.op==='rename'?'diff-line-rename':'diff-line-keep';
+      return `<span class="${cls}">${escapeHtml(d.line||'')}</span>`;
+    }).join('\n');
+  } else {
+    tgtPre.innerHTML = (data.target||'').split('\n').map(l => `<span class="diff-line-keep">${escapeHtml(l)}</span>`).join('\n');
+  }
+}
+
+function renderCommitCheck(checks) {
+  document.getElementById('cc-results').innerHTML = checks.map(c => {
+    const icon = c.status==='pass'?'✓':c.status==='fail'?'✗':'⚠';
+    const cls = c.status==='pass'?'pass':c.status==='fail'?'fail':'warn';
+    return `<div class="cc-item">
+      <span class="cc-icon ${cls}">[${icon}]</span>
+      <div class="cc-msg">${c.message||''}
+        ${c.statement?`<div class="cc-stmt">${escapeHtml(c.statement)}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function downloadTargetConfig() {
+  if (!targetConfigText) { toast('Generate config first', true); return; }
+  const blob = new Blob([targetConfigText], {type:'text/plain'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = (_sid||'target') + '-config.txt'; a.click();
+}
+
+// ── STEP 6 ────────────────────────────────────────────────────────
+let currentTestTab = 'pre';
+
+async function loadTests() {
+  if (!_sid) return;
+  try {
+    const data = await api('GET', `/api/network-migration/${_sid}/test-cases`);
+    const allTests = data.test_cases || [];
+    testCases.pre = allTests.filter(t => t.phase === 'pre');
+    testCases.cutover = allTests.filter(t => t.phase === 'cutover');
+    testCases.post = allTests.filter(t => t.phase === 'post');
+    renderTestTab('pre');
+  } catch(e) { toast('Could not load tests: ' + e.message, true); }
+}
+
+function showTestTab(tab, btn) {
+  currentTestTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tests-pre').style.display = tab==='pre'?'block':'none';
+  document.getElementById('tests-cutover').style.display = tab==='cutover'?'block':'none';
+  document.getElementById('tests-post').style.display = tab==='post'?'block':'none';
+  renderTestTab(tab);
+}
+
+function renderTestTab(tab) {
+  const tests = testCases[tab] || [];
+  const container = document.getElementById('tests-' + tab);
+  container.innerHTML = tests.map((t, i) => `
+    <div class="test-card">
+      <div class="test-card-header">
+        <div class="test-card-name">${escapeHtml(t.test_name||'')}</div>
+        <div class="test-toggle">
+          <button onclick="setTestResult('${tab}',${i},'pass',this)" class="${t.passed===true?'pass-active':''}">Pass</button>
+          <button onclick="setTestResult('${tab}',${i},'fail',this)" class="${t.passed===false?'fail-active':''}">Fail</button>
+        </div>
+      </div>
+      <div class="test-detail"><strong>Procedure:</strong> ${escapeHtml(t.procedure||'')}</div>
+      <div class="test-detail"><strong>Expected:</strong> ${escapeHtml(t.expected_result||'')}</div>
+      <input class="test-result-input" type="text" placeholder="Actual result..." value="${escapeHtml(t.actual_result||'')}"
+        onchange="testCases['${tab}'][${i}].actual_result=this.value">
+    </div>`).join('');
+  updateTestProgress();
+}
+
+function setTestResult(tab, i, result, btn) {
+  const t = testCases[tab][i];
+  t.passed = (result === 'pass');
+  t.actual_result = t.actual_result || (result === 'pass' ? 'Pass' : 'Fail');
+  btn.parentElement.querySelectorAll('button').forEach(b => { b.className=''; });
+  btn.className = result === 'pass' ? 'pass-active' : 'fail-active';
+  updateTestProgress();
+}
+
+function updateTestProgress() {
+  const all = [...(testCases.pre||[]), ...(testCases.cutover||[]), ...(testCases.post||[])];
+  const executed = all.filter(t => t.passed !== null && t.passed !== undefined).length;
+  document.getElementById('test-progress-label').textContent = `${executed}/${all.length} executed`;
+  document.getElementById('test-progress-bar').style.width = all.length ? (executed/all.length*100)+'%' : '0%';
+}
+
+async function saveTests() {
+  if (!_sid) return;
+  const all = [...(testCases.pre||[]), ...(testCases.cutover||[]), ...(testCases.post||[])];
+  try {
+    await api('POST', `/api/network-migration/${_sid}/test-cases`, {test_cases: all});
+    markStepDone(6);
+    toast('Test plan saved');
+  } catch(e) { toast('Save failed: ' + e.message, true); }
+}
+
+// ── STEP 7 ────────────────────────────────────────────────────────
+async function generateCutover() {
+  if (!_sid) { toast('Session required', true); return; }
+  const strategy = document.getElementById('cutover-strategy').value;
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/cutover-steps`, {action:'auto_generate', strategy});
+    cutoverSteps = data.steps || [];
+    renderCutover();
+    toast('Cutover sequence generated');
+  } catch(e) { toast('Cutover generation failed: ' + e.message, true); }
+}
+
+function renderCutover() {
+  const totalMin = cutoverSteps.reduce((s,step) => s + (step.duration_min||0), 0);
+  document.getElementById('mw-estimate').textContent = totalMin ? totalMin + ' min' : '—';
+  document.getElementById('cutover-list').innerHTML = cutoverSteps.map(step => `
+    <div class="cutover-step">
+      <div class="cutover-seq">${step.seq_no||'?'}</div>
+      <div class="cutover-body">
+        <div class="cutover-circuit">${escapeHtml(step.circuit_id||step.interface||'Step '+step.seq_no)}</div>
+        <div style="font-size:11px;color:#7a8cb0;margin-bottom:6px">Interface: <code>${step.interface||'—'}</code> · Est. ${step.duration_min||0} min</div>
+        <div class="cutover-actions">
+          <div class="cutover-action-item"><strong>Drain:</strong> ${escapeHtml(step.action||'—')}</div>
+          <div class="cutover-action-item"><strong>Rollback:</strong> ${escapeHtml(step.rollback_action||'—')}</div>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function saveCutover() {
+  if (!_sid) return;
+  try {
+    await api('POST', `/api/network-migration/${_sid}/cutover-steps`, {action:'save', steps: cutoverSteps});
+    markStepDone(7);
+    toast('Cutover plan saved');
+  } catch(e) { toast('Save failed: ' + e.message, true); }
+}
+
+// ── STEP 8 ────────────────────────────────────────────────────────
+async function loadReadiness() {
+  if (!_sid) return;
+  try {
+    const data = await api('GET', `/api/network-migration/${_sid}/readiness`);
+    const score = Math.round(data.overall || 0);
+    document.getElementById('erb-readiness-score').textContent = score + '%';
+    document.getElementById('sidebar-score').textContent = score + '%';
+    document.getElementById('sidebar-bar').style.width = score + '%';
+    const gate = document.getElementById('readiness-gate');
+    gate.classList.toggle('ready', score >= 100);
+
+    const blockers = data.blockers || [];
+    document.getElementById('erb-blockers').innerHTML = blockers.map(b =>
+      `<li>${escapeHtml(b)}</li>`
+    ).join('');
+    document.getElementById('erb-submit-btn').disabled = score < 100;
+
+    // Load ERB package summary
+    try {
+      const pkg = await api('GET', `/api/network-migration/${_sid}/erb-package`);
+      renderErbSummary(pkg);
+    } catch(e) {}
+  } catch(e) { toast('Could not load readiness: ' + e.message, true); }
+}
+
+function renderErbSummary(pkg) {
+  const cs = pkg.change_summary || {};
+  const ia = pkg.impact_analysis || {};
+  const ra = pkg.risk_assessment || {};
+  const riskColor = ra.tier==='HIGH'?'#e74c3c':ra.tier==='MEDIUM'?'#f39c12':'#27ae60';
+  document.getElementById('erb-summary-display').innerHTML = `
+    <div style="margin-bottom:10px">
+      <span class="risk-badge risk-${ra.tier||'LOW'}">${ra.tier||'LOW'} Risk</span>
+    </div>
+    <div class="spec-row"><span class="lbl">Source</span><span class="val">${cs.src_device||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Target</span><span class="val">${cs.tgt_device||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Site</span><span class="val">${cs.src_site||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Circuits Affected</span><span class="val">${ia.circuits_affected||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Optic Changes</span><span class="val">${ia.optic_changes||0}</span></div>
+    <div class="spec-row"><span class="lbl">CAT1 Blockers</span><span class="val" style="color:${(ra.cat1_blockers||0)>0?'#e74c3c':'#27ae60'}">${ra.cat1_blockers||0}</span></div>
+  `;
+}
+
+async function saveErbMetadata() {
+  if (!_sid) { toast('Session required', true); return; }
+  try {
+    await api('POST', `/api/network-migration/${_sid}/erb-metadata`, {
+      business_justification: document.getElementById('erb-justification').value,
+      requestor: document.getElementById('erb-requestor').value,
+      mw_start: document.getElementById('erb-mw-start').value,
+      mw_end: document.getElementById('erb-mw-end').value,
+    });
+    toast('ERB metadata saved');
+  } catch(e) { toast('Save failed: ' + e.message, true); }
+}
+
+async function submitErb() {
+  if (!_sid) { toast('Session required', true); return; }
+  await saveErbMetadata();
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/erb-submit`);
+    toast('Submitted to ERB/CCB approval flow. SOP ID: ' + (data.sop_id||'—'));
+    document.getElementById('erb-submit-btn').textContent = 'Submitted ✓';
+    document.getElementById('erb-submit-btn').disabled = true;
+  } catch(e) { toast('Submit failed: ' + e.message, true); }
+}
+
+function openErbPdf() {
+  if (!_sid) { toast('Session required', true); return; }
+  window.open('/migration-canvas/api/network-migration/' + _sid + '/erb-package/pdf', '_blank');
+  return false;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function markStepDone(n) {
+  const link = document.getElementById('step-link-' + n);
+  if (link) link.classList.add('done');
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+(async function init() {
+  await loadHwCatalog();
+  if (_sid) {
+    // Resume existing session
+    try {
+      const data = await api('GET', `/api/network-migration/${_sid}`);
+      const sess = data.session;
+      // Pre-fill step 1
+      document.getElementById('src-model').value = sess.src_model || '';
+      document.getElementById('tgt-model').value = sess.tgt_model || '';
+      document.getElementById('src-device-name').value = sess.src_device_name || '';
+      document.getElementById('tgt-device-name').value = sess.tgt_device_name || '';
+      document.getElementById('src-site').value = sess.src_site || '';
+      onModelChange();
+      // Load port map if exists
+      await loadPortMap();
+      // Determine which step to resume at
+      let resumeStep = 2;
+      if ((data.port_map||[]).length > 0) { markStepDone(3); resumeStep = 4; }
+      if ((data.compat_checks||[]).length > 0) { markStepDone(4); resumeStep = 5; }
+      if ((data.test_cases||[]).length > 0) { markStepDone(6); resumeStep = 7; }
+      if ((data.cutover_steps||[]).length > 0) { markStepDone(7); resumeStep = 8; }
+      goStep(resumeStep);
+    } catch(e) { goStep(1); }
+  } else {
+    goStep(1);
+  }
+  // Update readiness score in sidebar
+  if (_sid) {
+    try {
+      const r = await api('GET', `/api/network-migration/${_sid}/readiness`);
+      const score = Math.round(r.overall || 0);
+      document.getElementById('sidebar-score').textContent = score + '%';
+      document.getElementById('sidebar-bar').style.width = score + '%';
+    } catch(e) {}
+  }
+})();
+</script>
+{% endblock %}

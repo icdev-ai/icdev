@@ -190,6 +190,139 @@ CREATE INDEX IF NOT EXISTS idx_mc_oracle_severity ON mc_oracle_predictions(sever
 """
 
 
+# ── Network Device Migration Schema ─────────────────────────────────────────
+
+NETWORK_MIGRATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS mc_net_sessions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES migration_designs(id),
+    src_model       TEXT NOT NULL DEFAULT 'MX10003',
+    tgt_model       TEXT NOT NULL DEFAULT 'MX304',
+    src_device_name TEXT DEFAULT '',
+    tgt_device_name TEXT DEFAULT '',
+    src_site        TEXT DEFAULT '',
+    tgt_site        TEXT DEFAULT '',
+    src_config_raw  TEXT DEFAULT '',
+    config_parsed   INTEGER DEFAULT 0,
+    readiness_score REAL DEFAULT 0,
+    status          TEXT DEFAULT 'in_progress',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mc_net_port_map (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id),
+    src_interface   TEXT NOT NULL,
+    src_speed_gbps  REAL DEFAULT 0,
+    src_media       TEXT DEFAULT '',
+    src_optic_type  TEXT DEFAULT '',
+    src_ip_address  TEXT DEFAULT '',
+    src_description TEXT DEFAULT '',
+    src_circuit_id  TEXT DEFAULT '',
+    tgt_interface   TEXT DEFAULT '',
+    tgt_speed_gbps  REAL DEFAULT 0,
+    tgt_optic_required TEXT DEFAULT '',
+    optic_change    INTEGER DEFAULT 0,
+    speed_mismatch  INTEGER DEFAULT 0,
+    cable_id        TEXT DEFAULT '',
+    far_end_device  TEXT DEFAULT '',
+    far_end_port    TEXT DEFAULT '',
+    notes           TEXT DEFAULT '',
+    status          TEXT DEFAULT 'pending',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mc_net_compat_checks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id),
+    category        TEXT NOT NULL DEFAULT 'hardware',
+    check_name      TEXT NOT NULL,
+    expected        TEXT DEFAULT '',
+    actual          TEXT DEFAULT '',
+    severity        TEXT DEFAULT 'cat2',
+    status          TEXT DEFAULT 'pending',
+    override_reason TEXT DEFAULT '',
+    auto_detected   INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mc_net_test_cases (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id),
+    phase           TEXT NOT NULL DEFAULT 'pre',
+    seq_no          INTEGER DEFAULT 0,
+    test_name       TEXT NOT NULL,
+    procedure       TEXT DEFAULT '',
+    expected_result TEXT DEFAULT '',
+    actual_result   TEXT DEFAULT '',
+    passed          INTEGER DEFAULT NULL,
+    notes           TEXT DEFAULT '',
+    executed_at     TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mc_net_cutover_steps (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id),
+    seq_no          INTEGER DEFAULT 0,
+    circuit_id      TEXT DEFAULT '',
+    interface       TEXT DEFAULT '',
+    description     TEXT DEFAULT '',
+    drain_action    TEXT DEFAULT '',
+    cutover_action  TEXT DEFAULT '',
+    verify_action   TEXT DEFAULT '',
+    rollback_action TEXT DEFAULT '',
+    duration_min    INTEGER DEFAULT 5,
+    executed_at     TEXT DEFAULT '',
+    status          TEXT DEFAULT 'pending',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mc_net_erb_metadata (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL REFERENCES mc_net_sessions(id),
+    change_type          TEXT DEFAULT 'hardware_replacement',
+    risk_tier            TEXT DEFAULT 'medium',
+    business_justification TEXT DEFAULT '',
+    impact_summary       TEXT DEFAULT '',
+    rollback_plan        TEXT DEFAULT '',
+    mw_start             TEXT DEFAULT '',
+    mw_end               TEXT DEFAULT '',
+    go_nogo_criteria     TEXT DEFAULT '{}',
+    requestor            TEXT DEFAULT '',
+    sop_id               TEXT DEFAULT '',
+    approval_status      TEXT DEFAULT 'draft',
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_net_port_map_session ON mc_net_port_map(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_net_compat_session ON mc_net_compat_checks(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_net_compat_category ON mc_net_compat_checks(category);
+CREATE INDEX IF NOT EXISTS idx_mc_net_tests_session ON mc_net_test_cases(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_net_tests_phase ON mc_net_test_cases(phase);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cutover_session ON mc_net_cutover_steps(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_net_erb_session ON mc_net_erb_metadata(session_id);
+"""
+
+
+def _migrate_network_tables(conn):
+    """Idempotently add network migration tables and columns to existing DBs."""
+    conn.executescript(NETWORK_MIGRATION_SCHEMA)
+    # Add network_session_id to migration_designs if not present (ALTER TABLE is idempotent via try/except)
+    try:
+        conn.execute("ALTER TABLE migration_designs ADD COLUMN network_session_id TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+
 # ── Seed Templates ──────────────────────────────────────────────────────────
 
 
@@ -721,6 +854,7 @@ def init_db():
     """Create tables and seed templates, snippets, runbooks, and SOPs."""
     with get_connection() as conn:
         conn.executescript(SCHEMA)
+        _migrate_network_tables(conn)
 
         # Seed templates
         for tpl in SEED_TEMPLATES:
