@@ -58,6 +58,12 @@
       <button class="tb-btn" onclick="zoomFit()" title="Fit All">⊞ Fit</button>
       <button class="tb-btn" onclick="zoomReset()" title="Reset Zoom">1:1</button>
     </div>
+    <div class="tb-group" title="Layer visibility — click to hide/show device classes">
+      <button class="tb-btn tb-layer-btn tb-layer-active" id="tb-layer-L1" onclick="toggleLayerFilter('L1')" title="Toggle Layer 1 (physical media: SFP, fiber, patch panels)">L1</button>
+      <button class="tb-btn tb-layer-btn tb-layer-active" id="tb-layer-L2" onclick="toggleLayerFilter('L2')" title="Toggle Layer 2 (switches, WAP, WLC)">L2</button>
+      <button class="tb-btn tb-layer-btn tb-layer-active" id="tb-layer-L3" onclick="toggleLayerFilter('L3')" title="Toggle Layer 3 (routers, firewalls, L3 switches)">L3</button>
+      <button class="tb-btn tb-layer-btn" id="tb-layer-all" onclick="toggleLayerFilter('all')" title="Restore all layers">All</button>
+    </div>
     <div class="tb-group">
       <div class="tb-export-wrap" id="export-dropdown-wrap">
         <button class="tb-btn" onclick="this.parentElement.classList.toggle('open')" title="Export topology in various formats">⬇ Export ▾</button>
@@ -109,6 +115,10 @@
     </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
+    </div>
+    <div class="tb-group tb-search-group">
+      <input type="text" id="canvas-search" class="tb-search-input" placeholder="&#128269; Find node..." oninput="_canvasSearch(this.value)" title="Find nodes by label, IP, hostname, or device type (Ctrl+F)"/>
+      <button class="tb-btn" id="canvas-search-clear" onclick="_clearCanvasSearch()" title="Clear search" style="display:none;padding:3px 6px;">&#215;</button>
     </div>
     <div class="tb-center">
       <span class="topology-name-display" id="topo-name-display">{{ topology_name }}</span>
@@ -936,6 +946,15 @@
     </div>
     <div id="ann-legend-entries"></div>
     <button class="ann-add-btn" onclick="addAnnotLegendEntry()">+ Add Entry</button>
+  </div>
+
+  <!-- Conflict Scanner Panel (ndc-ux-02) -->
+  <div id="conflict-panel" class="conflict-panel hidden">
+    <div class="conflict-panel-header">
+      <span>&#9888; Conflicts <span id="conflict-count-badge" class="conflict-count-badge">0</span></span>
+      <button class="conflict-panel-close" onclick="document.getElementById('conflict-panel').classList.add('hidden')" title="Dismiss">&times;</button>
+    </div>
+    <div id="conflict-panel-list" class="conflict-panel-list"></div>
   </div>
 
   <!-- Status Bar -->

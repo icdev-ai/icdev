@@ -3619,6 +3619,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize fence selection and load existing boundaries
   initFenceSelection();
   loadBoundaries();
+
+  // ndc-ux-02: Start the live conflict scanner
+  _initConflictScanner();
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -4561,4 +4564,270 @@ function _escHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * ndc-ux-01: Canvas Search / Find Node (Ctrl+F)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+let _searchHighlighted = [];
+
+function _canvasSearch(query) {
+  // Clear previous highlights
+  _searchHighlighted.forEach(cid => {
+    const cell = graph.getCell(cid);
+    if (!cell) return;
+    const view = paper.findViewByModel(cell);
+    if (view) view.el.classList.remove('canvas-search-highlight');
+  });
+  _searchHighlighted = [];
+
+  const clearBtn = document.getElementById('canvas-search-clear');
+  const q = (query || '').trim().toLowerCase();
+
+  if (!q) {
+    if (clearBtn) clearBtn.style.display = 'none';
+    setStatus('Ready');
+    return;
+  }
+  if (clearBtn) clearBtn.style.display = '';
+
+  const matches = [];
+  graph.getElements().forEach(cell => {
+    const cd = cell.get('configData') || {};
+    const label = (cell.attr('label/text') || cell.attr('headerLabel/text') || '').toLowerCase();
+    const ip       = (cd.ip       || '').toLowerCase();
+    const hostname = (cd.hostname || '').toLowerCase();
+    const nodeType = (cell.get('nodeType') || '').toLowerCase();
+    if (label.includes(q) || ip.includes(q) || hostname.includes(q) || nodeType.includes(q)) {
+      matches.push(cell);
+    }
+  });
+
+  if (matches.length === 0) {
+    setStatus('No matches for "' + query + '"');
+    return;
+  }
+
+  matches.forEach(cell => {
+    const view = paper.findViewByModel(cell);
+    if (view) {
+      view.el.classList.add('canvas-search-highlight');
+      _searchHighlighted.push(cell.id);
+    }
+  });
+
+  // Pan to first match (or fit all)
+  const first = matches[0];
+  const firstView = paper.findViewByModel(first);
+  if (firstView) {
+    const bbox = firstView.getBBox();
+    const s = paper.scale().sx;
+    paper.translate(
+      paper.el.clientWidth  / 2 - (bbox.x + bbox.width  / 2) * s,
+      paper.el.clientHeight / 2 - (bbox.y + bbox.height / 2) * s
+    );
+  }
+
+  setStatus(matches.length + ' match' + (matches.length !== 1 ? 'es' : '') + ' for "' + query + '"');
+}
+
+function _clearCanvasSearch() {
+  const inp = document.getElementById('canvas-search');
+  if (inp) inp.value = '';
+  _canvasSearch('');
+}
+
+// Ctrl+F focuses search; Escape clears it
+document.addEventListener('keydown', function _searchKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    const inp = document.getElementById('canvas-search');
+    if (inp) { e.preventDefault(); inp.focus(); inp.select(); }
+  }
+  if (e.key === 'Escape') {
+    const inp = document.getElementById('canvas-search');
+    if (inp && document.activeElement === inp) { _clearCanvasSearch(); inp.blur(); }
+  }
+});
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * ndc-ux-02: Live Conflict Scanner
+ * Detects duplicate IPs, duplicate hostnames; renders orange badge + panel.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+let _conflicts = {};            // cellId -> { label, conflicts: [{type, message}] }
+let _conflictScanDirty = false;
+
+function _scheduleConflictScan() { _conflictScanDirty = true; }
+
+function _runConflictScan() {
+  if (!_conflictScanDirty) return;
+  _conflictScanDirty = false;
+
+  const elements = graph.getElements();
+  const ipMap       = {};   // ip -> [cellId]
+  const hostnameMap = {};   // hostname.lower -> [cellId]
+
+  elements.forEach(cell => {
+    const cd = cell.get('configData') || {};
+    const ip = (cd.ip || '').trim();
+    const hn = (cd.hostname || '').trim().toLowerCase();
+    if (ip) { if (!ipMap[ip]) ipMap[ip] = []; ipMap[ip].push(cell.id); }
+    if (hn) { if (!hostnameMap[hn]) hostnameMap[hn] = []; hostnameMap[hn].push(cell.id); }
+  });
+
+  const newConflicts = {};
+  elements.forEach(cell => {
+    const cd = cell.get('configData') || {};
+    const ip = (cd.ip || '').trim();
+    const hn = (cd.hostname || '').trim().toLowerCase();
+    const label = cell.attr('label/text') || cell.get('nodeType') || cell.id;
+    const conflicts = [];
+
+    if (ip && ipMap[ip] && ipMap[ip].length > 1) {
+      const peers = ipMap[ip].filter(id => id !== cell.id).map(id => {
+        const c = graph.getCell(id);
+        return c ? (c.attr('label/text') || c.get('nodeType') || id.slice(0, 8)) : id.slice(0, 8);
+      });
+      conflicts.push({ type: 'dup-ip', message: 'Duplicate IP ' + ip + ' — also on: ' + peers.join(', ') });
+    }
+    if (hn && hostnameMap[hn] && hostnameMap[hn].length > 1) {
+      const raw = (cd.hostname || '').trim();
+      const peers = hostnameMap[hn].filter(id => id !== cell.id).map(id => {
+        const c = graph.getCell(id);
+        return c ? (c.attr('label/text') || c.get('nodeType') || id.slice(0, 8)) : id.slice(0, 8);
+      });
+      conflicts.push({ type: 'dup-hostname', message: 'Duplicate hostname "' + raw + '" — also on: ' + peers.join(', ') });
+    }
+
+    if (conflicts.length) newConflicts[cell.id] = { label, conflicts };
+  });
+
+  // Sync visual badges
+  const prevIds = new Set(Object.keys(_conflicts));
+  const newIds  = new Set(Object.keys(newConflicts));
+
+  prevIds.forEach(cid => {
+    if (!newIds.has(cid)) {
+      const v = paper.findViewByModel(graph.getCell(cid));
+      if (v) v.el.classList.remove('canvas-conflict-node');
+    }
+  });
+  newIds.forEach(cid => {
+    if (!prevIds.has(cid)) {
+      const v = paper.findViewByModel(graph.getCell(cid));
+      if (v) v.el.classList.add('canvas-conflict-node');
+    }
+  });
+
+  _conflicts = newConflicts;
+  _renderConflictPanel();
+}
+
+function _renderConflictPanel() {
+  const panel = document.getElementById('conflict-panel');
+  const list  = document.getElementById('conflict-panel-list');
+  const badge = document.getElementById('conflict-count-badge');
+  if (!panel || !list) return;
+
+  const entries = Object.entries(_conflicts);
+  if (badge) badge.textContent = entries.length;
+
+  if (entries.length === 0) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  list.innerHTML = entries.map(([cid, info]) => {
+    const msgs = info.conflicts.map(c =>
+      '<div class="ce-desc">' + _escHtml(c.message) + '</div>'
+    ).join('');
+    return '<div class="conflict-entry" onclick="_conflictGoTo(\'' + cid + '\')">' +
+      '<span class="ce-icon">&#9888;</span>' +
+      '<div class="ce-body"><div class="ce-title">' + _escHtml(info.label) + '</div>' + msgs + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function _conflictGoTo(cellId) {
+  const cell = graph.getCell(cellId);
+  if (!cell) return;
+  const view = paper.findViewByModel(cell);
+  if (!view) return;
+  const bbox = view.getBBox();
+  const s = paper.scale().sx;
+  paper.translate(
+    paper.el.clientWidth  / 2 - (bbox.x + bbox.width  / 2) * s,
+    paper.el.clientHeight / 2 - (bbox.y + bbox.height / 2) * s
+  );
+  view.el.classList.add('canvas-search-highlight');
+  setTimeout(() => view.el.classList.remove('canvas-search-highlight'), 1500);
+}
+
+function _initConflictScanner() {
+  graph.on('change', _scheduleConflictScan);
+  graph.on('add',    _scheduleConflictScan);
+  graph.on('remove', _scheduleConflictScan);
+  setInterval(_runConflictScan, 3000);
+  // Initial scan 1.5s after load (let graph finish populating)
+  setTimeout(() => { _conflictScanDirty = true; _runConflictScan(); }, 1500);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * ndc-ux-03: Layer Visibility Filter (L1 / L2 / L3 toggle)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+const _LAYER_TYPES = {
+  L1: new Set([
+    'media-ge','media-10ge','media-25ge','media-40ge','media-100ge','media-400ge',
+    'sfp','sfp-plus','qsfp','qsfp-dd','media-fiber','media-optical','media-converter',
+    'patch-panel','roadm','oadm','edfa','transponder','olt','odf'
+  ]),
+  L2: new Set(['switch-l2','wap','wlc']),
+  L3: new Set(['router','switch-l3','firewall','load-balancer','sdwan-edge'])
+};
+
+let _layerVisibility = { L1: true, L2: true, L3: true };
+
+function toggleLayerFilter(layer) {
+  if (layer === 'all') {
+    _layerVisibility = { L1: true, L2: true, L3: true };
+  } else if (_LAYER_TYPES[layer]) {
+    _layerVisibility[layer] = !_layerVisibility[layer];
+  }
+  _applyLayerFilter();
+  _updateLayerButtons();
+}
+
+function _applyLayerFilter() {
+  const hiddenNodeIds = new Set();
+
+  graph.getElements().forEach(cell => {
+    const nt = cell.get('nodeType') || '';
+    let hidden = false;
+    for (const [layer, types] of Object.entries(_LAYER_TYPES)) {
+      if (types.has(nt) && !_layerVisibility[layer]) { hidden = true; break; }
+    }
+    const view = paper.findViewByModel(cell);
+    if (view) view.el.style.display = hidden ? 'none' : '';
+    if (hidden) hiddenNodeIds.add(cell.id);
+  });
+
+  // Hide/show links whose endpoints are hidden
+  graph.getLinks().forEach(link => {
+    const src = link.get('source');
+    const tgt = link.get('target');
+    const srcHidden = src && src.id && hiddenNodeIds.has(src.id);
+    const tgtHidden = tgt && tgt.id && hiddenNodeIds.has(tgt.id);
+    const view = paper.findViewByModel(link);
+    if (view) view.el.style.display = (srcHidden || tgtHidden) ? 'none' : '';
+  });
+}
+
+function _updateLayerButtons() {
+  ['L1', 'L2', 'L3'].forEach(l => {
+    const btn = document.getElementById('tb-layer-' + l);
+    if (btn) btn.classList.toggle('tb-layer-active', !!_layerVisibility[l]);
+  });
 }
