@@ -1003,10 +1003,13 @@ def create_app() -> Flask:
         from flask import jsonify as _j
         from tools.db.storage import get_connection as _gc
 
+        hb_path = pathlib.Path(".tmp/kanban_scheduler.heartbeat")
         log_path = pathlib.Path(".tmp/kanban_scheduler.log")
         sched_secs = None
-        if log_path.exists():
-            sched_secs = int(_t.time() - log_path.stat().st_mtime)
+        for _p in (hb_path, log_path):
+            if _p.exists():
+                sched_secs = int(_t.time() - _p.stat().st_mtime)
+                break
 
         if sched_secs is None:
             staleness = "unknown"

@@ -17,14 +17,21 @@ def list_plans():
 
 @kanban_plan_api.route("/api/kanban/scheduler-status", methods=["GET"])
 def scheduler_status():
-    """Kanban scheduler heartbeat from log mtime.
+    """Kanban scheduler heartbeat.
+
+    Prefers the heartbeat file (written every cycle before work) over the log
+    file (only written when there is something to log, so it goes stale when
+    the scheduler is idle but healthy).
 
     scheduler_last_seen_secs > 600 → scheduler likely dead (zombie tasks possible).
     """
+    hb_path = pathlib.Path(".tmp/kanban_scheduler.heartbeat")
     log_path = pathlib.Path(".tmp/kanban_scheduler.log")
     scheduler_last_seen_secs = None
-    if log_path.exists():
-        scheduler_last_seen_secs = int(_t.time() - log_path.stat().st_mtime)
+    for p in (hb_path, log_path):
+        if p.exists():
+            scheduler_last_seen_secs = int(_t.time() - p.stat().st_mtime)
+            break
 
     if scheduler_last_seen_secs is None:
         staleness = "unknown"
