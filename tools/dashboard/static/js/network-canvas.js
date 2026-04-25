@@ -11,6 +11,7 @@ let undoStack = [];
 let redoStack = [];
 let saveTimer = null;
 let isDirty = false;
+let _conflictExportBypassed = false; // ndc-ux-02: bypass conflict gate for "Export Anyway"
 
 /* ── CR Markup Mode State ─────────────────────────────────────────────────── */
 let _crModeActive = false;
@@ -2268,6 +2269,9 @@ async function loadTopology(id) {
 
 /* ── Export ───────────────────────────────────────────────────────────────────── */
 async function exportAs(fmt) {
+  if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+    _guardExport(fmt.toUpperCase() + ' export', () => exportAs(fmt)); return;
+  }
   if (!currentTopoId || currentTopoId === 'new') {
     await saveTopology();
   }
@@ -4787,6 +4791,17 @@ function _renderConflictPanel() {
   const entries = Object.entries(_conflicts);
   if (badge) badge.textContent = entries.length;
 
+  // Drive status bar counter — always visible even when panel is dismissed
+  const sbConflicts = document.getElementById('sb-conflicts');
+  if (sbConflicts) {
+    if (entries.length > 0) {
+      sbConflicts.textContent = '⚠ ' + entries.length + ' conflict' + (entries.length !== 1 ? 's' : '');
+      sbConflicts.style.display = '';
+    } else {
+      sbConflicts.style.display = 'none';
+    }
+  }
+
   if (entries.length === 0) { panel.classList.add('hidden'); return; }
   panel.classList.remove('hidden');
 
@@ -4882,4 +4897,144 @@ function _updateLayerButtons() {
     const btn = document.getElementById('tb-layer-' + l);
     if (btn) btn.classList.toggle('tb-layer-active', !!_layerVisibility[l]);
   });
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Conflict Export Guard — shows warning modal before any export when
+ * conflicts exist. "Export Anyway" sets bypass flag, proceeds, then clears.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function _guardExport(label, fn) {
+  const entries = Object.entries(_conflicts || {});
+  if (entries.length === 0) { fn(); return; }
+
+  document.getElementById('cex-sub').textContent =
+    entries.length + ' conflict' + (entries.length !== 1 ? 's' : '') +
+    ' found. If you proceed, the ' + label + ' will include these issues.';
+
+  const list = document.getElementById('cex-list');
+  const shown = entries.slice(0, 5);
+  list.innerHTML = shown.map(([, info]) =>
+    '<div class="cex-entry">&#9888; <strong>' + _escHtml(info.label) + '</strong>: ' +
+    info.conflicts.map(c => _escHtml(c.message)).join('; ') + '</div>'
+  ).join('') + (entries.length > 5
+    ? '<div class="cex-entry cex-more">...and ' + (entries.length - 5) + ' more</div>'
+    : '');
+
+  const btn = document.getElementById('cex-proceed-btn');
+  btn.onclick = () => {
+    document.getElementById('conflict-export-modal').classList.add('hidden');
+    _conflictExportBypassed = true;
+    try { fn(); } finally { _conflictExportBypassed = false; }
+  };
+  document.getElementById('conflict-export-modal').classList.remove('hidden');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Board Ready Check — pre-flight gate before ERB / CCB presentation
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function openBoardReadyCheck() {
+  // Force a fresh conflict scan
+  _conflictScanDirty = true;
+  _runConflictScan();
+
+  const elements = graph.getElements().filter(c => c.get('nodeType'));
+  const checks = [];
+
+  // 1 — Node count
+  const nodeCount = elements.length;
+  checks.push({
+    label: 'Device count',
+    pass: nodeCount >= 3,
+    detail: nodeCount + ' device' + (nodeCount !== 1 ? 's' : '') + ' on canvas' +
+            (nodeCount < 3 ? ' — need at least 3 for a meaningful design' : '')
+  });
+
+  // 2 — No conflicts
+  const conflictCount = Object.keys(_conflicts).length;
+  checks.push({
+    label: 'No duplicate IPs / hostnames',
+    pass: conflictCount === 0,
+    detail: conflictCount === 0
+      ? 'Clean — no duplicates detected'
+      : conflictCount + ' conflict' + (conflictCount !== 1 ? 's' : '') + ' detected — click ⚠ in status bar to review'
+  });
+
+  // 3 — Routable devices have IPs
+  const routables = new Set(['router','switch-l3','firewall','load-balancer','server']);
+  const missingIp = elements.filter(c =>
+    routables.has(c.get('nodeType')) && !(c.get('configData') || {}).ip
+  );
+  checks.push({
+    label: 'Routable devices have IP addresses',
+    pass: missingIp.length === 0,
+    detail: missingIp.length === 0
+      ? 'All routable devices have IPs assigned'
+      : missingIp.slice(0, 3).map(c => c.attr('label/text') || c.get('nodeType')).join(', ') +
+        (missingIp.length > 3 ? ' +' + (missingIp.length - 3) + ' more' : '') + ' missing IP'
+  });
+
+  // 4 — No default-label devices (renamed by engineer)
+  const defaultLabelSet = new Set(Object.values(NODE_STYLES).map(s => s.label));
+  const unnamed = elements.filter(c => {
+    const lbl = (c.attr('label/text') || '').trim();
+    return !lbl || defaultLabelSet.has(lbl);
+  });
+  checks.push({
+    label: 'All devices have custom names',
+    pass: unnamed.length === 0,
+    detail: unnamed.length === 0
+      ? 'All devices have been renamed'
+      : unnamed.length + ' device' + (unnamed.length !== 1 ? 's' : '') +
+        ' still using default labels — rename before presenting'
+  });
+
+  // 5 — Topology is saved
+  const isSaved = !!(currentTopoId && currentTopoId !== 'new');
+  checks.push({
+    label: 'Topology saved',
+    pass: isSaved,
+    detail: isSaved ? 'Saved (ID: ' + currentTopoId.slice(0, 12) + '...)' : 'Unsaved changes — save before board'
+  });
+
+  const allPass = checks.every(c => c.pass);
+  const failCount = checks.filter(c => !c.pass).length;
+
+  const headline = document.getElementById('brm-headline');
+  if (headline) {
+    headline.textContent = allPass ? '✅ Board Ready' : '❌ ' + failCount + ' issue' + (failCount !== 1 ? 's' : '') + ' — Not Board Ready';
+    headline.className = 'brm-headline ' + (allPass ? 'brm-pass' : 'brm-fail');
+  }
+
+  const list = document.getElementById('brm-list');
+  if (list) {
+    list.innerHTML = checks.map(c =>
+      '<div class="brm-check ' + (c.pass ? 'brm-check-pass' : 'brm-check-fail') + '">' +
+      '<span class="brm-icon">' + (c.pass ? '&#10003;' : '&#10007;') + '</span>' +
+      '<div class="brm-check-body">' +
+        '<div class="brm-check-label">' + _escHtml(c.label) + '</div>' +
+        '<div class="brm-check-detail">' + _escHtml(c.detail) + '</div>' +
+      '</div></div>'
+    ).join('');
+  }
+
+  const atoBtn = document.getElementById('brm-ato-btn');
+  if (atoBtn) atoBtn.style.display = allPass ? '' : 'none';
+
+  document.getElementById('board-ready-modal').classList.remove('hidden');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * exportCanvasPDF — opens browser print dialog (Print to PDF)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function exportCanvasPDF() {
+  if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+    _guardExport('PDF export', exportCanvasPDF); return;
+  }
+  window.print();
 }
