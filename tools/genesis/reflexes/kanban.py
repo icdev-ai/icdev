@@ -4292,6 +4292,68 @@ def _check_token_exhausted_tasks() -> list:
         conn.close()
 
 
+def _close_orphaned_decomposed() -> None:
+    """Step 3d: Auto-close decomposed parents that have no live children.
+
+    When the LLM decomposer sets a parent to 'decomposed' but fails to create
+    child tasks, the parent is orphaned — nothing ever closes it and it renders
+    as 'Backlog' in the kanban UI (JS buckets unknown statuses there).
+
+    A decomposed task is orphaned when:
+      - status = 'decomposed'
+      - no children (kanban_tasks WHERE depends_on_task_id = id AND status != 'done')
+      - updated_at older than 5 minutes (give the decomposer time to finish)
+
+    Safe to auto-close: if children exist and are all done, the parent should
+    already be closed by _auto_close_decomposed_parent — this catches the ones
+    that slipped through.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, title FROM kanban_tasks WHERE status = 'decomposed' "
+                "AND updated_at < NOW() - INTERVAL '5 minutes'"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("orphaned_decomposed: DB read failed: %s", exc)
+        return
+
+    if not rows:
+        return
+
+    now = _utcnow_iso()
+    for row in rows:
+        task = dict(row)
+        tid = task["id"]
+        try:
+            conn2 = get_connection()
+            try:
+                live_children = conn2.execute(
+                    "SELECT COUNT(*) AS cnt FROM kanban_tasks "
+                    "WHERE depends_on_task_id = %s AND status != 'done'",
+                    (tid,),
+                ).fetchone()
+                live_count = dict(live_children)["cnt"] if live_children else 0
+                if live_count == 0:
+                    conn2.execute(
+                        "UPDATE kanban_tasks SET status = 'done', completed_at = %s, "
+                        "updated_at = %s WHERE id = %s AND status = 'decomposed'",
+                        (now, now, tid),
+                    )
+                    conn2.commit()
+                    logger.info(
+                        "orphaned_decomposed: auto-closed %s (no live children)", tid
+                    )
+                    print(f"  Kanban: orphaned-decomposed {tid!r} auto-closed (no live children)")
+            finally:
+                conn2.close()
+        except Exception as exc:
+            logger.warning("orphaned_decomposed: failed to close %s: %s", tid, exc)
+
+
 def _auto_decompose_stalled_tasks() -> list:
     """Step 3c: LLM-powered decomposer for needs_decomposition tasks.
 
@@ -4768,6 +4830,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             print(f"  Kanban: auto-decomposed {len(decomposed)} stalled task(s): {decomposed}")
     except Exception as _ad_exc:
         logger.warning("auto_decompose sweep failed: %s", _ad_exc)
+
+    # 3d. Close orphaned-decomposed tasks — decomposed parents whose LLM
+    # decomposition produced no children (LLM failed silently) get stuck
+    # forever in 'decomposed' status. Auto-close them as done so they
+    # don't block visibility and don't mislead the kanban board.
+    try:
+        _close_orphaned_decomposed()
+    except Exception as _cod_exc:
+        logger.warning("orphaned-decomposed sweep failed: %s", _cod_exc)
 
     # 4. Find due tasks
     due_tasks = _get_due_tasks()

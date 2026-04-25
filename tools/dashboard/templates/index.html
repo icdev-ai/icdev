@@ -385,6 +385,7 @@ function renderTaskKanban(tasks) {
     var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
     tasks.forEach(function(t) {
         var s = t.status || 'backlog';
+        if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
         if (columns[s]) columns[s].push(t);
         else columns.backlog.push(t);
     });
