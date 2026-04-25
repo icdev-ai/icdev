@@ -61,6 +61,23 @@ python tools/testing/platform_check.py
 python tools/testing/health_check.py
 ```
 
+## Import Convention
+
+All imports from the tools package **must** use the `icdev.tools.*` namespace.
+
+```python
+# WRONG
+from tools.db.storage import get_connection
+
+# CORRECT
+from icdev.tools.db.storage import get_connection
+```
+
+A backward-compatibility shim in `tools/__init__.py` keeps old `from tools.*`
+imports working during the migration period, but all new code must use
+`from icdev.tools.*`. See [`tools/README.md`](tools/README.md) for PYTHONPATH
+setup required in test environments.
+
 ## Adding a New Tool
 
 1. **Check the manifest first.** Read `tools/manifest.md` to confirm a similar tool does not already exist.
@@ -109,9 +126,9 @@ import os
 import sys
 import pytest
 
-# Import guard for optional dependencies
+# Import guard for optional dependencies — always use icdev.tools.* namespace
 try:
-    from tools.some_module import SomeClass
+    from icdev.tools.some_module import SomeClass
 except ImportError:
     pytestmark = pytest.mark.skip(reason="Missing dependency")
 
