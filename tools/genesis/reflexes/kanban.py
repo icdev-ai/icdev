@@ -1320,7 +1320,7 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
     return result
 
 
-MAX_FAILURES_BEFORE_DECOMPOSITION = 3
+MAX_FAILURES_BEFORE_DECOMPOSITION = 1
 
 
 def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
@@ -4451,6 +4451,63 @@ def _reset_to_backlog(task_id: str, reason: str = "") -> None:
         conn.close()
 
 
+def _complexity_score(task: dict) -> int:
+    """Heuristic complexity score — no LLM, no I/O.
+
+    Returns an int 0-10. Score ≥ 4 → decompose upfront before first dispatch.
+
+    Signals:
+      +2  description word count > 120
+      +1  description word count > 60
+      +2  ≥ 3 bullet/numbered items in description
+      +1  title contains "and" / "&" / "+" (compound scope)
+      +1  ≥ 3 distinct file paths mentioned (*.py / *.html / *.yaml / *.md)
+      +2  task_type is "build" AND word count > 80
+      +1  title or description contains "implement", "refactor", "migrate",
+          "redesign", "overhaul", "integrate" (broad-scope verbs)
+    """
+    import re as _re
+
+    title = (task.get("title") or "").lower()
+    desc = (task.get("description") or "")
+    task_type = (task.get("task_type") or "").lower()
+    failure_count = int(task.get("failure_count") or 0)
+
+    # Tasks that already failed once skip pre-dispatch decompose
+    # (they go through _record_failure_and_maybe_flag instead).
+    if failure_count > 0:
+        return 0
+
+    words = len(desc.split())
+    score = 0
+
+    if words > 120:
+        score += 2
+    elif words > 60:
+        score += 1
+
+    bullets = len([l for l in desc.splitlines()
+                   if _re.match(r"^\s*[-*•]|\s*\d+\.", l)])
+    if bullets >= 3:
+        score += 2
+
+    if any(tok in title for tok in (" and ", " & ", " + ")):
+        score += 1
+
+    file_refs = _re.findall(r"[\w/\-]+\.(?:py|html|yaml|yml|md|ts|js|go)", desc)
+    if len(file_refs) >= 3:
+        score += 1
+
+    if task_type == "build" and words > 80:
+        score += 2
+
+    broad_verbs = ("implement", "refactor", "migrate", "redesign", "overhaul", "integrate")
+    if any(v in title or v in desc.lower() for v in broad_verbs):
+        score += 1
+
+    return score
+
+
 def _decompose_one_task(task: dict) -> None:
     """Call LLM to decompose a single needs_decomposition task into subtasks."""
     from tools.llm.router import LLMRouter, LLMRequest
@@ -4460,28 +4517,52 @@ def _decompose_one_task(task: dict) -> None:
     description = task.get("description") or ""
     priority = task.get("priority") or "medium"
     task_type = task.get("task_type") or "build"
+    failure_count = int(task.get("failure_count") or 0)
     failure_reason = task.get("last_failure_reason") or "Task exceeded single-session capacity."
 
     # Determine valid child task_type (constrained by DB CHECK)
     VALID_TYPES = {"build", "run", "fix", "research", "deploy", "test", "chore"}
     child_type = task_type if task_type in VALID_TYPES else "build"
 
+    is_upfront = failure_count == 0
+
     system_prompt = (
-        "You are a software project decomposer. Given a task that is too large for one session, "
-        "break it into 2-5 concrete, independent subtasks that each fit in a single Claude CLI session "
-        "(under 900 seconds of work). Each subtask must be specific, actionable, and include a clear "
-        "acceptance criterion. Output ONLY valid JSON — a list of objects with keys: "
-        "'title' (str, max 120 chars), 'description' (str), 'task_type' "
+        "You are an expert software task decomposer. Your job is to break a task into "
+        "the smallest possible ATOMIC subtasks — each must do ONE thing, touch at most "
+        "2-3 files, and complete in under 10 minutes of agent work.\n\n"
+        "RULES (enforce strictly):\n"
+        "1. Each subtask has a SINGLE acceptance criterion — one verifiable outcome.\n"
+        "2. Each subtask touches at most 2-3 files. If more files are needed, split further.\n"
+        "3. Title must be a specific action: 'Add X to Y', 'Fix Z in W', not 'Implement feature'.\n"
+        "4. Subtasks are ordered: each builds on the previous (list in execution order).\n"
+        "5. No 'scaffolding' or 'setup' tasks that just create empty files — do real work.\n"
+        "6. Prefer 3-5 focused subtasks over 2 large ones — smaller is always safer.\n\n"
+        "Output ONLY valid JSON — a list of objects with keys: "
+        "'title' (str, max 120 chars), 'description' (str, include the specific files to "
+        "touch and the exact acceptance criterion), 'task_type' "
         f"(one of: {sorted(VALID_TYPES)}), 'priority' (one of: critical, high, medium, low). "
         "No markdown, no explanation, just the JSON array."
     )
+
+    if is_upfront:
+        decompose_instruction = (
+            "Decompose this proactively into 3-5 atomic subtasks BEFORE any attempt is made. "
+            "The goal is to get each subtask right on the first try with no retries."
+        )
+    else:
+        decompose_instruction = (
+            f"This task FAILED with: {failure_reason}\n"
+            "Decompose into 3-5 atomic subtasks. Each must be small enough that an agent "
+            "cannot possibly miss it. Address the failure reason in your decomposition."
+        )
+
     user_prompt = (
         f"Task ID: {tid}\n"
         f"Title: {title}\n"
         f"Description: {description}\n"
         f"Priority: {priority}\n"
-        f"Failure reason: {failure_reason}\n\n"
-        "Decompose this into 2-5 smaller subtasks."
+        f"Task type: {task_type}\n\n"
+        f"{decompose_instruction}"
     )
 
     try:
@@ -4858,6 +4939,40 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     # Only dispatch ONE task at a time to claude
     task = due_tasks[0]
+
+    # Pre-dispatch complexity gate: score the task before spending any tokens.
+    # If it looks too big for a single session (score ≥ 4) decompose it now
+    # instead of letting it fail and waste a full 900s agent run.
+    _cscore = _complexity_score(task)
+    if _cscore >= 4:
+        logger.info(
+            "pre-dispatch: %s complexity score %d ≥ 4 — decomposing upfront",
+            task["id"], _cscore,
+        )
+        print(
+            f"  Kanban: pre-dispatch complexity gate triggered for {task['id']!r} "
+            f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
+        )
+        try:
+            _decompose_one_task(task)
+        except Exception as _pd_exc:
+            logger.warning(
+                "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
+                task["id"], _pd_exc,
+            )
+        else:
+            # Decomposed successfully — skip dispatch this cycle; children will
+            # be picked up next cycle.
+            return {
+                "success": True,
+                "metric_value": 0,
+                "details": {
+                    "status": "pre_dispatch_decomposed",
+                    "task_id": task["id"],
+                    "complexity_score": _cscore,
+                },
+            }
+
     try:
         # Write prompt file first (low risk)
         prompt_path = _write_prompt_file(task)
