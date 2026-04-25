@@ -407,3 +407,10 @@
 |------|------|-------------|-------|--------|
 | Isa Expiry | tools\boundary_canvas\isa_expiry.py | Auto-registered: boundary_canvas/isa_expiry.py | --json | JSON |
 | Bdc Isa Expiry | tools\genesis\reflexes\bdc_isa_expiry.py | Auto-registered: reflexes/bdc_isa_expiry.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Mitre Ingestor | tools\observability\mitre_ingestor.py | Auto-registered: observability/mitre_ingestor.py | --json | JSON |
+| Bus Subscriber | tools\security_canvas\bus_subscriber.py | Auto-registered: security_canvas/bus_subscriber.py | --json | JSON |

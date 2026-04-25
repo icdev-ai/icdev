@@ -430,7 +430,7 @@ class TestCoachEventOnTrap:
             (inserted[0]["id"],),
         ).fetchone()
         assert "AAPL" in row["summary"]
-        assert "bull_trap" in row["summary"]
+        assert "bull trap" in row["summary"]
 
     def test_coach_event_recommendation_present(self, coach_db):
         """Coach event recommendation must not be empty."""

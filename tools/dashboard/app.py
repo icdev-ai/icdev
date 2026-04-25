@@ -1150,7 +1150,13 @@ def create_app() -> Flask:
     @app.route("/canvas-compliance")
     def canvas_compliance_page():
         """Unified compliance posture across all 7 design canvases."""
-        return render_template("canvas_compliance.html")
+        try:
+            from tools.canvas_compliance.compliance import get_all_cards
+            cards = get_all_cards()
+        except Exception as _exc:
+            app.logger.warning("canvas_compliance: get_all_cards failed: %s", _exc)
+            cards = []
+        return render_template("canvas_compliance.html", cards=cards)
 
     # ---- Design Canvases (all 8) ----
     _CANVAS_ROUTES = {
