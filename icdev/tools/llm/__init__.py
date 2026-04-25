@@ -23,7 +23,7 @@ Usage::
     vector = emb_provider.embed("search query text")
 """
 
-from tools.llm.provider import (
+from .provider import (
     LLMProvider,
     LLMRequest,
     LLMResponse,
@@ -44,7 +44,7 @@ def get_router(config_path=None):
     """
     global _router_instance
     if _router_instance is None:
-        from tools.llm.router import LLMRouter
+        from .router import LLMRouter
 
         _router_instance = LLMRouter(config_path=config_path)
     return _router_instance
