@@ -2837,6 +2837,64 @@ const TYPE_SETS = {
   MONITORING: new Set(['siem', 'network-tap']),
 };
 
+/* ── Physical-to-Logical element mapping (ndc-pl-01) ────────────────────── */
+
+// Maps physical node types to their logical canvas equivalents.
+// Used by the P→L view transform to replace physical nodes with logical overlays.
+const PHYS_TO_LOGICAL = {
+  'router':          'vrf',
+  'switch-l3':       'vrf',
+  'switch-l2':       'vlan',
+  'firewall':        'security-zone',
+  'server':          'annotation',
+  'load-balancer':   'annotation',
+  'wap':             'annotation',
+  'wlc':             'annotation',
+  'cloud':           'annotation',
+  'sdwan-edge':      'vrf',
+  'route-reflector': 'vrf',
+  'aws-vpc':         'vrf',
+  'az-vnet':         'vrf',
+  'gcp-vpc':         'vrf',
+  'oci-vcn':         'vrf',
+  'type1-encryptor': 'security-zone',
+  'fips-140-l1':     'security-zone',
+  'fips-140-l2':     'security-zone',
+  'fips-140-l3':     'security-zone',
+  'fips-140-l4':     'security-zone',
+  'hsm':             'security-zone',
+};
+
+// Physical-layer types dropped when rendering the logical view (no logical equivalent).
+const LOGICAL_DROP_TYPES = new Set([
+  'media-ge', 'media-10ge', 'media-25ge', 'media-40ge', 'media-100ge', 'media-400ge',
+  'sfp', 'sfp-plus', 'qsfp', 'qsfp-dd',
+  'patch-panel',
+  'media-fiber', 'media-optical', 'media-converter',
+  'roadm', 'oadm', 'edfa', 'transponder', 'olt', 'odf',
+]);
+
+// Merge rules applied after P→L substitution.
+// Each rule: { match(a,b)→bool, into: logicalType, label(a)→string }
+// Linked nodes satisfying match() are collapsed into one logical node.
+const LOGICAL_MERGE_RULES = [
+  {
+    // Adjacent switch-l2 nodes with the same vlanId → single VLAN node
+    match: (a, b) => a.nodeType === 'switch-l2' && b.nodeType === 'switch-l2'
+                  && a.vlanId != null && a.vlanId === b.vlanId,
+    into:  'vlan',
+    label: (a) => `VLAN ${a.vlanId}`,
+  },
+  {
+    // Adjacent switch-l3/router nodes with the same vrfName → single VRF node
+    match: (a, b) => ['switch-l3', 'router'].includes(a.nodeType)
+                  && ['switch-l3', 'router'].includes(b.nodeType)
+                  && a.vrfName && a.vrfName === b.vrfName,
+    into:  'vrf',
+    label: (a) => `VRF ${a.vrfName}`,
+  },
+];
+
 // Infer classification of an existing canvas node from its configData and label
 function _nodeClassification(cell) {
   const cfg = cell.get ? cell.get('configData') || {} : (cell.config || {});
