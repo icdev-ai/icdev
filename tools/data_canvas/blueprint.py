@@ -564,6 +564,139 @@ def create_data_canvas_blueprint():
         conn.close()
         return jsonify({"status": "deleted"})
 
+    # ── PII keyword sets for lineage node classification ───────────────────
+    _PII_KEYWORDS = frozenset({
+        "ssn", "social_security", "social security", "dob", "date_of_birth",
+        "birth", "phone", "email", "address", "zip", "postal", "passport",
+        "license", "credit_card", "debit_card", "card_number", "cardholder",
+        "firstname", "lastname", "full_name", "salary", "income", "race",
+        "ethnicity", "religion", "sex", "gender", "medical", "health",
+        "diagnosis", "prescription", "ip_address", "geolocation", "location",
+        "biometric", "fingerprint", "face", "iris", "tin", "ein", "ssid",
+    })
+    _SENSITIVE_KEYWORDS = frozenset({
+        "cui", "secret", "confidential", "restricted", "internal",
+        "pii", "phi", "pci", "financial", "account", "routing", "tax",
+        "password", "credential", "token", "secret_key", "private_key",
+    })
+
+    def _pii_marker_for_node(label: str, node_type: str, classification: str) -> str:
+        """Return 'pii', 'sensitive', or 'clean' for a node."""
+        text = (label + " " + node_type).lower().replace("-", "_")
+        cls = (classification or "").lower()
+        if any(k in text for k in _PII_KEYWORDS) or cls in ("secret", "ts", "sci", "top secret"):
+            return "pii"
+        if any(k in text for k in _SENSITIVE_KEYWORDS) or "cui" in cls or "sensitive" in cls:
+            return "sensitive"
+        return "clean"
+
+    @bp.route("/api/lineage/<dataset_id>", methods=["GET"])
+    @dc_login_required
+    def dc_api_lineage_pii(dataset_id):
+        """Return lineage graph for a design with per-node PII markers.
+
+        Response shape::
+            {
+              "dataset_id": "<id>",
+              "nodes": [{"id", "label", "node_type", "classification",
+                         "pii_marker": "pii"|"sensitive"|"clean",
+                         "pii_color": "#e74c3c"|"#f39c12"|"#27ae60"}, ...],
+              "edges": [{"id", "source", "target", "column_name",
+                         "lineage_type", "transform_desc"}, ...]
+            }
+        """
+        _MARKER_COLOR = {"pii": "#e74c3c", "sensitive": "#f39c12", "clean": "#27ae60"}
+        conn = get_connection()
+        design_row = conn.execute(
+            "SELECT id, name, graph_json, classification FROM data_designs WHERE id=?",
+            (dataset_id,),
+        ).fetchone()
+        if not design_row:
+            conn.close()
+            return jsonify({"error": "Design not found"}), 404
+
+        # Fetch lineage edges
+        edge_rows = conn.execute(
+            "SELECT id, source_node_id, target_node_id, lineage_type, "
+            "column_name, transform_desc, classification "
+            "FROM dd_lineage WHERE design_id=? ORDER BY created_at",
+            (dataset_id,),
+        ).fetchall()
+
+        # Fetch explicit data_nodes rows (may be empty for older designs)
+        node_rows = conn.execute(
+            "SELECT id, label, node_type, classification FROM data_nodes WHERE design_id=?",
+            (dataset_id,),
+        ).fetchall()
+        conn.close()
+
+        # Build node map from data_nodes table
+        node_map: dict = {}
+        for nr in node_rows:
+            node_map[nr["id"]] = {
+                "id": nr["id"],
+                "label": nr["label"] or "",
+                "node_type": nr["node_type"] or "",
+                "classification": nr["classification"] or "",
+            }
+
+        # Fall back to graph_json nodes when data_nodes is empty
+        if not node_map:
+            try:
+                graph = json.loads(design_row["graph_json"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                graph = {}
+            for gn in graph.get("nodes", []):
+                nid = gn.get("id") or gn.get("data", {}).get("id", "")
+                if not nid:
+                    continue
+                label = gn.get("label") or gn.get("data", {}).get("label", "")
+                node_map[nid] = {
+                    "id": nid,
+                    "label": str(label),
+                    "node_type": gn.get("type") or gn.get("nodeType", ""),
+                    "classification": gn.get("classification", design_row["classification"] or "CUI"),
+                }
+
+        # Collect node ids referenced by edges (ensure they appear even if not in node_map)
+        edges = [row_to_dict(e) for e in edge_rows]
+        for e in edges:
+            for nid in (e.get("source_node_id", ""), e.get("target_node_id", "")):
+                if nid and nid not in node_map:
+                    node_map[nid] = {
+                        "id": nid,
+                        "label": nid,
+                        "node_type": "",
+                        "classification": design_row["classification"] or "CUI",
+                    }
+
+        # Annotate nodes with PII markers
+        nodes_out = []
+        for nd in node_map.values():
+            marker = _pii_marker_for_node(nd["label"], nd["node_type"], nd["classification"])
+            nodes_out.append({
+                "id": nd["id"],
+                "label": nd["label"],
+                "node_type": nd["node_type"],
+                "classification": nd["classification"],
+                "pii_marker": marker,
+                "pii_color": _MARKER_COLOR[marker],
+            })
+
+        edges_out = [
+            {
+                "id": e.get("id", ""),
+                "source": e.get("source_node_id", ""),
+                "target": e.get("target_node_id", ""),
+                "column_name": e.get("column_name", ""),
+                "lineage_type": e.get("lineage_type", "flow"),
+                "transform_desc": e.get("transform_desc", ""),
+            }
+            for e in edges
+        ]
+
+        return jsonify({"dataset_id": dataset_id, "nodes": nodes_out, "edges": edges_out})
+
     @bp.route("/api/designs/<design_id>/pii-scan", methods=["POST"])
     @dc_login_required
     def dc_api_pii_scan(design_id):

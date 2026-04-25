@@ -1081,6 +1081,137 @@ document.addEventListener('DOMContentLoaded', () => {
     openRightPanel('Deploy IaC Bundle', html);
     showStatus('✓ IaC bundle generated');
   };
+
+  // ── PII Lineage Panel ──────────────────────────────────────────────────
+  window.canvasPiiLineage = function() {
+    if (cfg.designId === 'new') {
+      openRightPanel('PII Lineage', '<p style="color:#f39c12;">Save the design first.</p>');
+      return;
+    }
+    openRightPanel('PII Lineage', '<p style="color:#7a8cb0;font-size:11px;">Loading lineage graph…</p>');
+    fetch(cfg.apiBase + '/lineage/' + cfg.designId)
+      .then(r => r.json())
+      .then(data => {
+        const nodes = data.nodes || [];
+        const edges = data.edges || [];
+
+        // Summary counts
+        const piiCount = nodes.filter(n => n.pii_marker === 'pii').length;
+        const sensCount = nodes.filter(n => n.pii_marker === 'sensitive').length;
+        const cleanCount = nodes.filter(n => n.pii_marker === 'clean').length;
+
+        let html = '';
+
+        // Legend + counts
+        html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+        html += `<span style="background:#e74c3c22;border:1px solid #e74c3c;border-radius:4px;padding:3px 8px;font-size:10px;color:#e74c3c;">&#9679; PII &nbsp;${piiCount}</span>`;
+        html += `<span style="background:#f39c1222;border:1px solid #f39c12;border-radius:4px;padding:3px 8px;font-size:10px;color:#f39c12;">&#9679; Sensitive &nbsp;${sensCount}</span>`;
+        html += `<span style="background:#27ae6022;border:1px solid #27ae60;border-radius:4px;padding:3px 8px;font-size:10px;color:#27ae60;">&#9679; Clean &nbsp;${cleanCount}</span>`;
+        html += '</div>';
+
+        if (nodes.length === 0) {
+          html += '<div style="text-align:center;padding:20px;"><div style="font-size:24px;color:#27ae60;">&#10003;</div>';
+          html += '<div style="color:#27ae60;font-weight:600;">No lineage edges recorded</div>';
+          html += '<div style="color:#7a8cb0;font-size:11px;margin-top:4px;">Add lineage edges from the Lineage page.</div></div>';
+          openRightPanel('PII Lineage', html);
+          return;
+        }
+
+        // Build SVG lineage graph (horizontal left→right layout)
+        const NODE_W = 110, NODE_H = 32, PAD_X = 140, PAD_Y = 48;
+        const nodeIndex = {};
+        nodes.forEach((n, i) => { nodeIndex[n.id] = i; });
+
+        // Simple column layout: bucket nodes by how many incoming edges (level = 0 if no incoming)
+        const inDeg = {};
+        nodes.forEach(n => { inDeg[n.id] = 0; });
+        edges.forEach(e => { if (e.target in inDeg) inDeg[e.target]++; });
+        const levels = {};
+        // BFS-style level assignment
+        const visited = new Set();
+        const queue = nodes.filter(n => inDeg[n.id] === 0).map(n => ({ id: n.id, lvl: 0 }));
+        if (queue.length === 0) { nodes.forEach(n => queue.push({ id: n.id, lvl: 0 })); }
+        while (queue.length > 0) {
+          const { id, lvl } = queue.shift();
+          if (visited.has(id)) continue;
+          visited.add(id);
+          if (levels[id] === undefined || levels[id] < lvl) levels[id] = lvl;
+          edges.filter(e => e.source === id).forEach(e => {
+            if (!visited.has(e.target)) queue.push({ id: e.target, lvl: lvl + 1 });
+          });
+        }
+        nodes.forEach(n => { if (levels[n.id] === undefined) levels[n.id] = 0; });
+
+        // Group nodes by level
+        const byLevel = {};
+        nodes.forEach(n => {
+          const l = levels[n.id] || 0;
+          (byLevel[l] = byLevel[l] || []).push(n);
+        });
+        const maxLevel = Math.max(...Object.keys(byLevel).map(Number));
+        const svgW = (maxLevel + 1) * PAD_X + NODE_W + 20;
+        const maxPerLevel = Math.max(...Object.values(byLevel).map(a => a.length));
+        const svgH = maxPerLevel * PAD_Y + 20;
+
+        // Compute node screen positions
+        const pos = {};
+        Object.entries(byLevel).forEach(([lvl, nds]) => {
+          const x = Number(lvl) * PAD_X + 10;
+          nds.forEach((n, i) => {
+            const y = i * PAD_Y + 10;
+            pos[n.id] = { x, y };
+          });
+        });
+
+        let svgEdges = '';
+        edges.forEach(e => {
+          const sp = pos[e.source], tp = pos[e.target];
+          if (!sp || !tp) return;
+          const x1 = sp.x + NODE_W, y1 = sp.y + NODE_H / 2;
+          const x2 = tp.x, y2 = tp.y + NODE_H / 2;
+          const mx = (x1 + x2) / 2;
+          svgEdges += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="#2a4070" stroke-width="1.5" marker-end="url(#arrow)"/>`;
+          if (e.column_name) {
+            const lx = (x1 + x2) / 2, ly = (y1 + y2) / 2 - 4;
+            svgEdges += `<text x="${lx}" y="${ly}" text-anchor="middle" fill="#5a6e8c" font-size="8">${e.column_name.substring(0,16)}</text>`;
+          }
+        });
+
+        let svgNodes = '';
+        nodes.forEach(n => {
+          const p = pos[n.id];
+          if (!p) return;
+          const label = (n.label || n.id).substring(0, 14);
+          svgNodes += `<rect x="${p.x}" y="${p.y}" width="${NODE_W}" height="${NODE_H}" rx="5" fill="#16213e" stroke="${n.pii_color}" stroke-width="2"/>`;
+          svgNodes += `<circle cx="${p.x + 10}" cy="${p.y + NODE_H/2}" r="4" fill="${n.pii_color}"/>`;
+          svgNodes += `<text x="${p.x + 20}" y="${p.y + NODE_H/2 + 4}" fill="#eaeaea" font-size="9">${label}</text>`;
+        });
+
+        html += `<div style="overflow:auto;max-height:320px;background:#0a1628;border-radius:6px;padding:4px;">
+<svg width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#2a4070"/>
+    </marker>
+  </defs>
+  ${svgEdges}${svgNodes}
+</svg></div>`;
+
+        // Node list with PII markers
+        html += _section('Nodes');
+        nodes.forEach(n => {
+          const markerLabel = n.pii_marker === 'pii' ? 'PII' : n.pii_marker === 'sensitive' ? 'Sensitive' : 'Clean';
+          html += `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #0f1e36;">`;
+          html += `<div style="width:8px;height:8px;border-radius:50%;background:${n.pii_color};flex-shrink:0;"></div>`;
+          html += `<div style="flex:1;font-size:11px;color:#eaeaea;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label || n.id}</div>`;
+          html += `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${n.pii_color}22;color:${n.pii_color};border:1px solid ${n.pii_color};">${markerLabel}</span>`;
+          html += `</div>`;
+        });
+
+        openRightPanel('PII Lineage', html);
+      })
+      .catch(e => openRightPanel('PII Lineage', `<p style="color:#e74c3c;">Failed: ${e}</p>`));
+  };
 });
 
 /* ── Shared Collaboration Widget (Task 18) ─────────────────────────────────
