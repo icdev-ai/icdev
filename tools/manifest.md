@@ -376,3 +376,11 @@
 |------|------|-------------|-------|--------|
 | Genesis Daemon | tools\trading\options\genesis_daemon.py | Auto-registered: options/genesis_daemon.py | --json | JSON |
 | Oracle Engine | tools\trading\options\oracle_engine.py | Auto-registered: options/oracle_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Tfw Chat Agent | tools\simulation\tfw_chat_agent.py | Auto-registered: simulation/tfw_chat_agent.py | --json | JSON |
+| Oracle Notify | tools\trading\options\oracle_notify.py | Auto-registered: options/oracle_notify.py | --json | JSON |
+| Dfd Generator | tools\simulation\artifacts\dfd_generator.py | Auto-registered: artifacts/dfd_generator.py | --json | JSON |
