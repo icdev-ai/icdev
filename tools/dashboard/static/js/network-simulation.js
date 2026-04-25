@@ -2045,6 +2045,129 @@ async function _ncChatDirectGenerate(description, opts) {
   }
 }
 
+// ── AI Chat History ────────────────────────────────────────────────────────
+
+let _ncHistoryVisible = false;
+
+function ncChatToggleHistory() {
+  const panel = document.getElementById('nc-chat-history-panel');
+  const msgs  = document.getElementById('nc-chat-messages');
+  const btn   = document.getElementById('nc-chat-history-btn');
+  _ncHistoryVisible = !_ncHistoryVisible;
+  if (_ncHistoryVisible) {
+    panel.style.display = 'flex';
+    msgs.style.display  = 'none';
+    btn.style.background = 'rgba(116,185,255,.15)';
+    btn.style.borderColor = 'rgba(116,185,255,.4)';
+    _ncChatLoadHistory();
+  } else {
+    panel.style.display = 'none';
+    msgs.style.display  = '';
+    btn.style.background = '';
+    btn.style.borderColor = '';
+  }
+}
+
+async function _ncChatLoadHistory() {
+  const list = document.getElementById('nc-chat-history-list');
+  if (!list) return;
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-dim);font-size:12px;">Loading…</div>';
+  try {
+    const r = await fetch(NC_BASE + '/api/ai-history?limit=30');
+    const data = await r.json();
+    const entries = data.entries || [];
+    if (!entries.length) {
+      list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:12px;">No history yet.<br>Generate a topology to start building history.</div>';
+      return;
+    }
+    list.innerHTML = entries.map(e => {
+      const badge = e.is_migration
+        ? '<span class="nc-history-badge nc-history-badge-mig">Migration</span>'
+        : '<span class="nc-history-badge nc-history-badge-gen">Topology</span>';
+      const ts = e.created_at ? new Date(e.created_at + 'Z').toLocaleString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      const prov = e.provider ? ` · ${e.provider}` : '';
+      return `<div class="nc-history-item" data-id="${_escHtml(e.id)}">
+        <div class="nc-history-desc" title="${_escHtml(e.short_desc)}">${_escHtml(e.short_desc)}</div>
+        <div class="nc-history-meta">
+          ${badge}
+          <span>${e.node_count}N · ${e.edge_count}E${prov}</span>
+          <span>${ts}</span>
+          <div class="nc-history-actions">
+            <button onclick="ncHistoryReuse('${_escHtml(e.id)}',event)" title="Paste description into input">↩ Reuse</button>
+            <button onclick="ncHistoryRestore('${_escHtml(e.id)}',event)" title="Load topology onto canvas">⬆ Load</button>
+            <button onclick="ncHistoryDelete('${_escHtml(e.id)}',event)" title="Delete this entry" style="color:var(--danger,#e74c3c);">✕</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = `<div style="padding:16px;color:var(--danger,#e74c3c);font-size:12px;">Failed to load history: ${_escHtml(err.message)}</div>`;
+  }
+}
+
+async function ncHistoryReuse(id, evt) {
+  if (evt) evt.stopPropagation();
+  try {
+    const r = await fetch(`${NC_BASE}/api/ai-history/${encodeURIComponent(id)}`);
+    const data = await r.json();
+    if (data.description) {
+      const input = document.getElementById('nc-chat-input');
+      if (input) { input.value = data.description; input.focus(); }
+      ncChatToggleHistory();   // flip back to chat view
+    }
+  } catch (err) {
+    alert('Could not load description: ' + err.message);
+  }
+}
+
+async function ncHistoryRestore(id, evt) {
+  if (evt) evt.stopPropagation();
+  try {
+    const r = await fetch(`${NC_BASE}/api/ai-history/${encodeURIComponent(id)}`);
+    const data = await r.json();
+    if (data.graph_json) {
+      if (typeof pushUndo === 'function') pushUndo();
+      if (typeof loadGraphJSON === 'function') loadGraphJSON(data.graph_json);
+      if (typeof updateStatusBar === 'function') updateStatusBar();
+      if (typeof markDirty === 'function') markDirty();
+      ncChatToggleHistory();
+      _ncChatAppendMsg('assistant',
+        `Restored: <strong>${data.node_count} nodes</strong>, <strong>${data.edge_count} edges</strong> from history.` +
+        `<button class="nc-chat-action-btn" onclick="if(typeof undoAction==='function')undoAction()">↩ Undo</button>`
+      );
+      if (typeof setStatus === 'function') setStatus('Restored from history: ' + data.node_count + ' nodes');
+    }
+  } catch (err) {
+    alert('Could not restore topology: ' + err.message);
+  }
+}
+
+async function ncHistoryDelete(id, evt) {
+  if (evt) evt.stopPropagation();
+  if (!confirm('Delete this history entry?')) return;
+  try {
+    await fetch(`${NC_BASE}/api/ai-history/${encodeURIComponent(id)}`, {method: 'DELETE'});
+    _ncChatLoadHistory();   // refresh list
+  } catch (err) {
+    alert('Delete failed: ' + err.message);
+  }
+}
+
+async function ncChatClearAllHistory() {
+  if (!confirm('Clear all AI generation history?')) return;
+  const list = document.getElementById('nc-chat-history-list');
+  try {
+    const r = await fetch(NC_BASE + '/api/ai-history?limit=100');
+    const data = await r.json();
+    await Promise.all((data.entries || []).map(e =>
+      fetch(`${NC_BASE}/api/ai-history/${encodeURIComponent(e.id)}`, {method: 'DELETE'})
+    ));
+    if (list) list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim);font-size:12px;">History cleared.</div>';
+  } catch (err) {
+    alert('Clear failed: ' + err.message);
+  }
+}
+
 function _ncChatPollForResponse() {
   if (_ncChatPollTimer) clearInterval(_ncChatPollTimer);
   let attempts = 0;
