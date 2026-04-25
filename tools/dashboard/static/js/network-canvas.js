@@ -214,6 +214,69 @@ const _TYPE_ALIASES = {
   'unknown': 'server',
 };
 
+// Physical device type → logical overlay type it collapses into during logical view
+const PHYS_TO_LOGICAL = {
+  'router':            'vrf',
+  'switch-l3':         'vrf',
+  'switch-l2':         'vlan',
+  'firewall':          'security-zone',
+  'server':            'annotation',
+  'load-balancer':     'subnet',
+  'wap':               'vlan',
+  'wlc':               'vlan',
+  'sdwan-edge':        'vrf',
+  'route-reflector':   'vrf',
+  'mpls-pe':           'mpls-lsp',
+  'mpls-p':            'mpls-lsp',
+  'cisco-router':      'vrf',
+  'cisco-switch-l2':   'vlan',
+  'cisco-switch-l3':   'vrf',
+  'cisco-firewall':    'security-zone',
+  'cisco-lb':          'subnet',
+  'juniper-ptx10003':  'vrf',
+  'juniper-mx304':     'vrf',
+};
+
+// Physical media / connector types that are dropped entirely in logical view
+const LOGICAL_DROP_TYPES = new Set([
+  'media-ge', 'media-10ge', 'media-25ge', 'media-40ge', 'media-100ge', 'media-400ge',
+  'media-fiber', 'media-optical', 'media-converter',
+  'sfp', 'sfp-plus', 'qsfp', 'qsfp-dd',
+  'patch-panel', 'patch-panel-fiber',
+  'odf',
+]);
+
+// Rules governing how adjacent physical nodes collapse in logical view
+// Each rule: { types, sameAttr, action, intoType, label }
+//   types    — set of physical node types the rule applies to
+//   sameAttr — node data attribute that must match across adjacent nodes for merge to fire
+//   action   — 'merge' collapses matched group into a single logical node
+//   intoType — the logical NODE_STYLES type the merged group becomes
+const LOGICAL_MERGE_RULES = [
+  {
+    types:    new Set(['switch-l2', 'cisco-switch-l2', 'wlc']),
+    sameAttr: 'vlan',
+    action:   'merge',
+    intoType: 'vlan',
+    label:    'Adjacent same-VLAN L2 switches merge into a VLAN node',
+  },
+  {
+    types:    new Set(['router', 'switch-l3', 'cisco-router', 'cisco-switch-l3',
+                       'juniper-ptx10003', 'juniper-mx304', 'sdwan-edge', 'route-reflector']),
+    sameAttr: 'vrf',
+    action:   'merge',
+    intoType: 'vrf',
+    label:    'Adjacent same-VRF routing devices merge into a VRF node',
+  },
+  {
+    types:    new Set(['firewall', 'cisco-firewall']),
+    sameAttr: 'security_zone',
+    action:   'merge',
+    intoType: 'security-zone',
+    label:    'Adjacent same-zone firewalls merge into a Security Zone node',
+  },
+];
+
 function getStyle(type) {
   return NODE_STYLES[type] || NODE_STYLES[_TYPE_ALIASES[type]] || { fill: '#1a1a2e', stroke: '#7a8cb0', label: type, symbol: '?' };
 }
