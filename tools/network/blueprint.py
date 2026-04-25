@@ -8143,6 +8143,220 @@ def create_network_blueprint():
         _audit("SAVE_AS", "topology", new_id, f"from {topo_id}")
         return jsonify({"id": new_id, "name": name, "redirect": f"/network/canvas/{new_id}"}), 201
 
+    @bp.route("/api/topologies/<topo_id>/create-lab", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_lab(topo_id):
+        """AI-reduce production topology to a scaled-down representative lab version.
+
+        Reduction rules applied:
+        - 1 representative node per nc_group cluster (first non-L1 member)
+        - L1 physical media stripped (SFP, fiber, patch panels, media converters)
+        - IPs reassigned to 10.99.x.x range
+        - Node labels prefixed LAB-
+        - Security zones, VRFs, subnets, roles preserved
+        - Lineage recorded in nc_lab_clones; version snapshot saved on source (phase=lab)
+        """
+        import re as _re
+
+        L1_TYPES = {
+            "sfp", "sfp-plus", "qsfp", "qsfp-dd",
+            "media-ge", "media-10ge", "media-40ge", "media-100ge", "media-400ge",
+            "media-fiber", "media-optical", "media-converter",
+            "patch-panel", "odf",
+        }
+
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+
+        try:
+            graph = json.loads(row["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+
+        # Load nc_groups to identify cluster membership
+        group_rows = conn.execute(
+            "SELECT id, auto_nodes_json FROM nc_groups WHERE topology_id=?", (topo_id,)
+        ).fetchall()
+
+        node_type_map = {n["id"]: n.get("type", "") for n in nodes}
+
+        # Map each node to its first group; pick one representative per group
+        node_to_group: dict = {}
+        group_representative: dict = {}
+        for gr in group_rows:
+            gid = gr["id"]
+            try:
+                members = json.loads(gr["auto_nodes_json"] or "[]")
+            except Exception:
+                members = []
+            for nid in members:
+                if nid not in node_to_group:
+                    node_to_group[nid] = gid
+            rep = next(
+                (nid for nid in members if node_type_map.get(nid, "") not in L1_TYPES),
+                members[0] if members else None,
+            )
+            if rep is not None:
+                group_representative[gid] = rep
+
+        # Determine kept nodes and the ID remap table
+        kept_node_ids: set = set()
+        id_remap: dict = {}
+        for n in nodes:
+            nid = n["id"]
+            ntype = n.get("type", "")
+            if ntype in L1_TYPES:
+                continue
+            gid = node_to_group.get(nid)
+            if gid is not None:
+                rep = group_representative.get(gid)
+                if rep and rep != nid:
+                    id_remap[nid] = rep
+                    continue
+            kept_node_ids.add(nid)
+
+        # IP reassignment: 10.99.x.x counter
+        _ip_state = [1, 1]
+
+        def _next_lab_ip():
+            ip = f"10.99.{_ip_state[0]}.{_ip_state[1]}"
+            _ip_state[1] += 1
+            if _ip_state[1] > 254:
+                _ip_state[1] = 1
+                _ip_state[0] += 1
+            return ip
+
+        _IP_RE = _re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b")
+
+        def _replace_ips(text):
+            if not isinstance(text, str):
+                return text
+            def _sub(m):
+                parts = m.group(0).split("/")
+                return _next_lab_ip() + ("/" + parts[1] if len(parts) > 1 else "")
+            return _IP_RE.sub(_sub, text)
+
+        def _sanitize(val):
+            if isinstance(val, dict):
+                return {k: _sanitize(v) for k, v in val.items()}
+            if isinstance(val, list):
+                return [_sanitize(v) for v in val]
+            return _replace_ips(val)
+
+        # Build lab nodes
+        lab_nodes = []
+        for n in nodes:
+            if n["id"] not in kept_node_ids:
+                continue
+            lab_n = dict(n)
+            lbl = lab_n.get("label", lab_n["id"])
+            lab_n["label"] = f"LAB-{lbl}" if not lbl.startswith("LAB-") else lbl
+            lab_n["label"] = _replace_ips(lab_n["label"])
+            if "config" in lab_n:
+                lab_n["config"] = _sanitize(lab_n["config"])
+            lab_nodes.append(lab_n)
+
+        # Build lab edges — remap endpoints, skip self-loops and duplicates
+        seen_edges: set = set()
+        lab_edges = []
+        for e in edges:
+            src = id_remap.get(e.get("source"), e.get("source"))
+            dst = id_remap.get(e.get("target"), e.get("target"))
+            if src not in kept_node_ids or dst not in kept_node_ids:
+                continue
+            if src == dst:
+                continue
+            key = (min(src, dst), max(src, dst))
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
+            lab_e = dict(e)
+            lab_e["source"] = src
+            lab_e["target"] = dst
+            lab_edges.append(lab_e)
+
+        lab_name = f"LAB-{row['name']}"
+        now = _now()
+        new_id = str(_uuid.uuid4())
+
+        # Create the lab topology
+        conn.execute(
+            "INSERT INTO topologies (id, name, description, graph_json, template_id, classification, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                new_id,
+                lab_name,
+                f"Lab of '{row['name']}' (source: {topo_id}). {(row['description'] or '')}".strip(". "),
+                json.dumps({"nodes": lab_nodes, "edges": lab_edges}),
+                None,
+                row["classification"] or "public",
+                now,
+                now,
+            ),
+        )
+
+        # Record lineage in nc_lab_clones
+        clone_id = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_lab_clones "
+            "(clone_id, parent_design_id, lineage, redaction_log, created_at, classification) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                clone_id,
+                topo_id,
+                json.dumps([topo_id]),
+                json.dumps({
+                    "l1_stripped": sorted(L1_TYPES),
+                    "ips_replaced": True,
+                    "label_prefix": "LAB-",
+                    "clusters_reduced": len(group_representative),
+                }),
+                now,
+                row["classification"] or "UNCLASSIFIED",
+            ),
+        )
+
+        # Save a version snapshot on the source topology linking to the new lab
+        last_ver = conn.execute(
+            "SELECT MAX(version_num) FROM nc_versions WHERE topology_id=?", (topo_id,)
+        ).fetchone()[0]
+        ver_num = (last_ver or 0) + 1
+        vid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_versions "
+            "(id, topology_id, version_num, label, phase, graph_json, created_by, notes, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                vid,
+                topo_id,
+                ver_num,
+                f"Lab snapshot → {lab_name}",
+                "lab",
+                row["graph_json"],
+                "system",
+                json.dumps({"lab_topology_id": new_id, "lab_name": lab_name}),
+                now,
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+        _audit("CREATE_LAB", "topology", new_id, f"lab of {topo_id}, nodes={len(lab_nodes)}, edges={len(lab_edges)}")
+        return jsonify({
+            "id": new_id,
+            "name": lab_name,
+            "source_id": topo_id,
+            "nodes": len(lab_nodes),
+            "edges": len(lab_edges),
+            "redirect": f"/network/canvas/{new_id}",
+        }), 201
+
     @bp.route("/api/topologies/<topo_id>/save-as-template", methods=["POST"])
     @nc_login_required
     def nc_api_save_as_template(topo_id):
