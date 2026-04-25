@@ -553,6 +553,20 @@ reflexes:
     scenario_key: potential_reversal_cascade  # Scenario template to execute per trap
     digest_status: draft               # Pulse post status for daily digest
 
+  # ── FathomDesk Trap Sweep (Phase 7.12 ad712-trap-02) ──────────────────────────
+
+  fathomdesk_trap_sweep:
+    enabled: true
+    risk_tier: green
+    schedule: "every 4h"
+    interval_seconds: 14400  # 4 hours — COOLDOWN_HOURS=4 per ad712-trap-02
+    cooldown_minutes: 60     # Minimum gap between consecutive cycles
+    description: "Detect bull/bear trap patterns from signal direction flips, persist to ad_trap_events via ad712-trap-01 insert path (ta_config.yaml thresholds)"
+    success_metric:
+      name: traps_inserted
+      threshold: 0
+      operator: gte  # 0 = no new traps detected (healthy), >0 = events written
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:
