@@ -1107,6 +1107,85 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .topology-name-display { font-size: 13px; font-weight: 600; color: var(--text-dim); }
 .tb-status { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 
+/* ── Pattern Chip Strip ─────────────────────────────────────────────────── */
+.pattern-chips-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  height: 40px;
+  min-height: 40px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  background: #1c1000;
+  border-bottom: 1px solid #b7770d;
+  white-space: nowrap;
+  scrollbar-width: thin;
+  scrollbar-color: #f39c12 transparent;
+}
+.pattern-chips-strip:empty { display: none; }
+.pattern-chips-strip::-webkit-scrollbar { height: 4px; }
+.pattern-chips-strip::-webkit-scrollbar-track { background: transparent; }
+.pattern-chips-strip::-webkit-scrollbar-thumb { background: #f39c12; border-radius: 2px; }
+
+.pattern-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+  border: 1px solid #d68910;
+  border-radius: 15px;
+  color: #1a0900;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: box-shadow .12s;
+}
+.pattern-chip:hover { box-shadow: 0 0 0 2px rgba(243,156,18,0.5); }
+
+.chip-icon { font-size: 13px; flex-shrink: 0; }
+
+.chip-label {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-show-btn {
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(0,0,0,0.25);
+  border-radius: 10px;
+  color: #1a0900;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background .12s;
+  flex-shrink: 0;
+  font-family: var(--font, inherit);
+}
+.chip-show-btn:hover { background: rgba(0,0,0,0.32); }
+
+.chip-dismiss {
+  background: none;
+  border: none;
+  color: rgba(0,0,0,0.5);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: color .12s;
+  font-family: var(--font, inherit);
+}
+.chip-dismiss:hover { color: #1a0900; }
+
 /* ── Export Dropdown ───────────────────────────────────────────────────────── */
 .tb-export-wrap { position: relative; display: inline-block; }
 .tb-export-menu {
