@@ -388,6 +388,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_simulation_artifacts",
         # Cross-canvas event bus (migration 037, NIST AU — payload history preserved)
         "canvas_events",
+        # ODC MITRE ATT&CK technique catalog (migration cvo-odc-01, append-only NIST AU)
+        "odc_mitre_techniques",
     ]
 
     if tool_name == "Bash":
