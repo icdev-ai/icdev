@@ -3997,6 +3997,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ndc-ux-02: Start the live conflict scanner
   _initConflictScanner();
+
+  // ndc-ai-04: Wire PatternAdvisor to all graph mutation events
+  _initPatternAdvisor();
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -5035,6 +5038,8 @@ document.addEventListener('keydown', function _searchKeydown(e) {
 let _conflicts = {};            // cellId -> { label, conflicts: [{type, message}] }
 let _conflictScanDirty = false;
 
+let patternAdvisor = null;
+
 function _scheduleConflictScan() { _conflictScanDirty = true; }
 
 function _runConflictScan() {
@@ -5157,6 +5162,16 @@ function _initConflictScanner() {
   setInterval(_runConflictScan, 3000);
   // Initial scan 1.5s after load (let graph finish populating)
   setTimeout(() => { _conflictScanDirty = true; _runConflictScan(); }, 1500);
+}
+
+function _initPatternAdvisor() {
+  patternAdvisor = new PatternAdvisor();
+  // addNode / addEdge
+  graph.on('add',    () => patternAdvisor.trackEdit());
+  // deleteNode / deleteEdge
+  graph.on('remove', () => patternAdvisor.trackEdit());
+  // updateNodeProperty
+  graph.on('change', () => patternAdvisor.trackEdit());
 }
 
 
