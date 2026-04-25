@@ -689,6 +689,9 @@ let _blastCtxNodeId = null;
 /* ── Policy Panel State ─────────────────────────────────────────────────────── */
 let _policyNodeId = null;
 
+/* ── Link Policy Panel State ────────────────────────────────────────────────── */
+let _policyLinkId = null;
+
 function showBlastContextMenu(x, y, cell) {
   const menu = document.getElementById('blast-ctx-menu');
   const nameEl = document.getElementById('blast-ctx-device-name');
@@ -771,6 +774,126 @@ function openAuditPanel() {
   console.log('[NDC] openAuditPanel — node:', _blastCtxNodeId);
 }
 
+/* ── Link Policy Panel ───────────────────────────────────────────────────────── */
+
+function openLinkPolicyPanel() {
+  hideLinkContextMenu();
+  const linkId = _capLinkId;
+  if (!linkId) return;
+  const link = graph.getCell(linkId);
+  if (!link || !link.isLink()) return;
+  _policyLinkId = linkId;
+
+  const lc = link.get('linkConfig') || {};
+  const policy = lc.policy || {};
+
+  // Resolve classification: inherit lower of src/dst if not explicitly set
+  const srcId = (link.get('source') || {}).id;
+  const tgtId = (link.get('target') || {}).id;
+  const srcCell = srcId && graph.getCell(srcId);
+  const tgtCell = tgtId && graph.getCell(tgtId);
+  const srcCls = (srcCell && (srcCell.get('configData') || {}).policy || {}).classification || '';
+  const tgtCls = (tgtCell && (tgtCell.get('configData') || {}).policy || {}).classification || '';
+
+  let inheritedCls = '';
+  let inheritedNote = '';
+  if (srcCls && tgtCls) {
+    // Inherit the lower classification (less restrictive endpoint governs the link floor)
+    inheritedCls = _classRank(srcCls) <= _classRank(tgtCls) ? srcCls : tgtCls;
+    inheritedNote = `Inherited: ${srcCls} ↔ ${tgtCls} → floor ${inheritedCls}`;
+  } else if (srcCls || tgtCls) {
+    inheritedCls = srcCls || tgtCls;
+    inheritedNote = `Inherited from ${srcCls ? 'source' : 'target'}: ${inheritedCls}`;
+  }
+
+  const effectiveCls = policy.classification || inheritedCls;
+
+  // Cross-domain: src and dst have different non-empty classification ranks
+  const crossDomain = srcCls && tgtCls && _classRank(srcCls) !== _classRank(tgtCls);
+  const encRequired = policy.encryption_required !== undefined
+    ? policy.encryption_required
+    : crossDomain;
+
+  // Populate title
+  const srcName = (srcCell && srcCell.attr('label/text')) || srcId || '?';
+  const tgtName = (tgtCell && tgtCell.attr('label/text')) || tgtId || '?';
+  document.getElementById('lp-link-title').textContent = `${srcName} → ${tgtName}`;
+
+  // Inherited badge
+  const badge = document.getElementById('lp-inherited-badge');
+  if (inheritedNote) {
+    badge.textContent = inheritedNote;
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  document.getElementById('lp-classification').value = effectiveCls;
+  document.getElementById('lp-encryption').checked = !!encRequired;
+  document.getElementById('lp-enc-auto-badge').style.display = crossDomain ? 'inline' : 'none';
+
+  const protocolVal = policy.protocol_allowed || '';
+  const knownProtocols = ['TLS','IPsec','MACsec','HTTPS','SSH','OSPF','BGP','EIGRP','IS-IS'];
+  if (!protocolVal || knownProtocols.includes(protocolVal)) {
+    document.getElementById('lp-protocol').value = protocolVal;
+    document.getElementById('lp-protocol-custom-group').style.display = 'none';
+  } else {
+    document.getElementById('lp-protocol').value = 'custom';
+    document.getElementById('lp-protocol-custom').value = protocolVal;
+    document.getElementById('lp-protocol-custom-group').style.display = 'block';
+  }
+
+  document.getElementById('link-policy-overlay').classList.remove('hidden');
+}
+
+function closeLinkPolicyPanel() {
+  document.getElementById('link-policy-overlay').classList.add('hidden');
+  _policyLinkId = null;
+}
+
+function onLinkPolicyFieldChange(key, val) {
+  const link = _policyLinkId && graph.getCell(_policyLinkId);
+  if (!link || !link.isLink()) return;
+  const lc = link.get('linkConfig') || {};
+  lc.policy = lc.policy || {};
+  lc.policy[key] = val;
+  link.set('linkConfig', lc);
+  markDirty();
+}
+
+function onLinkPolicyClassificationChange(val) {
+  onLinkPolicyFieldChange('classification', val);
+  // Re-evaluate cross-domain encryption auto-flag
+  const link = _policyLinkId && graph.getCell(_policyLinkId);
+  if (!link) return;
+  const srcId = (link.get('source') || {}).id;
+  const tgtId = (link.get('target') || {}).id;
+  const srcCell = srcId && graph.getCell(srcId);
+  const tgtCell = tgtId && graph.getCell(tgtId);
+  const srcCls = (srcCell && (srcCell.get('configData') || {}).policy || {}).classification || '';
+  const tgtCls = (tgtCell && (tgtCell.get('configData') || {}).policy || {}).classification || '';
+  const crossDomain = srcCls && tgtCls && _classRank(srcCls) !== _classRank(tgtCls);
+  const encBox = document.getElementById('lp-encryption');
+  if (crossDomain && !encBox.checked) {
+    encBox.checked = true;
+    onLinkPolicyFieldChange('encryption_required', true);
+  }
+  document.getElementById('lp-enc-auto-badge').style.display = crossDomain ? 'inline' : 'none';
+}
+
+function onLinkPolicyProtocolChange(val) {
+  const customGroup = document.getElementById('lp-protocol-custom-group');
+  if (val === 'custom') {
+    customGroup.style.display = 'block';
+    // Don't save 'custom' as the value — wait for the text input
+    const customInput = document.getElementById('lp-protocol-custom');
+    if (customInput.value) onLinkPolicyFieldChange('protocol_allowed', customInput.value);
+  } else {
+    customGroup.style.display = 'none';
+    onLinkPolicyFieldChange('protocol_allowed', val);
+  }
+}
+
 /* ── Link Capture Context Menu ──────────────────────────────────────────────── */
 let _capLinkId = null;
 let _capLinkLabel = '';
@@ -797,7 +920,7 @@ function showLinkContextMenu(x, y, link) {
   document.getElementById('link-ctx-link-label').textContent = _capLinkLabel;
 
   const vw = window.innerWidth, vh = window.innerHeight;
-  const mw = 224, mh = 120;
+  const mw = 224, mh = 170;
   menu.style.left = (x + mw > vw ? vw - mw - 8 : x) + 'px';
   menu.style.top  = (y + mh > vh ? vh - mh - 8 : y) + 'px';
   menu.style.display = 'block';
