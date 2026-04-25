@@ -1360,8 +1360,44 @@ def seed_test_cases(vendor: str = "") -> list[dict]:
 # Readiness scoring
 # ---------------------------------------------------------------------------
 
-def compute_readiness(session_id: str) -> dict[str, Any]:
-    """Score migration session completeness 0-100 with per-dimension breakdown."""
+def compute_readiness(
+    compatibility: dict | str,
+    validations: dict | None = None,
+) -> dict[str, Any]:
+    """Score migration readiness 0-100 with status and blockers.
+
+    Two calling modes:
+
+    **Dict mode** — *compatibility* is a compat report dict (output of
+    :func:`check_compatibility`) and *validations* is a commit-check result
+    dict (output of :func:`simulate_commit_check`).
+    Returns ``{"score": int, "status": str, "blockers": list[str]}``.
+
+    **String mode** (original) — *compatibility* is a session UUID string.
+    Returns the full per-dimension breakdown from the DB.
+    """
+    if isinstance(compatibility, dict):
+        issues: list[str] = compatibility.get("issues", [])
+        blockers: list[str] = [
+            i for i in issues
+            if any(kw in i.lower() for kw in ("insufficient", "cross-vendor", "ms-mic", "eol"))
+        ]
+        val_errors: list[str] = []
+        if isinstance(validations, dict):
+            val_errors = validations.get("errors", [])
+            blockers.extend(val_errors)
+        non_blocking = len(issues) + len(val_errors) - len(blockers)
+        score = max(0, 100 - len(blockers) * 20 - non_blocking * 5)
+        score = min(100, score)
+        if score >= 80:
+            status = "ready"
+        elif score >= 50:
+            status = "partial"
+        else:
+            status = "blocked"
+        return {"score": score, "status": status, "blockers": blockers}
+
+    session_id: str = compatibility
     with _mc_conn() as conn:
         session = conn.execute(
             "SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)
@@ -1632,6 +1668,76 @@ def generate_erb_package(
         "approval_status": erb_meta.get("approval_status", "draft"),
         "readiness": compute_readiness(session_id),
     }
+
+
+# ---------------------------------------------------------------------------
+# PDF report rendering
+# ---------------------------------------------------------------------------
+
+def render_erb_pdf(erb_package: dict, output_path: str) -> str:
+    """Render an ERB/CCB package dict to a PDF report at *output_path*.
+
+    Attempts to use ``reportlab`` when available; falls back to a structured
+    plain-text report so the function always succeeds.
+
+    Returns *output_path*.
+    """
+    dest = Path(output_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from reportlab.lib.pagesizes import letter  # type: ignore
+        from reportlab.lib.styles import getSampleStyleSheet  # type: ignore
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer  # type: ignore
+
+        doc = SimpleDocTemplate(str(dest), pagesize=letter)
+        styles = getSampleStyleSheet()
+        story: list = [
+            Paragraph("ERB / CCB Migration Package", styles["Title"]),
+            Spacer(1, 12),
+        ]
+
+        _section_order = [
+            "change_summary", "risk_assessment", "impact_analysis",
+            "rollback_plan", "approval_status",
+        ]
+        for key in _section_order:
+            val = erb_package.get(key)
+            if val is None:
+                continue
+            story.append(Paragraph(key.replace("_", " ").title(), styles["Heading1"]))
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    story.append(
+                        Paragraph(f"<b>{k}:</b> {v}", styles["Normal"])
+                    )
+            else:
+                story.append(Paragraph(str(val), styles["Normal"]))
+            story.append(Spacer(1, 8))
+
+        doc.build(story)
+
+    except ImportError:
+        lines = ["ERB/CCB MIGRATION PACKAGE", "=" * 60, ""]
+        _section_order2 = [
+            "change_summary", "risk_assessment", "impact_analysis",
+            "rollback_plan", "approval_status",
+        ]
+        for key in _section_order2:
+            val = erb_package.get(key)
+            if val is None:
+                continue
+            lines.append(key.upper().replace("_", " "))
+            lines.append("-" * 40)
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    lines.append(f"  {k}: {v}")
+            else:
+                lines.append(f"  {val}")
+            lines.append("")
+        dest.write_text("\n".join(lines), encoding="utf-8")
+
+    return str(dest)
 
 
 # ---------------------------------------------------------------------------
