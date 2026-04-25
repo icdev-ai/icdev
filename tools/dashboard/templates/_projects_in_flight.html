@@ -1,209 +1,364 @@
 {# -*- CUI // SP-CTI -*-
-  Reusable partial — Projects in Flight section + Task Board auto-hide.
+  Reusable partial — Projects in Flight + Live Task Activity combined.
 
-  Include underneath any page that renders the kanban board (`#kanban-board`
-  with `.kanban-column[data-status=...]` children). The partial ships the
-  full HTML / CSS / JS needed — the host page only has to:
+  Combines what were previously two separate sections:
+    * Live Activity  — scheduler heartbeat dot + per-task liveness cards
+    * Projects in Flight — project/epic progress bars from args/projects.yaml
 
-      * include this file with `{% include "_projects_in_flight.html" %}`
-      * call `refreshProjectsInFlight()` once on load + on each auto-refresh
-      * call `checkBoardEmptyAndToggle()` after any kanban refresh that
-        updates the `.kanban-column-count` numbers
+  Include on any page that renders the kanban board:
+      {% include "_projects_in_flight.html" %}
 
-  Auto-hide semantics:
-      * Task Board hides when suggested/backlog/scheduled/in_progress
-        columns all read 0. "Done" alone doesn't count.
-      * Each project card hides when its prefix reaches 100% done (or 0%
-        exists). Implemented server-side in /api/projects/progress.
-      * Section hides entirely when zero projects are visible.
-
-  Config: args/projects.yaml. Add a project → it appears here on next
-  load. No code change required. #}
+  Host page must also call:
+      refreshProjectsInFlight()   — on load + each auto-refresh cycle
+      checkBoardEmptyAndToggle()  — after any kanban refresh
+#}
 
 <div id="kanban-board-empty" class="kanban-empty-placeholder" style="display:none;">
     <em>No active tasks on the board. Any in-flight projects appear below.</em>
 </div>
 
 <section id="projects-in-flight" style="margin-top:1.5rem;">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
-        <h2 style="margin:0; font-size:1.15rem; color:var(--text-primary);">Projects in Flight</h2>
-        <span id="projects-triage-summary" style="font-size:0.78rem; color:var(--text-secondary);"></span>
-    </div>
-    <div id="projects-container">
-        <div class="kanban-empty" style="padding:1rem;">Loading projects…</div>
-    </div>
+  {# ── Section header: project title + scheduler heartbeat ── #}
+  <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+    <span id="pif-scheduler-dot" class="pif-dot pif-dot-unknown" title="Scheduler status"></span>
+    <h2 style="margin:0; font-size:1.05rem; color:var(--text-primary); letter-spacing:0.01em;">
+      Projects in Flight
+    </h2>
+    <span id="pif-scheduler-label" style="font-size:0.75rem; color:var(--text-secondary); margin-left:0.15rem;"></span>
+    <span style="margin-left:auto; font-size:0.72rem; color:var(--text-muted);" id="pif-last-refresh"></span>
+  </div>
+
+  {# ── Live task cards — individual in_progress tasks with liveness ── #}
+  <div id="pif-live-tasks" style="margin-bottom:0.75rem; display:none;"></div>
+
+  {# ── Project progress cards ── #}
+  <div id="projects-container">
+    <div class="kanban-empty" style="padding:1rem;">Loading projects…</div>
+  </div>
 </section>
 
 <style>
-  /* Dark-theme-aware, mirrors dashboard CSS variables from
-     tools/dashboard/static/css/style.css */
-  .proj-card { border: 1px solid var(--border-color, #2a2a40);
-               border-radius: 8px; background: var(--bg-card, #16213e);
-               margin-bottom: 0.75rem; overflow: hidden; }
-  .proj-card > summary { padding: 0.75rem 1rem; cursor: pointer; list-style: none;
-                         display: flex; align-items: center; gap: 0.75rem;
-                         background: var(--bg-secondary, #1a1a2e);
-                         border-bottom: 1px solid var(--border-color, #2a2a40); }
-  .proj-card > summary::-webkit-details-marker { display: none; }
-  .proj-card > summary::before { content: "▶"; font-size: 0.75rem;
-                                  color: var(--text-secondary); transition: transform 0.15s; }
-  .proj-card[open] > summary::before { transform: rotate(90deg); }
-  .proj-title { font-weight: 600; color: var(--text-primary, #e0e0e0);
-                flex: 1; font-size: 1rem; }
-  .proj-summary-stats { font-family: monospace; font-size: 0.85rem;
-                        color: var(--text-secondary, #a0a0b8); }
-  .proj-body { padding: 0.75rem 1rem; }
-  .proj-desc { color: var(--text-secondary, #a0a0b8); margin: 0 0 0.5rem;
-               font-size: 0.88rem; }
-  .proj-briefs { margin: 0 0 1rem; font-size: 0.85rem; }
-  .proj-briefs a { color: var(--accent-blue-light, #6db3f8); margin-right: 1rem;
-                   text-decoration: none; }
-  .proj-briefs a:hover { text-decoration: underline; }
+/* ── Scheduler dot ── */
+.pif-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0; display: inline-block;
+}
+.pif-dot-active  { background: #22c55e;
+                   animation: pif-pulse 1.6s ease-in-out infinite;
+                   box-shadow: 0 0 0 0 rgba(34,197,94,0.7); }
+.pif-dot-warning { background: #f59e0b; }
+.pif-dot-stale   { background: #ef4444; }
+.pif-dot-unknown { background: #6b7280; }
 
-  .proj-epic { display: grid; grid-template-columns: 32% 1fr 26%; gap: 0.75rem;
-               padding: 0.5rem 0.75rem; border: 1px solid var(--border-color, #2a2a40);
-               border-radius: 6px; margin-bottom: 0.4rem;
-               background: var(--bg-primary, #0f0f1a); align-items: center; }
-  .proj-epic-key { font-weight: 600; color: var(--text-primary); font-size: 0.88rem; }
-  .proj-epic-key .pri { display: inline-block; font-size: 0.68rem; padding: 0.1rem 0.4rem;
-                        border-radius: 3px; margin-left: 0.4rem; font-weight: 600; }
-  .pri-critical { background: rgba(220,53,69,0.2); color: #ff6b7a;
-                  border: 1px solid rgba(220,53,69,0.5); }
-  .pri-high     { background: rgba(255,152,0,0.2); color: #ffb74d;
-                  border: 1px solid rgba(255,152,0,0.5); }
-  .pri-medium   { background: rgba(33,150,243,0.2); color: #6db3f8;
-                  border: 1px solid rgba(33,150,243,0.5); }
-  .pri-low      { background: rgba(120,144,156,0.2); color: #b0bec5;
-                  border: 1px solid rgba(120,144,156,0.4); }
+@keyframes pif-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.7); }
+  70%  { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
 
-  .proj-bar { background: var(--bg-input, #0d1b2a); border-radius: 4px; height: 14px;
-              overflow: hidden; position: relative;
-              border: 1px solid var(--border-color, #2a2a40); }
-  .proj-bar-fill { background: linear-gradient(90deg, #4caf50, #66bb6a);
-                   height: 100%; transition: width 0.3s; }
-  .proj-bar-text { position: absolute; top: 0; left: 0; right: 0; text-align: center;
-                   line-height: 14px; font-size: 0.72rem; color: var(--text-primary);
-                   font-weight: 600; text-shadow: 0 0 3px rgba(0,0,0,0.7); }
-  .proj-counts { font-family: monospace; font-size: 0.75rem;
-                 color: var(--text-secondary); text-align: right; }
-  .proj-badge { display: inline-block; padding: 0.08rem 0.3rem; border-radius: 3px;
-                margin-left: 0.2rem; font-weight: 600; font-size: 0.72rem; }
-  .badge-progress  { background: rgba(255,152,0,0.25); color: #ffb74d; }
-  .badge-backlog   { background: rgba(120,144,156,0.25); color: #b0bec5; }
-  .badge-failed    { background: rgba(244,67,54,0.25); color: #ff6b7a; }
+/* ── Live task cards ── */
+.pif-task-card {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 7px;
+  border: 1px solid var(--border-color, #2a2a40);
+  background: var(--bg-card, #16213e);
+  margin-bottom: 0.4rem;
+}
+.pif-task-card:last-child { margin-bottom: 0; }
+.pif-task-card-active  { border-left: 3px solid #22c55e; }
+.pif-task-card-quiet   { border-left: 3px solid #f59e0b; }
+.pif-task-card-suspect { border-left: 3px solid #ef4444; }
+.pif-task-card-new     { border-left: 3px solid #6b7280; }
 
-  .kanban-empty-placeholder { padding: 2rem; text-align: center;
-                              color: var(--text-muted, #6c6c80);
-                              border: 1px dashed var(--border-color, #2a2a40);
-                              border-radius: 8px;
-                              background: var(--bg-card, #16213e); }
+.pif-task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pif-task-dot-active  { background: #22c55e;
+                        animation: pif-pulse 1.6s ease-in-out infinite; }
+.pif-task-dot-quiet   { background: #f59e0b; }
+.pif-task-dot-suspect { background: #ef4444; }
+.pif-task-dot-new     { background: #6b7280; }
+
+.pif-task-title {
+  font-size: 0.86rem; font-weight: 600; color: var(--text-primary, #e0e0e0);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pif-task-meta {
+  font-size: 0.73rem; color: var(--text-secondary, #a0a0b8);
+  margin-top: 0.12rem; display: flex; gap: 0.45rem; flex-wrap: wrap;
+  align-items: center;
+}
+.pif-tag { display: inline-block; padding: 0.07rem 0.3rem; border-radius: 3px;
+           font-size: 0.67rem; font-weight: 600; }
+.pif-tag-critical { background:rgba(220,53,69,0.18); color:#ff6b7a; border:1px solid rgba(220,53,69,0.4); }
+.pif-tag-high     { background:rgba(255,152,0,0.18); color:#ffb74d; border:1px solid rgba(255,152,0,0.4); }
+.pif-tag-medium   { background:rgba(33,150,243,0.18); color:#6db3f8; border:1px solid rgba(33,150,243,0.4); }
+.pif-tag-low      { background:rgba(120,144,156,0.18); color:#b0bec5; border:1px solid rgba(120,144,156,0.35); }
+.pif-tag-warn     { background:rgba(239,68,68,0.15); color:#fca5a5; border:1px solid rgba(239,68,68,0.35); }
+
+.pif-elapsed { font-family:monospace; font-size:0.78rem;
+               color:var(--text-secondary); white-space:nowrap; text-align:right; }
+
+.pif-zombie-banner {
+  padding:0.45rem 0.75rem; border-radius:6px; font-size:0.78rem;
+  background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3);
+  color:#fca5a5; margin-bottom:0.5rem;
+}
+
+/* ── Project progress cards (unchanged) ── */
+.proj-card { border: 1px solid var(--border-color, #2a2a40);
+             border-radius: 8px; background: var(--bg-card, #16213e);
+             margin-bottom: 0.75rem; overflow: hidden; }
+.proj-card > summary { padding: 0.75rem 1rem; cursor: pointer; list-style: none;
+                       display: flex; align-items: center; gap: 0.75rem;
+                       background: var(--bg-secondary, #1a1a2e);
+                       border-bottom: 1px solid var(--border-color, #2a2a40); }
+.proj-card > summary::-webkit-details-marker { display: none; }
+.proj-card > summary::before { content: "\25B6"; font-size: 0.75rem;
+                                color: var(--text-secondary); transition: transform 0.15s; }
+.proj-card[open] > summary::before { transform: rotate(90deg); }
+.proj-title { font-weight: 600; color: var(--text-primary, #e0e0e0);
+              flex: 1; font-size: 1rem; }
+.proj-summary-stats { font-family: monospace; font-size: 0.85rem;
+                      color: var(--text-secondary, #a0a0b8); }
+.proj-body { padding: 0.75rem 1rem; }
+.proj-desc { color: var(--text-secondary, #a0a0b8); margin: 0 0 0.5rem; font-size: 0.88rem; }
+.proj-briefs { margin: 0 0 1rem; font-size: 0.85rem; }
+.proj-briefs a { color: var(--accent-blue-light, #6db3f8); margin-right: 1rem; text-decoration: none; }
+.proj-briefs a:hover { text-decoration: underline; }
+.proj-epic { display: grid; grid-template-columns: 32% 1fr 26%; gap: 0.75rem;
+             padding: 0.5rem 0.75rem; border: 1px solid var(--border-color, #2a2a40);
+             border-radius: 6px; margin-bottom: 0.4rem;
+             background: var(--bg-primary, #0f0f1a); align-items: center; }
+.proj-epic-key { font-weight: 600; color: var(--text-primary); font-size: 0.88rem; }
+.proj-epic-key .pri { display: inline-block; font-size: 0.68rem; padding: 0.1rem 0.4rem;
+                      border-radius: 3px; margin-left: 0.4rem; font-weight: 600; }
+.pri-critical { background:rgba(220,53,69,0.2); color:#ff6b7a; border:1px solid rgba(220,53,69,0.5); }
+.pri-high     { background:rgba(255,152,0,0.2); color:#ffb74d; border:1px solid rgba(255,152,0,0.5); }
+.pri-medium   { background:rgba(33,150,243,0.2); color:#6db3f8; border:1px solid rgba(33,150,243,0.5); }
+.pri-low      { background:rgba(120,144,156,0.2); color:#b0bec5; border:1px solid rgba(120,144,156,0.4); }
+.proj-bar { background:var(--bg-input,#0d1b2a); border-radius:4px; height:14px;
+            overflow:hidden; position:relative; border:1px solid var(--border-color,#2a2a40); }
+.proj-bar-fill { background:linear-gradient(90deg,#4caf50,#66bb6a); height:100%; transition:width 0.3s; }
+.proj-bar-text { position:absolute; top:0; left:0; right:0; text-align:center;
+                 line-height:14px; font-size:0.72rem; color:var(--text-primary);
+                 font-weight:600; text-shadow:0 0 3px rgba(0,0,0,0.7); }
+.proj-counts { font-family:monospace; font-size:0.75rem; color:var(--text-secondary); text-align:right; }
+.proj-badge { display:inline-block; padding:0.08rem 0.3rem; border-radius:3px;
+              margin-left:0.2rem; font-weight:600; font-size:0.72rem; }
+.badge-progress { background:rgba(255,152,0,0.25); color:#ffb74d; }
+.badge-backlog  { background:rgba(120,144,156,0.25); color:#b0bec5; }
+.badge-failed   { background:rgba(244,67,54,0.25); color:#ff6b7a; }
+.kanban-empty-placeholder { padding:2rem; text-align:center;
+                            color:var(--text-muted,#6c6c80);
+                            border:1px dashed var(--border-color,#2a2a40);
+                            border-radius:8px; background:var(--bg-card,#16213e); }
 </style>
 
 <script>
-// All identifiers under window.ICDEV_PIF to avoid colliding with host-page
-// globals. Thin wrappers preserve the short names for host-page init code.
-// Double-include guard — if this partial is rendered twice on the same
-// page (e.g. by a layout that includes it both in a header and footer),
-// skip the IIFE on the second pass so we don't redefine the globals or
-// re-register listeners.
 (function () {
   if (window.ICDEV_PIF && window.ICDEV_PIF._loaded) return;
   if (!window.ICDEV_PIF) window.ICDEV_PIF = {};
   window.ICDEV_PIF._loaded = true;
 
-  function escapeHTML(s) {
+  var TASK_TIMEOUT_SECS = 900;
+
+  function esc(s) {
     return String(s || '').replace(/[&<>"']/g, function (c) {
-      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
     });
   }
 
+  function fmt(secs) {
+    if (secs == null) return '?';
+    if (secs < 60)   return secs + 's';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+    return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+  }
+
+  // Per-task liveness from agent log file age.
+  function liveness(logAge) {
+    if (logAge == null)            return 'new';
+    if (logAge > TASK_TIMEOUT_SECS) return 'suspect';
+    if (logAge > 300)              return 'quiet';
+    return 'active';
+  }
+
+  // ── Live task cards ──────────────────────────────────────────────
+  function renderLiveTasks(tasks, schSecs) {
+    var container = document.getElementById('pif-live-tasks');
+    var schDot    = document.getElementById('pif-scheduler-dot');
+    var schLabel  = document.getElementById('pif-scheduler-label');
+    var lastRef   = document.getElementById('pif-last-refresh');
+    if (!container) return;
+
+    // Scheduler dot
+    schDot.className = 'pif-dot';
+    if (schSecs == null) {
+      schDot.classList.add('pif-dot-unknown');
+      schLabel.textContent = 'scheduler not started';
+    } else if (schSecs > 600) {
+      schDot.classList.add('pif-dot-stale');
+      schLabel.textContent = 'scheduler silent ' + fmt(schSecs) + ' — possible zombies';
+    } else if (schSecs > 180) {
+      schDot.classList.add('pif-dot-warning');
+      schLabel.textContent = 'scheduler quiet ' + fmt(schSecs);
+    } else {
+      schDot.classList.add('pif-dot-active');
+      schLabel.textContent = 'scheduler active';
+    }
+
+    if (lastRef) lastRef.textContent = 'updated ' + new Date().toLocaleTimeString();
+
+    if (!tasks || tasks.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = '';
+
+    var html = '';
+
+    // Scheduler-level zombie banner
+    if (schSecs != null && schSecs > 600) {
+      html += '<div class="pif-zombie-banner">&#9888; <strong>Scheduler silent ' + fmt(schSecs)
+        + '</strong> &mdash; ' + tasks.length + ' task(s) in_progress with no heartbeat.'
+        + ' Check <code>.tmp/kanban_scheduler.log</code>.</div>';
+    }
+
+    // Per-task zombie banner
+    var suspects = tasks.filter(function (t) { return liveness(t.task_log_age_secs) === 'suspect'; });
+    if (suspects.length > 0 && (schSecs == null || schSecs <= 600)) {
+      html += '<div class="pif-zombie-banner">&#9888; <strong>'
+        + suspects.length + ' possible zombie' + (suspects.length > 1 ? 's' : '') + '</strong>: '
+        + suspects.map(function (t) { return esc(t.id); }).join(', ')
+        + ' &mdash; no agent output in >' + TASK_TIMEOUT_SECS + 's. Stale-reaper will recycle.</div>';
+    }
+
+    var nowMs = Date.now();
+    tasks.forEach(function (t) {
+      var raw = t.updated_at || t.created_at;
+      var elapsed = raw ? Math.floor((nowMs - new Date(raw).getTime()) / 1000) : null;
+      var liv = liveness(t.task_log_age_secs);
+      var pri = (t.priority || 'medium').toLowerCase();
+
+      var elStyle = elapsed > TASK_TIMEOUT_SECS ? 'color:#ef4444;'
+                  : elapsed > 900              ? 'color:#f59e0b;' : '';
+
+      var outputChip = '';
+      if (t.task_log_age_secs != null) {
+        var chipColor = liv === 'suspect' ? 'color:#fca5a5;font-weight:600;'
+                      : liv === 'quiet'   ? 'color:#fcd34d;' : 'color:#86efac;';
+        outputChip = '<span style="' + chipColor + '">'
+          + (liv === 'suspect'
+              ? '&#9888; zombie? last output ' + fmt(t.task_log_age_secs) + ' ago'
+              : 'output ' + fmt(t.task_log_age_secs) + ' ago')
+          + '</span>';
+      } else {
+        outputChip = '<span style="color:var(--text-muted);">starting up&hellip;</span>';
+      }
+
+      html += '<div class="pif-task-card pif-task-card-' + liv + '">'
+        + '<span class="pif-task-dot pif-task-dot-' + liv + '" title="' + esc(liv) + '"></span>'
+        + '<div style="min-width:0;">'
+        + '  <div class="pif-task-title">'
+        + '    <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-right:0.3rem;">' + esc(t.id) + '</span>'
+        + esc(t.title)
+        + '  </div>'
+        + '  <div class="pif-task-meta">'
+        + '    <span class="pif-tag pif-tag-' + esc(pri) + '">' + esc(pri) + '</span>'
+        + '    <span>' + esc(t.task_type || 'task') + '</span>'
+        + '    ' + outputChip
+        + (t.failure_count > 0 ? '<span class="pif-tag pif-tag-warn">&#9888; ' + t.failure_count + ' prior failure' + (t.failure_count > 1 ? 's' : '') + '</span>' : '')
+        + '  </div>'
+        + '</div>'
+        + '<div class="pif-elapsed" style="' + elStyle + '">' + fmt(elapsed) + '</div>'
+        + '</div>';
+    });
+
+    container.innerHTML = html;
+  }
+
+  // ── Project progress cards (unchanged logic) ─────────────────────
   function projectCardHTML(p) {
     var openAttr = p.default_open ? ' open' : '';
     var anchor = 'project-' + (p.key || '');
     var brief = (p.briefs || []).map(function (b) {
-      return '<a href="' + escapeHTML(b.path) + '">' + escapeHTML(b.label) + '</a>';
+      return '<a href="' + esc(b.path) + '">' + esc(b.label) + '</a>';
     }).join('');
-    var desc = p.description ? '<p class="proj-desc">' + escapeHTML(p.description) + '</p>' : '';
+    var desc = p.description ? '<p class="proj-desc">' + esc(p.description) + '</p>' : '';
 
     var epics = (p.epics || []).map(function (e) {
       var pct = Math.max(0, Math.min(100, e.pct || 0));
-      var pri = escapeHTML(e.priority || 'medium');
+      var pri = esc(e.priority || 'medium');
       var badges = [];
       if (e.in_progress) badges.push('<span class="proj-badge badge-progress">' + e.in_progress + ' in flight</span>');
       if (e.scheduled)   badges.push('<span class="proj-badge badge-progress">' + e.scheduled + ' scheduled</span>');
       if (e.backlog)     badges.push('<span class="proj-badge badge-backlog">' + e.backlog + ' queued</span>');
       if (e.failed)      badges.push('<span class="proj-badge badge-failed">' + e.failed + ' failed</span>');
-      return ''
-        + '<div class="proj-epic">'
-        + '  <div class="proj-epic-key">' + escapeHTML(e.title || e.key)
-        + '    <span class="pri pri-' + pri + '">' + pri + '</span>'
-        + '  </div>'
-        + '  <div class="proj-bar">'
-        + '    <div class="proj-bar-fill" style="width:' + pct + '%"></div>'
-        + '    <div class="proj-bar-text">' + (e.done || 0) + ' / ' + (e.total || 0) + ' done · ' + pct + '%</div>'
-        + '  </div>'
-        + '  <div class="proj-counts">' + badges.join('') + '</div>'
+      return '<div class="proj-epic">'
+        + '<div class="proj-epic-key">' + esc(e.title || e.key)
+        + '<span class="pri pri-' + pri + '">' + pri + '</span></div>'
+        + '<div class="proj-bar"><div class="proj-bar-fill" style="width:' + pct + '%"></div>'
+        + '<div class="proj-bar-text">' + (e.done || 0) + ' / ' + (e.total || 0) + ' done &middot; ' + pct + '%</div></div>'
+        + '<div class="proj-counts">' + badges.join('') + '</div>'
         + '</div>';
     }).join('');
 
     var overallPct = Math.max(0, Math.min(100, p.overall_pct || 0));
-    return ''
-      + '<details class="proj-card" id="' + escapeHTML(anchor) + '"' + openAttr + '>'
-      + '  <summary>'
-      + '    <div class="proj-title">' + escapeHTML(p.name || p.key) + '</div>'
-      + '    <div class="proj-summary-stats">' + (p.done_tasks || 0) + ' / ' + (p.total_tasks || 0) + ' · ' + overallPct + '%</div>'
-      + '  </summary>'
-      + '  <div class="proj-body">'
-      +      desc
-      + '    <div class="proj-briefs">' + brief + '</div>'
-      +      epics
-      + '  </div>'
+    return '<details class="proj-card" id="' + esc(anchor) + '"' + openAttr + '>'
+      + '<summary>'
+      + '<div class="proj-title">' + esc(p.name || p.key) + '</div>'
+      + '<div class="proj-summary-stats">' + (p.done_tasks || 0) + ' / ' + (p.total_tasks || 0) + ' &middot; ' + overallPct + '%</div>'
+      + '</summary>'
+      + '<div class="proj-body">' + desc + '<div class="proj-briefs">' + brief + '</div>' + epics + '</div>'
       + '</details>';
   }
 
-  function renderProjectsInFlight(payload) {
+  function renderProjectCards(payload) {
     var container = document.getElementById('projects-container');
-    var section = document.getElementById('projects-in-flight');
-    var summaryEl = document.getElementById('projects-triage-summary');
+    var section   = document.getElementById('projects-in-flight');
     if (!container) return;
 
     var projects = (payload && payload.projects) || [];
-    var triage = (payload && payload.triage && payload.triage.summary) || {};
-
-    if (summaryEl) {
-      if ((triage.total || 0) > 0) {
-        summaryEl.textContent = 'failure_triage: '
-          + (triage.applied || 0) + ' applied / '
-          + (triage.verification_failed || 0) + ' verify-failed / '
-          + (triage.total || 0) + ' audited';
-      } else {
-        summaryEl.textContent = '';
-      }
-    }
-
     if (projects.length === 0) {
-      if (section) section.style.display = 'none';
+      container.innerHTML = '';
       return;
     }
     if (section) section.style.display = '';
-
     container.innerHTML = projects.map(projectCardHTML).join('');
   }
 
+  // ── Combined refresh: live-check + projects/progress in parallel ──
   function refreshProjectsInFlight() {
-    fetch('/api/projects/progress')
-      .then(function (r) { return r.json(); })
-      .then(renderProjectsInFlight)
-      .catch(function (err) {
-        var container = document.getElementById('projects-container');
-        if (container) {
-          container.innerHTML = '<div class="kanban-empty" style="padding:0.5rem;">'
-            + 'Failed to load projects: ' + (err && err.message || err) + '</div>';
-        }
-      });
+    Promise.all([
+      fetch('/api/live-check').then(function (r) { return r.json(); }),
+      fetch('/api/projects/progress').then(function (r) { return r.json(); }),
+    ]).then(function (results) {
+      var liveData    = results[0];
+      var projectData = results[1];
+
+      renderLiveTasks(
+        (liveData && liveData.tasks) || [],
+        (liveData && liveData.scheduler_last_seen_secs) != null
+          ? liveData.scheduler_last_seen_secs : null
+      );
+      renderProjectCards(projectData);
+
+      // Show section if either live tasks or projects are present
+      var section = document.getElementById('projects-in-flight');
+      var hasLive = (liveData && liveData.tasks && liveData.tasks.length > 0);
+      var hasProj = (projectData && projectData.projects && projectData.projects.length > 0);
+      if (section) section.style.display = (hasLive || hasProj) ? '' : 'none';
+    }).catch(function () {
+      // On error, hide live tasks but leave project cards as-is
+      var c = document.getElementById('pif-live-tasks');
+      if (c) c.style.display = 'none';
+    });
   }
 
-  // Task Board auto-hide. Called by host page after refreshKanbanTasks.
+  // Task Board auto-hide (unchanged)
   function checkBoardEmptyAndToggle() {
     var active = ['suggested', 'backlog', 'scheduled', 'in_progress'];
     var total = 0;
@@ -211,7 +366,7 @@
       var el = document.querySelector('.kanban-column[data-status="' + s + '"] .kanban-column-count');
       if (el) total += parseInt(el.textContent || '0', 10) || 0;
     });
-    var board = document.getElementById('kanban-board');
+    var board       = document.getElementById('kanban-board');
     var placeholder = document.getElementById('kanban-board-empty');
     if (!board) return;
     if (total === 0) {
@@ -223,14 +378,14 @@
     }
   }
 
-  // Expose at module + top-level scope so host pages with their own
-  // refresh loops can wire in with the short names they expect.
-  window.ICDEV_PIF.refresh = refreshProjectsInFlight;
-  window.ICDEV_PIF.render = renderProjectsInFlight;
+  window.ICDEV_PIF.refresh        = refreshProjectsInFlight;
+  window.ICDEV_PIF.render         = renderProjectCards;
   window.ICDEV_PIF.checkBoardEmpty = checkBoardEmptyAndToggle;
 
-  window.refreshProjectsInFlight = refreshProjectsInFlight;
-  window.renderProjectsInFlight = renderProjectsInFlight;
+  window.refreshProjectsInFlight  = refreshProjectsInFlight;
+  window.renderProjectsInFlight   = renderProjectCards;
   window.checkBoardEmptyAndToggle = checkBoardEmptyAndToggle;
+  // Backward-compat alias for any page that called refreshLiveActivity()
+  window.refreshLiveActivity      = refreshProjectsInFlight;
 })();
 </script>
