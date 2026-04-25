@@ -2978,6 +2978,109 @@ async function deriveLogicalTopologyUI() {
   }
 }
 
+// ── ndc-pl-03: To Logical toolbar button ─────────────────────────────────────
+
+/** Generic canvas toast. type: 'success' | 'warning' | 'error' */
+function ncShowToast(msg, type) {
+  const id = 'nc-generic-toast';
+  const old = document.getElementById(id);
+  if (old) old.remove();
+  const color = type === 'error' ? '#e74c3c' : type === 'warning' ? '#f39c12' : '#27ae60';
+  const icon  = type === 'error' ? '✕' : '✓';
+  const t = document.createElement('div');
+  t.id = id;
+  t.style.cssText = [
+    'position:fixed', 'bottom:24px', 'right:24px', 'z-index:9999',
+    'background:#0f1e35', 'border:1px solid ' + color,
+    'border-radius:8px', 'padding:12px 18px', 'min-width:260px',
+    'box-shadow:0 4px 16px rgba(0,0,0,0.5)',
+    'font-family:sans-serif', 'font-size:13px', 'color:#eaeaea',
+  ].join(';');
+  t.innerHTML = '<span style="color:' + color + ';margin-right:8px;">' + icon + '</span>' + msg +
+    '<button onclick="this.parentElement.remove()" style="position:absolute;top:6px;right:8px;background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">\xd7</button>';
+  document.body.appendChild(t);
+  setTimeout(() => { if (t.parentElement) t.remove(); }, 6000);
+}
+
+/** Enable/disable the To Logical button based on node count (need ≥ 3). */
+function _updateToLogicalBtnState() {
+  const btn = document.getElementById('tb-to-logical-btn');
+  if (!btn) return;
+  const n = graph.getElements().length;
+  btn.disabled = n < 3;
+  btn.title = n < 3
+    ? 'To Logical — need at least 3 nodes on the canvas'
+    : 'To Logical — collapse physical nodes to logical overlays (VRF/VLAN/Zone) and open as new topology';
+}
+
+/** Full UI handler for the To Logical toolbar button. */
+async function toLogicalUI() {
+  if (!currentTopoId || currentTopoId === 'new') {
+    ncShowToast('Save the topology first before deriving the logical view.', 'warning');
+    return;
+  }
+  const btn = document.getElementById('tb-to-logical-btn');
+  const origHTML = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#x23f3; Deriving&hellip;'; }
+  try {
+    // 1. Build and POST the logical topology
+    const newId = await deriveLogicalTopology();
+
+    // 2. Patch source topology: add phase link → logical view
+    const srcResp = await fetch(NC_BASE + '/api/topologies/' + currentTopoId);
+    if (srcResp.ok) {
+      const srcData   = await srcResp.json();
+      const srcGj     = srcData.graph_json || { nodes: [], edges: [] };
+      const srcPhases = Array.isArray(srcGj._phases) ? srcGj._phases : [];
+      if (!srcPhases.some(p => p.topology_id === newId)) {
+        const nextOrder = srcPhases.reduce((m, p) => Math.max(m, p.phase_order || 0), 0) + 1;
+        srcPhases.push({ topology_id: newId, label: 'logical', phase_order: nextOrder, active: false });
+      }
+      srcGj._phases = srcPhases;
+      await fetch(NC_BASE + '/api/topologies/' + currentTopoId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ graph_json: srcGj }),
+      });
+      // Reflect phase link locally so the strip updates immediately
+      _phases = srcPhases.map(p =>
+        p.topology_id === currentTopoId ? { ...p, active: true } : { ...p, active: false }
+      );
+      renderPhaseStrip();
+    }
+
+    // 3. Patch logical topology: add bidirectional phase links (as-is → logical/active)
+    const logResp = await fetch(NC_BASE + '/api/topologies/' + newId);
+    if (logResp.ok) {
+      const logData = await logResp.json();
+      const logGj   = logData.graph_json || { nodes: [], edges: [] };
+      logGj._phases = [
+        { topology_id: currentTopoId, label: 'as-is',  phase_order: 1, active: false },
+        { topology_id: newId,         label: 'logical', phase_order: 2, active: true  },
+      ];
+      await fetch(NC_BASE + '/api/topologies/' + newId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ graph_json: logGj }),
+      });
+    }
+
+    // 4. Open in new tab
+    window.open(NC_BASE + '/canvas/' + encodeURIComponent(newId), '_blank');
+
+    // 5. Toast confirmation
+    ncShowToast('Logical view created — opened in new tab', 'success');
+    setStatus('Logical topology created → ' + newId);
+  } catch (err) {
+    ncShowToast('To Logical failed: ' + err.message, 'error');
+    setStatus('To Logical failed: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = graph.getElements().length < 3; btn.innerHTML = origHTML; }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Infer classification of an existing canvas node from its configData and label
 function _nodeClassification(cell) {
   const cfg = cell.get ? cell.get('configData') || {} : (cell.config || {});
@@ -4215,6 +4318,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ndc-ai-04: Wire PatternAdvisor to all graph mutation events
   _initPatternAdvisor();
+
+  // ndc-pl-03: Sync To Logical button disabled state with node count
+  graph.on('add',    _updateToLogicalBtnState);
+  graph.on('remove', _updateToLogicalBtnState);
+  _updateToLogicalBtnState();
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
