@@ -214,69 +214,6 @@ const _TYPE_ALIASES = {
   'unknown': 'server',
 };
 
-// Physical device type → logical overlay type it collapses into during logical view
-const PHYS_TO_LOGICAL = {
-  'router':            'vrf',
-  'switch-l3':         'vrf',
-  'switch-l2':         'vlan',
-  'firewall':          'security-zone',
-  'server':            'annotation',
-  'load-balancer':     'subnet',
-  'wap':               'vlan',
-  'wlc':               'vlan',
-  'sdwan-edge':        'vrf',
-  'route-reflector':   'vrf',
-  'mpls-pe':           'mpls-lsp',
-  'mpls-p':            'mpls-lsp',
-  'cisco-router':      'vrf',
-  'cisco-switch-l2':   'vlan',
-  'cisco-switch-l3':   'vrf',
-  'cisco-firewall':    'security-zone',
-  'cisco-lb':          'subnet',
-  'juniper-ptx10003':  'vrf',
-  'juniper-mx304':     'vrf',
-};
-
-// Physical media / connector types that are dropped entirely in logical view
-const LOGICAL_DROP_TYPES = new Set([
-  'media-ge', 'media-10ge', 'media-25ge', 'media-40ge', 'media-100ge', 'media-400ge',
-  'media-fiber', 'media-optical', 'media-converter',
-  'sfp', 'sfp-plus', 'qsfp', 'qsfp-dd',
-  'patch-panel', 'patch-panel-fiber',
-  'odf',
-]);
-
-// Rules governing how adjacent physical nodes collapse in logical view
-// Each rule: { types, sameAttr, action, intoType, label }
-//   types    — set of physical node types the rule applies to
-//   sameAttr — node data attribute that must match across adjacent nodes for merge to fire
-//   action   — 'merge' collapses matched group into a single logical node
-//   intoType — the logical NODE_STYLES type the merged group becomes
-const LOGICAL_MERGE_RULES = [
-  {
-    types:    new Set(['switch-l2', 'cisco-switch-l2', 'wlc']),
-    sameAttr: 'vlan',
-    action:   'merge',
-    intoType: 'vlan',
-    label:    'Adjacent same-VLAN L2 switches merge into a VLAN node',
-  },
-  {
-    types:    new Set(['router', 'switch-l3', 'cisco-router', 'cisco-switch-l3',
-                       'juniper-ptx10003', 'juniper-mx304', 'sdwan-edge', 'route-reflector']),
-    sameAttr: 'vrf',
-    action:   'merge',
-    intoType: 'vrf',
-    label:    'Adjacent same-VRF routing devices merge into a VRF node',
-  },
-  {
-    types:    new Set(['firewall', 'cisco-firewall']),
-    sameAttr: 'security_zone',
-    action:   'merge',
-    intoType: 'security-zone',
-    label:    'Adjacent same-zone firewalls merge into a Security Zone node',
-  },
-];
-
 function getStyle(type) {
   return NODE_STYLES[type] || NODE_STYLES[_TYPE_ALIASES[type]] || { fill: '#1a1a2e', stroke: '#7a8cb0', label: type, symbol: '?' };
 }
@@ -2894,6 +2831,152 @@ const LOGICAL_MERGE_RULES = [
     label: (a) => `VRF ${a.vrfName}`,
   },
 ];
+
+/* ── Derive Logical Topology (ndc-pl-02) ─────────────────────────────────── */
+
+// Generate a logical graph JSON from the current physical canvas, post it as a
+// new topology, and return the new topology ID.
+//
+// Algorithm:
+//   1. Snapshot current graph via graphToJSON()
+//   2. Drop nodes in LOGICAL_DROP_TYPES; map surviving node types via PHYS_TO_LOGICAL
+//   3. Apply LOGICAL_MERGE_RULES: union-find over adjacent node pairs that satisfy
+//      a rule's match() — merged groups collapse to one logical node (averaged pos)
+//   4. Rebuild edges between surviving logical nodes; drop self-loops and duplicates
+//   5. Attach _meta.derivedFrom = currentTopoId
+//   6. POST to /api/topologies → return new topology ID
+async function deriveLogicalTopology() {
+  const physGraph = graphToJSON();
+  const physNodes = physGraph.nodes || [];
+  const physEdges = physGraph.edges || [];
+
+  // Step 1 — filter and map nodes
+  const surviving = [];
+  physNodes.forEach(n => {
+    if (LOGICAL_DROP_TYPES.has(n.type)) return;
+    const cfg = n.config || {};
+    surviving.push({
+      id:       n.id,
+      label:    n.label,
+      type:     PHYS_TO_LOGICAL[n.type] || n.type,
+      nodeType: n.type,   // original physical type — used by merge rule match()
+      vlanId:   cfg.vlan_id  ?? cfg.vlanId  ?? null,
+      vrfName:  cfg.vrf_name ?? cfg.vrfName ?? null,
+      x: n.x,
+      y: n.y,
+      config: cfg,
+    });
+  });
+
+  const survivingIds = new Set(surviving.map(n => n.id));
+  const nodeById = Object.fromEntries(surviving.map(n => [n.id, n]));
+
+  // Step 2 — union-find for merge groups
+  const parent = Object.fromEntries(surviving.map(n => [n.id, n.id]));
+  function find(x) {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  }
+  function union(a, b) { parent[find(a)] = find(b); }
+
+  physEdges.forEach(e => {
+    if (!survivingIds.has(e.source) || !survivingIds.has(e.target)) return;
+    const a = nodeById[e.source];
+    const b = nodeById[e.target];
+    LOGICAL_MERGE_RULES.forEach(rule => {
+      if (rule.match(a, b)) union(a.id, b.id);
+    });
+  });
+
+  // Step 3 — build one logical node per union group
+  const groups = {};
+  surviving.forEach(n => {
+    const rep = find(n.id);
+    if (!groups[rep]) groups[rep] = [];
+    groups[rep].push(n);
+  });
+
+  const mergedIdMap = {};  // physId → representative logical node id
+  const logicalNodes = [];
+
+  Object.entries(groups).forEach(([rep, members]) => {
+    const repr = members[0];
+    let nodeType = repr.type;
+    let label    = repr.label;
+
+    if (members.length > 1) {
+      for (const rule of LOGICAL_MERGE_RULES) {
+        if (members.length >= 2 && rule.match(repr, members[1])) {
+          nodeType = rule.into;
+          label    = rule.label(repr);
+          break;
+        }
+      }
+    }
+
+    const avgX = members.reduce((s, n) => s + n.x, 0) / members.length;
+    const avgY = members.reduce((s, n) => s + n.y, 0) / members.length;
+
+    logicalNodes.push({ id: rep, label, type: nodeType, x: avgX, y: avgY, config: repr.config });
+    members.forEach(n => { mergedIdMap[n.id] = rep; });
+  });
+
+  // Step 4 — rebuild edges (deduplicated, no self-loops)
+  const seenEdges = new Set();
+  const logicalEdges = [];
+  physEdges.forEach(e => {
+    const src = mergedIdMap[e.source];
+    const tgt = mergedIdMap[e.target];
+    if (!src || !tgt || src === tgt) return;
+    const key = [src, tgt].sort().join('::');
+    if (seenEdges.has(key)) return;
+    seenEdges.add(key);
+    logicalEdges.push({ id: e.id + '-log', source: src, target: tgt, label: e.label || '', protocol: e.protocol || '' });
+  });
+
+  // Step 5 — assemble derived graph with _meta
+  const derivedGraph = {
+    nodes: logicalNodes,
+    edges: logicalEdges,
+    _meta: {
+      derivedFrom:  currentTopoId,
+      derivedAt:    new Date().toISOString(),
+      type:         'logical',
+      physNodeCount: physNodes.length,
+      logNodeCount:  logicalNodes.length,
+    },
+  };
+
+  // Step 6 — POST to /api/topologies
+  const srcName = document.getElementById('topo-name-display')?.textContent?.trim() || 'Topology';
+  const r = await fetch(NC_BASE + '/api/topologies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: srcName + ' — Logical View', graph_json: derivedGraph }),
+  });
+  if (!r.ok) throw new Error('deriveLogicalTopology: POST failed (' + r.status + ')');
+  const data = await r.json();
+  return data.id;
+}
+
+// UI handler: derive logical topology and navigate to the new canvas
+async function deriveLogicalTopologyUI() {
+  if (!currentTopoId || currentTopoId === 'new') {
+    setStatus('Save topology first before deriving logical view.');
+    return;
+  }
+  const btn = document.getElementById('tb-derive-logical-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Deriving…'; }
+  try {
+    const newId = await deriveLogicalTopology();
+    window.open(NC_BASE + '/canvas/' + encodeURIComponent(newId), '_blank');
+    setStatus('Logical topology created → opening in new tab');
+  } catch (err) {
+    setStatus('Derive logical failed: ' + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬡ Derive Logical'; }
+  }
+}
 
 // Infer classification of an existing canvas node from its configData and label
 function _nodeClassification(cell) {
