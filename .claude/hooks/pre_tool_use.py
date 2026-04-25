@@ -386,6 +386,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_simulation_sessions",
         "nc_simulation_runs",
         "nc_simulation_artifacts",
+        # Cross-canvas event bus (migration 037, NIST AU — payload history preserved)
+        "canvas_events",
     ]
 
     if tool_name == "Bash":
