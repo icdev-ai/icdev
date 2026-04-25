@@ -8689,6 +8689,26 @@ Output ONLY the JSON object. No other text."""
                     logger.warning("Migration session create failed (non-fatal): %s", _mig_err)
 
             _audit("AI_GENERATE", "topology", "", f"[{used_provider}] Generated from: {description[:100]}")
+
+            # Persist to AI history (non-fatal)
+            try:
+                _hist_id = "aih-" + _uuid.uuid4().hex[:12]
+                _short = (description[:120] + "…") if len(description) > 120 else description
+                _hist_gj = json.dumps(graph_json) if graph_json else None
+                with get_connection() as _hc:
+                    _hc.execute(
+                        "INSERT INTO nc_ai_history "
+                        "(id, description, short_desc, node_count, edge_count, provider, is_migration, graph_json, created_at) "
+                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        (_hist_id, description, _short,
+                         len(graph_json["nodes"]), len(graph_json["edges"]),
+                         used_provider, int(is_migration), _hist_gj,
+                         datetime.utcnow().isoformat()),
+                    )
+                    _hc.commit()
+            except Exception as _he:
+                logger.warning("AI history save failed (non-fatal): %s", _he)
+
             return jsonify(
                 {
                     "graph_json": graph_json,
@@ -8699,6 +8719,7 @@ Output ONLY the JSON object. No other text."""
                     "is_migration": is_migration,
                     "migration_session_id": migration_session_id,
                     "migration_session_url": migration_session_url,
+                    "history_id": _hist_id,
                 }
             )
 
@@ -8779,6 +8800,60 @@ Respond with ONLY this JSON (no other text):
             logger.warning("AI chat prep failed (non-fatal): %s", _prep_err)
 
         return jsonify({"needs_more_info": False}), 200
+
+    # ══════════════════════════════════════════════════════════════════════
+    # API: AI Chat History
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/ai-history", methods=["GET"])
+    @nc_login_required
+    def nc_api_ai_history():
+        """Return the last N AI generation history entries."""
+        limit = min(int(request.args.get("limit", 30)), 100)
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, short_desc, node_count, edge_count, provider, is_migration, created_at "
+                "FROM nc_ai_history ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        entries = [
+            {
+                "id": r[0], "short_desc": r[1], "node_count": r[2],
+                "edge_count": r[3], "provider": r[4],
+                "is_migration": bool(r[5]), "created_at": r[6],
+            }
+            for r in rows
+        ]
+        return jsonify({"entries": entries})
+
+    @bp.route("/api/ai-history/<hist_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_ai_history_get(hist_id):
+        """Return full description + graph_json for a history entry."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, description, node_count, edge_count, provider, is_migration, graph_json, created_at "
+                "FROM nc_ai_history WHERE id=?",
+                (hist_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify({
+            "id": row[0], "description": row[1], "node_count": row[2],
+            "edge_count": row[3], "provider": row[4],
+            "is_migration": bool(row[5]),
+            "graph_json": json.loads(row[6]) if row[6] else None,
+            "created_at": row[7],
+        })
+
+    @bp.route("/api/ai-history/<hist_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_ai_history_delete(hist_id):
+        """Delete a single history entry."""
+        with get_connection() as conn:
+            conn.execute("DELETE FROM nc_ai_history WHERE id=?", (hist_id,))
+            conn.commit()
+        return jsonify({"ok": True})
 
     # ══════════════════════════════════════════════════════════════════════
     # API: ATO Package Auto-Generator

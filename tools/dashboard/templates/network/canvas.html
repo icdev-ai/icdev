@@ -1687,9 +1687,18 @@
   <div class="nc-chat-header">
     <span class="nc-chat-title">Network Assistant</span>
     <div class="nc-chat-header-actions">
+      <button class="nc-chat-btn-sm" id="nc-chat-history-btn" onclick="ncChatToggleHistory()" title="Prompt history">History</button>
       <button class="nc-chat-btn-sm" onclick="ncChatClear()" title="Clear chat">Clear</button>
       <button class="close-btn" onclick="ncChatClose()">✕</button>
     </div>
+  </div>
+  <!-- History panel (overlays messages area) -->
+  <div id="nc-chat-history-panel" style="display:none;flex:1;overflow-y:auto;flex-direction:column;">
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;">Past Generations</span>
+      <button class="nc-chat-btn-sm" onclick="ncChatClearAllHistory()" title="Clear all history" style="color:var(--danger,#e74c3c);font-size:10px;">Clear all</button>
+    </div>
+    <div id="nc-chat-history-list" style="flex:1;overflow-y:auto;padding:4px 0;"></div>
   </div>
   <div class="nc-chat-messages" id="nc-chat-messages">
     <div class="nc-chat-welcome">

@@ -1722,6 +1722,19 @@ CREATE TABLE IF NOT EXISTS nc_stencil_shapes (
 );
 CREATE INDEX IF NOT EXISTS idx_nc_ss_library ON nc_stencil_shapes(library_id);
 CREATE INDEX IF NOT EXISTS idx_nc_ss_name ON nc_stencil_shapes(name);
+
+CREATE TABLE IF NOT EXISTS nc_ai_history (
+    id           TEXT PRIMARY KEY,
+    description  TEXT NOT NULL,
+    short_desc   TEXT NOT NULL,
+    node_count   INTEGER DEFAULT 0,
+    edge_count   INTEGER DEFAULT 0,
+    provider     TEXT DEFAULT '',
+    is_migration INTEGER DEFAULT 0,
+    graph_json   TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_nc_ai_history_created ON nc_ai_history(created_at DESC);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
