@@ -8393,6 +8393,8 @@ Each edge: {"id": "unique-id", "source": "node-id", "target": "node-id", "label"
 
 ═══ DEVICE TYPES (use ONLY these) ═══
 Physical:     router, switch-l2, switch-l3, firewall, load-balancer, wap, server, patch-panel
+Cisco:        cisco-router, cisco-switch-l2, cisco-switch-l3, cisco-firewall, cisco-lb
+Juniper:      juniper-ptx10003, juniper-mx304
 Endpoints:    endpoint-pc, endpoint-phone, endpoint-iot, endpoint-camera
 Cloud:        cloud, aws-vpc, aws-tgw, aws-subnet, az-vnet, az-fw, gcp-vpc
 Logical:      vrf, vlan, subnet, security-zone
@@ -8403,6 +8405,8 @@ Media:        media-fiber, media-ge, media-10ge, media-100ge
 Colo:         meet-me-room, cross-connect
 Drawing:      draw-rect, draw-rounded-rect, text-heading, text-label, text-badge
 
+Use vendor-specific types when the user names a vendor product (e.g., Juniper PTX10003 → juniper-ptx10003, Juniper MX304 → juniper-mx304, Cisco ASR → cisco-router, Cisco Catalyst → cisco-switch-l3, Cisco ASA → cisco-firewall).
+
 ═══ MANDATORY STRUCTURE — follow this exact order in nodes array ═══
 
 1. ZONE BOXES (draw-rect) — placed FIRST so they render behind devices
@@ -8410,7 +8414,7 @@ Drawing:      draw-rect, draw-rounded-rect, text-heading, text-label, text-badge
 3. BADGES (text-badge) — top of diagram for topology type name
 4. DEVICES — inside their zone boxes, with realistic labels
 5. ANNOTATION LABELS (text-label) — protocol/spec notes in clear space
-6. LEGEND PANEL — ALWAYS include, on the RIGHT side of the diagram
+6. LEGEND PANEL — ALWAYS include, on the RIGHT side of the last diagram
 
 ═══ ZONE COLOR PALETTE (dark fills, bright borders) ═══
 Blue:    {"_fill": "#0a1628", "_stroke": "#3498db", "_width": W, "_height": H}
@@ -8419,6 +8423,7 @@ Orange:  {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": W, "_height": H}
 Red:     {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "_width": W, "_height": H}
 Purple:  {"_fill": "#120a20", "_stroke": "#9b59b6", "_width": W, "_height": H}
 Teal:    {"_fill": "#0a1a1a", "_stroke": "#00cec9", "_width": W, "_height": H}
+Silver:  {"_fill": "#111318", "_stroke": "#95a5a6", "_width": W, "_height": H}
 Legend:  {"_fill": "#0f1520", "_stroke": "#636e72", "_width": 240, "_height": H}
 
 text-heading config: {"_textColor": "<matching zone stroke color>"}
@@ -8428,29 +8433,58 @@ text-label config:   {"_textColor": "#7a8cb0"} (or matching color)
 ═══ LAYOUT RULES ═══
 - Start at x=40, y=60. Leave 25px above zones for headings.
 - Space devices 150-200px apart horizontally, 130-160px vertically between tiers.
-- Zone boxes: 300-700px wide, 140-250px tall, with 40px padding around devices inside.
+- Zone boxes: 700-900px wide, 500-800px tall, with 40px padding around devices inside.
 - Zone headings: positioned at (zone_x + 20, zone_y - 25) with _textColor matching zone _stroke.
 - NEVER overlap text on text. Keep 30px vertical gap between text nodes.
-- Use different zone colors for different functional areas (e.g., blue=network, green=customer, orange=core, red=security, purple=control plane).
+- Use different zone colors for different functional areas.
+
+═══ MIGRATION SCENARIOS (read carefully when user describes upgrades, replacements, parallel runs, cutover, or incremental migration) ═══
+When the user describes migrating or replacing devices:
+
+1. Create MULTIPLE labeled phase zones arranged LEFT-TO-RIGHT (each 820px wide, 120px gap between):
+   • Phase 0 "AS-IS — Current State" at x=40 (Silver zone, _stroke #95a5a6)
+   • Phase 1 "Phase 1 — [name]" at x=980 (Orange zone, _stroke #f39c12)
+   • Phase 2 "Phase 2 — [name]" at x=1920 (Teal zone, _stroke #00cec9)
+   • Phase N "TO-BE — Target State" at x=(N*940)+40 (Green zone, _stroke #27ae60)
+
+2. AS-IS zone: show EXISTING devices and ALL connections exactly as the user described. Use port/interface labels on edges (e.g., "xe-0/0/0 ↔ Gi0/0/1"). Include VLANs and VRFs as logical nodes inside or below the device.
+
+3. Each migration phase zone: show WHAT CHANGES — new device in parallel, which VLANs/VRFs move this phase. Devices being decommissioned should stay with "(retiring)" in label. New devices appear with "(new)" in label. Add text-label annotations for port mappings and BGP session status.
+
+4. TO-BE zone: show final target state after full cutover — only target devices remain, no legacy equipment.
+
+5. Add edges BETWEEN phases for the migration path: dashed edges showing BGP peer hand-off, uplink preservation, VLAN migration order.
+
+6. For VLAN/VRF migration: create individual vlan/vrf nodes showing which phase they migrate. Label them "VLAN 10 (Phase 1)", "VRF MGMT (Phase 2)", etc.
+
+7. Port mapping: use text-label nodes within each zone to show the interface mapping table.
+   Example: "xe-0/0/0 (PTX) → et-0/0/1 (MX304)" as a text-label inside the phase zone.
+
+8. BGP continuity: when uplinks must stay on old router until last phase, show this explicitly with a note text-label "BGP AS 1001 uplink retained on legacy until Phase N".
 
 ═══ LEGEND (MANDATORY — always include) ═══
-Place a legend panel to the RIGHT of the main diagram (max_device_x + 120).
+Place a legend panel to the RIGHT of the rightmost diagram (rightmost_x + 120).
 Structure:
 - draw-rect background: {"_fill": "#0f1520", "_stroke": "#636e72", "_width": 240, "_height": <calculated>}
 - text-heading "Legend" at top
-- PROTOCOLS section: list only protocols used, with color matching link colors:
-  OSPF=#27ae60, iBGP=#85c1e9, eBGP=#3498db, MPLS=#ff9800, IPSec=#f7dc6f, mTLS=#fdcb6e, VXLAN=#00bcd4, BGP=#5dade2
-- DEVICES section: list device types used with their colors:
-  Router=#3498db, Switch=#27ae60, Firewall=#e94560, Server=#1abc9c, Cloud=#7f8c8d, WAP=#9b59b6, etc.
-- ZONES section: list zones by color with their heading labels:
-  "Blue = <heading text>", "Orange = <heading text>", etc.
+- PROTOCOLS section: list only protocols used:
+  OSPF=#27ae60, iBGP=#85c1e9, eBGP=#3498db, MPLS=#ff9800, IPSec=#f7dc6f, BGP=#5dade2
+- DEVICES section: list device types used
+- PHASES section (for migration): Silver=AS-IS, Orange=Phase 1, Teal=Phase 2, Green=TO-BE
 Each legend entry: text-label with "• <description>" and appropriate _textColor.
 Spacing: 22px between entries, 30px between sections.
 
 ═══ PROTOCOLS (use realistic ones) ═══
-OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, mTLS, STP, VXLAN, BGP EVPN, GRE, SONET, OC-192, OLSR
+OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, STP, VXLAN, BGP EVPN, GRE
 
 Output ONLY the JSON object. No other text."""
+
+    # Migration scenario keywords — trigger multi-phase layout + migration canvas session
+    _MIGRATION_KEYWORDS = {
+        "migrat", "replac", "cutover", "cut-over", "parallel run", "incremental",
+        "as-is", "as is", "to-be", "to be", "phase ", "phased", "hand-off", "handoff",
+        "decommission", "decomm", "retire", "swap", "upgrade router", "upgrade switch",
+    }
 
     @bp.route("/api/ai-generate", methods=["POST"])
     @nc_login_required
@@ -8496,7 +8530,21 @@ Output ONLY the JSON object. No other text."""
                 e.setdefault("protocol", "")
             return graph_json, None
 
-        def _call_claude(desc):
+        # Detect migration scenario once — shared across helpers below
+        desc_lower = description.lower()
+        is_migration = any(kw in desc_lower for kw in _MIGRATION_KEYWORDS)
+        architect_mode = data.get("architect_mode", False)
+
+        # Prefix for architect / best-practices mode
+        if architect_mode:
+            description = (
+                "Act as a senior network architect and engineer. "
+                "Apply DISA STIG, NIST 800-53, and industry best practices for anything the user did not specify. "
+                "Make sensible, production-grade design decisions. "
+                "Original request: " + description
+            )
+
+        def _call_claude(desc, max_tokens=4096):
             """Call Anthropic Claude API."""
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
             if not api_key:
@@ -8512,18 +8560,18 @@ Output ONLY the JSON object. No other text."""
                 },
                 json={
                     "model": model,
-                    "max_tokens": 4096,
+                    "max_tokens": max_tokens,
                     "temperature": 0.3,
                     "system": _AI_TOPO_SYSTEM_PROMPT,
                     "messages": [{"role": "user", "content": desc}],
                 },
-                timeout=60,
+                timeout=90,
             )
             r.raise_for_status()
             content = r.json().get("content", [{}])[0].get("text", "")
             return content, None
 
-        def _call_ollama(desc):
+        def _call_ollama(desc, max_tokens=4096):
             """Call Ollama local LLM."""
             ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
             ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
@@ -8537,13 +8585,16 @@ Output ONLY the JSON object. No other text."""
                         {"role": "user", "content": desc},
                     ],
                     "stream": False,
-                    "options": {"num_predict": 4096, "temperature": 0.3},
+                    "options": {"num_predict": max_tokens, "temperature": 0.3},
                 },
                 timeout=120,
             )
             r.raise_for_status()
             content = r.json().get("message", {}).get("content", "")
             return content, None
+
+        # Migration diagrams need more tokens (multi-phase = many nodes)
+        token_budget = 8192 if is_migration else 4096
 
         try:
             # Try Claude first (fast, reliable), fall back to Ollama (air-gap)
@@ -8552,14 +8603,14 @@ Output ONLY the JSON object. No other text."""
             used_provider = ""
 
             if provider in ("auto", "claude"):
-                content, err = _call_claude(description)
+                content, err = _call_claude(description, max_tokens=token_budget)
                 if content:
                     used_provider = "claude"
                 elif provider == "claude":
                     return jsonify({"error": f"Claude API failed: {err}"}), 503
 
             if not content and provider in ("auto", "ollama"):
-                content, err = _call_ollama(description)
+                content, err = _call_ollama(description, max_tokens=token_budget)
                 if content:
                     used_provider = "ollama"
                 elif provider == "ollama":
@@ -8580,6 +8631,36 @@ Output ONLY the JSON object. No other text."""
             except Exception as style_err:
                 logger.warning("Topology styler failed (non-fatal): %s", style_err)
 
+            # For migration scenarios: create a migration canvas session automatically
+            migration_session_id = None
+            migration_session_url = None
+            if is_migration:
+                try:
+                    # Extract src/tgt device names from node labels
+                    node_labels = [n.get("label", "") for n in graph_json["nodes"]]
+                    src_candidates = [l for l in node_labels if any(
+                        v in l.lower() for v in ("ptx", "mx", "juniper", "legacy", "current", "asis", "as-is")
+                    )]
+                    tgt_candidates = [l for l in node_labels if any(
+                        v in l.lower() for v in ("cisco", "new", "tobe", "to-be", "target", "replace")
+                    )]
+                    src_model = src_candidates[0] if src_candidates else "Source Device"
+                    tgt_model = tgt_candidates[0] if tgt_candidates else "Target Device"
+                    migration_session_id = "nmig-" + _uuid.uuid4().hex[:12]
+                    with get_connection() as _mc:
+                        _mc.execute(
+                            "INSERT INTO mc_net_sessions "
+                            "(id, src_model, tgt_model, src_device_name, tgt_device_name, created_at, updated_at) "
+                            "VALUES (?,?,?,?,?,?,?)",
+                            (migration_session_id, src_model, tgt_model,
+                             src_model, tgt_model,
+                             datetime.utcnow().isoformat(), datetime.utcnow().isoformat()),
+                        )
+                        _mc.commit()
+                    migration_session_url = f"/migration-canvas/?session={migration_session_id}"
+                except Exception as _mig_err:
+                    logger.warning("Migration session create failed (non-fatal): %s", _mig_err)
+
             _audit("AI_GENERATE", "topology", "", f"[{used_provider}] Generated from: {description[:100]}")
             return jsonify(
                 {
@@ -8588,6 +8669,9 @@ Output ONLY the JSON object. No other text."""
                     "node_count": len(graph_json["nodes"]),
                     "edge_count": len(graph_json["edges"]),
                     "provider": used_provider,
+                    "is_migration": is_migration,
+                    "migration_session_id": migration_session_id,
+                    "migration_session_url": migration_session_url,
                 }
             )
 
@@ -8600,6 +8684,74 @@ Output ONLY the JSON object. No other text."""
         except Exception as exc:
             logger.exception("AI generate failed")
             return jsonify({"error": str(exc)}), 500
+
+    # ══════════════════════════════════════════════════════════════════════
+    # API: AI Chat Pre-flight — Grilling / Clarifying Questions
+    # ══════════════════════════════════════════════════════════════════════
+
+    _CHAT_PREP_SYSTEM = """You are a senior network architect and engineer.
+A user has described a network topology they want designed.
+Your job: decide if you need more information to create an OPTIMAL design.
+
+Rules:
+- If the request already has enough detail (device types, counts, topology style, scale) → reply with {"needs_more_info": false}
+- If key information is missing, ask 2-3 targeted questions. No more than 3. Be specific.
+- Always suggest what a reasonable default assumption would be if the user doesn't know.
+
+Respond with ONLY this JSON (no other text):
+{
+  "needs_more_info": true|false,
+  "questions": ["question 1", "question 2"],
+  "assumption_summary": "If user says that's all I have, I'll assume: ..."
+}"""
+
+    @bp.route("/api/ai-chat-prep", methods=["POST"])
+    @nc_login_required
+    def nc_api_ai_chat_prep():
+        """Assess description completeness and return clarifying questions."""
+        import re as _re2
+        from tools.http.client import request as _req_prep
+        data = request.get_json(force=True, silent=True) or {}
+        description = data.get("description", "").strip()
+        if not description:
+            return jsonify({"needs_more_info": False}), 200
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return jsonify({"needs_more_info": False}), 200
+
+        try:
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req_prep(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 512,
+                    "temperature": 0.1,
+                    "system": _CHAT_PREP_SYSTEM,
+                    "messages": [{"role": "user", "content": description}],
+                },
+                timeout=20,
+            )
+            r.raise_for_status()
+            text = r.json().get("content", [{}])[0].get("text", "")
+            # Parse the JSON response
+            text = _re2.sub(r"<think>.*?</think>", "", text, flags=_re2.DOTALL).strip()
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                result = json.loads(text[start:end])
+                return jsonify(result), 200
+        except Exception as _prep_err:
+            logger.warning("AI chat prep failed (non-fatal): %s", _prep_err)
+
+        return jsonify({"needs_more_info": False}), 200
 
     # ══════════════════════════════════════════════════════════════════════
     # API: ATO Package Auto-Generator
