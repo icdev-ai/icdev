@@ -754,20 +754,100 @@ def _check_compatibility(
 # Config conversion (vendor-aware rename + cleanup)
 # ---------------------------------------------------------------------------
 
+def _convert_config_dict(
+    source_config: dict[str, Any],
+    port_map: dict[str, str],
+) -> dict[str, Any]:
+    """Apply port_map renames to a parsed config dict.
+
+    Args:
+        source_config: Parsed source config (output of :func:`parse_source_config`).
+        port_map: Mapping of ``{src_interface_name: tgt_interface_name}``.
+
+    Returns the converted config dict with interface names renamed plus two
+    metadata keys appended:
+        ``port_map_applied`` — ``{src: tgt}`` pairs that were actually applied
+        ``unmapped`` — data interface names that had no entry in *port_map*
+    """
+    if not source_config:
+        return {
+            "vendor": "",
+            "hostname": "",
+            "interfaces": [],
+            "port_map_applied": {},
+            "unmapped": [],
+        }
+
+    renamed_ifaces: list[dict] = []
+    port_map_applied: dict[str, str] = {}
+    unmapped: list[str] = []
+
+    for iface in source_config.get("interfaces", []):
+        name: str = iface.get("name", "")
+        base = name.split(".")[0]  # strip logical-unit suffix (ge-0/0/0.0 → ge-0/0/0)
+        unit_suffix = f".{name.split('.', 1)[1]}" if "." in name else ""
+
+        tgt_name = port_map.get(base) or port_map.get(name)
+        new_iface = dict(iface)
+
+        if tgt_name:
+            new_iface["name"] = tgt_name + unit_suffix
+            port_map_applied[name] = tgt_name
+        elif not re.search(
+            r"^(lo\d*$|loopback|fxp\d|me\d|management|mgmt|irb|vlan)", base, re.I
+        ):
+            unmapped.append(name)
+
+        renamed_ifaces.append(new_iface)
+
+    result = {k: v for k, v in source_config.items() if k != "interfaces"}
+    result["interfaces"] = renamed_ifaces
+    result["port_map_applied"] = port_map_applied
+    result["unmapped"] = unmapped
+    return result
+
+
 def convert_config(
-    src_config: str,
-    port_map: list[dict],
-    src_vendor: str,
+    source_config: dict[str, Any] | str,
+    port_map: dict[str, str] | list[dict],
+    src_vendor: str = "",
     tgt_model: str = "",
 ) -> dict[str, Any]:
-    """Rename interfaces and remove platform-specific stanzas.
+    """Transform source config to target format using port_map.
 
-    Returns {"source": str, "target": str, "diff": [{"op", "line"}]}
-    where op is "keep" | "remove" | "add".
+    Two calling modes:
+
+    **Dict mode** — *source_config* is a parsed config dict (output of
+    :func:`parse_source_config`); *port_map* is ``{src_interface: tgt_interface}``.
+    Returns the converted config dict with interface names renamed and metadata
+    keys ``port_map_applied`` and ``unmapped`` added.
+
+    **String mode** (original) — *source_config* is raw config text; *port_map*
+    is a list of port-assignment row dicts (from :func:`generate_port_map`).
+    Returns ``{"source": str, "target": str, "diff": list[dict]}`` where each
+    diff entry has ``op`` ∈ ``{"keep", "remove", "rename"}``.
     """
+    if isinstance(source_config, dict):
+        if isinstance(port_map, list):
+            _pm: dict[str, str] = {
+                r.get("src_interface", ""): r.get("tgt_interface", "")
+                for r in port_map
+                if r.get("src_interface") and r.get("tgt_interface")
+            }
+        else:
+            _pm = {k: v for k, v in (port_map or {}).items() if k and v}
+        return _convert_config_dict(source_config, _pm)
+
+    # --- String mode: existing line-by-line transformation ---
+    src_config: str = source_config
+    list_map: list[dict] = (
+        port_map if isinstance(port_map, list)
+        else [{"src_interface": k, "tgt_interface": v} for k, v in port_map.items()]
+    )
+
     # Build rename map: src_interface -> tgt_interface
     rename = {}
-    for row in port_map:
+    for row in list_map:
         si = row.get("src_interface", "")
         ti = row.get("tgt_interface", "")
         if si and ti and si != ti:
@@ -853,15 +933,109 @@ def _get_deprecated_patterns(vendor: str) -> list[tuple[re.Pattern, str]]:
 # Commit-check simulation (vendor-aware, pure Python)
 # ---------------------------------------------------------------------------
 
-def simulate_commit_check(
-    target_config: str,
-    tgt_vendor: str,
-    tgt_hw_profile: dict | None = None,
-) -> list[dict]:
-    """Simulate commit check without pushing to a device.
+def _simulate_commit_check_dict(
+    converted_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate a converted config dict for syntax and structural issues.
 
-    Returns list of findings: {status: pass|fail|warn, statement, message}
+    Args:
+        converted_config: Parsed/converted config dict — output of
+            :func:`convert_config` in dict mode, or any
+            :func:`parse_source_config`-shaped dict.
+
+    Returns:
+        {
+          "valid": bool,          # True when *errors* list is empty
+          "errors": list[str],    # Blocking issues that must be resolved
+          "warnings": list[str],  # Non-blocking concerns worth reviewing
+        }
     """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not converted_config:
+        errors.append("Empty config — nothing to validate")
+        return {"valid": False, "errors": errors, "warnings": warnings}
+
+    interfaces: list[dict] = converted_config.get("interfaces", [])
+
+    # Duplicate interface names after conversion
+    all_names = [i.get("name", "") for i in interfaces if i.get("name")]
+    seen: set[str] = set()
+    for name in all_names:
+        if name in seen:
+            errors.append(f"Duplicate interface name after conversion: {name}")
+        seen.add(name)
+
+    # Interfaces without a name
+    nameless = sum(1 for i in interfaces if not i.get("name"))
+    if nameless:
+        errors.append(f"{nameless} interface(s) missing name in converted config")
+
+    # Unmapped data interfaces flagged by _convert_config_dict
+    unmapped: list[str] = converted_config.get("unmapped", [])
+    if unmapped:
+        sample = ", ".join(unmapped[:5])
+        suffix = f" (+{len(unmapped) - 5} more)" if len(unmapped) > 5 else ""
+        warnings.append(
+            f"{len(unmapped)} data interface(s) not mapped to target ports: "
+            f"{sample}{suffix}"
+        )
+
+    # Vendor-specific checks
+    vendor: str = converted_config.get("vendor", "")
+    if vendor == "juniper":
+        ms_mic = [
+            i["name"]
+            for i in interfaces
+            if re.search(r"^ms-\d+/\d+/\d+", i.get("name", ""), re.I)
+        ]
+        if ms_mic:
+            errors.append(
+                f"MS-MIC adaptive-services interfaces remain after conversion "
+                f"({len(ms_mic)} found): {', '.join(ms_mic[:3])}"
+            )
+
+    # BGP neighbor address format
+    for nbr in converted_config.get("bgp_neighbors", []):
+        ip = nbr.get("ip", "")
+        if ip and not re.match(
+            r"^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-fA-F:]+:[0-9a-fA-F:]*$", ip
+        ):
+            warnings.append(f"BGP neighbor has unrecognised address format: {ip!r}")
+
+    # BGP neighbors configured but no interface carries an IP
+    if converted_config.get("bgp_neighbors") and not any(
+        i.get("ip") for i in interfaces
+    ):
+        warnings.append(
+            "BGP neighbors configured but no interfaces have IP addresses — "
+            "verify IP assignments survived conversion"
+        )
+
+    return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
+
+
+def simulate_commit_check(
+    converted_config: dict[str, Any] | str,
+    tgt_vendor: str = "",
+    tgt_hw_profile: dict | None = None,
+) -> dict[str, Any] | list[dict]:
+    """Simulate commit check or validate a converted config dict.
+
+    Two calling modes:
+
+    **Dict mode** — *converted_config* is a parsed/converted config dict.
+    Returns ``{"valid": bool, "errors": list[str], "warnings": list[str]}``.
+
+    **String mode** (original) — *converted_config* is raw target config text.
+    Returns ``list[dict]`` of finding rows ``{status, statement, message}``.
+    """
+    if isinstance(converted_config, dict):
+        return _simulate_commit_check_dict(converted_config)
+
+    # --- String mode: existing line-by-line checks ---
+    target_config: str = converted_config
     findings: list[dict] = []
     lines = target_config.splitlines()
 
