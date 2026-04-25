@@ -384,3 +384,19 @@
 | Tfw Chat Agent | tools\simulation\tfw_chat_agent.py | Auto-registered: simulation/tfw_chat_agent.py | --json | JSON |
 | Oracle Notify | tools\trading\options\oracle_notify.py | Auto-registered: options/oracle_notify.py | --json | JSON |
 | Dfd Generator | tools\simulation\artifacts\dfd_generator.py | Auto-registered: artifacts/dfd_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Event Bus | tools\canvas\event_bus.py | Auto-registered: canvas/event_bus.py | --json | JSON |
+| Broker Adapter | tools\fathomdesk\broker_adapter.py | Auto-registered: fathomdesk/broker_adapter.py | --json | JSON |
+| Fathomdesk Trap Sweep | tools\genesis\reflexes\fathomdesk_trap_sweep.py | Auto-registered: reflexes/fathomdesk_trap_sweep.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Event Bus | tools\canvas\event_bus.py | Auto-registered: canvas/event_bus.py | --json | JSON |
+| Broker Adapter | tools\fathomdesk\broker_adapter.py | Auto-registered: fathomdesk/broker_adapter.py | --json | JSON |
+| Fathomdesk Trap Sweep | tools\genesis\reflexes\fathomdesk_trap_sweep.py | Auto-registered: reflexes/fathomdesk_trap_sweep.py | --json | JSON |
