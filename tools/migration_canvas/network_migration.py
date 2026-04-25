@@ -382,7 +382,30 @@ def _compute_hw_gaps(src: dict, tgt: dict) -> list[dict]:
 # Port mapping (vendor-agnostic)
 # ---------------------------------------------------------------------------
 
-def generate_port_map(
+def generate_port_map(source_ports: list, target_hw: dict) -> dict:
+    """Map source device ports to target hardware ports.
+
+    Args:
+        source_ports: List of source interface dicts (name, speed_gbps, media_type, etc.)
+        target_hw: Target hardware profile dict with ``ports_json`` describing available ports.
+
+    Returns:
+        dict with keys:
+            ``mappings`` — list of per-port assignment dicts (src_interface, tgt_interface, …)
+            ``unmapped_count`` — number of data ports that could not be assigned
+            ``optic_change_count`` — number of ports requiring a different optic
+            ``speed_mismatch_count`` — number of ports where source and target speeds differ
+    """
+    mappings = _generate_port_map(source_ports, target_hw)
+    return {
+        "mappings": mappings,
+        "unmapped_count": sum(1 for m in mappings if m.get("status") == "unmapped"),
+        "optic_change_count": sum(1 for m in mappings if m.get("optic_change")),
+        "speed_mismatch_count": sum(1 for m in mappings if m.get("speed_mismatch")),
+    }
+
+
+def _generate_port_map(
     src_interfaces: list[dict],
     tgt_hw_profile: dict,
     existing_map: list[dict] | None = None,
@@ -517,7 +540,76 @@ def _parse_speed_str(s: str) -> float:
 # Compatibility checklist (DB-driven + vendor-aware)
 # ---------------------------------------------------------------------------
 
-def check_compatibility(
+def check_compatibility(source_config: dict, target_hw: dict) -> dict:
+    """Return a compatibility report between a parsed source config and target hardware.
+
+    Args:
+        source_config: Parsed source device config dict (output of :func:`parse_source_config`).
+        target_hw: Target hardware profile dict (from :func:`fetch_hardware_profiles`).
+
+    Returns:
+        dict with keys:
+            ``is_compatible`` — ``True`` when no blocking issues are found
+            ``issues`` — list of human-readable issue strings describing problems
+    """
+    issues: list[str] = []
+
+    src_vendor = source_config.get("vendor", "")
+    tgt_vendor = target_hw.get("vendor", "")
+
+    # Cross-vendor migration warning
+    if src_vendor and tgt_vendor and src_vendor != tgt_vendor:
+        issues.append(f"Cross-vendor migration detected: {src_vendor} → {tgt_vendor}")
+
+    # Port count feasibility
+    src_iface_count = source_config.get("raw_interface_count", 0)
+    tgt_ports_json = target_hw.get("ports_json", [])
+    tgt_port_count = sum(
+        grp.get("count", max(0, grp.get("if_end", 0) - grp.get("if_start", 0) + 1))
+        for grp in tgt_ports_json
+    )
+    if src_iface_count > 0 and tgt_port_count > 0 and src_iface_count > tgt_port_count:
+        issues.append(
+            f"Insufficient target ports: source has {src_iface_count} interfaces, "
+            f"target has {tgt_port_count} ports"
+        )
+
+    # Throughput headroom
+    tgt_throughput = target_hw.get("throughput_gbps", 0) or 0
+    if tgt_throughput > 0:
+        high_speed = sum(
+            1 for i in source_config.get("interfaces", [])
+            if (i.get("speed_gbps") or 0) >= 100
+        )
+        if high_speed * 100 > tgt_throughput:
+            issues.append(
+                f"Target throughput {tgt_throughput} Gbps may be insufficient "
+                f"for {high_speed}×100 G source interfaces"
+            )
+
+    # MS-MIC / stateful-firewall gap (Juniper)
+    if source_config.get("ms_mic_used") and tgt_vendor == "juniper":
+        issues.append(
+            "Source uses MS-MIC/MS-PIC stateful firewall — verify target platform "
+            "has MX-SPC3 or plan migration to an external NGFW"
+        )
+
+    # Target EOL
+    eol = target_hw.get("eol_date", "")
+    if eol:
+        issues.append(f"Target hardware end-of-life date: {eol}")
+
+    # FIB size regression
+    tgt_fib = target_hw.get("routing_table_size", 0) or 0
+    if tgt_fib > 0:
+        bgp_neighbors = len(source_config.get("bgp_neighbors", []))
+        if bgp_neighbors > 0 and tgt_fib < 1_000_000:
+            pass  # low FIB is noted but not a hard block here
+
+    return {"is_compatible": len(issues) == 0, "issues": issues}
+
+
+def _check_compatibility(
     src_hw: dict,
     tgt_hw: dict,
     parsed_config: dict,
