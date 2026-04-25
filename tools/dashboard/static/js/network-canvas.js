@@ -685,6 +685,9 @@ function initCanvas() {
 /* ── Blast Radius Context Menu ────────────────────────────────────────────────── */
 let _blastCtxNodeId = null;
 
+/* ── Policy Panel State ─────────────────────────────────────────────────────── */
+let _policyNodeId = null;
+
 function showBlastContextMenu(x, y, cell) {
   const menu = document.getElementById('blast-ctx-menu');
   const nameEl = document.getElementById('blast-ctx-device-name');
@@ -708,12 +711,13 @@ function hideBlastContextMenu() {
   if (menu) menu.style.display = 'none';
 }
 
-function openPolicyPanel() {
+function openPolicyPanel(nodeId) {
   hideBlastContextMenu();
-  const nodeId = _blastCtxNodeId;
+  nodeId = nodeId || _blastCtxNodeId;
   if (!nodeId) return;
   const cell = graph.getCell(nodeId);
   if (!cell || !cell.isElement()) return;
+  _policyNodeId = nodeId;
 
   const policy = (cell.get('configData') || {}).policy || {};
   document.getElementById('policy-node-title').textContent = cell.attr('label/text') || nodeId;
@@ -732,10 +736,12 @@ function openPolicyPanel() {
 
 function closePolicyPanel() {
   document.getElementById('policy-overlay').classList.add('hidden');
+  _policyNodeId = null;
 }
 
 function onPolicyFieldChange(key, val) {
-  const cell = _blastCtxNodeId && graph.getCell(_blastCtxNodeId);
+  const id = _policyNodeId || _blastCtxNodeId;
+  const cell = id && graph.getCell(id);
   if (!cell || !cell.isElement()) return;
   const config = cell.get('configData') || {};
   config.policy = config.policy || {};
