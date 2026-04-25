@@ -21,3 +21,21 @@ canvases:
       - pii_exposure
       - lineage_break
       - classification_mismatch
+
+  odc:
+    display_name: "Observability Design Canvas"
+    flow_noun: telemetry_flow
+    persona_set:
+      - sre
+      - seceng
+      - cloudarch
+      - appdev
+    available_artifacts:
+      - mitre_coverage
+      - sigma_rules
+      - alert_map
+      - slos
+    troubleshoot_domains:
+      - blind_spot
+      - alert_fatigue
+      - coverage_gap
