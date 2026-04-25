@@ -8926,7 +8926,7 @@ Output ONLY the JSON object. No other text."""
                 params.append(data[col])
         if updates:
             params.append(cid)
-            conn.execute(f"UPDATE nc_naming_conventions SET {', '.join(updates)} WHERE id = ?", params)
+            conn.execute(f"UPDATE nc_naming_conventions SET {', '.join(updates)} WHERE id = ?", params)  # nosec B608 — columns from hardcoded whitelist
             conn.commit()
         conn.close()
         return jsonify({"updated": cid})
