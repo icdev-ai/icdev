@@ -5556,16 +5556,78 @@ class PatternAdvisor {
   constructor() {
     this._debounceTimer = null;
     this._debounceMs = 5000;
+    this._editCount = 0;
+    this._dismissed = new Map(); // findingId → _editCount at dismissal
   }
 
   trackEdit() {
+    this._editCount++;
     if (this._debounceTimer !== null) {
       clearTimeout(this._debounceTimer);
     }
     this._debounceTimer = setTimeout(() => {
       this._debounceTimer = null;
-      this.analyzePatterns();
+      this.renderChips(this.analyzePatterns());
     }, this._debounceMs);
+  }
+
+  renderChips(findings) {
+    const strip = document.getElementById('pattern-chips');
+    if (!strip) return;
+    strip.innerHTML = '';
+
+    findings.forEach(finding => {
+      if (this._dismissed.has(finding.id)) {
+        const editsSince = this._editCount - this._dismissed.get(finding.id);
+        if (editsSince < 5) return;
+        this._dismissed.delete(finding.id);
+      }
+
+      const chip = document.createElement('div');
+      chip.className = 'pattern-chip';
+      chip.dataset.findingId = finding.id;
+
+      const icon = document.createElement('span');
+      icon.className = 'chip-icon';
+      icon.textContent = '⚠';
+
+      const label = document.createElement('span');
+      label.className = 'chip-label';
+      label.title = finding.message;
+      label.textContent = finding.message;
+
+      const showBtn = document.createElement('button');
+      showBtn.className = 'chip-show-btn';
+      showBtn.textContent = 'Show Me';
+      showBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._highlightNodes(finding.nodeIds);
+      });
+
+      const dismissBtn = document.createElement('button');
+      dismissBtn.className = 'chip-dismiss';
+      dismissBtn.textContent = '×';
+      dismissBtn.title = 'Dismiss';
+      dismissBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._dismissed.set(finding.id, this._editCount);
+        chip.remove();
+      });
+
+      chip.appendChild(icon);
+      chip.appendChild(label);
+      chip.appendChild(showBtn);
+      chip.appendChild(dismissBtn);
+      strip.appendChild(chip);
+    });
+  }
+
+  _highlightNodes(nodeIds) {
+    const views = nodeIds
+      .map(id => { const cell = graph.getCell(id); return cell ? paper.findViewByModel(cell) : null; })
+      .filter(Boolean);
+    views.forEach(v => v.highlight());
+    setTimeout(() => views.forEach(v => v.unhighlight()), 2000);
   }
 
   analyzePatterns() {
