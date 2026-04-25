@@ -2735,3 +2735,65 @@ def export_fips_report_html(report: dict) -> str:
 def _esc(text: str) -> str:
     """Minimal HTML escaping for report output."""
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+import re as _re
+
+_TEMPLATE_RE = _re.compile(
+    r"^\{(?P<role>[^}]+)\}-\{(?P<site>[^}]+)\}-\{(?P<nn>[^}]+)\}$"
+)
+_TEMPLATE_LITERAL_RE = _re.compile(
+    r"^(?P<role>[a-z][a-z0-9]*)-(?P<site>[a-z][a-z0-9]*)-(?P<nn>\d{2})$",
+    _re.IGNORECASE,
+)
+
+
+def validate_hostname_pattern(hostname: str, pattern: str) -> tuple:
+    """Return (is_valid, suggested_name) for hostname against pattern.
+
+    pattern may be:
+      • A template string like ``{role}-{site}-{nn}`` — hostname must have
+        three hyphen-separated segments where the third segment is two digits.
+      • Any other string is treated as a regex; hostname is matched in full.
+
+    suggested_name is a corrected form when is_valid is False and a
+    correction can be derived, otherwise None.
+    """
+    if not hostname or not pattern:
+        return (False, None)
+
+    if _TEMPLATE_RE.fullmatch(pattern):
+        # Template pattern: expect <role>-<site>-<nn> (nn = 2-digit zero-padded)
+        parts = hostname.split("-")
+        if len(parts) != 3:
+            suggested = None
+            if len(parts) >= 3:
+                role, site, *rest = parts
+                nn_candidate = rest[-1]
+                if nn_candidate.isdigit():
+                    suggested = f"{role}-{site}-{int(nn_candidate):02d}"
+            return (False, suggested)
+
+        role, site, nn = parts
+        if not role or not site:
+            return (False, None)
+
+        if not nn.isdigit():
+            return (False, f"{role}-{site}-00")
+
+        is_valid = True
+        suggested = None
+        # Suggest zero-padded form if nn is not exactly 2 digits
+        if len(nn) != 2:
+            suggested = f"{role}-{site}-{int(nn):02d}"
+            is_valid = False
+        return (is_valid, suggested)
+
+    # Regex pattern
+    try:
+        compiled = _re.compile(pattern)
+    except _re.error:
+        return (False, None)
+
+    is_valid = bool(compiled.fullmatch(hostname))
+    return (is_valid, None)
