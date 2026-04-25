@@ -883,7 +883,8 @@ def create_migration_blueprint():
         - Updates the migration KG with device nodes and connections
         - Returns extracted devices and connections for the wizard UI
         """
-        import tempfile, os as _os
+        import tempfile
+        import os as _os
 
         # Accept either multipart file upload or base64 JSON
         if request.files.get("file"):
@@ -1050,7 +1051,7 @@ def create_migration_blueprint():
                 return jsonify({"error": "No config imported yet — call /parse-config first"}), 400
             parsed = _nm.parse_source_config(raw_config)
             hw = _nm.fetch_hardware_profiles(sess["src_model"], sess["tgt_model"])
-            rows = _nm.generate_port_map(parsed["interfaces"], hw["target"])
+            rows = _nm._generate_port_map(parsed["interfaces"], hw["target"])
 
         with get_connection() as conn:
             conn.execute("DELETE FROM mc_net_port_map WHERE session_id=?", (sid,))
@@ -1092,7 +1093,7 @@ def create_migration_blueprint():
         hw = _nm.fetch_hardware_profiles(sess["src_model"], sess["tgt_model"])
         parsed = _nm.parse_source_config(sess.get("src_config_raw", "")) if sess.get("src_config_raw") else {}
 
-        checks = _nm.check_compatibility(hw["source"], hw["target"], parsed)
+        checks = _nm._check_compatibility(hw["source"], hw["target"], parsed)
 
         # Apply any manual overrides from request body
         overrides = {r["check_name"]: r.get("override_reason", "") for r in data.get("overrides", [])}
