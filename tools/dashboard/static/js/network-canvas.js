@@ -195,15 +195,16 @@ const NODE_STYLES = {
   'pdu':              { fill: '#fff3e0', stroke: '#e65100',  label: 'PDU',           symbol: 'PDU' },
   'ups':              { fill: '#fff8e1', stroke: '#f57f17',  label: 'UPS',           symbol: 'UPS' },
   'unknown':          { fill: '#f5f5f5', stroke: '#7a8cb0',  label: 'Device',        symbol: '?' },
-  // ── Cisco Physical (Cisco blue #049fd9) ──────────────────────────────────
-  'cisco-router':     { fill: '#062333', stroke: '#049fd9', label: 'Cisco Router',    symbol: 'CR'  },
-  'cisco-switch-l2':  { fill: '#062333', stroke: '#049fd9', label: 'Cisco Switch L2', symbol: 'CS2' },
-  'cisco-switch-l3':  { fill: '#062333', stroke: '#049fd9', label: 'Cisco Switch L3', symbol: 'CS3' },
-  'cisco-firewall':   { fill: '#1a0a0f', stroke: '#e74c3c', label: 'Cisco Firewall',  symbol: 'CFW' },
-  'cisco-lb':         { fill: '#062333', stroke: '#049fd9', label: 'Cisco LB',        symbol: 'CLB' },
-  // ── Juniper Physical (Juniper green #84b135) ─────────────────────────────
-  'juniper-ptx10003': { fill: '#0a1505', stroke: '#84b135', label: 'Juniper PTX10003',symbol: 'PTX' },
-  'juniper-mx304':    { fill: '#0a1505', stroke: '#84b135', label: 'Juniper MX304',   symbol: 'MX'  },
+  // ── Cisco Physical — solid Cisco blue fill, dark body, white detail ───────
+  // fill = node card bg (Cisco blue), stroke = stencil body fill (dark for contrast)
+  'cisco-router':     { fill: '#049fd9', stroke: '#004e78', label: 'Cisco Router',    symbol: 'CR'  },
+  'cisco-switch-l2':  { fill: '#049fd9', stroke: '#004e78', label: 'Cisco Switch L2', symbol: 'CS2' },
+  'cisco-switch-l3':  { fill: '#049fd9', stroke: '#004e78', label: 'Cisco Switch L3', symbol: 'CS3' },
+  'cisco-firewall':   { fill: '#c0392b', stroke: '#7b0000', label: 'Cisco Firewall',  symbol: 'CFW' },
+  'cisco-lb':         { fill: '#049fd9', stroke: '#004e78', label: 'Cisco LB',        symbol: 'CLB' },
+  // ── Juniper Physical — solid Juniper green fill, dark body, white detail ─
+  'juniper-ptx10003': { fill: '#84b135', stroke: '#3d5a0f', label: 'Juniper PTX10003',symbol: 'PTX' },
+  'juniper-mx304':    { fill: '#84b135', stroke: '#3d5a0f', label: 'Juniper MX304',   symbol: 'MX'  },
 };
 
 // Alias map: ingester/intelligence types → canvas NODE_STYLES keys

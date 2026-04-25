@@ -2687,11 +2687,11 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   padding: 1px;
 }
 
-/* ── Cisco Physical palette icons ─────────────────────────────────────────── */
-.cisco-icon    { background: #062333; border: 1px solid #037ab5; color: #049fd9; }
-.cisco-fw-icon { background: #1a0a0f; border: 1px solid #c0392b; color: #e74c3c; }
-/* ── Juniper Physical palette icons ──────────────────────────────────────── */
-.juniper-icon  { background: #0a1505; border: 1px solid #5a7a25; color: #84b135; }
+/* ── Cisco Physical palette icons — solid Cisco blue, white SVG shapes ────── */
+.cisco-icon    { background: #049fd9; border: 1px solid #037ab5; color: #ffffff; }
+.cisco-fw-icon { background: #c0392b; border: 1px solid #7b0000; color: #ffffff; }
+/* ── Juniper Physical palette icons — solid Juniper green, white SVG shapes ─ */
+.juniper-icon  { background: #84b135; border: 1px solid #5a7a25; color: #ffffff; }
 /* ── Vendor chip label in palette-cat ────────────────────────────────────── */
 .vendor-chip {
   display: inline-flex; align-items: center; justify-content: center;
