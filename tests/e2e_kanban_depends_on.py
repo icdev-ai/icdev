@@ -66,19 +66,19 @@ def _post(path: str, payload: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
         return json.loads(resp.read().decode("utf-8"))
 
 
 def _get(path: str) -> dict:
-    with urllib.request.urlopen(f"{BASE_URL}{path}", timeout=10) as resp:
+    with urllib.request.urlopen(f"{BASE_URL}{path}", timeout=10) as resp:  # nosec B310
         return json.loads(resp.read().decode("utf-8"))
 
 
 def _delete(path: str) -> None:
     req = urllib.request.Request(f"{BASE_URL}{path}", method="DELETE")
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             resp.read()
     except urllib.error.HTTPError:
         pass  # best-effort cleanup
@@ -169,7 +169,7 @@ def main() -> int:
                 method="PATCH",
             )
             try:
-                urllib.request.urlopen(req, timeout=10)
+                urllib.request.urlopen(req, timeout=10)  # nosec B310
                 raise AssertionError("self-reference PATCH should have 400'd")
             except urllib.error.HTTPError as http_err:
                 assert http_err.code == 400, http_err.code
@@ -190,7 +190,7 @@ def main() -> int:
                 method="PATCH",
             )
             try:
-                urllib.request.urlopen(req, timeout=10)
+                urllib.request.urlopen(req, timeout=10)  # nosec B310
                 raise AssertionError("2-hop cycle PATCH should have 400'd")
             except urllib.error.HTTPError as http_err:
                 assert http_err.code == 400, http_err.code
