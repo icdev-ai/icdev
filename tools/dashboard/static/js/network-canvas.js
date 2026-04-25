@@ -195,6 +195,15 @@ const NODE_STYLES = {
   'pdu':              { fill: '#fff3e0', stroke: '#e65100',  label: 'PDU',           symbol: 'PDU' },
   'ups':              { fill: '#fff8e1', stroke: '#f57f17',  label: 'UPS',           symbol: 'UPS' },
   'unknown':          { fill: '#f5f5f5', stroke: '#7a8cb0',  label: 'Device',        symbol: '?' },
+  // ── Cisco Physical (Cisco blue #049fd9) ──────────────────────────────────
+  'cisco-router':     { fill: '#062333', stroke: '#049fd9', label: 'Cisco Router',    symbol: 'CR'  },
+  'cisco-switch-l2':  { fill: '#062333', stroke: '#049fd9', label: 'Cisco Switch L2', symbol: 'CS2' },
+  'cisco-switch-l3':  { fill: '#062333', stroke: '#049fd9', label: 'Cisco Switch L3', symbol: 'CS3' },
+  'cisco-firewall':   { fill: '#1a0a0f', stroke: '#e74c3c', label: 'Cisco Firewall',  symbol: 'CFW' },
+  'cisco-lb':         { fill: '#062333', stroke: '#049fd9', label: 'Cisco LB',        symbol: 'CLB' },
+  // ── Juniper Physical (Juniper green #84b135) ─────────────────────────────
+  'juniper-ptx10003': { fill: '#0a1505', stroke: '#84b135', label: 'Juniper PTX10003',symbol: 'PTX' },
+  'juniper-mx304':    { fill: '#0a1505', stroke: '#84b135', label: 'Juniper MX304',   symbol: 'MX'  },
 };
 
 // Alias map: ingester/intelligence types → canvas NODE_STYLES keys
@@ -320,9 +329,10 @@ function getCiscoStencil(type) {
   // Infrastructure types use text symbols, not stencils
   if (type === 'pdu' || type === 'ups') return null;
   if (CISCO_STENCILS[type]) return CISCO_STENCILS[type];
-  if (type.startsWith('switch-l3')) return CISCO_STENCILS['switch-l3'];
-  if (type.startsWith('switch')) return CISCO_STENCILS['switch-l2'];
+  if (type.startsWith('cisco-switch-l3') || type.startsWith('switch-l3')) return CISCO_STENCILS['switch-l3'];
+  if (type.startsWith('cisco-switch') || type.startsWith('switch')) return CISCO_STENCILS['switch-l2'];
   if (type.includes('router') || type === 'mpls-pe' || type === 'mpls-p' || type === 'route-reflector') return CISCO_STENCILS['router'];
+  if (type.startsWith('juniper-')) return CISCO_STENCILS['router'];
   if (type.includes('firewall') || type.includes('fw') || type.includes('nfw')) return CISCO_STENCILS['firewall'];
   if (type.includes('server') || type.includes('srv') || type.includes('historian')) return CISCO_STENCILS['server'];
   if (type.includes('vpn') || type === 'vpn_gateway') return CISCO_STENCILS['router'];

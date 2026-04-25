@@ -1494,6 +1494,15 @@ BOM_COSTS = {
     "switch-l3": 8000,
     "firewall": 25000,
     "load-balancer": 20000,
+    # Cisco-branded physical devices
+    "cisco-router": 15000,
+    "cisco-switch-l2": 3000,
+    "cisco-switch-l3": 8000,
+    "cisco-firewall": 25000,
+    "cisco-lb": 20000,
+    # Juniper-branded physical devices
+    "juniper-ptx10003": 150000,
+    "juniper-mx304": 45000,
     "wap": 800,
     "server": 5000,
     "patch-panel": 200,
@@ -2072,6 +2081,7 @@ SCCA_COMPLIANCE_RULES = [
 
 SCCA_FIREWALL_TYPES = {
     "firewall",
+    "cisco-firewall",
     "aws-nfw",
     "az-fw",
     "oci-nfw",

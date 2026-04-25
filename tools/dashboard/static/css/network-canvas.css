@@ -2686,3 +2686,18 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   display: flex; align-items: center; justify-content: center;
   padding: 1px;
 }
+
+/* ── Cisco Physical palette icons ─────────────────────────────────────────── */
+.cisco-icon    { background: #062333; border: 1px solid #037ab5; color: #049fd9; }
+.cisco-fw-icon { background: #1a0a0f; border: 1px solid #c0392b; color: #e74c3c; }
+/* ── Juniper Physical palette icons ──────────────────────────────────────── */
+.juniper-icon  { background: #0a1505; border: 1px solid #5a7a25; color: #84b135; }
+/* ── Vendor chip label in palette-cat ────────────────────────────────────── */
+.vendor-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 3px;
+  font-size: 9px; font-weight: 800; letter-spacing: 0;
+  margin-right: 4px; vertical-align: middle;
+}
+.cisco-chip   { background: #049fd9; color: #fff; }
+.juniper-chip { background: #84b135; color: #fff; }
