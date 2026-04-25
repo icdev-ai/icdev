@@ -1429,6 +1429,7 @@ function selectCell(cell) {
     document.getElementById('cfg-type').value = type;
     document.getElementById('cfg-label').value = label;
     document.getElementById('cfg-ip').value = config.ip || '';
+    updateSubnetBadge('cfg-ip-subnet-info', config.ip || '');
     document.getElementById('cfg-protocol').value = config.protocol || '';
     document.getElementById('cfg-mtu').value = config.mtu || '';
     document.getElementById('cfg-vlan').value = config.vlan || '';
@@ -1502,6 +1503,7 @@ function selectCell(cell) {
       linkPanel.classList.remove('hidden');
       const lc = cell.get('linkConfig') || {};
       document.getElementById('lcfg-ip').value = lc.ip || '';
+      updateSubnetBadge('lcfg-ip-subnet-info', lc.ip || '');
       document.getElementById('lcfg-vlan').value = lc.vlan || '';
       document.getElementById('lcfg-vrf').value = lc.vrf || '';
       document.getElementById('lcfg-mtu').value = lc.mtu || '';
@@ -1524,12 +1526,92 @@ function updateLinkConfig(key, val) {
   markDirty();
 }
 
+/* ── Subnet Calculator & Host Validator ─────────────────────────────────────── */
+function calcSubnet(cidr) {
+  const m = cidr.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+  if (!m) return null;
+  const octets = [+m[1], +m[2], +m[3], +m[4]];
+  const prefixLen = +m[5];
+  if (octets.some(n => n > 255)) return { valid: false, error: 'Octet out of range (0–255)' };
+  if (prefixLen > 32) return { valid: false, error: 'Prefix length must be 0–32' };
+
+  const ipInt = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  const mask = prefixLen === 0 ? 0 : ((0xFFFFFFFF << (32 - prefixLen)) >>> 0);
+  const networkInt = (ipInt & mask) >>> 0;
+  const broadcastInt = (networkInt | (~mask >>> 0)) >>> 0;
+  const toIP = n => [(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF].join('.');
+
+  const isP2P  = prefixLen === 31;
+  const isHost = prefixLen === 32;
+  let isValidHost;
+  if (isHost)     isValidHost = true;
+  else if (isP2P) isValidHost = (ipInt === networkInt || ipInt === broadcastInt);
+  else            isValidHost = ipInt > networkInt && ipInt < broadcastInt;
+
+  const numHosts = isHost ? 1 : isP2P ? 2 : Math.max(0, broadcastInt - networkInt - 1);
+  const peer = isP2P ? toIP(ipInt === networkInt ? broadcastInt : networkInt) : null;
+
+  return {
+    valid: true,
+    ip: toIP(ipInt),
+    prefixLen,
+    network:    toIP(networkInt),
+    broadcast:  isP2P ? null : toIP(broadcastInt),
+    hostMin:    toIP(isHost || isP2P ? networkInt : networkInt + 1),
+    hostMax:    toIP(isHost || isP2P ? broadcastInt : broadcastInt - 1),
+    numHosts,
+    isP2P,
+    isHost,
+    isValidHost,
+    peer,
+    subnetMask: toIP(mask),
+  };
+}
+
+function updateSubnetBadge(containerId, cidr) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const trimmed = (cidr || '').trim();
+  if (!trimmed || !trimmed.includes('/')) { el.innerHTML = ''; return; }
+
+  const info = calcSubnet(trimmed);
+  if (!info) {
+    el.innerHTML = '<span class="subnet-badge subnet-badge-error">&#9888; Invalid CIDR format</span>';
+    return;
+  }
+  if (!info.valid) {
+    el.innerHTML = `<span class="subnet-badge subnet-badge-error">&#9888; ${info.error}</span>`;
+    return;
+  }
+
+  const cls = info.isValidHost ? 'subnet-badge-ok' : 'subnet-badge-warn';
+  const txt = info.isValidHost ? '&#10003; Valid host address' : '&#10007; Not a valid host address';
+
+  let rows = `<div class="sbi-row"><span class="sbi-lbl">Network</span><span class="sbi-val">${info.network}/${info.prefixLen}</span></div>`;
+  rows += `<div class="sbi-row"><span class="sbi-lbl">Subnet Mask</span><span class="sbi-val">${info.subnetMask}</span></div>`;
+  if (info.isP2P) {
+    rows += `<div class="sbi-row"><span class="sbi-lbl">Type</span><span class="sbi-val sbi-tag-p2p">/31 P2P (RFC 3021)</span></div>`;
+    rows += `<div class="sbi-row"><span class="sbi-lbl">Peer IP</span><span class="sbi-val">${info.peer}</span></div>`;
+    rows += `<div class="sbi-row"><span class="sbi-lbl">Both usable</span><span class="sbi-val">${info.hostMin} / ${info.hostMax}</span></div>`;
+  } else if (info.isHost) {
+    rows += `<div class="sbi-row"><span class="sbi-lbl">Type</span><span class="sbi-val">/32 Host Route</span></div>`;
+  } else {
+    rows += `<div class="sbi-row"><span class="sbi-lbl">Broadcast</span><span class="sbi-val">${info.broadcast}</span></div>`;
+    rows += `<div class="sbi-row"><span class="sbi-lbl">Host Range</span><span class="sbi-val">${info.hostMin} &#8211; ${info.hostMax}</span></div>`;
+    rows += `<div class="sbi-row"><span class="sbi-lbl">Usable Hosts</span><span class="sbi-val">${info.numHosts.toLocaleString()}</span></div>`;
+  }
+
+  el.innerHTML = `<span class="subnet-badge ${cls}">${txt}</span><div class="subnet-info-box">${rows}</div>`;
+}
+
 function deselectAll() {
   selectedCell = null;
   document.getElementById('config-empty').classList.remove('hidden');
   document.getElementById('config-form').classList.add('hidden');
   const linkPanel = document.getElementById('link-config-form');
   if (linkPanel) linkPanel.classList.add('hidden');
+  updateSubnetBadge('cfg-ip-subnet-info', '');
+  updateSubnetBadge('lcfg-ip-subnet-info', '');
 }
 
 function updateSelectedLabel(val) {
