@@ -8500,6 +8500,26 @@ Output ONLY the JSON object. No other text."""
         import requests as _req
         from tools.http.client import request as _req_request
 
+        def _repair_json(s):
+            """Best-effort repair for common LLM JSON mistakes."""
+            # Missing comma between adjacent objects in an array: }...{
+            s = re.sub(r"\}\s*\n(\s*)\{", r"},\n\1{", s)
+            # Trailing comma before closing bracket/brace
+            s = re.sub(r",(\s*[\]\}])", r"\1", s)
+            # Truncated JSON: find last complete top-level object and close it
+            if s.count("{") > s.count("}"):
+                # Try closing unclosed arrays and objects gracefully
+                depth_b = s.count("[") - s.count("]")
+                depth_c = s.count("{") - s.count("}")
+                # Strip back to last complete object in nodes/edges
+                last_close = s.rfind("}}")
+                if last_close > 0:
+                    s = s[: last_close + 2]
+                    depth_b2 = s.count("[") - s.count("]")
+                    depth_c2 = s.count("{") - s.count("}")
+                    s += "]" * max(0, depth_b2) + "}" * max(0, depth_c2)
+            return s
+
         def _parse_llm_response(content):
             """Extract and validate JSON from LLM response text."""
             text = content.strip()
@@ -8512,7 +8532,13 @@ Output ONLY the JSON object. No other text."""
             end = text.rfind("}") + 1
             if start < 0 or end <= start:
                 return None, text[:500]
-            graph_json = json.loads(text[start:end])
+            json_str = text[start:end]
+            # Try clean parse first, fall back to repair
+            try:
+                graph_json = json.loads(json_str)
+            except json.JSONDecodeError:
+                json_str = _repair_json(json_str)
+                graph_json = json.loads(json_str)
             if "nodes" not in graph_json or "edges" not in graph_json:
                 return None, text[:500]
             for n in graph_json["nodes"]:
@@ -8565,7 +8591,7 @@ Output ONLY the JSON object. No other text."""
                     "system": _AI_TOPO_SYSTEM_PROMPT,
                     "messages": [{"role": "user", "content": desc}],
                 },
-                timeout=90,
+                timeout=120,
             )
             r.raise_for_status()
             content = r.json().get("content", [{}])[0].get("text", "")
@@ -8594,7 +8620,8 @@ Output ONLY the JSON object. No other text."""
             return content, None
 
         # Migration diagrams need more tokens (multi-phase = many nodes)
-        token_budget = 8192 if is_migration else 4096
+        # 8192 baseline; migration scenarios with many phases get 16k
+        token_budget = 16384 if is_migration else 8192
 
         try:
             # Try Claude first (fast, reliable), fall back to Ollama (air-gap)
