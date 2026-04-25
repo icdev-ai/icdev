@@ -149,6 +149,79 @@
 #port-map-simple-table input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #27ae60; }
 #port-map-simple-table input[type="text"] { background: #0a1624; border: 1px solid #1a2d4a; color: #eaeaea; padding: 3px 6px; border-radius: 3px; font-size: 12px; box-sizing: border-box; }
 #port-map-simple-table input[type="text"]:focus { outline: none; border-color: #27ae60; }
+
+/* ── Step 4 — CAT1 pin banner ─────────────────────────────────── */
+.cat1-pin-banner { background: #3d1515; border: 1px solid #a93226; border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; display: none; }
+.cat1-pin-banner.visible { display: block; }
+.cat1-pin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.cat1-pin-title { color: #e74c3c; font-size: 13px; font-weight: 700; }
+.cat1-pin-count { background: #e74c3c; color: #fff; border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+.cat1-pin-banner.resolved { background: #1a3a1a; border-color: #27ae60; }
+.cat1-pin-banner.resolved .cat1-pin-title { color: #27ae60; }
+.cat1-pin-banner.resolved .cat1-pin-count { background: #27ae60; }
+.cat1-pin-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(169,50,38,0.3); }
+.cat1-pin-item:last-child { border-bottom: none; }
+.cat1-pin-icon { color: #e74c3c; flex-shrink: 0; margin-top: 1px; }
+.cat1-pin-text { flex: 1; }
+.cat1-pin-name { color: #eaeaea; font-size: 12px; }
+.cat1-pin-detail { color: #7a8cb0; font-size: 11px; margin-top: 2px; }
+.cat1-pin-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(231,76,60,0.2); color: #e74c3c; flex-shrink: 0; }
+.cat1-pin-badge.overridden { background: rgba(243,156,18,0.2); color: #f39c12; }
+
+.compat-stats { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.compat-stat-chip { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 8px 16px; text-align: center; }
+.compat-stat-val { font-size: 24px; font-weight: 700; line-height: 1; }
+.compat-stat-lbl { font-size: 10px; color: #7a8cb0; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.compat-stat-chip.stat-cat1 .compat-stat-val { color: #e74c3c; }
+.compat-stat-chip.stat-cat2 .compat-stat-val { color: #f39c12; }
+.compat-stat-chip.stat-pass .compat-stat-val { color: #27ae60; }
+.compat-stat-chip.stat-total .compat-stat-val { color: #eaeaea; }
+
+.compat-section-hdr { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; padding: 6px 0; }
+.compat-collapse-icon { font-size: 10px; color: #4a6080; transition: transform 0.2s; }
+.compat-collapse-icon.collapsed { transform: rotate(-90deg); }
+.compat-section-body { overflow: hidden; }
+
+.override-btn { background: none; border: 1px solid #2e5580; color: #4a8abf; border-radius: 3px; padding: 2px 7px; font-size: 10px; cursor: pointer; white-space: nowrap; }
+.override-btn:hover { background: #1e3a6e; }
+.override-form { display: none; margin-top: 6px; background: #0a1624; border: 1px solid #1e3a6e; border-radius: 4px; padding: 8px; }
+.override-form.open { display: block; }
+.override-reason-input { width: 100%; background: #0d1b2e; border: 1px solid #1e3a6e; color: #eaeaea; padding: 4px 8px; border-radius: 3px; font-size: 11px; box-sizing: border-box; margin-bottom: 6px; }
+.override-form-btns { display: flex; gap: 6px; }
+.override-apply-btn { background: #f39c12; color: #000; border: none; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 11px; font-weight: 700; }
+.override-cancel-btn { background: #1e3a6e; color: #eaeaea; border: none; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 11px; }
+
+/* ── Step 5 — Enhanced diff ───────────────────────────────────── */
+.diff-stats-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 8px 14px; flex-wrap: wrap; }
+.diff-stat { font-size: 12px; font-weight: 600; }
+.diff-stat-add { color: #27ae60; }
+.diff-stat-rem { color: #e74c3c; }
+.diff-stat-ren { color: #f39c12; }
+.diff-stat-total { color: #7a8cb0; font-weight: 400; }
+.diff-stats-spacer { flex: 1; }
+.diff-copy-btn { background: #1e3a6e; border: none; color: #7a8cb0; border-radius: 3px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+.diff-copy-btn:hover { background: #254d8e; color: #eaeaea; }
+.diff-pane pre { margin: 0; padding: 12px 0; font-size: 11px; overflow-x: auto; white-space: pre; }
+.diff-pane-scroll { max-height: 400px; overflow-y: auto; overflow-x: auto; }
+.diff-line { display: flex; align-items: flex-start; min-height: 17px; }
+.diff-lnum { display: inline-block; min-width: 36px; text-align: right; padding: 0 8px 0 4px; color: #2e4060; font-size: 10px; border-right: 1px solid #1a2d4a; margin-right: 8px; flex-shrink: 0; user-select: none; line-height: 17px; }
+.diff-ltext { flex: 1; white-space: pre-wrap; line-height: 17px; padding-right: 8px; }
+.diff-line.keep .diff-ltext { color: #7a8cb0; }
+.diff-line.add { background: rgba(39,174,96,0.08); }
+.diff-line.add .diff-ltext { color: #27ae60; }
+.diff-line.add .diff-lnum { color: #1a5e2d; }
+.diff-line.remove { background: rgba(231,76,60,0.08); }
+.diff-line.remove .diff-ltext { color: #e74c3c; text-decoration: line-through; }
+.diff-line.remove .diff-lnum { color: #5a1515; }
+.diff-line.rename { background: rgba(243,156,18,0.08); }
+.diff-line.rename .diff-ltext { color: #f39c12; }
+.diff-line.rename .diff-lnum { color: #5a3d00; }
+
+.cc-group-hdr { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 0 4px; margin-top: 4px; border-bottom: 1px solid #1e3a6e; display: flex; align-items: center; gap: 6px; }
+.cc-group-hdr.cc-errors { color: #e74c3c; }
+.cc-group-hdr.cc-warnings { color: #f39c12; }
+.cc-group-hdr.cc-info { color: #27ae60; }
+.cc-group-badge { background: rgba(255,255,255,0.1); border-radius: 8px; padding: 1px 7px; font-size: 10px; }
 </style>
 {% endblock %}
 
@@ -477,19 +550,66 @@
     <div class="nw-page" id="page-4">
       <div class="nw-header">
         <h2>Step 4 — Compatibility Checklist</h2>
-        <p>Auto-generated hardware, software, protocol, and scale compatibility checks.</p>
+        <p>Auto-generated hardware, software, protocol, and scale compatibility checks. CAT1 blockers must be resolved before ERB submission.</p>
       </div>
 
-      <button class="btn btn-primary" style="margin-bottom:16px" onclick="runCompatCheck()">Run Compatibility Check</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <button class="btn btn-primary" onclick="runCompatCheck()" id="compat-run-btn">Run Compatibility Check</button>
+        <span id="compat-run-status" style="font-size:12px;color:#7a8cb0"></span>
+      </div>
 
+      <!-- CAT1 Blocker Pin Banner -->
+      <div class="cat1-pin-banner" id="cat1-pin-banner">
+        <div class="cat1-pin-header">
+          <div>
+            <span class="cat1-pin-title" id="cat1-pin-title">⛔ CAT1 Blockers — Must Resolve Before ERB Submission</span>
+          </div>
+          <span class="cat1-pin-count" id="cat1-pin-count">0</span>
+        </div>
+        <div id="cat1-pin-items"></div>
+      </div>
+
+      <!-- Compat stats bar -->
+      <div class="compat-stats" id="compat-stats" style="display:none">
+        <div class="compat-stat-chip stat-total">
+          <div class="compat-stat-val" id="stat-total">0</div>
+          <div class="compat-stat-lbl">Total Checks</div>
+        </div>
+        <div class="compat-stat-chip stat-pass">
+          <div class="compat-stat-val" id="stat-pass">0</div>
+          <div class="compat-stat-lbl">Passed</div>
+        </div>
+        <div class="compat-stat-chip stat-cat1">
+          <div class="compat-stat-val" id="stat-cat1">0</div>
+          <div class="compat-stat-lbl">CAT1 Blockers</div>
+        </div>
+        <div class="compat-stat-chip stat-cat2">
+          <div class="compat-stat-val" id="stat-cat2">0</div>
+          <div class="compat-stat-lbl">CAT2 Warnings</div>
+        </div>
+      </div>
+
+      <!-- Category sections -->
       <div id="compat-cats">
-        {% for cat in ['hardware','software','protocol','scale'] %}
-        <div style="margin-bottom:20px">
-          <div class="section-title" style="text-transform:capitalize">{{ cat }}</div>
-          <table class="data-table" id="compat-{{ cat }}">
-            <thead><tr><th>Check</th><th>Expected</th><th>Actual</th><th>Status</th><th>Category</th></tr></thead>
-            <tbody id="compat-{{ cat }}-tbody"></tbody>
-          </table>
+        {% for cat, label in [('hardware','Hardware'),('software','Software / Firmware'),('protocol','Protocols'),('scale','Scale / Capacity')] %}
+        <div style="margin-bottom:16px">
+          <div class="section-title compat-section-hdr" onclick="toggleCompatSection('{{ cat }}')">
+            <span>{{ label }}
+              <span id="compat-{{ cat }}-badge" style="font-size:11px;font-weight:400;margin-left:8px;color:#4a6080"></span>
+            </span>
+            <span class="compat-collapse-icon" id="compat-{{ cat }}-icon">▼</span>
+          </div>
+          <div class="compat-section-body" id="compat-{{ cat }}-body">
+            <table class="data-table" id="compat-{{ cat }}">
+              <thead><tr>
+                <th>Check</th><th>Expected</th><th>Actual</th>
+                <th style="width:80px">Status</th><th style="width:70px">Severity</th><th style="width:80px">Override</th>
+              </tr></thead>
+              <tbody id="compat-{{ cat }}-tbody">
+                <tr><td colspan="6" style="color:#4a6080;text-align:center;font-size:11px">Run check to populate</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
         {% endfor %}
       </div>
@@ -504,25 +624,49 @@
     <div class="nw-page" id="page-5">
       <div class="nw-header">
         <h2>Step 5 — Config Conversion &amp; Preview</h2>
-        <p>Generated target config with diff highlighting. Commit-check simulation validates syntax and compatibility.</p>
+        <p>Split-pane diff view of source vs. generated target config. Commit-check simulation reports errors, warnings, and info findings.</p>
       </div>
 
-      <button class="btn btn-primary" style="margin-bottom:16px" onclick="convertConfig()">Generate Target Config</button>
-      <button class="btn btn-secondary" style="margin-bottom:16px;margin-left:8px" onclick="downloadTargetConfig()">Download Config</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <button class="btn btn-primary" onclick="convertConfig()" id="convert-btn">Generate Target Config</button>
+        <button class="btn btn-secondary" onclick="downloadTargetConfig()">Download Config</button>
+        <span id="convert-status" style="font-size:12px;color:#7a8cb0"></span>
+      </div>
 
+      <!-- Diff stats bar -->
+      <div class="diff-stats-bar" id="diff-stats-bar" style="display:none">
+        <span class="diff-stat diff-stat-add" id="diff-stat-add">+0 added</span>
+        <span class="diff-stat diff-stat-rem" id="diff-stat-rem">−0 removed</span>
+        <span class="diff-stat diff-stat-ren" id="diff-stat-ren">~0 renamed</span>
+        <span class="diff-stat diff-stat-total" id="diff-stat-total">0 total lines</span>
+        <span class="diff-stats-spacer"></span>
+        <button class="diff-copy-btn" onclick="copyTargetConfig()" title="Copy target config to clipboard">Copy Target</button>
+      </div>
+
+      <!-- Split-pane diff view -->
       <div class="diff-grid" id="diff-view" style="display:none">
         <div class="diff-pane">
           <div class="diff-pane-title">Source Config</div>
-          <pre id="diff-source"></pre>
+          <div class="diff-pane-scroll" id="diff-src-scroll" onscroll="syncScroll('src')">
+            <pre id="diff-source" style="margin:0;padding:0"></pre>
+          </div>
         </div>
         <div class="diff-pane">
-          <div class="diff-pane-title">Target Config (Generated)</div>
-          <pre id="diff-target"></pre>
+          <div class="diff-pane-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Target Config (Generated)</span>
+            <span id="cc-error-badge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;background:#3d1515;color:#e74c3c"></span>
+          </div>
+          <div class="diff-pane-scroll" id="diff-tgt-scroll" onscroll="syncScroll('tgt')">
+            <pre id="diff-target" style="margin:0;padding:0"></pre>
+          </div>
         </div>
       </div>
 
+      <!-- Commit-check simulation panel -->
       <div class="cc-panel" id="cc-panel" style="display:none">
-        <h4>Commit-Check Simulation</h4>
+        <h4>Commit-Check Simulation
+          <span id="cc-summary-chips" style="margin-left:8px;font-size:11px;font-weight:400"></span>
+        </h4>
         <div id="cc-results"></div>
       </div>
 
@@ -656,6 +800,9 @@ let testCases = {};  // {pre:[], cutover:[], post:[]}
 let cutoverSteps = [];
 let targetConfigText = '';
 let currentStep = 1;
+let _compatChecked = false;
+let _compatChecks = [];   // raw checks array from last run
+let _compatOverrides = {}; // {checkId: {reason, ts}}
 
 // ── Toast ─────────────────────────────────────────────────────────
 function toast(msg, isErr=false) {
@@ -672,6 +819,8 @@ function goStep(n) {
   document.getElementById('page-' + n).classList.add('active');
   document.getElementById('step-link-' + n).classList.add('active');
   currentStep = n;
+  if (n === 4 && _sid && !_compatChecked) runCompatCheck(true);
+  if (n === 5 && _sid && !targetConfigText) convertConfig(true);
   if (n === 6 && Object.keys(testCases).length === 0) loadTests();
   if (n === 8) loadReadiness();
 }
@@ -1163,72 +1312,311 @@ function downloadBOM() {
 }
 
 // ── STEP 4 ────────────────────────────────────────────────────────
-async function runCompatCheck() {
-  if (!_sid) { toast('Session required', true); return; }
+async function runCompatCheck(silent=false) {
+  if (!_sid) { if (!silent) toast('Session required', true); return; }
+  const btn = document.getElementById('compat-run-btn');
+  const statusEl = document.getElementById('compat-run-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Running checks…';
   try {
     const data = await api('POST', `/api/network-migration/${_sid}/compat-check`);
-    renderCompatChecks(data.checks || []);
+    _compatChecks = data.checks || [];
+    _compatChecked = true;
+    renderCompatChecks(_compatChecks);
     markStepDone(4);
-    toast('Compatibility check complete');
-  } catch(e) { toast('Compat check failed: ' + e.message, true); }
+    if (!silent) toast('Compatibility check complete — ' + _compatChecks.length + ' checks run');
+    const cat1 = _compatChecks.filter(c => c.severity === 'CAT1' && c.status !== 'pass');
+    statusEl.textContent = cat1.length
+      ? `⛔ ${cat1.length} CAT1 blocker${cat1.length > 1 ? 's' : ''} detected`
+      : '✓ No CAT1 blockers';
+    statusEl.style.color = cat1.length ? '#e74c3c' : '#27ae60';
+  } catch(e) {
+    statusEl.textContent = '';
+    if (!silent) toast('Compat check failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function toggleCompatSection(cat) {
+  const body = document.getElementById('compat-' + cat + '-body');
+  const icon = document.getElementById('compat-' + cat + '-icon');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  icon.textContent = hidden ? '▼' : '▶';
 }
 
 function renderCompatChecks(checks) {
-  const cats = {hardware:[], software:[], protocol:[], scale:[]};
+  const cats = { hardware: [], software: [], protocol: [], scale: [] };
   checks.forEach(c => { if (cats[c.category]) cats[c.category].push(c); });
+
+  // Compute stats
+  const total = checks.length;
+  const cat1 = checks.filter(c => c.severity === 'CAT1' && c.status !== 'pass').length;
+  const cat2 = checks.filter(c => c.severity === 'CAT2' && c.status !== 'pass').length;
+  const passed = checks.filter(c => c.status === 'pass').length;
+
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-pass').textContent = passed;
+  document.getElementById('stat-cat1').textContent = cat1;
+  document.getElementById('stat-cat2').textContent = cat2;
+  document.getElementById('compat-stats').style.display = 'flex';
+
+  // Render CAT1 pin banner
+  renderCat1Pin(checks);
+
+  // Render each category section
   Object.entries(cats).forEach(([cat, rows]) => {
-    document.getElementById('compat-'+cat+'-tbody').innerHTML = rows.map(r => `
-      <tr>
-        <td>${r.item}</td>
-        <td style="font-size:11px;color:#7a8cb0">${r.expected||'—'}</td>
-        <td style="font-size:11px">${r.actual||'—'}</td>
-        <td><span class="badge badge-${r.status}">${r.status.toUpperCase()}</span></td>
-        <td style="font-size:11px;color:${r.severity==='CAT1'?'#e74c3c':r.severity==='CAT2'?'#f39c12':'#7a8cb0'}">${r.severity||'—'}</td>
-      </tr>`).join('');
+    const catCat1 = rows.filter(r => r.severity === 'CAT1' && r.status !== 'pass').length;
+    const catCat2 = rows.filter(r => r.severity === 'CAT2' && r.status !== 'pass').length;
+    const badge = document.getElementById('compat-' + cat + '-badge');
+    if (catCat1 > 0) {
+      badge.textContent = `${catCat1} CAT1`;
+      badge.style.color = '#e74c3c';
+    } else if (catCat2 > 0) {
+      badge.textContent = `${catCat2} CAT2`;
+      badge.style.color = '#f39c12';
+    } else if (rows.length) {
+      badge.textContent = 'All pass';
+      badge.style.color = '#27ae60';
+    } else {
+      badge.textContent = '';
+    }
+
+    document.getElementById('compat-' + cat + '-tbody').innerHTML = rows.length
+      ? rows.map((r, idx) => {
+          const overrideKey = cat + '_' + idx;
+          const isOverridden = !!_compatOverrides[overrideKey];
+          const statusBadge = isOverridden
+            ? '<span class="badge badge-warn">OVERRIDE</span>'
+            : `<span class="badge badge-${r.status}">${(r.status||'—').toUpperCase()}</span>`;
+          const sevColor = r.severity === 'CAT1' ? '#e74c3c' : r.severity === 'CAT2' ? '#f39c12' : '#7a8cb0';
+          return `<tr id="compat-row-${cat}-${idx}">
+            <td>${escapeHtml(r.item||'—')}
+              ${r.notes ? `<div style="font-size:10px;color:#4a6080;margin-top:2px">${escapeHtml(r.notes)}</div>` : ''}
+            </td>
+            <td style="font-size:11px;color:#7a8cb0">${escapeHtml(r.expected||'—')}</td>
+            <td style="font-size:11px">${escapeHtml(r.actual||'—')}</td>
+            <td>${statusBadge}</td>
+            <td style="font-size:11px;font-weight:700;color:${sevColor}">${escapeHtml(r.severity||'—')}</td>
+            <td>
+              ${(r.status !== 'pass' && !isOverridden)
+                ? `<button class="override-btn" onclick="showOverrideForm('${cat}',${idx})">Override</button>` : ''}
+              ${isOverridden
+                ? `<span style="font-size:10px;color:#f39c12" title="${escapeHtml(_compatOverrides[overrideKey].reason)}">Overridden ✓</span>` : ''}
+              <div class="override-form" id="override-form-${cat}-${idx}">
+                <input class="override-reason-input" id="override-reason-${cat}-${idx}" placeholder="Reason for override (required)…">
+                <div class="override-form-btns">
+                  <button class="override-apply-btn" onclick="applyOverride('${cat}',${idx})">Apply Override</button>
+                  <button class="override-cancel-btn" onclick="hideOverrideForm('${cat}',${idx})">Cancel</button>
+                </div>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="6" style="color:#4a6080;text-align:center;font-size:11px">No checks in this category</td></tr>`;
   });
 }
 
+function renderCat1Pin(checks) {
+  const banner = document.getElementById('cat1-pin-banner');
+  const items = document.getElementById('cat1-pin-items');
+  const countEl = document.getElementById('cat1-pin-count');
+  const titleEl = document.getElementById('cat1-pin-title');
+
+  const cat1Blockers = checks.filter(c => c.severity === 'CAT1' && c.status !== 'pass');
+  const overriddenCat1 = cat1Blockers.filter(c => {
+    const cats = ['hardware', 'software', 'protocol', 'scale'];
+    return cats.some(cat => {
+      const catChecks = checks.filter(ch => ch.category === cat);
+      const idx = catChecks.indexOf(c);
+      return idx >= 0 && !!_compatOverrides[cat + '_' + idx];
+    });
+  });
+  const unresolvedCat1 = cat1Blockers.length - overriddenCat1.length;
+
+  banner.classList.add('visible');
+  countEl.textContent = unresolvedCat1;
+
+  if (unresolvedCat1 === 0 && cat1Blockers.length === 0) {
+    banner.classList.remove('visible');
+    return;
+  }
+
+  if (unresolvedCat1 === 0) {
+    banner.classList.add('resolved');
+    titleEl.textContent = '✓ All CAT1 blockers have overrides applied';
+    countEl.textContent = '0 unresolved';
+  } else {
+    banner.classList.remove('resolved');
+    titleEl.textContent = '⛔ CAT1 Blockers — Must Resolve Before ERB Submission';
+  }
+
+  items.innerHTML = cat1Blockers.map(c => {
+    const cats = ['hardware', 'software', 'protocol', 'scale'];
+    let overrideKey = null;
+    for (const cat of cats) {
+      const catChecks = checks.filter(ch => ch.category === cat);
+      const idx = catChecks.indexOf(c);
+      if (idx >= 0) { overrideKey = cat + '_' + idx; break; }
+    }
+    const isOverridden = overrideKey && !!_compatOverrides[overrideKey];
+    return `<div class="cat1-pin-item">
+      <div class="cat1-pin-icon">${isOverridden ? '⚠' : '✗'}</div>
+      <div class="cat1-pin-text">
+        <div class="cat1-pin-name">${escapeHtml(c.item||'')}</div>
+        <div class="cat1-pin-detail">Expected: ${escapeHtml(c.expected||'—')} · Actual: ${escapeHtml(c.actual||'—')} · ${escapeHtml(c.category||'')}</div>
+        ${c.notes ? `<div class="cat1-pin-detail">${escapeHtml(c.notes)}</div>` : ''}
+      </div>
+      <span class="cat1-pin-badge ${isOverridden ? 'overridden' : ''}">${isOverridden ? 'OVERRIDE' : 'BLOCKED'}</span>
+    </div>`;
+  }).join('');
+}
+
+function showOverrideForm(cat, idx) {
+  document.getElementById(`override-form-${cat}-${idx}`).classList.add('open');
+}
+function hideOverrideForm(cat, idx) {
+  document.getElementById(`override-form-${cat}-${idx}`).classList.remove('open');
+}
+function applyOverride(cat, idx) {
+  const reason = document.getElementById(`override-reason-${cat}-${idx}`).value.trim();
+  if (!reason) { toast('Enter a reason for the override', true); return; }
+  _compatOverrides[cat + '_' + idx] = { reason, ts: new Date().toISOString() };
+  // Re-render with overrides applied
+  renderCompatChecks(_compatChecks);
+  toast(`Override applied: ${reason}`);
+}
+
 // ── STEP 5 ────────────────────────────────────────────────────────
-async function convertConfig() {
-  if (!_sid) { toast('Session required', true); return; }
+let _syncScrolling = false;
+
+function syncScroll(origin) {
+  if (_syncScrolling) return;
+  _syncScrolling = true;
+  const src = document.getElementById('diff-src-scroll');
+  const tgt = document.getElementById('diff-tgt-scroll');
+  if (origin === 'src') {
+    tgt.scrollTop = src.scrollTop;
+  } else {
+    src.scrollTop = tgt.scrollTop;
+  }
+  _syncScrolling = false;
+}
+
+async function convertConfig(silent=false) {
+  if (!_sid) { if (!silent) toast('Session required', true); return; }
+  const btn = document.getElementById('convert-btn');
+  const statusEl = document.getElementById('convert-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Generating…';
   try {
     const data = await api('POST', `/api/network-migration/${_sid}/convert-config`);
     targetConfigText = data.target || '';
     renderDiff(data);
     renderCommitCheck(data.commit_check || []);
-    document.getElementById('diff-view').style.display='grid';
-    document.getElementById('cc-panel').style.display='block';
+    document.getElementById('diff-view').style.display = 'grid';
+    document.getElementById('cc-panel').style.display = 'block';
     markStepDone(5);
-    toast('Config generated');
-  } catch(e) { toast('Convert failed: ' + e.message, true); }
-}
-
-function renderDiff(data) {
-  const srcPre = document.getElementById('diff-source');
-  const tgtPre = document.getElementById('diff-target');
-  srcPre.innerHTML = (data.source||'').split('\n').map(l => `<span class="diff-line-keep">${escapeHtml(l)}</span>`).join('\n');
-  const diffLines = data.diff || [];
-  if (diffLines.length) {
-    tgtPre.innerHTML = diffLines.map(d => {
-      const cls = d.op==='add'?'diff-line-add':d.op==='remove'?'diff-line-remove':d.op==='rename'?'diff-line-rename':'diff-line-keep';
-      return `<span class="${cls}">${escapeHtml(d.line||'')}</span>`;
-    }).join('\n');
-  } else {
-    tgtPre.innerHTML = (data.target||'').split('\n').map(l => `<span class="diff-line-keep">${escapeHtml(l)}</span>`).join('\n');
+    if (!silent) toast('Config generated');
+    const errs = (data.commit_check||[]).filter(c => c.status === 'fail').length;
+    statusEl.textContent = errs ? `⚠ ${errs} commit-check error${errs > 1 ? 's' : ''}` : '✓ Commit-check clean';
+    statusEl.style.color = errs ? '#f39c12' : '#27ae60';
+  } catch(e) {
+    statusEl.textContent = '';
+    if (!silent) toast('Convert failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
   }
 }
 
+function renderDiff(data) {
+  const srcLines = (data.source || '').split('\n');
+  const diffLines = data.diff || [];
+
+  // Build source pane (always line-by-line plain)
+  const srcPre = document.getElementById('diff-source');
+  srcPre.innerHTML = srcLines.map((l, i) =>
+    `<div class="diff-line keep"><span class="diff-lnum">${i + 1}</span><span class="diff-ltext">${escapeHtml(l)}</span></div>`
+  ).join('');
+
+  // Build target pane
+  const tgtPre = document.getElementById('diff-target');
+  let added = 0, removed = 0, renamed = 0;
+  if (diffLines.length) {
+    let lineNum = 0;
+    tgtPre.innerHTML = diffLines.map(d => {
+      const op = d.op || 'keep';
+      if (op !== 'remove') lineNum++;
+      if (op === 'add') added++;
+      else if (op === 'remove') removed++;
+      else if (op === 'rename') renamed++;
+      const cls = op === 'add' ? 'add' : op === 'remove' ? 'remove' : op === 'rename' ? 'rename' : 'keep';
+      const num = op === 'remove' ? '' : lineNum;
+      return `<div class="diff-line ${cls}"><span class="diff-lnum">${num}</span><span class="diff-ltext">${escapeHtml(d.line||'')}</span></div>`;
+    }).join('');
+  } else {
+    const tgtLines = (data.target || '').split('\n');
+    tgtPre.innerHTML = tgtLines.map((l, i) =>
+      `<div class="diff-line keep"><span class="diff-lnum">${i + 1}</span><span class="diff-ltext">${escapeHtml(l)}</span></div>`
+    ).join('');
+  }
+
+  // Update stats bar
+  document.getElementById('diff-stat-add').textContent = `+${added} added`;
+  document.getElementById('diff-stat-rem').textContent = `−${removed} removed`;
+  document.getElementById('diff-stat-ren').textContent = `~${renamed} renamed`;
+  document.getElementById('diff-stat-total').textContent = `${srcLines.length} source lines`;
+  document.getElementById('diff-stats-bar').style.display = 'flex';
+}
+
 function renderCommitCheck(checks) {
-  document.getElementById('cc-results').innerHTML = checks.map(c => {
-    const icon = c.status==='pass'?'✓':c.status==='fail'?'✗':'⚠';
-    const cls = c.status==='pass'?'pass':c.status==='fail'?'fail':'warn';
-    return `<div class="cc-item">
-      <span class="cc-icon ${cls}">[${icon}]</span>
-      <div class="cc-msg">${c.message||''}
-        ${c.statement?`<div class="cc-stmt">${escapeHtml(c.statement)}</div>`:''}
-      </div>
-    </div>`;
-  }).join('');
+  // Group by severity
+  const errors = checks.filter(c => c.status === 'fail');
+  const warnings = checks.filter(c => c.status === 'warn');
+  const info = checks.filter(c => c.status === 'pass' || c.status === 'info');
+
+  // Summary chips in panel header
+  const chips = [];
+  if (errors.length) chips.push(`<span style="color:#e74c3c;font-weight:700">${errors.length} error${errors.length > 1 ? 's' : ''}</span>`);
+  if (warnings.length) chips.push(`<span style="color:#f39c12">${warnings.length} warning${warnings.length > 1 ? 's' : ''}</span>`);
+  if (info.length) chips.push(`<span style="color:#27ae60">${info.length} passed</span>`);
+  document.getElementById('cc-summary-chips').innerHTML = chips.join(' · ');
+
+  // Badge in target pane header
+  const badge = document.getElementById('cc-error-badge');
+  if (errors.length) {
+    badge.textContent = `${errors.length} error${errors.length > 1 ? 's' : ''}`;
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  function renderGroup(items, label, cls) {
+    if (!items.length) return '';
+    const icon = cls === 'cc-errors' ? '✗' : cls === 'cc-warnings' ? '⚠' : '✓';
+    const rows = items.map(c => {
+      const iCls = c.status === 'pass' ? 'pass' : c.status === 'fail' ? 'fail' : 'warn';
+      return `<div class="cc-item">
+        <span class="cc-icon ${iCls}">${icon}</span>
+        <div class="cc-msg">${escapeHtml(c.message||'')}
+          ${c.statement ? `<div class="cc-stmt">${escapeHtml(c.statement)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="cc-group-hdr ${cls}">${label}<span class="cc-group-badge">${items.length}</span></div>${rows}`;
+  }
+
+  document.getElementById('cc-results').innerHTML =
+    renderGroup(errors, 'Errors', 'cc-errors') +
+    renderGroup(warnings, 'Warnings', 'cc-warnings') +
+    renderGroup(info, 'Passed', 'cc-info') ||
+    '<div style="color:#4a6080;font-size:12px">No commit-check findings.</div>';
+}
+
+function copyTargetConfig() {
+  if (!targetConfigText) { toast('Generate config first', true); return; }
+  navigator.clipboard.writeText(targetConfigText).then(() => toast('Target config copied to clipboard'));
 }
 
 function downloadTargetConfig() {
@@ -1452,7 +1840,13 @@ function escapeHtml(s) {
       // Determine which step to resume at
       let resumeStep = 2;
       if ((data.port_map||[]).length > 0) { markStepDone(3); resumeStep = 4; }
-      if ((data.compat_checks||[]).length > 0) { markStepDone(4); resumeStep = 5; }
+      if ((data.compat_checks||[]).length > 0) {
+        _compatChecked = true;
+        _compatChecks = data.compat_checks;
+        renderCompatChecks(_compatChecks);
+        markStepDone(4); resumeStep = 5;
+      }
+      if (data.session && data.session.target_config) { markStepDone(5); resumeStep = 6; }
       if ((data.test_cases||[]).length > 0) { markStepDone(6); resumeStep = 7; }
       if ((data.cutover_steps||[]).length > 0) { markStepDone(7); resumeStep = 8; }
       goStep(resumeStep);
