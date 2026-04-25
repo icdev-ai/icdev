@@ -4,13 +4,35 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: ndc
+  name: Ndc Project
+  description: Auto-registered project for tasks with prefix 'ndc-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: ndc-
+  default_open: true
+  briefs: []
+  epics:
+  - key: cq
+    title: CQ
+    priority: medium
+  - key: pi
+    title: PI
+    priority: medium
+  - key: pa
+    title: PA
+    priority: medium
+  - key: ph
+    title: PH
+    priority: medium
+  - key: pl
+    title: PL
+    priority: medium
 - key: cvo
   name: Canvas Orchestration
-  description: >-
-    Cross-canvas event bus and unified compliance health: NDC->SDC topology hook,
-    PDC->SDC threat refresh, BDC ISA expiry alerting, DDC lineage UI with PII markers,
-    ODC MITRE ingestion + Sigma generation, and a unified /canvas-compliance page
-    showing green/yellow/red compliance status across all 7 canvases.
+  description: 'Cross-canvas event bus and unified compliance health: NDC->SDC topology
+    hook, PDC->SDC threat refresh, BDC ISA expiry alerting, DDC lineage UI with PII
+    markers, ODC MITRE ingestion + Sigma generation, and a unified /canvas-compliance
+    page showing green/yellow/red compliance status across all 7 canvases.'
   task_prefix: cvo-
   default_open: true
   briefs: []
@@ -38,11 +60,10 @@ projects:
     priority: critical
 - key: cvp
   name: Canvas Parity
-  description: >-
-    Bring BDC, DDC, ODC, and IDC to parity with NDC/SDC/PDC. Adds simulation registry
-    entries and canvas_versions YAML for all 4 canvases. IDC gets full Terraform + Ansible
-    IaC generation (the only canvas currently lacking IaC output). E2E Selenium lifecycle
-    tests for each canvas.
+  description: Bring BDC, DDC, ODC, and IDC to parity with NDC/SDC/PDC. Adds simulation
+    registry entries and canvas_versions YAML for all 4 canvases. IDC gets full Terraform
+    + Ansible IaC generation (the only canvas currently lacking IaC output). E2E Selenium
+    lifecycle tests for each canvas.
   task_prefix: cvp-
   default_open: true
   briefs: []
@@ -67,10 +88,10 @@ projects:
     priority: critical
 - key: ad712
   name: FathomDesk 7.12
-  description: >-
-    Completes the deferred work from Phase 7.10-7.5C: ad_trap_events insert path
-    (table exists, write path missing), trap history API + Genesis reflex + UI panel,
-    and live broker limit/stop orders (Phase 7.5C stub completion via Alpaca API).
+  description: 'Completes the deferred work from Phase 7.10-7.5C: ad_trap_events insert
+    path (table exists, write path missing), trap history API + Genesis reflex + UI
+    panel, and live broker limit/stop orders (Phase 7.5C stub completion via Alpaca
+    API).'
   task_prefix: ad712-
   default_open: true
   briefs: []
@@ -89,11 +110,10 @@ projects:
     priority: critical
 - key: cdh
   name: Code Health
-  description: >-
-    Systematic cleanup of 1,014 open oracle predictions: fix CRITICAL import regression
-    (stale FathomDesk reference in awareness tooling), repair 3 broken test files,
-    register 219 unlisted tools in manifest shards, and add 360 unlisted routes to
-    start.md Pages: line.
+  description: 'Systematic cleanup of 1,014 open oracle predictions: fix CRITICAL
+    import regression (stale FathomDesk reference in awareness tooling), repair 3
+    broken test files, register 219 unlisted tools in manifest shards, and add 360
+    unlisted routes to start.md Pages: line.'
   task_prefix: cdh-
   default_open: true
   briefs: []
@@ -107,6 +127,12 @@ projects:
   - key: vv
     title: V&V Gate
     priority: critical
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
 - key: task_kb
   name: Task Kb Project
   description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
