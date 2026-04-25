@@ -12,6 +12,7 @@ let redoStack = [];
 let saveTimer = null;
 let isDirty = false;
 let _conflictExportBypassed = false; // ndc-ux-02: bypass conflict gate for "Export Anyway"
+let _selectedCells = [];             // ndc-ux-multi: shift+click multi-select list
 
 /* ── CR Markup Mode State ─────────────────────────────────────────────────── */
 let _crModeActive = false;
@@ -601,15 +602,19 @@ function initCanvas() {
   });
 
   // Selection (CR markup mode intercepts clicks when active)
-  paper.on('element:pointerclick', (view) => {
+  paper.on('element:pointerclick', (view, evt) => {
     if (_crHandleElementClick(view.model)) return;
+    if (evt && evt.shiftKey) { _toggleMultiSelect(view.model, view); return; }
+    _clearMultiSelect();
     selectCell(view.model);
   });
-  paper.on('link:pointerclick', (view) => {
+  paper.on('link:pointerclick', (view, evt) => {
     if (_crHandleLinkClick(view.model)) return;
+    if (evt && evt.shiftKey) return; // shift+click on link: ignore
+    _clearMultiSelect();
     selectCell(view.model);
   });
-  paper.on('blank:pointerclick', () => { if (!_isPanning) { deselectAll(); hideBlastContextMenu(); } });
+  paper.on('blank:pointerclick', () => { if (!_isPanning) { _clearMultiSelect(); deselectAll(); hideBlastContextMenu(); } });
 
   // Right-click on device → blast radius context menu
   paper.on('element:contextmenu', (view, evt) => {
@@ -661,13 +666,15 @@ function initCanvas() {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveTopology(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undoAction(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redoAction(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') { e.preventDefault(); duplicateSelected(); }
     if (e.key === 'Escape' && !document.getElementById('cr-just-dialog').classList.contains('hidden')) {
       crJustCancel();
       return;
     }
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (selectedCell && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-        deleteSelected();
+      if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+        if (_selectedCells.length > 0) { _deleteMultiSelected(); }
+        else if (selectedCell) { deleteSelected(); }
       }
     }
   });
@@ -1755,6 +1762,7 @@ function _showDesignGuidance(data) {
 /* ── Selection & Config Panel ───────────────────────────────────────────────── */
 function selectCell(cell) {
   selectedCell = cell;
+  _openConfigPanel();
 
   if (cell.isElement()) {
     const type = cell.get('nodeType') || 'unknown';
@@ -1763,6 +1771,10 @@ function selectCell(cell) {
 
     document.getElementById('config-empty').classList.add('hidden');
     document.getElementById('config-form').classList.remove('hidden');
+    const bulkPanel = document.getElementById('bulk-edit-panel');
+    if (bulkPanel) bulkPanel.classList.add('hidden');
+    const hdr = document.getElementById('config-header-title');
+    if (hdr) hdr.textContent = label || type || 'Properties';
 
     document.getElementById('cfg-type').value = type;
     document.getElementById('cfg-label').value = label;
@@ -1841,6 +1853,10 @@ function selectCell(cell) {
     // Link selected — show link config panel
     document.getElementById('config-empty').classList.add('hidden');
     document.getElementById('config-form').classList.add('hidden');
+    const bulkPanel = document.getElementById('bulk-edit-panel');
+    if (bulkPanel) bulkPanel.classList.add('hidden');
+    const hdr = document.getElementById('config-header-title');
+    if (hdr) hdr.textContent = 'Link';
     const linkPanel = document.getElementById('link-config-form');
     if (linkPanel) {
       linkPanel.classList.remove('hidden');
@@ -1967,10 +1983,15 @@ function updateSubnetBadge(containerId, cidr) {
 
 function deselectAll() {
   selectedCell = null;
+  _closeConfigPanel();
   document.getElementById('config-empty').classList.remove('hidden');
   document.getElementById('config-form').classList.add('hidden');
   const linkPanel = document.getElementById('link-config-form');
   if (linkPanel) linkPanel.classList.add('hidden');
+  const bulkPanel = document.getElementById('bulk-edit-panel');
+  if (bulkPanel) bulkPanel.classList.add('hidden');
+  const hdr = document.getElementById('config-header-title');
+  if (hdr) hdr.textContent = 'Properties';
   updateSubnetBadge('cfg-ip-subnet-info', '');
   updateSubnetBadge('lcfg-ip-subnet-info', '');
   const fillEl = document.getElementById('cfg-fill-color');
@@ -5276,4 +5297,197 @@ function exportCanvasPDF() {
     _guardExport('PDF export', exportCanvasPDF); return;
   }
   window.print();
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Config Panel Auto-Hide — slide open/close with tab handle
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function _openConfigPanel() {
+  const p = document.getElementById('config-panel');
+  const arrow = document.getElementById('cpt-arrow');
+  if (p) p.classList.add('config-panel-open');
+  if (arrow) arrow.innerHTML = '&#x276E;'; // ❮
+}
+
+function _closeConfigPanel() {
+  const p = document.getElementById('config-panel');
+  const arrow = document.getElementById('cpt-arrow');
+  if (p) p.classList.remove('config-panel-open');
+  if (arrow) arrow.innerHTML = '&#x276F;'; // ❯
+}
+
+function _toggleConfigPanel() {
+  const p = document.getElementById('config-panel');
+  if (p && p.classList.contains('config-panel-open')) {
+    _closeConfigPanel();
+    selectedCell = null;
+    document.getElementById('config-empty').classList.remove('hidden');
+    document.getElementById('config-form').classList.add('hidden');
+    const lp = document.getElementById('link-config-form');
+    if (lp) lp.classList.add('hidden');
+    const bp = document.getElementById('bulk-edit-panel');
+    if (bp) bp.classList.add('hidden');
+  } else {
+    _openConfigPanel();
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Ctrl+D — Duplicate selected node
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function duplicateSelected() {
+  if (!selectedCell || !selectedCell.isElement()) return;
+  pushUndo();
+  const clone = selectedCell.clone();
+  const pos = selectedCell.position();
+  clone.position(pos.x + 30, pos.y + 30);
+  clone.set('configData', JSON.parse(JSON.stringify(selectedCell.get('configData') || {})));
+  graph.addCell(clone);
+  selectCell(clone);
+  markDirty();
+  setStatus('Duplicated — press Ctrl+D again to chain-offset');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Multi-Select (Shift+Click) + Bulk Edit
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+function _toggleMultiSelect(cell, view) {
+  if (!cell.isElement()) return;
+  const idx = _selectedCells.findIndex(c => c.id === cell.id);
+  if (idx >= 0) {
+    _selectedCells.splice(idx, 1);
+    if (view) view.el.classList.remove('canvas-multi-select');
+  } else {
+    // Fold in the existing single-select if this is the first shift+click
+    if (selectedCell && _selectedCells.length === 0) {
+      const prevView = paper.findViewByModel(selectedCell);
+      if (prevView) prevView.el.classList.add('canvas-multi-select');
+      _selectedCells.push(selectedCell);
+      selectedCell = null;
+    }
+    _selectedCells.push(cell);
+    if (view) view.el.classList.add('canvas-multi-select');
+  }
+  if (_selectedCells.length === 0) {
+    deselectAll();
+  } else {
+    _updateMultiSelectPanel();
+  }
+}
+
+function _clearMultiSelect() {
+  _selectedCells.forEach(c => {
+    const v = paper.findViewByModel(c);
+    if (v) v.el.classList.remove('canvas-multi-select');
+  });
+  _selectedCells = [];
+  const bp = document.getElementById('bulk-edit-panel');
+  if (bp) bp.classList.add('hidden');
+  const bound = document.querySelector('.boundary-panel');
+  if (bound) bound.style.display = '';
+  const hdr = document.getElementById('config-header-title');
+  if (hdr) hdr.textContent = 'Properties';
+}
+
+function _updateMultiSelectPanel() {
+  const n = _selectedCells.length;
+  if (n < 2) { _clearMultiSelect(); return; }
+
+  _openConfigPanel();
+  document.getElementById('config-empty').classList.add('hidden');
+  document.getElementById('config-form').classList.add('hidden');
+  const lp = document.getElementById('link-config-form');
+  if (lp) lp.classList.add('hidden');
+  const bound = document.querySelector('.boundary-panel');
+  if (bound) bound.style.display = 'none';
+  const bp = document.getElementById('bulk-edit-panel');
+  if (bp) bp.classList.remove('hidden');
+
+  // Summary: count by nodeType
+  const typeCounts = {};
+  let missingIp = 0;
+  _selectedCells.forEach(c => {
+    const t = c.get('nodeType') || 'unknown';
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+    if (!(c.get('configData') || {}).ip) missingIp++;
+  });
+  const typeStr = Object.entries(typeCounts).map(([t, cnt]) => cnt + '× ' + t).join(', ');
+  const sumEl = document.getElementById('bulk-summary-text');
+  if (sumEl) sumEl.textContent = n + ' selected: ' + typeStr;
+  const misEl = document.getElementById('bulk-summary-missing');
+  if (misEl) misEl.textContent = missingIp > 0 ? missingIp + ' missing IP' : '';
+
+  const hdr = document.getElementById('config-header-title');
+  if (hdr) hdr.textContent = n + ' Selected';
+
+  // Reset input fields
+  ['bulk-vlan', 'bulk-ip-prefix'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const cls = document.getElementById('bulk-classification');
+  if (cls) cls.value = '';
+}
+
+function _bulkUpdate(key, val) {
+  if (val === '' || val === undefined) return;
+  pushUndo();
+  _selectedCells.forEach(c => {
+    const cfg = c.get('configData') || {};
+    cfg[key] = isNaN(val) || val === '' ? val : Number(val);
+    c.set('configData', cfg);
+  });
+  markDirty();
+}
+
+function _bulkApplyColor(colorVal) {
+  pushUndo();
+  _selectedCells.forEach(c => {
+    const type = c.get('nodeType') || '';
+    if (type === 'annotation' || type === 'callout-bubble') {
+      c.attr('shape/fill', colorVal);
+    } else {
+      c.attr('body/fill', colorVal);
+    }
+    const cfg = c.get('configData') || {};
+    cfg.fillColor = colorVal;
+    c.set('configData', cfg);
+  });
+  markDirty();
+}
+
+function _bulkApplyIpPrefix() {
+  const prefix = (document.getElementById('bulk-ip-prefix').value || '').trim();
+  if (!prefix) { setStatus('Enter a prefix first (e.g. 10.1.0.)'); return; }
+  pushUndo();
+  _selectedCells.forEach((c, i) => {
+    const cfg = c.get('configData') || {};
+    const existing = cfg.ip || '';
+    const cidr = existing.includes('/') ? '/' + existing.split('/')[1] : '/24';
+    cfg.ip = prefix + (i + 1) + cidr;
+    c.set('configData', cfg);
+  });
+  markDirty();
+  _updateMultiSelectPanel();
+  setStatus('Applied prefix ' + prefix + '* to ' + _selectedCells.length + ' nodes');
+}
+
+function _deleteMultiSelected() {
+  const n = _selectedCells.length;
+  if (n === 0) return;
+  if (!confirm('Delete ' + n + ' selected node' + (n !== 1 ? 's' : '') + '?')) return;
+  pushUndo();
+  const cells = _selectedCells.slice();
+  _selectedCells = [];
+  cells.forEach(c => c.remove());
+  const bp = document.getElementById('bulk-edit-panel');
+  if (bp) bp.classList.add('hidden');
+  _closeConfigPanel();
+  markDirty();
+  setStatus('Deleted ' + n + ' nodes');
 }

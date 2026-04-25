@@ -525,9 +525,18 @@
            font-size:11px;color:#ecf0f1;box-shadow:0 4px 12px rgba(0,0,0,0.5);white-space:nowrap;"></div>
     </div>
 
-    <!-- Right Config Panel -->
+    <!-- Config Panel Toggle Tab (always visible, 22px handle) -->
+    <div id="config-panel-tab" class="config-panel-tab" onclick="_toggleConfigPanel()" title="Toggle Properties panel">
+      <span class="cpt-arrow" id="cpt-arrow">&#x276F;</span>
+      <span class="cpt-label">Props</span>
+    </div>
+
+    <!-- Right Config Panel (auto-hides when nothing selected) -->
     <div class="config-panel" id="config-panel">
-      <div class="config-header">Properties</div>
+      <div class="config-header">
+        <span id="config-header-title">Properties</span>
+        <button class="config-header-close" onclick="_closeConfigPanel()" title="Close panel">&times;</button>
+      </div>
       <div id="config-empty" class="config-empty">
         <div class="empty-icon">⬡</div>
         <p>Select an object to configure</p>
@@ -936,6 +945,42 @@
         <div class="boundary-panel-header">Security Boundaries</div>
         <div id="boundary-list">
           <div class="boundary-empty">No boundaries defined. Use fence tool to create.</div>
+        </div>
+      </div>
+
+      <!-- Bulk Edit Panel (shown when 2+ nodes selected via Shift+Click) -->
+      <div id="bulk-edit-panel" class="hidden">
+        <div class="bulk-summary-bar">
+          <span id="bulk-summary-text">0 selected</span>
+          <span id="bulk-summary-missing" class="bulk-summary-missing"></span>
+        </div>
+        <div class="form-group">
+          <label>Set VLAN (all selected)</label>
+          <input type="number" id="bulk-vlan" class="form-control" placeholder="e.g. 100" oninput="_bulkUpdate('vlan', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Classification (all selected)</label>
+          <select id="bulk-classification" class="form-control" onchange="_bulkUpdate('classification', this.value)">
+            <option value="">— No Change —</option>
+            <option value="IL2">IL2 — Public</option>
+            <option value="IL4">IL4 — CUI</option>
+            <option value="IL5">IL5 — CUI/DoD</option>
+            <option value="IL6">IL6 — SECRET</option>
+            <option value="SIPR">SIPR — SECRET</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>IP Prefix (first 3 octets)</label>
+          <input type="text" id="bulk-ip-prefix" class="form-control" placeholder="e.g. 10.1.0." title="Replaces first three octets, keeps host + CIDR"/>
+          <button class="tb-btn" style="width:100%;margin-top:4px;" onclick="_bulkApplyIpPrefix()">Apply Prefix to All</button>
+        </div>
+        <div class="form-group">
+          <label>Fill Color (all selected)</label>
+          <input type="color" id="bulk-fill-color" class="color-input" oninput="_bulkApplyColor(this.value)"/>
+        </div>
+        <div class="bulk-action-row">
+          <button class="tb-btn" onclick="_clearMultiSelect()">Clear</button>
+          <button class="tb-btn tb-btn-danger" onclick="_deleteMultiSelected()">Delete All</button>
         </div>
       </div>
     </div>
