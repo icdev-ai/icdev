@@ -1737,6 +1737,65 @@ def _detect_orphan_done_tasks() -> list[dict]:
     return orphans
 
 
+def _get_resume_context(task_id: str) -> str:
+    """Return a '## Resume Context' section if the task branch has commits
+    ahead of the default branch, otherwise return an empty string.
+
+    Uses `git log main..kanban/{task_id}` and
+    `git diff --name-only main..kanban/{task_id}` to inspect prior work.
+    All subprocess failures are swallowed — this must never break prompt
+    writing.
+    """
+    branch = f"kanban/{task_id}"
+    cwd = str(BASE_DIR)
+    try:
+        log_result = subprocess.run(
+            ["git", "log", f"main..{branch}", "--oneline"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        commits = log_result.stdout.strip()
+        if not commits:
+            return ""
+
+        diff_result = subprocess.run(
+            ["git", "diff", "--name-only", f"main..{branch}"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        changed_files = diff_result.stdout.strip()
+
+        lines = [
+            "## Resume Context",
+            "",
+            "This task was interrupted (power outage or restart). The following "
+            "work was already committed and is preserved in your worktree:",
+            "",
+            "**Commits already on this branch:**",
+        ]
+        for commit_line in commits.splitlines():
+            lines.append(f"- {commit_line}")
+
+        if changed_files:
+            lines.append("")
+            lines.append("**Files already modified:**")
+            for f in changed_files.splitlines():
+                lines.append(f"- {f}")
+
+        lines.append("")
+        lines.append(
+            "Pick up where it left off. Do NOT redo work already committed."
+        )
+        lines.append("")
+        return "\n".join(lines) + "\n"
+    except Exception:
+        return ""
+
+
 def _write_prompt_file(task: dict):
     """Write a prompt file for Claude Code to pick up."""
     _ensure_prompt_dir()
@@ -1746,7 +1805,9 @@ def _write_prompt_file(task: dict):
     task_type = task.get("task_type", "chore")
     priority = task.get("priority", "medium")
 
-    prompt = f"""# Kanban Task: {title}
+    resume_section = _get_resume_context(task_id)
+
+    prompt = f"""{resume_section}# Kanban Task: {title}
 - **ID:** {task_id}
 - **Type:** {task_type}
 - **Priority:** {priority}

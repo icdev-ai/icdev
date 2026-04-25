@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Kanban Scheduler — standalone process that runs the kanban reflex on a loop.
+"""Kanban Scheduler -- standalone process that runs the kanban reflex on a loop.
 
 Designed to run as a persistent background service (Windows Task Scheduler,
 systemd, or nohup). Calls the kanban reflex every INTERVAL seconds to:
@@ -14,7 +14,7 @@ Usage:
 
 NOTE: Always use ``python -B`` (or set PYTHONDONTWRITEBYTECODE=1) to prevent
 stale .pyc bytecache from shadowing code changes. The scheduler is a
-long-running process that loads modules once at startup — without -B, edits
+long-running process that loads modules once at startup -- without -B, edits
 to kanban.py (e.g. timeout adjustments) require both a restart AND manual
 __pycache__ clearing.
 """
@@ -53,9 +53,9 @@ def main():
     args = parser.parse_args()
 
     # Single-instance guard via PID lockfile. Handles two cases:
-    #  (1) startup race — if another scheduler's PID is in the lockfile and
+    #  (1) startup race -- if another scheduler's PID is in the lockfile and
     #      that process is alive, exit immediately.
-    #  (2) concurrent starts — re-check the lockfile each cycle; if another
+    #  (2) concurrent starts -- re-check the lockfile each cycle; if another
     #      instance took ownership, exit.
     # --once bypasses this so one-shot/test runs always work.
     LOCK_PATH = BASE_DIR / ".tmp" / "kanban_scheduler.pid"
@@ -97,7 +97,7 @@ def main():
             )
             return
         if not _take_lock():
-            logger.warning("Failed to take lockfile — starting anyway")
+            logger.warning("Failed to take lockfile -- starting anyway")
 
     # Load .env for Telegram bot token, API keys, etc.
     try:
@@ -112,19 +112,13 @@ def main():
     dummy_config = {"enabled": True, "risk_tier": "green"}
     dummy_trust = None
 
-    # ── STARTUP RECOVERY: reset orphaned in_progress tasks ──────────
-    # If the scheduler crashed (or was restarted mid-flight), tasks may be
-    # stuck in in_progress with no running subprocess. Reset them to
-    # backlog so they get re-dispatched.
-    #
-    # 2026-04-17 silent-recovery fix: previously this path reset tasks
-    # silently — no failure_count bump, no last_failure_reason, no
-    # Telegram alert. When the user restarted the daemon while a task
-    # was running (common operational action), the task disappeared
-    # without any signal and failure_triage never saw it. dt-iqe-11 hit
-    # this exact path. We now record a failure reason and fire a
-    # Telegram warning so the user sees the recovery happened and
-    # failure_triage picks it up on its next reflex tick.
+    # -- STARTUP RECOVERY: reset orphaned in_progress tasks ----------
+    # Power outage or daemon restart leaves tasks stuck in in_progress.
+    # Reset them to backlog WITHOUT incrementing failure_count -- an
+    # interruption is not a task failure and must not trigger decomposition.
+    # Git commits on kanban/{task_id} branches are preserved on disk;
+    # _write_prompt_file will include a "Resume Context" section so Claude
+    # picks up exactly where it left off.
     try:
         from tools.db.storage import get_connection
         from datetime import datetime, timezone
@@ -137,65 +131,44 @@ def main():
             ).fetchall()
             if stuck:
                 now_iso = datetime.now(timezone.utc).isoformat()
-                reason = (
-                    "startup-recovery: scheduler restarted while task was "
-                    "in_progress. Subprocess was interrupted; task reset to "
-                    "backlog for re-dispatch."
+                ids = [dict(r)["id"] for r in stuck]
+                stuck_ids = [(dict(r)["id"], dict(r).get("title")) for r in stuck]
+                # Single UPDATE for all interrupted tasks -- no failure penalty.
+                placeholders = ",".join(["%s"] * len(ids))
+                conn.execute(
+                    f"UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "
+                    f"WHERE id IN ({placeholders}) AND status = 'in_progress'",
+                    [now_iso] + ids,
                 )
-                for row in stuck:
-                    rd = dict(row)
-                    tid = rd["id"]
-                    stuck_ids.append((tid, rd.get("title")))
-                    # Reset to backlog + bump failure_count + record reason
-                    # so the full observability pipeline fires.
-                    conn.execute(
-                        "UPDATE kanban_tasks SET "
-                        "  status = 'backlog', "
-                        "  failure_count = COALESCE(failure_count, 0) + 1, "
-                        "  last_failure_reason = ?, "
-                        "  last_failure_at = ?, "
-                        "  updated_at = ? "
-                        "WHERE id = ?",
-                        (reason, now_iso, now_iso, tid),
-                    )
                 conn.commit()
                 logger.info(
-                    "Startup recovery: reset %d orphaned in_progress tasks to backlog",
+                    "Startup recovery: reset %d interrupted task(s) to backlog "
+                    "(failure_count unchanged -- interruption is not a failure): %s",
                     len(stuck_ids),
+                    ", ".join(tid for tid, _ in stuck_ids),
                 )
         finally:
             conn.close()
 
-        # Fire Telegram + self_debug for each stuck task (outside the DB
-        # connection so a notification failure doesn't roll back the reset).
+        # Fire Telegram for each interrupted task (best-effort, outside DB conn).
         for tid, title in stuck_ids:
             display = (title or tid)[:60]
             try:
                 from tools.notifications.adapters.telegram import send as tg_send
                 tg_send(
-                    f"STARTUP-RECOVERY: {display}",
+                    f"RESTARTED: {display}",
                     (
-                        "Task was in_progress when the scheduler restarted. "
-                        "Reset to backlog for re-dispatch. "
-                        "If you saw this without restarting the daemon, the "
-                        "scheduler crashed — check .tmp/genesis_launcher.log."
+                        f"Task '{display}' ({tid}) was interrupted (power outage or "
+                        "daemon restart). Reset to backlog for re-dispatch. "
+                        "failure_count was NOT changed. Any git commits on the task "
+                        "branch are preserved -- Claude will resume from them."
                     ),
-                    severity="warning",
+                    severity="info",
                 )
             except Exception as _tg_exc:
                 logger.debug("startup-recovery Telegram send failed: %s", _tg_exc)
-
-            try:
-                from tools.workflow.self_debug import check_and_diagnose
-                check_and_diagnose(
-                    tid,
-                    "startup-recovery: scheduler restarted mid-flight",
-                    str(Path(__file__).resolve().parent.parent.parent),
-                )
-            except Exception as _sd_exc:
-                logger.debug("startup-recovery self_debug failed: %s", _sd_exc)
     except Exception as exc:
-        logger.warning("Startup recovery failed: %s", exc)
+        logger.warning("Startup recovery failed: %s", str(exc).encode("ascii", errors="replace").decode("ascii"))
 
     if args.once:
         logger.info("Running single kanban cycle...")
@@ -212,7 +185,7 @@ def main():
     logger.info("Kanban scheduler started (interval=%ds)", args.interval)
     logger.info("Press Ctrl+C to stop")
 
-    # guard-6: Orphan cleanup on startup — kill any Claude CLI subprocesses
+    # guard-6: Orphan cleanup on startup -- kill any Claude CLI subprocesses
     # left over from a previous run that may have crashed.
     _cleanup_orphan_processes()
 
