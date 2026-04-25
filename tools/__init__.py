@@ -8,9 +8,19 @@ Update your imports:
     from icdev.tools.llm.router import LLMRouter  # new
 """
 
-import importlib
-import os
 import sys
+import os
+
+# Inject the repository root into sys.path so 'icdev.tools' resolves when
+# running from the worktree root without a full editable install.
+try:
+    import icdev.tools  # noqa: F401
+except ModuleNotFoundError:
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
+
+import importlib
 import types
 
 # Deprecation warning suppressed — migration to icdev.tools is incomplete
