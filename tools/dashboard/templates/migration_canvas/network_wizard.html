@@ -257,8 +257,8 @@
           <input type="file" id="config-file" accept=".txt,.conf,.cfg" onchange="onFileUpload(event)">
         </div>
         <div class="nw-actions">
-          <button class="btn btn-primary" onclick="parseConfig()">Parse Config →</button>
-          <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
+          <button class="btn btn-primary" id="parse-config-btn" onclick="parseConfig()">Parse Config →</button>
+          <button class="btn btn-secondary" onclick="goStep(1)">← Back to Step 1</button>
         </div>
       </div>
 
@@ -330,6 +330,35 @@
             <thead><tr><th>Interface</th><th>Speed</th><th>Media</th><th>Optic</th><th>IP Address</th><th>Description</th><th>Protocols</th></tr></thead>
             <tbody id="parsed-tbody"></tbody>
           </table>
+        </div>
+
+        <div style="margin-top:20px" id="parse-vlans-section">
+          <div class="section-title">VLANs</div>
+          <div class="parsed-table-wrap">
+            <table class="data-table" id="parsed-vlans-table">
+              <thead><tr><th>VLAN ID</th><th>Name</th><th>Description</th><th>Tagged Interfaces</th><th>Untagged Interfaces</th></tr></thead>
+              <tbody id="parsed-vlans-tbody">
+                <tr><td colspan="5" style="color:#4a6080;text-align:center">No VLANs detected — parse a config to populate</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="margin-top:20px" id="parse-lags-section">
+          <div class="section-title">LAG Groups (Aggregated Ethernet / Port-Channel)</div>
+          <div class="parsed-table-wrap">
+            <table class="data-table" id="parsed-lags-table">
+              <thead><tr><th>LAG / AE Name</th><th>Mode</th><th>Member Interfaces</th><th>Speed</th><th>IP Address</th><th>Description</th></tr></thead>
+              <tbody id="parsed-lags-tbody">
+                <tr><td colspan="6" style="color:#4a6080;text-align:center">No LAG groups detected — parse a config to populate</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="nw-actions" style="margin-top:16px">
+          <button class="btn btn-primary" onclick="goStep(3)">Next to Step 3 →</button>
+          <button class="btn btn-secondary" onclick="goStep(1)">← Back to Step 1</button>
         </div>
       </div>
     </div>
@@ -853,8 +882,12 @@ async function parseConfig() {
 }
 
 function renderParsedResult(data) {
+  const vlans = data.vlans || [];
+  const lags = data.lag_groups || data.ae_interfaces || [];
   const chips = [
     ['Interfaces', (data.interfaces||[]).length],
+    ['VLANs', vlans.length],
+    ['LAGs', lags.length],
     ['BGP Peers', (data.bgp_neighbors||[]).length],
     ['OSPF Areas', (data.ospf_areas||[]).length],
     ['ISIS', (data.isis_nets||[]).length],
@@ -872,6 +905,7 @@ function renderParsedResult(data) {
       '<div class="gap-banner" style="margin-top:10px"><strong>CAT1:</strong> MS-MIC / stateful firewall detected in config. This function is unavailable on the target. Plan firewall migration separately.</div>');
   }
 
+  // Interfaces table
   const tbody = document.getElementById('parsed-tbody');
   tbody.innerHTML = (data.interfaces||[]).map(ifc => `
     <tr>
@@ -883,6 +917,38 @@ function renderParsedResult(data) {
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ifc.description||'—'}</td>
       <td>${[ifc.bgp_peer?'BGP':'',ifc.ospf?'OSPF':'',ifc.isis?'ISIS':'',ifc.mpls?'MPLS':''].filter(Boolean).join(', ')||'—'}</td>
     </tr>`).join('');
+
+  // VLANs table
+  const vlanTbody = document.getElementById('parsed-vlans-tbody');
+  if (vlans.length) {
+    vlanTbody.innerHTML = vlans.map(v => `
+      <tr>
+        <td><strong>${escapeHtml(String(v.vlan_id||v.id||'—'))}</strong></td>
+        <td>${escapeHtml(v.name||'—')}</td>
+        <td style="color:#7a8cb0;font-size:11px">${escapeHtml(v.description||'—')}</td>
+        <td style="font-size:11px">${escapeHtml((v.tagged_interfaces||[]).join(', ')||'—')}</td>
+        <td style="font-size:11px">${escapeHtml((v.untagged_interfaces||[]).join(', ')||'—')}</td>
+      </tr>`).join('');
+  } else {
+    vlanTbody.innerHTML = '<tr><td colspan="5" style="color:#4a6080;text-align:center">No VLANs found in config</td></tr>';
+  }
+
+  // LAG groups table
+  const lagTbody = document.getElementById('parsed-lags-tbody');
+  if (lags.length) {
+    lagTbody.innerHTML = lags.map(l => `
+      <tr>
+        <td><code>${escapeHtml(l.name||l.ae_name||'—')}</code></td>
+        <td><span class="badge badge-pending">${escapeHtml(l.mode||l.lacp_mode||'—')}</span></td>
+        <td style="font-size:11px">${escapeHtml((l.members||l.member_interfaces||[]).join(', ')||'—')}</td>
+        <td>${l.speed_gbps ? l.speed_gbps+'G' : (l.speed||'—')}</td>
+        <td>${escapeHtml(l.ip_address||'—')}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#7a8cb0;font-size:11px">${escapeHtml(l.description||'—')}</td>
+      </tr>`).join('');
+  } else {
+    lagTbody.innerHTML = '<tr><td colspan="6" style="color:#4a6080;text-align:center">No LAG groups found in config</td></tr>';
+  }
+
   document.getElementById('parse-result').style.display='block';
 }
 
