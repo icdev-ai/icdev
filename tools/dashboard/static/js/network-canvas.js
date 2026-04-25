@@ -710,7 +710,53 @@ function hideBlastContextMenu() {
 
 function openPolicyPanel() {
   hideBlastContextMenu();
-  console.log('[NDC] openPolicyPanel — node:', _blastCtxNodeId);
+  const nodeId = _blastCtxNodeId;
+  if (!nodeId) return;
+  const cell = graph.getCell(nodeId);
+  if (!cell || !cell.isElement()) return;
+
+  const policy = (cell.get('configData') || {}).policy || {};
+  document.getElementById('policy-node-title').textContent = cell.attr('label/text') || nodeId;
+  document.getElementById('pol-classification').value = policy.classification || '';
+  document.getElementById('pol-zone').value = policy.zone || '';
+  document.getElementById('pol-segmentation').value = policy.segmentation || '';
+  document.getElementById('pol-acl-inbound').value = policy.acl_inbound || '';
+  document.getElementById('pol-acl-outbound').value = policy.acl_outbound || '';
+  document.getElementById('pol-encryption').checked = !!policy.encryption_required;
+  document.getElementById('pol-requires-kg').checked = !!policy.requiresKG;
+  document.getElementById('pol-notes').value = policy.notes || '';
+  _updateKgAutoBadge(policy.classification || '');
+
+  document.getElementById('policy-overlay').classList.remove('hidden');
+}
+
+function closePolicyPanel() {
+  document.getElementById('policy-overlay').classList.add('hidden');
+}
+
+function onPolicyFieldChange(key, val) {
+  const cell = _blastCtxNodeId && graph.getCell(_blastCtxNodeId);
+  if (!cell || !cell.isElement()) return;
+  const config = cell.get('configData') || {};
+  config.policy = config.policy || {};
+  config.policy[key] = val;
+  cell.set('configData', config);
+  markDirty();
+}
+
+function onPolicyClassificationChange(val) {
+  onPolicyFieldChange('classification', val);
+  // Auto-set requiresKG for IL4+ (CUI, SECRET, TOP SECRET — classification rank >= 1)
+  if (_classRank(val) >= 1) {
+    onPolicyFieldChange('requiresKG', true);
+    document.getElementById('pol-requires-kg').checked = true;
+  }
+  _updateKgAutoBadge(val);
+}
+
+function _updateKgAutoBadge(cls) {
+  const badge = document.getElementById('pol-kg-auto-badge');
+  if (badge) badge.style.display = _classRank(cls) >= 1 ? 'inline' : 'none';
 }
 
 function openAuditPanel() {
