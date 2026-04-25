@@ -144,6 +144,11 @@
 .toast.show { opacity: 1; }
 .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #1e3a6e; border-top-color: #27ae60; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Port mapping simple table ────────────────────────────────── */
+#port-map-simple-table input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #27ae60; }
+#port-map-simple-table input[type="text"] { background: #0a1624; border: 1px solid #1a2d4a; color: #eaeaea; padding: 3px 6px; border-radius: 3px; font-size: 12px; box-sizing: border-box; }
+#port-map-simple-table input[type="text"]:focus { outline: none; border-color: #27ae60; }
 </style>
 {% endblock %}
 
@@ -368,6 +373,70 @@
       <div class="nw-header">
         <h2>Step 3 — Port Mapping</h2>
         <p>Auto-generated mapping from source to target interfaces. Review and adjust as needed.</p>
+      </div>
+
+      <!-- ── Datalist for Target Port auto-suggest ───────────────── -->
+      <datalist id="tgt-port-datalist">
+        <option value="ge-0/0/0"><option value="ge-0/0/1"><option value="ge-0/0/2">
+        <option value="ge-0/0/3"><option value="ge-0/0/4"><option value="ge-0/0/5">
+        <option value="xe-0/0/0"><option value="xe-0/0/1"><option value="xe-0/0/2">
+        <option value="xe-0/0/3"><option value="xe-0/0/4">
+        <option value="et-0/0/0"><option value="et-0/0/1"><option value="et-0/0/2">
+        <option value="ae0"><option value="ae1"><option value="ae2">
+        <option value="lo0"><option value="lo0.0">
+      </datalist>
+
+      <!-- ── Simple Port Mapping Table ──────────────────────────── -->
+      <div id="port-map-simple-section" style="margin-bottom:24px">
+        <div class="section-title">Port Mapping Table</div>
+        <div class="parsed-table-wrap">
+          <table class="data-table" id="port-map-simple-table">
+            <thead>
+              <tr>
+                <th>Source Port</th>
+                <th style="min-width:160px">Target Port</th>
+                <th style="text-align:center;width:170px">Optic Change Required</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="port-map-simple-tbody">
+              <tr>
+                <td><code>ge-0/0/0</code></td>
+                <td><input type="text" list="tgt-port-datalist" value="ge-0/0/0" style="width:150px"></td>
+                <td style="text-align:center"><input type="checkbox"></td>
+                <td><input type="text" placeholder="e.g. Uplink to core-sw-01" style="width:100%"></td>
+              </tr>
+              <tr>
+                <td><code>ge-0/0/1</code></td>
+                <td><input type="text" list="tgt-port-datalist" value="ge-0/0/1" style="width:150px"></td>
+                <td style="text-align:center"><input type="checkbox"></td>
+                <td><input type="text" placeholder="e.g. Uplink to dist-sw-01" style="width:100%"></td>
+              </tr>
+              <tr>
+                <td><code>ge-0/0/2</code></td>
+                <td><input type="text" list="tgt-port-datalist" value="ge-0/0/2" style="width:150px"></td>
+                <td style="text-align:center"><input type="checkbox" checked></td>
+                <td><input type="text" value="SFP to SFP+ optic swap required" style="width:100%"></td>
+              </tr>
+              <tr>
+                <td><code>ge-0/0/3</code></td>
+                <td><input type="text" list="tgt-port-datalist" value="ge-0/0/3" style="width:150px"></td>
+                <td style="text-align:center"><input type="checkbox"></td>
+                <td><input type="text" placeholder="e.g. Access port VLAN 100" style="width:100%"></td>
+              </tr>
+              <tr>
+                <td><code>ge-0/0/4</code></td>
+                <td><input type="text" list="tgt-port-datalist" value="ge-0/0/4" style="width:150px"></td>
+                <td style="text-align:center"><input type="checkbox"></td>
+                <td><input type="text" placeholder="e.g. Trunk port VLAN 10,20,30" style="width:100%"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="nw-actions" style="margin-top:12px;margin-bottom:0">
+          <button class="btn btn-secondary" onclick="goStep(2)">← Back to Step 2</button>
+          <button class="btn btn-primary" id="generate-bom-btn" onclick="toast('BOM generation — use Auto-Generate Mapping then Download BOM')">Generate BOM</button>
+        </div>
       </div>
 
       <div class="nw-actions" style="margin-bottom:16px;margin-top:0">
