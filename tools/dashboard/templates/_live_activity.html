@@ -221,13 +221,33 @@
   }
 
   function refresh() {
-    fetch('/api/kanban/live-activity')
-      .then(function(r) { return r.json(); })
-      .then(render)
-      .catch(function() {
-        var panel = document.getElementById('live-activity-panel');
-        if (panel) panel.style.display = 'none';
+    // Two parallel fetches: tasks (existing endpoint) + scheduler heartbeat (new inline).
+    Promise.all([
+      fetch('/api/kanban/tasks?status=in_progress').then(function(r) { return r.json(); }),
+      fetch('/api/kanban/scheduler-status').then(function(r) { return r.json(); }),
+    ]).then(function(results) {
+      var taskData   = results[0];
+      var schedData  = results[1];
+      var tasks = (taskData && taskData.tasks) || [];
+      var schSecs = (schedData && schedData.scheduler_last_seen_secs) != null
+        ? schedData.scheduler_last_seen_secs : null;
+      var staleness = (schedData && schedData.staleness) || 'unknown';
+
+      // Enrich each task with elapsed time (client-side from updated_at).
+      var nowMs = Date.now();
+      tasks = tasks.filter(function(t) { return t.status === 'in_progress'; });
+      tasks.forEach(function(t) {
+        var raw = t.updated_at || t.created_at;
+        t.elapsed_dispatch_secs = raw ? Math.floor((nowMs - new Date(raw).getTime()) / 1000) : null;
+        t.scheduler_last_seen_secs = schSecs;
+        t.staleness = staleness;
       });
+
+      render({ tasks: tasks, scheduler_last_seen_secs: schSecs });
+    }).catch(function() {
+      var panel = document.getElementById('live-activity-panel');
+      if (panel) panel.style.display = 'none';
+    });
   }
 
   // Initial load + polling.
