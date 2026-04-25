@@ -90,6 +90,7 @@
       <button class="tb-btn" id="tb-board-ready-btn" onclick="openBoardReadyCheck()" title="Board Ready? — pre-flight check before ERB/CCB: conflicts, IP completeness, naming, save status" style="color:#a29bfe;">&#x1f4cb; Board Ready?</button>
       <button class="tb-btn" onclick="openTechDebt()" title="Tech Debt — EOL/EOS analysis + lifecycle risk" style="color:#e67e22;">&#x23f3; Tech Debt</button>
       <button class="tb-btn" onclick="openIpv6Readiness()" title="IPv6 Readiness — device capability + migration plan" style="color:#3498db;">v6 IPv6</button>
+      <button class="tb-btn" id="tb-ip-plan-btn" onclick="openIpPlanModal()" title="Plan IPs — AI-assisted subnet allocation from supernet (CIDR → segment mapping)" style="color:#00d4ff;">&#x1f5c4; Plan IPs</button>
     </div>
     <div class="tb-group">
       <button class="tb-btn tb-btn-fence" id="tb-fence-btn" onclick="toggleFenceMode()" title="Security Boundary Auto-Fencing — click to toggle, then click-drag a rectangle around devices to create enclave boundary">⬡ Fence <span id="fence-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
@@ -2301,6 +2302,86 @@
     _pinAiReviewAnnotations(_aiReviewFindings);
     highlightFindingNodes(idx, true);
   }
+
+  /* ── IP Address Planning Assistant ──────────────────────────────────────── */
+  let _ipPlanAssignments = [];
+
+  function openIpPlanModal() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    document.getElementById('ip-plan-overlay').classList.remove('hidden');
+    document.getElementById('ip-plan-results').style.display = 'none';
+    document.getElementById('ip-plan-loading').style.display = 'none';
+  }
+
+  function closeIpPlanModal() {
+    document.getElementById('ip-plan-overlay').classList.add('hidden');
+  }
+
+  async function runIpPlan() {
+    const supernet = document.getElementById('ip-plan-supernet').value.trim();
+    const strategy = document.getElementById('ip-plan-strategy').value;
+    if (!supernet) { alert('Enter a supernet (e.g. 10.100.0.0/16)'); return; }
+    document.getElementById('ip-plan-results').style.display = 'none';
+    document.getElementById('ip-plan-loading').style.display = 'block';
+    const btn = document.getElementById('ip-plan-gen-btn');
+    btn.disabled = true;
+    try {
+      const r = await fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/plan-ips', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({supernet, strategy}),
+      });
+      const data = await r.json();
+      if (data.error) { alert('IP planning failed: ' + data.error); return; }
+      _ipPlanAssignments = data.assignments || [];
+      const tbody = document.getElementById('ip-plan-tbody');
+      tbody.innerHTML = '';
+      _ipPlanAssignments.forEach(a => {
+        const tr = document.createElement('tr');
+        tr.style.cssText = 'border-bottom:1px solid #1e2d45;';
+        tr.innerHTML =
+          '<td style="padding:6px 8px;color:#eaeaea;">' + (a.label || a.node_id) + '</td>' +
+          '<td style="padding:6px 8px;color:#95a5a6;">' + (a.type || '') + '</td>' +
+          '<td style="padding:6px 8px;color:#00d4ff;font-family:monospace;">' + (a.cidr || '') + '</td>' +
+          '<td style="padding:6px 8px;color:#27ae60;font-family:monospace;">' + (a.gateway || '') + '</td>' +
+          '<td style="padding:6px 8px;color:#f39c12;">' + (a.vlan != null ? a.vlan : '') + '</td>';
+        tbody.appendChild(tr);
+      });
+      document.getElementById('ip-plan-results').style.display = 'block';
+    } catch (e) {
+      alert('IP plan request failed: ' + e.message);
+    } finally {
+      document.getElementById('ip-plan-loading').style.display = 'none';
+      btn.disabled = false;
+    }
+  }
+
+  function _applyIpPlan(assignments) {
+    let applied = 0;
+    graph.getElements().forEach(cell => {
+      if (!cell.get('nodeType')) return;
+      const nodeId = cell.id;
+      const label = cell.attr('label/text') || '';
+      const match = assignments.find(a => a.node_id === nodeId || a.label === label);
+      if (!match) return;
+      const config = cell.get('configData') || {};
+      if (match.cidr) config.ip = match.cidr;
+      if (match.vlan != null) config.vlan = match.vlan;
+      cell.set('configData', config);
+      if (config.ip) cell.attr('iplabel/text', config.ip);
+      applied++;
+    });
+    markDirty();
+    return applied;
+  }
+
+  function applyIpPlan() {
+    if (!_ipPlanAssignments.length) return;
+    const applied = _applyIpPlan(_ipPlanAssignments);
+    closeIpPlanModal();
+    setStatus('IP plan applied — ' + applied + ' node(s) updated.');
+    if (typeof autoSave === 'function') autoSave();
+  }
 </script>
 <!-- ATO Package Generator Dialog -->
 <div id="ato-overlay" class="sim-overlay hidden">
@@ -2325,6 +2406,55 @@
       <button class="btn btn-secondary" onclick="closeAtoDialog()">Cancel</button>
     </div>
     <div id="ato-gen-output" class="sim-output" style="display:none;max-height:450px;overflow-y:auto;"></div>
+  </div>
+</div>
+<!-- IP Address Planning Assistant Modal -->
+<div id="ip-plan-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:700px;">
+    <div class="sim-panel-header">
+      <h3>&#x1f5c4; IP Address Planning Assistant</h3>
+      <button class="close-btn" onclick="closeIpPlanModal()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 14px;">Enter a supernet and strategy — the AI will propose CIDR allocations for each segment and device in the topology.</p>
+    <div style="display:flex;gap:12px;margin-bottom:12px;">
+      <div class="form-group" style="flex:2;margin-bottom:0;">
+        <label>Supernet</label>
+        <input type="text" id="ip-plan-supernet" class="form-control" placeholder="e.g. 10.100.0.0/16" value="10.100.0.0/16"/>
+      </div>
+      <div class="form-group" style="flex:1;margin-bottom:0;">
+        <label>Strategy</label>
+        <select id="ip-plan-strategy" class="form-control">
+          <option value="balanced">Balanced</option>
+          <option value="power-of-2">Power-of-2</option>
+          <option value="flat">Flat /24s</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn btn-primary" id="ip-plan-gen-btn" onclick="runIpPlan()" style="flex:1;background:#0099bb;border-color:#007a99;">Generate Plan</button>
+      <button class="btn btn-secondary" onclick="closeIpPlanModal()">Cancel</button>
+    </div>
+    <div id="ip-plan-loading" style="display:none;text-align:center;padding:24px;color:#95a5a6;font-size:13px;">&#x25cc; Planning IP allocations&#x2026;</div>
+    <div id="ip-plan-results" style="display:none;">
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="color:#7f8c8d;border-bottom:1px solid #2d3a56;">
+              <th style="text-align:left;padding:6px 8px;">Segment / Device</th>
+              <th style="text-align:left;padding:6px 8px;">Type</th>
+              <th style="text-align:left;padding:6px 8px;">CIDR</th>
+              <th style="text-align:left;padding:6px 8px;">Gateway</th>
+              <th style="text-align:left;padding:6px 8px;">VLAN</th>
+            </tr>
+          </thead>
+          <tbody id="ip-plan-tbody"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="applyIpPlan()" style="flex:1;background:#27ae60;border-color:#219a52;">&#x2714; Apply to Diagram</button>
+        <button class="btn btn-secondary" onclick="closeIpPlanModal()">Close</button>
+      </div>
+    </div>
   </div>
 </div>
 <!-- STIG XCCDF/CKL Import Dialog -->
