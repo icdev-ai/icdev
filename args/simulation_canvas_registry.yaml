@@ -22,6 +22,24 @@ canvases:
       - lineage_break
       - classification_mismatch
 
+  idc:
+    display_name: "Infrastructure Design Canvas"
+    flow_noun: infra_provision
+    persona_set:
+      - cloudarch
+      - sre
+      - seceng
+      - neteng
+    available_artifacts:
+      - terraform_plan
+      - ansible_playbook
+      - iac_diff
+      - cis_benchmark
+    troubleshoot_domains:
+      - drift_detection
+      - misconfiguration
+      - cost_anomaly
+
   odc:
     display_name: "Observability Design Canvas"
     flow_noun: telemetry_flow
