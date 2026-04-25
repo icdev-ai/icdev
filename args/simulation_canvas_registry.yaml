@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+# Simulation Canvas Registry — maps canvas keys to sim-chat metadata.
+# Each entry drives flow_noun resolution, persona selection, artifact menus,
+# and troubleshoot domain routing inside the TFW Simulation Chat engine.
+
+canvases:
+  ddc:
+    display_name: "Data Design Canvas"
+    flow_noun: data_flow
+    persona_set:
+      - dataeng
+      - appdev
+      - seceng
+      - compofficer
+    available_artifacts:
+      - dfd
+      - pii_map
+      - lineage_graph
+      - data_ato
+    troubleshoot_domains:
+      - pii_exposure
+      - lineage_break
+      - classification_mismatch
