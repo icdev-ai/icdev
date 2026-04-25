@@ -129,6 +129,94 @@
     padding: 0 4px;
   }
   #fd-modal-close:hover { color: var(--text-primary, #e0e0f0); }
+
+  /* Trap History panel */
+  .fd-trap-panel {
+    margin: 16px;
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a2a40);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .fd-trap-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-color, #2a2a40);
+    background: var(--bg-input, #0f1829);
+  }
+  .fd-trap-panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary, #a0a0b8);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .fd-trap-panel-count {
+    font-size: 11px;
+    color: var(--text-muted, #6c6c80);
+  }
+  .fd-trap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .fd-trap-table thead th {
+    padding: 7px 12px;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim, #4a4a60);
+    border-bottom: 1px solid var(--border-color, #2a2a40);
+    background: var(--bg-input, #0f1829);
+  }
+  .fd-trap-table tbody tr {
+    border-bottom: 1px solid rgba(42,42,64,0.5);
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .fd-trap-table tbody tr:last-child { border-bottom: none; }
+  .fd-trap-table tbody tr:hover { background: rgba(74,144,217,0.06); }
+  .fd-trap-table td {
+    padding: 7px 12px;
+    color: var(--text-secondary, #a0a0b8);
+    vertical-align: top;
+  }
+  .fd-trap-sev {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .fd-trap-sev.critical { background: rgba(220,53,69,0.18); color: #e05260; border: 1px solid rgba(220,53,69,0.35); }
+  .fd-trap-sev.high     { background: rgba(255,140,0,0.15);  color: #e8943a; border: 1px solid rgba(255,140,0,0.3); }
+  .fd-trap-sev.medium   { background: rgba(245,197,24,0.12); color: #c8aa18; border: 1px solid rgba(245,197,24,0.3); }
+  .fd-trap-ticker { font-weight: 700; color: var(--text-primary, #e0e0f0); }
+  .fd-trap-type   { font-family: monospace; color: var(--accent-blue, #4a90d9); }
+  .fd-trap-ctx {
+    display: none;
+    padding: 8px 12px 10px 12px;
+    background: rgba(15,24,41,0.6);
+    border-top: 1px solid rgba(42,42,64,0.6);
+    font-size: 11px;
+    color: var(--text-muted, #6c6c80);
+    line-height: 1.7;
+  }
+  .fd-trap-ctx.open { display: block; }
+  .fd-trap-expand { font-size: 10px; color: var(--text-dim, #4a4a60); transition: transform .15s; }
+  .fd-trap-expand.open { transform: rotate(90deg); }
+  .fd-trap-empty {
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--text-muted, #6c6c80);
+    font-size: 12px;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -161,6 +249,17 @@
   <span><span class="fd-legend-dot" style="background:#f5a623;"></span>Rising Wedge</span>
   <span><span class="fd-legend-dot" style="background:#7b68ee;"></span>Falling Wedge</span>
   <span style="cursor:help;" title="Click a pattern badge on the chart for details">▼▲ Patterns (click)</span>
+</div>
+
+<!-- Trap History panel -->
+<div class="fd-trap-panel" id="fd-trap-panel">
+  <div class="fd-trap-panel-header">
+    <span class="fd-trap-panel-title">&#9888; Trap History</span>
+    <span class="fd-trap-panel-count" id="fd-trap-count">Loading…</span>
+  </div>
+  <div id="fd-trap-body">
+    <div class="fd-trap-empty">Loading trap events…</div>
+  </div>
 </div>
 
 <!-- Pattern detail modal -->
@@ -775,6 +874,96 @@
     clearTimeout(_resizeTimer);
     _resizeTimer = setTimeout(function () { render(_currentTicker, _currentTf); }, 200);
   });
+
+  // ── Trap History panel ───────────────────────────────────────────────────────
+  (function () {
+    var TRAP_LABELS = {
+      'bull_trap': 'Bull Trap',
+      'bear_trap': 'Bear Trap',
+      'macro_liquidity_trap': 'Macro Liq.',
+      'trap_against_position': 'Pos. Trap',
+    };
+
+    function fmtDate(s) {
+      if (!s) return '—';
+      try {
+        var d = new Date(s);
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+               ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      } catch (e) { return s; }
+    }
+
+    function buildContext(ev) {
+      var lines = [];
+      if (ev.broken_level != null) lines.push('<b>Broken level:</b> ' + (+ev.broken_level).toFixed(2));
+      if (ev.volume_ratio != null) lines.push('<b>Volume ratio:</b> ' + (+ev.volume_ratio).toFixed(2));
+      if (ev.confidence != null)   lines.push('<b>Confidence:</b> '   + Math.round(ev.confidence * 100) + '%');
+      if (ev.timeframe)            lines.push('<b>Timeframe:</b> '    + ev.timeframe);
+      if (ev.evidence_json) {
+        try {
+          var ev2 = JSON.parse(ev.evidence_json);
+          Object.keys(ev2).forEach(function (k) {
+            lines.push('<b>' + k + ':</b> ' + ev2[k]);
+          });
+        } catch (e) {}
+      }
+      return lines.length ? lines.join(' &nbsp;·&nbsp; ') : 'No additional context.';
+    }
+
+    function renderTraps(events) {
+      var body = document.getElementById('fd-trap-body');
+      var countEl = document.getElementById('fd-trap-count');
+      if (!events || !events.length) {
+        body.innerHTML = '<div class="fd-trap-empty">No trap events recorded yet.</div>';
+        countEl.textContent = '0 events';
+        return;
+      }
+      countEl.textContent = events.length + ' event' + (events.length !== 1 ? 's' : '');
+      var html = '<table class="fd-trap-table">' +
+        '<thead><tr>' +
+        '<th></th><th>Ticker</th><th>Trap Type</th><th>Detected</th><th>Severity</th>' +
+        '</tr></thead><tbody>';
+
+      events.forEach(function (ev, i) {
+        var sev = ev.severity || 'medium';
+        var label = TRAP_LABELS[ev.pattern] || ev.pattern;
+        var ctx = buildContext(ev);
+        html += '<tr data-idx="' + i + '" onclick="fdToggleTrap(' + i + ')">' +
+          '<td><span class="fd-trap-expand" id="fd-trap-exp-' + i + '">&#9658;</span></td>' +
+          '<td class="fd-trap-ticker">' + (ev.ticker || '—') + '</td>' +
+          '<td class="fd-trap-type">'   + label + '</td>' +
+          '<td>' + fmtDate(ev.created_at) + '</td>' +
+          '<td><span class="fd-trap-sev ' + sev + '">' + sev + '</span></td>' +
+          '</tr>' +
+          '<tr id="fd-trap-ctx-row-' + i + '" style="display:none">' +
+          '<td colspan="5"><div class="fd-trap-ctx" id="fd-trap-ctx-' + i + '">' + ctx + '</div></td>' +
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      body.innerHTML = html;
+    }
+
+    window.fdToggleTrap = function (idx) {
+      var ctxRow = document.getElementById('fd-trap-ctx-row-' + idx);
+      var ctxDiv = document.getElementById('fd-trap-ctx-' + idx);
+      var expEl  = document.getElementById('fd-trap-exp-' + idx);
+      if (!ctxRow) return;
+      var open = ctxRow.style.display !== 'none';
+      ctxRow.style.display = open ? 'none' : '';
+      if (ctxDiv)  ctxDiv.classList.toggle('open', !open);
+      if (expEl)   expEl.classList.toggle('open', !open);
+    };
+
+    fetch('/fathomdesk/api/traps')
+      .then(function (r) { return r.json(); })
+      .then(function (data) { renderTraps(data.events || []); })
+      .catch(function () {
+        var body = document.getElementById('fd-trap-body');
+        if (body) body.innerHTML = '<div class="fd-trap-empty">Failed to load trap events.</div>';
+        var c = document.getElementById('fd-trap-count');
+        if (c) c.textContent = 'error';
+      });
+  })();
 
 })();
 </script>

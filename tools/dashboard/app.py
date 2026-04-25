@@ -8291,6 +8291,47 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    @app.route("/fathomdesk/api/traps")
+    def fathomdesk_api_traps():
+        """Return last 20 trap events from ad_trap_events for the Trap History panel."""
+        def _confidence_to_severity(conf):
+            if conf is None:
+                return "medium"
+            if conf >= 0.8:
+                return "critical"
+            if conf >= 0.6:
+                return "high"
+            return "medium"
+
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            try:
+                rows = conn.execute(
+                    "SELECT id, ticker, pattern, broken_level, confidence, "
+                    "volume_ratio, timeframe, evidence_json, created_at "
+                    "FROM ad_trap_events "
+                    "ORDER BY created_at DESC "
+                    "LIMIT 20"
+                ).fetchall()
+            finally:
+                conn.close()
+
+            events = []
+            for r in rows:
+                row = dict(r) if hasattr(r, "keys") else {
+                    "id": r[0], "ticker": r[1], "pattern": r[2],
+                    "broken_level": r[3], "confidence": r[4],
+                    "volume_ratio": r[5], "timeframe": r[6],
+                    "evidence_json": r[7], "created_at": r[8],
+                }
+                row["severity"] = _confidence_to_severity(row.get("confidence"))
+                events.append(row)
+
+            return jsonify({"events": events})
+        except Exception as exc:
+            return jsonify({"events": [], "error": str(exc)})
+
     return app
 
 
