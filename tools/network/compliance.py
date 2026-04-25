@@ -1739,6 +1739,24 @@ def run_compliance_audit(
     # ── Remediation plan ─────────────────────────────────────────────────
     remediation_plan = _build_remediation_plan(findings, scores, classification)
 
+    # ── R-NAME: hostname naming-pattern violations ────────────────────────
+    for n in nodes:
+        hostname = n.get("hostname")
+        naming_pattern = n.get("policy", {}).get("namingPattern")
+        if not hostname or not naming_pattern:
+            continue
+        is_valid, suggested_name = validate_hostname_pattern(hostname, naming_pattern)
+        if not is_valid:
+            findings.append(
+                {
+                    "type": "R-NAME",
+                    "node_id": n["id"],
+                    "hostname": hostname,
+                    "namingPattern": naming_pattern,
+                    "autoFix": {"suggestedName": suggested_name},
+                }
+            )
+
     return {
         "topology_id": topology_id,
         "classification": classification,
