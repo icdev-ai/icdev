@@ -179,6 +179,27 @@ def main() -> int:
         except Exception as e:
             result.fail("self-reference rejection", e)
 
+        # --- Step 3b: 2-hop cycle rejected (A→B→A) ----------------------
+        # parent already depends on nothing; child depends on parent.
+        # Patching parent to depend on child would form parent→child→parent.
+        try:
+            req = urllib.request.Request(
+                f"{BASE_URL}/api/kanban/tasks/{parent_id}",
+                data=json.dumps({"depends_on_task_id": child_id}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="PATCH",
+            )
+            try:
+                urllib.request.urlopen(req, timeout=10)
+                raise AssertionError("2-hop cycle PATCH should have 400'd")
+            except urllib.error.HTTPError as http_err:
+                assert http_err.code == 400, http_err.code
+                body = json.loads(http_err.read().decode("utf-8"))
+                assert "cycle" in body["error"].lower()
+            result.ok("2-hop cycle rejected", "400")
+        except Exception as e:
+            result.fail("2-hop cycle rejection", e)
+
         # --- Step 4: browser render ------------------------------------
         driver = None
         try:
