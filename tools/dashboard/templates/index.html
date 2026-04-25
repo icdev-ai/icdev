@@ -50,10 +50,6 @@
         <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
     </div>
 </div>
-{# Live Activity — prominently shows in_progress tasks with scheduler heartbeat.
-   Auto-hides when nothing is running. Polls every 30s. #}
-{% include "_live_activity.html" %}
-
 <div class="kanban-board" id="kanban-board">
     {% set columns = [
         ("suggested", "Suggested"),
