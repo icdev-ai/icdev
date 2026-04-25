@@ -43,6 +43,7 @@
       <button class="tb-btn" onclick="saveTopology()" title="Save (Ctrl+S)">💾 Save</button>
       <button class="tb-btn" onclick="saveAsTopology()" title="Save As (new copy)">💾 Save As</button>
       <button class="tb-btn" onclick="saveAsTemplate()" title="Save as reusable template">⊡ Save Template</button>
+      <button class="tb-btn" onclick="createLabTopology()" title="Create Lab — AI-reduced representative version with 10.99.x.x IPs, 1 node per cluster, L1 media stripped" style="color:#00c896;">&#x1f9ea; Create Lab</button>
       <button class="tb-btn" onclick="undoAction()" title="Undo">↩ Undo</button>
       <button class="tb-btn" onclick="redoAction()" title="Redo">↪ Redo</button>
     </div>
@@ -1689,6 +1690,21 @@
       if (d.id) alert('Saved as template: ' + d.name + ' (ID: ' + d.id + ')');
       else alert('Error: ' + (d.error || 'Unknown'));
     });
+  }
+
+  function createLabTopology() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    if (!confirm('Create a lab version of "' + TOPOLOGY_NAME + '"?\n\nThe lab topology will:\n• Keep 1 representative node per cluster/group\n• Replace IPs with 10.99.x.x range\n• Strip L1 physical media (SFP, fiber, patch panels)\n• Prefix all labels with LAB-\n• Preserve security zones, VRFs, and roles\n\nThe new topology opens in a new tab.')) return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/create-lab', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    }).then(r => r.json()).then(d => {
+      if (d.redirect) {
+        window.open(d.redirect, '_blank');
+        alert('Lab topology created: ' + d.name + '\n' + d.nodes + ' nodes, ' + d.edges + ' edges.\nOpened in new tab.');
+      } else {
+        alert('Error: ' + (d.error || 'Unknown'));
+      }
+    }).catch(() => alert('Request failed — check server logs.'));
   }
 
   // ── ATO Package Auto-Generator ─────────────────────────────────────────
