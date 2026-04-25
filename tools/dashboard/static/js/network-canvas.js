@@ -831,6 +831,13 @@ function _renderAuditViolations(violations, nodeId) {
   `).join('');
 }
 
+function _applyAiCorrectedGlow(cell) {
+  const view = paper.findViewByModel(cell);
+  if (!view) return;
+  const corrected = (cell.get('configData') || {})._aiCorrected === true;
+  view.el.classList.toggle('ai-corrected-node', corrected);
+}
+
 function _applyAuditAutoFix(nodeId, suggestedName) {
   const cell = graph.getCell(nodeId);
   if (!cell || !cell.isElement()) return;
@@ -862,6 +869,7 @@ function applyAutoFix(nodeId, ruleId) {
 
   config._aiCorrected = true;
   cell.set('configData', config);
+  _applyAiCorrectedGlow(cell);
   markDirty();
   openAuditPanel(nodeId);
 }
@@ -2435,6 +2443,9 @@ function loadGraphJSON(data) {
     console.warn('loadGraphJSON: dropped ' + dropped + ' edge(s) referencing missing nodes');
   }
   updateStatusBar();
+  requestAnimationFrame(() => {
+    graph.getElements().forEach(cell => _applyAiCorrectedGlow(cell));
+  });
 }
 
 /* ── Phase Strip Renderer ─────────────────────────────────────────────────────── */
