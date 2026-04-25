@@ -15,8 +15,7 @@ The ``_ToolsRedirect`` module below intercepts attribute access on the
 ``tools`` module and resolves it to ``icdev.tools.<name>``, falling back to
 normal package resolution when the sub-module doesn't exist under ``icdev.tools``.
 
-Update new imports to the canonical form:
-    from tools.llm.router import LLMRouter       # legacy — still works
+Use the canonical absolute import form:
     from icdev.tools.llm.router import LLMRouter  # preferred
 """
 
@@ -25,14 +24,8 @@ import os
 import sys
 import types
 
-# Deprecation warning suppressed — migration to icdev.tools is incomplete
-# and the warning fires on every import across hundreds of files.
-# Uncomment when ready to migrate:
-# warnings.warn(
-#     "Importing from 'tools' is deprecated. Use 'from icdev.tools' instead.",
-#     DeprecationWarning,
-#     stacklevel=2,
-# )
+# Deprecation warning intentionally suppressed — this shim keeps legacy
+# ``tools.*`` imports working while the codebase migrates to ``icdev.tools.*``.
 
 
 class _ToolsRedirect(types.ModuleType):
