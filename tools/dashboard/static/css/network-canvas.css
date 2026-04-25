@@ -1442,13 +1442,46 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 
 /* ── Right Config Panel ─────────────────────────────────────────────────────── */
 .config-panel {
+  width: 0;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-left: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s ease;
+}
+.config-panel.config-panel-open {
   width: 220px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+}
+
+/* ── Config Panel Tab (always-visible toggle handle) ────────────────────────── */
+.config-panel-tab {
+  width: 22px;
   flex-shrink: 0;
   background: var(--bg2);
   border-left: 1px solid var(--border);
-  overflow-y: auto;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  user-select: none;
+  transition: background 0.12s;
+}
+.config-panel-tab:hover { background: var(--accent); }
+.config-panel-tab .cpt-arrow { font-size: 13px; color: var(--text-dim); line-height: 1; }
+.config-panel-tab .cpt-label {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 .config-header {
   padding: 10px 14px;
@@ -1459,7 +1492,21 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   text-transform: uppercase;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
+.config-header-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  margin-left: 4px;
+}
+.config-header-close:hover { color: var(--text); }
 .config-empty { padding: 24px 14px; text-align: center; color: var(--text-dim); }
 .config-empty .empty-icon { font-size: 28px; margin-bottom: 8px; }
 .config-empty p { font-size: 12px; }
@@ -2425,6 +2472,7 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 }
 .brm-btn-ato:hover { background: #219a52; border-color: #219a52; }
 
+<<<<<<< Updated upstream
 /* ── Phase Nav Strip ─────────────────────────────────────────────────────────── */
 .phase-nav-strip {
   display: none;
@@ -2458,3 +2506,21 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   pointer-events: none;
 }
 .pns-arrow { color: var(--text-dim); font-size: 11px; flex-shrink: 0; }
+=======
+/* ── Multi-Select Highlight ─────────────────────────────────────────────────── */
+.canvas-multi-select { filter: drop-shadow(0 0 5px rgba(52,152,219,0.9)) drop-shadow(0 0 2px rgba(52,152,219,1.0)) !important; }
+
+/* ── Bulk-Edit Panel (inside config-panel, shown when 2+ nodes selected) ─────── */
+#bulk-edit-panel { padding: 12px 14px; }
+.bulk-summary-bar {
+  font-size: 11px; font-weight: 700; color: var(--text);
+  background: rgba(52,152,219,0.12); border: 1px solid rgba(52,152,219,0.3);
+  border-radius: 5px; padding: 7px 10px; margin-bottom: 12px; line-height: 1.4;
+}
+.bulk-summary-missing { color: #e67e22; font-size: 10px; display: block; margin-top: 2px; }
+#bulk-edit-panel .form-group { margin-bottom: 10px; }
+#bulk-edit-panel .form-group label { font-size: 11px; }
+#bulk-edit-panel .form-control { padding: 6px 8px; font-size: 12px; }
+.bulk-action-row { display: flex; gap: 6px; margin-top: 10px; }
+.bulk-action-row button { flex: 1; }
+>>>>>>> Stashed changes
