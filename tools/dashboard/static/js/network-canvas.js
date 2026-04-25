@@ -10,6 +10,7 @@ let currentTopoId = TOPOLOGY_ID; // injected by template
 let undoStack = [];
 let redoStack = [];
 let auditResults = {}; // nodeId -> violations[]
+let _aiCorrections = []; // {nodeId, ruleId, timestamp, oldValue, newValue}
 let saveTimer = null;
 let isDirty = false;
 let _conflictExportBypassed = false; // ndc-ux-02: bypass conflict gate for "Export Anyway"
@@ -858,14 +859,21 @@ function applyAutoFix(nodeId, ruleId) {
 
   const config = cell.get('configData') || {};
 
+  let oldValue, newValue;
   if (ruleId === 'R-NAME' && violation.suggestedName) {
-    cell.attr('label/text', violation.suggestedName);
-    config.hostname = violation.suggestedName;
+    oldValue = cell.attr('label/text') || config.hostname || '';
+    newValue = violation.suggestedName;
+    cell.attr('label/text', newValue);
+    config.hostname = newValue;
   } else if (violation.suggestedIp) {
-    config.ip = violation.suggestedIp;
-    config.ipv4 = violation.suggestedIp;
-    cell.attr('iplabel/text', violation.suggestedIp);
+    oldValue = config.ip || config.ipv4 || '';
+    newValue = violation.suggestedIp;
+    config.ip = newValue;
+    config.ipv4 = newValue;
+    cell.attr('iplabel/text', newValue);
   }
+
+  _aiCorrections.push({ nodeId, ruleId, timestamp: new Date().toISOString(), oldValue, newValue });
 
   config._aiCorrected = true;
   cell.set('configData', config);
@@ -2400,7 +2408,7 @@ function graphToJSON() {
     }
   });
 
-  return { nodes, edges, _annotationLegend: _annotationLegend, _phases: _phases };
+  return { nodes, edges, _annotationLegend: _annotationLegend, _phases: _phases, _aiCorrections: _aiCorrections.slice() };
 }
 
 function loadGraphJSON(data) {

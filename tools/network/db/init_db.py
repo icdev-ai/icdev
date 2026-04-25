@@ -13831,7 +13831,7 @@ def init_db():
             _hw_profiles = [
                 # Juniper MX Series
                 ("hw-juniper-mx304", "Juniper", "MX304", "MX Series", "router", "rack", 2, 12.25, 508, 438, 88, 350, 480, 2, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 65, 4800, 2000, 4000000, 256000, None, None, None, None,
-                 json.dumps([{"count":4,"speed":"100GbE","type":"QSFP28","breakout":"4x25GbE"},{"count":8,"speed":"10GbE","type":"SFP+"}]),
+                 json.dumps([{"count":36,"speed":"100GbE","type":"QSFP28","breakout":"4x25GbE or 2x50GbE","if_prefix":"et-0/0/","if_start":0,"if_end":35},{"count":2,"speed":"400GbE","type":"QSFP-DD","breakout":"4x100GbE","if_prefix":"et-0/0/","if_start":36,"if_end":37}]),
                  json.dumps([{"type":"Chassis","model":"MX304-PREM","qty":1},{"type":"RE","model":"JNP304-RE-S","qty":2},{"type":"Fan","model":"JNP-FAN-2RU","qty":3},{"type":"PSU","model":"JNP-PWR2200-AC","qty":2}]),
                  json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
                  json.dumps(["JunOS","JunOS Evolved"]), "subscription", "2031-12-31", "2029-12-31", 85000, 0.15,
@@ -13842,7 +13842,7 @@ def init_db():
                  json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
                  json.dumps(["JunOS"]), "subscription", "2030-06-30", "2028-06-30", 35000, 0.15, None, None, json.dumps(["access","cpe","small-core"]), 1),
                 ("hw-juniper-mx10003", "Juniper", "MX10003", "MX10000 Series", "router", "chassis", 3, 27.0, 610, 438, 131, 800, 1200, 4, "AC/DC", 0, 40, 10, 85, "front-to-back", 3000, 72, 9600, 4000, 8000000, 512000, None, None, None, None,
-                 json.dumps([{"count":3,"speed":"line card slot","type":"MPC","breakout":"varies"}]),
+                 json.dumps([{"count":3,"speed":"line card slot","type":"MPC","breakout":"varies","note":"Modular — actual ports depend on installed MICs. Common: MPC7E-100G (2x MIC, 12x100GE/slot), MPC7E-MRATE (2x MIC, 24x10GE/slot), MPC10E-15C-MRATE (15x100GE/slot). Parse running-config for as-built interfaces."}]),
                  json.dumps([{"type":"Chassis","model":"MX10003","qty":1},{"type":"RE","model":"RE-MX10003","qty":2},{"type":"Fan","model":"MX10003-FAN","qty":6},{"type":"PSU","model":"PWR-MX10003-AC","qty":4}]),
                  json.dumps([{"type":"Console RJ45"},{"type":"USB"},{"type":"1GbE Mgmt"}]),
                  json.dumps(["JunOS","JunOS Evolved"]), "subscription", "2033-12-31", "2031-12-31", 180000, 0.12, None, None, json.dumps(["core","backbone","dc-edge"]), 1),

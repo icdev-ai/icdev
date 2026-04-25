@@ -6,6 +6,10 @@
 # Default 88 was generating 10K+ false E501 violations.
 line-length = 120
 
+# Exclude non-Python assets so ruff never parses them even when passed explicitly.
+exclude = ["*.js", "*.ts", "*.jsx", "*.tsx", "*.css", "*.html"]
+force-exclude = true
+
 [lint]
 # E402: Module-level imports not at top — intentional pattern in ICDEV tools.
 # All tools/ scripts use sys.path.insert(0, ...) before importing project modules.

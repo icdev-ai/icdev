@@ -414,3 +414,9 @@
 |------|------|-------------|-------|--------|
 | Mitre Ingestor | tools\observability\mitre_ingestor.py | Auto-registered: observability/mitre_ingestor.py | --json | JSON |
 | Bus Subscriber | tools\security_canvas\bus_subscriber.py | Auto-registered: security_canvas/bus_subscriber.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Network Migration | tools\migration_canvas\network_migration.py | Auto-registered: migration_canvas/network_migration.py | --json | JSON |

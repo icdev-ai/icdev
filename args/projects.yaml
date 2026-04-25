@@ -4,6 +4,36 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: nmig
+  name: Network Device Migration Workflow
+  description: Vendor-agnostic network device migration workflow (chassis swap, peering
+    add/change/move) — physical port mapping, compatibility checklist, config conversion,
+    SVG port diagram, cutover planner, ERB/CCB package generation, and SOP approval flow.
+  task_prefix: nmig-
+  default_open: true
+  briefs:
+  - "DB schema: 6 mc_net_* tables — nmig-db-01 (done)"
+  - "Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01 (done)"
+  - "Blueprint: 23 network-migration API + page routes — nmig-engine-02 (done)"
+  - "UI: 8-step wizard (device/config/ports/compat/diff/test/cutover/ERB) — nmig-wizard-01/02/03 (done)"
+  - "Port diagram: SVG front-panel chassis view — nmig-portdiag-01 (done)"
+  - "ERB/CCB: print template + SOP approval flow — nmig-erb-01 (done)"
+  epics:
+  - key: db
+    title: DB Schema
+    priority: high
+  - key: engine
+    title: Migration Engine
+    priority: high
+  - key: wizard
+    title: 8-Step Wizard UI
+    priority: high
+  - key: portdiag
+    title: Physical Port Diagram
+    priority: medium
+  - key: erb
+    title: ERB/CCB Package & Approval
+    priority: medium
 - key: ndc
   name: Ndc Project
   description: Auto-registered project for tasks with prefix 'ndc-'. Update name and
