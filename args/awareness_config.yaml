@@ -141,3 +141,13 @@ promotion_filters:
   auto_dismiss:
     enabled: true
     stale_days: 30      # days in suggested before auto-dismiss
+
+# --------------------------------------------------------------------------
+# module_import probe suppressions (2026-04-24)
+# --------------------------------------------------------------------------
+# Paths listed here are skipped (not failed) by the module_import probe.
+# Use for child-app scripts and renamed/removed tools that are still
+# referenced in the knowledge graph but do not belong to ICDEV core.
+module_import_suppressions:
+  - tools/db/migrate_alphadesk.py          # child app (AlphaDesk → FathomDesk); not in ICDEV core
+  - tools/scripts/schedule_alphadesk_news_plan.py  # stale auto-added script; child app artifact

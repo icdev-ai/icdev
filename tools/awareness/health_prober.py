@@ -45,7 +45,7 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 LOG = logging.getLogger("health_prober")
 
@@ -68,6 +68,23 @@ GRAPH_ID = "kg-icdev-self-awareness"
 DASHBOARD_BASE = "http://localhost:5050"
 HTTP_HEAD_TIMEOUT = 5.0
 IMPORT_PROBE_TIMEOUT = 15.0
+_AWARENESS_CONFIG = BASE_DIR / "args" / "awareness_config.yaml"
+
+
+def _load_import_suppressions() -> Set[str]:
+    """Load the module_import_suppressions list from awareness_config.yaml.
+
+    Returns a set of normalised posix-style paths (e.g. 'tools/db/foo.py')
+    so callers can do a simple ``file_path in suppressions`` check.
+    """
+    try:
+        import yaml  # type: ignore[import]
+        with _AWARENESS_CONFIG.open(encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        raw: List[str] = cfg.get("module_import_suppressions") or []
+        return {str(Path(p).as_posix()) for p in raw}
+    except Exception:
+        return set()
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +324,7 @@ def _probe_module_import(
     fail = 0
     skipped = 0
 
+    suppressions = _load_import_suppressions()
     nodes = _load_component_nodes(conn, entity_types=["tool", "reflex", "mcp_server"])
     for node in nodes:
         if not is_component_enabled(
@@ -318,6 +336,12 @@ def _probe_module_import(
             continue
         file_path = node["properties"].get("file_path", "")
         if not file_path or not file_path.endswith(".py"):
+            continue
+        # Skip paths suppressed in awareness_config.yaml (child-app artifacts,
+        # renamed tools still referenced in the knowledge graph).
+        norm_path = str(Path(file_path).as_posix())
+        if norm_path in suppressions:
+            skipped += 1
             continue
         abs_path = BASE_DIR / file_path
         if not abs_path.exists():
