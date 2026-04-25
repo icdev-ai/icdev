@@ -34,6 +34,47 @@ projects:
   - key: erb
     title: ERB/CCB Package & Approval
     priority: medium
+- key: mi
+  name: Migration Intelligence Engine
+  description: Autonomous migration opportunity discovery and planning aligned to enterprise
+    technical goals (5-10 year horizon). Canvas cross-scan, goal management, 7R strategy
+    generation, wave-based roadmaps, wishlist/budget lifecycle tracking, and Genesis reflex.
+  task_prefix: mi-
+  default_open: true
+  briefs:
+  - "DB schema: 8 mi_* tables (goals, opps, strategies, roadmaps, wishlist, budget cycles, scans) — mi-db-01 (done)"
+  - "Goal manager: CRUD + NL chat parsing (air-gap conditional) — mi-goal-01 (done)"
+  - "Opportunity scanner: NDC EOL, topology, MDC cross-canvas — mi-scan-01 (done)"
+  - "Strategy generator: 7R + roadmap builder — mi-strat-01 (done)"
+  - "Migration manager: 8-stage pipeline + daemon + CLI — mi-mgr-01 (done)"
+  - "Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API — mi-api-01 (done)"
+  - "Dashboard UI: index.html with tabbed goals/opps/roadmaps/wishlist/chat — mi-ui-01 (done)"
+  - "Genesis reflex: migration_intel.py autonomous 24h scan — mi-reflex-01 (done)"
+  epics:
+  - key: db
+    title: DB Schema
+    priority: high
+  - key: goal
+    title: Goal Manager
+    priority: high
+  - key: scan
+    title: Opportunity Scanner
+    priority: high
+  - key: strat
+    title: Strategy Generator
+    priority: medium
+  - key: mgr
+    title: Migration Manager
+    priority: high
+  - key: api
+    title: Flask Blueprint
+    priority: high
+  - key: ui
+    title: Dashboard UI
+    priority: medium
+  - key: reflex
+    title: Genesis Reflex
+    priority: medium
 - key: ndc
   name: Ndc Project
   description: Auto-registered project for tasks with prefix 'ndc-'. Update name and

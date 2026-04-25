@@ -1263,6 +1263,15 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Infra IaC blueprint failed to register: %s", _exc)
 
+    # ---- Migration Intelligence Engine Blueprint ----
+    try:
+        from tools.migration_intelligence.blueprint import create_migration_intel_blueprint
+        _mi_bp = create_migration_intel_blueprint()
+        app.register_blueprint(_mi_bp)
+        app.logger.info("Migration Intelligence blueprint registered at /migration-intel")
+    except Exception as _exc:
+        app.logger.warning("Migration Intelligence blueprint failed to register: %s", _exc)
+
     # ---- Convenience JSON routes that match the spec ----
 
     @app.route("/api/alerts", methods=["GET"])

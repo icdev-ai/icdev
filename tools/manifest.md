@@ -420,3 +420,13 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Network Migration | tools\migration_canvas\network_migration.py | Auto-registered: migration_canvas/network_migration.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Goal Manager | tools\migration_intelligence\goal_manager.py | Auto-registered: migration_intelligence/goal_manager.py | --json | JSON |
+| Migration Manager | tools\migration_intelligence\migration_manager.py | Auto-registered: migration_intelligence/migration_manager.py | --json | JSON |
+| Opportunity Scanner | tools\migration_intelligence\opportunity_scanner.py | Auto-registered: migration_intelligence/opportunity_scanner.py | --json | JSON |
+| Strategy Generator | tools\migration_intelligence\strategy_generator.py | Auto-registered: migration_intelligence/strategy_generator.py | --json | JSON |
+| Migration Intel | tools\genesis\reflexes\migration_intel.py | Auto-registered: reflexes/migration_intel.py | --json | JSON |
