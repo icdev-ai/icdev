@@ -258,8 +258,24 @@
     <span class="fd-trap-panel-count" id="fd-trap-count">Loading…</span>
   </div>
   <div id="fd-trap-body">
-    <div class="fd-trap-empty">Loading trap events…</div>
+    <table id="fd-trap-table" class="fd-trap-table">
+      <thead><tr>
+        <th>Ticker</th><th>Pattern</th><th>Confidence</th><th>Timeframe</th><th>Detected</th>
+      </tr></thead>
+      <tbody id="fd-trap-tbody"><tr><td colspan="5" style="padding:8px;text-align:center;color:var(--text-muted,#6c6c80);">Loading&#8230;</td></tr></tbody>
+    </table>
   </div>
+</div>
+
+<!-- Limit Order Form -->
+<div id="fd-order-panel" style="margin-top:12px;padding:12px;background:var(--bg-card,#14142a);border:1px solid var(--border-color,#2a2a40);border-radius:8px;">
+  <div style="font-size:13px;font-weight:600;color:var(--text-primary,#e0e0f0);margin-bottom:8px;">Place Limit Order</div>
+  <form id="fd-order-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;" onsubmit="return false;">
+    <input id="order-ticker" placeholder="Ticker" style="width:80px;padding:4px 8px;background:var(--bg-input,#1a1a2e);border:1px solid var(--border-color,#2a2a40);border-radius:4px;color:var(--text-primary,#e0e0f0);font-size:12px;" autocomplete="off">
+    <input id="order-qty" type="number" placeholder="Qty" min="1" style="width:70px;padding:4px 8px;background:var(--bg-input,#1a1a2e);border:1px solid var(--border-color,#2a2a40);border-radius:4px;color:var(--text-primary,#e0e0f0);font-size:12px;">
+    <input id="order-price" type="number" placeholder="Price" step="0.01" min="0.01" style="width:80px;padding:4px 8px;background:var(--bg-input,#1a1a2e);border:1px solid var(--border-color,#2a2a40);border-radius:4px;color:var(--text-primary,#e0e0f0);font-size:12px;">
+    <button type="submit" id="order-submit" style="padding:4px 12px;background:var(--accent-blue,#4a90d9);border:none;border-radius:4px;color:#fff;font-size:12px;cursor:pointer;">Submit</button>
+  </form>
 </div>
 
 <!-- Pattern detail modal -->
@@ -911,36 +927,27 @@
     }
 
     function renderTraps(events) {
-      var body = document.getElementById('fd-trap-body');
+      var tbody = document.getElementById('fd-trap-tbody');
       var countEl = document.getElementById('fd-trap-count');
       if (!events || !events.length) {
-        body.innerHTML = '<div class="fd-trap-empty">No trap events recorded yet.</div>';
-        countEl.textContent = '0 events';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:8px;text-align:center;color:var(--text-muted,#6c6c80);">No trap events recorded yet.</td></tr>';
+        if (countEl) countEl.textContent = '0 events';
         return;
       }
-      countEl.textContent = events.length + ' event' + (events.length !== 1 ? 's' : '');
-      var html = '<table class="fd-trap-table">' +
-        '<thead><tr>' +
-        '<th></th><th>Ticker</th><th>Trap Type</th><th>Detected</th><th>Severity</th>' +
-        '</tr></thead><tbody>';
-
+      if (countEl) countEl.textContent = events.length + ' event' + (events.length !== 1 ? 's' : '');
+      var html = '';
       events.forEach(function (ev, i) {
-        var sev = ev.severity || 'medium';
-        var label = TRAP_LABELS[ev.pattern] || ev.pattern;
-        var ctx = buildContext(ev);
-        html += '<tr data-idx="' + i + '" onclick="fdToggleTrap(' + i + ')">' +
-          '<td><span class="fd-trap-expand" id="fd-trap-exp-' + i + '">&#9658;</span></td>' +
+        var conf = ev.confidence != null ? (parseFloat(ev.confidence) * 100).toFixed(0) + '%' : '—';
+        var label = TRAP_LABELS[ev.pattern] || ev.pattern || '—';
+        html += '<tr>' +
           '<td class="fd-trap-ticker">' + (ev.ticker || '—') + '</td>' +
           '<td class="fd-trap-type">'   + label + '</td>' +
+          '<td>' + conf + '</td>' +
+          '<td>' + (ev.timeframe || '—') + '</td>' +
           '<td>' + fmtDate(ev.created_at) + '</td>' +
-          '<td><span class="fd-trap-sev ' + sev + '">' + sev + '</span></td>' +
-          '</tr>' +
-          '<tr id="fd-trap-ctx-row-' + i + '" style="display:none">' +
-          '<td colspan="5"><div class="fd-trap-ctx" id="fd-trap-ctx-' + i + '">' + ctx + '</div></td>' +
           '</tr>';
       });
-      html += '</tbody></table>';
-      body.innerHTML = html;
+      if (tbody) tbody.innerHTML = html;
     }
 
     window.fdToggleTrap = function (idx) {
@@ -956,7 +963,7 @@
 
     fetch('/fathomdesk/api/traps')
       .then(function (r) { return r.json(); })
-      .then(function (data) { renderTraps(data.events || []); })
+      .then(function (data) { renderTraps(data.traps || []); })
       .catch(function () {
         var body = document.getElementById('fd-trap-body');
         if (body) body.innerHTML = '<div class="fd-trap-empty">Failed to load trap events.</div>';
