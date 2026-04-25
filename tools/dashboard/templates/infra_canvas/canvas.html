@@ -40,6 +40,32 @@
   .dc-right-panel-header button { background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; }
   .dc-right-panel-header button:hover { background: #1e3a6e; color: #eaeaea; }
   .dc-right-panel-body { padding: 12px 14px; font-size: 12px; color: #eaeaea; }
+  /* IaC Generation Panel */
+  .iac-modal { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.65); z-index:200; align-items:flex-start; justify-content:center; padding-top:60px; }
+  .iac-modal.open { display:flex; }
+  .iac-panel { background:#0a1628; border:1px solid #1e3a6e; border-radius:8px; width:720px; max-width:95vw; max-height:80vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+  .iac-panel-header { padding:13px 16px; font-weight:600; font-size:14px; border-bottom:1px solid #1e3a6e; display:flex; justify-content:space-between; align-items:center; color:#eaeaea; flex-shrink:0; background:#16213e; }
+  .iac-panel-header button { background:transparent; border:1px solid #1e3a6e; color:#7a8cb0; width:24px; height:24px; border-radius:4px; cursor:pointer; font-size:12px; }
+  .iac-panel-header button:hover { background:#1e3a6e; color:#eaeaea; }
+  .iac-panel-body { padding:16px; overflow-y:auto; flex:1; }
+  .iac-section { margin-bottom:20px; border:1px solid #1e3a6e; border-radius:6px; padding:14px; }
+  .iac-section-title { font-size:12px; font-weight:700; color:#00bcd4; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px; }
+  .iac-controls { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .iac-btn { background:#00bcd4; border:none; color:#fff; padding:5px 14px; border-radius:4px; cursor:pointer; font-size:12px; }
+  .iac-btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .iac-btn.secondary { background:transparent; border:1px solid #1e3a6e; color:#aab; font-size:11px; }
+  .iac-btn.secondary:hover:not(:disabled) { border-color:#00bcd4; color:#eaeaea; }
+  .iac-btn.dl { background:transparent; border:1px solid #27ae60; color:#27ae60; font-size:11px; }
+  .iac-btn.dl:hover:not(:disabled) { background:#1a4a30; color:#eaeaea; }
+  .iac-select { background:#16213e; border:1px solid #1e3a6e; color:#eaeaea; padding:4px 8px; border-radius:4px; font-size:12px; }
+  .iac-hint { font-size:10px; color:#5a6e8c; }
+  .iac-pre { background:#0d1b2a; border:1px solid #1e3a6e; border-radius:6px; padding:12px; font-size:11px; color:#a8d8b9; font-family:'Courier New',monospace; white-space:pre; overflow-x:auto; max-height:220px; overflow-y:auto; display:none; margin-top:8px; }
+  .iac-pre.visible { display:block; }
+  .iac-pre-actions { display:none; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center; }
+  .iac-pre-actions.visible { display:flex; }
+  .iac-status { font-size:11px; color:#7a8cb0; }
+  .iac-status.err { color:#e74c3c; }
+  .iac-status.ok { color:#27ae60; }
 </style>
 
 <div class="dc-wrap">
@@ -110,6 +136,7 @@
       <button class="secondary analysis" onclick="canvasLegend()" title="Toggle Legend">Legend</button>
       <button class="secondary analysis" onclick="canvasValidateIaC()" title="Validate IaC" style="color:#27ae60;">Validate IaC</button>
       <button class="secondary analysis" onclick="canvasDeployIaC()" title="Deploy IaC Bundle" style="color:#27ae60;">Deploy IaC</button>
+      <button class="secondary analysis" onclick="openIaCPanel()" title="Generate IaC — Terraform &amp; Ansible" style="color:#00bcd4;border-color:#00bcd4;">Generate IaC</button>
       <!-- Navigation -->
       <button class="secondary" onclick="location.href='/infra/'" title="Back to Dashboard">Back</button>
     </div>
@@ -125,6 +152,58 @@
       <button onclick="closeRightPanel()">&#10005;</button>
     </div>
     <div class="dc-right-panel-body" id="dc-panel-body"></div>
+  </div>
+</div>
+
+<!-- Generate IaC Modal -->
+<div class="iac-modal" id="iac-modal" onclick="if(event.target===this)closeIaCPanel()">
+  <div class="iac-panel">
+    <div class="iac-panel-header">
+      <span>&#9881; Generate IaC — Infrastructure as Code</span>
+      <button onclick="closeIaCPanel()" title="Close">&#10005;</button>
+    </div>
+    <div class="iac-panel-body">
+      <!-- Terraform Section -->
+      <div class="iac-section">
+        <div class="iac-section-title">Terraform (HCL)</div>
+        <div class="iac-controls">
+          <label class="iac-hint">CSP:</label>
+          <select class="iac-select" id="tf-csp">
+            <option value="aws">AWS GovCloud</option>
+            <option value="gcp">GCP</option>
+            <option value="oci">OCI</option>
+          </select>
+          <button class="iac-btn" id="btn-gen-tf" onclick="generateIaC('terraform')">Generate Terraform</button>
+          <span class="iac-status" id="tf-status"></span>
+        </div>
+        <pre class="iac-pre" id="tf-output"></pre>
+        <div class="iac-pre-actions" id="tf-actions">
+          <button class="iac-btn secondary" onclick="copyIaC('tf-output', this)">&#128203; Copy HCL</button>
+          <button class="iac-btn dl" onclick="downloadIaC('tf-output', 'main.tf')">&#8595; Download main.tf</button>
+        </div>
+      </div>
+      <!-- Ansible Section -->
+      <div class="iac-section">
+        <div class="iac-section-title">Ansible (YAML)</div>
+        <div class="iac-controls">
+          <label class="iac-hint">CSP:</label>
+          <select class="iac-select" id="ans-csp">
+            <option value="aws">AWS</option>
+            <option value="azure">Azure</option>
+            <option value="gcp">GCP</option>
+            <option value="oci">OCI</option>
+            <option value="on-prem">On-Prem</option>
+          </select>
+          <button class="iac-btn" id="btn-gen-ans" onclick="generateIaC('ansible')">Generate Ansible</button>
+          <span class="iac-status" id="ans-status"></span>
+        </div>
+        <pre class="iac-pre" id="ans-output"></pre>
+        <div class="iac-pre-actions" id="ans-actions">
+          <button class="iac-btn secondary" onclick="copyIaC('ans-output', this)">&#128203; Copy YAML</button>
+          <button class="iac-btn dl" onclick="downloadIaC('ans-output', 'playbook.yml')">&#8595; Download playbook.yml</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -164,6 +243,99 @@ document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); canvasSave(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); canvasUndo(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); canvasRedo(); }
+  if (e.key === 'Escape') { closeIaCPanel(); }
 });
+
+// ── IaC Generation Panel ─────────────────────────────────────────────────────
+function openIaCPanel() {
+  document.getElementById('iac-modal').classList.add('open');
+}
+function closeIaCPanel() {
+  document.getElementById('iac-modal').classList.remove('open');
+}
+function generateIaC(target) {
+  const isTf = target === 'terraform';
+  const csp   = document.getElementById(isTf ? 'tf-csp' : 'ans-csp').value;
+  const statusEl  = document.getElementById(isTf ? 'tf-status'  : 'ans-status');
+  const outputEl  = document.getElementById(isTf ? 'tf-output'  : 'ans-output');
+  const actionsEl = document.getElementById(isTf ? 'tf-actions' : 'ans-actions');
+  const btnEl     = document.getElementById(isTf ? 'btn-gen-tf' : 'btn-gen-ans');
+
+  statusEl.textContent = 'Generating…';
+  statusEl.className = 'iac-status';
+  outputEl.classList.remove('visible');
+  actionsEl.classList.remove('visible');
+  btnEl.disabled = true;
+
+  fetch('/infra/emit/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      project: window.CANVAS_CONFIG.designId,
+      target: target,
+      csp: csp
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btnEl.disabled = false;
+    if (data.error) {
+      statusEl.textContent = data.error;
+      statusEl.className = 'iac-status err';
+      return;
+    }
+    var files = data.files || {};
+    var content = Object.values(files).join('\n\n');
+    if (!content) {
+      statusEl.textContent = 'No output generated';
+      statusEl.className = 'iac-status err';
+      return;
+    }
+    outputEl.textContent = content;
+    outputEl.classList.add('visible');
+    actionsEl.classList.add('visible');
+    var nodes = data.node_count != null ? ' (' + data.node_count + ' nodes)' : '';
+    statusEl.textContent = 'Done' + nodes;
+    statusEl.className = 'iac-status ok';
+  })
+  .catch(function(err) {
+    btnEl.disabled = false;
+    statusEl.textContent = 'Request failed: ' + err.message;
+    statusEl.className = 'iac-status err';
+  });
+}
+function copyIaC(outputId, btn) {
+  var text = document.getElementById(outputId).textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  }).catch(function() {
+    // fallback for older browsers
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  });
+}
+function downloadIaC(outputId, filename) {
+  var text = document.getElementById(outputId).textContent;
+  var blob = new Blob([text], {type: 'text/plain'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 </script>
 {% endblock %}
