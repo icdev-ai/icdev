@@ -1,7 +1,7 @@
 # ICDEV Task Scheduler Registration Script (Windows)
 # Registers autostart_windows.ps1 to run at user logon via Windows Task Scheduler.
 #
-# Run ONCE with elevated privileges (right-click -> "Run as Administrator"):
+# Run ONCE (no elevated privileges required — runs as current user):
 #   powershell.exe -ExecutionPolicy Bypass -File register_autostart.ps1
 #
 # To remove the scheduled task:
@@ -24,7 +24,7 @@ Register-ScheduledTask `
     -Action   $action `
     -Trigger  $trigger `
     -Settings $settings `
-    -RunLevel Highest `
+    -RunLevel Limited `
     -Force
 
 Write-Host "Task 'ICDEV-Dashboard-Autostart' registered successfully."
