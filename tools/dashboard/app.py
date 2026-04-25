@@ -8435,6 +8435,42 @@ if __name__ == "__main__":
             print("[ICDEV™ Dashboard] Kanban scheduler started (60s interval)")
         else:
             print("[ICDEV™ Dashboard] Kanban scheduler not found — skipping")
+
+        # ── Watchdog: auto-restart scheduler if it dies ────────────────
+        # Polls the heartbeat file every 120s. If it's > 300s old the
+        # scheduler process crashed; spawn a fresh one.
+        if _ks_script.exists():
+            import threading as _ks_threading
+
+            def _ks_watchdog():
+                import time as _wt
+                _POLL = 120   # check every 2 min
+                _STALE = 300  # restart if heartbeat > 5 min old
+                while True:
+                    _wt.sleep(_POLL)
+                    try:
+                        age = _wt.time() - _ks_hb.stat().st_mtime if _ks_hb.exists() else 9999
+                        if age > _STALE:
+                            _log_dir = BASE_DIR / ".tmp"
+                            _log_dir.mkdir(parents=True, exist_ok=True)
+                            _lf = open(str(_log_dir / "kanban_scheduler.log"), "a", encoding="utf-8")  # noqa: SIM115
+                            _ks_sp.Popen(
+                                [sys.executable, str(_ks_script), "--interval", "60"],
+                                stdout=_lf,
+                                stderr=_ks_sp.STDOUT,
+                                cwd=str(BASE_DIR),
+                            )
+                            print(
+                                f"[ICDEV™ Dashboard] Kanban scheduler watchdog: "
+                                f"heartbeat was {int(age)}s old — restarted scheduler"
+                            )
+                    except Exception as _we:
+                        print(f"[ICDEV™ Dashboard] Kanban scheduler watchdog error: {_we}")
+
+            _ks_wd = _ks_threading.Thread(target=_ks_watchdog, name="kanban-scheduler-watchdog", daemon=True)
+            _ks_wd.start()
+            print("[ICDEV™ Dashboard] Kanban scheduler watchdog started (polls every 120s, restarts if >300s stale)")
+
     except Exception as _ks_err:
         print(f"[ICDEV™ Dashboard] Kanban scheduler failed to start: {_ks_err}")
 
