@@ -10159,6 +10159,191 @@ Output ONLY the JSON object. No other text."""
             except Exception:
                 pass
 
+    # ══════════════════════════════════════════════════════════════════════
+    # API: IP Address Planning Assistant
+    # ══════════════════════════════════════════════════════════════════════
+
+    _IP_PLAN_SYSTEM_PROMPT = """You are a network IP address planner. Given a supernet and topology nodes, allocate non-overlapping CIDRs.
+
+Output ONLY a valid JSON object — no markdown, no explanation:
+{"assignments": [{"node_id": "...", "label": "...", "type": "...", "cidr": "x.x.x.x/xx", "gateway": "x.x.x.x", "vlan": N}]}
+
+Strategy rules:
+- balanced: divide the supernet into equal-sized subnets for each logical segment
+- power-of-2: size each subnet to the next power-of-2 that fits expected hosts
+- flat: assign sequential /24 subnets
+
+Planning rules:
+1. Stay within the given supernet — never assign IPs outside it
+2. Never overlap CIDRs
+3. Logical segments (type=subnet, vlan, security-zone, vrf, aws-subnet, aws-vpc, az-vnet, gcp-vpc): assign a network CIDR (e.g. 10.0.1.0/24)
+4. Devices (router, switch-l2, switch-l3, firewall, server, load-balancer, wap, siem, sdwan-edge, etc.): assign a host IP within the appropriate segment CIDR (e.g. 10.0.1.1/24)
+5. If no explicit segments exist, group devices by inferred function and assign subnets accordingly
+6. gateway = first usable IP (.1) of the subnet
+7. vlan: assign sequential VLAN IDs starting at 10, incrementing by 10 per segment
+8. Include ALL provided nodes in the assignments array
+9. Output ONLY the JSON object"""
+
+    @bp.route("/api/topologies/<topo_id>/plan-ips", methods=["POST"])
+    @nc_login_required
+    def nc_api_plan_ips(topo_id):
+        """AI-assisted IP address planning: supernet → subnet/host allocation."""
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT id, name, graph_json FROM topologies WHERE id=?",
+            (topo_id,),
+        ).fetchone()
+        conn.close()
+        if not topo:
+            return jsonify({"error": "Topology not found"}), 404
+
+        data = request.get_json(force=True, silent=True) or {}
+        supernet = data.get("supernet", "").strip()
+        strategy = data.get("strategy", "balanced").strip()
+        if not supernet:
+            return jsonify({"error": "supernet required"}), 400
+        if strategy not in ("balanced", "power-of-2", "flat"):
+            strategy = "balanced"
+
+        import re
+
+        import requests as _req
+        from tools.http.client import request as _req_request
+
+        # Parse graph nodes
+        try:
+            graph_data = json.loads(topo["graph_json"] or "{}")
+        except Exception:
+            graph_data = {}
+        nodes = graph_data.get("nodes", [])
+
+        # Skip purely decorative/drawing elements
+        _SKIP_TYPES = {
+            "draw-rect", "draw-rounded-rect", "text-heading", "text-label",
+            "text-badge", "media-fiber", "media-ge", "media-10ge", "media-100ge",
+            "patch-panel", "meet-me-room", "cross-connect",
+        }
+        routable = [
+            {"id": n["id"], "label": n.get("label", ""), "type": n.get("type", "")}
+            for n in nodes
+            if n.get("type", "") not in _SKIP_TYPES and n.get("type", "")
+        ]
+        if not routable:
+            return jsonify({"error": "No addressable nodes found in topology"}), 400
+
+        user_prompt = (
+            f"Topology: {topo['name']}\n"
+            f"Supernet: {supernet}\n"
+            f"Strategy: {strategy}\n\n"
+            f"Nodes:\n{json.dumps(routable, indent=2)}\n\n"
+            f"Assign IP CIDRs from the supernet to these nodes using the {strategy} strategy."
+        )
+
+        def _parse_ip_plan(content):
+            text = content.strip()
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            if text.startswith("```"):
+                lines = [ln for ln in text.split("\n") if not ln.strip().startswith("```")]
+                text = "\n".join(lines).strip()
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start < 0 or end <= start:
+                return None, text[:500]
+            result = json.loads(text[start:end])
+            if "assignments" not in result:
+                return None, text[:500]
+            return result, None
+
+        def _call_claude_ip(prompt):
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                return None, "No ANTHROPIC_API_KEY set"
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req_request(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 4096,
+                    "temperature": 0.1,
+                    "system": _IP_PLAN_SYSTEM_PROMPT,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=60,
+            )
+            r.raise_for_status()
+            return r.json().get("content", [{}])[0].get("text", ""), None
+
+        def _call_ollama_ip(prompt):
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
+            r = _req_request(
+                "POST",
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": ollama_model,
+                    "messages": [
+                        {"role": "system", "content": _IP_PLAN_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 4096, "temperature": 0.1},
+                },
+                timeout=120,
+            )
+            r.raise_for_status()
+            return r.json().get("message", {}).get("content", ""), None
+
+        try:
+            provider = os.environ.get("NC_AI_PROVIDER", "auto")
+            content = None
+            used_provider = ""
+
+            if provider in ("auto", "claude"):
+                content, err = _call_claude_ip(user_prompt)
+                if content:
+                    used_provider = "claude"
+                elif provider == "claude":
+                    return jsonify({"error": f"Claude API failed: {err}"}), 503
+
+            if not content and provider in ("auto", "ollama"):
+                content, err = _call_ollama_ip(user_prompt)
+                if content:
+                    used_provider = "ollama"
+                elif provider == "ollama":
+                    return jsonify({"error": f"Ollama failed: {err}"}), 503
+
+            if not content:
+                return jsonify({"error": "No LLM provider available. Set ANTHROPIC_API_KEY or start Ollama."}), 503
+
+            result, raw = _parse_ip_plan(content)
+            if result is None:
+                return jsonify({"error": "LLM did not return valid JSON", "raw": raw}), 422
+
+            _audit("IP_PLAN", "topology", topo_id,
+                   f"[{used_provider}] {supernet} ({strategy}) → {len(result['assignments'])} assignments")
+            return jsonify({
+                "assignments": result["assignments"],
+                "supernet": supernet,
+                "strategy": strategy,
+                "provider": used_provider,
+            })
+
+        except _req.exceptions.ConnectionError:
+            return jsonify({"error": "Cannot connect to LLM provider"}), 503
+        except _req.exceptions.Timeout:
+            return jsonify({"error": "LLM timed out — try a simpler topology"}), 504
+        except json.JSONDecodeError as exc:
+            return jsonify({"error": f"Invalid JSON from LLM: {exc}"}), 422
+        except Exception as exc:
+            logger.exception("IP plan failed")
+            return jsonify({"error": str(exc)}), 500
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
