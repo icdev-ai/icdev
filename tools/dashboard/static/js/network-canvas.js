@@ -9,6 +9,7 @@ let selectedCell = null;
 let currentTopoId = TOPOLOGY_ID; // injected by template
 let undoStack = [];
 let redoStack = [];
+let auditResults = {}; // nodeId -> violations[]
 let saveTimer = null;
 let isDirty = false;
 let _conflictExportBypassed = false; // ndc-ux-02: bypass conflict gate for "Export Anyway"
@@ -838,6 +839,33 @@ function _applyAuditAutoFix(nodeId, suggestedName) {
   openAuditPanel(nodeId);
 }
 
+function applyAutoFix(nodeId, ruleId) {
+  const violations = auditResults[nodeId] || [];
+  const violation = violations.find(v => v.rule === ruleId);
+  if (!violation || !violation.autoFix) return;
+
+  const cell = graph.getCell(nodeId);
+  if (!cell || !cell.isElement()) return;
+
+  pushUndo();
+
+  const config = cell.get('configData') || {};
+
+  if (ruleId === 'R-NAME' && violation.suggestedName) {
+    cell.attr('label/text', violation.suggestedName);
+    config.hostname = violation.suggestedName;
+  } else if (violation.suggestedIp) {
+    config.ip = violation.suggestedIp;
+    config.ipv4 = violation.suggestedIp;
+    cell.attr('iplabel/text', violation.suggestedIp);
+  }
+
+  config._aiCorrected = true;
+  cell.set('configData', config);
+  markDirty();
+  openAuditPanel(nodeId);
+}
+
 function openAuditPanel(nodeId) {
   hideBlastContextMenu();
   nodeId = nodeId || _blastCtxNodeId;
@@ -854,6 +882,7 @@ function openAuditPanel(nodeId) {
   const rName = _rNameCheck(label, nodeType);
   if (rName) violations.push(rName);
 
+  auditResults[nodeId] = violations;
   _renderAuditViolations(violations, nodeId);
   document.getElementById('audit-overlay').classList.remove('hidden');
 }
