@@ -6938,6 +6938,11 @@ def create_network_blueprint():
 
     register_governance_routes(bp)
 
+    # ── Stencil Library routes (Cisco / Juniper / AWS / Azure / Custom) ───
+    from tools.network.routes.stencils import register_stencil_routes
+
+    register_stencil_routes(bp)
+
     # ══════════════════════════════════════════════════════════════════════
     # Extended: Notifications, Topology Diff, Auto-Decompose, Global Canvas
     # ══════════════════════════════════════════════════════════════════════

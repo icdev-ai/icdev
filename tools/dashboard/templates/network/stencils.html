@@ -1,0 +1,674 @@
+{% extends "network/base.html" %}
+{% block title %}Stencil Libraries — Network Design Canvas{% endblock %}
+
+{% block head %}
+<style>
+/* ── Stencil Manager Layout ─────────────────────────────────────── */
+.stencil-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+  padding: 20px;
+  min-height: calc(100vh - 120px);
+}
+.vendor-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vendor-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+}
+.vendor-btn:hover { background: var(--accent); border-color: var(--primary); }
+.vendor-btn.active { background: var(--accent); border-color: var(--primary); color: var(--primary); font-weight: 600; }
+.vendor-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: #fff;
+}
+.vendor-btn-info { min-width: 0; }
+.vendor-btn-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vendor-btn-count { font-size: 10px; color: var(--text-muted, #888); }
+
+/* ── Main Panel ─────────────────────────────────────────────────── */
+.stencil-main { display: flex; flex-direction: column; gap: 20px; }
+
+.stencil-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.stencil-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+.stencil-panel-title { font-weight: 700; font-size: 14px; }
+.stencil-panel-body { padding: 16px 18px; }
+
+/* Vendor header */
+.vendor-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.vendor-header-logo {
+  width: 48px; height: 48px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.vendor-header-desc { font-size: 13px; color: var(--text-muted, #999); line-height: 1.5; }
+.vendor-header-links { display: flex; gap: 8px; margin-top: 6px; }
+.vendor-header-links a { font-size: 11px; color: var(--primary); text-decoration: none; }
+.vendor-header-links a:hover { text-decoration: underline; }
+
+/* Import controls */
+.import-controls { display: flex; flex-direction: column; gap: 12px; }
+.import-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.import-row input[type="text"], .import-row input[type="url"] {
+  flex: 1; min-width: 200px;
+  padding: 8px 12px; font-size: 13px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); outline: none;
+}
+.import-row input:focus { border-color: var(--primary); }
+.import-row label { font-size: 12px; color: var(--text-muted, #888); min-width: 80px; padding-top: 10px; }
+.btn-sm-import {
+  padding: 8px 14px; font-size: 12px; font-weight: 600;
+  border: none; border-radius: 6px; cursor: pointer;
+  white-space: nowrap;
+}
+.btn-import-url { background: var(--primary); color: #fff; }
+.btn-import-url:hover { opacity: 0.85; }
+.btn-import-upload { background: #27ae60; color: #fff; }
+.btn-import-upload:hover { opacity: 0.85; }
+.import-progress {
+  display: none; padding: 10px 14px;
+  background: var(--accent); border-radius: 6px;
+  font-size: 12px; color: var(--primary);
+}
+.import-result {
+  display: none; padding: 10px 14px;
+  border-radius: 6px; font-size: 12px;
+}
+.import-result.ok { background: #1a3a1a; border: 1px solid #27ae60; color: #2ecc71; }
+.import-result.err { background: #3a1a1a; border: 1px solid #e74c3c; color: #e74c3c; }
+
+/* Catalog table */
+.catalog-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.catalog-table th { padding: 8px 10px; text-align: left; background: var(--accent); border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-muted, #999); }
+.catalog-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.catalog-table tr:last-child td { border-bottom: none; }
+.catalog-table tr:hover td { background: var(--accent); }
+.catalog-item-name { font-weight: 500; }
+.catalog-item-cat { color: var(--text-muted, #888); font-size: 11px; }
+.btn-import-row {
+  padding: 4px 10px; font-size: 11px; font-weight: 600;
+  background: var(--primary); color: #fff;
+  border: none; border-radius: 4px; cursor: pointer;
+}
+.btn-import-row:hover { opacity: 0.85; }
+.btn-import-row:disabled { opacity: 0.4; cursor: default; }
+.catalog-empty { color: var(--text-muted, #888); font-size: 13px; padding: 12px 0; text-align: center; }
+
+/* Imported libraries */
+.library-grid { display: flex; flex-direction: column; gap: 8px; }
+.library-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--accent);
+}
+.library-vendor-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.library-info { flex: 1; min-width: 0; }
+.library-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-meta { font-size: 11px; color: var(--text-muted, #888); }
+.library-actions { display: flex; gap: 6px; }
+.btn-browse-lib {
+  padding: 4px 10px; font-size: 11px; font-weight: 600;
+  background: transparent; border: 1px solid var(--primary); color: var(--primary);
+  border-radius: 4px; cursor: pointer;
+}
+.btn-delete-lib {
+  padding: 4px 8px; font-size: 11px;
+  background: transparent; border: 1px solid #e74c3c; color: #e74c3c;
+  border-radius: 4px; cursor: pointer;
+}
+.no-libraries { color: var(--text-muted, #888); font-size: 13px; padding: 12px 0; text-align: center; }
+
+/* Shape browser */
+.shape-search-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+.shape-search-bar input {
+  flex: 1; padding: 8px 12px; font-size: 13px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); outline: none;
+}
+.shape-search-bar input:focus { border-color: var(--primary); }
+.shape-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.shape-card {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: 10px 6px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); cursor: grab; user-select: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.shape-card:hover { border-color: var(--primary); background: var(--accent); }
+.shape-card:active { cursor: grabbing; }
+.shape-icon-wrap {
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; overflow: hidden; background: rgba(255,255,255,0.04);
+}
+.shape-icon-wrap img { width: 100%; height: 100%; object-fit: contain; }
+.shape-icon-placeholder {
+  width: 48px; height: 48px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+.shape-name { font-size: 10px; text-align: center; line-height: 1.3; word-break: break-word; color: var(--text); }
+.shape-cat { font-size: 9px; color: var(--text-muted, #888); }
+.shape-empty { color: var(--text-muted, #888); font-size: 13px; text-align: center; padding: 24px; }
+.shape-loading { color: var(--text-muted, #888); font-size: 13px; text-align: center; padding: 16px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Stencil Libraries</h1>
+    <p class="page-subtitle">Import industry-standard Visio stencils from Cisco, Juniper, AWS, Azure, or any custom vendor</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/canvas/new" class="btn btn-secondary">Open Canvas</a>
+  </div>
+</div>
+
+<div class="stencil-layout">
+
+  <!-- Vendor Sidebar -->
+  <div class="vendor-sidebar">
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted,#888);padding:4px 6px;text-transform:uppercase;letter-spacing:0.06em;">Vendors</div>
+    {% for v in vendors %}
+    <button class="vendor-btn {% if loop.first %}active{% endif %}"
+            onclick="selectVendor('{{ v.id }}')"
+            id="vbtn-{{ v.id }}"
+            data-vendor="{{ v.id }}"
+            data-color="{{ v.color }}"
+            data-char="{{ v.logo_char }}">
+      <div class="vendor-logo" id="vlogo-{{ v.id }}" style="background:{{ v.color }};">{{ v.logo_char }}</div>
+      <div class="vendor-btn-info">
+        <div class="vendor-btn-label">{{ v.label }}</div>
+        <div class="vendor-btn-count" id="vcount-{{ v.id }}">—</div>
+      </div>
+    </button>
+    {% endfor %}
+
+    <div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted,#888);padding:4px 6px;text-transform:uppercase;letter-spacing:0.06em;">Shortcuts</div>
+      <a href="/network/" class="btn" style="font-size:12px;display:block;text-align:center;margin-top:6px;">← Canvas Home</a>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="stencil-main">
+
+    <!-- Vendor header + import controls -->
+    <div class="stencil-panel" id="import-panel">
+      <div class="stencil-panel-header">
+        <span class="stencil-panel-title" id="vendor-panel-title">Import Stencils</span>
+        <span id="vendor-panel-badge" style="font-size:11px;color:var(--text-muted,#888);"></span>
+      </div>
+      <div class="stencil-panel-body">
+        <div class="vendor-header" id="vendor-header">
+          <div class="vendor-header-logo" id="vendor-header-logo" style="background:#888;">?</div>
+          <div>
+            <div id="vendor-header-name" style="font-size:15px;font-weight:700;"></div>
+            <div class="vendor-header-desc" id="vendor-header-desc"></div>
+            <div class="vendor-header-links" id="vendor-header-links"></div>
+          </div>
+        </div>
+
+        <!-- URL import -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:8px;">IMPORT FROM URL</div>
+          <div class="import-controls">
+            <div class="import-row">
+              <label>URL</label>
+              <input type="url" id="import-url" placeholder="https://www.cisco.com/…/stencil.zip" style="flex:2;"/>
+              <input type="text" id="import-name" placeholder="Library name" style="flex:1;"/>
+              <select id="import-vendor-url" style="padding:8px 10px;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                {% for v in vendors %}
+                <option value="{{ v.id }}">{{ v.label }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn-sm-import btn-import-url" onclick="importFromURL()">Import</button>
+            </div>
+            <div class="import-progress" id="url-progress">⏳ Downloading and parsing stencil… this may take a minute for large files.</div>
+            <div class="import-result" id="url-result"></div>
+          </div>
+        </div>
+
+        <!-- File upload -->
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted,#888);margin-bottom:8px;">UPLOAD STENCIL FILE (.vssx, .vsdx, .vss, .zip)</div>
+          <div class="import-controls">
+            <div class="import-row">
+              <label>File</label>
+              <input type="file" id="upload-file" accept=".vssx,.vsdx,.vss,.zip"
+                     style="flex:2;padding:6px;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);"/>
+              <input type="text" id="upload-name" placeholder="Library name (optional)" style="flex:1;"/>
+              <select id="upload-vendor" style="padding:8px 10px;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+                {% for v in vendors %}
+                <option value="{{ v.id }}">{{ v.label }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn-sm-import btn-import-upload" onclick="uploadStencil()">Upload</button>
+            </div>
+            <div class="import-progress" id="upload-progress">⏳ Parsing stencil file…</div>
+            <div class="import-result" id="upload-result"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vendor catalog -->
+    <div class="stencil-panel" id="catalog-panel">
+      <div class="stencil-panel-header">
+        <span class="stencil-panel-title">Available Stencil Packages</span>
+        <button onclick="refreshCatalog()" style="font-size:11px;background:transparent;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;">↻ Refresh</button>
+      </div>
+      <div class="stencil-panel-body" style="padding:0;">
+        <div id="catalog-loading" style="padding:20px;text-align:center;color:var(--text-muted,#888);font-size:13px;">Loading catalog…</div>
+        <div id="catalog-empty" class="catalog-empty" style="display:none;">No catalog entries for this vendor. Use URL or file import above.</div>
+        <table class="catalog-table" id="catalog-table" style="display:none;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Size</th>
+              <th>Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="catalog-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Imported libraries -->
+    <div class="stencil-panel">
+      <div class="stencil-panel-header">
+        <span class="stencil-panel-title">Imported Libraries</span>
+        <button onclick="loadLibraries()" style="font-size:11px;background:transparent;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;">↻ Refresh</button>
+      </div>
+      <div class="stencil-panel-body">
+        <div id="libraries-loading" style="color:var(--text-muted,#888);font-size:13px;">Loading…</div>
+        <div class="library-grid" id="library-grid" style="display:none;"></div>
+        <div id="no-libraries" class="no-libraries" style="display:none;">No stencil libraries imported yet. Use the catalog or URL import above.</div>
+      </div>
+    </div>
+
+    <!-- Shape browser -->
+    <div class="stencil-panel">
+      <div class="stencil-panel-header">
+        <span class="stencil-panel-title">Shape Browser</span>
+        <span id="shape-count-label" style="font-size:11px;color:var(--text-muted,#888);"></span>
+      </div>
+      <div class="stencil-panel-body">
+        <div class="shape-search-bar">
+          <input type="text" id="shape-q" placeholder="Search shapes…" oninput="debounceShapeSearch()" />
+          <select id="shape-vendor-filter" onchange="loadShapes()" style="padding:8px 10px;font-size:13px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+            <option value="">All Vendors</option>
+            {% for v in vendors %}{% if v.id != 'custom' %}<option value="{{ v.id }}">{{ v.label }}</option>{% endif %}{% endfor %}
+          </select>
+        </div>
+        <div id="shape-loading" class="shape-loading">Loading shapes…</div>
+        <div class="shape-grid" id="shape-grid" style="display:none;"></div>
+        <div id="no-shapes" class="shape-empty" style="display:none;">No shapes found. Import a stencil library to get started.</div>
+      </div>
+    </div>
+
+  </div><!-- /stencil-main -->
+</div><!-- /stencil-layout -->
+
+<script>
+const VENDOR_COLORS = {
+  {% for v in vendors %}'{{ v.id }}': '{{ v.color }}',{% endfor %}
+};
+let _currentVendor = '{{ vendors[0].id if vendors else "cisco" }}';
+let _shapeDebounce = null;
+let _libraryCounts = {};
+
+function selectVendor(vid) {
+  _currentVendor = vid;
+  document.querySelectorAll('.vendor-btn').forEach(b => b.classList.toggle('active', b.dataset.vendor === vid));
+  // Sync vendor select dropdowns
+  ['import-vendor-url', 'upload-vendor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = vid;
+  });
+  loadVendorMeta(vid);
+  loadCatalog(vid);
+}
+
+async function loadVendorMeta(vid) {
+  const resp = await fetch('/network/api/stencils/vendors');
+  const data = await resp.json();
+  const v = (data.vendors || []).find(x => x.id === vid);
+  if (!v) return;
+  document.getElementById('vendor-panel-title').textContent = v.label + ' — Import';
+  document.getElementById('vendor-panel-badge').textContent = v.catalog_note || '';
+  document.getElementById('vendor-header-logo').style.background = v.color;
+  document.getElementById('vendor-header-logo').textContent = v.logo_char;
+  document.getElementById('vendor-header-name').textContent = v.label;
+  document.getElementById('vendor-header-desc').textContent = v.description;
+  const links = document.getElementById('vendor-header-links');
+  links.innerHTML = '';
+  if (v.catalog_url) {
+    const a = document.createElement('a');
+    a.href = v.catalog_url; a.target = '_blank'; a.textContent = '↗ Vendor Catalog';
+    links.appendChild(a);
+  }
+  if (v.docs_url) {
+    const a = document.createElement('a');
+    a.href = v.docs_url; a.target = '_blank'; a.textContent = '↗ Visio Docs';
+    a.style.marginLeft = '10px';
+    links.appendChild(a);
+  }
+}
+
+async function loadCatalog(vid) {
+  const loading = document.getElementById('catalog-loading');
+  const tbl = document.getElementById('catalog-table');
+  const empty = document.getElementById('catalog-empty');
+  loading.style.display = 'block';
+  tbl.style.display = 'none';
+  empty.style.display = 'none';
+
+  try {
+    const resp = await fetch(`/network/api/stencils/catalog/${vid}`);
+    const data = await resp.json();
+    const items = data.items || [];
+    loading.style.display = 'none';
+    if (!items.length) { empty.style.display = 'block'; return; }
+    const tbody = document.getElementById('catalog-tbody');
+    tbody.innerHTML = '';
+    items.forEach((item, i) => {
+      const tr = document.createElement('tr');
+      const btnId = `cat-btn-${i}`;
+      tr.innerHTML = `
+        <td>
+          <div class="catalog-item-name">${_esc(item.name)}</div>
+        </td>
+        <td><span class="catalog-item-cat">${_esc(item.category || '')}</span></td>
+        <td style="white-space:nowrap;color:var(--text-muted,#888);font-size:11px;">${_esc(item.size || '')}</td>
+        <td style="white-space:nowrap;color:var(--text-muted,#888);font-size:11px;">${_esc(item.updated || '')}</td>
+        <td><button id="${btnId}" class="btn-import-row" onclick="importCatalogItem(this,'${_esc(item.url)}','${_esc(item.name)}','${vid}')">Import</button></td>`;
+      tbody.appendChild(tr);
+    });
+    tbl.style.display = 'table';
+  } catch(e) {
+    loading.textContent = 'Failed to load catalog.';
+  }
+}
+
+async function importCatalogItem(btn, url, name, vendor) {
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  try {
+    const resp = await fetch('/network/api/stencils/import-url', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url, name, vendor})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      btn.textContent = `✓ ${data.shape_count} shapes`;
+      btn.style.background = '#27ae60';
+      loadLibraries();
+      loadShapes();
+    } else {
+      btn.textContent = 'Failed';
+      btn.style.background = '#e74c3c';
+      btn.disabled = false;
+      btn.title = data.error || 'Import failed';
+    }
+  } catch(e) {
+    btn.textContent = 'Error';
+    btn.style.background = '#e74c3c';
+    btn.disabled = false;
+  }
+}
+
+async function importFromURL() {
+  const url = document.getElementById('import-url').value.trim();
+  const name = document.getElementById('import-name').value.trim() || url.split('/').pop();
+  const vendor = document.getElementById('import-vendor-url').value;
+  if (!url) { showResult('url', false, 'Please enter a URL.'); return; }
+  const prog = document.getElementById('url-progress');
+  prog.style.display = 'block';
+  document.getElementById('url-result').style.display = 'none';
+  try {
+    const resp = await fetch('/network/api/stencils/import-url', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url, name, vendor})
+    });
+    const data = await resp.json();
+    prog.style.display = 'none';
+    if (data.ok) {
+      showResult('url', true, `Imported ${data.shape_count} shapes (${data.format || ''})`);
+      loadLibraries(); loadShapes();
+    } else {
+      showResult('url', false, data.error || 'Import failed');
+    }
+  } catch(e) {
+    prog.style.display = 'none';
+    showResult('url', false, 'Network error: ' + e.message);
+  }
+}
+
+async function uploadStencil() {
+  const fileEl = document.getElementById('upload-file');
+  const name = document.getElementById('upload-name').value.trim();
+  const vendor = document.getElementById('upload-vendor').value;
+  if (!fileEl.files.length) { showResult('upload', false, 'Please select a file.'); return; }
+  const prog = document.getElementById('upload-progress');
+  prog.style.display = 'block';
+  document.getElementById('upload-result').style.display = 'none';
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  fd.append('vendor', vendor);
+  if (name) fd.append('name', name);
+  try {
+    const resp = await fetch('/network/api/stencils/upload', {method: 'POST', body: fd});
+    const data = await resp.json();
+    prog.style.display = 'none';
+    if (data.ok) {
+      showResult('upload', true, `Imported ${data.shape_count} shapes (${data.format || ''})`);
+      fileEl.value = '';
+      loadLibraries(); loadShapes();
+    } else {
+      showResult('upload', false, data.error || 'Upload failed');
+    }
+  } catch(e) {
+    prog.style.display = 'none';
+    showResult('upload', false, 'Network error: ' + e.message);
+  }
+}
+
+function showResult(prefix, ok, msg) {
+  const el = document.getElementById(`${prefix}-result`);
+  el.className = 'import-result ' + (ok ? 'ok' : 'err');
+  el.textContent = (ok ? '✓ ' : '✗ ') + msg;
+  el.style.display = 'block';
+  if (ok) setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
+
+async function loadLibraries() {
+  const grid = document.getElementById('library-grid');
+  const noLibs = document.getElementById('no-libraries');
+  const loading = document.getElementById('libraries-loading');
+  grid.style.display = 'none';
+  noLibs.style.display = 'none';
+  loading.style.display = 'block';
+  try {
+    const resp = await fetch('/network/api/stencils/libraries');
+    const data = await resp.json();
+    loading.style.display = 'none';
+    const libs = data.libraries || [];
+    // Update vendor sidebar counts
+    const byCounts = {};
+    libs.forEach(l => { byCounts[l.vendor] = (byCounts[l.vendor] || 0) + 1; });
+    Object.entries(byCounts).forEach(([v, c]) => {
+      const el = document.getElementById(`vcount-${v}`);
+      if (el) el.textContent = `${c} librar${c===1?'y':'ies'} imported`;
+    });
+    if (!libs.length) { noLibs.style.display = 'block'; return; }
+    grid.innerHTML = '';
+    libs.forEach(lib => {
+      const color = VENDOR_COLORS[lib.vendor] || '#555';
+      const div = document.createElement('div');
+      div.className = 'library-item';
+      div.innerHTML = `
+        <div class="library-vendor-dot" style="background:${color};"></div>
+        <div class="library-info">
+          <div class="library-name">${_esc(lib.name)}</div>
+          <div class="library-meta">${_esc(lib.vendor.toUpperCase())} · ${lib.shape_count} shapes · ${lib.raw_format || ''} · ${(lib.imported_at||'').slice(0,10)}</div>
+        </div>
+        <div class="library-actions">
+          <button class="btn-browse-lib" onclick="browseLibrary('${lib.id}','${_esc(lib.vendor)}')">Browse</button>
+          <button class="btn-delete-lib" onclick="deleteLibrary('${lib.id}',this)">Delete</button>
+        </div>`;
+      grid.appendChild(div);
+    });
+    grid.style.display = 'flex';
+  } catch(e) {
+    loading.textContent = 'Failed to load libraries.';
+  }
+}
+
+async function deleteLibrary(libId, btn) {
+  if (!confirm('Delete this stencil library and all its shapes?')) return;
+  btn.disabled = true;
+  try {
+    await fetch(`/network/api/stencils/libraries/${libId}`, {method: 'DELETE'});
+    loadLibraries(); loadShapes();
+  } catch(e) { btn.disabled = false; }
+}
+
+function browseLibrary(libId, vendor) {
+  document.getElementById('shape-vendor-filter').value = vendor;
+  loadShapes(libId);
+  document.getElementById('shape-q').value = '';
+  document.querySelector('.stencil-panel:last-child').scrollIntoView({behavior:'smooth'});
+}
+
+function debounceShapeSearch() {
+  clearTimeout(_shapeDebounce);
+  _shapeDebounce = setTimeout(() => loadShapes(), 300);
+}
+
+async function loadShapes(libId) {
+  const q = document.getElementById('shape-q').value.trim();
+  const vendor = document.getElementById('shape-vendor-filter').value;
+  const loading = document.getElementById('shape-loading');
+  const grid = document.getElementById('shape-grid');
+  const noShapes = document.getElementById('no-shapes');
+  grid.style.display = 'none';
+  noShapes.style.display = 'none';
+  loading.style.display = 'block';
+
+  const params = new URLSearchParams({limit: 200});
+  if (q) params.set('q', q);
+  if (vendor) params.set('vendor', vendor);
+  if (libId) params.set('library_id', libId);
+
+  try {
+    const resp = await fetch('/network/api/stencils/shapes?' + params.toString());
+    const data = await resp.json();
+    loading.style.display = 'none';
+    const shapes = data.shapes || [];
+    const countEl = document.getElementById('shape-count-label');
+    countEl.textContent = shapes.length ? `${shapes.length} shapes` : '';
+    if (!shapes.length) { noShapes.style.display = 'block'; return; }
+    grid.innerHTML = '';
+    shapes.forEach(s => {
+      const color = VENDOR_COLORS[s.vendor] || '#555';
+      const card = document.createElement('div');
+      card.className = 'shape-card';
+      card.draggable = true;
+      card.dataset.type = 'stencil:' + s.id;
+      card.dataset.name = s.name;
+      card.dataset.vendor = s.vendor;
+      card.dataset.shapeId = s.id;
+      card.title = `${s.name}\n${s.library_name} · ${s.category}`;
+      card.addEventListener('dragstart', onStencilDragStart);
+      const iconHtml = `<div class="shape-icon-wrap"><img src="/network/api/stencils/shapes/${s.id}/icon" alt="${_esc(s.name)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=shape-icon-placeholder style=background:${color};>${_esc(s.name.slice(0,2).toUpperCase())}</div>'"/></div>`;
+      card.innerHTML = `${iconHtml}<span class="shape-name">${_esc(s.name)}</span><span class="shape-cat">${_esc(s.category||'')}</span>`;
+      grid.appendChild(card);
+    });
+    grid.style.display = 'grid';
+  } catch(e) {
+    loading.textContent = 'Failed to load shapes.';
+  }
+}
+
+function onStencilDragStart(e) {
+  const card = e.currentTarget;
+  e.dataTransfer.setData('text/plain', JSON.stringify({
+    type: 'stencil:' + card.dataset.shapeId,
+    label: card.dataset.name,
+    vendor: card.dataset.vendor,
+    shape_id: card.dataset.shapeId,
+    is_stencil: true,
+  }));
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
+function refreshCatalog() { loadCatalog(_currentVendor); }
+
+function _esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const firstVendor = '{{ vendors[0].id if vendors else "cisco" }}';
+  selectVendor(firstVendor);
+  loadLibraries();
+  loadShapes();
+});
+</script>
+{% endblock %}

@@ -212,3 +212,54 @@ python tools/network/narrative_generator.py --flow-id <uuid> --no-llm --json
 | `bcap_vdss` | 12 |
 | `csp_il4` | 15 |
 | `csp_il5` | 18 |
+
+---
+
+## NDC — Vendor Stencil Library (Cisco / Juniper / AWS / Azure / Custom)
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| `parse_vssx()` | `tools/network/stencil_importer.py` | Parse .vssx / .vsdx OpenXML stencil → list of shape dicts with name, icon_data (base64 PNG/SVG) |
+| `parse_cisco_zip()` | `tools/network/stencil_importer.py` | Extract shapes from Cisco legacy ZIP (contains .vss + optional PNG/VSSX) |
+| `parse_svg_pack()` | `tools/network/stencil_importer.py` | Extract shapes from AWS/Azure SVG icon pack ZIPs |
+| `import_from_url()` | `tools/network/stencil_importer.py` | Download vendor stencil URL → parse → save to `nc_stencil_libraries` + `nc_stencil_shapes` |
+| `import_from_bytes()` | `tools/network/stencil_importer.py` | Upload stencil file bytes → parse → save to DB |
+| `save_library()` | `tools/network/stencil_importer.py` | Persist stencil library + shapes to network_canvas.db |
+| `get_cisco_catalog()` | `tools/network/stencil_catalog.py` | Fetch live Cisco stencil listing (falls back to 18-entry static catalog on 403) |
+| `get_catalog(vendor)` | `tools/network/stencil_catalog.py` | Get catalog for any vendor: cisco / juniper / aws / azure / custom |
+| `get_vendor_list()` | `tools/network/stencil_catalog.py` | Return metadata for all 5 vendors (label, color, logo_char, docs_url) |
+
+**DB Tables:** `nc_stencil_libraries`, `nc_stencil_shapes` (in `data/network_canvas.db`)
+
+**Routes (registered on NDC blueprint at `/network`):**
+- `GET /stencils` — stencil manager page
+- `GET /api/stencils/vendors` — vendor list
+- `GET /api/stencils/catalog/<vendor>` — available packages from vendor catalog
+- `POST /api/stencils/import-url` — download + import by URL
+- `POST /api/stencils/upload` — file upload + import
+- `GET /api/stencils/libraries` — list imported libraries
+- `DELETE /api/stencils/libraries/<id>` — delete library + shapes
+- `GET /api/stencils/shapes` — list shapes (vendor, library_id, q filters)
+- `GET /api/stencils/shapes/<id>/icon` — serve shape icon (PNG/SVG)
+
+```bash
+# Import Cisco ISR 4000 stencil by URL
+python -c "
+from tools.network.stencil_importer import import_from_url
+result = import_from_url(
+    'https://www.cisco.com/c/dam/assets/prod/visio/visio/routers-cisco-4000-series-isr.zip',
+    vendor='cisco', lib_name='Cisco ISR 4000'
+)
+print(result)  # {'library_id': '...', 'shape_count': N, 'format': 'vss_zip'}
+"
+
+# Import AWS icon pack
+python -c "
+from tools.network.stencil_importer import import_from_url
+result = import_from_url(
+    'https://d1.awsstatic.com/webteam/architecture-icons/q4-2023/Asset-Package_10242023.e47d9fa5db10be08af8ae6e44cee5b7e7b55a59f.zip',
+    vendor='aws', lib_name='AWS Architecture Icons'
+)
+print(result)
+"
+```
