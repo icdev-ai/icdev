@@ -506,6 +506,20 @@
           </div>
         </div>
       </div>
+
+      <!-- Vendor Stencils — loaded from nc_stencil_shapes -->
+      <div class="palette-section" id="stencil-palette-section">
+        <div class="palette-cat" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Vendor Stencils</span>
+          <a href="/network/stencils" target="_blank" title="Manage stencil libraries"
+             style="font-size:9px;color:var(--primary);text-decoration:none;opacity:0.8;">Manage ↗</a>
+        </div>
+        <div class="palette-items" id="stencil-palette-items">
+          <div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;line-height:1.4;">
+            Loading…
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Canvas Area -->
@@ -2983,6 +2997,66 @@ async function cfgDownloadAll() {
     }
   }).catch(()=>{});
 })();
+
+// ── Load Vendor Stencil palette from API ────────────────────────────────────
+(function(){
+  const VENDOR_COLORS = {cisco:'#049fd9',juniper:'#84b135',aws:'#ff9900',azure:'#0078d4',custom:'#8e44ad'};
+  const container = document.getElementById('stencil-palette-items');
+  if (!container) return;
+
+  fetch(NC_BASE + '/api/stencils/shapes?limit=200').then(r=>r.json()).then(data=>{
+    const shapes = data.shapes || [];
+    if (!shapes.length) {
+      container.innerHTML = '<div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;line-height:1.5;">No stencils imported.<br><a href="/network/stencils" target="_blank" style="color:var(--primary);">Import now ↗</a></div>';
+      return;
+    }
+    // Group by vendor
+    const byVendor = {};
+    shapes.forEach(s => {
+      (byVendor[s.vendor] = byVendor[s.vendor] || []).push(s);
+    });
+    let html = '';
+    for (const [vendor, items] of Object.entries(byVendor)) {
+      const color = VENDOR_COLORS[vendor] || '#555';
+      items.slice(0, 50).forEach(s => {
+        const imgSrc = NC_BASE + '/api/stencils/shapes/' + s.id + '/icon';
+        const initials = (s.name||'?').slice(0,2).toUpperCase();
+        html += `<div class="palette-item stencil-palette-item" draggable="true"
+          data-type="stencil:${s.id}"
+          data-stencil-id="${s.id}"
+          data-stencil-name="${(s.name||'').replace(/"/g,'&quot;')}"
+          data-vendor="${vendor}"
+          ondragstart="onStencilDragStart(event)"
+          title="${(s.name||'').replace(/"/g,'&quot;')} [${vendor.toUpperCase()}]">
+          <div class="pi-icon stencil-pi-icon" style="background:transparent;padding:1px;">
+            <img src="${imgSrc}" alt="${initials}"
+                 style="width:28px;height:28px;object-fit:contain;"
+                 onerror="this.parentElement.innerHTML='<div style=width:28px;height:28px;border-radius:4px;background:${color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;>${initials}</div>'"/>
+          </div>
+          <span>${(s.name||'').length > 12 ? (s.name||'').slice(0,12)+'…' : (s.name||'')}</span>
+        </div>`;
+      });
+    }
+    if (shapes.length > 50) {
+      html += `<div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;">+${shapes.length-50} more — <a href="/network/stencils" target="_blank" style="color:var(--primary);">view all ↗</a></div>`;
+    }
+    container.innerHTML = html;
+  }).catch(() => {
+    container.innerHTML = '<div style="font-size:10px;color:var(--text-muted,#888);padding:4px 6px;"><a href="/network/stencils" target="_blank" style="color:var(--primary);">Import stencils ↗</a></div>';
+  });
+})();
+
+function onStencilDragStart(e) {
+  const el = e.currentTarget;
+  e.dataTransfer.setData('text/plain', JSON.stringify({
+    type: el.dataset.type,
+    label: el.dataset.stencilName || el.dataset.type,
+    vendor: el.dataset.vendor,
+    shape_id: el.dataset.stencilId,
+    is_stencil: true,
+  }));
+  e.dataTransfer.effectAllowed = 'copy';
+}
 
 // ── Collapsible palette sections ─────────────────────────────────────────
 (function(){

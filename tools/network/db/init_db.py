@@ -1696,6 +1696,32 @@ CREATE TABLE IF NOT EXISTS nc_step_persona_responses (
     UNIQUE(step_id, persona_id)
 );
 CREATE INDEX IF NOT EXISTS idx_nc_spr_step ON nc_step_persona_responses(step_id);
+
+-- ── Vendor Stencil Libraries (Cisco, Juniper, AWS, Azure, Custom) ────────────
+CREATE TABLE IF NOT EXISTS nc_stencil_libraries (
+    id          TEXT PRIMARY KEY,
+    vendor      TEXT NOT NULL,          -- cisco | juniper | aws | azure | custom
+    name        TEXT NOT NULL,
+    category    TEXT DEFAULT '',
+    source_url  TEXT DEFAULT '',
+    raw_format  TEXT DEFAULT 'vssx',    -- vssx | vss_zip | svg_pack | vsdx
+    shape_count INTEGER DEFAULT 0,
+    imported_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_nc_sl_vendor ON nc_stencil_libraries(vendor);
+
+CREATE TABLE IF NOT EXISTS nc_stencil_shapes (
+    id           TEXT PRIMARY KEY,
+    library_id   TEXT NOT NULL REFERENCES nc_stencil_libraries(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    name_u       TEXT DEFAULT '',       -- internal/universal name (NameU in Visio)
+    category     TEXT DEFAULT '',
+    icon_data    TEXT,                  -- base64-encoded PNG or SVG bytes (may be NULL for text-only fallback)
+    icon_type    TEXT DEFAULT 'png' CHECK(icon_type IN ('png','svg','emf','none')),
+    metadata_json TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_nc_ss_library ON nc_stencil_shapes(library_id);
+CREATE INDEX IF NOT EXISTS idx_nc_ss_name ON nc_stencil_shapes(name);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

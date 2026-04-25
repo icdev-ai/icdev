@@ -2675,3 +2675,14 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   font-weight: 600;
 }
 .brf-btn-pdf:hover { background: #2e6bc4; border-color: #2e6bc4; }
+
+/* ── Vendor Stencil Palette Items ───────────────────────────────────────────── */
+.stencil-palette-item { border-color: rgba(4,159,217,0.3); }
+.stencil-palette-item:hover { border-color: #049fd9; background: rgba(4,159,217,0.08); }
+.stencil-pi-icon {
+  background: transparent !important;
+  border: none !important;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1px;
+}
