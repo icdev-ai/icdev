@@ -708,6 +708,16 @@ function hideBlastContextMenu() {
   if (menu) menu.style.display = 'none';
 }
 
+function openPolicyPanel() {
+  hideBlastContextMenu();
+  console.log('[NDC] openPolicyPanel — node:', _blastCtxNodeId);
+}
+
+function openAuditPanel() {
+  hideBlastContextMenu();
+  console.log('[NDC] openAuditPanel — node:', _blastCtxNodeId);
+}
+
 /* ── Link Capture Context Menu ──────────────────────────────────────────────── */
 let _capLinkId = null;
 let _capLinkLabel = '';
