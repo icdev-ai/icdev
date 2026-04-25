@@ -116,6 +116,9 @@
   window._LA_LOADED = true;
 
   var POLL_MS = 30000;
+  // Task timeout — same as kanban scheduler MAX_EXECUTION_SECONDS (900s).
+  // A task whose agent log is older than this is almost certainly a zombie.
+  var TASK_TIMEOUT_SECS = 900;
 
   function fmtElapsed(secs) {
     if (secs == null) return '?';
@@ -126,35 +129,90 @@
     return h + 'h ' + m + 'm';
   }
 
-  function elapsedClass(secs) {
-    if (secs == null) return '';
-    if (secs > 14400) return 'la-elapsed-very-long';  // > 4 h
-    if (secs > 3600)  return 'la-elapsed-long';        // > 1 h
-    return '';
-  }
-
   function escapeHTML(s) {
     return String(s || '').replace(/[&<>"']/g, function(c) {
       return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
     });
   }
 
+  // Per-task liveness based on agent log file age (task_log_age_secs).
+  // This is INDEPENDENT of the scheduler heartbeat — tells you whether
+  // this specific subprocess is still writing output.
+  //
+  //  null        → "new"     log not yet created (just dispatched)
+  //  0 – 300s    → "active"  agent wrote output in the last 5 min
+  //  300 – 900s  → "quiet"   agent silent 5-15 min (thinking or stuck)
+  //  > 900s      → "suspect" log older than task timeout → zombie
+  function taskLiveness(logAgeSecs) {
+    if (logAgeSecs == null) return 'new';
+    if (logAgeSecs > TASK_TIMEOUT_SECS) return 'suspect';
+    if (logAgeSecs > 300) return 'quiet';
+    return 'active';
+  }
+
+  // Map liveness to CSS dot class (reuses existing la-task-dot-* classes).
+  var LIVENESS_DOT = {
+    active:  'la-task-dot-active',
+    quiet:   'la-task-dot-warning',
+    suspect: 'la-task-dot-stale',
+    new:     'la-task-dot-unknown',
+  };
+  var LIVENESS_CARD = {
+    active:  'la-card-active',
+    quiet:   'la-card-warning',
+    suspect: 'la-card-stale',
+    new:     'la-card-unknown',
+  };
+  var LIVENESS_LABEL = {
+    active:  'writing output',
+    quiet:   'quiet',
+    suspect: 'no output — possible zombie',
+    new:     'just dispatched',
+  };
+
   function taskCardHTML(t) {
-    var s = t.staleness || 'unknown';
-    var pri = (t.priority || 'medium').toLowerCase();
-    var elapsed = fmtElapsed(t.elapsed_dispatch_secs);
-    var elClass = elapsedClass(t.elapsed_dispatch_secs);
+    var liveness  = taskLiveness(t.task_log_age_secs);
+    var dotClass  = LIVENESS_DOT[liveness];
+    var cardClass = LIVENESS_CARD[liveness];
+    var pri       = (t.priority || 'medium').toLowerCase();
+    var elapsed   = fmtElapsed(t.elapsed_dispatch_secs);
+
+    // Elapsed colour: amber > 15 min, red > task timeout
+    var elStyle = '';
+    if (t.elapsed_dispatch_secs > TASK_TIMEOUT_SECS) elStyle = 'color:#ef4444;';
+    else if (t.elapsed_dispatch_secs > 900) elStyle = 'color:#f59e0b;';
+
+    var livenessTitle = 'Agent log: ' + (t.task_log_age_secs != null
+      ? fmtElapsed(t.task_log_age_secs) + ' since last output'
+      : 'no log yet');
 
     var meta = [];
     meta.push('<span class="la-tag la-tag-' + escapeHTML(pri) + '">' + escapeHTML(pri) + '</span>');
     meta.push('<span>' + escapeHTML(t.task_type || 'task') + '</span>');
-    if (t.dispatch_source) meta.push('<span>' + escapeHTML(t.dispatch_source) + '</span>');
-    if (t.failure_count && t.failure_count > 0) {
-      meta.push('<span class="la-tag la-tag-warn">&#9888; ' + t.failure_count + ' failure' + (t.failure_count > 1 ? 's' : '') + '</span>');
+
+    // Last-output chip — the key "is it actually working?" signal
+    if (t.task_log_age_secs != null) {
+      var outputStyle = liveness === 'suspect'
+        ? 'color:#fca5a5; font-weight:600;'
+        : liveness === 'quiet' ? 'color:#fcd34d;' : 'color:#86efac;';
+      meta.push(
+        '<span style="' + outputStyle + '" title="' + escapeHTML(livenessTitle) + '">'
+        + (liveness === 'suspect'
+            ? '&#9888; zombie? last output ' + fmtElapsed(t.task_log_age_secs) + ' ago'
+            : 'last output ' + fmtElapsed(t.task_log_age_secs) + ' ago')
+        + '</span>'
+      );
+    } else {
+      meta.push('<span style="color:var(--text-muted);">starting up...</span>');
     }
 
-    return '<div class="la-card la-card-' + escapeHTML(s) + '">'
-      + '<span class="la-task-dot la-task-dot-' + escapeHTML(s) + '" title="' + escapeHTML(s) + '"></span>'
+    if (t.dispatch_source) meta.push('<span style="color:var(--text-muted);">' + escapeHTML(t.dispatch_source) + '</span>');
+    if (t.failure_count && t.failure_count > 0) {
+      meta.push('<span class="la-tag la-tag-warn">&#9888; ' + t.failure_count + ' prior failure' + (t.failure_count > 1 ? 's' : '') + '</span>');
+    }
+
+    return '<div class="la-card ' + cardClass + '">'
+      + '<span class="la-task-dot ' + dotClass + '" title="' + escapeHTML(livenessTitle) + '"></span>'
       + '<div style="min-width:0;">'
       + '  <div class="la-task-title" title="' + escapeHTML(t.id) + '">'
       + '    <span style="font-size:0.72rem; color:var(--text-muted); font-weight:400; margin-right:0.3rem;">' + escapeHTML(t.id) + '</span>'
@@ -162,7 +220,7 @@
       + '  </div>'
       + '  <div class="la-task-meta">' + meta.join('') + '</div>'
       + '</div>'
-      + '<div class="la-elapsed ' + elClass + '" title="Running for ' + elapsed + '">'
+      + '<div class="la-elapsed" style="' + elStyle + '" title="Total running: ' + elapsed + '">'
       + elapsed
       + '</div>'
       + '</div>';
@@ -176,20 +234,20 @@
     var lastRef  = document.getElementById('la-last-refresh');
     if (!panel || !taskList) return;
 
-    var tasks = (data && data.tasks) || [];
+    var tasks   = (data && data.tasks) || [];
     var schSecs = data && data.scheduler_last_seen_secs;
 
-    // Update scheduler heartbeat indicator.
+    // Scheduler heartbeat — global health of the dispatch loop.
     schDot.className = 'la-dot';
     if (schSecs == null) {
       schDot.classList.add('la-dot-unknown');
       schLabel.textContent = 'scheduler: not started';
     } else if (schSecs > 600) {
       schDot.classList.add('la-dot-stale');
-      schLabel.textContent = 'scheduler: no heartbeat for ' + fmtElapsed(schSecs) + ' — possible zombie tasks';
+      schLabel.textContent = 'scheduler: silent ' + fmtElapsed(schSecs) + ' — possible zombie tasks';
     } else if (schSecs > 180) {
       schDot.classList.add('la-dot-warning');
-      schLabel.textContent = 'scheduler: quiet for ' + fmtElapsed(schSecs);
+      schLabel.textContent = 'scheduler: quiet ' + fmtElapsed(schSecs);
     } else {
       schDot.classList.add('la-dot-active');
       schLabel.textContent = 'scheduler: active (' + fmtElapsed(schSecs) + ' ago)';
@@ -203,60 +261,64 @@
 
     var html = '';
 
-    // Zombie warning banner if scheduler is stale but tasks are in_progress.
+    // Scheduler-level zombie banner.
     if (schSecs != null && schSecs > 600) {
       html += '<div class="la-zombie-banner">'
-        + '&#9888;&nbsp;<strong>Possible zombie tasks</strong> — '
-        + tasks.length + ' task' + (tasks.length > 1 ? 's' : '') + ' marked in_progress '
-        + 'but the kanban scheduler has been silent for ' + fmtElapsed(schSecs) + '. '
-        + 'The subprocess may have died. Check <code>.tmp/kanban_scheduler.log</code>.'
+        + '&#9888;&nbsp;<strong>Scheduler silent ' + fmtElapsed(schSecs) + '</strong> — '
+        + tasks.length + ' task' + (tasks.length > 1 ? 's' : '') + ' in_progress '
+        + 'but no scheduler heartbeat. Check <code>.tmp/kanban_scheduler.log</code>.'
+        + '</div>';
+    }
+
+    // Per-task zombie banner — catches tasks whose agent log is stale even
+    // when the scheduler is healthy (subprocess died mid-run).
+    var suspects = tasks.filter(function(t) { return taskLiveness(t.task_log_age_secs) === 'suspect'; });
+    if (suspects.length > 0 && (schSecs == null || schSecs <= 600)) {
+      html += '<div class="la-zombie-banner">'
+        + '&#9888;&nbsp;<strong>' + suspects.length + ' possible zombie' + (suspects.length > 1 ? 's' : '') + '</strong> — '
+        + suspects.map(function(t) { return escapeHTML(t.id); }).join(', ')
+        + ' — agent log older than ' + TASK_TIMEOUT_SECS + 's (task timeout). '
+        + 'Stale-reaper will recycle these on next cycle.'
         + '</div>';
     }
 
     html += tasks.map(taskCardHTML).join('');
     taskList.innerHTML = html;
 
-    var now = new Date();
-    lastRef.textContent = 'updated ' + now.toLocaleTimeString();
+    lastRef.textContent = 'updated ' + new Date().toLocaleTimeString();
   }
 
   function refresh() {
-    // Two parallel fetches: tasks (existing endpoint) + scheduler heartbeat (new inline).
-    Promise.all([
-      fetch('/api/kanban/tasks?status=in_progress').then(function(r) { return r.json(); }),
-      fetch('/api/kanban/scheduler-status').then(function(r) { return r.json(); }),
-    ]).then(function(results) {
-      var taskData   = results[0];
-      var schedData  = results[1];
-      var tasks = (taskData && taskData.tasks) || [];
-      var schSecs = (schedData && schedData.scheduler_last_seen_secs) != null
-        ? schedData.scheduler_last_seen_secs : null;
-      var staleness = (schedData && schedData.staleness) || 'unknown';
+    // Single fetch — /api/live-check returns tasks + scheduler heartbeat +
+    // per-task log age in one call.
+    fetch('/api/live-check')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var tasks   = (data && data.tasks) || [];
+        var schSecs = (data && data.scheduler_last_seen_secs) != null
+          ? data.scheduler_last_seen_secs : null;
 
-      // Enrich each task with elapsed time (client-side from updated_at).
-      var nowMs = Date.now();
-      tasks = tasks.filter(function(t) { return t.status === 'in_progress'; });
-      tasks.forEach(function(t) {
-        var raw = t.updated_at || t.created_at;
-        t.elapsed_dispatch_secs = raw ? Math.floor((nowMs - new Date(raw).getTime()) / 1000) : null;
-        t.scheduler_last_seen_secs = schSecs;
-        t.staleness = staleness;
+        // Compute total elapsed from dispatch time (updated_at = dispatch timestamp).
+        var nowMs = Date.now();
+        tasks.forEach(function(t) {
+          var raw = t.updated_at || t.created_at;
+          t.elapsed_dispatch_secs = raw
+            ? Math.floor((nowMs - new Date(raw).getTime()) / 1000) : null;
+        });
+
+        render({ tasks: tasks, scheduler_last_seen_secs: schSecs });
+      })
+      .catch(function() {
+        var panel = document.getElementById('live-activity-panel');
+        if (panel) panel.style.display = 'none';
       });
-
-      render({ tasks: tasks, scheduler_last_seen_secs: schSecs });
-    }).catch(function() {
-      var panel = document.getElementById('live-activity-panel');
-      if (panel) panel.style.display = 'none';
-    });
   }
 
-  // Initial load + polling.
   document.addEventListener('DOMContentLoaded', function() {
     refresh();
     setInterval(refresh, POLL_MS);
   });
 
-  // Also expose so host pages can call it on-demand.
   window.refreshLiveActivity = refresh;
 })();
 </script>

@@ -1033,6 +1033,27 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+        # Enrich each task with per-task liveness from its agent log file.
+        # .tmp/kanban/{task_id}.log is written by the Claude CLI subprocess
+        # while the agent is running. A stale or missing log while the task
+        # is still in_progress means the subprocess is dead or hung.
+        #
+        # task_log_age_secs thresholds (independent of scheduler heartbeat):
+        #   null          → log file not found yet (task just dispatched)
+        #   0 – 300       → active   (agent writing output in last 5 min)
+        #   300 – 900     → quiet    (agent silent 5-15 min; may be thinking)
+        #   > 900         → suspect  (likely zombie — log older than task timeout)
+        kanban_dir = BASE_DIR / ".tmp" / "kanban"
+        now_ts = _t.time()
+        for task in tasks:
+            log_file = kanban_dir / f"{task['id']}.log"
+            if log_file.exists():
+                task["task_log_age_secs"] = int(now_ts - log_file.stat().st_mtime)
+                task["task_log_size"] = log_file.stat().st_size
+            else:
+                task["task_log_age_secs"] = None
+                task["task_log_size"] = None
+
         return _j({
             "scheduler_last_seen_secs": sched_secs,
             "staleness": staleness,

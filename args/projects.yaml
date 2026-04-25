@@ -27,6 +27,12 @@ projects:
   - key: pl
     title: PL
     priority: medium
+  - key: ux
+    title: UX
+    priority: medium
+  - key: ai
+    title: AI
+    priority: medium
 - key: cvo
   name: Canvas Orchestration
   description: 'Cross-canvas event bus and unified compliance health: NDC->SDC topology
