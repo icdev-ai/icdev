@@ -4,29 +4,109 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: cvo
+  name: Canvas Orchestration
+  description: >-
+    Cross-canvas event bus and unified compliance health: NDC->SDC topology hook,
+    PDC->SDC threat refresh, BDC ISA expiry alerting, DDC lineage UI with PII markers,
+    ODC MITRE ingestion + Sigma generation, and a unified /canvas-compliance page
+    showing green/yellow/red compliance status across all 7 canvases.
+  task_prefix: cvo-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bus
+    title: Cross-Canvas Event Bus
+    priority: high
+  - key: bdc
+    title: BDC ISA Expiry Alerting
+    priority: high
+  - key: ddc
+    title: DDC Lineage UI + PII Markers
+    priority: medium
+  - key: odc
+    title: ODC MITRE + Sigma Generation
+    priority: medium
+  - key: compliance
+    title: Unified /canvas-compliance Page
+    priority: high
+  - key: e2e
+    title: E2E Selenium + V&V Gate
+    priority: critical
+  - key: vv
+    title: V&V Gate
+    priority: critical
+- key: cvp
+  name: Canvas Parity
+  description: >-
+    Bring BDC, DDC, ODC, and IDC to parity with NDC/SDC/PDC. Adds simulation registry
+    entries and canvas_versions YAML for all 4 canvases. IDC gets full Terraform + Ansible
+    IaC generation (the only canvas currently lacking IaC output). E2E Selenium lifecycle
+    tests for each canvas.
+  task_prefix: cvp-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bdc
+    title: BDC Registry + Versioning
+    priority: high
+  - key: ddc
+    title: DDC Registry + Versioning
+    priority: high
+  - key: odc
+    title: ODC Registry + Versioning
+    priority: high
+  - key: idc
+    title: IDC Registry + IaC Generation
+    priority: high
+  - key: e2e
+    title: Canvas E2E Lifecycle Tests
+    priority: medium
+  - key: vv
+    title: V&V Gate
+    priority: critical
+- key: ad712
+  name: FathomDesk 7.12
+  description: >-
+    Completes the deferred work from Phase 7.10-7.5C: ad_trap_events insert path
+    (table exists, write path missing), trap history API + Genesis reflex + UI panel,
+    and live broker limit/stop orders (Phase 7.5C stub completion via Alpaca API).
+  task_prefix: ad712-
+  default_open: true
+  briefs: []
+  epics:
+  - key: trap
+    title: Trap Events Write Path + API + UI
+    priority: high
+  - key: broker
+    title: Live Broker Limit/Stop Orders
+    priority: high
+  - key: e2e
+    title: E2E Selenium Test
+    priority: high
+  - key: vv
+    title: V&V Gate
+    priority: critical
 - key: cdh
-  name: Cdh Project
-  description: Auto-registered project for tasks with prefix 'cdh-'. Update name and
-    description to reflect the project purpose.
+  name: Code Health
+  description: >-
+    Systematic cleanup of 1,014 open oracle predictions: fix CRITICAL import regression
+    (stale FathomDesk reference in awareness tooling), repair 3 broken test files,
+    register 219 unlisted tools in manifest shards, and add 360 unlisted routes to
+    start.md Pages: line.
   task_prefix: cdh-
   default_open: true
   briefs: []
   epics:
   - key: fix
-    title: FIX
-    priority: medium
-  - key: guard
-    title: GUARD
-    priority: medium
-  - key: test
-    title: TEST
-    priority: medium
+    title: Critical Fixes (import regression + broken tests)
+    priority: critical
   - key: mfst
-    title: MFST
+    title: Manifest + Routes Registration
     priority: medium
   - key: vv
-    title: VV
-    priority: medium
+    title: V&V Gate
+    priority: critical
 - key: task_kb
   name: Task Kb Project
   description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
@@ -178,6 +258,21 @@ projects:
   - key: tfw
     title: NDC Traffic Flow Walkthrough
     priority: critical
+  - key: coach
+    title: COACH
+    priority: medium
+  - key: confirm
+    title: CONFIRM
+    priority: medium
+  - key: intake
+    title: INTAKE
+    priority: medium
+  - key: scorer
+    title: SCORER
+    priority: medium
+  - key: wrap
+    title: WRAP
+    priority: medium
 - key: fathomdesk-7-6
   name: FathomDesk 7.6 — AI-Assisted Options
   description: 'LLM-interpretation + deterministic-selection hybrid: intent parser,
@@ -207,6 +302,12 @@ projects:
   - key: wrap
     title: Registration + feature doc + E2E
     priority: high
+  - key: compare
+    title: COMPARE
+    priority: medium
+  - key: prob
+    title: PROB
+    priority: medium
 - key: fathomdesk-7-7
   name: FathomDesk 7.7 — Probability & Compare
   description: 'OptionStrat-inspired upgrades on top of 7.6''s proposal flow: (1)
@@ -230,6 +331,15 @@ projects:
   - key: wrap
     title: Registration + docs + E2E
     priority: high
+  - key: patterns
+    title: PATTERNS
+    priority: medium
+  - key: primitives
+    title: PRIMITIVES
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
 - key: fathomdesk-7-9
   name: FathomDesk 7.9 — TA Foundation
   description: 'Candlestick 1D chart + Volume Profile (HVN/LVN/POC/VA) + algorithmic
@@ -308,6 +418,15 @@ projects:
   - key: wrap
     title: Registration + docs + E2E
     priority: high
+  - key: portfolio
+    title: PORTFOLIO
+    priority: medium
+  - key: pricing
+    title: PRICING
+    priority: medium
+  - key: share
+    title: SHARE
+    priority: medium
 - key: fathomdesk-7-8
   name: FathomDesk 7.8 — Greeks Deep Dive + Quick Wins
   description: 'Three OptionStrat-inspired upgrades: (1) Black-Scholes pricer + time-T
