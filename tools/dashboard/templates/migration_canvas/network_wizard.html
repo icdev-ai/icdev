@@ -110,12 +110,21 @@
 .progress-bar-fill { height: 5px; border-radius: 4px; background: #27ae60; transition: width 0.3s; }
 
 /* ── Cutover ─────────────────────────────────────────────────── */
-.cutover-step { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; }
+.cutover-step { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; transition: border-color 0.15s, background 0.15s; }
 .cutover-seq { font-size: 20px; font-weight: 700; color: #27ae60; min-width: 32px; text-align: center; }
 .cutover-body { flex: 1; }
 .cutover-circuit { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .cutover-actions { font-size: 11px; color: #7a8cb0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 6px; }
 .cutover-action-item strong { color: #eaeaea; }
+/* drag-and-drop */
+.cutover-drag-handle { color: #4a6080; cursor: grab; font-size: 18px; padding: 2px 4px; user-select: none; line-height: 1.2; flex-shrink: 0; margin-top: 2px; }
+.cutover-drag-handle:active { cursor: grabbing; }
+.cutover-step[draggable=true]:hover { border-color: #2a5a8e; }
+.cutover-step.dragging { opacity: 0.35; border: 2px dashed #27ae60; background: #0d1b2e; }
+.cutover-step.drag-over { border-color: #27ae60; background: #0e2416; box-shadow: inset 0 0 0 2px rgba(39,174,96,0.2); }
+/* duration inline edit */
+.duration-input { width: 52px; background: #0a1624; border: 1px solid #1a2d4a; border-radius: 3px; color: #27ae60; padding: 2px 5px; font-size: 11px; font-weight: 700; text-align: center; }
+.duration-input:focus { outline: none; border-color: #27ae60; }
 
 /* ── ERB package ─────────────────────────────────────────────── */
 .erb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -685,9 +694,9 @@
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div class="tab-bar">
-          <button class="tab-btn active" onclick="showTestTab('pre',this)">Pre-Migration</button>
-          <button class="tab-btn" onclick="showTestTab('cutover',this)">Cutover Smoke</button>
-          <button class="tab-btn" onclick="showTestTab('post',this)">Post (24h)</button>
+          <button class="tab-btn test-tab active" id="ttab-pre" onclick="showTestTab('pre',this)">Pre-Migration <span id="ttab-pre-badge" style="font-size:10px;opacity:0.7"></span></button>
+          <button class="tab-btn test-tab" id="ttab-cutover" onclick="showTestTab('cutover',this)">Cutover Smoke <span id="ttab-cutover-badge" style="font-size:10px;opacity:0.7"></span></button>
+          <button class="tab-btn test-tab" id="ttab-post" onclick="showTestTab('post',this)">Post (24h) <span id="ttab-post-badge" style="font-size:10px;opacity:0.7"></span></button>
         </div>
         <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#7a8cb0">
           <span id="test-progress-label">0/0 executed</span>
@@ -695,7 +704,7 @@
         </div>
       </div>
 
-      <div id="tests-pre"><div style="color:#7a8cb0;font-size:12px">Click a tab to load tests.</div></div>
+      <div id="tests-pre"><div style="color:#7a8cb0;font-size:12px">Loading tests…</div></div>
       <div id="tests-cutover" style="display:none"></div>
       <div id="tests-post" style="display:none"></div>
 
@@ -714,7 +723,6 @@
 
       <div class="nw-actions" style="margin-bottom:16px;margin-top:0">
         <button class="btn btn-primary" onclick="generateCutover()">Auto-Generate Sequence</button>
-        <button class="btn btn-secondary" onclick="saveCutover()">Save Plan</button>
       </div>
 
       <div class="spec-grid" style="margin-bottom:16px">
@@ -723,6 +731,8 @@
           <select id="cutover-strategy">
             <option value="traffic_volume_asc">Lowest Traffic First (recommended)</option>
             <option value="sequential">Sequential (port order)</option>
+            <option value="alphabetical">Alphabetical (interface name)</option>
+            <option value="description_alpha">Alphabetical (description)</option>
           </select>
         </div>
         <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:12px">
@@ -731,10 +741,12 @@
         </div>
       </div>
 
+      <div style="font-size:11px;color:#4a6080;margin-bottom:10px">⠿ Drag rows to reorder steps. Edit duration (min) inline. Changes saved when you click Save Plan.</div>
       <div id="cutover-list"></div>
 
       <div class="nw-actions">
         <button class="btn btn-primary" onclick="saveCutover(); goStep(8)">Save &amp; Continue →</button>
+        <button class="btn btn-secondary" onclick="saveCutover()">Save Plan</button>
         <button class="btn btn-secondary" onclick="goStep(6)">← Back</button>
       </div>
     </div>
@@ -748,8 +760,16 @@
 
       <div class="readiness-gate" id="readiness-gate">
         <div class="score-big" id="erb-readiness-score">—</div>
-        <div class="score-label">Readiness Score</div>
+        <div class="score-label">Overall Readiness Score</div>
         <ul class="blocker-list" id="erb-blockers"></ul>
+      </div>
+
+      <div id="readiness-dimensions" style="display:none;margin-bottom:16px">
+        <div class="section-title">Readiness by Dimension</div>
+        <table class="data-table" id="readiness-dim-table">
+          <thead><tr><th>Dimension</th><th>Weight</th><th>Score</th><th style="width:40%">Progress</th></tr></thead>
+          <tbody id="readiness-dim-tbody"></tbody>
+        </table>
       </div>
 
       <div class="erb-grid">
@@ -1632,7 +1652,7 @@ let currentTestTab = 'pre';
 async function loadTests() {
   if (!_sid) return;
   try {
-    const data = await api('GET', `/api/network-migration/${_sid}/test-cases`);
+    const data = await api('GET', `/api/network-migration/${_sid}/test-cases?seed=true`);
     const allTests = data.test_cases || [];
     testCases.pre = allTests.filter(t => t.phase === 'pre');
     testCases.cutover = allTests.filter(t => t.phase === 'cutover');
@@ -1643,7 +1663,7 @@ async function loadTests() {
 
 function showTestTab(tab, btn) {
   currentTestTab = tab;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.test-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('tests-pre').style.display = tab==='pre'?'block':'none';
   document.getElementById('tests-cutover').style.display = tab==='cutover'?'block':'none';
@@ -1683,8 +1703,22 @@ function setTestResult(tab, i, result, btn) {
 function updateTestProgress() {
   const all = [...(testCases.pre||[]), ...(testCases.cutover||[]), ...(testCases.post||[])];
   const executed = all.filter(t => t.passed !== null && t.passed !== undefined).length;
+  const passed = all.filter(t => t.passed === true).length;
+  const failed = all.filter(t => t.passed === false).length;
   document.getElementById('test-progress-label').textContent = `${executed}/${all.length} executed`;
   document.getElementById('test-progress-bar').style.width = all.length ? (executed/all.length*100)+'%' : '0%';
+
+  // Update per-tab badges
+  ['pre','cutover','post'].forEach(tab => {
+    const tests = testCases[tab] || [];
+    const p = tests.filter(t => t.passed === true).length;
+    const f = tests.filter(t => t.passed === false).length;
+    const el = document.getElementById('ttab-' + tab + '-badge');
+    if (el && tests.length) {
+      el.textContent = `${p}✓ ${f}✗`;
+      el.style.color = f > 0 ? '#e74c3c' : p === tests.length ? '#27ae60' : '#f39c12';
+    }
+  });
 }
 
 async function saveTests() {
@@ -1698,6 +1732,8 @@ async function saveTests() {
 }
 
 // ── STEP 7 ────────────────────────────────────────────────────────
+let _dragSrcIdx = null;
+
 async function generateCutover() {
   if (!_sid) { toast('Session required', true); return; }
   const strategy = document.getElementById('cutover-strategy').value;
@@ -1712,18 +1748,72 @@ async function generateCutover() {
 function renderCutover() {
   const totalMin = cutoverSteps.reduce((s,step) => s + (step.duration_min||0), 0);
   document.getElementById('mw-estimate').textContent = totalMin ? totalMin + ' min' : '—';
-  document.getElementById('cutover-list').innerHTML = cutoverSteps.map(step => `
-    <div class="cutover-step">
-      <div class="cutover-seq">${step.seq_no||'?'}</div>
+  document.getElementById('cutover-list').innerHTML = cutoverSteps.map((step, i) => `
+    <div class="cutover-step" draggable="true"
+         ondragstart="onCutoverDragStart(event,${i})"
+         ondragover="onCutoverDragOver(event)"
+         ondragenter="onCutoverDragEnter(event)"
+         ondragleave="onCutoverDragLeave(event)"
+         ondrop="onCutoverDrop(event,${i})"
+         ondragend="onCutoverDragEnd(event)">
+      <div class="cutover-drag-handle" title="Drag to reorder">⠿</div>
+      <div class="cutover-seq">${i + 1}</div>
       <div class="cutover-body">
-        <div class="cutover-circuit">${escapeHtml(step.circuit_id||step.interface||'Step '+step.seq_no)}</div>
-        <div style="font-size:11px;color:#7a8cb0;margin-bottom:6px">Interface: <code>${step.interface||'—'}</code> · Est. ${step.duration_min||0} min</div>
+        <div class="cutover-circuit">${escapeHtml(step.circuit_id||step.interface||'Step '+(i+1))}</div>
+        <div style="font-size:11px;color:#7a8cb0;margin-bottom:6px">
+          Interface: <code>${escapeHtml(step.interface||'—')}</code> ·
+          Est. <input class="duration-input" type="number" min="1" value="${step.duration_min||0}"
+            onchange="cutoverSteps[${i}].duration_min=parseInt(this.value)||0;updateMwEstimate()" title="Duration (min)"> min
+        </div>
         <div class="cutover-actions">
-          <div class="cutover-action-item"><strong>Drain:</strong> ${escapeHtml(step.action||'—')}</div>
+          <div class="cutover-action-item"><strong>Drain:</strong> ${escapeHtml(step.drain_action||step.action||'—')}</div>
+          <div class="cutover-action-item"><strong>Cutover:</strong> ${escapeHtml(step.cutover_action||'—')}</div>
+          <div class="cutover-action-item"><strong>Verify:</strong> ${escapeHtml(step.verify_action||'—')}</div>
           <div class="cutover-action-item"><strong>Rollback:</strong> ${escapeHtml(step.rollback_action||'—')}</div>
         </div>
       </div>
     </div>`).join('');
+}
+
+function updateMwEstimate() {
+  const totalMin = cutoverSteps.reduce((s,step) => s + (step.duration_min||0), 0);
+  document.getElementById('mw-estimate').textContent = totalMin ? totalMin + ' min' : '—';
+}
+
+function onCutoverDragStart(e, idx) {
+  _dragSrcIdx = idx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('dragging');
+}
+
+function onCutoverDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onCutoverDragEnter(e) {
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onCutoverDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+function onCutoverDrop(e, targetIdx) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (_dragSrcIdx === null || _dragSrcIdx === targetIdx) return;
+  const moved = cutoverSteps.splice(_dragSrcIdx, 1)[0];
+  cutoverSteps.splice(targetIdx, 0, moved);
+  cutoverSteps.forEach((step, i) => { step.seq_no = i + 1; });
+  renderCutover();
+  toast('Step ' + (_dragSrcIdx + 1) + ' moved to position ' + (targetIdx + 1));
+}
+
+function onCutoverDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.cutover-step').forEach(el => el.classList.remove('drag-over'));
+  _dragSrcIdx = null;
 }
 
 async function saveCutover() {
@@ -1753,6 +1843,25 @@ async function loadReadiness() {
     ).join('');
     document.getElementById('erb-submit-btn').disabled = score < 100;
 
+    // Render dimension breakdown if provided
+    const dims = data.dimensions || data.breakdown;
+    if (dims && Object.keys(dims).length) {
+      const weightMap = {inventory:20, compatibility:25, config:15, tests:20, cutover:10, erb:10};
+      const dimWrap = document.getElementById('readiness-dimensions');
+      dimWrap.style.display = 'block';
+      document.getElementById('readiness-dim-tbody').innerHTML = Object.entries(dims).map(([key, val]) => {
+        const pct = Math.round(val * 100);
+        const w = weightMap[key] || '—';
+        const color = pct >= 100 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
+        return `<tr>
+          <td style="text-transform:capitalize;font-weight:600">${escapeHtml(key)}</td>
+          <td style="color:#7a8cb0">${w}%</td>
+          <td style="color:${color};font-weight:700">${pct}%</td>
+          <td><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${pct}%;background:${color}"></div></div></td>
+        </tr>`;
+      }).join('');
+    }
+
     // Load ERB package summary
     try {
       const pkg = await api('GET', `/api/network-migration/${_sid}/erb-package`);
@@ -1765,15 +1874,15 @@ function renderErbSummary(pkg) {
   const cs = pkg.change_summary || {};
   const ia = pkg.impact_analysis || {};
   const ra = pkg.risk_assessment || {};
-  const riskColor = ra.tier==='HIGH'?'#e74c3c':ra.tier==='MEDIUM'?'#f39c12':'#27ae60';
+  const tier = (ra.risk_tier || ra.tier || 'LOW').toUpperCase();
   document.getElementById('erb-summary-display').innerHTML = `
     <div style="margin-bottom:10px">
-      <span class="risk-badge risk-${ra.tier||'LOW'}">${ra.tier||'LOW'} Risk</span>
+      <span class="risk-badge risk-${tier}">${tier} Risk</span>
     </div>
-    <div class="spec-row"><span class="lbl">Source</span><span class="val">${cs.src_device||'—'}</span></div>
-    <div class="spec-row"><span class="lbl">Target</span><span class="val">${cs.tgt_device||'—'}</span></div>
-    <div class="spec-row"><span class="lbl">Site</span><span class="val">${cs.src_site||'—'}</span></div>
-    <div class="spec-row"><span class="lbl">Circuits Affected</span><span class="val">${ia.circuits_affected||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Source</span><span class="val">${cs.source_device||cs.src_device||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Target</span><span class="val">${cs.target_device||cs.tgt_device||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Site</span><span class="val">${cs.site||cs.src_site||'—'}</span></div>
+    <div class="spec-row"><span class="lbl">Circuits Affected</span><span class="val">${ia.total_interfaces||ia.circuits_affected||'—'}</span></div>
     <div class="spec-row"><span class="lbl">Optic Changes</span><span class="val">${ia.optic_changes||0}</span></div>
     <div class="spec-row"><span class="lbl">CAT1 Blockers</span><span class="val" style="color:${(ra.cat1_blockers||0)>0?'#e74c3c':'#27ae60'}">${ra.cat1_blockers||0}</span></div>
   `;

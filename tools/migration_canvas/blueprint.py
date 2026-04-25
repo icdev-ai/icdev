@@ -1186,14 +1186,15 @@ def create_migration_blueprint():
                 rows = conn.execute(
                     "SELECT * FROM mc_net_test_cases WHERE session_id=? ORDER BY phase, seq_no", (sid,)
                 ).fetchall()
-        return jsonify([_row_to_dict(r) for r in rows])
+        return jsonify({"test_cases": [_row_to_dict(r) for r in rows]})
 
     @bp.route("/api/network-migration/<sid>/test-cases", methods=["POST"])
     @mdc_login_required
     def mc_net_api_save_tests(sid):
         """Save test case results (bulk update passed/actual_result)."""
         data = request.get_json(force=True, silent=True) or {}
-        updates = data.get("results", [])  # [{id, passed, actual_result, notes}]
+        # Accept 'test_cases' (full objects from wizard) or legacy 'results'
+        updates = data.get("test_cases") or data.get("results", [])
         with get_connection() as conn:
             for u in updates:
                 conn.execute(
@@ -1243,7 +1244,7 @@ def create_migration_blueprint():
             conn.commit()
 
         _audit(sid, "cutover_steps_saved", f"{len(steps)} steps")
-        return jsonify({"ok": True, "count": len(steps)})
+        return jsonify({"ok": True, "count": len(steps), "steps": steps})
 
     @bp.route("/api/network-migration/<sid>/erb-metadata", methods=["POST"])
     @mdc_login_required
