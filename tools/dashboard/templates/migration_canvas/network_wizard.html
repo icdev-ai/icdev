@@ -235,7 +235,7 @@
       </div>
 
       <div class="nw-actions">
-        <button class="btn btn-primary" onclick="createSession()">Create Session &amp; Continue →</button>
+        <button class="btn btn-primary" onclick="validateStep1()">Create Session &amp; Continue →</button>
       </div>
     </div>
 
@@ -362,7 +362,7 @@
         </div>
 
         <div class="nw-actions" style="margin-top:16px">
-          <button class="btn btn-primary" onclick="goStep(3)">Next to Step 3 →</button>
+          <button class="btn btn-primary" onclick="validateStep2()">Next to Step 3 →</button>
           <button class="btn btn-secondary" onclick="goStep(1)">← Back to Step 1</button>
         </div>
       </div>
@@ -662,6 +662,20 @@ function goStep(n) {
   currentStep = n;
   if (n === 6 && Object.keys(testCases).length === 0) loadTests();
   if (n === 8) loadReadiness();
+}
+
+function showStep(n) { goStep(n); }
+
+function validateStep1() {
+  const src = document.getElementById('src-model').value;
+  const tgt = document.getElementById('tgt-model').value;
+  if (!src || !tgt) { toast('Select both source and target device models before continuing', true); return; }
+  createSession();
+}
+
+function validateStep2() {
+  if (!parsedInterfaces.length) { toast('Parse a device config before advancing to port mapping', true); return; }
+  goStep(3);
 }
 
 // ── API helpers ───────────────────────────────────────────────────
