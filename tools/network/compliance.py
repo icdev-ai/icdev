@@ -1838,7 +1838,7 @@ def _build_remediation_plan(findings: list, scores: dict, classification: str) -
         elif fix_type == "set_config":
             key = fix.get("key", "setting")
             val = fix.get("value", "enabled")
-            action["remediation_step"] = f"Update configuration: set '{key}' to '{val}' on the affected device."
+            action["remediation_step"] = f"Update configuration: set '{key}' to '{val}' on the affected device."  # nosec B608 - remediation message, not SQL
         else:
             action["remediation_step"] = f"Address finding: {f['description']}"
 
