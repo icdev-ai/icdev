@@ -1112,6 +1112,10 @@
   <div style="padding:8px 14px;background:#12122a;border-bottom:1px solid #2a2a4a;
     font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Link Capture</div>
   <div id="link-ctx-link-label" style="padding:8px 14px 4px;font-size:12px;color:#2ecc71;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;"></div>
+  <button onclick="openLinkPolicyPanel()" class="ctx-menu-btn">
+    &#x1F512; Link Policy
+    <span class="ctx-menu-sub">Classification, encryption &amp; protocol intent</span>
+  </button>
   <button onclick="startLinkCapture()" class="ctx-menu-btn" id="link-ctx-start-btn">
     &#x1F4E1; Start Capture
     <span class="ctx-menu-sub">Stream packets to PCAP viewer</span>
@@ -1336,6 +1340,57 @@
         <textarea id="pol-notes" class="form-control" rows="3"
           placeholder="Access control justification, compliance notes, waivers..."
           oninput="onPolicyFieldChange('notes', this.value)"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Link Policy Panel -->
+<div id="link-policy-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:400px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x1F512; Link Policy Intent</h3>
+      <button class="close-btn" onclick="closeLinkPolicyPanel()">&#x2715;</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;padding:16px;">
+      <div id="lp-link-title" style="font-size:13px;font-weight:600;color:#2ecc71;margin-bottom:4px;"></div>
+      <div id="lp-inherited-badge" style="display:none;font-size:10px;padding:2px 8px;border-radius:8px;background:#2a2a4a;color:#7a8cb0;margin-bottom:14px;"></div>
+      <div class="form-group">
+        <label>Classification</label>
+        <select id="lp-classification" class="form-control" onchange="onLinkPolicyClassificationChange(this.value)">
+          <option value="">— Select —</option>
+          <option value="PUBLIC">PUBLIC (IL2)</option>
+          <option value="CUI">CUI (IL4)</option>
+          <option value="SECRET">SECRET (IL5/IL6)</option>
+          <option value="TOP SECRET">TOP SECRET</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+        <input type="checkbox" id="lp-encryption" onchange="onLinkPolicyFieldChange('encryption_required', this.checked)"/>
+        <label for="lp-encryption" style="margin:0;cursor:pointer;">Encryption Required</label>
+        <span id="lp-enc-auto-badge" style="display:none;font-size:10px;padding:1px 6px;border-radius:8px;background:#e74c3c;color:#fff;font-weight:700;">AUTO</span>
+      </div>
+      <div class="form-group">
+        <label>Protocol Allowed</label>
+        <select id="lp-protocol" class="form-control" onchange="onLinkPolicyProtocolChange(this.value)">
+          <option value="">— Any —</option>
+          <option value="TLS">TLS</option>
+          <option value="IPsec">IPsec</option>
+          <option value="MACsec">MACsec</option>
+          <option value="HTTPS">HTTPS</option>
+          <option value="SSH">SSH</option>
+          <option value="OSPF">OSPF</option>
+          <option value="BGP">BGP</option>
+          <option value="EIGRP">EIGRP</option>
+          <option value="IS-IS">IS-IS</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </div>
+      <div class="form-group" id="lp-protocol-custom-group" style="display:none;">
+        <label>Custom Protocol</label>
+        <input type="text" id="lp-protocol-custom" class="form-control"
+          placeholder="e.g. GRE, MPLS, WireGuard"
+          oninput="onLinkPolicyFieldChange('protocol_allowed', this.value)"/>
       </div>
     </div>
   </div>
