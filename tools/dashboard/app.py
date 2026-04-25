@@ -996,6 +996,46 @@ def create_app() -> Flask:
             200,
         )
 
+    @app.route("/api/live-check", methods=["GET"])
+    def api_live_check():
+        """Scheduler heartbeat + in_progress task count for the Live Activity panel."""
+        import pathlib, time as _t
+        from flask import jsonify as _j
+        from tools.db.storage import get_connection as _gc
+
+        log_path = pathlib.Path(".tmp/kanban_scheduler.log")
+        sched_secs = None
+        if log_path.exists():
+            sched_secs = int(_t.time() - log_path.stat().st_mtime)
+
+        if sched_secs is None:
+            staleness = "unknown"
+        elif sched_secs > 600:
+            staleness = "stale"
+        elif sched_secs > 180:
+            staleness = "warning"
+        else:
+            staleness = "active"
+
+        conn = _gc()
+        try:
+            rows = conn.execute(
+                "SELECT id, title, priority, task_type, failure_count, "
+                "last_failure_at, updated_at, dispatch_source, executor_type "
+                "FROM kanban_tasks WHERE status = 'in_progress' ORDER BY updated_at DESC"
+            ).fetchall()
+            tasks = [dict(r) for r in rows]
+        except Exception:
+            tasks = []
+        finally:
+            conn.close()
+
+        return _j({
+            "scheduler_last_seen_secs": sched_secs,
+            "staleness": staleness,
+            "tasks": tasks,
+        })
+
     # Role-based view configuration
     ROLE_VIEWS = {
         "pm": {

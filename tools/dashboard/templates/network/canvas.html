@@ -97,6 +97,7 @@
         </div>
       </div>
       <button class="tb-btn" onclick="toggleTopologyLegend()" title="Topology Legend — show/hide legend of all node types and protocols on the canvas">&#x1f5fa; Legend</button>
+      <button class="tb-btn" onclick="toggleAnnotationLegend()" title="Annotation Legend — numbered callout bubbles with explanations for traffic walkthrough" style="color:#f1c40f;">&#x1f3f7; Ann. Legend</button>
       <button class="tb-btn" onclick="exportCanvasPDF()" title="Export PDF — opens print-ready canvas in new tab for Print to PDF">&#x1f4c4; Export PDF</button>
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — toggle to highlight protected (green) vs unprotected (red dashed) links">🔒 FIPS <span id="fips-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
       <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
@@ -398,6 +399,21 @@
       </div>
 
       <div class="palette-section">
+        <div class="palette-cat">Connectors</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="conn-straight" ondragstart="onDragStart(event)" title="Straight connector — drag endpoints freely, add labels at start/mid/end">
+            <div class="pi-icon conn-straight-icon">—→</div><span>Straight</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="conn-curved" ondragstart="onDragStart(event)" title="Curved connector — smooth arc between two points">
+            <div class="pi-icon conn-curved-icon">⌒→</div><span>Curved</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="conn-dashed" ondragstart="onDragStart(event)" title="Dashed connector — for logical or decommissioned paths">
+            <div class="pi-icon conn-dashed-icon">--→</div><span>Dashed</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
         <div class="palette-cat">Annotation / Text</div>
         <div class="palette-items">
           <div class="palette-item" draggable="true" data-type="annotation" ondragstart="onDragStart(event)">
@@ -414,6 +430,9 @@
           </div>
           <div class="palette-item" draggable="true" data-type="text-badge" ondragstart="onDragStart(event)" title="Badge label — pill-shaped tag">
             <div class="pi-icon text-badge-icon">B</div><span>Badge</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="callout-bubble" ondragstart="onDragStart(event)" title="Numbered callout bubble — references annotation legend">
+            <div class="callout-icon">1</div><span>Callout</span>
           </div>
         </div>
       </div>
@@ -507,6 +526,36 @@
         <div class="form-group">
           <label>Label</label>
           <input type="text" id="cfg-label" class="form-control" oninput="updateSelectedLabel(this.value)"/>
+        </div>
+        <div class="form-group cfg-section-header">Appearance</div>
+        <div class="form-group">
+          <label>Fill Color</label>
+          <div class="color-row">
+            <input type="color" id="cfg-fill-color" class="color-input" oninput="applyNodeColor('fill', this.value)"/>
+            <div class="color-swatches">
+              <span class="clr-swatch" style="background:#1a2a3a;" onclick="setNodeColor('fill','#1a2a3a')" title="Default dark"></span>
+              <span class="clr-swatch" style="background:#eaeaea;" onclick="setNodeColor('fill','#eaeaea')" title="White"></span>
+              <span class="clr-swatch" style="background:#f1c40f;" onclick="setNodeColor('fill','#f1c40f')" title="Yellow — As-Is / Future"></span>
+              <span class="clr-swatch" style="background:#e74c3c;" onclick="setNodeColor('fill','#e74c3c')" title="Red — Decommission"></span>
+              <span class="clr-swatch" style="background:#2ecc71;" onclick="setNodeColor('fill','#2ecc71')" title="Green — New / In-Service"></span>
+              <span class="clr-swatch" style="background:#3498db;" onclick="setNodeColor('fill','#3498db')" title="Blue"></span>
+              <span class="clr-swatch" style="background:#9b59b6;" onclick="setNodeColor('fill','#9b59b6')" title="Purple"></span>
+              <span class="clr-swatch" style="background:#e67e22;" onclick="setNodeColor('fill','#e67e22')" title="Orange"></span>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Text Color</label>
+          <div class="color-row">
+            <input type="color" id="cfg-text-color" class="color-input" oninput="applyNodeColor('text', this.value)"/>
+            <div class="color-swatches">
+              <span class="clr-swatch" style="background:#eaeaea;" onclick="setNodeColor('text','#eaeaea')" title="White"></span>
+              <span class="clr-swatch" style="background:#f1c40f;" onclick="setNodeColor('text','#f1c40f')" title="Yellow"></span>
+              <span class="clr-swatch" style="background:#e74c3c;" onclick="setNodeColor('text','#e74c3c')" title="Red"></span>
+              <span class="clr-swatch" style="background:#2ecc71;" onclick="setNodeColor('text','#2ecc71')" title="Green"></span>
+              <span class="clr-swatch" style="background:#1a1a2e;" onclick="setNodeColor('text','#1a1a2e')" title="Dark"></span>
+            </div>
+          </div>
         </div>
         <div class="form-group">
           <label>IPv4 Address</label>
@@ -794,6 +843,38 @@
       <!-- Link Config Panel (shown when a link/edge is selected) -->
       <div id="link-config-form" class="hidden">
         <div class="config-header">Link Properties</div>
+        <div class="form-group cfg-section-header">Labels</div>
+        <div class="form-group">
+          <label>Label — Start (A end)</label>
+          <input type="text" id="lcfg-label-start" class="form-control" placeholder="e.g. eth0/0" oninput="updateLinkConfig('labelStart', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Label — Middle</label>
+          <input type="text" id="lcfg-label-mid" class="form-control" placeholder="e.g. 1 Gbps" oninput="updateLinkConfig('labelMid', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Label — End (B end)</label>
+          <input type="text" id="lcfg-label-end" class="form-control" placeholder="e.g. Gi1/0/1" oninput="updateLinkConfig('labelEnd', this.value)"/>
+        </div>
+        <div class="form-group cfg-section-header">Style</div>
+        <div class="form-group">
+          <label>Line Color</label>
+          <div class="color-row">
+            <input type="color" id="lcfg-color" class="color-input" oninput="updateLinkConfig('color', this.value)"/>
+            <div class="color-swatches">
+              <span class="clr-swatch" style="background:#e94560;" onclick="setLinkColor('#e94560')" title="Default red"></span>
+              <span class="clr-swatch" style="background:#f1c40f;" onclick="setLinkColor('#f1c40f')" title="Yellow — As-Is/Future"></span>
+              <span class="clr-swatch" style="background:#e74c3c;" onclick="setLinkColor('#e74c3c')" title="Red — Decommission"></span>
+              <span class="clr-swatch" style="background:#2ecc71;" onclick="setLinkColor('#2ecc71')" title="Green — New"></span>
+              <span class="clr-swatch" style="background:#3498db;" onclick="setLinkColor('#3498db')" title="Blue"></span>
+              <span class="clr-swatch" style="background:#7a8cb0;" onclick="setLinkColor('#7a8cb0')" title="Gray"></span>
+            </div>
+          </div>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="lcfg-curved" onchange="updateLinkConfig('curved', this.checked)" style="width:16px;height:16px;"/>
+          <label for="lcfg-curved" style="margin:0;cursor:pointer;">Curved connector</label>
+        </div>
         <div class="form-group cfg-section-header">Routing</div>
         <div class="form-group">
           <label>Protocol</label>
@@ -846,6 +927,16 @@
     </div>
 
   </div><!-- end canvas-body -->
+
+  <!-- Annotation Legend Panel -->
+  <div id="ann-legend-panel" class="ann-legend">
+    <div class="ann-legend-title">
+      Annotation Legend
+      <button class="ann-legend-close" onclick="toggleAnnotationLegend()">&times;</button>
+    </div>
+    <div id="ann-legend-entries"></div>
+    <button class="ann-add-btn" onclick="addAnnotLegendEntry()">+ Add Entry</button>
+  </div>
 
   <!-- Status Bar -->
   <div class="canvas-statusbar">
