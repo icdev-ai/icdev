@@ -77,6 +77,7 @@
           <button onclick="showDeviceConfigModal();this.closest('.tb-export-wrap').classList.remove('open')" title="Device configs (IOS/EOS/JunOS)" style="color:#00c896;">⚙ Dev Configs</button>
           <button onclick="exportCablePlantReport();this.closest('.tb-export-wrap').classList.remove('open')" title="Cable plant report CSV" style="color:#a29bfe;">🔌 Cable Plant</button>
           <button onclick="generateExecutiveBriefing();this.closest('.tb-export-wrap').classList.remove('open')" title="AI Executive Briefing — plain-English summary for CISO/PM" style="color:#00d4ff;">📋 Exec Briefing</button>
+          <button onclick="generateRunbook();this.closest('.tb-export-wrap').classList.remove('open')" title="Network Operations Runbook — device inventory, IP table, link matrix, troubleshooting procedures" style="color:#27ae60;">📔 Runbook</button>
         </div>
       </div>
     </div>
@@ -1050,6 +1051,28 @@
       <button class="brf-btn-copy" id="brf-copy-btn" onclick="briefingCopyToClipboard()" style="display:none;">&#x1f4cb; Copy Markdown</button>
       <button class="brf-btn-pdf" id="brf-pdf-btn" onclick="briefingPrintPDF()" style="display:none;">&#x1f5a8; Print / Export PDF</button>
       <button class="brf-btn-copy" onclick="document.getElementById('briefing-modal').classList.add('hidden')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Runbook Modal -->
+<div id="runbook-modal" class="brf-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="brf-box">
+    <div class="brf-titlebar">
+      <span class="brf-title" id="rb-modal-title">Network Operations Runbook</span>
+      <span class="brf-badge" style="background:rgba(39,174,96,.18);color:#27ae60;">NDC · NetOps</span>
+      <button class="brf-close" onclick="document.getElementById('runbook-modal').classList.add('hidden')">&times;</button>
+    </div>
+    <div class="brf-body" id="rb-modal-body">
+      <div class="brf-loading">
+        <div class="brf-spinner"></div>
+        Generating runbook&hellip;
+      </div>
+    </div>
+    <div class="brf-actions">
+      <button class="brf-btn-copy" id="rb-download-btn" onclick="runbookDownload()" style="display:none;">&#x2b07; Download .md</button>
+      <button class="brf-btn-copy" id="rb-copy-btn" onclick="runbookCopy()" style="display:none;">&#x1f4cb; Copy Markdown</button>
+      <button class="brf-btn-copy" onclick="document.getElementById('runbook-modal').classList.add('hidden')">Close</button>
     </div>
   </div>
 </div>
@@ -3083,6 +3106,75 @@ function briefingPrintPDF() {
   win.document.close();
   win.focus();
   setTimeout(function() { win.print(); }, 400);
+}
+
+// ── Network Operations Runbook Generator ────────────────────────────────
+var _runbookMarkdown = '';
+var _runbookFilename = 'runbook.md';
+
+async function generateRunbook() {
+  if (!TOPOLOGY_ID) { alert('Save the topology first.'); return; }
+  var modal   = document.getElementById('runbook-modal');
+  var body    = document.getElementById('rb-modal-body');
+  var title   = document.getElementById('rb-modal-title');
+  var dlBtn   = document.getElementById('rb-download-btn');
+  var copyBtn = document.getElementById('rb-copy-btn');
+
+  _runbookMarkdown = '';
+  dlBtn.style.display   = 'none';
+  copyBtn.style.display = 'none';
+  body.innerHTML = '<div class="brf-loading"><div class="brf-spinner"></div>Generating runbook&hellip;<br>'
+    + '<span style="font-size:11px;opacity:0.6;margin-top:6px;display:block;">'
+    + 'Building device inventory, IP table, link matrix and troubleshooting procedures&hellip;</span></div>';
+  modal.classList.remove('hidden');
+
+  try {
+    var r = await fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/runbook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    var data = await r.json();
+    if (!r.ok || data.error) {
+      body.innerHTML = '<div class="brf-error">&#9888; ' + (data.error || 'Runbook generation failed.') + '</div>';
+      return;
+    }
+    _runbookMarkdown = data.markdown || '';
+    _runbookFilename = data.filename  || 'runbook.md';
+    title.textContent = 'Runbook — ' + (data.topo_name || 'Topology');
+    body.innerHTML = _mdToHtml(_runbookMarkdown);
+    dlBtn.style.display   = '';
+    copyBtn.style.display = '';
+  } catch (e) {
+    body.innerHTML = '<div class="brf-error">&#9888; Request failed: ' + e.message + '</div>';
+  }
+}
+
+function runbookDownload() {
+  if (!_runbookMarkdown) return;
+  var blob = new Blob([_runbookMarkdown], { type: 'text/markdown' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = _runbookFilename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function runbookCopy() {
+  if (!_runbookMarkdown) return;
+  navigator.clipboard.writeText(_runbookMarkdown).then(function() {
+    var btn = document.getElementById('rb-copy-btn');
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1800);
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = _runbookMarkdown;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
 }
 
 // ── Close export dropdown on outside click ──────────────────────────────

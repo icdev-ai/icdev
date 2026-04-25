@@ -1722,6 +1722,338 @@ def create_network_blueprint():
             return jsonify({"error": str(exc)}), 500
 
     # ══════════════════════════════════════════════════════════════════════
+    # API: Network Operations Runbook Generator
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/topologies/<topo_id>/runbook", methods=["POST"])
+    @nc_login_required
+    def nc_api_generate_runbook(topo_id):
+        """Generate a downloadable Network Operations Runbook Markdown file from topology graph data.
+
+        Deterministic sections built from graph data:
+          1. Document header (name, classification, date)
+          2. Device Inventory table
+          3. IP Address Table sorted by subnet
+          4. Interface/Link Matrix
+          5. Standard Troubleshooting Procedures (LLM-generated per device type)
+          6. Escalation Contacts fillable template
+        """
+        import ipaddress
+        import re
+        from datetime import datetime, timezone
+
+        from tools.http.client import request as _req_request
+
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            ipam_rows = conn.execute(
+                "SELECT network, description, vlan_id, vrf, gateway "
+                "FROM nc_ipam_blocks WHERE topology_id=? ORDER BY network",
+                (topo_id,),
+            ).fetchall()
+        except Exception:
+            ipam_rows = []
+        conn.close()
+
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo.get("graph_json") or "{}")
+        except Exception:
+            graph = {}
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+
+        topo_name = topo.get("name", "Unnamed Topology")
+        classification = (topo.get("classification") or "UNCLASSIFIED").upper()
+        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        _DRAWING_TYPES = {
+            "draw-rect", "draw-rounded-rect", "text-heading", "text-label", "text-badge",
+        }
+        device_nodes = [n for n in nodes if n.get("type") not in _DRAWING_TYPES]
+
+        lines: list = []
+
+        # ── Section 1: Header ─────────────────────────────────────────────
+        lines += [
+            "# Network Operations Runbook",
+            "",
+            "| Field | Value |",
+            "|-------|-------|",
+            f"| **Topology** | {topo_name} |",
+            f"| **Classification** | {classification} |",
+            f"| **Generated** | {now_utc} |",
+            f"| **Nodes** | {len(nodes)} |",
+            f"| **Links** | {len(edges)} |",
+            "",
+            "---",
+            "",
+        ]
+
+        # ── Section 2: Device Inventory ───────────────────────────────────
+        lines.append("## 1. Device Inventory")
+        lines.append("")
+        if device_nodes:
+            lines += [
+                "| # | Label | Type | Management IP | OS/Platform | Serial | Notes |",
+                "|---|-------|------|---------------|-------------|--------|-------|",
+            ]
+            for i, n in enumerate(device_nodes, 1):
+                cfg = n.get("config") or {}
+                label = (n.get("label") or n.get("type") or "Unknown").replace("|", "\\|")
+                dtype = n.get("type", "unknown")
+                ip = cfg.get("ip") or cfg.get("mgmt_ip") or "—"
+                os_name = cfg.get("os") or "—"
+                serial = (cfg.get("serial") or "—").replace("|", "\\|")
+                notes = (cfg.get("role") or cfg.get("description") or "—").replace("|", "\\|")
+                lines.append(f"| {i} | {label} | `{dtype}` | `{ip}` | {os_name} | {serial} | {notes} |")
+        else:
+            lines.append("*No devices in topology.*")
+        lines += ["", "---", ""]
+
+        # ── Section 3: IP Address Table (sorted by subnet) ────────────────
+        lines.append("## 2. IP Address Table")
+        lines.append("")
+
+        ip_entries: list = []
+        for n in device_nodes:
+            cfg = n.get("config") or {}
+            label = (n.get("label") or n.get("type") or "Unknown")
+            dtype = n.get("type", "unknown")
+            primary_ip = cfg.get("ip") or cfg.get("mgmt_ip") or ""
+            if primary_ip:
+                ip_entries.append({"ip": primary_ip, "label": label, "type": dtype, "context": "Management"})
+            for vlan in (cfg.get("vlans") or []):
+                if isinstance(vlan, dict) and vlan.get("ip"):
+                    ip_entries.append({
+                        "ip": vlan["ip"],
+                        "label": f"{label} VLAN {vlan.get('vlan_id', '?')}",
+                        "type": dtype,
+                        "context": f"VLAN {vlan.get('vlan_id', '?')}",
+                    })
+            for extra_ip in (cfg.get("ips") or []):
+                if extra_ip and extra_ip != primary_ip:
+                    ip_entries.append({"ip": extra_ip, "label": label, "type": dtype, "context": "Interface"})
+
+        for ipam_r in ipam_rows:
+            ipam = _row_to_dict(ipam_r)
+            network = ipam.get("network", "")
+            if network:
+                ip_entries.append({
+                    "ip": network,
+                    "label": f"IPAM: {ipam.get('description') or network}",
+                    "type": "subnet",
+                    "context": f"VRF {ipam.get('vrf') or 'global'} · GW {ipam.get('gateway') or '—'}",
+                })
+
+        def _ip_sort_key(entry):
+            raw = entry["ip"].split("/")[0]
+            try:
+                return (0, int(ipaddress.ip_address(raw)))
+            except Exception:
+                return (1, 0)
+
+        ip_entries.sort(key=_ip_sort_key)
+
+        if ip_entries:
+            lines += [
+                "| # | IP / Subnet | Device / Label | Type | Context |",
+                "|---|-------------|----------------|------|---------|",
+            ]
+            for i, e in enumerate(ip_entries, 1):
+                lbl = e["label"].replace("|", "\\|")
+                lines.append(
+                    f"| {i} | `{e['ip']}` | {lbl} | `{e['type']}` | {e['context']} |"
+                )
+        else:
+            lines.append("*No IP addresses configured in topology.*")
+        lines += ["", "---", ""]
+
+        # ── Section 4: Interface / Link Matrix ────────────────────────────
+        lines.append("## 3. Interface / Link Matrix")
+        lines.append("")
+
+        label_by_id = {n.get("id"): (n.get("label") or n.get("type") or "?") for n in nodes}
+
+        if edges:
+            lines += [
+                "| # | Source | Target | Protocol | Bandwidth | Latency | Label |",
+                "|---|--------|--------|----------|-----------|---------|-------|",
+            ]
+            for i, e in enumerate(edges, 1):
+                src = label_by_id.get(e.get("source"), e.get("source") or "?").replace("|", "\\|")
+                tgt = label_by_id.get(e.get("target"), e.get("target") or "?").replace("|", "\\|")
+                proto = e.get("protocol") or "—"
+                bw = e.get("bandwidth") or "—"
+                lat = f"{e.get('latency_ms')} ms" if e.get("latency_ms") else "—"
+                lbl = (e.get("label") or "—").replace("|", "\\|")
+                lines.append(f"| {i} | {src} | {tgt} | {proto} | {bw} | {lat} | {lbl} |")
+        else:
+            lines.append("*No links configured in topology.*")
+        lines += ["", "---", ""]
+
+        # ── Section 5: Troubleshooting Procedures (LLM) ───────────────────
+        lines.append("## 4. Standard Troubleshooting Procedures")
+        lines.append("")
+
+        type_counts: dict = {}
+        for n in device_nodes:
+            t = n.get("type", "unknown")
+            type_counts[t] = type_counts.get(t, 0) + 1
+
+        device_type_summary = ", ".join(
+            f"{v}× {k}" for k, v in sorted(type_counts.items(), key=lambda x: -x[1])
+        )
+        seen_types: set = set()
+        device_samples: list = []
+        for n in device_nodes:
+            t = n.get("type", "unknown")
+            if t not in seen_types:
+                seen_types.add(t)
+                cfg = n.get("config") or {}
+                device_samples.append(
+                    f"- {n.get('label') or t} (type={t}, ip={cfg.get('ip') or '—'}, os={cfg.get('os') or '—'})"
+                )
+
+        _RUNBOOK_SYSTEM = (
+            "You are a senior network operations engineer writing a troubleshooting section for a "
+            "Network Operations Runbook. For each device type present in the topology, write concise, "
+            "actionable troubleshooting procedures. "
+            "Format using Markdown with ### headings for each device type. "
+            "Each device type section must include:\n"
+            "- **Common failure symptoms** (2–3 bullet points)\n"
+            "- **Initial diagnostic commands** (CLI commands in fenced code blocks)\n"
+            "- **Step-by-step resolution checklist** (numbered steps)\n"
+            "- **Escalation trigger** (one sentence: when to escalate to Tier 3 or vendor)\n\n"
+            "Keep each section under 20 lines. Be specific and operational. "
+            "Output ONLY the Markdown troubleshooting content — no preamble or postscript."
+        )
+        _runbook_user_msg = (
+            f"Generate troubleshooting procedures for a network topology named '{topo_name}'.\n\n"
+            f"Device types present: {device_type_summary or 'none'}\n"
+            f"Representative devices:\n" + "\n".join(device_samples[:20]) + "\n\n"
+            f"Total links: {len(edges)}\n"
+            f"Classification: {classification}"
+        )
+
+        def _call_claude_runbook():
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                return None, "No ANTHROPIC_API_KEY"
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req_request(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 3000,
+                    "temperature": 0.3,
+                    "system": _RUNBOOK_SYSTEM,
+                    "messages": [{"role": "user", "content": _runbook_user_msg}],
+                },
+                timeout=90,
+            )
+            r.raise_for_status()
+            return r.json().get("content", [{}])[0].get("text", ""), None
+
+        def _call_ollama_runbook():
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
+            r = _req_request(
+                "POST",
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": ollama_model,
+                    "messages": [
+                        {"role": "system", "content": _RUNBOOK_SYSTEM},
+                        {"role": "user", "content": _runbook_user_msg},
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 3000, "temperature": 0.3},
+                },
+                timeout=180,
+            )
+            r.raise_for_status()
+            return r.json().get("message", {}).get("content", ""), None
+
+        try:
+            provider = os.environ.get("NC_AI_PROVIDER", "auto")
+            ts_content = None
+            if provider in ("auto", "claude"):
+                ts_content, _ = _call_claude_runbook()
+            if not ts_content and provider in ("auto", "ollama"):
+                ts_content, _ = _call_ollama_runbook()
+            if ts_content:
+                ts_content = re.sub(r"<think>.*?</think>", "", ts_content, flags=re.DOTALL).strip()
+                lines.append(ts_content)
+            else:
+                lines += [
+                    "*No LLM provider available — set `ANTHROPIC_API_KEY` or start Ollama for AI-generated procedures.*",
+                    "",
+                    "**Generic network troubleshooting checklist:**",
+                    "",
+                    "1. Verify physical connectivity (cable, SFP, interface admin/oper state)",
+                    "2. Check interface state: `show interface status` / `show ip interface brief`",
+                    "3. Review routing table: `show ip route` / `show bgp summary`",
+                    "4. Check recent log events: `show log | last 50`",
+                    "5. Ping gateway: `ping <gateway-ip> repeat 100`",
+                    "6. Traceroute to isolate break: `traceroute <destination>`",
+                    "7. Verify spanning-tree state (L2): `show spanning-tree`",
+                    "8. Review ARP/MAC tables: `show arp` / `show mac address-table`",
+                ]
+        except Exception:
+            logger.exception("Runbook troubleshooting LLM call failed for %s", topo_id)
+            lines.append("*Troubleshooting generation failed. Check LLM provider configuration.*")
+        lines += ["", "---", ""]
+
+        # ── Section 6: Escalation Contacts (fillable template) ────────────
+        lines += [
+            "## 5. Escalation Contacts",
+            "",
+            "> **Instructions:** Fill in contact information before distributing this runbook.",
+            "",
+            "| Role | Name | Phone | Email | On-Call Hours |",
+            "|------|------|-------|-------|---------------|",
+            "| Network Operations (Tier 1) | ________________ | ________________ | ________________ | 24/7 |",
+            "| Network Engineer (Tier 2) | ________________ | ________________ | ________________ | Business hours |",
+            "| Network Architect (Tier 3) | ________________ | ________________ | ________________ | On-call |",
+            "| Security / ISSO | ________________ | ________________ | ________________ | On-call |",
+            "| Vendor TAC | ________________ | ________________ | ________________ | 24/7 |",
+            "| ISP/Carrier NOC | ________________ | ________________ | ________________ | 24/7 |",
+            "| Program Manager | ________________ | ________________ | ________________ | Business hours |",
+            "",
+            "### Escalation Thresholds",
+            "",
+            "| Severity | Description | Response Time | Escalation Path |",
+            "|----------|-------------|---------------|-----------------|",
+            "| **P1 — Critical** | Complete outage / mission impact | 15 min | Tier 1 → Tier 2 → Tier 3 → PM |",
+            "| **P2 — High** | Partial outage, redundancy lost | 30 min | Tier 1 → Tier 2 |",
+            "| **P3 — Medium** | Degraded performance, non-critical path | 2 hr | Tier 1 → Tier 2 (biz hrs) |",
+            "| **P4 — Low** | Minor issue, workaround available | Next business day | Tier 1 ticket |",
+            "",
+            "---",
+            "",
+            f"*Generated by ICDEV™ NDC Runbook Generator — {now_utc}*",
+        ]
+
+        markdown = "\n".join(lines)
+        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", topo_name)[:40]
+        filename = f"runbook-{safe_name}.md"
+
+        _audit("RUNBOOK_GENERATED", "topology", topo_id)
+        return jsonify({"markdown": markdown, "topo_name": topo_name, "filename": filename})
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Simulation
     # ══════════════════════════════════════════════════════════════════════
 
