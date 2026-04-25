@@ -2275,3 +2275,59 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .ann-del-btn:hover { color: var(--red); }
 .ann-add-btn { width: 100%; padding: 6px; font-size: 11px; font-weight: 600; border: 1px dashed var(--border); background: transparent; color: var(--text-dim); border-radius: 4px; cursor: pointer; margin-top: 4px; }
 .ann-add-btn:hover { border-color: var(--red); color: var(--text); }
+
+/* ── ndc-ux-01: Canvas Search ──────────────────────────────────────────────── */
+.tb-search-group { flex: 0 0 auto; }
+.tb-search-input {
+  width: 170px; padding: 3px 8px; font-size: 11px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text); outline: none;
+  vertical-align: middle;
+}
+.tb-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(15,52,96,0.4); }
+.canvas-search-highlight { filter: drop-shadow(0 0 6px #f1c40f) drop-shadow(0 0 12px #f39c12) !important; }
+
+/* ── ndc-ux-02: Conflict Scanner ───────────────────────────────────────────── */
+.canvas-conflict-node { filter: drop-shadow(0 0 5px #e67e22) drop-shadow(0 0 10px #e67e22) !important; }
+.conflict-panel {
+  position: fixed; bottom: 42px; left: 260px; z-index: 800;
+  width: 320px; max-height: 280px;
+  background: var(--bg2); border: 1px solid #e67e22;
+  border-radius: 6px; overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.conflict-panel.hidden { display: none; }
+.conflict-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 12px; background: rgba(230,126,34,0.12);
+  font-size: 12px; font-weight: 600; color: #e67e22;
+  border-bottom: 1px solid var(--border);
+}
+.conflict-panel-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-dim); font-size: 16px; padding: 0 4px; line-height: 1;
+}
+.conflict-panel-close:hover { color: var(--text); }
+.conflict-count-badge {
+  display: inline-block; background: #e67e22; color: #fff;
+  border-radius: 10px; font-size: 10px; padding: 1px 6px; margin-left: 4px;
+}
+.conflict-panel-list { overflow-y: auto; max-height: 232px; }
+.conflict-entry {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 7px 12px; border-bottom: 1px solid var(--border);
+  font-size: 11px; cursor: pointer;
+}
+.conflict-entry:hover { background: var(--bg3); }
+.conflict-entry:last-child { border-bottom: none; }
+.ce-icon { font-size: 13px; flex-shrink: 0; color: #e67e22; line-height: 1.4; }
+.ce-body { flex: 1; min-width: 0; }
+.ce-title { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ce-desc { color: var(--text-dim); margin-top: 2px; line-height: 1.3; }
+
+/* ── ndc-ux-03: Layer Visibility Filter ────────────────────────────────────── */
+.tb-layer-btn {
+  opacity: 0.4; font-size: 10px; min-width: 26px;
+  padding: 2px 6px; font-weight: 700; letter-spacing: 0.3px;
+}
+.tb-layer-btn.tb-layer-active { opacity: 1; background: var(--accent, #0f3460); color: #74b9ff; border-color: #74b9ff; }
