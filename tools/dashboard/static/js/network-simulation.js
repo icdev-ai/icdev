@@ -1879,38 +1879,132 @@ For non-topology questions, answer normally without JSON.`
   return null;
 }
 
-async function ncChatSend() {
+// File attachment state
+let _ncChatAttachedFile = null;  // {name, content}
+
+function ncChatHandleFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    _ncChatAttachedFile = {name: file.name, content: e.target.result};
+    const bar = document.getElementById('nc-chat-attach-bar');
+    const nameEl = document.getElementById('nc-chat-attach-name');
+    if (bar) { bar.style.display = 'flex'; }
+    if (nameEl) nameEl.textContent = file.name;
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+function ncChatClearAttach() {
+  _ncChatAttachedFile = null;
+  const bar = document.getElementById('nc-chat-attach-bar');
+  if (bar) bar.style.display = 'none';
+}
+
+async function ncChatSend(opts) {
+  opts = opts || {};
   const input = document.getElementById('nc-chat-input');
   const sendBtn = document.getElementById('nc-chat-send-btn');
-  const text = input.value.trim();
-  if (!text) return;
+  let text = input.value.trim();
+  if (!text && !opts.description) return;
+  if (opts.description) text = opts.description;
+
+  // Append file context if attached
+  let fullDescription = text;
+  if (_ncChatAttachedFile) {
+    const snippet = _ncChatAttachedFile.content.slice(0, 3000);
+    fullDescription = text + '\n\n--- Attached: ' + _ncChatAttachedFile.name + ' ---\n' + snippet;
+    ncChatClearAttach();
+  }
 
   // Show user message
-  _ncChatAppendMsg('user', _escHtml(text));
+  _ncChatAppendMsg('user', _escHtml(text) + (_ncChatAttachedFile ? ' <span style="color:var(--accent);font-size:10px;">[+file]</span>' : ''));
   input.value = '';
   sendBtn.disabled = true;
   sendBtn.textContent = '...';
 
-  // Use direct AI generate (Claude API — fast and reliable)
+  // "that's all" phrases → architect mode auto-trigger
+  const _thatAllPhrases = ["that's all", "thats all", "that is all", "no more info", "just go ahead",
+    "just generate", "best practices", "your call", "use your judgment", "proceed", "just do it"];
+  const _lowerText = text.toLowerCase();
+  const _saidThatAll = _thatAllPhrases.some(p => _lowerText.includes(p));
+  if (_saidThatAll) {
+    opts = Object.assign({}, opts, {architect_mode: true, skip_grill: true});
+  }
+
+  // Skip grilling if: architect mode, explicit bypass, short phrase, or "that's all"
+  const skipGrill = opts.architect_mode || opts.skip_grill || text.length < 15;
+
+  if (!skipGrill) {
+    _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Analyzing your request...</span>');
+    try {
+      const prepR = await fetch(NC_BASE + '/api/ai-chat-prep', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({description: fullDescription}),
+      });
+      const prep = await prepR.json();
+      const msgs = document.getElementById('nc-chat-messages');
+      const thinking = msgs ? msgs.querySelector('.nc-chat-thinking') : null;
+      if (thinking) thinking.closest('.nc-chat-msg').remove();
+
+      if (prep.needs_more_info && prep.questions && prep.questions.length) {
+        // Show clarifying questions with options to answer or proceed
+        const qHtml = prep.questions.map(q => `<li style="margin-bottom:4px;">${_escHtml(q)}</li>`).join('');
+        const assumptionNote = prep.assumption_summary
+          ? `<div style="margin-top:8px;padding:6px 8px;background:rgba(52,152,219,0.08);border-radius:4px;font-size:11px;color:var(--text-dim);">
+               <strong>If you proceed without answering</strong>, I'll assume: ${_escHtml(prep.assumption_summary)}
+             </div>` : '';
+        _ncChatAppendMsg('assistant',
+          `To design the optimal network, I need a few more details:<br><ul style="margin:6px 0 0 0;padding-left:16px;">${qHtml}</ul>` +
+          assumptionNote +
+          `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+             <button class="nc-chat-action-btn" onclick="ncChatProceedAsArchitect(${JSON.stringify(_escHtml(fullDescription))})">
+               Generate with Best Practices
+             </button>
+           </div>`
+        );
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send';
+        return;
+      }
+    } catch (_pe) {
+      // Grill step failed — just proceed to generate
+      const msgs = document.getElementById('nc-chat-messages');
+      const thinking = msgs ? msgs.querySelector('.nc-chat-thinking') : null;
+      if (thinking) thinking.closest('.nc-chat-msg').remove();
+    }
+  }
+
   _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Generating topology...</span>');
-  await _ncChatDirectGenerate(text);
+  await _ncChatDirectGenerate(fullDescription, {architect_mode: !!opts.architect_mode});
 
   sendBtn.disabled = false;
   sendBtn.textContent = 'Send';
 }
 
-async function _ncChatDirectGenerate(description) {
+function ncChatProceedAsArchitect(description) {
+  // Decode HTML entities that were escaped for display
+  const txt = document.createElement('textarea');
+  txt.innerHTML = description;
+  ncChatSend({description: txt.value, architect_mode: true, skip_grill: true});
+}
+
+async function _ncChatDirectGenerate(description, opts) {
+  opts = opts || {};
   try {
     const r = await fetch(NC_BASE + '/api/ai-generate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({description}),
+      body: JSON.stringify({description, architect_mode: !!opts.architect_mode}),
     });
     const data = await r.json();
 
     // Remove thinking indicator
     const msgs = document.getElementById('nc-chat-messages');
-    const thinking = msgs.querySelector('.nc-chat-thinking');
+    const thinking = msgs ? msgs.querySelector('.nc-chat-thinking') : null;
     if (thinking) thinking.closest('.nc-chat-msg').remove();
 
     if (!r.ok || data.error) {
@@ -1925,12 +2019,28 @@ async function _ncChatDirectGenerate(description) {
     if (typeof markDirty === 'function') markDirty();
 
     const prov = data.provider ? ' via ' + data.provider : '';
-    _ncChatAppendMsg('assistant',
-      `Generated <strong>${data.node_count} nodes</strong> and <strong>${data.edge_count} edges</strong>${prov}. Loaded onto canvas.` +
-      `<button class="nc-chat-action-btn" onclick="if(typeof undoAction==='function')undoAction()">Undo</button>`
-    );
+    let resultHtml = `Generated <strong>${data.node_count} nodes</strong> and <strong>${data.edge_count} edges</strong>${prov}. Loaded onto canvas.` +
+      `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">` +
+      `<button class="nc-chat-action-btn" onclick="if(typeof undoAction==='function')undoAction()" style="background:rgba(231,76,60,0.15);border-color:rgba(231,76,60,0.4);">↩ Undo</button>`;
+
+    // Show migration workflow button when a session was created
+    if (data.migration_session_url) {
+      resultHtml += `<a class="nc-chat-action-btn" href="${_escHtml(data.migration_session_url)}" target="_blank" style="background:rgba(39,174,96,0.15);border-color:rgba(39,174,96,0.4);text-decoration:none;">🔄 Open Migration Workflow</a>`;
+    }
+    resultHtml += `</div>`;
+
+    if (data.is_migration) {
+      resultHtml += `<div style="margin-top:6px;padding:5px 8px;background:rgba(243,156,18,0.1);border-radius:4px;font-size:11px;color:#f39c12;">
+        Migration diagram: phases are laid out left-to-right (Silver=AS-IS → Orange=Phase 1 → Green=TO-BE).
+      </div>`;
+    }
+
+    _ncChatAppendMsg('assistant', resultHtml);
     setStatus('AI generated: ' + data.node_count + ' nodes, ' + data.edge_count + ' edges');
   } catch (err) {
+    const msgs = document.getElementById('nc-chat-messages');
+    const thinking = msgs ? msgs.querySelector('.nc-chat-thinking') : null;
+    if (thinking) thinking.closest('.nc-chat-msg').remove();
     _ncChatAppendMsg('system', 'Request failed: ' + _escHtml(err.message));
   }
 }

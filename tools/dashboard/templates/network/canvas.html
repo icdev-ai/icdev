@@ -1696,11 +1696,23 @@
       <div style="font-size:20px;margin-bottom:6px;">✦</div>
       <p>Describe a network topology and I'll generate it on the canvas.</p>
       <p style="color:var(--text-dim);font-size:11px;">Try: "3-tier campus with DMZ" or "MPLS L3VPN with dual PE routers"</p>
+      <p style="color:var(--text-dim);font-size:11px;">📎 Attach a device config or diagram file for richer context.</p>
     </div>
   </div>
-  <div class="nc-chat-input-area">
-    <textarea id="nc-chat-input" class="nc-chat-input" rows="2" placeholder="Describe your network..." onkeydown="ncChatKeydown(event)"></textarea>
-    <button class="nc-chat-send-btn" id="nc-chat-send-btn" onclick="ncChatSend()">Send</button>
+  <!-- Attach indicator (shown when a file is attached) -->
+  <div id="nc-chat-attach-bar" style="display:none;padding:4px 10px;background:var(--bg-card);border-top:1px solid var(--border);font-size:11px;color:var(--accent);display:flex;align-items:center;gap:6px;">
+    <span>📎</span><span id="nc-chat-attach-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+    <button onclick="ncChatClearAttach()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:12px;padding:0;">✕</button>
+  </div>
+  <input type="file" id="nc-chat-file-input" accept=".txt,.log,.conf,.cfg,.json,.yaml,.yml,.xml,.csv,.md,.ios,.junos,.iosxr" style="display:none" onchange="ncChatHandleFile(this)">
+  <div class="nc-chat-input-area" style="flex-direction:column;gap:4px;">
+    <div style="display:flex;gap:4px;align-items:flex-end;">
+      <textarea id="nc-chat-input" class="nc-chat-input" rows="2" placeholder="Describe your network..." onkeydown="ncChatKeydown(event)" style="flex:1;"></textarea>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <button class="nc-chat-send-btn" id="nc-chat-send-btn" onclick="ncChatSend()" style="padding:6px 12px;">Send</button>
+        <button class="nc-chat-btn-sm" title="Attach device config or diagram" onclick="document.getElementById('nc-chat-file-input').click()" style="padding:5px 8px;font-size:13px;">📎</button>
+      </div>
+    </div>
   </div>
 </div>
 <!-- Rack Elevation View Panel -->
