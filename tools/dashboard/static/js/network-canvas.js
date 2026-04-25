@@ -106,6 +106,7 @@ const NODE_STYLES = {
   'text-label':       { fill: 'transparent', stroke: 'transparent', label: 'Text',   symbol: '',  shape: 'text' },
   'text-heading':     { fill: 'transparent', stroke: 'transparent', label: 'Heading', symbol: '',  shape: 'heading' },
   'text-badge':       { fill: '#0f3460',     stroke: '#4a9eff',    label: 'Badge',   symbol: '',  shape: 'badge' },
+  'callout-bubble':   { fill: '#e94560',     stroke: '#e94560',    label: '1',       symbol: '1', shape: 'circle' },
   // Logical
   'vrf':              { fill: '#0f1a2b', stroke: '#5dade2',  label: 'VRF',           symbol: 'VRF'},
   'vlan':             { fill: '#0f2b0f', stroke: '#58d68d',  label: 'VLAN',          symbol: 'VL' },
@@ -1074,18 +1075,21 @@ function createNode(type, x, y, label, nodeId, configData) {
   const displayLabel = label || style.label;
   const config = configData || {};
 
-  // Drawing shapes
+  // Drawing shapes (including callout-bubble)
   if (style.shape && ['rect','roundedrect','circle','ellipse','diamond','triangle','hexagon','star','hline','vline','arrow'].includes(style.shape)) {
     const isLine = ['hline','vline','arrow'].includes(style.shape);
-    const w = config._width || (isLine ? (style.shape === 'vline' ? 20 : 160) : (['circle','star'].includes(style.shape) ? 80 : 120));
-    const h = config._height || (isLine ? (style.shape === 'hline' || style.shape === 'arrow' ? 20 : 100) : (['circle','star'].includes(style.shape) ? 80 : 80));
+    const isCallout = (type === 'callout-bubble');
+    const w = config._width  || (isCallout ? 40 : isLine ? (style.shape === 'vline' ? 20 : 160) : (['circle','star'].includes(style.shape) ? 80 : 120));
+    const h = config._height || (isCallout ? 40 : isLine ? (style.shape === 'hline' || style.shape === 'arrow' ? 20 : 100) : (['circle','star'].includes(style.shape) ? 80 : 80));
     const shapePath = drawingShapePath(style.shape, w, h);
 
-    // Label position: inside top-left for large zones, centered for small shapes
-    const isLargeZone = w > 150 || h > 100;
-    const labelAttrs = isLargeZone
-      ? { x: 10, y: 18, textAnchor: 'start', fontSize: 11, fontWeight: '600' }
-      : { refX: '50%', refY: '50%', textAnchor: 'middle', textVerticalAnchor: 'middle', fontSize: 10, fontWeight: 'normal' };
+    // Label position
+    const isLargeZone = !isCallout && (w > 150 || h > 100);
+    const labelAttrs = isCallout
+      ? { refX: '50%', refY: '50%', textAnchor: 'middle', textVerticalAnchor: 'middle', fontSize: 16, fontWeight: 'bold' }
+      : isLargeZone
+        ? { x: 10, y: 18, textAnchor: 'start', fontSize: 11, fontWeight: '600' }
+        : { refX: '50%', refY: '50%', textAnchor: 'middle', textVerticalAnchor: 'middle', fontSize: 10, fontWeight: 'normal' };
 
     const node = new DrawingShape({
       id: nodeId || joint.util.uuid(),
@@ -1095,13 +1099,13 @@ function createNode(type, x, y, label, nodeId, configData) {
         shape: {
           d: shapePath,
           fill: isLine ? 'none' : (config._fill || style.fill),
-          stroke: config._stroke || style.stroke,
-          strokeWidth: config._strokeWidth || 2,
-          fillOpacity: config._fillOpacity || 0.6,
+          stroke: isCallout ? 'none' : (config._stroke || style.stroke),
+          strokeWidth: config._strokeWidth || (isCallout ? 0 : 2),
+          fillOpacity: isCallout ? 1.0 : (config._fillOpacity || 0.6),
         },
         label: {
-          text: isLine ? '' : (displayLabel === style.label ? '' : displayLabel),
-          fill: config._textColor || (config._stroke || style.stroke),
+          text: isLine ? '' : (isCallout ? displayLabel : (displayLabel === style.label ? '' : displayLabel)),
+          fill: config._textColor || (isCallout ? '#ffffff' : (config._stroke || style.stroke)),
           ...labelAttrs,
         }
       }
@@ -1294,6 +1298,63 @@ function createLink(srcId, tgtId, label, protocol, linkId) {
   return link;
 }
 
+/* ── Free Connector (standalone link not anchored to nodes) ─────────────────── */
+function createFreeConnector(connType, x, y, linkId, lc) {
+  const isCurved = connType === 'conn-curved' || (lc && lc.curved);
+  const isDashed  = connType === 'conn-dashed'  || (lc && lc.dashed);
+  const color = (lc && lc.color) || '#7a8cb0';
+
+  const link = new joint.shapes.standard.Link({
+    id: linkId || joint.util.uuid(),
+    source: { x: x,       y: y + 20 },
+    target: { x: x + 140, y: y + 20 },
+    attrs: {
+      line: {
+        stroke: color,
+        strokeWidth: 2,
+        strokeDasharray: isDashed ? '8 4' : 'none',
+        targetMarker: { type: 'classic', fill: color, size: 6 },
+        sourceMarker: { type: 'none' },
+      }
+    },
+    labels: [],
+    ...(isCurved ? { connector: { name: 'smooth' } } : { connector: { name: 'normal' } }),
+  });
+
+  const config = lc || { freeConn: true, curved: isCurved, dashed: isDashed, color };
+  config.freeConn = true;
+  link.set('linkConfig', config);
+  link.set('protocol', '');
+  graph.addCell(link);
+  _applyLinkConfig(link, config);
+  return link;
+}
+
+/* ── Apply full link styling + labels from linkConfig ────────────────────────── */
+function _applyLinkConfig(link, lc) {
+  if (!link || !lc) return;
+  const color = lc.color || link.attr('line/stroke') || '#e94560';
+  const labelFill = '#c8d0e0';
+  const labelFont = { fontFamily: 'Cascadia Code, Consolas, monospace', fontSize: 10 };
+
+  // Rebuild labels
+  const labels = [];
+  if (lc.labelStart) labels.push({ attrs: { text: { text: lc.labelStart, fill: labelFill, ...labelFont } }, position: { distance: 0.05, offset: { x: 0, y: -14 } } });
+  if (lc.labelMid)   labels.push({ attrs: { text: { text: lc.labelMid,   fill: labelFill, ...labelFont } }, position: 0.5 });
+  if (lc.labelEnd)   labels.push({ attrs: { text: { text: lc.labelEnd,   fill: labelFill, ...labelFont } }, position: { distance: 0.95, offset: { x: 0, y: -14 } } });
+  link.labels(labels);
+
+  // Color
+  link.attr('line/stroke', color);
+  link.attr('line/targetMarker/fill', color);
+
+  // Dash
+  link.attr('line/strokeDasharray', lc.dashed ? '8 4' : 'none');
+
+  // Curve
+  link.set('connector', (lc.curved || lc.curve) ? { name: 'smooth' } : { name: 'normal' });
+}
+
 /* ── Drag and Drop from palette ─────────────────────────────────────────────── */
 function onDragStart(event) {
   const type = event.target.closest('[data-type]').dataset.type;
@@ -1311,6 +1372,16 @@ function onDrop(event) {
   const y = Math.round((event.clientY - canvasRect.top - paper.translate().ty) / (paper.scale().sy / 1) / 10) * 10;
 
   pushUndo();
+
+  // Free connectors drop as standalone floating links
+  if (type.startsWith('conn-')) {
+    const conn = createFreeConnector(type, x, y);
+    selectCell(conn);
+    markDirty();
+    updateStatusBar();
+    return;
+  }
+
   const style = getStyle(type);
   const node = createNode(type, x, y, style.label);
   selectCell(node);
@@ -1430,6 +1501,11 @@ function selectCell(cell) {
     document.getElementById('cfg-label').value = label;
     document.getElementById('cfg-ip').value = config.ip || '';
     updateSubnetBadge('cfg-ip-subnet-info', config.ip || '');
+    // Color pickers
+    const fillEl = document.getElementById('cfg-fill-color');
+    const textEl = document.getElementById('cfg-text-color');
+    if (fillEl) fillEl.value = config._fill || '#1a2a3a';
+    if (textEl) textEl.value = config._textColor || '#eaeaea';
     document.getElementById('cfg-protocol').value = config.protocol || '';
     document.getElementById('cfg-mtu').value = config.mtu || '';
     document.getElementById('cfg-vlan').value = config.vlan || '';
@@ -1504,6 +1580,18 @@ function selectCell(cell) {
       const lc = cell.get('linkConfig') || {};
       document.getElementById('lcfg-ip').value = lc.ip || '';
       updateSubnetBadge('lcfg-ip-subnet-info', lc.ip || '');
+      // Labels
+      const lsEl = document.getElementById('lcfg-label-start');
+      const lmEl = document.getElementById('lcfg-label-mid');
+      const leEl = document.getElementById('lcfg-label-end');
+      if (lsEl) lsEl.value = lc.labelStart || '';
+      if (lmEl) lmEl.value = lc.labelMid   || '';
+      if (leEl) leEl.value = lc.labelEnd    || '';
+      // Style
+      const lcColorEl = document.getElementById('lcfg-color');
+      if (lcColorEl) lcColorEl.value = lc.color || '#e94560';
+      const lcCurvedEl = document.getElementById('lcfg-curved');
+      if (lcCurvedEl) lcCurvedEl.checked = !!(lc.curved || lc.curve);
       document.getElementById('lcfg-vlan').value = lc.vlan || '';
       document.getElementById('lcfg-vrf').value = lc.vrf || '';
       document.getElementById('lcfg-mtu').value = lc.mtu || '';
@@ -1516,14 +1604,20 @@ function selectCell(cell) {
 function updateLinkConfig(key, val) {
   if (!selectedCell || !selectedCell.isLink()) return;
   const lc = selectedCell.get('linkConfig') || {};
-  if (key === 'trunk') {
-    lc[key] = val;
-  } else {
-    lc[key] = val;
-  }
+  lc[key] = val;
   selectedCell.set('linkConfig', lc);
   if (key === 'protocol') selectedCell.set('protocol', val);
+  // Re-apply visual attrs for style-related keys
+  if (['labelStart','labelMid','labelEnd','color','curved','dashed'].includes(key)) {
+    _applyLinkConfig(selectedCell, lc);
+  }
   markDirty();
+}
+
+function setLinkColor(color) {
+  const el = document.getElementById('lcfg-color');
+  if (el) el.value = color;
+  updateLinkConfig('color', color);
 }
 
 /* ── Subnet Calculator & Host Validator ─────────────────────────────────────── */
@@ -1612,6 +1706,95 @@ function deselectAll() {
   if (linkPanel) linkPanel.classList.add('hidden');
   updateSubnetBadge('cfg-ip-subnet-info', '');
   updateSubnetBadge('lcfg-ip-subnet-info', '');
+  const fillEl = document.getElementById('cfg-fill-color');
+  const textEl = document.getElementById('cfg-text-color');
+  if (fillEl) fillEl.value = '#1a2a3a';
+  if (textEl) textEl.value = '#eaeaea';
+}
+
+/* ── Node Color Pickers ──────────────────────────────────────────────────────── */
+function applyNodeColor(key, color) {
+  if (!selectedCell || !selectedCell.isElement()) return;
+  const config = selectedCell.get('configData') || {};
+  const type = selectedCell.get('nodeType') || '';
+  const style = getStyle(type);
+
+  if (key === 'fill') {
+    config._fill = color;
+    if (style.shape && ['rect','roundedrect','circle','ellipse','diamond','triangle','hexagon','star'].includes(style.shape)) {
+      selectedCell.attr('shape/fill', color);
+      if (type === 'callout-bubble') selectedCell.attr('shape/fillOpacity', 1.0);
+    } else if (style.shape && ['text','heading','badge'].includes(style.shape)) {
+      selectedCell.attr('body/fill', color);
+    } else {
+      selectedCell.attr('body/fill', color);
+    }
+  } else if (key === 'text') {
+    config._textColor = color;
+    selectedCell.attr('label/fill', color);
+  }
+  selectedCell.set('configData', config);
+  markDirty();
+}
+
+function setNodeColor(key, color) {
+  const pickerId = key === 'fill' ? 'cfg-fill-color' : 'cfg-text-color';
+  const el = document.getElementById(pickerId);
+  if (el) el.value = color;
+  applyNodeColor(key, color);
+}
+
+/* ── Annotation Legend ───────────────────────────────────────────────────────── */
+var _annotationLegend = [];  // [{id, num, color, text}]
+var _annLegendVisible = false;
+
+function toggleAnnotationLegend() {
+  const panel = document.getElementById('ann-legend-panel');
+  if (!panel) return;
+  _annLegendVisible = !_annLegendVisible;
+  panel.style.display = _annLegendVisible ? 'block' : 'none';
+  if (_annLegendVisible) _renderAnnotationLegend();
+}
+
+function _renderAnnotationLegend() {
+  const container = document.getElementById('ann-legend-entries');
+  if (!container) return;
+  container.innerHTML = '';
+  _annotationLegend.forEach((entry, idx) => {
+    const row = document.createElement('div');
+    row.className = 'ann-entry';
+    row.innerHTML = `
+      <div class="ann-bubble" style="background:${entry.color || '#e94560'};" onclick="openCalloutColorPicker(${idx})" title="Click to change color">${entry.num || idx + 1}</div>
+      <input type="number" class="ann-num-input" value="${entry.num || idx + 1}" min="1" max="999" oninput="_updateAnnotEntry(${idx}, 'num', +this.value)" title="Callout number"/>
+      <input type="color" class="ann-color-input" value="${entry.color || '#e94560'}" oninput="_updateAnnotEntry(${idx}, 'color', this.value)" title="Bubble color"/>
+      <input type="text" class="ann-text-input" value="${(entry.text || '').replace(/"/g,'&quot;')}" placeholder="Description…" oninput="_updateAnnotEntry(${idx}, 'text', this.value)"/>
+      <button class="ann-del-btn" onclick="_deleteAnnotEntry(${idx})" title="Delete">&times;</button>`;
+    container.appendChild(row);
+  });
+}
+
+function _updateAnnotEntry(idx, key, val) {
+  if (!_annotationLegend[idx]) return;
+  _annotationLegend[idx][key] = val;
+  // Re-render bubble color live
+  const bubble = document.querySelectorAll('.ann-bubble')[idx];
+  if (bubble && key === 'color') bubble.style.background = val;
+  if (bubble && key === 'num') bubble.textContent = val;
+  markDirty();
+}
+
+function _deleteAnnotEntry(idx) {
+  _annotationLegend.splice(idx, 1);
+  _renderAnnotationLegend();
+  markDirty();
+}
+
+function addAnnotLegendEntry() {
+  const nextNum = _annotationLegend.length + 1;
+  const colors = ['#e94560','#3498db','#2ecc71','#f1c40f','#9b59b6','#e67e22'];
+  _annotationLegend.push({ id: joint.util.uuid(), num: nextNum, color: colors[(nextNum - 1) % colors.length], text: '' });
+  _renderAnnotationLegend();
+  markDirty();
 }
 
 function updateSelectedLabel(val) {
@@ -1854,32 +2037,40 @@ function graphToJSON() {
         config: cell.get('configData') || {}
       });
     } else if (cell.isLink()) {
+      const src = cell.get('source');
+      const tgt = cell.get('target');
+      const lc  = cell.get('linkConfig') || {};
       const edgeObj = {
         id: cell.id,
-        source: cell.get('source').id || '',
-        target: cell.get('target').id || '',
-        label: cell.labels().length ? cell.labels()[0].attrs?.text?.text || '' : '',
-        protocol: cell.get('protocol') || ''
+        source: src.id || null,
+        target: tgt.id || null,
+        label: cell.labels().length ? (cell.labels()[0].attrs?.text?.text || '') : '',
+        protocol: cell.get('protocol') || '',
       };
+      if (lc.freeConn) {
+        edgeObj.freeConn = true;
+        edgeObj.srcX = (src.x != null ? src.x : (src.point ? src.point.x : 0));
+        edgeObj.srcY = (src.y != null ? src.y : (src.point ? src.point.y : 0));
+        edgeObj.tgtX = (tgt.x != null ? tgt.x : (tgt.point ? tgt.point.x : 140));
+        edgeObj.tgtY = (tgt.y != null ? tgt.y : (tgt.point ? tgt.point.y : 0));
+      }
       const cableData = cell.get('cableData');
-      if (cableData && Object.keys(cableData).length) {
-        edgeObj.cableData = cableData;
-      }
-      const linkConfig = cell.get('linkConfig');
-      if (linkConfig && Object.keys(linkConfig).length) {
-        edgeObj.config = linkConfig;
-      }
+      if (cableData && Object.keys(cableData).length) edgeObj.cableData = cableData;
+      if (Object.keys(lc).length) edgeObj.config = lc;
       edges.push(edgeObj);
     }
   });
 
-  return { nodes, edges };
+  return { nodes, edges, _annotationLegend: _annotationLegend };
 }
 
 function loadGraphJSON(data) {
   graph.clear();
   const nodes = data.nodes || [];
   const edges = data.edges || [];
+
+  // Restore annotation legend
+  _annotationLegend = Array.isArray(data._annotationLegend) ? data._annotationLegend : [];
 
   const createdIds = new Set();
   nodes.forEach(n => {
@@ -1889,6 +2080,18 @@ function loadGraphJSON(data) {
 
   let dropped = 0;
   edges.forEach(e => {
+    // Free (floating) connectors — no node endpoints
+    if (e.freeConn || (e.config && e.config.freeConn)) {
+      const lc = e.config || {};
+      const connType = lc.dashed ? 'conn-dashed' : lc.curved ? 'conn-curved' : 'conn-straight';
+      const link = createFreeConnector(connType, e.srcX || 100, e.srcY || 100, e.id, lc);
+      if (link) {
+        link.set('source', { x: e.srcX || 100, y: e.srcY || 100 });
+        link.set('target', { x: e.tgtX || 240, y: e.tgtY || 100 });
+        _applyLinkConfig(link, lc);
+      }
+      return;
+    }
     if (!e.source || !e.target) { dropped++; return; }
     if (!createdIds.has(e.source) || !createdIds.has(e.target)) {
       dropped++;
@@ -1898,7 +2101,10 @@ function loadGraphJSON(data) {
     const link = createLink(e.source, e.target, e.label, e.protocol, e.id);
     if (link) {
       if (e.cableData) link.set('cableData', e.cableData);
-      if (e.config) link.set('linkConfig', e.config);
+      if (e.config) {
+        link.set('linkConfig', e.config);
+        _applyLinkConfig(link, e.config);
+      }
     }
   });
   if (dropped > 0) {
