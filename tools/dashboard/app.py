@@ -1185,6 +1185,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Simulation blueprint failed to register: %s", _exc)
 
+    # ---- Infra IaC Generator Blueprint ----
+    try:
+        from tools.infra.blueprint import bp as _infra_iac_bp
+        app.register_blueprint(_infra_iac_bp, url_prefix="/infra")
+        app.logger.info("Infra IaC blueprint registered at /infra")
+    except Exception as _exc:
+        app.logger.warning("Infra IaC blueprint failed to register: %s", _exc)
+
     # ---- Convenience JSON routes that match the spec ----
 
     @app.route("/api/alerts", methods=["GET"])
