@@ -76,6 +76,7 @@
           <button onclick="exportInventory('terraform');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Terraform HCL" style="color:#7b42bc;">⚙ Terraform</button>
           <button onclick="showDeviceConfigModal();this.closest('.tb-export-wrap').classList.remove('open')" title="Device configs (IOS/EOS/JunOS)" style="color:#00c896;">⚙ Dev Configs</button>
           <button onclick="exportCablePlantReport();this.closest('.tb-export-wrap').classList.remove('open')" title="Cable plant report CSV" style="color:#a29bfe;">🔌 Cable Plant</button>
+          <button onclick="generateExecutiveBriefing();this.closest('.tb-export-wrap').classList.remove('open')" title="AI Executive Briefing — plain-English summary for CISO/PM" style="color:#00d4ff;">📋 Exec Briefing</button>
         </div>
       </div>
     </div>
@@ -1027,6 +1028,28 @@
     <div class="cex-actions">
       <button class="cex-btn-fix" onclick="document.getElementById('conflict-export-modal').classList.add('hidden')">&#10007; Fix First</button>
       <button class="cex-btn-proceed" id="cex-proceed-btn">Export Anyway &#8594;</button>
+    </div>
+  </div>
+</div>
+
+<!-- Executive Briefing Modal -->
+<div id="briefing-modal" class="brf-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="brf-box">
+    <div class="brf-titlebar">
+      <span class="brf-title" id="brf-title">Executive Briefing</span>
+      <span class="brf-badge">AI · CISO/PM</span>
+      <button class="brf-close" onclick="document.getElementById('briefing-modal').classList.add('hidden')">&times;</button>
+    </div>
+    <div class="brf-body" id="brf-body">
+      <div class="brf-loading">
+        <div class="brf-spinner"></div>
+        Generating executive briefing&hellip;
+      </div>
+    </div>
+    <div class="brf-actions">
+      <button class="brf-btn-copy" id="brf-copy-btn" onclick="briefingCopyToClipboard()" style="display:none;">&#x1f4cb; Copy Markdown</button>
+      <button class="brf-btn-pdf" id="brf-pdf-btn" onclick="briefingPrintPDF()" style="display:none;">&#x1f5a8; Print / Export PDF</button>
+      <button class="brf-btn-copy" onclick="document.getElementById('briefing-modal').classList.add('hidden')">Close</button>
     </div>
   </div>
 </div>
@@ -2963,6 +2986,104 @@ async function cfgDownloadAll() {
     });
   }
 })();
+
+// ── Executive Briefing Generator ─────────────────────────────────────────────
+var _briefingMarkdown = '';
+
+function _mdToHtml(md) {
+  // Minimal markdown → HTML converter for the briefing output subset
+  var html = md
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>)/g, function(m) { return '<ul>' + m + '</ul>'; })
+    // Collapse adjacent </ul><ul> from multi-bullet groups
+    .replace(/<\/ul>\s*<ul>/g, '')
+    .replace(/\n{2,}/g, '</p><p>')
+    .replace(/^(?!<[hup])/gm, '');
+  // Wrap bare text blocks in <p>
+  html = html.split(/\n/).map(function(line) {
+    if (!line.trim()) return '';
+    if (/^<[hpu]/.test(line)) return line;
+    return '<p>' + line + '</p>';
+  }).join('\n');
+  return html;
+}
+
+async function generateExecutiveBriefing() {
+  if (!TOPOLOGY_ID) { alert('Save the topology first.'); return; }
+  var modal = document.getElementById('briefing-modal');
+  var body  = document.getElementById('brf-body');
+  var title = document.getElementById('brf-title');
+  var copyBtn = document.getElementById('brf-copy-btn');
+  var pdfBtn  = document.getElementById('brf-pdf-btn');
+
+  _briefingMarkdown = '';
+  copyBtn.style.display = 'none';
+  pdfBtn.style.display  = 'none';
+  body.innerHTML = '<div class="brf-loading"><div class="brf-spinner"></div>Generating executive briefing&hellip;<br><span style="font-size:11px;opacity:0.6;margin-top:6px;display:block;">This may take up to 30 seconds</span></div>';
+  modal.classList.remove('hidden');
+
+  try {
+    var r = await fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/briefing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    var data = await r.json();
+    if (!r.ok || data.error) {
+      body.innerHTML = '<div class="brf-error">&#9888; ' + (data.error || 'Briefing generation failed.') + '</div>';
+      return;
+    }
+    _briefingMarkdown = data.markdown || '';
+    title.textContent = 'Executive Briefing — ' + (data.topo_name || 'Topology');
+    body.innerHTML = _mdToHtml(_briefingMarkdown);
+    copyBtn.style.display = '';
+    pdfBtn.style.display  = '';
+  } catch (e) {
+    body.innerHTML = '<div class="brf-error">&#9888; Request failed: ' + e.message + '</div>';
+  }
+}
+
+function briefingCopyToClipboard() {
+  if (!_briefingMarkdown) return;
+  navigator.clipboard.writeText(_briefingMarkdown).then(function() {
+    var btn = document.getElementById('brf-copy-btn');
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1800);
+  }).catch(function() {
+    // Fallback for older browsers
+    var ta = document.createElement('textarea');
+    ta.value = _briefingMarkdown;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
+
+function briefingPrintPDF() {
+  if (!_briefingMarkdown) return;
+  var title = document.getElementById('brf-title').textContent;
+  var bodyHtml = _mdToHtml(_briefingMarkdown);
+  var win = window.open('', '_blank');
+  win.document.write(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title>' +
+    '<style>body{font-family:Georgia,serif;max-width:740px;margin:40px auto;color:#111;line-height:1.7}' +
+    'h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:28px}' +
+    'ul{padding-left:20px}li{margin-bottom:4px}p{margin:0 0 10px}' +
+    '@media print{body{margin:20px}}</style></head><body>' +
+    '<h1 style="font-size:18px;margin-bottom:4px">' + title + '</h1>' +
+    '<p style="color:#666;font-size:12px;margin-bottom:24px">Generated ' + new Date().toLocaleString() + '</p>' +
+    bodyHtml + '</body></html>'
+  );
+  win.document.close();
+  win.focus();
+  setTimeout(function() { win.print(); }, 400);
+}
 
 // ── Close export dropdown on outside click ──────────────────────────────
 document.addEventListener('click', function(e) {
