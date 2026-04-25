@@ -2015,6 +2015,9 @@ function setNodeColor(key, color) {
 var _annotationLegend = [];  // [{id, num, color, text}]
 var _annLegendVisible = false;
 
+/* ── Phase Strip State ───────────────────────────────────────────────────────── */
+let _phases = [];  // [{topology_id, label, phase_order, active}]
+
 function toggleAnnotationLegend() {
   const panel = document.getElementById('ann-legend-panel');
   if (!panel) return;
@@ -2328,7 +2331,7 @@ function graphToJSON() {
     }
   });
 
-  return { nodes, edges, _annotationLegend: _annotationLegend };
+  return { nodes, edges, _annotationLegend: _annotationLegend, _phases: _phases };
 }
 
 function loadGraphJSON(data) {
@@ -2338,6 +2341,10 @@ function loadGraphJSON(data) {
 
   // Restore annotation legend
   _annotationLegend = Array.isArray(data._annotationLegend) ? data._annotationLegend : [];
+
+  // Restore phase strip state
+  _phases = Array.isArray(data._phases) ? data._phases : [];
+  renderPhaseStrip();
 
   const createdIds = new Set();
   nodes.forEach(n => {
@@ -2378,6 +2385,32 @@ function loadGraphJSON(data) {
     console.warn('loadGraphJSON: dropped ' + dropped + ' edge(s) referencing missing nodes');
   }
   updateStatusBar();
+}
+
+/* ── Phase Strip Renderer ─────────────────────────────────────────────────────── */
+function renderPhaseStrip() {
+  const strip = document.getElementById('phase-nav-strip');
+  if (!strip) return;
+  if (!_phases.length) {
+    strip.classList.remove('pns-visible');
+    strip.innerHTML = '';
+    return;
+  }
+  const PHASE_LABELS = { 'as-is': 'As-Is', 'future': 'Future', 'logical': 'Logical' };
+  const sorted = _phases.slice().sort((a, b) => (a.phase_order || 0) - (b.phase_order || 0));
+  const parts = [];
+  sorted.forEach((p, i) => {
+    if (i > 0) parts.push('<span class="pns-arrow">›</span>');
+    const display = PHASE_LABELS[p.label] || p.label;
+    if (p.active) {
+      parts.push(`<span class="pns-pill pns-active">${display}</span>`);
+    } else {
+      const href = `${NC_BASE}/canvas/${encodeURIComponent(p.topology_id)}`;
+      parts.push(`<a href="${href}" class="pns-pill">${display}</a>`);
+    }
+  });
+  strip.innerHTML = parts.join('');
+  strip.classList.add('pns-visible');
 }
 
 /* ── API: Save ────────────────────────────────────────────────────────────────── */
@@ -3154,6 +3187,8 @@ function newCanvas() {
   currentTopoId = 'new';
   document.getElementById('topo-name-display').textContent = 'Untitled Topology';
   window.history.replaceState({}, '', '/canvas/new');
+  _phases = [];
+  renderPhaseStrip();
   deselectAll();
   updateStatusBar();
   isDirty = false;
