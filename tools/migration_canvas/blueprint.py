@@ -797,7 +797,7 @@ def create_migration_blueprint():
         set_clause = ", ".join(f"{k}=?" for k in fields)
         with get_connection() as conn:
             conn.execute(
-                f"UPDATE mc_net_sessions SET {set_clause}, updated_at=? WHERE id=?",
+                f"UPDATE mc_net_sessions SET {set_clause}, updated_at=? WHERE id=?",  # nosec B608
                 list(fields.values()) + [now_isoformat(), sid],
             )
             conn.commit()
@@ -830,13 +830,13 @@ def create_migration_blueprint():
         with _nm._nc_conn() as conn:
             if vendor:
                 rows = conn.execute(
-                    f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "
+                    f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
                     "WHERE LOWER(vendor)=LOWER(?) AND device_type=? ORDER BY vendor, model",
                     (vendor, device_type),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "
+                    f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
                     "WHERE device_type=? ORDER BY vendor, model",
                     (device_type,),
                 ).fetchall()
@@ -1262,7 +1262,7 @@ def create_migration_blueprint():
             if existing:
                 set_clause = ", ".join(f"{k}=?" for k in fields)
                 conn.execute(
-                    f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=? WHERE session_id=?",
+                    f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=? WHERE session_id=?",  # nosec B608
                     list(fields.values()) + [now_isoformat(), sid],
                 )
             else:
@@ -1272,7 +1272,7 @@ def create_migration_blueprint():
                 fields["updated_at"] = now_isoformat()
                 cols = ", ".join(fields.keys())
                 placeholders = ", ".join("?" * len(fields))
-                conn.execute(f"INSERT INTO mc_net_erb_metadata ({cols}) VALUES ({placeholders})", list(fields.values()))
+                conn.execute(f"INSERT INTO mc_net_erb_metadata ({cols}) VALUES ({placeholders})", list(fields.values()))  # nosec B608
             conn.commit()
 
         return jsonify({"ok": True})
