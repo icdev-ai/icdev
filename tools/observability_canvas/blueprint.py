@@ -1412,4 +1412,37 @@ def create_observability_blueprint():
         result = observability_chat_to_delta(message, data.get("graph_json"))
         return jsonify(result), (500 if "error" in result else 200)
 
+    # ====================================================================
+    # API — MITRE ATT&CK / Sigma (standalone technique endpoint)
+    # ====================================================================
+
+    @bp.route("/api/sigma/generate", methods=["POST"])
+    @oc_login_required
+    def oc_api_sigma_generate():
+        """Generate a Sigma YAML rule for a single MITRE ATT&CK technique.
+
+        Body params:
+          technique_id: str — MITRE technique ID (e.g. 'T1055')
+
+        Returns:
+          {"technique_id": str, "sigma_yaml": str}
+        """
+        from tools.observability.sigma_generator import generate_sigma
+
+        data = request.get_json(force=True, silent=True) or {}
+        tid = (data.get("technique_id") or "").strip()
+        if not tid:
+            return jsonify({"error": "technique_id is required"}), 400
+
+        try:
+            sigma_yaml = generate_sigma(tid)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            logger.warning("sigma generate failed for %s: %s", tid, exc)
+            return jsonify({"error": "sigma generation failed"}), 500
+
+        _audit("sigma_generate", details=tid)
+        return jsonify({"technique_id": tid, "sigma_yaml": sigma_yaml})
+
     return bp

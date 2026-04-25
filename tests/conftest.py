@@ -1489,6 +1489,14 @@ CREATE TABLE IF NOT EXISTS nc_simulation_artifacts (
     content       TEXT NOT NULL DEFAULT '',
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS odc_mitre_techniques (
+    id              TEXT PRIMARY KEY,
+    technique_id    TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    tactic          TEXT NOT NULL DEFAULT '',
+    sigma_template  TEXT NOT NULL DEFAULT '',
+    ingested_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ---------------------------------------------------------------------------

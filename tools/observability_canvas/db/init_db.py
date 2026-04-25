@@ -248,6 +248,18 @@ CREATE TABLE IF NOT EXISTS odc_sdc_verifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_odc_sdcv_design ON odc_sdc_verifications(design_id);
+
+CREATE TABLE IF NOT EXISTS odc_mitre_techniques (
+    id              TEXT PRIMARY KEY,
+    technique_id    TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    tactic          TEXT NOT NULL DEFAULT '',
+    sigma_template  TEXT NOT NULL DEFAULT '',
+    ingested_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_odc_mt_technique ON odc_mitre_techniques(technique_id);
+CREATE INDEX IF NOT EXISTS idx_odc_mt_tactic    ON odc_mitre_techniques(tactic);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
