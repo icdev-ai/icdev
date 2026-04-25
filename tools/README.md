@@ -4,31 +4,53 @@ Deterministic Python scripts that execute one job each. AI orchestrates; tools e
 
 ---
 
-## Import Path Migration
+## Import Convention
 
-The `tools` package has been relocated to `icdev.tools` as part of the ICDEV™ package
-restructuring. All new code should use the `icdev.tools` namespace, and existing
-`from tools` imports should be updated incrementally to `from icdev.tools`.
+**Rule:** All imports from the tools package **must** use the `icdev.tools.*` namespace.
+Do not use `from tools.*` in new code.
 
 ```python
-# Deprecated — avoid in new code
+# WRONG — do not use in new code
 from tools.llm.router import LLMRouter
 from tools.db.storage import get_connection
 
-# Preferred — use this for all new imports
+# CORRECT — use this for all imports
 from icdev.tools.llm.router import LLMRouter
 from icdev.tools.db.storage import get_connection
 ```
 
-### Temporary Fallback (tools/__init__.py)
+### PYTHONPATH Requirement (Test Environments)
 
-A backward-compatibility shim in `tools/__init__.py` transparently redirects
-`from tools.*` imports to `icdev.tools.*` so existing scripts continue to work
-during the migration period without requiring a big-bang rename. When a
-`tools.<module>` lookup is requested, the shim first tries
+Tests must be able to resolve `icdev` as a top-level package. Ensure the repo
+root is on `PYTHONPATH` before running pytest or behave:
+
+```bash
+# Option 1 — set inline
+PYTHONPATH=$(pwd) pytest tests/ -v
+
+# Option 2 — export in your shell profile or CI env
+export PYTHONPATH=/path/to/ICDev
+
+# Option 3 — use the project's installed editable package (preferred)
+pip install -e .
+# After this, both `icdev.tools.*` and the shim resolve correctly
+# without any PYTHONPATH manipulation.
+```
+
+If you see `ModuleNotFoundError: No module named 'icdev'` in tests, the repo
+root is not on `PYTHONPATH` or the package has not been installed in editable
+mode.
+
+### Import Path Migration (Background)
+
+The `tools` package has been relocated to `icdev.tools` as part of the ICDEV™
+package restructuring. A backward-compatibility shim in `tools/__init__.py`
+transparently redirects `from tools.*` imports to `icdev.tools.*` so existing
+scripts continue to work during the migration period without a big-bang rename.
+When a `tools.<module>` lookup is requested, the shim first tries
 `icdev.tools.<module>` and falls back to direct `tools.<module>` resolution if
-the `icdev.tools` path does not yet exist. This means all existing code keeps
-running while migration proceeds file-by-file.
+the `icdev.tools` path does not yet exist. Existing code keeps running while
+migration proceeds file-by-file.
 
 ### Deprecation Warning
 
