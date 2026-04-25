@@ -317,6 +317,11 @@ function renderTaskKanban(tasks) {
     var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
     tasks.forEach(function(t) {
         var s = t.status || 'backlog';
+        // 'decomposed' and 'needs_decomposition' are internal scheduler states —
+        // decomposed = parent split into children (auto-closes when children done);
+        // needs_decomposition = queued for LLM decomposer next cycle.
+        // Both belong in Done visually (work is handed off); never bucket as Backlog.
+        if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
         if (columns[s]) columns[s].push(t); else columns.backlog.push(t);
     });
 
