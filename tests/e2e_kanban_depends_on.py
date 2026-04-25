@@ -119,7 +119,7 @@ def _cleanup_stale_dep_rows() -> int:
     Without this, leftover tasks are picked up by the kanban scheduler and
     dispatched as real work items, causing false-positive task failures.
     """
-    from icdev.tools.db.storage import get_connection
+    from tools.db.storage import get_connection
 
     conn = get_connection()
     try:
