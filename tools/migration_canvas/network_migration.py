@@ -1100,24 +1100,12 @@ def simulate_commit_check(
 # Cutover sequence builder
 # ---------------------------------------------------------------------------
 
-def build_cutover_sequence(
+def _assemble_cutover_steps(
     port_map: list[dict],
-    strategy: str = "traffic_volume_asc",
-    parsed_config: dict | None = None,
+    strategy: str,
+    vendor: str,
 ) -> list[dict]:
-    """Generate an ordered cutover step list from the port map.
-
-    Strategies:
-      traffic_volume_asc  — low-traffic circuits first (default, safest)
-      alphabetical        — by source interface name
-      description_alpha   — by circuit description
-
-    Each step includes drain, cutover, verify, and rollback actions
-    appropriate for the source vendor.
-    """
-    vendor = (parsed_config or {}).get("vendor", "")
-
-    # Only include data interfaces (not loopback/management)
+    """Core step-assembly logic shared by both build_cutover_sequence calling modes."""
     data_rows = [
         r for r in port_map
         if r.get("status") not in ("no-migration",) and r.get("tgt_interface")
@@ -1127,7 +1115,6 @@ def build_cutover_sequence(
         data_rows = sorted(data_rows, key=lambda r: r.get("src_interface", ""))
     elif strategy == "description_alpha":
         data_rows = sorted(data_rows, key=lambda r: r.get("src_description", ""))
-    # Default: leave in port_map order (assumed low→high traffic by assignment)
 
     steps: list[dict] = []
     for seq, row in enumerate(data_rows, start=1):
@@ -1135,10 +1122,7 @@ def build_cutover_sequence(
         tgt_if = row.get("tgt_interface", "")
         circuit = row.get("src_circuit_id", "") or row.get("src_description", src_if)
         ip = row.get("src_ip_address", "")
-
-        drain, cutover, verify, rollback = _build_step_actions(
-            src_if, tgt_if, ip, circuit, vendor
-        )
+        drain, cutover, verify, rollback = _build_step_actions(src_if, tgt_if, ip, circuit, vendor)
         steps.append({
             "seq_no": seq,
             "circuit_id": row.get("src_circuit_id", ""),
@@ -1152,7 +1136,6 @@ def build_cutover_sequence(
             "status": "pending",
         })
 
-    # Always add management / loopback last
     mgmt_rows = [r for r in port_map if r.get("status") == "no-migration"]
     for seq2, row in enumerate(mgmt_rows, start=len(steps) + 1):
         src_if = row.get("src_interface", "")
@@ -1170,6 +1153,50 @@ def build_cutover_sequence(
         })
 
     return steps
+
+
+def build_cutover_sequence(
+    port_map: list[dict] | dict,
+    strategy: str = "traffic_volume_asc",
+    parsed_config: dict | None = None,
+) -> list[dict]:
+    """Generate an ordered cutover step list from a port map or migration plan.
+
+    Two calling modes:
+
+    **Dict mode** — *port_map* is a ``migration_plan`` dict with keys:
+        ``port_map`` (list[dict] of port-assignment rows),
+        ``strategy`` (str, optional), ``parsed_config`` (dict, optional).
+        Returns steps enriched with ISO-8601 ``scheduled_at`` timestamps
+        projected sequentially from the current UTC time.
+
+    **List mode** (original) — *port_map* is a list of port-assignment row
+    dicts (output of :func:`generate_port_map`). Returns steps without timestamps.
+
+    Strategies:
+      traffic_volume_asc  — low-traffic circuits first (default, safest)
+      alphabetical        — by source interface name
+      description_alpha   — by circuit description
+
+    Each step includes drain, cutover, verify, and rollback actions
+    appropriate for the source vendor.
+    """
+    if isinstance(port_map, dict):
+        migration_plan = port_map
+        _port_map: list[dict] = migration_plan.get("port_map", [])
+        _strategy: str = migration_plan.get("strategy", strategy)
+        _parsed: dict | None = migration_plan.get("parsed_config", parsed_config)
+        _vendor: str = (_parsed or {}).get("vendor", "")
+        steps = _assemble_cutover_steps(_port_map, _strategy, _vendor)
+        from datetime import timedelta
+        cursor = datetime.now(timezone.utc)
+        for step in steps:
+            step["scheduled_at"] = cursor.isoformat()
+            cursor += timedelta(minutes=step.get("duration_min", 5))
+        return steps
+
+    vendor = (parsed_config or {}).get("vendor", "")
+    return _assemble_cutover_steps(port_map, strategy, vendor)
 
 
 def _build_step_actions(
@@ -1449,8 +1476,74 @@ def compute_readiness(session_id: str) -> dict[str, Any]:
 # ERB/CCB package assembly
 # ---------------------------------------------------------------------------
 
-def generate_erb_package(session_id: str) -> dict[str, Any]:
-    """Assemble the full ERB/CCB package dict from all session sub-tables."""
+def generate_erb_package(
+    session_id: str | dict,
+    metadata: dict | None = None,
+) -> dict[str, Any]:
+    """Assemble an ERB/CCB package dict from a session ID or converted config.
+
+    Two calling modes:
+
+    **Dict mode** — *session_id* is a ``converted_config`` dict (output of
+    :func:`convert_config`) and *metadata* is an ERB metadata dict with keys:
+        ``change_type`` (str), ``requestor`` (str), ``risk_tier`` (str),
+        ``business_justification`` (str), ``mw_start`` (str), ``mw_end`` (str),
+        ``rollback_plan`` (str, optional), ``impact_summary`` (str, optional).
+    Returns a self-contained ERB package without any DB access.
+
+    **String mode** (original) — *session_id* is a migration session UUID.
+    Assembles the full ERB/CCB package dict from all session sub-tables.
+    """
+    if isinstance(session_id, dict):
+        converted_config: dict[str, Any] = session_id
+        meta: dict[str, Any] = metadata or {}
+        interfaces: list[dict] = converted_config.get("interfaces", [])
+        port_map_applied: dict = converted_config.get("port_map_applied", {})
+        unmapped: list = converted_config.get("unmapped", [])
+
+        risk_tier = meta.get("risk_tier", "medium")
+        if not risk_tier:
+            risk_tier = "high" if unmapped else "low"
+
+        return {
+            "converted_config": converted_config,
+            "change_summary": {
+                "vendor": converted_config.get("vendor", ""),
+                "hostname": converted_config.get("hostname", ""),
+                "change_type": meta.get("change_type", "hardware_replacement"),
+                "requestor": meta.get("requestor", ""),
+                "date": _now()[:10],
+            },
+            "impact_analysis": {
+                "total_interfaces": len(interfaces),
+                "data_interfaces": sum(
+                    1 for i in interfaces
+                    if not re.search(r"^(lo|loopback|fxp|me\d|mgmt|irb|vlan)", i.get("name", ""), re.I)
+                ),
+                "ports_remapped": len(port_map_applied),
+                "unmapped_ports": len(unmapped),
+                "unmapped_list": unmapped,
+                "mw_start": meta.get("mw_start", ""),
+                "mw_end": meta.get("mw_end", ""),
+                "impact_summary": meta.get("impact_summary", ""),
+            },
+            "risk_assessment": {
+                "risk_tier": risk_tier,
+                "business_justification": meta.get("business_justification", ""),
+            },
+            "port_mapping": [
+                {"src_interface": src, "tgt_interface": tgt}
+                for src, tgt in port_map_applied.items()
+            ],
+            "rollback_plan": meta.get(
+                "rollback_plan",
+                f"Restore {converted_config.get('hostname', 'source device')} from pre-migration config backup.",
+            ),
+            "approval_status": "draft",
+            "generated_at": _now(),
+        }
+
+    # --- String mode: DB-backed assembly ---
     with _mc_conn() as conn:
         session = dict(conn.execute(
             "SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)
