@@ -769,9 +769,90 @@ function _updateKgAutoBadge(cls) {
   if (badge) badge.style.display = _classRank(cls) >= 1 ? 'inline' : 'none';
 }
 
-function openAuditPanel() {
+/* ── R-NAME: device-type → naming prefix ────────────────────────────────── */
+const _RNAME_PREFIX = {
+  'router':'rtr','switch-l2':'sw','switch-l3':'sw3','firewall':'fw',
+  'load-balancer':'lb','wap':'ap','server':'srv','patch-panel':'pp',
+  'endpoint-pc':'pc','endpoint-phone':'ph','endpoint-iot':'iot',
+  'endpoint-camera':'cam','wlc':'wlc','sdwan-edge':'sdw',
+  'network-tap':'tap','siem':'siem','hsm':'hsm',
+  'type1-encryptor':'enc','macsec':'mac','vrf':'vrf','vlan':'vl',
+  'subnet':'snet','security-zone':'sz','gre-tunnel':'tun',
+  'ipsec-tunnel':'tun','tls-terminator':'tls',
+};
+
+function _rNameCheck(label, nodeType) {
+  const VALID = /^[a-z][a-z0-9]*(-[a-z0-9]+)+$/;
+  if (VALID.test(label)) return null;
+
+  const prefix = _RNAME_PREFIX[nodeType] || 'dev';
+  const cleaned = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const suggestedName = cleaned.includes('-') ? cleaned : `site-${prefix}-01`;
+  return {
+    rule: 'R-NAME',
+    severity: 'warning',
+    message: `"${label}" violates naming convention. Labels must be lowercase alphanumeric with hyphens (e.g. site-${prefix}-01).`,
+    suggestedName,
+    autoFix: true,
+  };
+}
+
+function _renderAuditViolations(violations, nodeId) {
+  const list = document.getElementById('audit-violations-list');
+  if (!list) return;
+  if (!violations.length) {
+    list.innerHTML = '<div style="color:#27ae60;font-size:13px;padding:8px 0;">&#x2705; No policy violations found.</div>';
+    return;
+  }
+  list.innerHTML = violations.map(v => `
+    <div style="background:#1a1a2e;border:1px solid ${v.severity==='error'?'#e74c3c':'#f39c12'};border-radius:6px;padding:12px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;background:${v.severity==='error'?'#e74c3c':'#f39c12'};color:#000;">${v.rule}</span>
+        <span style="font-size:11px;color:#7a8cb0;text-transform:uppercase;">${v.severity}</span>
+      </div>
+      <div style="font-size:12px;color:#cdd6f4;margin-bottom:8px;">${v.message}</div>
+      ${v.suggestedName ? `
+        <div style="font-size:11px;color:#7a8cb0;margin-bottom:8px;">
+          Auto-fix suggestion: <span style="font-family:monospace;color:#2ecc71;font-weight:600;">${v.suggestedName}</span>
+        </div>
+        ${v.autoFix ? `<button onclick="_applyAuditAutoFix('${nodeId}','${v.suggestedName}')"
+          style="font-size:11px;padding:4px 12px;background:#2ecc71;color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:600;">
+          &#x26A1; Auto Fix</button>` : ''}
+      ` : ''}
+    </div>
+  `).join('');
+}
+
+function _applyAuditAutoFix(nodeId, suggestedName) {
+  const cell = graph.getCell(nodeId);
+  if (!cell || !cell.isElement()) return;
+  cell.attr('label/text', suggestedName);
+  markDirty();
+  openAuditPanel(nodeId);
+}
+
+function openAuditPanel(nodeId) {
   hideBlastContextMenu();
-  console.log('[NDC] openAuditPanel — node:', _blastCtxNodeId);
+  nodeId = nodeId || _blastCtxNodeId;
+  if (!nodeId) return;
+  const cell = graph.getCell(nodeId);
+  if (!cell || !cell.isElement()) return;
+
+  const label = cell.attr('label/text') || nodeId;
+  const nodeType = cell.get('type') || '';
+
+  document.getElementById('audit-node-title').textContent = label;
+
+  const violations = [];
+  const rName = _rNameCheck(label, nodeType);
+  if (rName) violations.push(rName);
+
+  _renderAuditViolations(violations, nodeId);
+  document.getElementById('audit-overlay').classList.remove('hidden');
+}
+
+function closeAuditPanel() {
+  document.getElementById('audit-overlay').classList.add('hidden');
 }
 
 /* ── Link Policy Panel ───────────────────────────────────────────────────────── */

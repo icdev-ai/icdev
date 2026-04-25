@@ -1396,6 +1396,20 @@
   </div>
 </div>
 
+<!-- Policy Audit Panel (R-NAME and other policy rules) -->
+<div id="audit-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x26A0; Policy Audit &mdash; Violations</h3>
+      <button class="close-btn" onclick="closeAuditPanel()">&#x2715;</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;padding:16px;">
+      <div id="audit-node-title" style="font-size:13px;font-weight:600;color:#e94560;margin-bottom:14px;"></div>
+      <div id="audit-violations-list"></div>
+    </div>
+  </div>
+</div>
+
 <!-- CR Markup Mode Panel (slide-out left) -->
 <div id="nc-cr-panel" class="nc-cr-panel hidden">
   <div class="nc-cr-header">
