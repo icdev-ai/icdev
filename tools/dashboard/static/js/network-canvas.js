@@ -874,6 +874,17 @@ function applyAutoFix(nodeId, ruleId) {
   openAuditPanel(nodeId);
 }
 
+function autoFixAll() {
+  const snapshot = Object.entries(auditResults);
+  for (const [nodeId, violations] of snapshot) {
+    for (const v of violations) {
+      if (v.autoFix) {
+        applyAutoFix(nodeId, v.rule);
+      }
+    }
+  }
+}
+
 function openAuditPanel(nodeId) {
   hideBlastContextMenu();
   nodeId = nodeId || _blastCtxNodeId;
