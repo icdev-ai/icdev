@@ -5550,3 +5550,144 @@ function _deleteMultiSelected() {
   markDirty();
   setStatus('Deleted ' + n + ' nodes');
 }
+
+/* ── PatternAdvisor ──────────────────────────────────────────────────────────── */
+class PatternAdvisor {
+  constructor() {
+    this._debounceTimer = null;
+    this._debounceMs = 5000;
+  }
+
+  trackEdit() {
+    if (this._debounceTimer !== null) {
+      clearTimeout(this._debounceTimer);
+    }
+    this._debounceTimer = setTimeout(() => {
+      this._debounceTimer = null;
+      this.analyzePatterns();
+    }, this._debounceMs);
+  }
+
+  analyzePatterns() {
+    const findings = [];
+    const ENCRYPTOR_TYPES = new Set([...TYPE_SETS.TYPE1_ENCRYPTOR, ...TYPE_SETS.FIPS_ENCRYPTOR]);
+    const CRITICAL_TYPES  = new Set([...TYPE_SETS.FIREWALL, ...TYPE_SETS.ROUTING]);
+    const HOST_TYPES = new Set(['server', 'endpoint-pc', 'endpoint-phone', 'endpoint-iot', 'endpoint-camera']);
+
+    const elements = graph.getElements().filter(el => {
+      const t = el.get('nodeType') || '';
+      return t && !/^(draw-|text-|group-|annotation|callout)/.test(t);
+    });
+
+    function nbrs(el) {
+      return graph.getConnectedLinks(el).map(link => {
+        const srcId = (link.get('source') || {}).id;
+        const tgtId = (link.get('target') || {}).id;
+        const otherId = srcId === el.id ? tgtId : srcId;
+        const cell = otherId ? graph.getCell(otherId) : null;
+        return cell && cell.isElement() ? cell : null;
+      }).filter(Boolean);
+    }
+
+    // Rule 1: IL4+ device (requiresKG or classification >= CUI) without adjacent KG/Type-1 encryptor
+    elements.forEach(el => {
+      const policy = ((el.get('configData') || {}).policy) || {};
+      if (!policy.requiresKG && _classRank(policy.classification || '') < 1) return;
+      const hasKG = nbrs(el).some(n => TYPE_SETS.TYPE1_ENCRYPTOR.has(n.get('nodeType') || ''));
+      if (!hasKG) {
+        findings.push({
+          id: `il4-no-kg-${el.id}`,
+          type: 'warning',
+          message: `"${el.attr('label/text') || el.id}" is IL4+ but has no KG/Type-1 encryptor connected`,
+          nodeIds: [el.id],
+        });
+      }
+    });
+
+    // Rule 2: Routable host with no gateway (router) connected
+    elements.forEach(el => {
+      if (!HOST_TYPES.has(el.get('nodeType') || '')) return;
+      const hasGW = nbrs(el).some(n => TYPE_SETS.ROUTING.has(n.get('nodeType') || ''));
+      if (!hasGW) {
+        findings.push({
+          id: `no-gateway-${el.id}`,
+          type: 'warning',
+          message: `"${el.attr('label/text') || el.id}" is a routable device with no gateway (router) connected`,
+          nodeIds: [el.id],
+        });
+      }
+    });
+
+    // Rule 3: Critical node (firewall/router) with only a single uplink — no redundancy
+    elements.forEach(el => {
+      if (!CRITICAL_TYPES.has(el.get('nodeType') || '')) return;
+      if (graph.getConnectedLinks(el).length === 1) {
+        findings.push({
+          id: `single-uplink-${el.id}`,
+          type: 'warning',
+          message: `Critical node "${el.attr('label/text') || el.id}" has only a single uplink — no redundancy`,
+          nodeIds: [el.id],
+        });
+      }
+    });
+
+    // Rule 4: Firewall with no adjacent IDS/IPS sensor
+    elements.forEach(el => {
+      if (!TYPE_SETS.FIREWALL.has(el.get('nodeType') || '')) return;
+      const hasIdsIps = nbrs(el).some(n => {
+        const lbl = n.attr('label/text') || '';
+        return /\bids\b|\bips\b|sensor/i.test(lbl) || /^(ids|ips)$/.test(n.get('nodeType') || '');
+      });
+      if (!hasIdsIps) {
+        findings.push({
+          id: `fw-no-ids-${el.id}`,
+          type: 'warning',
+          message: `Firewall "${el.attr('label/text') || el.id}" has no IDS/IPS sensor connected (SI-4)`,
+          nodeIds: [el.id],
+        });
+      }
+    });
+
+    // Rule 5: DMZ node directly connected to internal/trusted zone without a firewall between
+    elements.forEach(el => {
+      const policy = ((el.get('configData') || {}).policy) || {};
+      const isDmz = policy.zone === 'dmz' || /\bdmz\b/i.test(el.attr('label/text') || '');
+      if (!isDmz) return;
+      const internalNeighbors = nbrs(el).filter(n => {
+        if (TYPE_SETS.FIREWALL.has(n.get('nodeType') || '')) return false;
+        const npol = ((n.get('configData') || {}).policy) || {};
+        return npol.zone === 'trusted' || npol.zone === 'management' || npol.zone === 'internal';
+      });
+      if (internalNeighbors.length > 0) {
+        findings.push({
+          id: `dmz-direct-internal-${el.id}`,
+          type: 'warning',
+          message: `DMZ node "${el.attr('label/text') || el.id}" is directly connected to internal zone without a firewall (SC-7)`,
+          nodeIds: [el.id, ...internalNeighbors.map(n => n.id)],
+        });
+      }
+    });
+
+    // Rule 6: Cross-domain link without an encryptor at either endpoint
+    graph.getLinks().forEach(link => {
+      const srcId = (link.get('source') || {}).id;
+      const tgtId = (link.get('target') || {}).id;
+      if (!srcId || !tgtId) return;
+      const src = graph.getCell(srcId);
+      const tgt = graph.getCell(tgtId);
+      if (!src || !tgt || !src.isElement() || !tgt.isElement()) return;
+      const srcCls = _nodeClassification(src);
+      const tgtCls = _nodeClassification(tgt);
+      if (!srcCls || !tgtCls || _classRank(srcCls) === _classRank(tgtCls)) return;
+      if (ENCRYPTOR_TYPES.has(src.get('nodeType') || '') || ENCRYPTOR_TYPES.has(tgt.get('nodeType') || '')) return;
+      findings.push({
+        id: `cross-domain-no-enc-${link.id}`,
+        type: 'warning',
+        message: `Cross-domain link "${src.attr('label/text') || srcId}" (${srcCls}) ↔ "${tgt.attr('label/text') || tgtId}" (${tgtCls}) has no encryptor (CA-3, SC-8)`,
+        nodeIds: [srcId, tgtId],
+      });
+    });
+
+    return findings;
+  }
+}
