@@ -87,6 +87,7 @@
       <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
       <button class="tb-btn" id="tb-pps-btn" onclick="openPpsPanel()" title="PPS Matrix Generator — select enclave or device pair, auto-generate ports/protocols/services matrix" style="color:#00d4ff;">&#x1f4ca; PPS Matrix</button>
       <button class="tb-btn" onclick="openScorecard()" title="Design Scorecard — check design completeness (routing, redundancy, security)" style="color:#27ae60;">&#x2705; Scorecard</button>
+      <button class="tb-btn" id="tb-board-ready-btn" onclick="openBoardReadyCheck()" title="Board Ready? — pre-flight check before ERB/CCB: conflicts, IP completeness, naming, save status" style="color:#a29bfe;">&#x1f4cb; Board Ready?</button>
       <button class="tb-btn" onclick="openTechDebt()" title="Tech Debt — EOL/EOS analysis + lifecycle risk" style="color:#e67e22;">&#x23f3; Tech Debt</button>
       <button class="tb-btn" onclick="openIpv6Readiness()" title="IPv6 Readiness — device capability + migration plan" style="color:#3498db;">v6 IPv6</button>
     </div>
@@ -963,9 +964,38 @@
     <span id="sb-links">Links: 0</span>
     <span id="sb-saved">Not saved</span>
     <span id="sb-zoom">Zoom: 100%</span>
+    <span id="sb-conflicts" class="sb-conflict-warn" style="display:none;" title="Click to view/hide conflict panel" onclick="document.getElementById('conflict-panel').classList.toggle('hidden')">&#9888; 0 conflicts</span>
   </div>
 
 </div><!-- end canvas-layout -->
+
+<!-- Conflict Export Warning Modal -->
+<div id="conflict-export-modal" class="cex-overlay hidden">
+  <div class="cex-box">
+    <div class="cex-header">&#9888; Export with Conflicts?</div>
+    <p class="cex-sub" id="cex-sub">Your design has conflicts that will be present in the export.</p>
+    <div class="cex-list" id="cex-list"></div>
+    <div class="cex-actions">
+      <button class="cex-btn-fix" onclick="document.getElementById('conflict-export-modal').classList.add('hidden')">&#10007; Fix First</button>
+      <button class="cex-btn-proceed" id="cex-proceed-btn">Export Anyway &#8594;</button>
+    </div>
+  </div>
+</div>
+
+<!-- Board Ready Modal -->
+<div id="board-ready-modal" class="brm-overlay hidden">
+  <div class="brm-box">
+    <div class="brm-titlebar">
+      <span id="brm-headline" class="brm-headline">Board Ready Check</span>
+      <button class="brm-close" onclick="document.getElementById('board-ready-modal').classList.add('hidden')">&times;</button>
+    </div>
+    <div class="brm-list" id="brm-list"></div>
+    <div class="brm-actions">
+      <button class="brm-btn-close" onclick="document.getElementById('board-ready-modal').classList.add('hidden')">Close</button>
+      <button class="brm-btn-ato" id="brm-ato-btn" style="display:none;" onclick="document.getElementById('board-ready-modal').classList.add('hidden'); generateAtoPackage();">&#x1f4cb; Generate ATO Package</button>
+    </div>
+  </div>
+</div>
 
 <!-- Security Boundary Fence Dialog -->
 <div id="fence-overlay" class="fence-overlay hidden">
@@ -1552,6 +1582,9 @@
   }
 
   function generateAtoPackage() {
+    if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+      _guardExport('ATO Package', generateAtoPackage); return;
+    }
     if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
     // Check if canvas has nodes
     const elements = graph.getElements();
@@ -1565,6 +1598,9 @@
   function closeAtoDialog() { document.getElementById('ato-overlay').classList.add('hidden'); }
 
   async function exportInventory(fmt) {
+    if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+      _guardExport((fmt === 'ansible' ? 'Ansible' : 'Terraform') + ' export', () => exportInventory(fmt)); return;
+    }
     if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
     const endpoint = NC_BASE + '/api/export/' + TOPOLOGY_ID + '/' + fmt;
     try {
@@ -1585,6 +1621,9 @@
   }
 
   async function exportDeviceConfigs() {
+    if (!_conflictExportBypassed && Object.keys(_conflicts || {}).length > 0) {
+      _guardExport('Device Configs export', exportDeviceConfigs); return;
+    }
     if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
     setStatus('Generating device configs…');
     try {
