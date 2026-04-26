@@ -1873,6 +1873,13 @@ python tools/trading/news/perspective_scorer.py --score --json
 
 ---
 
+## FathomDesk — OpenBB Gateway
+```bash
+python tools/fathomdesk/openbb_gateway.py --ticker AAPL --method get_price --json
+```
+
+---
+
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
 ```bash
 # Publish a skill to tenant-local catalog
