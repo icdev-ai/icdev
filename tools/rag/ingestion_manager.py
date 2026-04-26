@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path
@@ -30,6 +31,28 @@ from tools.rag.vector_store_factory import VectorStoreFactory
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 MEMORY_DB = BASE_DIR / "data" / "memory.db"
+
+# RAGKG_HOOK_ENABLED=false disables KG enrichment without touching RAG pipeline.
+RAGKG_HOOK_ENABLED = os.environ.get("RAGKG_HOOK_ENABLED", "true").lower() not in ("false", "0")
+
+
+def _kg_enrich_chunks(embeddable: list) -> None:
+    """Call KG bridge for each newly-inserted chunk. KG failures are silenced."""
+    if not RAGKG_HOOK_ENABLED or not embeddable:
+        return
+    try:
+        import tools.rag.rag_to_kg_ingester as _rki
+    except ImportError:
+        return
+    kg_conn = get_connection()
+    try:
+        for chunk in embeddable:
+            try:
+                _rki.ingest_chunk(kg_conn, chunk.chunk_id)
+            except Exception:
+                pass
+    finally:
+        kg_conn.close()
 
 
 def _get_db_path(db_name: str) -> Path:
@@ -274,6 +297,8 @@ def ingest_source(
             inserted = store.upsert(embeddable)
             total_chunks += inserted
 
+            _kg_enrich_chunks(embeddable)
+
             # Log ingestion
             _log_ingestion(
                 db_path=ICDEV_DB,
@@ -454,6 +479,8 @@ def ingest_single_record(
     embeddable = [c for c in new_chunks if c.embedding is not None]
     inserted = store.upsert(embeddable) if embeddable else 0
 
+    _kg_enrich_chunks(embeddable)
+
     if inserted > 0:
         _log_ingestion(
             db_path=ICDEV_DB,
@@ -477,13 +504,25 @@ def main():
     parser.add_argument("--source", help="Source type to ingest")
     parser.add_argument("--sweep", action="store_true", help="Sweep all sources")
     parser.add_argument("--status", action="store_true", help="Show ingestion status")
+    parser.add_argument("--backfill-kg", action="store_true", help="Backfill KG from all RAG chunks")
     parser.add_argument("--tenant-id", default="", help="Tenant ID")
     parser.add_argument("--project-id", default="", help="Project ID")
     parser.add_argument("--limit", type=int, default=0, help="Max rows per source")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
-    if args.status:
+    if args.backfill_kg:
+        import tools.rag.rag_to_kg_ingester as _rki
+        result = _rki.run_backfill(as_json=args.json_output)
+        if args.json_output:
+            print(json.dumps(result, indent=2))
+        else:
+            print(
+                f"KG backfill complete: {result.get('chunks_processed', 0)} chunks, "
+                f"{result.get('nodes_written', 0)} nodes, "
+                f"{result.get('edges_written', 0)} edges"
+            )
+    elif args.status:
         result = get_status(tenant_id=args.tenant_id)
         if args.json_output:
             print(json.dumps(result, indent=2))
