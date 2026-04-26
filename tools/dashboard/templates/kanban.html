@@ -310,9 +310,40 @@ function promoteAllSuggested() {
         });
 }
 
+// kv-viz-02: live counters for in_progress cards
+var _kvIntervals = {};
+function _clearKvIntervals() {
+    Object.keys(_kvIntervals).forEach(function(id) { clearInterval(_kvIntervals[id]); });
+    _kvIntervals = {};
+}
+function _setupKvCounters(boardEl) {
+    boardEl.querySelectorAll('[data-kv-started]').forEach(function(sentinel) {
+        var taskId = sentinel.getAttribute('data-kv-task-id');
+        var startedAt = sentinel.getAttribute('data-kv-started');
+        var barEl = document.getElementById('kv-bar-' + taskId);
+        var textEl = document.getElementById('kv-tif-' + taskId);
+        if (!textEl || !startedAt) return;
+        var startMs = new Date(startedAt).getTime();
+        function tick() {
+            var elapsed = (Date.now() - startMs) / 1000;
+            var mins = Math.floor(elapsed / 60);
+            var secs = Math.floor(elapsed % 60);
+            textEl.textContent = 'Running ' + mins + 'm ' + secs + 's';
+            if (barEl) {
+                var pct = Math.min(100, (elapsed / 900) * 100);
+                barEl.style.width = pct + '%';
+                barEl.style.background = pct >= 85 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e';
+            }
+        }
+        tick();
+        _kvIntervals[taskId] = setInterval(tick, 1000);
+    });
+}
+
 function renderTaskKanban(tasks) {
     var board = document.getElementById('kanban-board');
     if (!board) return;
+    _clearKvIntervals();
 
     var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
     tasks.forEach(function(t) {
@@ -395,27 +426,56 @@ function renderTaskKanban(tasks) {
             // OPT-62: mid-run message injection button (in_progress only)
             var msgBtn = '';
             if (status === 'in_progress') {
-                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">\uD83D\uDCAC</button>';
+                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">💬</button>';
+            }
+
+            // kv-viz-02: in_progress visibility elements
+            var attemptBadge = '';
+            var reaperBar = '';
+            var tifLine = '';
+            var lastKilledLine = '';
+            if (status === 'in_progress') {
+                var ac = t.attempt_count || 0;
+                if (ac > 1) {
+                    var abColor = ac >= 4 ? '#ef4444' : '#f59e0b';
+                    attemptBadge = '<span class="badge" style="background:' + abColor + '20;color:' + abColor + ';font-size:10px;" title="Dispatched ' + ac + ' times">Attempt ' + ac + '</span>';
+                }
+                if (t.current_attempt_started_at) {
+                    reaperBar = '<div style="margin:4px 0 2px 0;background:var(--bg-code);border-radius:2px;height:3px;overflow:hidden;" title="Reaper kills at 15m with no subprocess heartbeat">'
+                        + '<div id="kv-bar-' + esc(t.id) + '" style="height:100%;width:0%;background:#22c55e;"></div></div>';
+                    tifLine = '<div id="kv-tif-' + esc(t.id) + '" style="font-size:11px;color:var(--text-dim);margin-top:2px;">Running 0m 0s</div>'
+                        + '<span data-kv-started="' + esc(t.current_attempt_started_at) + '" data-kv-task-id="' + esc(t.id) + '" style="display:none;"></span>';
+                }
+                if (t.last_reaped_reason) {
+                    var reason = String(t.last_reaped_reason);
+                    var shortReason = reason.length > 80 ? reason.substring(0, 80) + '…' : reason;
+                    lastKilledLine = '<div style="font-size:10px;color:var(--text-dim);margin-top:2px;font-style:italic;" title="' + esc(reason) + '">Last killed: ' + esc(shortReason) + '</div>';
+                }
             }
 
             var snapAttr = JSON.stringify(t).replace(/"/g, '&quot;');
             return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + snapAttr + ')">'
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
+                + reaperBar
                 + '<div class="kanban-card-meta">'
                 + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
                 + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
                 + execBadge
                 + llmBadge
+                + attemptBadge
                 + '</div>'
+                + tifLine
+                + lastKilledLine
                 + schedLine
                 + execIdLine
                 + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
                 + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
-                + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">\u2715</button>'
+                + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>'
                 + '</div>'
                 + '</div>';
         }).join('');
     });
+    _setupKvCounters(board);
 }
 
 // OPT-62: mid-run message injection
