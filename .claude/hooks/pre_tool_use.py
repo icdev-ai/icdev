@@ -203,6 +203,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
         "genesis_audit",
+        # Genesis reflex observer (monitoring — append-only NIST AU)
+        "reflex_observations",
         # Knowledge Graph (D-KARL-1)
         "kg_retrieval_log",
         # Phase 64 Extension — Fine-Tuning (D-FT-3, D-FT-9, D-FT-14, D-FT-16, D-FT-13)
