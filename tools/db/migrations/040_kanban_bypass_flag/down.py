@@ -24,12 +24,14 @@ def down(conn: sqlite3.Connection) -> dict:
         return {"status": "skipped", "actions": ["column_not_present"]}
 
     col_list = ", ".join(cols)
+    # nosec B608 — col_list is derived solely from PRAGMA table_info (internal
+    # DB schema), never from external/user input; f-string is safe here.
     conn.executescript(f"""
         BEGIN;
         CREATE TABLE kanban_tasks_backup AS SELECT {col_list} FROM kanban_tasks;
         DROP TABLE kanban_tasks;
         ALTER TABLE kanban_tasks_backup RENAME TO kanban_tasks;
         COMMIT;
-    """)
+    """)  # nosec B608
     actions.append("column_dropped")
     return {"status": "rolled_back", "actions": actions}
