@@ -51,7 +51,7 @@ class TestMigration015:
         return conn
 
     def test_up_adds_column_and_index(self, tmp_path):
-        from tools.db.migrations import __init__  # noqa: F401 — ensure pkg importable
+        from icdev.tools.db.migrations import __init__  # noqa: F401 — ensure pkg importable
         import importlib.util
 
         mig = PROJECT_ROOT / "tools" / "db" / "migrations" / "015_kanban_depends_on" / "up.py"
@@ -155,7 +155,7 @@ def kanban_flask_client(tmp_path, monkeypatch):
         c.row_factory = sqlite3.Row
         return c
 
-    from tools.dashboard.api import kanban as kanban_mod
+    from icdev.tools.dashboard.api import kanban as kanban_mod
 
     monkeypatch.setattr(kanban_mod, "get_connection", _fake_conn)
 
@@ -323,7 +323,7 @@ class TestListenerDependencyGating:
         conn.commit()
 
         # Patch the listener's get_connection, in-progress count, and pending prompts.
-        from tools.genesis.reflexes import kanban as listener
+        from icdev.tools.genesis.reflexes import kanban as listener
 
         def _fake_conn():
             c = sqlite3.connect(str(db_path))
@@ -338,7 +338,7 @@ class TestListenerDependencyGating:
         conn.close()
 
     def test_only_unblocked_task_returned(self, seeded_db):
-        from tools.genesis.reflexes.kanban import _get_due_tasks
+        from icdev.tools.genesis.reflexes.kanban import _get_due_tasks
 
         due = _get_due_tasks()
         ids = [t["id"] for t in due]
@@ -347,7 +347,7 @@ class TestListenerDependencyGating:
         assert "C" not in ids
 
     def test_chain_progression(self, seeded_db):
-        from tools.genesis.reflexes.kanban import _get_due_tasks
+        from icdev.tools.genesis.reflexes.kanban import _get_due_tasks
 
         db_path, _ = seeded_db
 
@@ -374,7 +374,7 @@ class TestListenerDependencyGating:
 
     def test_scheduled_task_also_gated(self, seeded_db):
         """A scheduled-and-due task with a blocked dependency must not be returned."""
-        from tools.genesis.reflexes.kanban import _get_due_tasks
+        from icdev.tools.genesis.reflexes.kanban import _get_due_tasks
 
         db_path, _ = seeded_db
         past = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime(
