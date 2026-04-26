@@ -8751,6 +8751,35 @@ Output ONLY the JSON object. No other text."""
             return jsonify({"error": str(exc)}), 500
 
     # ══════════════════════════════════════════════════════════════════════
+    # API: Unified AI Chat — topology generation + Q&A in one endpoint
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/ai-chat", methods=["POST"])
+    @nc_login_required
+    def nc_api_ai_chat():
+        """Unified AI chat: route to topology generation or direct Q&A."""
+        data = request.get_json(force=True, silent=True) or {}
+        message = (data.get("message") or "").strip()
+        context_id = (data.get("context_id") or "").strip()
+        mode = data.get("mode", "qa")
+
+        if not message:
+            return jsonify({"error": "message is required"}), 400
+
+        is_topology = mode == "topology"
+
+        qa_system = (
+            _AI_TOPO_SYSTEM_PROMPT
+            + "\n\nYou are also a network expert who can answer questions directly"
+            " without generating JSON. When the user asks a question (rather than"
+            " requesting a diagram), respond in plain English with a clear, concise"
+            " explanation. Only output JSON when explicitly building a topology."
+        )
+
+        # Topology routing and Q&A logic added in subsequent tasks (d3, d4).
+        return jsonify({"ok": True, "is_topology": is_topology}), 200
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: AI Chat Pre-flight — Grilling / Clarifying Questions
     # ══════════════════════════════════════════════════════════════════════
 
