@@ -107,6 +107,13 @@ def list_tasks():
     # annotate_tasks_with_value, and confidence lives on the JOINed
     # oracle_predictions row which SQL ORDER BY can't drive portably.
     sort_param = (request.args.get("sort") or "").strip().lower()
+    # Cap how many "history" tasks (done/in_progress/suggested) to return in
+    # the unfiltered board view. Rendering thousands of done cards blocks the
+    # browser for tens of seconds. Default 100; pass done_limit=0 to disable.
+    try:
+        done_limit = int(request.args.get("done_limit") or 100)
+    except (ValueError, TypeError):
+        done_limit = 100
     conn = get_connection()
     try:
         # Execution queue ordering: within the same priority, tasks that
@@ -155,10 +162,13 @@ def list_tasks():
                 f"{select}WHERE kt.status IN ('backlog','scheduled') "
                 f"ORDER BY {priority_case}, kt.created_at ASC"  # nosec B608
             ).fetchall()
-            other_rows = conn.execute(
+            other_sql = (
                 f"{select}WHERE kt.status NOT IN ('backlog','scheduled') "
                 f"ORDER BY {priority_case}, kt.created_at DESC"  # nosec B608
-            ).fetchall()
+            )
+            if done_limit > 0:
+                other_sql += f" LIMIT {done_limit}"  # nosec B608
+            other_rows = conn.execute(other_sql).fetchall()
             rows = list(queue_rows) + list(other_rows)
         tasks = [dict(r) for r in rows]
         # Stringify datetimes for JSON + compute is_blocked + derive
@@ -237,7 +247,7 @@ def list_tasks():
                     -(t.get("oracle_value") or 0.0),
                 )
             )
-        return jsonify({"tasks": tasks, "total": len(tasks)})
+        return jsonify({"tasks": tasks, "total": len(tasks), "done_limit": done_limit or None})
     finally:
         conn.close()
 
