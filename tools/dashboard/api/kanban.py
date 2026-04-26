@@ -314,18 +314,43 @@ def list_tasks():
 
 
 def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
-    """If *child_task_id* has a parent, attempt to auto-close it."""
+    """If *child_task_id* has a parent, attempt to auto-close it.
+
+    Tries three paths in order (all best-effort — never blocks the main update):
+    1. FK depends_on_task_id: child explicitly declares its parent via the FK column
+    2. Naming convention: child ID matches ``{parent}-d{N}`` — parent is decomposed
+    3. Cascade: naming-convention result may unblock the grandparent via FK chain
+    """
     try:
-        from tools.kanban.state_machine import auto_close_parent_if_all_children_done
+        from tools.kanban.state_machine import (
+            auto_close_by_naming_convention,
+            auto_close_parent_if_all_children_done,
+        )
         row = conn.execute(
-            "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (child_task_id,)
+            "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (child_task_id,)
         ).fetchone()
-        if not row:
-            return
-        parent_id = dict(row).get("depends_on_task_id")
+        parent_id = (dict(row).get("depends_on_task_id") if hasattr(row, "keys") else row[0]) if row else None
+
+        # Path 1 — FK-based parent
         if parent_id:
             auto_close_parent_if_all_children_done(parent_id, conn, actor="auto_close_hook")
-            conn.commit()
+
+        # Path 2 — naming-convention decomposed parent ({parent}-d{N})
+        naming_result = auto_close_by_naming_convention(child_task_id, conn, actor="auto_close_hook")
+
+        # Path 3 — if naming-convention closed a parent, that parent may itself
+        # be a child (e.g. fd-floor-02 → fd-floor-02's own depends_on parent fd-floor-03
+        # now becomes unblocked), so re-run the FK sweep one level up.
+        if naming_result and naming_result.applied:
+            naming_parent = naming_result.task_id
+            np_row = conn.execute(
+                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (naming_parent,)
+            ).fetchone()
+            np_parent = (dict(np_row).get("depends_on_task_id") if hasattr(np_row, "keys") else np_row[0]) if np_row else None
+            if np_parent:
+                auto_close_parent_if_all_children_done(np_parent, conn, actor="auto_close_hook_cascade")
+
+        conn.commit()
     except Exception:
         pass  # auto-close is best-effort — never block the main update
 

@@ -1540,6 +1540,17 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
             # --- Path 2: depends_on_task_id linkage (manually created tasks) ---
             parent_id = row_d.get("depends_on_task_id")
             if not parent_id:
+                # --- Path 3: ID naming-convention ({parent}-d{N}) ---
+                # Delegate to the canonical state_machine implementation which
+                # handles this case — covers tasks where subtasks chain to each
+                # other but none explicitly declares depends_on_task_id=parent.
+                try:
+                    from tools.kanban.state_machine import auto_close_by_naming_convention
+                    result = auto_close_by_naming_convention(child_task_id, conn, actor=actor)
+                    if result and result.applied:
+                        return result.task_id
+                except Exception as _e:
+                    logger.debug("_auto_close_decomposed_parent path-3 failed: %s", _e)
                 return None
 
             parent_status_row = conn.execute(
