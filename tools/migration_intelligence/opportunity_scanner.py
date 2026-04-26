@@ -142,7 +142,7 @@ def scan_network_topology(db_path: str | None = None) -> dict[str, Any]:
 
     results = {"opportunities": [], "count": 0, "canvas": "ndc"}
     try:
-        # Count nodes per topology for consolidation analysis
+        # Schema: tools/db/migrations/020_nc_topologies_schema.py (id, name, description, created_at, updated_at)
         topologies = nc.execute(
             "SELECT id, name FROM nc_topologies ORDER BY updated_at DESC LIMIT 20"
         ).fetchall()
