@@ -5,57 +5,52 @@
 
 projects:
 - key: km
-  name: Km Project
-  description: Auto-registered project for tasks with prefix 'km-'. Update name and
-    description to reflect the project purpose.
+  name: Kanban Maintenance
+  description: 'Two-phase Kanban engine hardening: (1) auto-close sweep for decomposed
+    parent tasks that get stuck when all children complete — requires manual DB fix
+    today; (2) multi-parent dependency support via junction table, replacing the
+    single depends_on_task_id scalar with a full DAG + DFS cycle detection.'
   task_prefix: km-
   default_open: true
-  briefs: []
+  briefs:
+  - 'Auto-close sweep: audit stuck parents, implement recursive close + backfill — km-autoclose-01/02'
+  - 'Multi-parent deps: junction table migration, DFS cycle check, scheduler + UI badge — km-multidep-01/02'
   epics:
   - key: autoclose
-    title: AUTOCLOSE
-    priority: medium
+    title: Decomposed Parent Auto-Close Sweep
+    priority: high
   - key: multidep
-    title: MULTIDEP
-    priority: medium
-  - key: db
-    title: DB
-    priority: medium
-  - key: engine
-    title: ENGINE
-    priority: medium
-  - key: erb
-    title: ERB
-    priority: medium
-  - key: portdiag
-    title: PORTDIAG
-    priority: medium
-  - key: wizard
-    title: WIZARD
+    title: Multi-Parent Dependency (Junction Table)
     priority: medium
 - key: fd
-  name: Fd Project
-  description: Auto-registered project for tasks with prefix 'fd-'. Update name and
-    description to reflect the project purpose.
+  name: FathomDesk — Backtest Schema + Risk Floors + Cost Optimizer
+  description: 'Three paperclip-inspired improvements: (1) canonical BacktestResult
+    dataclass in constants.py so all 13 strategy types emit identical artifacts;
+    (2) per-strategy Sharpe/drawdown floor config wired as Gate 0 in preflight.py;
+    (3) weekly cost_optimizer Genesis reflex auditing LLM token spend across all agents.'
   task_prefix: fd-
   default_open: true
-  briefs: []
+  briefs:
+  - 'Backtest schema: BacktestResult dataclass + STRATEGY_TYPES + institutional memory artifacts — fd-schema-01/02'
+  - 'Risk floor: fathomdesk_strategy_floors.yaml + Gate 0 in preflight.py + tests — fd-floor-01/02/03'
+  - 'Cost optimizer: Genesis reflex (weekly, 168h) + daemon registration — fd-cost-01/02'
+  - 'Gate: manifest sync + companion sync + coherence + V&V — fd-sync-01, fd-vv-01'
   epics:
-  - key: cost
-    title: COST
-    priority: medium
-  - key: floor
-    title: FLOOR
-    priority: medium
   - key: schema
-    title: SCHEMA
+    title: BacktestResult Schema + Institutional Memory
+    priority: high
+  - key: floor
+    title: Per-Strategy Risk Floor (Gate 0)
+    priority: high
+  - key: cost
+    title: Cost Optimizer Genesis Reflex
     priority: medium
   - key: sync
-    title: SYNC
+    title: Manifest + Companion Sync
     priority: medium
   - key: vv
-    title: VV
-    priority: medium
+    title: V&V Sign-Off
+    priority: high
 - key: nmig
   name: Network Device Migration Workflow
   description: Vendor-agnostic network device migration workflow (chassis swap, peering
