@@ -218,8 +218,12 @@ def run_playwright_native(
         cmd.append(test_file)
 
     env = os.environ.copy()
+    root_str = str(PROJECT_ROOT)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
     json_results_file = results_dir / "playwright-results.json"
     env["PLAYWRIGHT_JSON_OUTPUT_NAME"] = str(json_results_file)
+    logger.info("e2e_runner: PYTHONPATH=%s", env["PYTHONPATH"])
     logger.info("e2e_runner: command: %s", " ".join(cmd))
 
     try:
@@ -700,6 +704,12 @@ def run_selenium(
     logger.info("e2e_runner: running tests via Selenium (pytest)")
     target = test_file or str(PROJECT_ROOT / "tests" / "e2e_selenium")
     cmd = [sys.executable, "-m", "pytest", target, "-v", "--tb=short", "-q"]
+
+    env = os.environ.copy()
+    root_str = str(PROJECT_ROOT)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
+    logger.info("e2e_runner: PYTHONPATH=%s", env["PYTHONPATH"])
     logger.info("e2e_runner: command: %s", " ".join(cmd))
 
     try:
@@ -711,6 +721,7 @@ def run_selenium(
             errors="replace",
             timeout=_SELENIUM_TIMEOUT_SECONDS,
             cwd=str(PROJECT_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         msg = f"pytest timed out after {_SELENIUM_TIMEOUT_SECONDS} seconds"

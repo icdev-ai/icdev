@@ -189,8 +189,12 @@ def run_playwright_native(
         cmd.append(test_file)
 
     env = os.environ.copy()
+    root_str = str(PROJECT_ROOT)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
     env["PLAYWRIGHT_JSON_OUTPUT_NAME"] = str(results_dir / "playwright-results.json")
 
+    logger.info(f"  PYTHONPATH={env['PYTHONPATH']}")
     logger.info(f"  Command: {' '.join(cmd)}")
 
     try:
