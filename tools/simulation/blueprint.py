@@ -318,4 +318,40 @@ def create_simulation_blueprint() -> Blueprint:
             headers={"Content-Disposition": f"attachment; filename=bundle-{session_id[:8]}.txt"},
         )
 
+    # ------------------------------------------------------------------
+    # War Endurance Index routes
+    # ------------------------------------------------------------------
+
+    @bp.route("/war-endurance")
+    def war_endurance_page():
+        """War Endurance Index — burn-down chart dashboard."""
+        return render_template("war_endurance.html")
+
+    @bp.route("/api/simulate/war-endurance", methods=["POST"])
+    def api_war_endurance():
+        """Compute war endurance for two sides.
+
+        Body: { side_a: {...}, side_b: {...}, scenario_id: "..." }
+        Returns endurance_months, endurance_delta, burn_series, escalation_risk.
+        """
+        data = request.get_json(silent=True) or {}
+        try:
+            from tools.simulation.war_endurance import run_endurance_analysis
+            result = run_endurance_analysis(data)
+            return jsonify(result)
+        except Exception as exc:
+            logger.exception("war_endurance computation failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/simulate/war-endurance/demo", methods=["GET"])
+    def api_war_endurance_demo():
+        """Return demo War Endurance result (Ukraine-Russia parameterization)."""
+        try:
+            from tools.simulation.war_endurance import run_endurance_analysis, DEMO_PARAMS
+            result = run_endurance_analysis(DEMO_PARAMS)
+            return jsonify(result)
+        except Exception as exc:
+            logger.exception("war_endurance demo failed")
+            return jsonify({"error": str(exc)}), 500
+
     return bp
