@@ -9,6 +9,8 @@ Use relative imports within the package:
 
 __all__ = ["LLMRouter"]
 
+from .llm.router import LLMRouter
+
 import importlib
 import os
 import sys
