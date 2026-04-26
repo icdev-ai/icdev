@@ -2066,16 +2066,16 @@ function ncChatProceedAsArchitect(description) {
   // Decode HTML entities that were escaped for display
   const txt = document.createElement('textarea');
   txt.innerHTML = description;
-  ncChatSend({description: txt.value, architect_mode: true, skip_grill: true});
+  ncChatSend({description: txt.value, architect_mode: true, skip_grill: true, context_id: _ncChatContextId});
 }
 
 async function _ncChatDirectGenerate(description, opts) {
   opts = opts || {};
   try {
-    const r = await fetch(NC_BASE + '/api/ai-generate', {
+    const r = await fetch(NC_BASE + '/api/ai-chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({description, architect_mode: !!opts.architect_mode}),
+      body: JSON.stringify({description, context_id: _ncChatContextId, architect_mode: !!opts.architect_mode}),
     });
     const data = await r.json();
 
