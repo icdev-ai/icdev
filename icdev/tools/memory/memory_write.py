@@ -66,13 +66,14 @@ def write_to_db(content, entry_type, importance, user_id=None, tenant_id=None, s
         )
     existing = c.fetchone()
     if existing:
+        # decay_weight intentionally not reset on update — managed by hybrid_search decay pass
         conn.close()
         return existing[0], True
 
     c.execute(
-        "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (content, entry_type, importance, content_hash, user_id, tenant_id, source),
+        "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (content, entry_type, importance, content_hash, user_id, tenant_id, source, 1.0),
     )
     conn.commit()
     entry_id = c.lastrowid
@@ -146,6 +147,17 @@ def update_memory_md(content, section):
 
     print(f"Warning: Section '{header}' not found in MEMORY.md")
     return False
+
+
+def reset_decay(memory_id: str, conn=None) -> None:
+    """Reset a memory's decay weight to 1.0 (called after retrieval strengthening)."""
+    close = conn is None
+    if conn is None:
+        from tools.db.storage import get_connection
+        conn = get_connection().__enter__()
+    conn.execute("UPDATE memory_entries SET decay_weight=1.0 WHERE id=?", (memory_id,))
+    if close:
+        conn.commit()
 
 
 def main():
