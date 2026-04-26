@@ -101,6 +101,73 @@ projects:
   - key: vv
     title: V&V Sign-Off
     priority: high
+- key: sg
+  name: STRATEGOS — Geospatial War Intelligence & Simulation Platform
+  description: 'Conflict-agnostic geospatial war intelligence child app: 8-domain
+    coverage (land/sea/cyber/air/space/information/EW/economic), Ghost Track transponder-off
+    prediction, I&W pre-war indicator engine, War Game simulation (Lanchester/Blotto/Nash),
+    7-agent OODA agentic loop, RAG+KG-powered HITL War Council briefs. Air-gap native
+    (Ollama LLM, PMTiles offline maps, PyPI-only). Ukraine theater Phase 1, Pacific
+    theater Phase 2. Extensible via Theater abstraction layer for any future conflict.'
+  task_prefix: sg-
+  default_open: true
+  briefs:
+  - 'Foundation: theater abstraction + DB migration + war KG schema + Flask blueprint — sg-foundation-01..06'
+  - 'Import: 9 air-gap data importers (ACLED/Oryx/AIS/STIX/FAO/OSM/TLE/GDELT/baselines) — sg-import-01..09'
+  - 'Viz: Leaflet+PMTiles map + frontline animation + domain layer controls + KG explorer — sg-viz-01..04'
+  - 'Land+Sea+Cyber+Space+Info+EW+Econ domain modules (parallel) — sg-land/sea/cyber/space/info/ew/econ'
+  - 'Ghost Track: behavioral profiler + 4 detectors + dead reckoning + classifier + HITL — sg-ghost-01..07'
+  - 'I&W Engine: 6 PMESII-PT scorers + Bayesian updater + GBM classifier + DTW matcher + Weibull — sg-iw-01..10'
+  - 'War Game: Lanchester + Blotto + Nash + Monte Carlo COA + 36 Stratagems — sg-game-01..05'
+  - 'Agents: 7-agent OODA loop (Intel/Pattern/Maritime/Cyber/Space/Info/Strategy) — sg-agent-01..06'
+  - 'RAG (GATED on RAG-KG bridge): doctrine corpus + historical events + upgrade stubs — sg-rag-01..06'
+  - 'Pacific: PLAN ORBAT + A2AD rings + amphibious analyzer + Taiwan Strait + militia classifier — sg-pacific-01..06'
+  epics:
+  - key: foundation
+    title: Theater Abstraction + DB + KG Schema + Blueprint
+    priority: critical
+  - key: import
+    title: Air-Gap Data Import Pipeline (9 Sources)
+    priority: critical
+  - key: viz
+    title: Geospatial Visualization Layer (Leaflet + D3 + Cytoscape)
+    priority: high
+  - key: land
+    title: Land Domain — Troops, Frontline, Logistics
+    priority: high
+  - key: sea
+    title: Maritime Domain — AIS, Naval ORBAT, Kalibr, USV
+    priority: high
+  - key: cyber
+    title: Cyber Domain — ATT&CK, Kill Chain, Correlation
+    priority: high
+  - key: space
+    title: Space Domain — TLE, GPS Jamming, ASAT, ISR
+    priority: high
+  - key: info
+    title: Information/Cognitive Domain — GDELT, NLP, Narratives
+    priority: high
+  - key: ew
+    title: EW + Economic Domains — Jamming Zones, Supply Chain
+    priority: medium
+  - key: ghost
+    title: Ghost Track — Transponder-Off Prediction + Classification
+    priority: critical
+  - key: iw
+    title: I&W Engine — Pre-War Indicators + Exercise Classifier
+    priority: critical
+  - key: game
+    title: War Game Engine — Lanchester/Blotto/Nash/COA
+    priority: high
+  - key: agent
+    title: Agentic OODA Loop — 7 Agents + Orchestrator
+    priority: high
+  - key: rag
+    title: RAG Integration (GATED — awaits RAG-KG bridge)
+    priority: high
+  - key: pacific
+    title: Pacific Theater Extension — PLAN/A2AD/Taiwan/Militia
+    priority: medium
 - key: nmig
   name: Network Device Migration Workflow
   description: Vendor-agnostic network device migration workflow (chassis swap, peering
