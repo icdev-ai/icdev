@@ -32,6 +32,13 @@ from typing import Any, Dict, List, Optional
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+# Propagate the worktree root via os.environ so that any subprocess launched
+# without an explicit env= dict still resolves `import tools` correctly.
+_existing_pp = os.environ.get("PYTHONPATH", "")
+os.environ["PYTHONPATH"] = (
+    str(PROJECT_ROOT) if not _existing_pp
+    else str(PROJECT_ROOT) + os.pathsep + _existing_pp
+)
 
 from tools.testing.data_types import E2ETestResult  # noqa: E402
 from tools.testing.utils import (  # noqa: E402
