@@ -6,8 +6,8 @@ Usage:
     result = observe(reflex_name, reflex.run, config, session)
 
 The wrapper records wall-clock duration and success/failure to the
-reflex_observations table (created on first use). Failures are re-raised
-so the scheduler's existing error handler still fires.
+reflex_observations table (defined in init_icdev_db.py). Failures are
+re-raised so the scheduler's existing error handler still fires.
 """
 
 from __future__ import annotations
@@ -19,45 +19,14 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-_TABLE_ENSURED = False
-
-
-def _ensure_table() -> None:
-    global _TABLE_ENSURED
-    if _TABLE_ENSURED:
-        return
-    try:
-        from tools.db.storage import get_connection
-
-        conn = get_connection()
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS reflex_observations (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    reflex_name TEXT    NOT NULL,
-                    started_at  TEXT    NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    success     INTEGER NOT NULL DEFAULT 1,
-                    error       TEXT,
-                    result_json TEXT
-                )
-                """
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        _TABLE_ENSURED = True
-    except Exception as exc:
-        logger.debug("reflex_observer: table ensure failed: %s", exc)
-
 
 def _record(
     reflex_name: str,
     started_at: str,
+    finished_at: str,
     duration_ms: int,
-    success: bool,
-    error: str | None,
+    status: str,
+    error_msg: str | None,
     result: Any,
 ) -> None:
     try:
@@ -76,10 +45,10 @@ def _record(
             conn.execute(
                 """
                 INSERT INTO reflex_observations
-                    (reflex_name, started_at, duration_ms, success, error, result_json)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (reflex_name, started_at, finished_at, duration_ms, status, error_msg, result_json)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                [reflex_name, started_at, duration_ms, int(success), error, result_json],
+                [reflex_name, started_at, finished_at, duration_ms, status, error_msg, result_json],
             )
             conn.commit()
         finally:
@@ -99,21 +68,22 @@ def observe(
     Re-raises any exception after logging so the caller's error handling
     is unaffected.
     """
-    _ensure_table()
     started_at = datetime.now(timezone.utc).isoformat()
     t0 = time.monotonic()
     try:
         result = reflex_fn(*args, **kwargs)
         duration_ms = int((time.monotonic() - t0) * 1000)
+        finished_at = datetime.now(timezone.utc).isoformat()
         logger.debug(
             "reflex_observer: %s completed in %dms", reflex_name, duration_ms
         )
-        _record(reflex_name, started_at, duration_ms, True, None, result)
+        _record(reflex_name, started_at, finished_at, duration_ms, "ok", None, result)
         return result
     except Exception as exc:
         duration_ms = int((time.monotonic() - t0) * 1000)
+        finished_at = datetime.now(timezone.utc).isoformat()
         logger.warning(
             "reflex_observer: %s failed in %dms: %s", reflex_name, duration_ms, exc
         )
-        _record(reflex_name, started_at, duration_ms, False, str(exc), None)
+        _record(reflex_name, started_at, finished_at, duration_ms, "error", str(exc), None)
         raise
