@@ -4,6 +4,22 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: kv
+  name: Kanban Task Visibility
+  description: 'Surface in-progress task health on the Kanban board: attempt count
+    badge, live time-in-flight counter, stale-reaper countdown bar, last-killed reason,
+    and fix failure_count to increment on reaper kills so the field is meaningful.'
+  task_prefix: kv-
+  default_open: true
+  briefs:
+  - 'API: add attempt_count + current_attempt_started_at + last_reaped_reason to task response — kv-viz-01'
+  - 'UI: attempt badge + time-in-flight + reaper bar + last-killed line on in_progress card — kv-viz-02'
+  - 'Fix: increment failure_count on stale-reaper kills — kv-viz-03'
+  - 'V&V: Playwright smoke test — kv-viz-04'
+  epics:
+  - key: viz
+    title: In-Progress Card Visibility
+    priority: high
 - key: km
   name: Kanban Maintenance
   description: 'Two-phase Kanban engine hardening: (1) auto-close sweep for decomposed
