@@ -108,6 +108,7 @@ def main():
         pass
 
     from tools.genesis.reflexes.kanban import run as kanban_run
+    from tools.monitoring.reflex_observer import observe
 
     dummy_config = {"enabled": True, "risk_tier": "green"}
     dummy_trust = None
@@ -172,9 +173,9 @@ def main():
 
     if args.once:
         logger.info("Running single kanban cycle...")
-        # [DISPATCH POINT - once mode] Direct import, not importlib. Kanban-only.
-        # observe() wrapper: result = observe("kanban", kanban_run, dummy_config, dummy_trust)
-        result = kanban_run(dummy_config, dummy_trust)
+        # [DISPATCH POINT - once mode]
+        reflex_name = kanban_run.__module__.rsplit(".", 1)[-1]
+        result = observe(reflex_name, kanban_run, dummy_config, dummy_trust)
         details = result.get("details", {})
         logger.info(
             "Cycle complete: activated=%s, completed=%s, running=%s",
@@ -220,9 +221,9 @@ def main():
             logger.debug("heartbeat write failed: %s", exc)
 
         try:
-            # [DISPATCH POINT - main loop] Direct import, not importlib. Kanban-only.
-            # observe() wrapper: result = observe("kanban", kanban_run, dummy_config, dummy_trust)
-            result = kanban_run(dummy_config, dummy_trust)
+            # [DISPATCH POINT - main loop]
+            reflex_name = kanban_run.__module__.rsplit(".", 1)[-1]
+            result = observe(reflex_name, kanban_run, dummy_config, dummy_trust)
             details = result.get("details", {})
             status = details.get("status", "ok")
             activated = details.get("tasks_activated", 0)
