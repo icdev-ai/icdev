@@ -171,6 +171,15 @@ projects:
   - key: sc
     title: Supply Chain Intelligence — DIB, War Endurance, Sanctions, Humanitarian
     priority: high
+  - key: oracle
+    title: STRATEGOS Intelligence Oracle — 5 War Intelligence Lenses
+    priority: critical
+  - key: reflex
+    title: War Intelligence Reflexes — 8 Autonomous Collection + Synthesis Reflexes
+    priority: high
+  - key: analyst
+    title: Analyst Workbench — PIR/CCIR, Brief Generator, Signal Engine, ORBAT
+    priority: high
 - key: sc-core
   name: Supply Chain Core Promotion
   description: 'Promote tools/supply_chain/ to true ICDEV core: domain-agnostic DB
