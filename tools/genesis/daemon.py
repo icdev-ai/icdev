@@ -235,6 +235,10 @@ class GenesisDaemon(DaemonBase):
         try:
             module = importlib.import_module(f"tools.genesis.reflexes.{name}")
             if hasattr(module, "run"):
+                # [DISPATCH POINT] Centralized reflex invocation via importlib.
+                # All 22 reflexes in REFLEX_NAMES are dispatched here.
+                # observe() wrapper should wrap module.run(config, trust) here:
+                #   result = observe(name, module.run, config, trust)
                 result = module.run(config, trust)
                 return (
                     result.get("success", False),
@@ -425,6 +429,8 @@ def _run_reflex(name: str, config: Dict[str, Any], trust) -> Tuple[bool, float, 
     try:
         module = importlib.import_module(f"tools.genesis.reflexes.{name}")
         if hasattr(module, "run"):
+            # [DISPATCH POINT - backward-compat] Same importlib pattern as run_reflex_impl.
+            # observe() wrapper should also be added here if _run_reflex is called directly.
             result = module.run(config, trust)
             return (
                 result.get("success", False),

@@ -172,6 +172,8 @@ def main():
 
     if args.once:
         logger.info("Running single kanban cycle...")
+        # [DISPATCH POINT - once mode] Direct import, not importlib. Kanban-only.
+        # observe() wrapper: result = observe("kanban", kanban_run, dummy_config, dummy_trust)
         result = kanban_run(dummy_config, dummy_trust)
         details = result.get("details", {})
         logger.info(
@@ -218,6 +220,8 @@ def main():
             logger.debug("heartbeat write failed: %s", exc)
 
         try:
+            # [DISPATCH POINT - main loop] Direct import, not importlib. Kanban-only.
+            # observe() wrapper: result = observe("kanban", kanban_run, dummy_config, dummy_trust)
             result = kanban_run(dummy_config, dummy_trust)
             details = result.get("details", {})
             status = details.get("status", "ok")
