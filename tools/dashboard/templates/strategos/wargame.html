@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Wargame Scenarios — Strategos{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Wargame Scenarios</h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<form method="get" style="display:flex;gap:.75rem;margin-bottom:1rem;align-items:flex-end">
+    <div>
+        <label style="display:block;font-size:.8rem;color:var(--text-secondary);margin-bottom:.25rem">State</label>
+        <select name="state" style="padding:.4rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+            <option value="">All states</option>
+            {% for s in wargame_states %}
+            <option value="{{ s }}" {% if s == selected_state %}selected{% endif %}>{{ s|title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if selected_state %}<a href="/strategos/wargame" class="btn">Clear</a>{% endif %}
+</form>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem">
+    {% for g in wargames %}
+    {% set state = g.state or 'pending' %}
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem">
+            <h3 style="margin:0;font-size:1rem">{{ g.name }}</h3>
+            <span style="padding:.15rem .5rem;border-radius:3px;font-size:.75rem;font-weight:600;
+                background:{% if state=='active' %}rgba(16,185,129,.15){% elif state=='complete' %}rgba(59,130,246,.15){% elif state=='paused' %}rgba(245,158,11,.15){% else %}var(--bg-secondary){% endif %};
+                color:{% if state=='active' %}#10b981{% elif state=='complete' %}#3b82f6{% elif state=='paused' %}#f59e0b{% else %}var(--text-secondary){% endif %}">
+                {{ state|title }}
+            </span>
+        </div>
+        {% if g.scenario %}
+        <p style="color:var(--text-secondary);font-size:.875rem;margin:.5rem 0">{{ g.scenario }}</p>
+        {% endif %}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.8rem;color:var(--text-secondary);margin-top:.75rem">
+            <div><span style="color:var(--text-muted)">Blue Force:</span> {{ g.blue_force or '—' }}</div>
+            <div><span style="color:var(--text-muted)">Red Force:</span> {{ g.red_force or '—' }}</div>
+            {% if g.outcome %}
+            <div style="grid-column:1/-1"><span style="color:var(--text-muted)">Outcome:</span> {{ g.outcome }}</div>
+            {% endif %}
+            <div style="grid-column:1/-1;color:var(--text-muted)">{{ (g.created_at or '')[:10] }}</div>
+        </div>
+    </div>
+    {% else %}
+    <div class="card" style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--text-muted)">
+        No wargame scenarios found.
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

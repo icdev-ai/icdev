@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Ghost Signals — Strategos{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Ghost Signals <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Dark vessels &amp; anomalies</span></h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<form method="get" style="display:flex;gap:.75rem;margin-bottom:1rem;align-items:flex-end">
+    <div>
+        <label style="display:block;font-size:.8rem;color:var(--text-secondary);margin-bottom:.25rem">Signal Type</label>
+        <select name="signal_type" style="padding:.4rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+            <option value="">All types</option>
+            {% for t in signal_types %}
+            <option value="{{ t }}" {% if t == selected_type %}selected{% endif %}>{{ t|replace('_',' ')|title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if selected_type %}<a href="/strategos/ghost" class="btn">Clear</a>{% endif %}
+</form>
+
+<div class="card" style="padding:0;overflow:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+        <thead>
+            <tr style="background:var(--bg-secondary)">
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Type</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">MMSI</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Lat</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Lon</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Confidence</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Source</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Detected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in signals %}
+            <tr style="border-bottom:1px solid var(--border-color)">
+                <td style="padding:.55rem 1rem">
+                    <span style="padding:.1rem .5rem;border-radius:3px;font-size:.78rem;background:rgba(245,158,11,.12);color:#f59e0b">
+                        {{ s.signal_type|replace('_',' ')|title }}
+                    </span>
+                </td>
+                <td style="padding:.55rem 1rem;font-family:monospace">{{ s.mmsi or '—' }}</td>
+                <td style="padding:.55rem 1rem;text-align:right">{% if s.lat is not none %}{{ s.lat|round(4) }}{% else %}—{% endif %}</td>
+                <td style="padding:.55rem 1rem;text-align:right">{% if s.lon is not none %}{{ s.lon|round(4) }}{% else %}—{% endif %}</td>
+                <td style="padding:.55rem 1rem;text-align:right;font-weight:500;color:{% if (s.confidence or 0) >= 0.75 %}#10b981{% elif (s.confidence or 0) >= 0.4 %}#f59e0b{% else %}#e94560{% endif %}">
+                    {{ ((s.confidence or 0) * 100)|round(0)|int }}%
+                </td>
+                <td style="padding:.55rem 1rem;color:var(--text-secondary)">{{ s.source or '—' }}</td>
+                <td style="padding:.55rem 1rem;color:var(--text-muted);font-size:.8rem">{{ (s.detected_at or '')[:16] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" style="padding:2rem;text-align:center;color:var(--text-muted)">No ghost signals detected.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">{{ signals|length }} signal(s)</div>
+{% endblock %}

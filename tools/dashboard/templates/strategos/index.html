@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Strategos — Strategic Intelligence Operations{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Strategos <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Strategic Intelligence Operations</span></h1>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem">
+    <a href="/strategos/orbat" class="card" style="text-decoration:none;color:inherit">
+        <div style="font-size:2rem;font-weight:700;color:var(--accent-blue)">{{ summary.orbat_units }}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem;margin-top:.25rem">ORBAT Units</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">Order of Battle registry</div>
+    </a>
+    <a href="/strategos/ghost" class="card" style="text-decoration:none;color:inherit">
+        <div style="font-size:2rem;font-weight:700;color:#f59e0b">{{ summary.ghost_signals }}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem;margin-top:.25rem">Ghost Signals</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">Dark vessels &amp; anomalies</div>
+    </a>
+    <a href="/strategos/iw" class="card" style="text-decoration:none;color:inherit">
+        <div style="font-size:2rem;font-weight:700;color:#e94560">{{ summary.iw_effects }}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem;margin-top:.25rem">IW Effects</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">Information Warfare events</div>
+    </a>
+    <a href="/strategos/wargame" class="card" style="text-decoration:none;color:inherit">
+        <div style="font-size:2rem;font-weight:700;color:#10b981">{{ summary.wargames }}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem;margin-top:.25rem">Wargames</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">Active scenarios</div>
+    </a>
+    <a href="/strategos/kg" class="card" style="text-decoration:none;color:inherit">
+        <div style="font-size:2rem;font-weight:700;color:#9b59b6">{{ summary.kg_nodes }}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem;margin-top:.25rem">KG Nodes</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">Knowledge graph entities</div>
+    </a>
+    <a href="/strategos/hitl" class="card" style="text-decoration:none;color:inherit">
+        <div style="font-size:2rem;font-weight:700;color:{% if summary.hitl_pending > 0 %}#f97316{% else %}var(--text-secondary){% endif %}">{{ summary.hitl_pending }}</div>
+        <div style="color:var(--text-secondary);font-size:.85rem;margin-top:.25rem">HITL Pending</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-top:.5rem">Awaiting human decision</div>
+    </a>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div class="card">
+        <h3 style="margin-top:0">Quick Links</h3>
+        <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.5rem">
+            <li><a href="/strategos/orbat">&#9654; ORBAT Tracker</a></li>
+            <li><a href="/strategos/ghost">&#9654; Ghost Signal Monitor</a></li>
+            <li><a href="/strategos/iw">&#9654; IW Effects Board</a></li>
+            <li><a href="/strategos/wargame">&#9654; Wargame Scenarios</a></li>
+            <li><a href="/strategos/kg">&#9654; Knowledge Graph</a></li>
+            <li><a href="/strategos/hitl">&#9654; HITL Queue</a></li>
+        </ul>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0">Classification</h3>
+        <p style="color:var(--text-secondary);font-size:.875rem">
+            All Strategos data is handled at <strong>CUI // SP-CTI</strong> (IL4/IL5).
+            Intelligence outputs require analyst review before dissemination.
+        </p>
+        <p style="color:var(--text-secondary);font-size:.875rem">
+            HITL queue items require human sign-off before actioning.
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -239,6 +239,20 @@
             </li>
             {% endif %}
 
+            <!-- Strategos — Strategic Intelligence Operations -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/strategos' in request.path %}active{% endif %}" style="color:#f59e0b;font-weight:600;">Strategos</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/strategos">Overview</a></li>
+                    <li><a href="/strategos/orbat">ORBAT Tracker</a></li>
+                    <li><a href="/strategos/ghost">Ghost Signals</a></li>
+                    <li><a href="/strategos/iw">IW Effects</a></li>
+                    <li><a href="/strategos/wargame">Wargame</a></li>
+                    <li><a href="/strategos/kg">Knowledge Graph</a></li>
+                    <li><a href="/strategos/hitl">HITL Queue</a></li>
+                </ul>
+            </li>
+
             <!-- Canvas Compliance (Cross-Canvas Integration) -->
             <li>
                 <a href="/canvas-compliance" class="{% if '/canvas-compliance' in request.path %}active{% endif %}" style="color:#e94560;font-weight:600;">Canvas Posture</a>

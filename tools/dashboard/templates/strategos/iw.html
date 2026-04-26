@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}IW Effects — Strategos{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Information Warfare <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Effects tracker</span></h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<form method="get" style="display:flex;gap:.75rem;margin-bottom:1rem;align-items:flex-end">
+    <div>
+        <label style="display:block;font-size:.8rem;color:var(--text-secondary);margin-bottom:.25rem">Effect Type</label>
+        <select name="effect_type" style="padding:.4rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+            <option value="">All types</option>
+            {% for t in effect_types %}
+            <option value="{{ t }}" {% if t == selected_type %}selected{% endif %}>{{ t|title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if selected_type %}<a href="/strategos/iw" class="btn">Clear</a>{% endif %}
+</form>
+
+<div class="card" style="padding:0;overflow:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+        <thead>
+            <tr style="background:var(--bg-secondary)">
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Effect</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Target</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Severity</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Confidence</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Description</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Detected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in effects %}
+            {% set sev = e.severity or 'moderate' %}
+            <tr style="border-bottom:1px solid var(--border-color)">
+                <td style="padding:.55rem 1rem">
+                    <span style="padding:.1rem .5rem;border-radius:3px;font-size:.78rem;background:rgba(233,69,96,.12);color:#e94560">
+                        {{ e.effect_type|title }}
+                    </span>
+                </td>
+                <td style="padding:.55rem 1rem;font-weight:500">{{ e.target or '—' }}</td>
+                <td style="padding:.55rem 1rem">
+                    <span style="padding:.1rem .5rem;border-radius:3px;font-size:.78rem;
+                        background:{% if sev in ['critical','elevated'] %}rgba(233,69,96,.12){% elif sev=='moderate' %}rgba(245,158,11,.12){% else %}rgba(16,185,129,.12){% endif %};
+                        color:{% if sev in ['critical','elevated'] %}#e94560{% elif sev=='moderate' %}#f59e0b{% else %}#10b981{% endif %}">
+                        {{ sev|title }}
+                    </span>
+                </td>
+                <td style="padding:.55rem 1rem;text-align:right;font-weight:500">
+                    {{ ((e.confidence or 0) * 100)|round(0)|int }}%
+                </td>
+                <td style="padding:.55rem 1rem;color:var(--text-secondary);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                    {{ e.description or '—' }}
+                </td>
+                <td style="padding:.55rem 1rem;color:var(--text-muted);font-size:.8rem">{{ (e.detected_at or '')[:16] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">No IW effects recorded.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">{{ effects|length }} effect(s)</div>
+{% endblock %}
