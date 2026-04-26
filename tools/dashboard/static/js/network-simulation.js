@@ -1799,9 +1799,34 @@ async function runAiGenerate() {
  * Uses /api/chat endpoints (same as main dashboard chat)
  * ══════════════════════════════════════════════════════════════════════════════ */
 
-let _ncChatContextId = null;
+let _ncChatContextId = sessionStorage.getItem('nc_chat_ctx_id') || null;
 let _ncChatPollTimer = null;
 let _ncChatLastTurn = 0;
+
+async function ncChatInitContext() {
+  if (_ncChatContextId) {
+    try {
+      const r = await fetch(`/network/api/ai-context/${_ncChatContextId}/messages`);
+      if (r.ok) {
+        const data = await r.json();
+        if (data.messages) {
+          data.messages.forEach(m => _ncChatAppendMsg(m.role, m.content));
+        }
+      }
+    } catch (_) { /* ignore — stale context, will create new on next send */ }
+  } else {
+    try {
+      const r = await fetch('/network/api/ai-context', { method: 'POST' });
+      if (r.ok) {
+        const data = await r.json();
+        if (data.context_id) {
+          _ncChatContextId = data.context_id;
+          sessionStorage.setItem('nc_chat_ctx_id', _ncChatContextId);
+        }
+      }
+    } catch (_) { /* non-fatal — chat will use fallback path */ }
+  }
+}
 
 function ncChatToggle() {
   // Close rack panel if open
