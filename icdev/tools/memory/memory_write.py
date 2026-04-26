@@ -38,47 +38,60 @@ MEMORY_SECTIONS = (
 )
 
 
-def compute_content_hash(content):
-    """Compute SHA-256 hash of content for deduplication (D179)."""
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+def _normalize(content: str) -> str:
+    """Normalize content for fingerprinting: lowercase, strip, collapse whitespace."""
+    return " ".join(content.lower().strip().split())
+
+
+def compute_content_hash(content: str) -> str:
+    """Compute SHA-256 hash of normalized content for deduplication (D179)."""
+    return hashlib.sha256(_normalize(content).encode("utf-8")).hexdigest()
 
 
 def write_to_db(content, entry_type, importance, user_id=None, tenant_id=None, source="manual"):
-    """Write memory entry with dedup check (D179).
+    """Write memory entry with SHA-256 dedup upsert (D179).
+
+    Normalizes content before hashing so case/whitespace variants deduplicate.
 
     Returns:
-        tuple: (entry_id, is_duplicate)
+        dict: {id, status ('inserted'|'duplicate_merged'), fingerprint}
     """
-    content_hash = compute_content_hash(content)
+    fingerprint = compute_content_hash(content)
     conn = _get_conn()
     c = conn.cursor()
 
-    # Check for duplicate (D179)
+    # Check for duplicate by normalized fingerprint (D179)
     if user_id:
         c.execute(
             "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id = ?",
-            (content_hash, user_id),
+            (fingerprint, user_id),
         )
     else:
         c.execute(
             "SELECT id FROM memory_entries WHERE content_hash = ? AND user_id IS NULL",
-            (content_hash,),
+            (fingerprint,),
         )
     existing = c.fetchone()
     if existing:
+        # Merge: bump updated_at to record the re-encounter
         # decay_weight intentionally not reset on update — managed by hybrid_search decay pass
+        c.execute(
+            "UPDATE memory_entries SET updated_at = datetime('now') WHERE id = ?",
+            (existing[0],),
+        )
+        conn.commit()
         conn.close()
-        return existing[0], True
+        return {"id": existing[0], "status": "duplicate_merged", "fingerprint": fingerprint}
 
     c.execute(
         "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (content, entry_type, importance, content_hash, user_id, tenant_id, source, 1.0),
+        (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0),
     )
     conn.commit()
     entry_id = c.lastrowid
     conn.close()
-    return entry_id, False
+    return {"id": entry_id, "status": "inserted", "fingerprint": fingerprint}
 
 
 def write_to_daily_log(content):
@@ -205,7 +218,7 @@ def main():
                 print("Error: --section required when using --update-memory")
             return
         update_memory_md(args.content, args.section)
-        entry_id, is_dup = write_to_db(
+        result = write_to_db(
             args.content,
             args.type,
             args.importance,
@@ -218,8 +231,9 @@ def main():
                 json.dumps(
                     {
                         "classification": "CUI // SP-CTI",
-                        "entry_id": entry_id,
-                        "duplicate": is_dup,
+                        "entry_id": result["id"],
+                        "status": result["status"],
+                        "fingerprint": result["fingerprint"],
                         "target": "memory_md",
                         "section": args.section,
                     }
@@ -227,7 +241,7 @@ def main():
             )
     else:
         write_to_daily_log(args.content)
-        entry_id, is_dup = write_to_db(
+        result = write_to_db(
             args.content,
             args.type,
             args.importance,
@@ -240,17 +254,18 @@ def main():
                 json.dumps(
                     {
                         "classification": "CUI // SP-CTI",
-                        "entry_id": entry_id,
-                        "duplicate": is_dup,
+                        "entry_id": result["id"],
+                        "status": result["status"],
+                        "fingerprint": result["fingerprint"],
                         "target": "daily_log",
                     }
                 )
             )
         else:
-            if is_dup:
-                print(f"Duplicate detected (existing entry #{entry_id})")
+            if result["status"] == "duplicate_merged":
+                print(f"Duplicate detected (existing entry #{result['id']})")
             else:
-                print(f"Written to daily log and DB (entry #{entry_id})")
+                print(f"Written to daily log and DB (entry #{result['id']})")
 
 
 if __name__ == "__main__":

@@ -443,3 +443,9 @@
 |------|------|-------------|-------|--------|
 | Data Gateway | tools\fathomdesk\data_gateway.py | Auto-registered: fathomdesk/data_gateway.py | --json | JSON |
 | Reflex Observer | tools\monitoring\reflex_observer.py | Auto-registered: monitoring/reflex_observer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Backtester | tools\fathomdesk\backtester.py | Auto-registered: fathomdesk/backtester.py | --json | JSON |

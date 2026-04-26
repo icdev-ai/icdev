@@ -1498,6 +1498,8 @@ CREATE TABLE IF NOT EXISTS odc_mitre_techniques (
     sigma_template  TEXT NOT NULL DEFAULT '',
     ingested_at     TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content, type, tags);
 """
 
 # ---------------------------------------------------------------------------

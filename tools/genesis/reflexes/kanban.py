@@ -3492,6 +3492,15 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             })
             if table_name.lower() in _NON_TABLE_WORDS:
                 table_name = None
+            # Blocklist: common English words that appear after "CREATE TABLE IF NOT EXISTS"
+            # in prose descriptions (e.g. "use the CREATE TABLE IF NOT EXISTS pattern from
+            # migration X") but are never actual table names.
+            _PROSE_WORDS = {
+                "pattern", "syntax", "template", "like", "similar", "example",
+                "approach", "format", "style", "convention", "idiom", "method",
+            }
+            if table_name and table_name.lower() in _PROSE_WORDS:
+                table_name = None
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
         # file with CREATE TABLE <name>, but that migration has not been
