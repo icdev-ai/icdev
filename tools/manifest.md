@@ -449,3 +449,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Backtester | tools\fathomdesk\backtester.py | Auto-registered: fathomdesk/backtester.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Setup Wizard | tools\rag\setup_wizard.py | Auto-registered: rag/setup_wizard.py | --json | JSON |

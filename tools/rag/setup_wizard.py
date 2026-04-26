@@ -129,6 +129,7 @@ def run_setup(
     conn=None,
     no_backfill: bool = False,
     no_disambiguation: bool = False,
+    dry_run: bool = False,
 ) -> Dict[str, Any]:
     """Run greenfield or brownfield RAG+KG setup.
 
@@ -138,11 +139,14 @@ def run_setup(
         conn: Optional DB connection. Opens one internally if None.
         no_backfill: Skip KG backfill in brownfield mode (non-interactive).
         no_disambiguation: Skip disambiguation sweep in brownfield mode.
+        dry_run: Validate paths without writing to DB or config files.
 
     Returns:
         Dict with keys: mode, status, and step results.
     """
     result: Dict[str, Any] = {"mode": mode, "status": "ok", "steps": []}
+    if dry_run:
+        result["dry_run"] = True
 
     if not interactive and mode not in ("greenfield", "brownfield"):
         raise ValueError(
@@ -209,11 +213,17 @@ def run_setup(
                     print(f"Warning: unknown sources ignored: {invalid}")
                 enabled = valid if valid else all_sources
 
-        _write_enabled_sources(enabled)
+        if not dry_run:
+            _write_enabled_sources(enabled)
+            print(f"Written {len(enabled)} source(s) to {RAG_CONFIG_PATH.name}.")
+        else:
+            print(f"[dry-run] Would write {len(enabled)} source(s) to {RAG_CONFIG_PATH.name}.")
         result["enabled_sources"] = enabled
-        print(f"Written {len(enabled)} source(s) to {RAG_CONFIG_PATH.name}.")
 
-        kg_result = _initialize_default_graph(_conn)
+        if not dry_run:
+            kg_result = _initialize_default_graph(_conn)
+        else:
+            kg_result = {"status": "skipped", "reason": "dry-run mode"}
         result["kg_init"] = kg_result
         if kg_result.get("status") == "skipped":
             print("KG init skipped (kg_init module not available).")
@@ -227,6 +237,7 @@ def run_setup(
             " Run ingestion_manager.py --ingest-all to populate."
         )
         result["steps"].append("greenfield_complete")
+        result["status"] = "complete"
 
     # ------------------------------------------------------------------
     # Step 3 — Brownfield path
@@ -234,10 +245,11 @@ def run_setup(
     else:
         print(f"Brownfield mode: {count:,} existing chunks detected.")
         result["steps"].append("init_brownfield")
+        result["chunks_detected"] = count
 
         # Backfill
-        do_backfill = not no_backfill
-        if interactive:
+        do_backfill = not no_backfill and not dry_run
+        if interactive and not dry_run:
             answer = _prompt("Run KG backfill now? (y/N): ", default="n").lower()
             do_backfill = answer in ("y", "yes")
 
@@ -247,15 +259,16 @@ def run_setup(
             result["backfill"] = backfill_result
             print(f"Backfill complete: {backfill_result}")
         else:
+            reason = "dry-run mode" if dry_run else "user skipped"
             print(
                 "Skipping backfill."
                 " Run manually: python tools/rag/rag_to_kg_ingester.py --backfill"
             )
-            result["backfill"] = {"status": "skipped"}
+            result["backfill"] = {"status": "skipped", "reason": reason}
 
         # Disambiguation
-        do_disambig = not no_disambiguation
-        if interactive:
+        do_disambig = not no_disambiguation and not dry_run
+        if interactive and not dry_run:
             answer = _prompt(
                 "Run disambiguation sweep after backfill? (y/N): ", default="n"
             ).lower()
@@ -267,14 +280,16 @@ def run_setup(
             result["disambiguation"] = disambig_result
             print(f"Disambiguation complete: {disambig_result}")
         else:
+            reason = "dry-run mode" if dry_run else "user skipped"
             print(
                 "Skipping disambiguation sweep."
                 " Run manually: python tools/rag/setup_wizard.py --mode brownfield"
             )
-            result["disambiguation"] = {"status": "skipped"}
+            result["disambiguation"] = {"status": "skipped", "reason": reason}
 
         print("\nBrownfield setup complete.")
         result["steps"].append("brownfield_complete")
+        result["status"] = "complete"
 
     return result
 
@@ -309,6 +324,12 @@ def main() -> None:
         help="Skip disambiguation sweep in brownfield mode.",
     )
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Validate paths without writing to DB or config files.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="as_json",
@@ -324,6 +345,7 @@ def main() -> None:
             mode=args.mode,
             no_backfill=args.no_backfill,
             no_disambiguation=args.no_disambiguation,
+            dry_run=args.dry_run,
         )
     except ValueError as exc:
         if args.as_json:
