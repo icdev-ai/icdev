@@ -1463,9 +1463,13 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
     """If the just-completed child had a decomposed parent whose remaining
     children are now all done, close the parent as well.
 
-    The parent-child linkage is via ``source_prediction_id`` — children
-    inherit it from the batch parent at decomposition time. A parent row
-    has the same ``source_prediction_id`` plus status='decomposed'.
+    Tries two linkage mechanisms in order:
+    1. ``source_prediction_id`` — batch children inherit this from the parent
+       at decomposition time; the parent row shares the same value.
+    2. ``depends_on_task_id`` — fallback for tasks created without a prediction
+       ID (manual inserts, LLM failures to propagate the field). The child's
+       depends_on_task_id IS the parent; siblings are all tasks sharing that
+       same parent.
 
     Returns the closed parent's task_id, or None if nothing was closed.
     Safe to call on any done transition — no-op when the task isn't a
@@ -1474,36 +1478,57 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT source_prediction_id FROM kanban_tasks WHERE id = ?",
+            "SELECT source_prediction_id, depends_on_task_id FROM kanban_tasks WHERE id = ?",
             (child_task_id,),
         ).fetchone()
         if not row:
             return None
-        sp = dict(row).get("source_prediction_id")
-        if not sp:
-            return None
+        row_d = dict(row)
+        sp = row_d.get("source_prediction_id")
 
-        parent_row = conn.execute(
-            "SELECT id FROM kanban_tasks "
-            "WHERE source_prediction_id = ? AND status = 'decomposed' "
-            "  AND id <> ? LIMIT 1",
-            (sp, child_task_id),
-        ).fetchone()
-        if not parent_row:
-            return None
-        parent_id = dict(parent_row)["id"]
+        if sp:
+            # --- Path 1: source_prediction_id linkage (batch-decomposed tasks) ---
+            parent_row = conn.execute(
+                "SELECT id FROM kanban_tasks "
+                "WHERE source_prediction_id = ? AND status = 'decomposed' "
+                "  AND id <> ? LIMIT 1",
+                (sp, child_task_id),
+            ).fetchone()
+            if not parent_row:
+                return None
+            parent_id = dict(parent_row)["id"]
 
-        # Count siblings (share same sp, are NOT the parent) that are still open.
-        open_count = conn.execute(
-            "SELECT COUNT(*) AS n FROM kanban_tasks "
-            "WHERE source_prediction_id = ? AND id <> ? "
-            "  AND status IN ('backlog', 'scheduled', 'in_progress', "
-            "                 'suggested', 'needs_decomposition', 'dispatched')",
-            (sp, parent_id),
-        ).fetchone()
-        open_n = dict(open_count).get("n", 0)
-        if open_n > 0:
-            return None  # siblings still working
+            open_count = conn.execute(
+                "SELECT COUNT(*) AS n FROM kanban_tasks "
+                "WHERE source_prediction_id = ? AND id <> ? "
+                "  AND status IN ('backlog', 'scheduled', 'in_progress', "
+                "                 'suggested', 'needs_decomposition', 'dispatched')",
+                (sp, parent_id),
+            ).fetchone()
+            if dict(open_count).get("n", 0) > 0:
+                return None
+        else:
+            # --- Path 2: depends_on_task_id linkage (manually created tasks) ---
+            parent_id = row_d.get("depends_on_task_id")
+            if not parent_id:
+                return None
+
+            parent_status_row = conn.execute(
+                "SELECT id FROM kanban_tasks WHERE id = ? AND status = 'decomposed'",
+                (parent_id,),
+            ).fetchone()
+            if not parent_status_row:
+                return None
+
+            open_siblings = conn.execute(
+                "SELECT COUNT(*) AS n FROM kanban_tasks "
+                "WHERE depends_on_task_id = ? AND id <> ? "
+                "  AND status IN ('backlog', 'scheduled', 'in_progress', "
+                "                 'suggested', 'needs_decomposition', 'dispatched')",
+                (parent_id, child_task_id),
+            ).fetchone()
+            if dict(open_siblings).get("n", 0) > 0:
+                return None
 
         now = _utcnow_iso()
         conn.execute(
@@ -1513,22 +1538,24 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
         )
         # Audit-trail bypass row so guard-22 stays consistent: the parent
         # closure is bookkeeping, not fresh work that needs verification.
+        linkage = "sp-linkage" if sp else "dep-linkage"
         conn.execute(
             "INSERT INTO kanban_verifications "
             "(task_id, verified_at, result, reason, dispatch_source) "
             "VALUES (?, ?, 'bypassed', ?, ?)",
             (parent_id, now,
-             f"Auto-closed by _auto_close_decomposed_parent: last child {child_task_id} completed, all siblings done",
+             f"Auto-closed by _auto_close_decomposed_parent ({linkage}): "
+             f"last child {child_task_id} completed, all siblings done",
              "scheduler"),
         )
         conn.commit()
         logger.info(
-            "auto-closed decomposed parent %s after last child %s completed",
-            parent_id, child_task_id,
+            "auto-closed decomposed parent %s (%s) after last child %s completed",
+            parent_id, linkage, child_task_id,
         )
         _record_status_transition(
             parent_id, "decomposed", "done", actor=actor,
-            reason=f"auto-close: last child {child_task_id} done",
+            reason=f"auto-close ({linkage}): last child {child_task_id} done",
         )
         return parent_id
     finally:
