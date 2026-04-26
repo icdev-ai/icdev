@@ -999,7 +999,8 @@ def create_app() -> Flask:
     @app.route("/api/live-check", methods=["GET"])
     def api_live_check():
         """Scheduler heartbeat + in_progress task count for the Live Activity panel."""
-        import pathlib, time as _t
+        import pathlib
+        import time as _t
         from flask import jsonify as _j
         from tools.db.storage import get_connection as _gc
 
@@ -1274,6 +1275,15 @@ def create_app() -> Flask:
         app.logger.info("Migration Intelligence blueprint registered at /migration-intel")
     except Exception as _exc:
         app.logger.warning("Migration Intelligence blueprint failed to register: %s", _exc)
+
+    # ---- Strategos DIB Supply Chain Blueprint ----
+    try:
+        from tools.strategos.blueprint import create_strategos_blueprint
+        _sg_bp = create_strategos_blueprint()
+        app.register_blueprint(_sg_bp)
+        app.logger.info("Strategos DIB blueprint registered at /strategos/supply")
+    except Exception as _exc:
+        app.logger.warning("Strategos blueprint failed to register: %s", _exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
